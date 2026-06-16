@@ -111,40 +111,73 @@ def method_sd15(out_dir: Path, seed: int, params=None):
             "poll_interval": {"description": "seconds between queue polls", "min": 0.5, "max": 30, "default": 2},
         })
 def method_comfyui(out_dir: Path, seed: int, params=None):
-    seed_all(seed)
+    """Generate an image using a running ComfyUI instance via its API.
+
+    Connects to a local ComfyUI server on the specified port(s), submits a
+    prompt workflow, and polls the queue until the image is generated. Falls
+    back to downloading the SD1.5 checkpoint if none is found.
+
+    Args:
+        out_dir: Output directory for the generated image.
+        seed: Random seed for deterministic output.
+        params: Dict with keys:
+            comfy_dir: ComfyUI base directory (default: ~/Documents/ComfyUI)
+            download_timeout: seconds to wait for model download (60-600)
+            sampler_steps: KSampler steps (1-150)
+            sampler_cfg: CFG scale (1.0-20.0)
+            sampler_name: sampler (euler, dpmpp_2m, etc.)
+            scheduler: scheduler (normal, karras, etc.)
+            denoise: denoise strength (0.0-1.0)
+            width: generated image width (64-2048)
+            height: generated image height (64-2048)
+            batch_size: batch size (1-8)
+            prompt_positive: positive prompt text
+            prompt_negative: negative prompt text
+            filename_prefix: prefix for saved images
+            ports: port(s) to check, comma-separated
+            api_timeout: seconds to wait for API response (5-120)
+            queue_timeout: seconds to wait for queue status (1-30)
+            poll_retries: max queue poll attempts (1-120)
+            poll_interval: seconds between queue polls (0.5-30)
+    """
     if params is None:
         params = {}
+    seed_all(seed)
     import urllib.request
     comfy_dir_raw = params.get("comfy_dir", "~/Documents/ComfyUI")
     comfy_dir = Path(comfy_dir_raw).expanduser()
-    download_timeout = params.get("download_timeout", 300)
-    sampler_steps = params.get("sampler_steps", 30)
-    sampler_cfg = params.get("sampler_cfg", 8.0)
+    download_timeout = int(params.get("download_timeout", 300))
+    sampler_steps = int(params.get("sampler_steps", 30))
+    sampler_cfg = float(params.get("sampler_cfg", 8.0))
     sampler_name = params.get("sampler_name", "euler")
     scheduler = params.get("scheduler", "normal")
-    denoise = params.get("denoise", 1.0)
-    img_width = params.get("width", 768)
-    img_height = params.get("height", 512)
-    batch_size = params.get("batch_size", 1)
+    denoise = float(params.get("denoise", 1.0))
+    img_width = int(params.get("width", 768))
+    img_height = int(params.get("height", 512))
+    batch_size = int(params.get("batch_size", 1))
     prompt_positive = params.get("prompt_positive", "oil painting of a computer workstation with a command-line terminal on screen showing fractal patterns, dramatic chiaroscuro lighting, neon blue and amber tones, cyberpunk atmospheric aesthetic, hyperrealistic render, cinematic composition")
     prompt_negative = params.get("prompt_negative", "text, watermark, signature, frame, border, cartoon, illustration, oversaturated, low quality, blurry, distorted, ugly, deformed, happy, peaceful, safe, warm, welcoming, bright daylight")
     filename_prefix = params.get("filename_prefix", "comfyui_v2")
     ports_str = params.get("ports", "8000,8188")
     ports = [int(p.strip()) for p in ports_str.split(",")]
-    api_timeout = params.get("api_timeout", 30)
-    queue_timeout = params.get("queue_timeout", 5)
-    poll_retries = params.get("poll_retries", 30)
-    poll_interval = params.get("poll_interval", 2)
+    api_timeout = int(params.get("api_timeout", 30))
+    queue_timeout = int(params.get("queue_timeout", 5))
+    poll_retries = int(params.get("poll_retries", 30))
+    poll_interval = float(params.get("poll_interval", 2))
 
     ckpts = list((comfy_dir / "models" / "checkpoints").glob("*"))
     if not ckpts:
         print("  … downloading SD1.5 for ComfyUI (~1.7GB)")
-        subprocess.run(
-            [str(comfy_dir / ".venv" / "bin" / "python3"), "-m", "huggingface_hub",
-             "download", "--local-dir", str(comfy_dir / "models" / "checkpoints"),
-             "runwayml/stable-diffusion-v1-5", "v1-5-pruned-emaonly.safetensors"],
-            capture_output=True, timeout=download_timeout,
-        )
+        try:
+            subprocess.run(
+                [str(comfy_dir / ".venv" / "bin" / "python3"), "-m", "huggingface_hub",
+                 "download", "--local-dir", str(comfy_dir / "models" / "checkpoints"),
+                 "runwayml/stable-diffusion-v1-5", "v1-5-pruned-emaonly.safetensors"],
+                capture_output=True, timeout=download_timeout,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            print(f"  ✗ ComfyUI: download failed: {e}")
+            return
         ckpts = list((comfy_dir / "models" / "checkpoints").glob("*"))
     if not ckpts:
         print("  ✗ ComfyUI: no checkpoint")
@@ -176,12 +209,16 @@ def method_comfyui(out_dir: Path, seed: int, params=None):
             print(f"  … ComfyUI queued (port {port}): {pid}")
             for _ in range(poll_retries):
                 time.sleep(poll_interval)
-                q = json.loads(urllib.request.urlopen(f"http://127.0.0.1:{port}/queue", timeout=queue_timeout).read())
+                try:
+                    q = json.loads(urllib.request.urlopen(f"http://127.0.0.1:{port}/queue", timeout=queue_timeout).read())
+                except Exception:
+                    q = {"queue_running": True, "queue_pending": True}
                 if not q.get("queue_running") and not q.get("queue_pending"):
                     break
             out = list(comfy_dir.glob(f"**/{filename_prefix}_*.png"))
             if out:
                 shutil.copy(str(out[-1]), str(out_dir / mn(28, "ComfyUI")))
+                capture_frame("28", out_dir / mn(28, "ComfyUI"))
                 print(f"  ✓ {mn(28, 'ComfyUI')}  ({out[-1].stat().st_size // 1024} KB)")
             else:
                 print("  ✗ ComfyUI: no output found")
