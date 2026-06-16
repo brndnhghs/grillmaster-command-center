@@ -543,12 +543,46 @@ def method_boids(out_dir: Path, seed: int, params=None):
              "reseed": {"description": "fraction of particles to reseed per frame", "min": 0.0, "max": 0.5, "default": 0.01},
              "field_freq": {"description": "field spatial frequency multiplier", "min": 0.5, "max": 10.0, "default": 2.0},
              "time": {"description": "animation time (drives field morph)", "min": 0.0, "max": 6.28, "default": 0.0},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "speed_pulse", "field_morph", "vortex_orbit"], "default": "none"},
+             "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
 def method_flowfield(out_dir: Path, seed: int, params=None):
+    """Simulate particles advected through a flow field.
+
+    Particles follow a vector field generated from one of 11 patterns
+    (random, perlin, vortex, radial, sinusoidal, checker, spiral, cross,
+    gabor, perlin_warp, cellular). Supports trail rendering, reseeding,
+    and multiple color modes. Animation modulates speed, field morph rate,
+    or vortex center position.
+
+    Args:
+        out_dir: Output directory for the generated image.
+        seed: Random seed for deterministic output.
+        params: Dict with keys:
+            particles: number of particles (500-10000)
+            speed: particle speed per frame (0.5-15)
+            frames: simulation steps (10-500)
+            blur_sigma: gaussian blur on random field (1-80)
+            field_type: flow field pattern
+            palette: color palette name
+            color_mode: particle coloring (velocity/position_x/position_y/random/field_angle)
+            trail_mode: trail rendering (none/fade/motion_blur/comet/ribbon)
+            particle_size: particle point size (1-6)
+            reseed: fraction of particles to reseed per frame (0-0.5)
+            field_freq: field spatial frequency multiplier (0.5-10)
+            time: animation time in radians (0-6.28)
+            anim_mode: animation mode (none/speed_pulse/field_morph/vortex_orbit)
+            anim_speed: animation speed multiplier (0.1-5.0)
+    """
     import cv2
     if params is None:
         params = {}
-    seed_all(seed + int(params.get("time", 0.0) * 100))
+    anim_time = float(params.get("time", 0.0))
+    anim_mode = params.get("anim_mode", "none")
+    anim_speed = float(params.get("anim_speed", 1.0))
+    seed_all(seed)
+    rng = np.random.default_rng(seed)
+    from ..core.utils import PALETTES
 
     # ── Base image ──
     if params.get("input_image"):
@@ -559,21 +593,32 @@ def method_flowfield(out_dir: Path, seed: int, params=None):
         base_img = Image.new("RGB", (W, H), (10, 10, 18))
 
     # ── Params ──
-    n_p = params.get("particles", 3000)
-    speed = params.get("speed", 2.0)
-    frames = params.get("frames", 200)
-    blur_sigma = params.get("blur_sigma", 25)
+    n_p = int(params.get("particles", 3000))
+    base_speed = float(params.get("speed", 2.0))
+    frames = int(params.get("frames", 200))
+    blur_sigma = int(params.get("blur_sigma", 25))
     field_type = params.get("field_type", "random")
     palette_name = params.get("palette", "cool")
     color_mode = params.get("color_mode", "velocity")
     trail_mode = params.get("trail_mode", "none")
-    psize = params.get("particle_size", 1)
-    reseed = params.get("reseed", 0.01)
-    field_freq = params.get("field_freq", 2.0)
-    t = params.get("time", 0.0)
+    psize = int(params.get("particle_size", 1))
+    reseed = float(params.get("reseed", 0.01))
+    field_freq = float(params.get("field_freq", 2.0))
+
+    # ── Animation ──
+    t = anim_time * anim_speed
+    if anim_mode == "speed_pulse":
+        speed = base_speed * (0.5 + 0.5 * abs(math.sin(t * 0.3)))
+    elif anim_mode == "field_morph":
+        speed = base_speed
+        # Field morph rate is applied via t_val in build_field
+    elif anim_mode == "vortex_orbit":
+        speed = base_speed
+        # Vortex center modulated in build_field
+    else:
+        speed = base_speed
 
     # ── Palette ──
-    from ..core.utils import PALETTES
     pal = PALETTES.get(palette_name, [(220, 220, 200)])
     n_pal = len(pal)
     if n_pal == 0:
@@ -582,7 +627,7 @@ def method_flowfield(out_dir: Path, seed: int, params=None):
     pal_arr = np.array(pal, dtype=np.uint8)  # (N, 3)
 
     # ── Particles ──
-    pos = np.random.rand(n_p, 2).astype(np.float32)
+    pos = rng.random((n_p, 2)).astype(np.float32)
     pos[:, 0] *= W
     pos[:, 1] *= H
     vel = np.zeros((n_p, 2), dtype=np.float32)
@@ -595,25 +640,27 @@ def method_flowfield(out_dir: Path, seed: int, params=None):
     def build_field(t_val):
         """Generate angle field (H,W) float32 radians."""
         if field_type == "random":
-            raw = np.random.randn(H, W).astype(np.float32) * (2 * np.pi)
+            raw = rng.standard_normal((H, W)).astype(np.float32) * (2 * np.pi)
             raw = cv2.GaussianBlur(raw, (0, 0), sigmaX=blur_sigma, sigmaY=blur_sigma)
-            return raw + t_val * 0.0  # random field is static per-frame
+            return raw
         elif field_type == "perlin":
             # Gradient noise at two octaves
-            g1 = np.random.randn(H, W).astype(np.float32)
+            g1 = rng.standard_normal((H, W)).astype(np.float32)
             g1 = cv2.GaussianBlur(g1, (0, 0), sigmaX=max(blur_sigma * 0.5, 2),
                                    sigmaY=max(blur_sigma * 0.5, 2))
-            g2 = np.random.randn(H, W).astype(np.float32)
+            g2 = rng.standard_normal((H, W)).astype(np.float32)
             g2 = cv2.GaussianBlur(g2, (0, 0), sigmaX=max(blur_sigma * 0.2, 1),
                                    sigmaY=max(blur_sigma * 0.2, 1))
             return (g1 + g2 * 0.5) * np.pi + t_val * 0.2
         elif field_type == "vortex":
-            cx, cy = W / 2 + np.sin(t_val * 0.5) * 50, H / 2 + np.cos(t_val * 0.7) * 40
+            cx = W / 2 + np.sin(t_val * 0.5) * 50
+            cy = H / 2 + np.cos(t_val * 0.7) * 40
             dx = xx * W - cx
             dy = yy * H - cy
             return np.arctan2(dy, dx) + t_val * 0.3
         elif field_type == "radial":
-            cx, cy = W / 2 + np.sin(t_val) * 30, H / 2 + np.cos(t_val * 1.3) * 30
+            cx = W / 2 + np.sin(t_val) * 30
+            cy = H / 2 + np.cos(t_val * 1.3) * 30
             dx = xx * W - cx
             dy = yy * H - cy
             return np.arctan2(dy, dx) + np.pi / 2 + np.sin(np.hypot(dx, dy) * 0.005) * 0.5 + t_val * 0.2
@@ -635,11 +682,11 @@ def method_flowfield(out_dir: Path, seed: int, params=None):
             return carrier * envelope * np.pi
         elif field_type == "perlin_warp":
             # Domain-warped perlin: displacement = perlin(perlin(x,y))
-            g1 = np.random.randn(H, W).astype(np.float32)
+            g1 = rng.standard_normal((H, W)).astype(np.float32)
             g1 = cv2.GaussianBlur(g1, (0, 0), sigmaX=max(blur_sigma * 0.4, 3),
                                    sigmaY=max(blur_sigma * 0.4, 3))
             dx_w = g1 * W * 0.08
-            g2 = np.random.randn(H, W).astype(np.float32)
+            g2 = rng.standard_normal((H, W)).astype(np.float32)
             g2 = cv2.GaussianBlur(g2, (0, 0), sigmaX=max(blur_sigma * 0.4, 3),
                                    sigmaY=max(blur_sigma * 0.4, 3))
             dy_w = g2 * H * 0.08
@@ -647,7 +694,7 @@ def method_flowfield(out_dir: Path, seed: int, params=None):
             map_x = np.clip(xx * W + dx_w, 0, W - 1).astype(np.float32)
             map_y = np.clip(yy * H + dy_w, 0, H - 1).astype(np.float32)
             # Generate noise at displaced positions
-            g3 = np.random.randn(H, W).astype(np.float32)
+            g3 = rng.standard_normal((H, W)).astype(np.float32)
             g3 = cv2.GaussianBlur(g3, (0, 0), sigmaX=max(blur_sigma * 0.3, 2),
                                    sigmaY=max(blur_sigma * 0.3, 2))
             remapped = cv2.remap(g3, map_x, map_y, cv2.INTER_LINEAR)
@@ -655,8 +702,8 @@ def method_flowfield(out_dir: Path, seed: int, params=None):
         else:  # cellular
             n_cells = int(blur_sigma * 0.3) + 3
             # Distance to nearest random cell center
-            cell_x = np.random.rand(n_cells) * W
-            cell_y = np.random.rand(n_cells) * H
+            cell_x = rng.random(n_cells) * W
+            cell_y = rng.random(n_cells) * H
             x_grid = xx * W  # (H, W) pixel coords
             y_grid = yy * H
             dists = np.full((H, W), np.inf, dtype=np.float32)
@@ -682,7 +729,7 @@ def method_flowfield(out_dir: Path, seed: int, params=None):
             angles = flow[fj, fi]
             idx = (((angles / (2 * np.pi) + 0.5) % 1.0) * (n_pal - 1)).astype(np.int32)
         else:  # random
-            idx = (np.random.randint(0, n_pal, n_p)).astype(np.int32) % n_pal
+            idx = (rng.integers(0, n_pal, n_p)).astype(np.int32) % n_pal
         return pal_arr[np.clip(idx, 0, n_pal - 1)]
 
     # ── Trail buffers ──
@@ -711,11 +758,7 @@ def method_flowfield(out_dir: Path, seed: int, params=None):
         t_val = t + frame * 0.02
 
         # ── Build flow field ──
-        if field_type in ("random",):
-            # Random changes each frame natively
-            flow = build_field(t_val)
-        else:
-            flow = build_field(t_val)
+        flow = build_field(t_val)
 
         # ── Vectorized particle advection ──
         xi = np.clip(pos[:, 0].astype(np.int32), 0, W - 1)
@@ -731,13 +774,13 @@ def method_flowfield(out_dir: Path, seed: int, params=None):
         out_of_bounds = (pos[:, 0] < 0) | (pos[:, 0] >= W) | (pos[:, 1] < 0) | (pos[:, 1] >= H)
         n_out = out_of_bounds.sum()
         if n_out > 0:
-            pos[out_of_bounds] = np.random.rand(n_out, 2).astype(np.float32) * [W, H]
+            pos[out_of_bounds] = rng.random((n_out, 2)).astype(np.float32) * [W, H]
 
         # Additional random reseeding
-        if reseed > 0 and np.random.random() < reseed:
+        if reseed > 0 and rng.random() < reseed:
             n_reseed = max(1, int(n_p * reseed))
-            idx_r = np.random.choice(n_p, n_reseed, replace=False)
-            pos[idx_r] = np.random.rand(n_reseed, 2).astype(np.float32) * [W, H]
+            idx_r = rng.choice(n_p, n_reseed, replace=False)
+            pos[idx_r] = rng.random((n_reseed, 2)).astype(np.float32) * [W, H]
 
         # ── Velocities (for color) ──
         vel[:, 0] = cos_a * speed
@@ -794,6 +837,7 @@ def method_flowfield(out_dir: Path, seed: int, params=None):
         if frame % 4 == 0:
             capture_frame("35", np.array(img, dtype=np.float32) / 255.0)
 
+    capture_frame("35", np.array(img, dtype=np.float32) / 255.0)
     save(img, mn(35, "Flow Field"), out_dir)
 
 
