@@ -47,15 +47,46 @@ def _render_flame_preview(density, colors, h, w):
     "trap_y": {"description": "orbital trap point Y (0=off)", "min": -2.0, "max": 2.0, "default": 0.0},
     "trap_strength": {"description": "orbital trap blend strength (0=off)", "min": 0.0, "max": 1.0, "default": 0.0},
     "color_shift": {"description": "hue rotation for default coloring", "min": 0.0, "max": 6.28, "default": 0.0},
+    "time": {"description": "animation time in radians (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
+    "anim_mode": {"description": "animation mode", "choices": ["none", "zoom", "color_cycle", "center_orbit", "formula_cycle"], "default": "none"},
+    "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
 })
 def method_fractal(out_dir: Path, seed: int, params=None):
-    """
-    Multi-formula fractal explorer with smooth coloring, deep zoom,
+    """Multi-formula fractal explorer with smooth coloring, deep zoom,
     orbital traps, and colormap support.
-    7 formulas × colormaps × traps × zoom levels.
+
+    Supports 7 fractal formulas (mandelbrot, julia, burning_ship, tricorn,
+    celtic, mandelbrot3, mandelbrot4) with smooth iteration coloring,
+    orbital traps, matplotlib colormaps, and PALETTES quantization.
+    Animation modes modulate zoom, color, center position, or formula.
+
+    Args:
+        out_dir: Output directory for the generated image.
+        seed: Random seed for deterministic output.
+        params: Dict with keys:
+            formula: fractal formula (mandelbrot/julia/burning_ship/...)
+            julia_c: Julia constant as 're,im' (e.g. '-0.7,0.27')
+            iterations: max iterations (50-2000)
+            center_x: view center X, real axis (-2.5 to 2.5)
+            center_y: view center Y, imag axis (-2.0 to 2.0)
+            zoom: zoom level (0.5-100000)
+            escape_radius: divergence threshold (1.5-100)
+            colormap: matplotlib colormap name, or 'palette'
+            palette: PALETTES name (used when colormap='palette')
+            smooth: smooth (normalized) coloring
+            trap_x: orbital trap point X (0=off)
+            trap_y: orbital trap point Y (0=off)
+            trap_strength: orbital trap blend strength (0=off)
+            color_shift: hue rotation for default coloring (0-6.28)
+            time: animation time in radians (0-6.28)
+            anim_mode: animation mode (none/zoom/color_cycle/center_orbit/formula_cycle)
+            anim_speed: animation speed multiplier (0.1-5.0)
     """
     if params is None:
         params = {}
+    anim_time = float(params.get("time", 0.0))
+    anim_mode = params.get("anim_mode", "none")
+    anim_speed = float(params.get("anim_speed", 1.0))
     seed_all(seed)
 
     formula = params.get("formula", "mandelbrot")
@@ -75,6 +106,24 @@ def method_fractal(out_dir: Path, seed: int, params=None):
 
     from ..core.utils import PALETTES, quantize_to_palette
 
+    # ── Animation ────────────────────────────────────────────────────────
+    t = anim_time * anim_speed
+    if anim_mode == "zoom":
+        zoom = zoom * (1.0 + 0.5 * math.sin(t * 0.3))
+    elif anim_mode == "color_cycle":
+        color_shift = t * 0.5
+    elif anim_mode == "center_orbit":
+        orbit_r = 0.3 / max(1.0, zoom)
+        cx = cx + orbit_r * math.cos(t * 0.5)
+        cy = cy + orbit_r * math.sin(t * 0.7)
+    elif anim_mode == "formula_cycle":
+        formula_names = ["mandelbrot", "julia", "burning_ship", "tricorn", "celtic", "mandelbrot3", "mandelbrot4"]
+        idx = int(t * 0.2) % len(formula_names)
+        formula = formula_names[idx]
+        if formula == "julia":
+            julia_c_str = "-0.7,0.27"
+    # else: none — use params as-is
+
     # ── Viewport ────────────────────────────────────────────────────────
     aspect = W / H
     view_w = 3.0 / zoom
@@ -87,8 +136,11 @@ def method_fractal(out_dir: Path, seed: int, params=None):
     xx, yy = np.meshgrid(x, y)
 
     # ── Julia constant ──────────────────────────────────────────────────
-    julia_parts = [float(p.strip()) for p in julia_c_str.split(",")]
-    julia_c = complex(julia_parts[0], julia_parts[1])
+    try:
+        julia_parts = [float(p.strip()) for p in julia_c_str.split(",")]
+        julia_c = complex(julia_parts[0], julia_parts[1])
+    except (ValueError, IndexError):
+        julia_c = complex(-0.7, 0.27)
 
     # ── Fractal iteration ──────────────────────────────────────────────
     z = np.zeros((H, W), dtype=np.complex128)
@@ -206,6 +258,7 @@ def method_fractal(out_dir: Path, seed: int, params=None):
             np.sin(d * 4 + color_shift + 4) * 0.5 + 0.5,
         ], axis=-1)
 
+    capture_frame("33", result)
     save(result, mn(33, "Fractal (Mandelbrot)"), out_dir)
 
 
