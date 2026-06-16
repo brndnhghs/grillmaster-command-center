@@ -1,18 +1,15 @@
-"""
-Code-gen method — auto-split from codegen.py
-"""
+"""Code-gen method — auto-split from codegen.py"""
 from __future__ import annotations
 import colorsys
 import math
 import random
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, save, get_font, BLACK, W, H
+from ...core.utils import save, mn, seed_all, get_font, W, H
 from ...core.animation import capture_frame
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -192,7 +189,7 @@ _PALETTE_GENERATORS = {
         },
         "anim_mode": {
             "description": "palette animation mode",
-            "choices": ["wheel_spin", "gradient_sweep"],
+            "choices": ["none", "wheel_spin", "gradient_sweep"],
             "default": "wheel_spin",
         },
         "anim_speed": {
@@ -213,7 +210,6 @@ def method_10_color_palette(out_dir: Path, seed: int, params=None):
     anim_speed = float(params.get("anim_speed", 0.25))
 
     # ── Fixed seed + continuous hue offset — NO seed churn ──
-    hue_offset = t * 30.0 * anim_speed
 
     # ── Parse params ──
     n_colors = int(params.get("n_colors", 8))
@@ -221,9 +217,19 @@ def method_10_color_palette(out_dir: Path, seed: int, params=None):
     palette_type = params.get("palette_type", "harmonious")
     anim_mode = params.get("anim_mode", "wheel_spin")
 
+    # ── Animation: conditional on mode ──
+    effective_hue_offset = 0.0
+    effective_rot_offset = 0.0
+    effective_phase_offset = 0.0
+    if anim_mode == "wheel_spin":
+        effective_hue_offset = t * 30.0 * anim_speed
+        effective_rot_offset = t * 30.0 * anim_speed
+    elif anim_mode == "gradient_sweep":
+        effective_phase_offset = (t * anim_speed) % 1.0
+
     # ── Generate palette colors ──
     gen_fn = _PALETTE_GENERATORS.get(palette_type, _harmonic_palette)
-    colors = gen_fn(n_colors, seed, hue_off=hue_offset)
+    colors = gen_fn(n_colors, seed, hue_off=effective_hue_offset)
 
     # ── Create output canvas ──
     img = Image.new("RGB", (W, H), (10, 10, 18))
@@ -237,7 +243,7 @@ def method_10_color_palette(out_dir: Path, seed: int, params=None):
         n = len(colors)
         radius = min(W, H) * 0.38
         # Total rotation offset for animation
-        rot_offset = t * 30.0 * anim_speed  # degrees
+        rot_offset = effective_rot_offset  # degrees
         for i, (r, g, b) in enumerate(colors):
             start_angle = (i / n) * 360.0 + rot_offset
             end_angle = ((i + 1) / n) * 360.0 + rot_offset
@@ -261,7 +267,7 @@ def method_10_color_palette(out_dir: Path, seed: int, params=None):
         n = len(colors)
         rgb_colors = [(rr / 255.0, gg / 255.0, bb / 255.0) for rr, gg, bb in colors]
         # Time offset shifts the gradient horizontally
-        phase_offset = (t * anim_speed) % 1.0
+        phase_offset = effective_phase_offset
         for x in range(W):
             # Fraction along width, shifted by animation phase
             frac = (x / max(1, W - 1) + phase_offset) % 1.0
