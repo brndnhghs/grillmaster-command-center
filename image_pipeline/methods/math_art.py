@@ -30,17 +30,61 @@ from ..core.animation import capture_frame
              "prime_size": {"description": "prime dot size (px at render)", "min": 1, "max": 5, "default": 1},
              "composite_alpha": {"description": "composite dot visibility (0=invisible)", "min": 0.0, "max": 1.0, "default": 0.0},
              "time": {"description": "animation time (spiral rotation offset)", "min": 0.0, "max": 6.28, "default": 0.0},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "color_cycle", "archimedean_rotate"], "default": "none"},
+             "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
 def method_ulam_spiral(out_dir: Path, seed: int, params=None):
-    import cv2
+    """Render Ulam Spiral — prime numbers arranged in a spiral pattern.
+
+    Places numbers on a spiral grid, marks primes with colored dots, and
+    supports various color modes (binary, factor_count, twin_prime, etc.)
+    and background styles. Inherently static — animation is color-based
+    (color_cycle) or archimedean rotation (archimedean_rotate).
+
+    Args:
+        out_dir: Output directory for the generated image.
+        seed: Random seed for deterministic output.
+        params: Dict with keys:
+            max_num: max number checked for primality (50000-500000)
+            spiral_type: spiral direction and geometry
+            color_mode: prime/coloring scheme
+            palette: PALETTES name for coloring
+            bg_style: background rendering
+            show_twin_lines: draw lines between twin primes
+            show_constellations: highlight prime constellations
+            show_goldbach: visualize Goldbach pairs
+            show_mersenne: highlight Mersenne primes
+            show_numbers: overlay number labels on primes
+            density_sigma: density heatmap blur sigma
+            prime_size: prime dot size (px at render)
+            composite_alpha: composite dot visibility
+            time: animation time in radians
+            anim_mode: animation mode (none/color_cycle/archimedean_rotate)
+            anim_speed: animation speed multiplier
+    """
     if params is None:
         params = {}
-    t = params.get("time", 0.0)
-    seed_all(seed + int(t * 100))
-    from ..core.utils import PALETTES, quantize_to_palette, get_font
+    anim_time = float(params.get("time", 0.0))
+    anim_mode = params.get("anim_mode", "none")
+    anim_speed = float(params.get("anim_speed", 1.0))
+    seed_all(seed)
+    rng = np.random.default_rng(seed)
+
+    # ── Optional imports ──
+    try:
+        import cv2
+        _has_cv2 = True
+    except ImportError:
+        _has_cv2 = False
+    from ..core.utils import PALETTES, quantize_to_palette
+
+    # ── Animation ──
+    t = anim_time * anim_speed
+    if anim_mode == "none":
+        t = 0.0
 
     # ── Params ──
-    n = params.get("max_num", 400000)
+    n = int(params.get("max_num", 400000))
     spiral_type = params.get("spiral_type", "clockwise")
     color_mode = params.get("color_mode", "binary")
     palette_name = params.get("palette", "")
@@ -50,9 +94,9 @@ def method_ulam_spiral(out_dir: Path, seed: int, params=None):
     show_gold = params.get("show_goldbach", "no")
     show_mers = params.get("show_mersenne", "no")
     show_nums = params.get("show_numbers", "no")
-    density_sigma = params.get("density_sigma", 8)
-    psize = params.get("prime_size", 1)
-    comp_alpha = params.get("composite_alpha", 0.0)
+    density_sigma = float(params.get("density_sigma", 8))
+    psize = int(params.get("prime_size", 1))
+    comp_alpha = float(params.get("composite_alpha", 0.0))
 
     pal = PALETTES.get(palette_name, [])
     n_pal = len(pal)
@@ -231,7 +275,7 @@ def method_ulam_spiral(out_dir: Path, seed: int, params=None):
 
     # ── Background ──
     if bg_style == "dark":
-        noise = np.random.randint(0, 4, (H, W)).astype(np.float32) / 255.0
+        noise = rng.integers(0, 4, (H, W)).astype(np.float32) / 255.0
         img[:, :, :] = np.array([10, 10, 18], dtype=np.float32) / 255.0 + np.expand_dims(noise, axis=-1) * 0.02
 
     elif bg_style == "gradient":
@@ -248,7 +292,9 @@ def method_ulam_spiral(out_dir: Path, seed: int, params=None):
         density = np.zeros((H, W), dtype=np.float32)
         for px, py, _ in prime_positions:
             density[py, px] = 1.0
-        density = cv2.GaussianBlur(density, (0, 0), sigmaX=density_sigma, sigmaY=density_sigma)
+        if _has_cv2:
+            density = cv2.GaussianBlur(density, (0, 0), sigmaX=density_sigma, sigmaY=density_sigma)
+        # else: skip blur — density stays as sparse dots
         density = norm(density)
         # Color with magma-like gradient
         img[:, :, 0] = density * 0.6 + 0.02
@@ -265,7 +311,7 @@ def method_ulam_spiral(out_dir: Path, seed: int, params=None):
     elif bg_style == "input_image" and params.get("input_image"):
         from ..core.utils import load_input
         img_arr = load_input(params["input_image"])
-        if img_arr.shape[:2] != (H, W):
+        if _has_cv2 and img_arr.shape[:2] != (H, W):
             img_arr = cv2.resize(img_arr, (W, H), interpolation=cv2.INTER_LINEAR)
         img = img_arr * 0.5  # dim for prime overlay
 
@@ -273,6 +319,12 @@ def method_ulam_spiral(out_dir: Path, seed: int, params=None):
     def get_prime_color(num, px, py):
         nonlocal pal
         if color_mode == "binary":
+            if anim_mode == "color_cycle":
+                hue = (num * 0.01 + t * 0.3) % 1.0
+                r = 0.5 + 0.5 * math.sin(hue * 2 * math.pi)
+                g = 0.5 + 0.5 * math.sin((hue + 0.33) * 2 * math.pi)
+                b = 0.5 + 0.5 * math.sin((hue + 0.67) * 2 * math.pi)
+                return np.array([r, g, b], dtype=np.float32) * 0.6 + 0.1
             return np.array([60, 50, 40], dtype=np.float32) / 255.0
         elif color_mode == "palette" and pal:
             c = pal[num % n_pal]
