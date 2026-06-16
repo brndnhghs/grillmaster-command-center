@@ -1017,21 +1017,59 @@ def method_dla(out_dir: Path, seed: int, params=None):
              "iterations": {"description": "simulation steps", "min": 100, "max": 10000, "default": 2000},
              "quality": {"description": "render quality: low (half-res), medium, high", "default": "medium"},
              "seed_type": {"description": "initial seed: center, random, grid, input", "default": "center"},
+             "seed_size": {"description": "seed region size in pixels", "min": 2, "max": 200, "default": 10},
+             "perturbations": {"description": "number of random perturbations for seed_type=random", "min": 5, "max": 200, "default": 20},
              "boundary": {"description": "boundary condition: wrap, reflect, zero, noise", "default": "wrap"},
              "color_mode": {"description": "color mapping: v_norm, u, u_minus_v, phase, gradient, frequency", "default": "v_norm"},
              "palette": {"description": "PALETTES name", "default": "cool"},
              "inject_x": {"description": "injection X position (0-1 fraction, 0=none)", "min": 0.0, "max": 1.0, "default": 0.0},
              "inject_y": {"description": "injection Y position (0-1 fraction)", "min": 0.0, "max": 1.0, "default": 0.0},
              "sweep_axis": {"description": "parameter sweep for animation: none, f, k, both, cycle", "default": "none"},
-             "time": {"description": "animation time param (0-2π)", "default": None},
+             "time": {"description": "animation time param (0-2π)", "min": 0.0, "max": 6.28, "default": 0.0},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "sweep"], "default": "none"},
+             "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
 def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
+    """Run a Gray-Scott reaction-diffusion simulation.
+
+    Simulates the Gray-Scott (or 3-species BZ) reaction-diffusion system
+    over a grid, producing organic patterns. Supports 15+ presets, multiple
+    seed types, boundary conditions, color modes, and parameter sweep animation.
+
+    Args:
+        out_dir: Output directory for the generated image.
+        seed: Random seed for deterministic output.
+        params: Dict with keys:
+            preset: named pattern (mitosis/coral/spots/stripes/waves/...)
+            species: species model (gray_scott/bz_3species)
+            feed_rate: Gray-Scott F parameter (0.01-0.1)
+            kill_rate: Gray-Scott k parameter (0.01-0.1)
+            diff_u: diffusion rate U (0.05-0.3)
+            diff_v: diffusion rate V (0.02-0.2)
+            iterations: simulation steps (100-10000)
+            quality: render quality (low/medium/high)
+            seed_type: initial seed (center/random/grid/input)
+            seed_size: seed region size in pixels (2-200)
+            perturbations: number of random perturbations (5-200)
+            boundary: boundary condition (wrap/reflect/zero/noise)
+            color_mode: color mapping (v_norm/u/u_minus_v/phase/gradient/frequency)
+            palette: PALETTES name
+            inject_x: injection X position (0-1, 0=none)
+            inject_y: injection Y position (0-1)
+            sweep_axis: parameter sweep (none/f/k/both/cycle)
+            time: animation time in radians (0-6.28)
+            anim_mode: animation mode (none/sweep)
+            anim_speed: animation speed multiplier (0.1-5.0)
+    """
+    import cv2
     if params is None:
         params = {}
-    t = params.get("time", 0.0)
-    seed_all(seed + int(t * 100))
+    anim_time = float(params.get("time", 0.0))
+    anim_mode = params.get("anim_mode", "none")
+    anim_speed = float(params.get("anim_speed", 1.0))
+    seed_all(seed)
+    rng = np.random.default_rng(seed)
     from ..core.utils import PALETTES, norm as _norm
-    import cv2
 
     # --- Presets (full Gray-Scott phase diagram) ---
     PRESETS = {
@@ -1059,10 +1097,9 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
     boundary = params.get("boundary", "wrap")
     color_mode = params.get("color_mode", "v_norm")
     palette_name = params.get("palette", "cool")
-    inject_x = max(0.0, min(1.0, params.get("inject_x", 0.0)))
-    inject_y = max(0.0, min(1.0, params.get("inject_y", 0.0)))
+    inject_x = max(0.0, min(1.0, float(params.get("inject_x", 0.0))))
+    inject_y = max(0.0, min(1.0, float(params.get("inject_y", 0.0))))
     sweep_axis = params.get("sweep_axis", "none")
-    anim_time = params.get("time", None)
 
     pal = PALETTES.get(palette_name, [(80, 60, 40)])
     n_pal = len(pal)
@@ -1075,10 +1112,10 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
         F = p["F"]
         k = p["k"]
     else:
-        Du = max(0.05, min(0.3, params.get("diff_u", 0.16)))
-        Dv = max(0.02, min(0.2, params.get("diff_v", 0.08)))
-        F = max(0.01, min(0.1, params.get("feed_rate", 0.035)))
-        k = max(0.01, min(0.1, params.get("kill_rate", 0.065)))
+        Du = max(0.05, min(0.3, float(params.get("diff_u", 0.16))))
+        Dv = max(0.02, min(0.2, float(params.get("diff_v", 0.08))))
+        F = max(0.01, min(0.1, float(params.get("feed_rate", 0.035))))
+        k = max(0.01, min(0.1, float(params.get("kill_rate", 0.065))))
 
     iterations = max(100, min(10000, int(params.get("iterations", 2000))))
     has_injection = inject_x > 0 and inject_y > 0
@@ -1104,7 +1141,7 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
 
     # Seed type
     ch, cw = rH // 2, rW // 2
-    seed_sz = max(2, int(params.get("seed_size", 10) * scale))
+    seed_sz = max(2, int(float(params.get("seed_size", 10)) * scale))
 
     if seed_type == "input" and params.get("input_image"):
         from ..core.utils import load_input
@@ -1121,20 +1158,20 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
                 u[y-sz:y+sz, x-sz:x+sz] = 0.5
                 v[y-sz:y+sz, x-sz:x+sz] = 0.25
     elif seed_type == "random":
-        n_perturb = int(params.get("perturbations", 20) * scale ** 2)
+        n_perturb = int(float(params.get("perturbations", 20)) * scale ** 2)
         for _ in range(n_perturb):
-            cy = np.random.randint(10, rH - 10)
-            cx = np.random.randint(10, rW - 10)
-            r = max(2, int(np.random.randint(5, 30) * scale))
-            v[cy-r:cy+r, cx-r:cx+r] = np.random.rand() * 0.3
-            u[cy-r:cy+r, cx-r:cx+r] = np.random.rand() * 0.5
+            cy = rng.integers(10, rH - 10)
+            cx = rng.integers(10, rW - 10)
+            r = max(2, int(rng.integers(5, 30) * scale))
+            v[cy-r:cy+r, cx-r:cx+r] = rng.random() * 0.3
+            u[cy-r:cy+r, cx-r:cx+r] = rng.random() * 0.5
     else:  # center
         ss = min(seed_sz, rW // 2, rH // 2)
         u[cw-ss:cw+ss, ch-ss:ch+ss] = 0.5
         v[cw-ss:cw+ss, ch-ss:ch+ss] = 0.25
 
     if species == "bz_3species":
-        w = np.random.rand(rH, rW).astype(np.float32) * 0.1
+        w = rng.random((rH, rW)).astype(np.float32) * 0.1
 
     # --- Boundary condition helper ---
     def lap(arr):
@@ -1145,31 +1182,32 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
             t = np.pad(arr[1:-1, 1:-1], 1, mode='constant')
             return (np.roll(t, 1, 0) + np.roll(t, -1, 0) + np.roll(t, 1, 1) + np.roll(t, -1, 1) - 4 * t)
         elif boundary == "noise":
-            t = arr + np.random.randn(*arr.shape) * 0.001
+            t = arr + rng.standard_normal(arr.shape) * 0.001
             return (np.roll(t, 1, 0) + np.roll(t, -1, 0) + np.roll(t, 1, 1) + np.roll(t, -1, 1) - 4 * t)
         else:  # wrap
             return (np.roll(arr, 1, 0) + np.roll(arr, -1, 0) + np.roll(arr, 1, 1) + np.roll(arr, -1, 1) - 4 * arr)
 
     # --- Time-based animation ---
-    if anim_time is not None and sweep_axis != "none":
-        t = anim_time / (2 * math.pi)
+    t = anim_time * anim_speed
+    if anim_mode == "sweep" and sweep_axis != "none":
+        t_norm = t / (2 * math.pi)
         if sweep_axis == "f":
-            F = 0.015 + 0.045 * abs(math.sin(anim_time * 0.5))
+            F = 0.015 + 0.045 * abs(math.sin(t * 0.5))
         elif sweep_axis == "k":
-            k = 0.045 + 0.025 * abs(math.sin(anim_time * 0.7))
+            k = 0.045 + 0.025 * abs(math.sin(t * 0.7))
         elif sweep_axis == "both":
             # Orbit through F-k phase space
-            F = 0.015 + 0.045 * abs(math.sin(anim_time * 0.4))
-            k = 0.045 + 0.025 * abs(math.cos(anim_time * 0.3))
+            F = 0.015 + 0.045 * abs(math.sin(t * 0.4))
+            k = 0.045 + 0.025 * abs(math.cos(t * 0.3))
         elif sweep_axis == "cycle":
             # Cycle through presets
             preset_names = list(PRESETS.keys())
-            idx = int(t * len(preset_names)) % len(preset_names)
-            p = PRESETS[preset_names[idx]]
-            F = p["F"]
-            k = p["k"]
-            Du = p["Du"]
-            Dv = p["Dv"]
+            idx = int(t_norm * len(preset_names)) % len(preset_names)
+            preset_p = PRESETS[preset_names[idx]]
+            F = preset_p["F"]
+            k = preset_p["k"]
+            Du = preset_p["Du"]
+            Dv = preset_p["Dv"]
 
     # --- Color function ---
     def render_frame(u_arr, v_arr, w_arr=None):
@@ -1213,8 +1251,6 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
         else:
             # Standard Gray-Scott
             uv = u * v * v
-            Du = max(0.05, Du)
-            Dv = max(0.02, Dv)
             u_la = lap(u)
             v_la = lap(v)
             u += Du * u_la - uv + F * (1 - u)
@@ -1245,6 +1281,7 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
     result = render_frame(u, v, w if species == "bz_3species" else None)
     if scale != 1.0:
         result = cv2.resize(result, (W, H), interpolation=cv2.INTER_LINEAR)
+    capture_frame("32", result)
     save(result.clip(0, 1), mn(32, "Reaction Diffusion"), out_dir)
 
 
