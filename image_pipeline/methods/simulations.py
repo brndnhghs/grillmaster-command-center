@@ -10,7 +10,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from ..core.registry import method
-from ..core.utils import save, norm, mn, seed_all, BLACK, W, H
+from ..core.utils import save, norm, mn, seed_all, BLACK, W, H, PALETTES, load_input
 from ..core.animation import capture_frame
 
 
@@ -2705,14 +2705,47 @@ def method_random_walk(out_dir: Path, seed: int, params=None):
              "life_decay": {"description": "life lost per frame", "min": 0.1, "max": 10, "default": 1},
              "brightness_mult": {"description": "life-to-brightness multiplier", "min": 0.5, "max": 10, "default": 3},
              "capture_interval": {"description": "capture every N frames", "min": 1, "max": 50, "default": 10},
-             "time": {"description": "animation time param (0-2π)", "default": None},
+             "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "emitter_dance", "wind_cycle", "turbulence_pulse"], "default": "none"},
+             "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},
          })
 def method_particles(out_dir: Path, seed: int, params=None):
+    """Render a particle system simulation with emitters, physics, and trails.
+
+    Simulates N particles with configurable emitter types (random, point, line,
+    radial, fountain, vortex, trail), physics modes (jitter, gravity, attractor,
+    repulsion, wind, turbulence), and rendering options (shape, color, trails).
+    Supports animation via time-domain modulation of emitter position and physics.
+
+    Params:
+        particles: particle count (100-5000)
+        frames: simulation frames (20-500)
+        emitter: emitter type (random, point, line, radial, fountain, vortex, trail)
+        physics: physics mode (jitter, gravity, attractor, repulsion, wind, turbulence)
+        palette: PALETTES name for particle colors
+        color_mode: coloring (life, velocity, position, rainbow, single)
+        shape: particle shape (dot, circle, star, glow, trail)
+        trail_length: motion blur trail length (0=none)
+        speed: initial speed range (0.1-10)
+        gravity: gravity strength (-1 to 1)
+        jitter: acceleration noise range (0.01-0.5)
+        size_min/size_max: particle size range
+        life_min/life_max: initial life range
+        life_decay: life lost per frame
+        brightness_mult: life-to-brightness multiplier
+        capture_interval: capture every N frames
+        time: animation time (0-6.28)
+        anim_mode: animation mode (none, emitter_dance, wind_cycle, turbulence_pulse)
+        anim_speed: animation speed multiplier (0.1-3.0)
+    """
     if params is None:
         params = {}
-    t_seed = int(params.get("time", 0.0) * 100)
-    seed_all(seed + t_seed)
-    from ..core.utils import PALETTES
+    anim_mode = params.get("anim_mode", "none")
+    anim_speed = float(params.get("anim_speed", 0.25))
+    anim_time = float(params.get("time", 0.0))
+    has_anim = anim_time > 0.0
+    seed_all(seed)
+    rng = random.Random(seed)
 
     n_particles = params.get("particles", 500)
     frames = params.get("frames", 100)
@@ -2732,14 +2765,13 @@ def method_particles(out_dir: Path, seed: int, params=None):
     life_decay = params.get("life_decay", 1)
     brightness_mult = params.get("brightness_mult", 3)
     cap_interval = params.get("capture_interval", 10)
-    anim_time = params.get("time", None)
 
     pal = PALETTES.get(palette_name, [(80, 60, 40)])
     n_pal = len(pal)
 
     # Background
     if params.get('input_image'):
-        from ..core.utils import load_input; img_arr = load_input(params['input_image'])
+        img_arr = load_input(params['input_image'])
         base_bg = Image.fromarray((img_arr * 255).astype(np.uint8))
     else:
         base_bg = Image.new("RGB", (W, H), (10, 10, 18))
@@ -2750,7 +2782,6 @@ def method_particles(out_dir: Path, seed: int, params=None):
     # --- Create particles ---
     cx, cy = W // 2, H // 2
     ps = []
-    rng = random.Random(seed + t_seed)
     for _ in range(n_particles):
         vx = rng.uniform(-speed, speed)
         vy = rng.uniform(-speed, speed)
@@ -2802,20 +2833,19 @@ def method_particles(out_dir: Path, seed: int, params=None):
     for frame in range(frames):
         # Time-based emitter motion
         emitter_cx, emitter_cy = cx, cy
-        if anim_time is not None:
-            t = anim_time
-            if emitter_type == "trail":
-                # Moving emitter draws a figure-8
-                emitter_cx = cx + 150 * math.sin(t * 2)
-                emitter_cy = cy + 100 * math.sin(t * 1.3)
-            elif emitter_type == "vortex":
-                # Vortex center rotates
-                emitter_cx = cx + 50 * math.sin(t)
-                emitter_cy = cy + 50 * math.cos(t)
+        if has_anim:
+            if anim_mode in ("none", "emitter_dance"):
+                if emitter_type == "trail":
+                    # Moving emitter draws a figure-8
+                    emitter_cx = cx + 150 * math.sin(anim_time * 0.75 * anim_speed)
+                    emitter_cy = cy + 100 * math.sin(anim_time * 0.75 * anim_speed * 0.65)
+                elif emitter_type == "vortex":
+                    # Vortex center rotates
+                    emitter_cx = cx + 50 * math.sin(anim_time * 0.75 * anim_speed)
+                    emitter_cy = cy + 50 * math.cos(anim_time * 0.75 * anim_speed)
             # Wind direction changes over time
-            if physics_mode == "wind":
-                wind_angle = t
-                wind_strength = 0.5 + 0.5 * math.sin(t * 1.5)
+            if physics_mode == "wind" and anim_mode in ("none", "wind_cycle"):
+                wind_strength = 0.5 + 0.5 * math.sin(anim_time * 0.75 * anim_speed)
 
         if frame % cap_interval == 0 and frame > 0 and trail_length > 0:
             # Fade for trails
@@ -2841,14 +2871,17 @@ def method_particles(out_dir: Path, seed: int, params=None):
                 p["vx"] += dx / dist * 0.5
                 p["vy"] += dy / dist * 0.5
             elif physics_mode == "wind":
-                wind_strength = 0.5 + 0.5 * math.sin((anim_time or 0) * 1.5)
-                p["vx"] += wind_strength * 0.1 * math.cos((anim_time or 0))
-                p["vy"] += 0.02 * math.sin((anim_time or 0) * 2)
+                wind_strength = 0.5 + 0.5 * math.sin(anim_time * 0.75 * anim_speed)
+                p["vx"] += wind_strength * 0.1 * math.cos(anim_time * 0.75 * anim_speed)
+                p["vy"] += 0.02 * math.sin(anim_time * 0.75 * anim_speed * 2)
             elif physics_mode == "turbulence":
                 # Noise-based force
-                noise_val = math.sin(p["y"] * 0.05 + (anim_time or 0) * 2) * 0.3 + math.cos(p["x"] * 0.03 + (anim_time or 0) * 1.5) * 0.3
+                turb_scale = 1.0
+                if has_anim and anim_mode == "turbulence_pulse":
+                    turb_scale = 0.5 + 0.5 * math.sin(anim_time * 0.75 * anim_speed)
+                noise_val = math.sin(p["y"] * 0.05 + anim_time * 0.75 * anim_speed) * 0.3 * turb_scale + math.cos(p["x"] * 0.03 + anim_time * 0.75 * anim_speed) * 0.3 * turb_scale
                 p["vx"] += noise_val * 0.1
-                p["vy"] += math.sin(p["x"] * 0.04 + (anim_time or 0) * 2.5) * 0.1
+                p["vy"] += math.sin(p["x"] * 0.04 + anim_time * 0.75 * anim_speed * 2.5) * 0.1 * turb_scale
 
             # Jitter (noise)
             p["vx"] += rng.uniform(-jitter, jitter)
@@ -2931,7 +2964,7 @@ def method_particles(out_dir: Path, seed: int, params=None):
             if p["life"] <= 0:
                 # Respawn based on emitter
                 life = rng.uniform(life_min, life_max)
-                if emitter_type == "trail" and anim_time is not None:
+                if emitter_type == "trail" and has_anim:
                     p["x"] = emitter_cx + rng.uniform(-10, 10)
                     p["y"] = emitter_cy + rng.uniform(-10, 10)
                     p["vx"] = rng.uniform(-1, 1)
