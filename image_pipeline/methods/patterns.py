@@ -1742,7 +1742,7 @@ def method_noise(out_dir: Path, seed: int, params=None):
     if params is None:
         params = {}
 
-    seed_all(seed + 9999)
+    seed_all(seed)
 
     noise_type = params.get("noise_type", "perlin")
     style = params.get("style", "normal")
@@ -1764,6 +1764,18 @@ def method_noise(out_dir: Path, seed: int, params=None):
     water_level = float(params.get("water_level", 0.0))
     erosion_strength = float(params.get("erosion", 0.0))
 
+    # ── Matplotlib/scipy import (with fallback) ──
+    try:
+        import matplotlib.cm as cm
+        _has_mpl = True
+    except ImportError:
+        _has_mpl = False
+    try:
+        from scipy.ndimage import sobel, gaussian_filter
+        _has_scipy = True
+    except ImportError:
+        _has_scipy = False
+
     from ..core.utils import PALETTES, quantize_to_palette
 
     # ── Matplotlib colormap registry ────────────────────────────────────
@@ -1781,7 +1793,8 @@ def method_noise(out_dir: Path, seed: int, params=None):
 
     def _apply_colormap(no: np.ndarray, cmap_name: str) -> np.ndarray:
         """Apply a matplotlib colormap to normalized noise."""
-        import matplotlib.cm as cm
+        if not _has_mpl:
+            return np.stack([no, no, no], axis=-1)
         try:
             cmap = cm.get_cmap(cmap_name)
             return cmap(no)[:, :, :3].astype(np.float32)
@@ -1848,9 +1861,9 @@ def method_noise(out_dir: Path, seed: int, params=None):
         s = (x + y) * F2
         i = np.floor(x + s).astype(np.int64)
         j = np.floor(y + s).astype(np.int64)
-        t = (i + j) * G2
-        x0 = x - (i - t)
-        y0 = y - (j - t)
+        t_simplex = (i + j) * G2
+        x0 = x - (i - t_simplex)
+        y0 = y - (j - t_simplex)
         i1 = np.where(x0 > y0, 1, 0)
         j1 = np.where(x0 > y0, 0, 1)
         x1, y1 = x0 - i1 + G2, y0 - j1 + G2
@@ -1916,7 +1929,7 @@ def method_noise(out_dir: Path, seed: int, params=None):
                 if use_gradient:
                     layer = _lattice_gradient_noise(x * freq, y * freq, table)
                 else:
-                    layer = _value_noise(x * freq, y * freq, seed_val=seed + int(freq * 1000))
+                    layer = _value_noise(x * freq, y * freq, seed_val=seed)
                 result += layer * amp
                 amp *= gain
                 freq *= lacunarity
@@ -2109,9 +2122,8 @@ def method_noise(out_dir: Path, seed: int, params=None):
             if np.any(mask):
                 dists2[mask] = d[mask]
 
-        if cell_borders > 0:
+        if cell_borders > 0 and _has_scipy:
             # Edge detection on closest_idx gives cell borders
-            from scipy.ndimage import sobel
             edge_x = sobel(closest_idx.astype(np.float32), axis=1)
             edge_y = sobel(closest_idx.astype(np.float32), axis=0)
             border = norm(np.abs(edge_x) + np.abs(edge_y))
@@ -2165,8 +2177,8 @@ def method_noise(out_dir: Path, seed: int, params=None):
         no = norm(dots)
         no = np.where(no > threshold, 1.0, 0.0)
         # Soften edges
-        from scipy.ndimage import gaussian_filter
-        no = gaussian_filter(no, sigma=0.5).clip(0, 1)
+        if _has_scipy:
+            no = gaussian_filter(no, sigma=0.5).clip(0, 1)
 
     elif effective_noise_type == "ring":
         # Concentric rings with noise distortion
