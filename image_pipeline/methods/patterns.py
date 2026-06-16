@@ -1064,8 +1064,9 @@ def method_worley_noise(out_dir: Path, seed: int, params=None):
     "scale_variation": {"description": "per-tile scale jitter", "min": 0.0, "max": 0.5, "default": 0.0},
     "penrose_generations": {"description": "Penrose inflation iterations", "min": 2, "max": 8, "default": 4},
     "star_rays": {"description": "star polygon rays (for star/islamic motifs)", "min": 4, "max": 16, "default": 8},
+    "anim_mode": {"description": "animation mode: none, motif_morph, group_morph", "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},
-    "time": {"description": "animation time (drives ripple wave + rotation)", "min": 0.0, "max": 100.0, "default": 0.0},
+    "time": {"description": "animation time (drives ripple wave + rotation)", "min": 0.0, "max": 6.28, "default": 0.0},
 })
 def method_wallpaper(out_dir: Path, seed: int, params=None):
     """
@@ -1078,6 +1079,7 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
         params = {}
     t = float(params.get("time", 0.0))
     seed_all(seed)  # fixed seed — animate via continuous param oscillation
+    rng = random.Random(seed)
 
     group = params.get("group", "p1")
     motif = params.get("motif", "diamond")
@@ -1090,17 +1092,30 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
     penrose_gens = int(params.get("penrose_generations", 4))
     star_rays = int(params.get("star_rays", 8))
     anim_speed = float(params.get("anim_speed", 0.25))
+    anim_mode = params.get("anim_mode", "none")
 
     from ..core.utils import PALETTES, quantize_to_palette
+
+    # ── Animation: morph motif or group ──
+    effective_motif = motif
+    effective_group = group
+    if anim_mode == "motif_morph":
+        motif_cycle = ["diamond", "triangle", "hexagon", "star", "cross", "spiral", "wave", "scales"]
+        idx = int((t / (2 * math.pi)) * len(motif_cycle) * anim_speed) % len(motif_cycle)
+        effective_motif = motif_cycle[idx]
+    elif anim_mode == "group_morph":
+        group_cycle = ["p1", "p2", "pm", "pg", "pmm", "pmg", "pgg", "cmm", "p4", "p4m", "p4g", "p3", "p3m1", "p31m", "p6", "p6m"]
+        idx = int((t / (2 * math.pi)) * len(group_cycle) * anim_speed) % len(group_cycle)
+        effective_group = group_cycle[idx]
 
     img = Image.new("RGB", (W, H), (10, 10, 18))
     draw = ImageDraw.Draw(img)
 
     # ── Helper: random per-tile color ───────────────────────────────────
     def _tile_color(variation=1.0):
-        r = int(random.randint(30, 255) * (1 - variation * 0.5) + 128 * variation * 0.5)
-        g = int(random.randint(30, 220) * (1 - variation * 0.5) + 128 * variation * 0.5)
-        b = int(random.randint(50, 200) * (1 - variation * 0.5) + 128 * variation * 0.5)
+        r = int(rng.randint(30, 255) * (1 - variation * 0.5) + 128 * variation * 0.5)
+        g = int(rng.randint(30, 220) * (1 - variation * 0.5) + 128 * variation * 0.5)
+        b = int(rng.randint(50, 200) * (1 - variation * 0.5) + 128 * variation * 0.5)
         return (r, g, b)
 
     def _inv_color(c):
@@ -1184,9 +1199,9 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
         import math as m2
         turns = 3
         pts = [(cx, cy)]
-        for t in range(int(sz * turns)):
-            a = m2.radians(t * 10 + angle)
-            r = t / (sz * turns / (sz/2))
+        for ti in range(int(sz * turns)):
+            a = m2.radians(ti * 10 + angle)
+            r = ti / (sz * turns / (sz/2))
             pts.append((cx + r * m2.cos(a), cy + r * m2.sin(a)))
         if len(pts) > 2:
             d.line(pts, fill=color, width=max(1, int(sz/30)))
@@ -1298,7 +1313,7 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
 
     def _motif_truchet_arc(d, cx, cy, sz, color, angle=0):
         hsz = sz / 2
-        opts = random.randint(0, 3)
+        opts = rng.randint(0, 3)
         corners = [(cx - hsz, cy - hsz), (cx + hsz, cy - hsz),
                    (cx + hsz, cy + hsz), (cx - hsz, cy + hsz)]
         for j, (sx, sy) in enumerate(corners):
@@ -1308,7 +1323,7 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
 
     def _motif_truchet_line(d, cx, cy, sz, color, angle=0):
         hsz = sz / 2
-        opts = random.randint(0, 3)
+        opts = rng.randint(0, 3)
         if opts == 0:
             d.line([(cx - hsz, cy), (cx, cy - hsz)], fill=color, width=max(1, int(sz/20)))
             d.line([(cx + hsz, cy), (cx, cy + hsz)], fill=color, width=max(1, int(sz/20)))
@@ -1321,7 +1336,7 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
             d.line([(cx + hsz, cy - hsz), (cx - hsz, cy + hsz)], fill=color, width=max(1, int(sz/20)))
 
     def _motif_truchet_circle(d, cx, cy, sz, color, angle=0):
-        r = sz * random.uniform(0.2, 0.45)
+        r = sz * rng.uniform(0.2, 0.45)
         d.ellipse([cx - r, cy - r, cx + r, cy + r],
                   fill=None, outline=color, width=max(1, int(sz/25)))
         dr = r * 0.3
@@ -1340,21 +1355,21 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
     }
 
     def _draw_motif(cx, cy, sz, angle=0):
-        fn = MOTIF_FN.get(motif, _motif_diamond)
+        fn = MOTIF_FN.get(effective_motif, _motif_diamond)
         c = _tile_color(color_variation)
         if pal and pal != "none" and pal in PALETTES:
             pal_colors = PALETTES[pal]
             if pal_colors:
-                c = random.choice(pal_colors)
-        a = angle + random.uniform(-rotation_noise, rotation_noise) if rotation_noise > 0 else angle
+                c = rng.choice(pal_colors)
+        a = angle + rng.uniform(-rotation_noise, rotation_noise) if rotation_noise > 0 else angle
         # Per-tile scale wave: ripple propagates across the grid
         tile_phase = (cx * 0.02 + cy * 0.03 + t * 0.8)
         ripple = 0.7 + 0.3 * (0.5 + 0.5 * math.sin(tile_phase))
-        sv = ripple * (1 + random.uniform(-scale_variation, scale_variation) if scale_variation > 0 else 1)
+        sv = ripple * (1 + rng.uniform(-scale_variation, scale_variation) if scale_variation > 0 else 1)
         fn(draw, cx, cy, sz * sv, c, angle=a)
 
     # ── Penrose tiling ──────────────────────────────────────────────────
-    if group == "penrose":
+    if effective_group == "penrose":
         cx, cy = W // 2, H // 2
         max_r = max(W, H) * 0.7
         import math as m2
@@ -1376,7 +1391,7 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
         return
 
     # ── Truchet tiling ──────────────────────────────────────────────────
-    if group == "truchet":
+    if effective_group == "truchet":
         for ty in range(0, H + tile_size, tile_size):
             for tx in range(0, W + tile_size, tile_size):
                 _draw_motif(tx, ty, tile_size - gap)
@@ -1407,27 +1422,27 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
     import math as m2
 
     # Rectangular groups
-    if group in ("p1", "p2", "pm", "pg", "pmm", "pmg", "pgg", "cmm"):
+    if effective_group in ("p1", "p2", "pm", "pg", "pmm", "pmg", "pgg", "cmm"):
         spacing = tile_size + gap
         for tx, ty in _rect_grid(spacing, spacing):
             c_angle = 0
-            if group == "p2":
-                c_angle = 180 * (random.randint(0, 1))
-            elif group == "pm":
+            if effective_group == "p2":
+                c_angle = 180 * (rng.randint(0, 1))
+            elif effective_group == "pm":
                 row = ty // spacing
                 c_angle = 180 * (row % 2)
-            elif group == "pg":
+            elif effective_group == "pg":
                 gl = spacing // 2 * ((ty // spacing) % 2)
                 tx += gl
                 row = ty // spacing
                 c_angle = 180 * (row % 2)
-            elif group == "pmm":
-                c_angle = 90 * (random.randint(0, 3))
-            elif group == "pmg":
-                c_angle = 90 + 180 * (random.randint(0, 1))
-            elif group == "pgg":
-                c_angle = 90 * (random.randint(0, 3))
-            elif group == "cmm":
+            elif effective_group == "pmm":
+                c_angle = 90 * (rng.randint(0, 3))
+            elif effective_group == "pmg":
+                c_angle = 90 + 180 * (rng.randint(0, 1))
+            elif effective_group == "pgg":
+                c_angle = 90 * (rng.randint(0, 3))
+            elif effective_group == "cmm":
                 row = ty // spacing
                 if row % 2:
                     tx += spacing // 2
@@ -1436,44 +1451,44 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
             _draw_motif(tx, ty, sz, angle=c_angle + global_rot)
 
     # Square groups
-    elif group in ("p4", "p4m", "p4g"):
+    elif effective_group in ("p4", "p4m", "p4g"):
         spacing = tile_size + gap
         for tx, ty in _rect_grid(spacing, spacing):
-            c_angle = 90 * (random.randint(0, 3))
-            if group == "p4m":
+            c_angle = 90 * (rng.randint(0, 3))
+            if effective_group == "p4m":
                 row, col = ty // spacing, tx // spacing
                 c_angle = (row % 2) * 180 + (col % 2) * 90
-            elif group == "p4g":
+            elif effective_group == "p4g":
                 row, col = ty // spacing, tx // spacing
                 c_angle = 45 + 90 * ((row + col) % 4)
             sz = min(tile_size - gap, spacing - gap)
             _draw_motif(tx, ty, sz, angle=c_angle + global_rot)
 
     # Triangular groups
-    elif group in ("p3", "p3m1", "p31m"):
+    elif effective_group in ("p3", "p3m1", "p31m"):
         spacing = tile_size + gap
         for tx, ty in _tri_grid():
-            c_angle = 120 * (random.randint(0, 2))
+            c_angle = 120 * (rng.randint(0, 2))
             sz = min(tile_size - gap, spacing - gap)
             if motif == "triangle":
                 row = ty // tile_size
                 col = tx // tile_size
-                c_angle = 180 * ((row + col) % 2) if group == "p3m1" else 0
+                c_angle = 180 * ((row + col) % 2) if effective_group == "p3m1" else 0
                 sz = int(sz * 1.1)
             _draw_motif(tx, ty, sz, angle=c_angle + global_rot)
 
     # Hexagonal groups
-    elif group in ("p6", "p6m"):
+    elif effective_group in ("p6", "p6m"):
         for tx, ty in _hex_grid():
-            c_angle = 60 * (random.randint(0, 5))
+            c_angle = 60 * (rng.randint(0, 5))
             sz = min(tile_size - gap, int(tile_size * 0.7))
-            if group == "p6m":
+            if effective_group == "p6m":
                 row = ty // tile_size
                 c_angle = 30 + 60 * (row % 6)
             _draw_motif(tx, ty, sz, angle=c_angle + global_rot)
 
     # Escher interlocking
-    elif group == "escher":
+    elif effective_group == "escher":
         spacing = tile_size + gap
         for tx, ty in _rect_grid(spacing, spacing):
             row = ty // spacing
@@ -1483,7 +1498,7 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
             _draw_motif(tx, ty, sz, angle=0 + global_rot)
 
     # Islamic geometric
-    elif group == "islamic":
+    elif effective_group == "islamic":
         spacing = tile_size + gap
         for tx, ty in _rect_grid(spacing, spacing):
             sz = min(int(tile_size * 0.9), spacing - gap)
