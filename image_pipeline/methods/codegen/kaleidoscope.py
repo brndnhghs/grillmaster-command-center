@@ -1,18 +1,13 @@
-"""
-Code-gen method — auto-split from codegen.py
-"""
+"""Code-gen method — auto-split from codegen.py"""
 from __future__ import annotations
-import colorsys
 import math
-import random
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, save, get_font, BLACK, W, H
+from ...core.utils import save, norm, mn, seed_all, get_font, W, H
 from ...core.animation import capture_frame
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -55,7 +50,7 @@ from ...core.animation import capture_frame
         },
         "anim_mode": {
             "description": "kaleidoscope animation mode",
-            "choices": ["rotation", "pattern_morph", "segment_morph", "source_morph"],
+            "choices": ["none", "rotation", "pattern_morph", "segment_morph", "source_morph"],
             "default": "rotation",
         },
         "anim_speed": {
@@ -70,11 +65,25 @@ def method_kaleidoscope(out_dir: Path, seed: int, params=None):
     """Render kaleidoscopic reflection patterns using cv2.remap."""
     if params is None:
         params = {}
-    raw_t = float(params.get("time", 0.0))
-    t = raw_t
+    t = float(params.get("time", 0.0))
     seed_all(seed)
 
-    import cv2
+    try:
+        import cv2
+        _has_cv2 = True
+    except ImportError:
+        _has_cv2 = False
+
+    if not _has_cv2:
+        # Fallback: render a placeholder
+        pil_img = Image.new("RGB", (W, H), (30, 10, 10))
+        draw = ImageDraw.Draw(pil_img)
+        font = get_font(20)
+        draw.text((W // 2 - 100, H // 2 - 10), "cv2 library missing", fill=(200, 50, 50), font=font)
+        img = np.array(pil_img).astype(np.float32) / 255.0
+        capture_frame("12", img)
+        save(img, mn(12, "Kaleidoscope"), out_dir)
+        return
 
     pattern = params.get("pattern", "radial")
     segments = int(params.get("segments", 6))
@@ -119,10 +128,10 @@ def method_kaleidoscope(out_dir: Path, seed: int, params=None):
     theta = np.arctan2(yv, xv)
 
     if effective_source == "random":
-        # Fixed seed + continuous param oscillation — no seed churn
-        noise_layer = np.random.rand(wedge_size, wedge_size).astype(np.float32)
+        rng = np.random.default_rng(seed)
+        noise_layer = rng.random((wedge_size, wedge_size)).astype(np.float32)
         for c in range(3):
-            base[:, :, c] = noise_layer * 0.3 + np.random.rand(wedge_size, wedge_size).astype(np.float32) * 0.7
+            base[:, :, c] = noise_layer * 0.3 + rng.random((wedge_size, wedge_size)).astype(np.float32) * 0.7
 
     elif effective_source == "gradient":
         # Rename local t to t_grad to avoid shadowing animation t
@@ -133,7 +142,8 @@ def method_kaleidoscope(out_dir: Path, seed: int, params=None):
         base = np.stack([r_ch, g_ch, b_ch], axis=-1)
 
     elif effective_source == "noise":
-        n = np.random.randn(wedge_size, wedge_size).astype(np.float32)
+        rng = np.random.default_rng(seed + 1)
+        n = rng.standard_normal((wedge_size, wedge_size)).astype(np.float32)
         n = (n - n.min()) / (n.max() - n.min() + 1e-8)
         base[:, :, 0] = n
         base[:, :, 1] = np.roll(n, 3, axis=0)
