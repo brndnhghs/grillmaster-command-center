@@ -1,18 +1,13 @@
-"""
-Code-gen method — auto-split from codegen.py
-"""
+"""Code-gen method — auto-split from codegen.py"""
 from __future__ import annotations
-import colorsys
 import math
-import random
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, save, get_font, BLACK, W, H
+from ...core.utils import save, mn, seed_all, get_font, W, H
 from ...core.animation import capture_frame
 
 @method(id="09", name="QR Code", category="codegen",
@@ -20,7 +15,7 @@ from ...core.animation import capture_frame
          params={
     "time": {"description": "animation phase (0 to 2pi)", "min": 0.0, "max": 6.28, "default": 0.0},
     "content": {"description": "text content to encode as QR", "default": "HELLO"},
-    "anim_mode": {"description": "QR animation mode", "choices": ["rotate_pulse", "mask_morph"], "default": "rotate_pulse"},
+    "anim_mode": {"description": "QR animation mode", "choices": ["none", "rotate_pulse", "mask_morph"], "default": "rotate_pulse"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.0, "max": 2.0, "default": 0.25},
 })
 def method_09_qr_code(out_dir: Path, seed: int, params=None):
@@ -34,7 +29,6 @@ def method_09_qr_code(out_dir: Path, seed: int, params=None):
     anim_speed = float(params.get("anim_speed", 0.25))
 
     import qrcode
-    from PIL import ImageDraw
 
     BOX_SIZE = 20
     BORDER = 4
@@ -92,7 +86,6 @@ def method_09_qr_code(out_dir: Path, seed: int, params=None):
         y = (H - dh) // 2
         img.paste(qr_img, (x, y))
         draw = ImageDraw.Draw(img)
-        from ...core.utils import get_font
         font = get_font(24)
         draw.text((20, 20), f"Mask {mask_idx}", fill=(60, 60, 60), font=font)
         arr = np.array(img).astype(np.float32) / 255.0
