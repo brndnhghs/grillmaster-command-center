@@ -242,27 +242,48 @@ def method_pyfiglet(out_dir: Path, seed: int, params=None):
             "text_color": {"description": "text RGB tuple as string", "default": "90,70,50"},
         })
 def method_boxes(out_dir: Path, seed: int, params=None):
-    seed_all(seed)
+    """Render text inside ASCII art boxes using the `boxes` CLI tool.
+
+    Pipes a message through the `boxes` command-line tool to generate
+    decorative ASCII art boxes, then renders the result as a PIL image.
+    Installs boxes via brew if not available.
+
+    Params:
+        box_design: boxes design name
+        message: text content piped into boxes
+        fallback_text: fallback if boxes fails
+        x_offset: horizontal text offset (0-W)
+        y_offset: vertical text offset (0-H)
+        line_spacing: pixels between lines (8-48)
+        font_size: PIL font size (6-48)
+        bg_color: background RGB tuple as string (e.g. \"10,10,18\")
+        text_color: text RGB tuple as string (e.g. \"90,70,50\")
+    """
     if params is None:
         params = {}
+    seed_all(seed)
     box_design = params.get("box_design", "whirly")
     message = params.get("message", "IMAGE PIPELINE v2\n\nmethod: 25\nbox: whirly")
     fallback_text = params.get("fallback_text", "no boxes")
-    x_offset = params.get("x_offset", 10)
-    y_offset = params.get("y_offset", 10)
-    line_spacing = params.get("line_spacing", 14)
-    font_size = params.get("font_size", 12)
+    x_offset = int(params.get("x_offset", 10))
+    y_offset = int(params.get("y_offset", 10))
+    line_spacing = int(params.get("line_spacing", 14))
+    font_size = int(params.get("font_size", 12))
     bg_color = tuple(int(x) for x in params.get("bg_color", "10,10,18").split(",")[:3])
     text_color = tuple(int(x) for x in params.get("text_color", "90,70,50").split(",")[:3])
     r = subprocess.run(["which", "boxes"], capture_output=True, text=True)
     if r.returncode != 0:
         subprocess.run(["brew", "install", "boxes"], capture_output=True)
-    r = subprocess.run(
-        ["boxes", "-d", box_design],
-        input=message,
-        capture_output=True, text=True, timeout=5,
-    )
-    lines = (r.stdout if r.returncode == 0 else fallback_text).split("\n")
+    try:
+        r = subprocess.run(
+            ["boxes", "-d", box_design],
+            input=message,
+            capture_output=True, text=True, timeout=5,
+        )
+        output = r.stdout if r.returncode == 0 else fallback_text
+    except Exception:
+        output = fallback_text
+    lines = output.split("\n")
     img = Image.new("L", (W, H), 0)
     draw = ImageDraw.Draw(img)
     font = get_font(font_size)
@@ -270,6 +291,7 @@ def method_boxes(out_dir: Path, seed: int, params=None):
         draw.text((x_offset, y_offset + y * line_spacing), line, fill=255, font=font)
     colored = Image.new("RGB", (W, H), bg_color)
     colored.paste(ImageOps.colorize(img, bg_color, text_color), (0, 0))
+    capture_frame("25", np.array(colored, dtype=np.float32) / 255.0)
     save(colored, mn(25, "boxes"), out_dir)
 
 
