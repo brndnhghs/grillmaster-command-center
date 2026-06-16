@@ -28,7 +28,22 @@ def method_09_qr_code(out_dir: Path, seed: int, params=None):
     anim_mode = params.get("anim_mode", "rotate_pulse")
     anim_speed = float(params.get("anim_speed", 0.25))
 
-    import qrcode
+    try:
+        import qrcode
+        _has_qrcode = True
+    except ImportError:
+        _has_qrcode = False
+
+    if not _has_qrcode:
+        # Fallback: render a placeholder
+        img = Image.new("RGB", (W, H), (255, 255, 255))
+        draw = ImageDraw.Draw(img)
+        font = get_font(20)
+        draw.text((W // 2 - 100, H // 2 - 10), "qrcode lib missing", fill=(200, 0, 0), font=font)
+        arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("09", arr)
+        save(img, mn(9, "qr"), out_dir)
+        return
 
     BOX_SIZE = 20
     BORDER = 4
