@@ -1,18 +1,13 @@
-"""
-Code-gen method — auto-split from codegen.py
-"""
+"""Code-gen method — auto-split from codegen.py"""
 from __future__ import annotations
-import colorsys
 import math
-import random
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, save, get_font, BLACK, W, H
+from ...core.utils import save, mn, seed_all, W, H
 from ...core.animation import capture_frame
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -43,7 +38,7 @@ from ...core.animation import capture_frame
         },
         "anim_mode": {
             "description": "gradient animation mode",
-            "choices": ["center_orbit", "direction_morph", "color_sweep"],
+            "choices": ["none", "center_orbit", "direction_morph", "color_sweep"],
             "default": "center_orbit",
         },
         "anim_speed": {
@@ -52,25 +47,45 @@ from ...core.animation import capture_frame
             "max": 3.0,
             "default": 0.25,
         },
+        "cx": {
+            "description": "gradient center X (0-1)",
+            "min": 0.0,
+            "max": 1.0,
+            "default": 0.5,
+        },
+        "cy": {
+            "description": "gradient center Y (0-1)",
+            "min": 0.0,
+            "max": 1.0,
+            "default": 0.5,
+        },
+        "direction": {
+            "description": "gradient direction in degrees (0-360)",
+            "min": 0.0,
+            "max": 360.0,
+            "default": 0.0,
+        },
     },
 )
 def method_gradient(out_dir: Path, seed: int, params=None):
     """Render procedural gradient images with multiple styles and animation modes."""
     if params is None:
         params = {}
-    raw_t = float(params.get("time", 0.0))
-    t = raw_t
+    t = float(params.get("time", 0.0))
     seed_all(seed)
 
     gradient_type = params.get("gradient_type", "linear")
     style = params.get("style", "solid")
     anim_mode = params.get("anim_mode", "center_orbit")
     anim_speed = float(params.get("anim_speed", 0.25))
+    cx = float(params.get("cx", 0.5))
+    cy = float(params.get("cy", 0.5))
+    direction = float(params.get("direction", 0.0))
 
     # ── Animation: effective parameters ──
-    effective_x = float(params.get("cx", 0.5))
-    effective_y = float(params.get("cy", 0.5))
-    effective_direction = float(params.get("direction", 0.0))
+    effective_x = cx
+    effective_y = cy
+    effective_direction = direction
     effective_color1 = np.array([0.1, 0.1, 0.5], dtype=np.float32)
     effective_color2 = np.array([0.9, 0.3, 0.1], dtype=np.float32)
 
@@ -135,13 +150,15 @@ def method_gradient(out_dir: Path, seed: int, params=None):
               + effective_color2[np.newaxis, np.newaxis, :] * (1.0 - band[:, :, np.newaxis])
 
     elif style == "noise":
-        noise = np.random.rand(H, W).astype(np.float32)
+        rng = np.random.default_rng(seed)
+        noise = rng.random((H, W)).astype(np.float32)
         blended = val * 0.7 + noise * 0.3
         img = effective_color1[np.newaxis, np.newaxis, :] * blended[:, :, np.newaxis] \
               + effective_color2[np.newaxis, np.newaxis, :] * (1.0 - blended[:, :, np.newaxis])
 
     elif style == "sparkle":
-        sparkle = np.random.rand(H, W).astype(np.float32)
+        rng = np.random.default_rng(seed + 1)
+        sparkle = rng.random((H, W)).astype(np.float32)
         bright_mask = sparkle > 0.97
         img = effective_color1[np.newaxis, np.newaxis, :] * val[:, :, np.newaxis] \
               + effective_color2[np.newaxis, np.newaxis, :] * (1.0 - val[:, :, np.newaxis])
