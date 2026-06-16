@@ -816,14 +816,50 @@ def method_barnsley_fern(out_dir: Path, seed: int, params=None):
     "anim_zoom_target": {"description": "zoom target as x,y or auto", "default": "auto"},
     "anim_zoom_speed": {"description": "zoom speed factor", "min": 0.1, "max": 2.0, "default": 0.5},
     "antialias": {"description": "supersample factor (2=2x2)", "min": 1, "max": 3, "default": 1},
+    "time": {"description": "animation time in radians", "min": 0.0, "max": 6.28, "default": 0.0},
+    "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
 })
 def method_burning_ship(out_dir: Path, seed: int, params=None):
-    seed_all(seed)
+    """Render the Burning Ship fractal with 6 variations and 10 color modes.
+
+    A fractal similar to the Mandelbrot set but using absolute values of z's
+    real and imaginary parts before squaring, creating a ship-like shape.
+    Supports zoom, flame, color_cycle, and iteration_growth animation modes.
+
+    Args:
+        out_dir: Output directory for the generated image.
+        seed: Random seed for deterministic output.
+        params: Dict with keys:
+            iterations: max iterations (30-500)
+            viewpoint: complex plane range as "xmin,xmax,ymin,ymax"
+            escape_radius: divergence threshold (1.5-10.0)
+            color_mode: coloring method (sine/palette/heatmap/spectral/...)
+            variation: fractal variation (classic/dual/alternating/...)
+            exponent: exponent for alternating variation (1.0-6.0)
+            palette_name: palette name for palette mode
+            smooth: use smooth fractional iteration counting
+            color_speed: color rotation speed (0.5-8.0)
+            color_offset: hue shift offset (0.0-6.28)
+            animation_mode: animation mode (none/zoom/color_cycle/iteration_growth/flame)
+            anim_zoom_target: zoom target as x,y or auto
+            anim_zoom_speed: zoom speed factor (0.1-2.0)
+            antialias: supersample factor (1-3)
+            time: animation time in radians (0-6.28)
+            anim_speed: animation speed multiplier (0.1-5.0)
+    """
     if params is None:
         params = {}
+    anim_time = float(params.get("time", 0.0))
+    anim_mode = str(params.get("animation_mode", "none"))
+    anim_speed = float(params.get("anim_speed", 1.0))
+    seed_all(seed)
+
     vp = params.get("viewpoint", "-2,1,-2,1.5")
-    parts = [float(p.strip()) for p in vp.split(",")]
-    x0, x1, y0, y1 = parts[0], parts[1], parts[2], parts[3]
+    try:
+        parts = [float(p.strip()) for p in vp.split(",")]
+        x0, x1, y0, y1 = parts[0], parts[1], parts[2], parts[3]
+    except (ValueError, IndexError):
+        x0, x1, y0, y1 = -2.0, 1.0, -2.0, 1.5
     max_iter = int(params.get("iterations", 100))
     escape_r = float(params.get("escape_radius", 2.0))
     color_mode = str(params.get("color_mode", "sine"))
@@ -833,8 +869,19 @@ def method_burning_ship(out_dir: Path, seed: int, params=None):
     smooth = bool(params.get("smooth", True))
     c_speed = float(params.get("color_speed", 2.0))
     c_off = float(params.get("color_offset", 0.0))
-    anim_mode = str(params.get("animation_mode", "none"))
     antialias = int(params.get("antialias", 1))
+
+    # ── Animation ──
+    t = anim_time * anim_speed
+    if anim_mode == "none":
+        t = 0.0
+
+    # ── Skimage import guard ──
+    try:
+        from skimage.transform import resize as sk_resize
+        _has_skimage = True
+    except ImportError:
+        _has_skimage = False
 
     # Resolve palette for palette mode
     use_pal = None
@@ -843,16 +890,18 @@ def method_burning_ship(out_dir: Path, seed: int, params=None):
         use_pal = np.array(pal, dtype=np.uint8)
 
     # Zoom animation: interpolate viewpoint over time
-    t = params.get("time", 0.0)
     anim_x0, anim_x1, anim_y0, anim_y1 = x0, x1, y0, y1
     if anim_mode == "zoom":
         zt = float(params.get("anim_zoom_speed", 0.5))
         target_raw = params.get("anim_zoom_target", "auto")
         tx, ty = -0.5, 0.0  # interesting burning ship area
         if target_raw != "auto":
-            txy = [float(p.strip()) for p in str(target_raw).split(",")]
-            if len(txy) >= 2:
-                tx, ty = txy[0], txy[1]
+            try:
+                txy = [float(p.strip()) for p in str(target_raw).split(",")]
+                if len(txy) >= 2:
+                    tx, ty = txy[0], txy[1]
+            except (ValueError, TypeError):
+                pass
         # zoom toward target, contracting range
         zoom_factor = 1.0 - 0.3 * min(1.0, t * zt)
         anim_x0 = tx + (x0 - tx) * zoom_factor
@@ -949,8 +998,7 @@ def method_burning_ship(out_dir: Path, seed: int, params=None):
     div_arr, last_z_arr = render_ship(xm, xx, ym, yx, aa)
 
     # Downsample antialiased
-    if aa > 1:
-        from skimage.transform import resize as sk_resize
+    if aa > 1 and _has_skimage:
         div_arr = sk_resize(div_arr.astype(np.float32), (H, W), order=1, preserve_range=True)
         last_z_arr = sk_resize(np.abs(last_z_arr).astype(np.float32), (H, W), order=1, preserve_range=True)
     else:
@@ -980,10 +1028,10 @@ def method_burning_ship(out_dir: Path, seed: int, params=None):
     elif color_mode == "smooth_gradient":
         frac = div_arr / max_iter
         # Create smooth cyclic gradients
-        t = (frac * c_speed + c_off) % 1.0
-        r = np.clip(np.sin(t * np.pi * 4) * 0.8 + 0.4, 0, 1)
-        g = np.clip(np.sin(t * np.pi * 4 + 2.1) * 0.8 + 0.4, 0, 1)
-        b = np.clip(np.sin(t * np.pi * 4 + 4.2) * 0.8 + 0.4, 0, 1)
+        t_sg = (frac * c_speed + c_off) % 1.0
+        r = np.clip(np.sin(t_sg * np.pi * 4) * 0.8 + 0.4, 0, 1)
+        g = np.clip(np.sin(t_sg * np.pi * 4 + 2.1) * 0.8 + 0.4, 0, 1)
+        b = np.clip(np.sin(t_sg * np.pi * 4 + 4.2) * 0.8 + 0.4, 0, 1)
         result = np.stack([r, g, b], axis=-1)
 
     elif color_mode == "spectral":
@@ -1053,6 +1101,7 @@ def method_burning_ship(out_dir: Path, seed: int, params=None):
         interior_3d = np.stack([interior, interior, interior], axis=-1)
         result = np.where(interior_3d, 0.0, result)
 
+    capture_frame("51", result)
     save(result, mn(51, "Burning Ship"), out_dir)
 
 
