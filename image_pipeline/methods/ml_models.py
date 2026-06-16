@@ -13,7 +13,6 @@ import numpy as np
 
 from ..core.registry import method
 from ..core.utils import save, mn, seed_all, W, H
-from ..core.animation import capture_frame
 
 
 @method(id="21", name="SD1.5 (diffusers)", category="ml_models", tags=["ml", "slow", "gpu", "expanded"], timeout=300,
@@ -28,9 +27,25 @@ from ..core.animation import capture_frame
             "num_inference_steps": {"description": "denoising steps", "min": 5, "max": 100, "default": 30},
         })
 def method_sd15(out_dir: Path, seed: int, params=None):
-    seed_all(seed)
+    """Generate an image using Stable Diffusion 1.5 via HuggingFace diffusers.
+
+    Downloads the model on first run (cached afterward), runs inference on
+    the specified device (mps/cuda/cpu), and saves the result. Requires
+    torch, diffusers, and ~2GB disk for model weights.
+
+    Params:
+        model_id: HuggingFace model ID (default: runwayml/stable-diffusion-v1-5)
+        device: torch device (mps/cuda/cpu)
+        prompt: positive prompt text
+        neg: negative prompt text
+        width: output width (64-1024)
+        height: output height (64-1024)
+        guidance_scale: CFG scale (1.0-20.0)
+        num_inference_steps: denoising steps (5-100)
+    """
     if params is None:
         params = {}
+    seed_all(seed)
     import torch
     from diffusers import StableDiffusionPipeline
 
@@ -49,20 +64,28 @@ def method_sd15(out_dir: Path, seed: int, params=None):
     guidance_scale = params.get("guidance_scale", 8.0)
     num_inference_steps = params.get("num_inference_steps", 30)
 
-    pipe = StableDiffusionPipeline.from_pretrained(
-        model_id,
-        torch_dtype=torch.float32,
-        safety_checker=None,
-        requires_safety_checker=False,
-    ).to(device)
+    try:
+        pipe = StableDiffusionPipeline.from_pretrained(
+            model_id,
+            torch_dtype=torch.float32,
+            safety_checker=None,
+            requires_safety_checker=False,
+        ).to(device)
+    except Exception as e:
+        print(f"  ✗ SD1.5: failed to load model: {e}")
+        return
     pipe.enable_attention_slicing()
     gen = torch.Generator(device="cpu").manual_seed(seed)
-    with torch.no_grad():
-        img = pipe(
-            prompt, negative_prompt=neg,
-            width=img_width, height=img_height, guidance_scale=guidance_scale,
-            num_inference_steps=num_inference_steps, generator=gen,
-        ).images[0]
+    try:
+        with torch.no_grad():
+            img = pipe(
+                prompt, negative_prompt=neg,
+                width=img_width, height=img_height, guidance_scale=guidance_scale,
+                num_inference_steps=num_inference_steps, generator=gen,
+            ).images[0]
+    except Exception as e:
+        print(f"  ✗ SD1.5: inference failed: {e}")
+        return
     save(img, mn(21, "SD1.5 (diffusers)"), out_dir)
 
 
