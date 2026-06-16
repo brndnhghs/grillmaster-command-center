@@ -278,17 +278,51 @@ def method_fractal(out_dir: Path, seed: int, params=None):
     "blur_sigma": {"description": "post-render gaussian blur sigma (0=off)", "min": 0.0, "max": 5.0, "default": 0.0},
     "gamma": {"description": "density gamma correction", "min": 0.1, "max": 3.0, "default": 1.0},
     "contrast": {"description": "density contrast boost", "min": 0.5, "max": 3.0, "default": 1.5},
+    "time": {"description": "animation time in radians", "min": 0.0, "max": 6.28, "default": 0.0},
 })
 def method_buddhabrot(out_dir: Path, seed: int, params=None):
+    """Render a Buddhabrot fractal — orbits of escaped Mandelbrot points.
+
+    Traces random points in the complex plane, records their escape orbits,
+    and accumulates a density map. Supports multiple formulas, render modes,
+    and color schemes. Animation modes: reveal (progressive build-up),
+    color_cycle (hue rotation), param_sweep (iteration modulation).
+
+    Args:
+        out_dir: Output directory for the generated image.
+        seed: Random seed for deterministic output.
+        params: Dict with keys:
+            samples: random points traced (10000-500000)
+            viewpoint: complex plane range as "xmin,xmax,ymin,ymax"
+            max_iter: max iterations per sample (30-1000)
+            formula: fractal formula (mandelbrot/burning_ship/tricorn/...)
+            color_mode: coloring method (density/sine/palette/heatmap/...)
+            palette_name: palette name for palette mode
+            color_speed: color rotation speed (0.5-8.0)
+            color_offset: hue shift offset (0.0-6.28)
+            render_mode: render mode (buddhabrot/antibuddhabrot/nebulabrot/hybrid)
+            animation_mode: animation mode (none/reveal/color_cycle/param_sweep)
+            anim_speed: animation speed multiplier (0.1-3.0)
+            blur_sigma: post-render gaussian blur sigma (0=off)
+            gamma: density gamma correction (0.1-3.0)
+            contrast: density contrast boost (0.5-3.0)
+            time: animation time in radians (0-6.28)
+    """
     if params is None:
         params = {}
-    t = params.get("time", 0.0)
-    seed_all(seed + int(t * 100))
+    anim_time = float(params.get("time", 0.0))
+    anim_mode = str(params.get("animation_mode", "none"))
+    anim_speed = float(params.get("anim_speed", 1.0))
+    seed_all(seed)
+    rng = np.random.default_rng(seed)
 
     n_samples = int(params.get("samples", 100000))
     vp = params.get("viewpoint", "-2,1,-1.5,1.5")
-    parts = [float(p.strip()) for p in vp.split(",")]
-    xmin, xmax, ymin, ymax = parts[0], parts[1], parts[2], parts[3]
+    try:
+        parts = [float(p.strip()) for p in vp.split(",")]
+        xmin, xmax, ymin, ymax = parts[0], parts[1], parts[2], parts[3]
+    except (ValueError, IndexError):
+        xmin, xmax, ymin, ymax = -2.0, 1.0, -1.5, 1.5
     max_iter = int(params.get("max_iter", 200))
     formula = str(params.get("formula", "mandelbrot"))
     color_mode = str(params.get("color_mode", "log_density"))
@@ -296,22 +330,28 @@ def method_buddhabrot(out_dir: Path, seed: int, params=None):
     c_speed = float(params.get("color_speed", 2.0))
     c_off = float(params.get("color_offset", 0.0))
     render_mode = str(params.get("render_mode", "buddhabrot"))
-    anim_mode = str(params.get("animation_mode", "none"))
-    anim_speed = float(params.get("anim_speed", 1.0))
     blur_sigma = float(params.get("blur_sigma", 0.0))
     gamma = float(params.get("gamma", 1.0))
     contrast = float(params.get("contrast", 1.5))
-    t = params.get("time", 0.0)
 
+    # ── Animation ──
+    t = anim_time * anim_speed
+    if anim_mode == "param_sweep":
+        max_iter = int(max_iter * (0.5 + 0.5 * math.sin(t * 0.3)))
+        max_iter = max(30, min(1000, max_iter))
+
+    # ── Palette setup ──
     use_pal = None
     if color_mode == "palette":
-        pal = PALETTES.get(pal_name, PALETTES.get("vapor", [(0,0,0),(255,255,255)]))
+        pal = PALETTES.get(pal_name, PALETTES.get("vapor", [(0, 0, 0), (255, 255, 255)]))
         use_pal = np.array(pal, dtype=np.uint8)
 
-    # ── Animation: param sweep ──
-    if anim_mode == "param_sweep":
-        max_iter = int(max_iter * (0.5 + 0.5 * math.sin(t * 0.3 * anim_speed)))
-        max_iter = max(30, min(1000, max_iter))
+    # ── Scipy import guard ──
+    try:
+        from scipy.ndimage import gaussian_filter
+        _has_scipy = True
+    except ImportError:
+        _has_scipy = False
 
     # ── Formula functions ──
     def iterate(cx, cy):
@@ -355,8 +395,8 @@ def method_buddhabrot(out_dir: Path, seed: int, params=None):
     sample_count = 0
 
     for _ in range(n_samples):
-        cx = np.random.uniform(xmin, xmax)
-        cy = np.random.uniform(ymin, ymax)
+        cx = rng.uniform(xmin, xmax)
+        cy = rng.uniform(ymin, ymax)
         escaped, trail = iterate(cx, cy)
 
         if render_mode == "antibuddhabrot":
@@ -417,8 +457,7 @@ def method_buddhabrot(out_dir: Path, seed: int, params=None):
     d = np.clip(d, 0, 1)
 
     # ── Blur ──
-    if blur_sigma > 0:
-        from scipy.ndimage import gaussian_filter
+    if blur_sigma > 0 and _has_scipy:
         d = gaussian_filter(d, sigma=blur_sigma)
 
     # ── Color ──
@@ -488,9 +527,10 @@ def method_buddhabrot(out_dir: Path, seed: int, params=None):
 
     # ── Color cycle animation ──
     if anim_mode == "color_cycle":
-        hue_shift = (math.sin(t * 0.5 * anim_speed) * 0.5 + 0.5) * 0.3
+        hue_shift = (math.sin(t * 0.5) * 0.5 + 0.5) * 0.3
         result = np.roll(result * 255, int(hue_shift * 255), axis=-1) / 255.0
 
+    capture_frame("49", np.clip(result, 0, 1))
     save(np.clip(result, 0, 1), mn(49, "Buddhabrot"), out_dir)
 
 
