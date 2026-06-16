@@ -70,11 +70,50 @@ def _render_sandpile_preview(grid, colors, size, h, w):
              "obstacle_avoid": {"description": "obstacle avoidance strength", "min": 0.0, "max": 10.0, "default": 3.0},
              "perch_mode": {"description": "perching behavior", "choices": ["none", "random", "timed"], "default": "none"},
              "food_sources": {"description": "number of food attraction points", "min": 0, "max": 10, "default": 0},
+             "time": {"description": "animation time in radians (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "speed_pulse", "cohesion_wave", "obstacle_dance"], "default": "none"},
+             "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
 def method_boids(out_dir: Path, seed: int, params=None):
+    """Simulate boids flocking behavior with multi-species, obstacles, and trails.
+
+    Implements Craig Reynolds' boids algorithm with cohesion, separation, and
+    alignment rules. Supports single/dual/predator-prey species modes, multiple
+    visual shapes, trail rendering styles, obstacles, food sources, and perching
+    behavior. Animation modulates speed, cohesion, or obstacle positions.
+
+    Args:
+        out_dir: Output directory for the generated image.
+        seed: Random seed for deterministic output.
+        params: Dict with keys:
+            boids: number of agents (10-500)
+            frames: simulation steps (50-1000)
+            max_speed: velocity clamp (1-15)
+            cohesion: centering force (0.0001-0.05)
+            separation: personal space radius in px (5-200)
+            alignment: velocity matching force (0.0001-0.1)
+            species_mode: multi-species mode (single/dual/predator_prey)
+            palette: color palette name
+            color_mode: boid coloring (species/velocity/position/random)
+            point_shape: boid visual shape (dot/triangle/arrow/glow/diamond)
+            trail_mode: trail rendering style (none/fade/motion_blur/comet/ribbon)
+            size_min: min boid size in px (1-10)
+            size_max: max boid size in px (2-20)
+            obstacles: number of circular obstacles (0-20)
+            obstacle_avoid: obstacle avoidance strength (0-10)
+            perch_mode: perching behavior (none/random/timed)
+            food_sources: number of food attraction points (0-10)
+            time: animation time in radians (0-6.28)
+            anim_mode: animation mode (none/speed_pulse/cohesion_wave/obstacle_dance)
+            anim_speed: animation speed multiplier (0.1-5.0)
+    """
     if params is None:
         params = {}
-    seed_all(seed + int(params.get("time", 0.0) * 100))
+    anim_time = float(params.get("time", 0.0))
+    anim_mode = params.get("anim_mode", "none")
+    anim_speed = float(params.get("anim_speed", 1.0))
+    seed_all(seed)
+    rng = random.Random(seed)
 
     # ── Base image ──
     if params.get("input_image"):
@@ -85,24 +124,34 @@ def method_boids(out_dir: Path, seed: int, params=None):
         base_img = Image.new("RGB", (W, H), BLACK)
 
     # ── Params ──
-    n_boids = params.get("boids", 80)
-    frames = params.get("frames", 300)
-    max_speed = params.get("max_speed", 4)
-    cohesion_w = params.get("cohesion", 0.001)
-    sep_px = params.get("separation", 40)
-    align_w = params.get("alignment", 0.005)
+    n_boids = int(params.get("boids", 80))
+    frames = int(params.get("frames", 300))
+    max_speed = float(params.get("max_speed", 4))
+    cohesion_w = float(params.get("cohesion", 0.001))
+    sep_px = float(params.get("separation", 40))
+    align_w = float(params.get("alignment", 0.005))
     sep_sq = sep_px * sep_px
     species_mode = params.get("species_mode", "single")
     palette_name = params.get("palette", "cool")
     color_mode = params.get("color_mode", "species")
     point_shape = params.get("point_shape", "dot")
     trail_mode = params.get("trail_mode", "none")
-    size_min = params.get("size_min", 2)
-    size_max = params.get("size_max", 5)
-    n_obstacles = params.get("obstacles", 0)
-    obstacle_avoid = params.get("obstacle_avoid", 3.0)
+    size_min = float(params.get("size_min", 2))
+    size_max = float(params.get("size_max", 5))
+    n_obstacles = int(params.get("obstacles", 0))
+    obstacle_avoid = float(params.get("obstacle_avoid", 3.0))
     perch_mode = params.get("perch_mode", "none")
-    n_food = params.get("food_sources", 0)
+    n_food = int(params.get("food_sources", 0))
+
+    # ── Animation ──
+    t = anim_time * anim_speed
+    if anim_mode == "speed_pulse":
+        max_speed = max_speed * (0.5 + 0.5 * abs(math.sin(t * 0.3)))
+    elif anim_mode == "cohesion_wave":
+        cohesion_w = cohesion_w * (0.3 + 0.7 * abs(math.sin(t * 0.5)))
+    elif anim_mode == "obstacle_dance":
+        pass  # Obstacle positions modulated below
+    # else: none — use params as-is
 
     # ── Palette ──
     from ..core.utils import PALETTES
@@ -141,14 +190,14 @@ def method_boids(out_dir: Path, seed: int, params=None):
         spd = speeds[s_idx % len(speeds)]
         s_min, s_max = size_ranges[s_idx % len(size_ranges)]
         for _ in range(pop):
-            angle = random.uniform(0, 2 * math.pi)
+            angle = rng.uniform(0, 2 * math.pi)
             boids.append({
-                "x": random.uniform(0, W),
-                "y": random.uniform(0, H),
+                "x": rng.uniform(0, W),
+                "y": rng.uniform(0, H),
                 "vx": math.cos(angle) * spd * 0.5,
                 "vy": math.sin(angle) * spd * 0.5,
                 "species": s_idx,
-                "size": random.uniform(s_min, s_max),
+                "size": rng.uniform(s_min, s_max),
                 "trail": [],
                 "perch_timer": 0,
                 "perched": False,
@@ -157,11 +206,16 @@ def method_boids(out_dir: Path, seed: int, params=None):
 
     # ── Obstacles ──
     obstacles = []
-    for _ in range(n_obstacles):
-        r = random.randint(15, 45)
+    for i in range(n_obstacles):
+        r = rng.randint(15, 45)
+        ox = rng.randint(r + 10, W - r - 10)
+        oy = rng.randint(r + 10, H - r - 10)
+        if anim_mode == "obstacle_dance":
+            ox += int(30 * math.sin(t * 0.5 + i * 1.3))
+            oy += int(30 * math.cos(t * 0.7 + i * 0.9))
         obstacles.append({
-            "x": random.randint(r + 10, W - r - 10),
-            "y": random.randint(r + 10, H - r - 10),
+            "x": ox,
+            "y": oy,
             "r": r,
         })
 
@@ -169,9 +223,9 @@ def method_boids(out_dir: Path, seed: int, params=None):
     food = []
     for _ in range(n_food):
         food.append({
-            "x": random.uniform(20, W - 20),
-            "y": random.uniform(20, H - 20),
-            "strength": random.uniform(0.5, 2.0),
+            "x": rng.uniform(20, W - 20),
+            "y": rng.uniform(20, H - 20),
+            "strength": rng.uniform(0.5, 2.0),
         })
 
     # ── Spatial hashing ──
@@ -202,7 +256,7 @@ def method_boids(out_dir: Path, seed: int, params=None):
             idx = int(b["x"] / W * (n_pal - 1))
             return pal[min(idx, n_pal - 1)]
         else:  # random
-            return pal[random.randint(0, n_pal - 1)]
+            return pal[rng.randint(0, n_pal - 1)]
 
     # ── Draw shape helper ──
     def draw_boid(drw, x, y, vx, vy, color, sz, shape):
@@ -248,13 +302,13 @@ def method_boids(out_dir: Path, seed: int, params=None):
             return
         perch_timer_ct -= 1
         if perch_timer_ct <= 0:
-            perch_timer_ct = random.randint(30, 90)
-            if random.random() < 0.4:
+            perch_timer_ct = rng.randint(30, 90)
+            if rng.random() < 0.4:
                 candidates = [b for b in boids if not b["perched"]]
                 if candidates:
-                    t = random.choice(candidates)
-                    t["perch_timer"] = random.randint(30, 80)
-                    t["perch_target"] = (random.uniform(40, W - 40), random.uniform(40, H - 40))
+                    chosen = rng.choice(candidates)
+                    chosen["perch_timer"] = rng.randint(30, 80)
+                    chosen["perch_target"] = (rng.uniform(40, W - 40), rng.uniform(40, H - 40))
 
     # ══════════════════════════════════════════════════════
     #  SIMULATION LOOP
@@ -292,7 +346,7 @@ def method_boids(out_dir: Path, seed: int, params=None):
                 if b["perch_target"]:
                     tx, ty = b["perch_target"]
                     dx = tx - b["x"]
-                    dy = ty - b["y"]
+                    dy = ty - b["x"]
                     d = max(0.1, math.hypot(dx, dy))
                     b["vx"] += dx / d * 0.08
                     b["vy"] += dy / d * 0.08
@@ -303,7 +357,7 @@ def method_boids(out_dir: Path, seed: int, params=None):
             if b["perched"]:
                 b["perched"] = False
                 b["perch_target"] = None
-                ta = random.uniform(0, 2 * math.pi)
+                ta = rng.uniform(0, 2 * math.pi)
                 b["vx"] = math.cos(ta) * spd * 0.6
                 b["vy"] = math.sin(ta) * spd * 0.6
 
