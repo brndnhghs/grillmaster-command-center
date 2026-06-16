@@ -1551,7 +1551,7 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
     "petal_angle": {"description": "rotate each petal toward center (degrees)", "min": 0, "max": 90, "default": 0},
     "anim_mode": {"description": "animation mode: none, spiral_morph, shape_morph", "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},
-    "time": {"description": "animation time (drives rotation + seed)", "min": 0.0, "max": 100.0, "default": 0.0},
+    "time": {"description": "animation time (drives rotation + seed)", "min": 0.0, "max": 6.28, "default": 0.0},
 })
 def method_phyllotaxis(out_dir: Path, seed: int, params=None):
     """
