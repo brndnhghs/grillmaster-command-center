@@ -846,7 +846,9 @@ def method_moire(out_dir: Path, seed: int, params=None):
     "fractal": {"description": "fractal Worley layers (1=off, 2-4=layered FBM)", "min": 1, "max": 4, "default": 1},
     "fractal_gain": {"description": "amplitude scaling per fractal layer", "min": 0.1, "max": 1.0, "default": 0.5},
     "cell_border": {"description": "cell edge highlight width (0=off)", "min": 0, "max": 20, "default": 0},
-    "time": {"description": "animation time for point drift", "min": 0.0, "max": 1.0, "default": 0.0},
+    "anim_mode": {"description": "animation mode: none, point_drift, metric_morph, feature_sweep", "default": "none"},
+    "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.5},
+    "time": {"description": "animation time for point drift", "min": 0.0, "max": 6.28, "default": 0.0},
 })
 def method_worley_noise(out_dir: Path, seed: int, params=None):
     """Render Worley (Voronoi cell) noise with GPU-free vectorized KD-tree.
@@ -858,7 +860,10 @@ def method_worley_noise(out_dir: Path, seed: int, params=None):
     if params is None:
         params = {}
     t = float(params.get("time", 0.0)) * 2 * math.pi
-    seed_all(seed + int(t * 100))
+    anim_mode = params.get("anim_mode", "none")
+    anim_speed = float(params.get("anim_speed", 0.5))
+    seed_all(seed)
+    rng = np.random.default_rng(seed)
     n_points = int(params.get("points", 60))
     dist_metric = params.get("distance", "euclidean")
     feature_idx = int(params.get("feature", 1))
@@ -869,9 +874,32 @@ def method_worley_noise(out_dir: Path, seed: int, params=None):
     fractal_layers = int(params.get("fractal", 1))
     fractal_gain = float(params.get("fractal_gain", 0.5))
     cell_border = int(params.get("cell_border", 0))
-    from ..core.utils import PALETTES
 
     yy, xx = np.mgrid[:H, :W].astype(np.float32)
+
+    # ── Matplotlib/scipy import (with fallback) ──
+    try:
+        from matplotlib import cm
+        _has_mpl = True
+    except ImportError:
+        _has_mpl = False
+    try:
+        from scipy.ndimage import sobel
+        _has_scipy = True
+    except ImportError:
+        _has_scipy = False
+
+    # ── Animation: operate on distance metric, feature index, or point drift ──
+    effective_metric = dist_metric
+    effective_feature = feature_idx
+    effective_drift = t * anim_speed
+    if anim_mode == "metric_morph":
+        metric_cycle = ["euclidean", "manhattan", "chebyshev", "minkowski", "angular"]
+        idx = int((t / (2 * math.pi)) * len(metric_cycle) * anim_speed) % len(metric_cycle)
+        effective_metric = metric_cycle[idx]
+    elif anim_mode == "feature_sweep":
+        effective_feature = max(1, min(4, int(1 + 3 * (0.5 + 0.5 * math.sin(t * anim_speed)))))
+    # point_drift uses effective_drift directly in _generate_points
 
     def _generate_points(n, jit, drift):
         """Generate feature points with optional jitter and time drift."""
@@ -882,16 +910,16 @@ def method_worley_noise(out_dir: Path, seed: int, params=None):
                                   np.linspace(0, H, side, endpoint=False))
             pts = np.stack([gx.ravel(), gy.ravel()], axis=-1).astype(np.float32)
             # Add tiny jitter to avoid exact grid artifacts
-            pts += np.random.uniform(-1, 1, pts.shape).astype(np.float32)
+            pts += rng.uniform(-1, 1, pts.shape).astype(np.float32)
             return pts[:n]
         else:
-            pts = np.random.rand(n, 2).astype(np.float32)
+            pts = rng.random((n, 2)).astype(np.float32)
             pts[:, 0] *= W
             pts[:, 1] *= H
             # Time drift
             if drift != 0:
-                angle = np.random.uniform(0, 2 * math.pi, n)
-                drift_dist = np.random.uniform(0, 15, n).astype(np.float32)
+                angle = rng.uniform(0, 2 * math.pi, n)
+                drift_dist = rng.uniform(0, 15, n).astype(np.float32)
                 pts[:, 0] += np.cos(angle) * drift_dist * drift * 0.1
                 pts[:, 1] += np.sin(angle) * drift_dist * drift * 0.1
                 pts[:, 0] = np.clip(pts[:, 0], 0, W - 1)
@@ -924,31 +952,30 @@ def method_worley_noise(out_dir: Path, seed: int, params=None):
             n_layer = max(5, n_points // (layer + 1))
             scale = 1.0 / (layer + 1)
             jit_layer = max(0.1, jitter * (1.0 - layer * 0.2))
-            pts = _generate_points(n_layer, jit_layer, t * (layer + 1))
-            dist = _distance_matrix(pts, xx, yy, dist_metric)
-            # Get the k-th nearest distance where k = feature_idx
+            pts = _generate_points(n_layer, jit_layer, effective_drift * (layer + 1))
+            dist = _distance_matrix(pts, xx, yy, effective_metric)
+            # Get the k-th nearest distance where k = effective_feature
             sorted_dist = np.sort(dist, axis=0)
-            k_idx = min(feature_idx, sorted_dist.shape[0] - 1)
+            k_idx = min(effective_feature, sorted_dist.shape[0] - 1)
             layer_val = sorted_dist[k_idx]
             amp = fractal_gain ** layer
             result += norm(layer_val) * amp * scale
             total_amp += amp * scale
         result = norm(result / total_amp)
     else:
-        pts = _generate_points(n_points, jitter, t)
-        dist = _distance_matrix(pts, xx, yy, dist_metric)
+        pts = _generate_points(n_points, jitter, effective_drift)
+        dist = _distance_matrix(pts, xx, yy, effective_metric)
         sorted_dist = np.sort(dist, axis=0)
-        k_idx = min(feature_idx, sorted_dist.shape[0] - 1)
+        k_idx = min(effective_feature, sorted_dist.shape[0] - 1)
         raw = sorted_dist[k_idx]
         result = norm(raw)
 
     # ── Cell borders ──
-    if cell_border > 0:
+    if cell_border > 0 and _has_scipy:
         # Detect cells by finding the nearest point's index
-        dist = _distance_matrix(_generate_points(n_points, jitter, 0), xx, yy, dist_metric)
+        dist = _distance_matrix(_generate_points(n_points, jitter, 0), xx, yy, effective_metric)
         nearest = np.argmin(dist, axis=0)
         # Sobel edge detect
-        from scipy.ndimage import sobel
         edge_x = sobel(nearest.astype(np.float32), axis=1)
         edge_y = sobel(nearest.astype(np.float32), axis=0)
         edges = np.sqrt(edge_x ** 2 + edge_y ** 2) > 0.01
@@ -964,37 +991,44 @@ def method_worley_noise(out_dir: Path, seed: int, params=None):
         pal_arr = np.array(pal, dtype=np.float32) / 255.0
         rgb = pal_arr[idx]
     elif cmode == "heatmap":
-        from matplotlib import cm
-        rgb = cm.inferno(result)[:, :, :3]
+        if _has_mpl:
+            rgb = cm.inferno(result)[:, :, :3]
+        else:
+            rgb = np.stack([result, result, result], axis=-1)
     elif cmode == "spectral":
-        from matplotlib import cm
-        rgb = cm.nipy_spectral(result)[:, :, :3]
+        if _has_mpl:
+            rgb = cm.nipy_spectral(result)[:, :, :3]
+        else:
+            rgb = np.stack([result, result, result], axis=-1)
     elif cmode == "fire":
         r2 = np.clip(result * 1.5, 0, 1)
         rgb = np.stack([r2, result * 0.6, result * 0.2], axis=-1)
     elif cmode == "ice":
         rgb = np.stack([result * 0.2, result * 0.5, 0.5 + result * 0.5], axis=-1)
     elif cmode == "dual_layer":
-        from matplotlib import cm
-        hi = result > 0.5
-        lo = result <= 0.5
-        base = np.zeros((H, W, 3), dtype=np.float32)
-        base[lo] = cm.viridis(result[lo] * 2)[:, :3]
-        base[hi] = cm.inferno((result[hi] - 0.5) * 2)[:, :3]
-        rgb = base
+        if _has_mpl:
+            hi = result > 0.5
+            lo = result <= 0.5
+            base = np.zeros((H, W, 3), dtype=np.float32)
+            base[lo] = cm.viridis(result[lo] * 2)[:, :3]
+            base[hi] = cm.inferno((result[hi] - 0.5) * 2)[:, :3]
+            rgb = base
+        else:
+            rgb = np.stack([result, result, result], axis=-1)
     elif cmode == "flat_shaded":
-        from matplotlib import cm
-        from scipy.ndimage import sobel
-        base = cm.magma(result)[:, :, :3]
-        gx = sobel(result, axis=1)
-        gy = sobel(result, axis=0)
-        light = np.clip((gx * 0.5 + gy * 0.5 + 0.5) * 0.8 + 0.2, 0, 1)
-        rgb = base * np.stack([light, light, light], axis=-1)
-        rgb = np.clip(rgb, 0, 1)
+        if _has_mpl and _has_scipy:
+            base = cm.magma(result)[:, :, :3]
+            gx = sobel(result, axis=1)
+            gy = sobel(result, axis=0)
+            light = np.clip((gx * 0.5 + gy * 0.5 + 0.5) * 0.8 + 0.2, 0, 1)
+            rgb = base * np.stack([light, light, light], axis=-1)
+            rgb = np.clip(rgb, 0, 1)
+        else:
+            rgb = np.stack([result, result, result], axis=-1)
     elif cmode == "crackle":
         # Lightning-like crackle effect using multi-F1/F2 difference
-        pts = _generate_points(n_points, jitter, t)
-        dist = _distance_matrix(pts, xx, yy, "euclidean")
+        pts = _generate_points(n_points, jitter, effective_drift)
+        dist = _distance_matrix(pts, xx, yy, effective_metric)
         sorted_dist = np.sort(dist, axis=0)
         f1 = sorted_dist[0]
         f2 = sorted_dist[min(1, sorted_dist.shape[0] - 1)]
