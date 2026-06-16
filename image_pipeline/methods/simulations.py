@@ -1427,8 +1427,8 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
              "balls": {"description": "metaball count", "min": 3, "max": 80, "default": 20},
              "radius_min": {"description": "minimum metaball radius", "min": 5, "max": 80, "default": 30},
              "radius_max": {"description": "maximum metaball radius", "min": 20, "max": 200, "default": 80},
-             "isovalue": {"description": "isosurface threshold (0-1)", "min": 0.05, "max": 0.8, "default": 0.3},
-             "behavior": {"description": "ball movement pattern", "choices": ["random_walk", "gravity", "attract_repel", "bounce", "swarm", "orbit", "spiral", "wave", "noise_driven", "explosion", "morph", "flock", "chain", "lattice", "galaxy", "cellular", "pulse", "breathing", "text", "painting"], "default": "random_walk"},
+             "isovalue": {"description": "isosurface threshold (0-1)", "min": 0.05, "max": 0.8, "default": 0.1},
+             "behavior": {"description": "ball movement pattern", "choices": ["random_walk", "gravity", "attract_repel", "bounce", "swarm", "orbit", "spiral", "wave", "noise_driven", "explosion", "morph", "flock", "chain", "lattice", "galaxy", "cellular", "pulse", "breathing", "text", "painting"], "default": "attract_repel"},
              "field_fn": {"description": "metaball field function", "choices": ["inverse_square", "gaussian", "wendland", "inverse_cubic", "softplus", "blobby", "compact"], "default": "inverse_square"},
              "style": {"description": "rendering style", "choices": ["filled", "palette", "gradient_fill", "wireframe", "glow", "multi_threshold", "heightmap_3d", "edge_glow", "inner_glow", "shadow", "textured", "boolean", "color_per_ball", "stippled", "neon", "oil_paint", "mosaic", "aurora", "glass", "luminous"], "default": "filled"},
              "palette": {"description": "PALETTES name for coloring", "default": ""},
@@ -1494,8 +1494,8 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
     n_balls = int(params.get("balls", 20))
     r_min = float(params.get("radius_min", 30))
     r_max = float(params.get("radius_max", 80))
-    iso_threshold = float(params.get("isovalue", 0.3))
-    behavior = params.get("behavior", "random_walk")
+    iso_threshold = float(params.get("isovalue", 0.1))
+    behavior = params.get("behavior", "attract_repel")
     field_fn_name = params.get("field_fn", "inverse_square")
     style = params.get("style", "filled")
     palette_name = params.get("palette", "")
@@ -1665,14 +1665,14 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
                     "init_x": float(px), "init_y": float(py),
                 })
         else:
-            # Default: random positions
+            # Default: random positions clustered near center
             for i in range(n_balls):
-                px = rng.uniform(0, W)
-                py = rng.uniform(0, H)
+                px = cx + rng.uniform(-80, 80)
+                py = cy + rng.uniform(-80, 80)
                 r = rng.uniform(r_min, r_max)
                 balls.append({
                     "x": float(px), "y": float(py),
-                    "r": r, "vx": rng.uniform(-1, 1), "vy": rng.uniform(-1, 1),
+                    "r": r, "vx": rng.uniform(-0.5, 0.5), "vy": rng.uniform(-0.5, 0.5),
                     "phase": rng.uniform(0, 2 * math.pi),
                     "color": (rng.random(), rng.random(), rng.random()),
                     "init_x": float(px), "init_y": float(py),
@@ -1715,16 +1715,17 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
                     dx = o["x"] - b["x"]
                     dy = o["y"] - b["y"]
                     d = math.sqrt(dx * dx + dy * dy) + 1
-                    if d < 80:
-                        # Repel
-                        fx -= dx / d * 0.5 * speed
-                        fy -= dy / d * 0.5 * speed
-                    elif d > 150:
-                        # Attract
-                        fx += dx / d * 0.1 * speed
-                        fy += dy / d * 0.1 * speed
-                b["vx"] = (b["vx"] + fx) * 0.95
-                b["vy"] = (b["vy"] + fy) * 0.95
+                    # Continuous force: attract at all ranges, repel only when overlapping
+                    if d < 60:
+                        # Strong repel when too close
+                        fx -= dx / d * 5.0 * speed
+                        fy -= dy / d * 5.0 * speed
+                    else:
+                        # Attract toward center of mass
+                        fx += dx / d * 5.0 * speed
+                        fy += dy / d * 5.0 * speed
+                b["vx"] = (b["vx"] + fx) * 0.9
+                b["vy"] = (b["vy"] + fy) * 0.9
                 b["x"] += b["vx"]
                 b["y"] += b["vy"]
                 b["x"] = max(0, min(W, b["x"]))
@@ -1911,10 +1912,10 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
     # ── Rendering styles ────────────────────────────────────────────
     def _render_filled(grid, iso):
         """Solid isosurface fill with blue/teal coloring."""
-        r = np.clip(iso * 1.5 + 0.1, 0, 1)
-        g = np.clip(iso * 1.0 + 0.2, 0, 1)
-        b = np.clip(iso * 0.5 + 0.3, 0, 1)
-        return np.stack([r, g, b], axis=-1)
+        r = np.clip(grid * 1.5 + 0.1, 0, 1)
+        g = np.clip(grid * 1.0 + 0.2, 0, 1)
+        b = np.clip(grid * 0.5 + 0.3, 0, 1)
+        return np.stack([r, g, b], axis=-1) * iso[:, :, None]
 
     def _render_palette(grid, iso):
         """Fill with PALETTES colors, cycling by position."""
@@ -1944,9 +1945,9 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
     def _render_glow(grid, iso):
         """Bright center + soft edges (Gaussian blur the isosurface)."""
         blurred = cv2.GaussianBlur(iso, (0, 0), sigmaX=8, sigmaY=8)
-        r = np.clip(blurred * 2.0 + 0.05, 0, 1)
-        g = np.clip(blurred * 1.5 + 0.1, 0, 1)
-        b = np.clip(blurred * 0.8 + 0.2, 0, 1)
+        r = np.clip(blurred * 2.0 + grid * 0.3, 0, 1)
+        g = np.clip(blurred * 1.5 + grid * 0.2, 0, 1)
+        b = np.clip(blurred * 0.8 + grid * 0.1, 0, 1)
         return np.stack([r, g, b], axis=-1)
 
     def _render_multi_threshold(grid, iso):
@@ -2090,9 +2091,9 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
         """Bright neon glow with thin bright core."""
         blurred = cv2.GaussianBlur(iso, (0, 0), sigmaX=6, sigmaY=6)
         core = cv2.GaussianBlur(iso, (0, 0), sigmaX=1, sigmaY=1)
-        r = np.clip(blurred * 1.5 + core * 2.0, 0, 1)
-        g = np.clip(blurred * 0.3 + core * 0.5, 0, 1)
-        b = np.clip(blurred * 0.8 + core * 1.5, 0, 1)
+        r = np.clip(blurred * 1.5 + core * 2.0 + grid * 0.2, 0, 1)
+        g = np.clip(blurred * 0.3 + core * 0.5 + grid * 0.1, 0, 1)
+        b = np.clip(blurred * 0.8 + core * 1.5 + grid * 0.3, 0, 1)
         return np.stack([r, g, b], axis=-1)
 
     def _render_oil_paint(grid, iso):
@@ -2225,6 +2226,9 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
     # animation (t going 0→2π across frames) produces meaningful evolution.
     # t=0 → initial positions, t=2π → ~125 iterations evolved.
     n_steps = max(0, int(abs(t) / dt)) if t != 0 else 0
+    # For static renders with interactive behaviors, run a warmup so balls cluster
+    if n_steps == 0 and behavior in ("gravity", "attract_repel", "swarm", "flock", "morph"):
+        n_steps = 500  # ~25 seconds of warmup for clustering
     for _ in range(n_steps):
         _update_balls(balls, dt)
 
@@ -2244,8 +2248,11 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
             weight_sum += w
         grid_norm = blended / weight_sum
 
-    # Isosurface
-    iso = (grid_norm > iso_threshold).astype(np.float32)
+    # Apply isosurface threshold to raw field values (not normalized)
+    # inverse_square produces values ~1.0 at 1 radius, so iso=0.1 captures
+    # out to ~3 radii. After norm(), the same values compress to ~0.0002
+    # which is below any reasonable threshold.
+    iso = (grid > iso_threshold).astype(np.float32)
     iso = cv2.GaussianBlur(iso, (0, 0), sigmaX=2, sigmaY=2)
 
     # Render
