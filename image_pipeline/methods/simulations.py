@@ -17,9 +17,9 @@ from ..core.animation import capture_frame
 # ── Preview helpers for animated captures ──
 
 
-def _render_dla_preview(grid, age_grid, h, w):
+def _render_dla_preview(grid, age_grid, h, w, rng):
     img = np.zeros((h, w, 3), dtype=np.uint8)
-    noise = np.random.randint(0, 5, (h, w))
+    noise = rng.integers(0, 5, (h, w))
     img[:, :, 0] = 8 + noise
     img[:, :, 1] = 8 + noise
     img[:, :, 2] = 16 + noise
@@ -855,25 +855,68 @@ def method_flowfield(out_dir: Path, seed: int, params=None):
              "aniso_angle": {"description": "anisotropy direction (degrees)", "min": 0, "max": 360, "default": 0},
              "self_avoid": {"description": "min distance between clusters (px)", "min": 0, "max": 10, "default": 0},
              "time": {"description": "animation drive", "min": 0.0, "max": 6.28, "default": 0.0},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "spawn_radius", "julia_drift", "aniso_rotate"], "default": "none"},
+             "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
 def method_dla(out_dir: Path, seed: int, params=None):
+    """Simulate diffusion-limited aggregation (DLA) growth.
+
+    Particles perform random walks from a spawn circle until they stick
+    to the growing cluster. Supports multiple growth modes (classic,
+    ballistic, cluster_cluster, surface, julia_field, gradient_field),
+    coloring modes, and anisotropy. Animation modulates spawn radius,
+    Julia field parameters, or anisotropy angle.
+
+    Args:
+        out_dir: Output directory for the generated image.
+        seed: Random seed for deterministic output.
+        params: Dict with keys:
+            particles: aggregate particles (1000-100000)
+            seed_radius: initial seed cluster radius (1-80)
+            spawn_offset: spawn distance beyond radius (5-200)
+            max_steps: max walk steps per particle (100-50000)
+            growth_mode: DLA growth style
+            palette: color palette
+            color_mode: coloring (age/radial/density/uniform)
+            bg_style: background style (dark/light/gradient)
+            aniso_strength: anisotropic growth bias (0=none, 1=strong)
+            aniso_angle: anisotropy direction in degrees (0-360)
+            self_avoid: min distance between clusters in px (0-10)
+            time: animation time in radians (0-6.28)
+            anim_mode: animation mode (none/spawn_radius/julia_drift/aniso_rotate)
+            anim_speed: animation speed multiplier (0.1-5.0)
+    """
     if params is None:
         params = {}
-    seed_all(seed + int(params.get("time", 0.0) * 100))
+    anim_time = float(params.get("time", 0.0))
+    anim_mode = params.get("anim_mode", "none")
+    anim_speed = float(params.get("anim_speed", 1.0))
+    seed_all(seed)
+    rng = np.random.default_rng(seed)
+    py_rng = random.Random(seed)
 
     # ── Params ──
-    n_p = params.get("particles", 30000)
-    seed_radius = params.get("seed_radius", 5)
-    spawn_offset = params.get("spawn_offset", 30)
-    max_steps = params.get("max_steps", 5000)
+    n_p = int(params.get("particles", 30000))
+    seed_radius = int(params.get("seed_radius", 5))
+    spawn_offset = int(params.get("spawn_offset", 30))
+    max_steps = int(params.get("max_steps", 5000))
     growth_mode = params.get("growth_mode", "classic")
     palette_name = params.get("palette", "cool")
     color_mode = params.get("color_mode", "age")
     bg_style = params.get("bg_style", "dark")
-    aniso_strength = params.get("aniso_strength", 0.0)
-    aniso_angle = params.get("aniso_angle", 0)
-    self_avoid = params.get("self_avoid", 0)
-    t = params.get("time", 0.0)
+    aniso_strength = float(params.get("aniso_strength", 0.0))
+    aniso_angle = float(params.get("aniso_angle", 0))
+    self_avoid = int(params.get("self_avoid", 0))
+
+    # ── Animation ──
+    t = anim_time * anim_speed
+    if anim_mode == "spawn_radius":
+        spawn_offset = int(spawn_offset * (0.5 + 0.5 * abs(math.sin(t * 0.3))))
+    elif anim_mode == "julia_drift":
+        pass  # Julia c_re modulated below
+    elif anim_mode == "aniso_rotate":
+        aniso_angle = (aniso_angle + t * 20) % 360
+    # else: none — use params as-is
 
     # ── Palette ──
     from ..core.utils import PALETTES
@@ -895,8 +938,6 @@ def method_dla(out_dir: Path, seed: int, params=None):
     density_grid[cy, cx] = 1
 
     dirs = [(0, 1), (1, 0), (0, -1), (-1, 0), (1, 1), (-1, -1), (1, -1), (-1, 1)]
-    dirs_arr = np.array(dirs, dtype=np.int32)
-    n_dirs = len(dirs)
 
     # ── Anisotropy precompute ──
     ang_rad = math.radians(aniso_angle)
@@ -913,7 +954,6 @@ def method_dla(out_dir: Path, seed: int, params=None):
     # ══════════════════════════════════════════════════════
     max_radius = seed_radius
     max_grid_radius = max_radius
-    stuck = 0
 
     # ── Ballistic mode: keep an ordered list of cluster positions ──
     cluster_positions = [(cx, cy)]
@@ -939,6 +979,8 @@ def method_dla(out_dir: Path, seed: int, params=None):
     if growth_mode == "julia_field":
         # Build a Julia set as field influence
         c_re = -0.7 + t * 0.01
+        if anim_mode == "julia_drift":
+            c_re = -0.7 + 0.3 * math.sin(t * 0.2)
         c_im = 0.270
         yy_f, xx_f = np.ogrid[:H, :W]
         zx = (xx_f - cx) / (W * 0.35)
@@ -958,20 +1000,20 @@ def method_dla(out_dir: Path, seed: int, params=None):
         if growth_mode == "surface":
             # Spawn from a random point on the current surface
             if cluster_positions:
-                sp_idx = random.randint(0, len(cluster_positions) - 1)
+                sp_idx = py_rng.randint(0, len(cluster_positions) - 1)
                 spx, spy = cluster_positions[sp_idx]
-                angle = random.uniform(0, 2 * math.pi)
+                angle = py_rng.uniform(0, 2 * math.pi)
                 r_ = max_radius + spawn_offset * 0.5
                 px = spx + int(r_ * math.cos(angle))
                 py = spy + int(r_ * math.sin(angle))
             else:
-                angle = random.uniform(0, 2 * math.pi)
+                angle = py_rng.uniform(0, 2 * math.pi)
                 r_ = max_radius + spawn_offset
                 px = cx + int(r_ * math.cos(angle))
                 py = cy + int(r_ * math.sin(angle))
         else:
             # Uniform spawn on circle
-            angle = random.uniform(0, 2 * math.pi)
+            angle = py_rng.uniform(0, 2 * math.pi)
             r_ = max_radius + spawn_offset
             px = cx + int(r_ * math.cos(angle))
             py = cy + int(r_ * math.sin(angle))
@@ -979,9 +1021,9 @@ def method_dla(out_dir: Path, seed: int, params=None):
             if aniso_strength > 0:
                 if px > 0 and px < W and py > 0 and py < H:
                     bias_val = aniso_bias[py, px]
-                    if np.random.random() > 0.5 + bias_val * 0.3:
+                    if rng.random() > 0.5 + bias_val * 0.3:
                         # Re-roll toward bias direction
-                        angle = math.atan2(-math.sin(ang_rad), math.cos(ang_rad)) + random.uniform(-0.5, 0.5)
+                        angle = math.atan2(-math.sin(ang_rad), math.cos(ang_rad)) + py_rng.uniform(-0.5, 0.5)
                         px = cx + int(r_ * math.cos(angle))
                         py = cy + int(r_ * math.sin(angle))
 
@@ -992,9 +1034,8 @@ def method_dla(out_dir: Path, seed: int, params=None):
             continue  # spawned inside cluster, skip
 
         # ── Random walk ──
-        stuck_flag = False
         for step in range(max_steps):
-            d = random.choice(dirs)
+            d = py_rng.choice(dirs)
             px = max(0, min(W - 1, px + d[0]))
             py = max(0, min(H - 1, py + d[1]))
 
@@ -1015,7 +1056,7 @@ def method_dla(out_dir: Path, seed: int, params=None):
                     # Stick probability proportional to distance from center
                     dist = math.hypot(px - cx, py - cy)
                     stick_prob = min(1.0, dist / (max(H, W) * 0.3))
-                    if np.random.random() < stick_prob:
+                    if rng.random() < stick_prob:
                         grid[py, px] = True
                     else:
                         continue
@@ -1032,15 +1073,12 @@ def method_dla(out_dir: Path, seed: int, params=None):
                     max_radius = dist
                 if dist > max_grid_radius:
                     max_grid_radius = dist
-                    # Optional: expand grid search if needed (no-op for fixed size)
 
-                stuck_flag = True
-                stuck += 1
                 break
 
         # ── Capture ──
         if p_idx % cap_interval == 0:
-            capture_frame("36", _render_dla_preview(grid, age_grid, H, W))
+            capture_frame("36", _render_dla_preview(grid, age_grid, H, W, rng))
 
     # ══════════════════════════════════════════════════════
     #  FINAL RENDER
@@ -1049,16 +1087,16 @@ def method_dla(out_dir: Path, seed: int, params=None):
 
     # ── Background ──
     if bg_style == "dark":
-        noise = np.random.randint(0, 5, (H, W)).astype(np.float32) / 255.0
+        noise = rng.integers(0, 5, (H, W)).astype(np.float32) / 255.0
         img[:, :, 0] = 10 / 255.0 + noise * 0.02
         img[:, :, 1] = 10 / 255.0 + noise * 0.02
         img[:, :, 2] = 18 / 255.0 + noise * 0.03
     elif bg_style == "light":
-        noise = np.random.randint(0, 8, (H, W)).astype(np.float32) / 255.0
+        noise = rng.integers(0, 8, (H, W)).astype(np.float32) / 255.0
         img[:, :, :] = 0.85 + noise * 0.05
     else:  # gradient
         yy_bg = np.linspace(0, 0.1, H).reshape(H, 1)
-        noise = np.random.randint(0, 3, (H, W)).astype(np.float32) / 255.0
+        noise = rng.integers(0, 3, (H, W)).astype(np.float32) / 255.0
         img[:, :, 0] = yy_bg + noise * 0.01
         img[:, :, 1] = yy_bg * 0.8 + noise * 0.01
         img[:, :, 2] = yy_bg * 1.2 + noise * 0.01
@@ -1101,6 +1139,7 @@ def method_dla(out_dir: Path, seed: int, params=None):
             col = pal_arr_np[2 % n_pal]
             img[grid] = col.astype(np.float32) / 255.0
 
+    capture_frame("36", img)
     save(img, mn(36, "DLA"), out_dir)
 
 
