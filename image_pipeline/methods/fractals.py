@@ -1118,17 +1118,47 @@ def method_burning_ship(out_dir: Path, seed: int, params=None):
     "animation_mode": {"description": "animation: none, zoom, color_cycle, param_morph, float", "default": "none"},
     "anim_zoom_speed": {"description": "zoom speed factor", "min": 0.1, "max": 2.0, "default": 0.5},
     "anim_float_amplitude": {"description": "float amplitude for viewpoint drift", "min": 0.01, "max": 1.0, "default": 0.1},
-    "angle": {"description": "rotation angle in radians for viewpoint", "min": 0.0, "max": 6.28, "default": 0.0},
+    "time": {"description": "animation time in radians", "min": 0.0, "max": 6.28, "default": 0.0},
+    "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
 })
 def method_newton_fractal(out_dir: Path, seed: int, params=None):
+    """Render a Newton fractal — basins of attraction for polynomial roots.
+
+    Applies Newton's method to find roots of a complex polynomial across the
+    complex plane. Each pixel is colored by which root it converges to and how
+    many iterations it took. Supports 8 polynomials and 7 color modes.
+
+    Args:
+        out_dir: Output directory for the generated image.
+        seed: Random seed for deterministic output.
+        params: Dict with keys:
+            max_iter: max Newton iterations (10-200)
+            tol: root convergence tolerance (1e-12 to 1e-2)
+            viewpoint: complex plane range as "xmin,xmax,ymin,ymax"
+            polynomial: polynomial type (cubic/quartic/quintic/...)
+            color_mode: coloring method (root_index/smooth_iteration/gradient/...)
+            palette_name: palette name for palette mode
+            color_speed: color rotation speed (0.5-8.0)
+            color_offset: hue shift offset (0.0-6.28)
+            animation_mode: animation mode (none/zoom/color_cycle/param_morph/float)
+            anim_zoom_speed: zoom speed factor (0.1-2.0)
+            anim_float_amplitude: float amplitude for viewpoint drift (0.01-1.0)
+            time: animation time in radians (0-6.28)
+            anim_speed: animation speed multiplier (0.1-5.0)
+    """
     if params is None:
         params = {}
-    t = params.get("time", 0.0)
-    seed_all(seed + int(t * 100))
+    anim_time = float(params.get("time", 0.0))
+    anim_mode = str(params.get("animation_mode", "none"))
+    anim_speed = float(params.get("anim_speed", 1.0))
+    seed_all(seed)
 
     vp = params.get("viewpoint", "-2,2,-2,2")
-    parts = [float(p.strip()) for p in vp.split(",")]
-    x0, x1, y0, y1 = parts[0], parts[1], parts[2], parts[3]
+    try:
+        parts = [float(p.strip()) for p in vp.split(",")]
+        x0, x1, y0, y1 = parts[0], parts[1], parts[2], parts[3]
+    except (ValueError, IndexError):
+        x0, x1, y0, y1 = -2.0, 2.0, -2.0, 2.0
     max_iter = int(params.get("max_iter", 50))
     tol = float(params.get("tol", 1e-8))
     polynomial = str(params.get("polynomial", "cubic"))
@@ -1136,9 +1166,11 @@ def method_newton_fractal(out_dir: Path, seed: int, params=None):
     pal_name = str(params.get("palette_name", "magma"))
     c_speed = float(params.get("color_speed", 2.0))
     c_off = float(params.get("color_offset", 0.0))
-    anim_mode = str(params.get("animation_mode", "none"))
-    angle = float(params.get("angle", 0.0))
-    t = params.get("time", 0.0)
+
+    # ── Animation ──
+    t = anim_time * anim_speed
+    if anim_mode == "none":
+        t = 0.0
 
     # ── Roots and derivatives per polynomial ──
     roots_map = {
@@ -1348,6 +1380,7 @@ def method_newton_fractal(out_dir: Path, seed: int, params=None):
         hue_shift = (math.sin(t * 0.5) * 0.5 + 0.5) * 0.3
         result = np.roll(result * 255, int(hue_shift * 255), axis=-1) / 255.0
 
+    capture_frame("52", result)
     save(result, mn(52, "Newton Fractal"), out_dir)
 
 
