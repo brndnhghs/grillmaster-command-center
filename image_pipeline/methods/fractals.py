@@ -13,6 +13,13 @@ from ..core.registry import method
 from ..core.utils import save, norm, mn, seed_all, BLACK, W, H, PALETTES
 from ..core.animation import capture_frame
 
+# ── Optional libraries ──
+try:
+    import cv2
+    _has_cv2 = True
+except ImportError:
+    _has_cv2 = False
+
 
 # ── Preview helpers for animated captures ──
 
@@ -553,14 +560,47 @@ def method_buddhabrot(out_dir: Path, seed: int, params=None):
              "x_range": {"description": "fern x viewport as xmin,xmax", "default": "-4,4"},
              "y_range": {"description": "fern y viewport as ymin,ymax", "default": "-2,10"},
              "custom_ifs": {"description": "custom IFS as JSON: [[p,a,b,c,d,e,f],...]", "default": ""},
-             "time": {"description": "animation time", "min": 0.0, "max": 100.0, "default": 0.0},
+             "time": {"description": "animation time in radians", "min": 0.0, "max": 6.28, "default": 0.0},
+             "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
 def method_barnsley_fern(out_dir: Path, seed: int, params=None):
-    import cv2, json, math
+    """Render an IFS fractal fern (Barnsley Fern and variants).
+
+    Uses an iterated function system (IFS) to generate a fern-like fractal by
+    iteratively applying affine transforms to a point. Supports multiple IFS
+    types, layouts, color modes, and animation modes.
+
+    Args:
+        out_dir: Output directory for the generated image.
+        seed: Random seed for deterministic output.
+        params: Dict with keys:
+            particles: number of fern points (50000-500000)
+            density_increment: accumulation per hit (0.0001-0.01)
+            ifs_type: IFS system type (barnsley/cyclosorus/thelypteris/...)
+            color_mode: coloring method (simple/palette/frond_age/...)
+            palette: PALETTES name for palette mode
+            layout: arrangement (single/mirror/kaleidoscope/multi_fern/forest)
+            n_ferns: ferns in multi_fern/forest mode (2-20)
+            symmetry: kaleidoscope symmetry (3-8)
+            animation: animation type (none/growth_reveal/sway/color_cycle/param_morph)
+            sway_amount: wind sway amplitude (0.0-1.0)
+            color_r: R multiplier (0.0-3.0)
+            color_g: G multiplier (0.0-3.0)
+            color_b: B multiplier (0.0-3.0)
+            offset_g: G offset (0.0-1.0)
+            x_range: fern x viewport as "xmin,xmax"
+            y_range: fern y viewport as "ymin,ymax"
+            custom_ifs: custom IFS as JSON
+            time: animation time in radians (0-6.28)
+            anim_speed: animation speed multiplier (0.1-5.0)
+    """
     if params is None:
         params = {}
-    t_param = float(params.get("time", 0.0))
-    seed_all(seed + int(t_param * 100))
+    anim_time = float(params.get("time", 0.0))
+    animation = params.get("animation", "none")
+    anim_speed = float(params.get("anim_speed", 1.0))
+    seed_all(seed)
+    rng = random.Random(seed)
 
     # ── IFS definitions ──
     IFS_SYSTEMS = {
@@ -581,32 +621,47 @@ def method_barnsley_fern(out_dir: Path, seed: int, params=None):
     layout = params.get("layout", "single")
     n_ferns = int(params.get("n_ferns", 5))
     symmetry = int(params.get("symmetry", 4))
-    animation = params.get("animation", "none")
     sway_amount = float(params.get("sway_amount", 0.3))
     cr = float(params.get("color_r", 0.5))
     cg = float(params.get("color_g", 0.8))
     cb = float(params.get("color_b", 0.3))
     cg_off = float(params.get("offset_g", 0.1))
     custom_ifs_str = params.get("custom_ifs", "")
-    anim_time = float(params.get("time", 0.0))
-    xp = [float(v) for v in params.get("x_range", "-4,4").split(",")]
-    yp = [float(v) for v in params.get("y_range", "-2,10").split(",")]
-    xmin_f, xmax_f, ymin_f, ymax_f = xp[0], xp[1], yp[0], yp[1]
+
+    # ── Parse viewport ──
+    try:
+        xp = [float(v) for v in params.get("x_range", "-4,4").split(",")]
+        yp = [float(v) for v in params.get("y_range", "-2,10").split(",")]
+        xmin_f, xmax_f, ymin_f, ymax_f = xp[0], xp[1], yp[0], yp[1]
+    except (ValueError, IndexError):
+        xmin_f, xmax_f, ymin_f, ymax_f = -4.0, 4.0, -2.0, 10.0
     x_span, y_span = xmax_f - xmin_f, ymax_f - ymin_f
 
-    # Resolve IFS
-    if ifs_type == "custom" and custom_ifs_str:
-        ifs_system = json.loads(custom_ifs_str)
-    else:
-        ifs_system = IFS_SYSTEMS.get(ifs_type, IFS_SYSTEMS["barnsley"])
+    # ── Animation ──
+    t = anim_time * anim_speed
+    if animation == "none":
+        t = 0.0
+    growth_limit = int(n_particles * min(1.0, t / (2 * math.pi))) if animation == "growth_reveal" else n_particles
+
+    # ── Resolve IFS ──
+    try:
+        import json
+    except ImportError:
+        json = None
+    try:
+        if ifs_type == "custom" and custom_ifs_str:
+            ifs_system = json.loads(custom_ifs_str)
+        else:
+            ifs_system = IFS_SYSTEMS.get(ifs_type, IFS_SYSTEMS["barnsley"])
+    except (json.JSONDecodeError, TypeError):
+        ifs_system = IFS_SYSTEMS["barnsley"]
     from ..core.utils import PALETTES, quantize_to_palette
     pal = PALETTES.get(palette_name, None)
     cap_interval = max(1, n_particles // 60)
-    growth_limit = int(n_particles * min(1.0, anim_time / (2 * math.pi))) if animation == "growth_reveal" else n_particles
 
     # ── Helpers ──
     def pick_transform(ifs):
-        r = random.random()
+        r = rng.random()
         for row in ifs:
             if r <= row[0]:
                 return row
@@ -615,10 +670,10 @@ def method_barnsley_fern(out_dir: Path, seed: int, params=None):
     def apply_transform(tf, x, y):
         _, a, b, c, d, e, f = tf
         if animation == "param_morph":
-            m = math.sin(anim_time * 0.5)
+            m = math.sin(t * 0.5)
             a += 0.02 * m * (((tf[1] * 100) % 1) - 0.5)
             b += 0.02 * m * (((tf[2] * 100) % 1) - 0.5)
-        sway = sway_amount * math.sin(anim_time + y * 0.3) if animation == "sway" else 0.0
+        sway = sway_amount * math.sin(t + y * 0.3) if animation == "sway" else 0.0
         return a * x + b * y + e + sway, c * x + d * y + f
 
     def to_screen(x, y, xm=xmin_f, xs=x_span):
@@ -666,11 +721,16 @@ def method_barnsley_fern(out_dir: Path, seed: int, params=None):
                 capture_frame('50', preview(density))
 
     elif layout == "kaleidoscope":
-        iterate_single(ifs_system, growth_limit, density)
-        cx, cy = W // 2, H // 2
-        for k in range(1, symmetry):
-            M = cv2.getRotationMatrix2D((cx, cy), 360.0 * k / symmetry, 1.0)
-            density += cv2.warpAffine(density.copy(), M, (W, H), flags=cv2.INTER_LINEAR) * 0.8
+        if _has_cv2:
+            iterate_single(ifs_system, growth_limit, density)
+            cx, cy = W // 2, H // 2
+            for k in range(1, symmetry):
+                M = cv2.getRotationMatrix2D((cx, cy), 360.0 * k / symmetry, 1.0)
+                density += cv2.warpAffine(density.copy(), M, (W, H), flags=cv2.INTER_LINEAR) * 0.8
+        else:
+            iterate_single(ifs_system, growth_limit, density)
+            # Fallback: mirror instead of kaleidoscope when cv2 unavailable
+            density += np.fliplr(density) * 0.5
 
     elif layout == "multi_fern":
         colors = np.zeros((H, W, 3), dtype=np.float32)
@@ -684,8 +744,8 @@ def method_barnsley_fern(out_dir: Path, seed: int, params=None):
     elif layout == "forest":
         sub_n = growth_limit // n_ferns
         for fi in range(n_ferns):
-            x_off = random.uniform(-2, 2)
-            scale = random.uniform(0.6, 1.2)
+            x_off = rng.uniform(-2, 2)
+            scale = rng.uniform(0.6, 1.2)
             xm = xmin_f + x_off
             xs = (xmax_f - x_off) - (xmin_f - x_off)
             # Build scaled IFS
@@ -732,10 +792,11 @@ def method_barnsley_fern(out_dir: Path, seed: int, params=None):
 
     # ── Post-animation color effects ──
     if animation == "color_cycle":
-        hue = (math.sin(anim_time * 0.3) + 1) * 0.1
+        hue = (math.sin(t * 0.3) + 1) * 0.1
         result[:, :, 0] = np.clip(result[:, :, 0] + hue, 0, 1)
         result[:, :, 2] = np.clip(result[:, :, 2] - hue * 0.5, 0, 1)
 
+    capture_frame("50", result)
     save(result, mn(50, "Barnsley Fern"), out_dir)
 
 
