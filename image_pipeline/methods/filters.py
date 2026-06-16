@@ -1190,7 +1190,9 @@ def method_oil_paint(out_dir: Path, seed: int, params=None):
         "saturation": {"description": "color saturation", "min": 0.0, "max": 3.0, "default": 1.2},
         "vignette": {"description": "vignette strength (0=off)", "min": 0.0, "max": 1.0, "default": 0.0},
         "bloom": {"description": "bloom/glow strength (0=off)", "min": 0.0, "max": 1.0, "default": 0.0},
-        "time": {"description": "animation time (0.0-1.0)", "min": 0.0, "max": 1.0, "default": 0.0},
+        "time": {"description": "animation time in radians (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
+        "anim_mode": {"description": "animation mode", "choices": ["none", "exposure_pulse", "tint_cycle", "bloom_pulse"], "default": "none"},
+        "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
     },
 )
 def method_hdr(out_dir: Path, seed: int, params=None):
@@ -1198,29 +1200,83 @@ def method_hdr(out_dir: Path, seed: int, params=None):
 
     Generates high-dynamic-range imagery from noise or input sources using
     Reinhard/Drago/Mantiuk tonemapping, plus bleach bypass, glow, duotone,
-    and edge glow effects.
+    and edge glow effects. Animation modulates exposure, tint, or bloom.
+
+    Args:
+        out_dir: Output directory for the generated image.
+        seed: Random seed for deterministic output.
+        params: Dict with keys:
+            style: HDR style (reinhard/drago/mantiuk/bleach/glow/radiance/duotone/edge_glow)
+            source: source type (noise/gradient/input_image/palette/rainbow/procedural)
+            colormode: color mode (source/palette/heatmap/spectral/fire/ice/dual_layer)
+            palette: color palette name
+            gamma: Reinhard tonemap gamma (1.0-4.0)
+            exposure: exposure multiplier before tonemap (1.0-20.0)
+            blur_sigma: gaussian blur sigma for noise source (5-60)
+            noise_amp: noise amplitude (0.1-2.0)
+            tint_r: red channel tint multiplier (0.3-2.0)
+            tint_g: green channel tint multiplier (0.3-2.0)
+            tint_b: blue channel tint multiplier (0.3-2.0)
+            contrast: contrast boost (0.5-3.0)
+            saturation: color saturation (0.0-3.0)
+            vignette: vignette strength (0=off)
+            bloom: bloom/glow strength (0=off)
+            time: animation time in radians (0-6.28)
+            anim_mode: animation mode (none/exposure_pulse/tint_cycle/bloom_pulse)
+            anim_speed: animation speed multiplier (0.1-5.0)
     """
+    import cv2
     if params is None:
         params = {}
-    import cv2
+    anim_time = float(params.get("time", 0.0))
+    anim_mode = params.get("anim_mode", "none")
+    anim_speed = float(params.get("anim_speed", 1.0))
+    seed_all(seed)
+    rng = np.random.default_rng(seed)
+
+    # ── Matplotlib pre-import guard ──
+    try:
+        from matplotlib import cm
+        _has_mpl = True
+    except ImportError:
+        _has_mpl = False
 
     style = params.get("style", "reinhard")
     source = params.get("source", "noise")
     cmode = params.get("colormode", "source")
     pal_name = params.get("palette", "vapor")
     gamma = float(params.get("gamma", 2.2))
-    exposure = float(params.get("exposure", 5.0))
+    base_exposure = float(params.get("exposure", 5.0))
     blur_sigma = float(params.get("blur_sigma", 15))
     noise_amp = float(params.get("noise_amp", 0.5))
-    tint_r = float(params.get("tint_r", 1.2))
-    tint_g = float(params.get("tint_g", 1.0))
-    tint_b = float(params.get("tint_b", 0.9))
+    base_tint_r = float(params.get("tint_r", 1.2))
+    base_tint_g = float(params.get("tint_g", 1.0))
+    base_tint_b = float(params.get("tint_b", 0.9))
     contrast = float(params.get("contrast", 1.0))
     saturation = float(params.get("saturation", 1.2))
     vignette = float(params.get("vignette", 0.0))
-    bloom = float(params.get("bloom", 0.0))
-    t = float(params.get("time", 0.0)) * 2 * math.pi
-    from ..core.utils import PALETTES
+    base_bloom = float(params.get("bloom", 0.0))
+
+    # ── Animation ──
+    t = anim_time * anim_speed
+    if anim_mode == "exposure_pulse":
+        exposure = base_exposure * (0.3 + 0.7 * abs(math.sin(t * 0.3)))
+        tint_r, tint_g, tint_b = base_tint_r, base_tint_g, base_tint_b
+        bloom = base_bloom
+    elif anim_mode == "tint_cycle":
+        exposure = base_exposure
+        tint_r = base_tint_r * (0.5 + 0.5 * abs(math.sin(t * 0.4)))
+        tint_g = base_tint_g * (0.5 + 0.5 * abs(math.sin(t * 0.5 + 1.0)))
+        tint_b = base_tint_b * (0.5 + 0.5 * abs(math.sin(t * 0.6 + 2.0)))
+        bloom = base_bloom
+    elif anim_mode == "bloom_pulse":
+        exposure = base_exposure
+        tint_r, tint_g, tint_b = base_tint_r, base_tint_g, base_tint_b
+        bloom = base_bloom * (0.3 + 0.7 * abs(math.sin(t * 0.3)))
+    else:
+        exposure = base_exposure
+        tint_r, tint_g, tint_b = base_tint_r, base_tint_g, base_tint_b
+        bloom = base_bloom
 
     # ── Generate source image ──
     def _make_source():
@@ -1228,9 +1284,7 @@ def method_hdr(out_dir: Path, seed: int, params=None):
             from ..core.utils import load_input
             return load_input(params["input_image"])
         elif source == "noise":
-            # Use t to seed per-frame so time-based animation produces evolving noise
-            seed_all(seed + int(t * 100))
-            n = np.random.randn(H, W, 3).astype(np.float32) * noise_amp + 0.5
+            n = rng.standard_normal((H, W, 3)).astype(np.float32) * noise_amp + 0.5
             n = cv2.GaussianBlur(n, (0, 0), sigmaX=blur_sigma, sigmaY=blur_sigma)
             return norm(n)
         elif source == "gradient":
@@ -1239,7 +1293,10 @@ def method_hdr(out_dir: Path, seed: int, params=None):
             g = norm(r)
             return np.stack([g, g * 0.7, 1 - g], axis=-1).clip(0, 1)
         elif source == "palette":
-            pal = PALETTES.get(pal_name, PALETTES["vapor"])
+            try:
+                pal = PALETTES.get(pal_name, list(PALETTES.values())[0])
+            except (IndexError, KeyError):
+                pal = [(80, 60, 40), (200, 180, 160)]
             yy, xx = np.mgrid[:H, :W].astype(np.float32)
             r = np.sqrt((xx - W/2)**2 + (yy - H/2)**2)
             g = norm(r)
@@ -1257,15 +1314,12 @@ def method_hdr(out_dir: Path, seed: int, params=None):
                 np.sin(hue + 4.189) * 0.5 + 0.5
             ], axis=-1).astype(np.float32)
         elif source == "procedural":
-            seed_all(seed + int(t * 100))
             yy, xx = np.mgrid[:H, :W].astype(np.float32)
             g = np.sin(xx * 0.03 + yy * 0.02 + t * 0.5) * \
                 np.cos(xx * 0.02 - yy * 0.03 + t * 0.3) * 0.5 + 0.5
             return np.stack([g, g * 0.6, 1 - g * 0.8], axis=-1).astype(np.float32)
         else:
-            # Use t to seed per-frame so time-based animation produces evolving noise
-            seed_all(seed + int(t * 100))
-            n = np.random.randn(H, W, 3).astype(np.float32) * noise_amp + 0.5
+            n = rng.standard_normal((H, W, 3)).astype(np.float32) * noise_amp + 0.5
             n = cv2.GaussianBlur(n, (0, 0), sigmaX=blur_sigma, sigmaY=blur_sigma)
             return norm(n)
 
@@ -1361,17 +1415,18 @@ def method_hdr(out_dir: Path, seed: int, params=None):
 
     # ── Color mode post-processing ──
     if cmode == "palette":
-        pal = PALETTES.get(pal_name, PALETTES["vapor"])
+        try:
+            pal = PALETTES.get(pal_name, list(PALETTES.values())[0])
+        except (IndexError, KeyError):
+            pal = [(80, 60, 40), (200, 180, 160)]
         gray = np.mean(result, axis=-1)
         idx = (norm(gray) * (len(pal) - 1)).astype(np.int32)
         pal_arr = np.array(pal, dtype=np.float32) / 255.0
         result = pal_arr[idx]
-    elif cmode == "heatmap":
-        from matplotlib import cm
+    elif cmode == "heatmap" and _has_mpl:
         gray = np.mean(result, axis=-1)
         result = cm.inferno(norm(gray))[:, :, :3].astype(np.float32)
-    elif cmode == "spectral":
-        from matplotlib import cm
+    elif cmode == "spectral" and _has_mpl:
         gray = np.mean(result, axis=-1)
         result = cm.nipy_spectral(norm(gray))[:, :, :3].astype(np.float32)
     elif cmode == "fire":
@@ -1380,8 +1435,7 @@ def method_hdr(out_dir: Path, seed: int, params=None):
     elif cmode == "ice":
         gray = norm(np.mean(result, axis=-1))
         result = np.stack([gray * 0.2, gray * 0.5, 0.5 + gray * 0.5], axis=-1).astype(np.float32)
-    elif cmode == "dual_layer":
-        from matplotlib import cm
+    elif cmode == "dual_layer" and _has_mpl:
         gray = norm(np.mean(result, axis=-1))
         hi = gray > 0.5
         lo = gray <= 0.5
