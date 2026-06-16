@@ -2460,45 +2460,78 @@ def method_chaos_game(out_dir: Path, seed: int, params=None):
         "water_level": {"description": "water fill height (0=none, 1=full)", "min": 0.0, "max": 1.0, "default": 0.0},
         "light_angle": {"description": "sunlight angle in degrees for shaded mode", "min": 0, "max": 360, "default": 45},
         "erosion": {"description": "thermal erosion intensity (0=none)", "min": 0, "max": 1, "default": 0},
-        "time": {"description": "animation time param (0-2π)", "default": None},
+        "time": {"description": "animation time param (0-2π)", "min": 0.0, "max": 6.28, "default": 0.0},
+        "anim_mode": {"description": "animation mode", "choices": ["none", "animate"], "default": "none"},
+        "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
     },
 )
 def method_plasma(out_dir: Path, seed: int, params=None):
+    """Generate a terrain heightmap using diamond-square plasma fractal.
+
+    Uses the diamond-square algorithm with fBm octaves to generate realistic
+    terrain heightmaps. Supports multiple terrain modes (height, island,
+    craters, fault, thermal) and coloring modes (height, slope, shaded,
+    contour). Animation modulates roughness and erosion over time.
+
+    Args:
+        out_dir: Output directory for the generated image.
+        seed: Random seed for deterministic output.
+        params: Dict with keys:
+            size: plasma grid size, power of 2 (64-1024)
+            roughness: initial roughness amplitude (0.05-2.0)
+            roughness_decay: roughness multiplier per step (0.1-0.9)
+            octaves: fBm octaves for detail layering (1-6)
+            terrain: terrain mode (height/island/craters/fault/thermal)
+            color_mode: coloring (height/slope/shaded/contour)
+            palette: PALETTES name for terrain coloring
+            water_level: water fill height (0=none, 1=full)
+            light_angle: sunlight angle in degrees for shaded mode (0-360)
+            erosion: thermal erosion intensity (0=none)
+            time: animation time in radians (0-6.28)
+            anim_mode: animation mode (none/animate)
+            anim_speed: animation speed multiplier (0.1-5.0)
+    """
     import cv2
     if params is None:
         params = {}
-    anim_time = params.get("time", 0.0)
-    seed_all(seed + int(anim_time * 100))
+    anim_time = float(params.get("time", 0.0))
+    anim_mode = params.get("anim_mode", "none")
+    anim_speed = float(params.get("anim_speed", 1.0))
+    seed_all(seed)
+    rng = np.random.default_rng(seed)
     from ..core.utils import PALETTES
 
-    size = params.get("size", 512)
-    roughness = params.get("roughness", 0.5)
-    r_decay = params.get("roughness_decay", 0.5)
+    size = int(params.get("size", 512))
+    base_roughness = float(params.get("roughness", 0.5))
+    r_decay = float(params.get("roughness_decay", 0.5))
     octaves = max(1, min(6, int(params.get("octaves", 3))))
     terrain_mode = params.get("terrain", "height")
     color_mode = params.get("color_mode", "height")
     palette_name = params.get("palette", "cool")
-    water_level = max(0.0, min(1.0, params.get("water_level", 0.0)))
-    light_angle = params.get("light_angle", 45)
-    erosion = max(0.0, min(1.0, params.get("erosion", 0.0)))
+    water_level = max(0.0, min(1.0, float(params.get("water_level", 0.0))))
+    light_angle = float(params.get("light_angle", 45))
+    base_erosion = max(0.0, min(1.0, float(params.get("erosion", 0.0))))
 
     pal = PALETTES.get(palette_name, [(80, 60, 40)])
     n_pal = len(pal)
 
     # --- Time-based animation ---
-    t = anim_time
-    t_norm = (math.sin(t) + 1) / 2
-    roughness = 0.2 + 1.8 * abs(math.sin(t * 0.5))
-    erosion = 0.2 + 0.8 * abs(math.sin(t * 0.7))
+    t = anim_time * anim_speed
+    if anim_mode == "animate":
+        roughness = 0.2 + 1.8 * abs(math.sin(t * 0.5))
+        erosion = 0.2 + 0.8 * abs(math.sin(t * 0.7))
+    else:
+        roughness = base_roughness
+        erosion = base_erosion
 
     # --- Diamond-square algorithm ---
     def diamond_square(sz, rough, rough_decay):
         """Generate heightmap using diamond-square. Returns (sz+1)x(sz+1) float32."""
         h = np.zeros((sz + 1, sz + 1), dtype=np.float32)
-        h[0, 0] = np.random.rand() * 2 - 1
-        h[0, sz] = np.random.rand() * 2 - 1
-        h[sz, 0] = np.random.rand() * 2 - 1
-        h[sz, sz] = np.random.rand() * 2 - 1
+        h[0, 0] = rng.random() * 2 - 1
+        h[0, sz] = rng.random() * 2 - 1
+        h[sz, 0] = rng.random() * 2 - 1
+        h[sz, sz] = rng.random() * 2 - 1
         step = sz
         while step > 1:
             half = step // 2
@@ -2506,7 +2539,7 @@ def method_plasma(out_dir: Path, seed: int, params=None):
             for y in range(0, sz, step):
                 for x in range(0, sz, step):
                     avg = (h[y, x] + h[y, x + step] + h[y + step, x] + h[y + step, x + step]) / 4
-                    h[y + half, x + half] = avg + (np.random.rand() * 2 - 1) * rough
+                    h[y + half, x + half] = avg + (rng.random() * 2 - 1) * rough
             # Square step
             for y in range(0, sz + 1, half):
                 for x in range((y + half) % step, sz + 1, step):
@@ -2516,7 +2549,7 @@ def method_plasma(out_dir: Path, seed: int, params=None):
                         if 0 <= ny <= sz and 0 <= nx <= sz:
                             s += h[ny, nx]
                             n += 1
-                    h[y, x] = s / n + (np.random.rand() * 2 - 1) * rough
+                    h[y, x] = s / n + (rng.random() * 2 - 1) * rough
             step //= 2
             rough *= rough_decay
         return h
@@ -2550,18 +2583,18 @@ def method_plasma(out_dir: Path, seed: int, params=None):
 
     elif terrain_mode == "craters":
         # Multiple impact depressions
-        rng = random.Random(seed)
-        for _ in range(rng.randint(3, 8)):
-            cx2 = rng.randint(size // 4, 3 * size // 4)
-            cy2 = rng.randint(size // 4, 3 * size // 4)
-            crater_r = rng.randint(20, 80)
+        crater_rng = random.Random(seed)
+        for _ in range(crater_rng.randint(3, 8)):
+            cx2 = crater_rng.randint(size // 4, 3 * size // 4)
+            cy2 = crater_rng.randint(size // 4, 3 * size // 4)
+            crater_r = crater_rng.randint(20, 80)
             dist = np.sqrt((xx - cx2) ** 2 + (yy - cy2) ** 2)
             crater = np.exp(-(dist ** 2) / (2 * (crater_r * 0.3) ** 2))
-            height = height - crater * 0.3 * rng.uniform(0.5, 1.5)
+            height = height - crater * 0.3 * crater_rng.uniform(0.5, 1.5)
 
     elif terrain_mode == "fault":
         # Tectonic fault line
-        fault_y = size // 2 + np.random.randn() * size * 0.1
+        fault_y = size // 2 + rng.standard_normal() * size * 0.1
         side = (yy > fault_y).astype(float)
         height = height + side * 0.2 - 0.1
 
