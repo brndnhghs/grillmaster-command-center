@@ -1814,19 +1814,61 @@ def method_data_bending(out_dir: Path, seed: int, params=None):
         "tint_g": {"description": "green channel tint", "min": 0.3, "max": 3.0, "default": 1.0},
         "tint_b": {"description": "blue channel tint", "min": 0.2, "max": 2.0, "default": 0.8},
         "feedback_decay": {"description": "feedback decay rate (0-1)", "min": 0.1, "max": 0.99, "default": 0.6},
-        "animation_mode": {"description": "animation: none, drift, phase_scroll, amplitude_mod, wave_morph, bounce", "default": "none"},
+        "anim_mode": {"description": "animation: none, drift, phase_scroll, amplitude_mod, wave_morph, bounce", "default": "none"},
         "anim_speed": {"description": "animation speed factor", "min": 0.1, "max": 3.0, "default": 1.0},
+        "time": {"description": "animation time in radians", "min": 0.0, "max": 6.28, "default": 0.0},
     },
 )
 def method_slitscan(out_dir: Path, seed: int, params=None):
+    """Render Slit Scan — displacement-based image distortion effect.
+
+    Generates a source image (noise, gradient, palette, etc.) then applies
+    a slit-scan displacement effect along various axes (vertical, horizontal,
+    radial, spiral, etc.) with configurable waveform, amplitude, and style.
+    Animation modulates phase, amplitude, frequency, or waveform.
+
+    Args:
+        out_dir: Output directory for the generated image.
+        seed: Random seed for deterministic output.
+        params: Dict with keys:
+            slit_type: slit direction
+            source: slit content type
+            waveform: displacement waveform
+            amplitude: slit shift amplitude
+            frequency: wave frequency
+            noise_amp: source noise amplitude
+            blur_sigma: source blur sigma
+            style: rendering style
+            color_mode: color method
+            palette_name: palette name
+            tint_r/g/b: channel tints
+            feedback_decay: feedback decay rate
+            anim_mode: animation mode
+            anim_speed: animation speed factor
+            time: animation time in radians
+    """
     if params is None:
         params = {}
-    t = params.get("time", 0.0)
-    seed_all(seed + int(t * 100))
+    anim_time = float(params.get("time", 0.0))
+    anim_mode = params.get("anim_mode", "none")
+    anim_speed = float(params.get("anim_speed", 1.0))
+    seed_all(seed)
+    rng = np.random.default_rng(seed)
 
-    import cv2
+    # ── Optional imports ──
+    try:
+        import cv2
+        _has_cv2 = True
+    except ImportError:
+        _has_cv2 = False
     from ..core.utils import load_input, PALETTES, quantize_to_palette
 
+    # ── Animation ──
+    t = anim_time * anim_speed
+    if anim_mode == "none":
+        t = 0.0
+
+    # ── Params ──
     slit_type = str(params.get("slit_type", "vertical"))
     source = str(params.get("source", "noise"))
     waveform = str(params.get("waveform", "sine"))
@@ -1841,8 +1883,6 @@ def method_slitscan(out_dir: Path, seed: int, params=None):
     tint_g = float(params.get("tint_g", 1.0))
     tint_b = float(params.get("tint_b", 0.8))
     feedback_decay = float(params.get("feedback_decay", 0.6))
-    anim_mode = str(params.get("animation_mode", "none"))
-    anim_speed = float(params.get("anim_speed", 1.0))
 
     # ── Generate source content ──
     if source == "input_image" and params.get('input_image'):
@@ -1855,13 +1895,14 @@ def method_slitscan(out_dir: Path, seed: int, params=None):
     elif source == "palette":
         pal = PALETTES.get(pal_name, PALETTES.get("vapor", [(0,0,0),(255,255,255)]))
         pal_arr = np.array(pal, dtype=np.uint8)
-        noise = np.random.rand(H, W).astype(np.float32)
-        noise = cv2.GaussianBlur(noise, (0, 0), sigmaX=blur_sigma, sigmaY=blur_sigma)
+        noise = rng.random((H, W)).astype(np.float32)
+        if _has_cv2:
+            noise = cv2.GaussianBlur(noise, (0, 0), sigmaX=blur_sigma, sigmaY=blur_sigma)
         noise = norm(noise)
         idx = (noise * (len(pal_arr) - 1)).astype(np.int32)
         src_img = pal_arr[idx].reshape(H, W, 3).astype(np.float32) / 255.0
     elif source == "random_color":
-        src_img = np.random.rand(H, W, 3).astype(np.float32)
+        src_img = rng.random((H, W, 3)).astype(np.float32)
     elif source == "rainbow":
         x = np.linspace(0, 1, W, dtype=np.float32)
         y = np.linspace(0, 1, H, dtype=np.float32)
@@ -1874,8 +1915,9 @@ def method_slitscan(out_dir: Path, seed: int, params=None):
         ], axis=-1)
     else:
         # Default: colored noise
-        noise = np.random.randn(H, W, 3).astype(np.float32) * noise_amp + 0.5
-        noise = cv2.GaussianBlur(noise, (0, 0), sigmaX=blur_sigma, sigmaY=blur_sigma)
+        noise = rng.standard_normal((H, W, 3)).astype(np.float32) * noise_amp + 0.5
+        if _has_cv2:
+            noise = cv2.GaussianBlur(noise, (0, 0), sigmaX=blur_sigma, sigmaY=blur_sigma)
         src_img = norm(noise)
 
     # ── Waveform functions ──
@@ -1892,16 +1934,18 @@ def method_slitscan(out_dir: Path, seed: int, params=None):
             s = np.sin(x * freq + phase)
             return np.where(np.abs(s) > 0.7, amp, 0.0)
         elif waveform == "random":
-            np.random.seed(int(x[0]) if x.ndim == 1 else 0)
-            return np.random.uniform(-amp, amp, size=x.shape if x.ndim == 1 else (H,))
+            return rng.uniform(-amp, amp, size=x.shape if x.ndim == 1 else (H,))
         elif waveform == "fractal_noise":
-            raw = np.random.randn(H if x.ndim > 1 else len(x)).astype(np.float32)
-            raw = cv2.GaussianBlur(raw, (0, 0), sigmaX=20, sigmaY=20)
+            raw = rng.standard_normal(H if x.ndim > 1 else len(x)).astype(np.float32)
+            if _has_cv2:
+                raw = cv2.GaussianBlur(raw, (0, 0), sigmaX=20, sigmaY=20)
             return norm(raw) * amp * 2 - amp
         elif waveform == "smooth_random":
-            raw = np.random.randn(H if x.ndim > 1 else len(x)).astype(np.float32)
-            raw = cv2.GaussianBlur(raw, (0, 0), sigmaX=10, sigmaY=10)
-            return raw / raw.max() * amp if raw.max() > 0 else np.zeros_like(raw) * amp
+            raw = rng.standard_normal(H if x.ndim > 1 else len(x)).astype(np.float32)
+            if _has_cv2:
+                raw = cv2.GaussianBlur(raw, (0, 0), sigmaX=10, sigmaY=10)
+            mx = raw.max()
+            return raw / mx * amp if mx > 0 else np.zeros_like(raw) * amp
         return np.sin(x * freq + phase) * amp
 
     # ── Animation phase ──
@@ -2019,13 +2063,13 @@ def method_slitscan(out_dir: Path, seed: int, params=None):
         dists = np.sqrt((xx - cx)**2 + (yy - cy)**2)
         angles = np.arctan2(yy - cy, xx - cx)
         order = np.argsort(dists.ravel() + angles.ravel() * 0.01)  # loose spiral
-        prev = result.ravel()[order[:1]]
+        prev = result.ravel()[order[0] * 3:order[0] * 3 + 3].copy()
         if len(order) > 1:
             for i, idx in enumerate(order[1:], 1):
                 phase = phase_offset + i * 0.02 * anim_speed if anim_mode != "none" else 0.0
                 shift = int(get_wave(np.array([i]), frequency, float(amplitude), phase)[0])
-                rolled = np.roll(prev, shift)
-                result.ravel()[idx] = rolled
+                rolled = np.roll(prev, shift, axis=0)
+                result.ravel()[idx * 3:idx * 3 + 3] = rolled
                 prev = rolled
 
     elif slit_type == "angular":
@@ -2044,10 +2088,11 @@ def method_slitscan(out_dir: Path, seed: int, params=None):
             shift = int(get_wave(np.array([i]), frequency, float(amplitude), phase)[0])
             cur_slice = result[mask].copy()
             if prev_slice is not None:
-                rolled = np.roll(prev_slice[:len(cur_slice)], shift, axis=0)
-                for c in range(3):
-                    if len(rolled) > 0:
-                        result[mask, c] = rolled[:, c] if rolled.ndim > 1 else rolled[..., c if rolled.ndim == 1 else None]
+                n_cur = len(cur_slice)
+                n_prev = len(prev_slice)
+                n_use = min(n_cur, n_prev)
+                rolled = np.roll(prev_slice[:n_use], shift, axis=0)
+                result[mask][:n_use] = rolled
             prev_slice = cur_slice
 
     elif slit_type == "double":
