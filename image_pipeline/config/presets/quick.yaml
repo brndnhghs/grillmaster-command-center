@@ -1,0 +1,3 @@
+# Quick test preset — run a few fast representative methods
+methods: "01,05,07,11,13,17,29,33,34,50,60,66,68"
+composite: "mosaic"

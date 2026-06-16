@@ -1,0 +1,102 @@
+# Method groups for image-pipeline v2 CLI
+# Used with: python -m image_pipeline.pipeline --group <name>
+
+# Built-in groups are auto-generated from method tags:
+#   "fast"  → all methods without "slow" or "ml" or "gpu" tags
+#   "slow"  → methods tagged "slow"
+#   "ml"    → methods tagged "ml" or "gpu"
+
+# Category-based groups (auto-discovered):
+groups:
+  fractals:
+    - "07"   # Mandelbrot
+    - "49"   # Buddhabrot
+    - "50"   # Barnsley Fern
+    - "51"   # Burning Ship
+    - "52"   # Newton Fractal
+    - "66"   # Julia
+    - "69"   # Lyapunov
+    - "70"   # Fractal Flame
+    - "71"   # Chaos Game
+    - "31"   # Plasma Fractal
+    - "67"   # Sierpinski Carpet
+    - "72"   # Pythagorean Tree
+    - "19"   # L-System
+
+  simulations:
+    - "34"   # Boids
+    - "35"   # Flow Field
+    - "36"   # DLA
+    - "32"   # Reaction-Diffusion
+    - "53"   # Metaballs
+    - "55"   # Sandpile
+    - "79"   # Random Walk
+    - "20"   # Particle System
+
+  filters:
+    - "17"   # Glitch
+    - "13"   # Dithering
+    - "40"   # Pixel Sort
+    - "41"   # Oil Paint
+    - "42"   # Fake HDR
+    - "59"   # Data Bending
+    - "57"   # Slit Scan
+    - "64"   # Edge Halftone
+    - "74"   # Swirl Displacement
+    - "80"   # Pixel Mosaic
+    - "63"   # Cross Stitch
+
+  codegen:
+    - "01"   # ASCII
+    - "02"   # Pixel Art
+    - "06"   # SVG
+    - "09"   # QR Code
+    - "11"   # Gradient
+    - "12"   # Kaleidoscope
+    - "29"   # Voronoi
+    - "10"   # Color Palette
+    - "14"   # Geometric
+    - "18"   # Cellular
+    - "39"   # Posterize
+    - "77"   # False Color IR
+
+  patterns:
+    - "33"   # Truchet
+    - "58"   # Quasicrystal
+    - "60"   # Moiré
+    - "61"   # Worley Noise
+    - "75"   # Wallpaper
+    - "68"   # Phyllotaxis
+    - "05"   # Procedural Noise
+
+  math_art:
+    - "54"   # Ulam Spiral
+    - "56"   # Maze
+    - "73"   # Low Poly
+    - "76"   # Binary Counter
+    - "78"   # Circle Packing
+    - "30"   # Strange Attractor
+    - "62"   # Chaotic Map (Hénon)
+    - "65"   # Waveform
+    - "48"   # FFT Art
+    - "37"   # Contour Lines
+    - "43"   # Density Heatmap
+    - "38"   # Stereogram
+    - "03"   # Matplotlib Gen
+    - "16"   # Data Viz Art
+
+  cli_tools:
+    - "22"   # ffmpeg
+    - "23"   # ImageMagick
+    - "24"   # pyfiglet
+    - "25"   # boxes
+    - "26"   # cowsay
+    - "27"   # qrencode
+    - "44"   # img2txt
+    - "45"   # Graphviz
+    - "46"   # IM Plasma
+    - "47"   # Chafa
+
+  ml_models:
+    - "21"   # SD1.5
+    - "28"   # ComfyUI
