@@ -537,29 +537,79 @@ def method_img2txt(out_dir: Path, seed: int, params=None):
             "edge_color": {"description": "edge line hex color", "default": "#4a3a2a"},
             "edge_len": {"description": "edge length factor", "min": 0.5, "max": 10.0, "default": 1.5},
             "dpi": {"description": "output DPI", "min": 36, "max": 300, "default": 72},
+            "time": {"description": "animation time in radians (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
+            "anim_mode": {"description": "animation mode", "choices": ["none", "edge_morph", "color_cycle"], "default": "none"},
+            "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
         })
 def method_graphviz(out_dir: Path, seed: int, params=None):
-    seed_all(seed)
+    """Generate a graph visualization using Graphviz dot.
+
+    Creates a random graph with N nodes and random edges, renders it via
+    the Graphviz `dot` CLI tool, and saves the result as a PNG. Falls back
+    to a dark placeholder if dot is unavailable. Animation modulates edge
+    density or cycles node colors.
+
+    Args:
+        out_dir: Output directory for the generated image.
+        seed: Random seed for deterministic output.
+        params: Dict with keys:
+            node_count: number of graph nodes (10-200)
+            edge_density: edge multiplier (1-10)
+            layout: Graphviz layout engine (neato/dot/fdp/sfdp/twopi/circo)
+            bg_color: graph background hex color
+            node_fill: default node fill hex color
+            node_font_color: node label font hex color
+            node_border: node border hex color
+            node_font_size: node label font size (4-24)
+            edge_color: edge line hex color
+            edge_len: edge length factor (0.5-10)
+            dpi: output DPI (36-300)
+            time: animation time in radians (0-6.28)
+            anim_mode: animation mode (none/edge_morph/color_cycle)
+            anim_speed: animation speed multiplier (0.1-5.0)
+    """
     if params is None:
         params = {}
-    n_nodes = params.get("node_count", 40)
-    edge_density = params.get("edge_density", 2)
+    anim_time = float(params.get("time", 0.0))
+    anim_mode = params.get("anim_mode", "none")
+    anim_speed = float(params.get("anim_speed", 1.0))
+    seed_all(seed)
+    rng = random.Random(seed)
+
+    n_nodes = int(params.get("node_count", 40))
+    base_edge_density = int(params.get("edge_density", 2))
     layout = params.get("layout", "neato")
     bg_color = params.get("bg_color", "#0a0a12")
     node_fill = params.get("node_fill", "#2a2a32")
     node_font_color = params.get("node_font_color", "#8a7a6a")
     node_border = params.get("node_border", "#4a4a5a")
-    node_font_size = params.get("node_font_size", 8)
+    node_font_size = int(params.get("node_font_size", 8))
     edge_color = params.get("edge_color", "#4a3a2a")
-    edge_len = params.get("edge_len", 1.5)
-    dpi = params.get("dpi", 72)
-    r = subprocess.run(["which", "dot"], capture_output=True, text=True)
-    if r.returncode != 0:
-        try:
-            subprocess.run(["brew", "install", "graphviz"], capture_output=True, text=True, timeout=120)
-        except Exception:
-            save(np.ones((H, W, 3), dtype=np.float32) * 0.05, mn(45, "Graphviz"), out_dir)
-            return
+    edge_len = float(params.get("edge_len", 1.5))
+    dpi = int(params.get("dpi", 72))
+
+    # ── Animation ──
+    t = anim_time * anim_speed
+    if anim_mode == "edge_morph":
+        edge_density = max(1, int(base_edge_density * (0.5 + 0.5 * abs(math.sin(t * 0.3)))))
+    elif anim_mode == "color_cycle":
+        edge_density = base_edge_density
+        # Cycle through hue for node colors
+        hue_shift = (t * 0.1) % 1.0
+    else:
+        edge_density = base_edge_density
+        hue_shift = 0.0
+
+    # ── Check for dot binary ──
+    try:
+        subprocess.run(["dot", "--version"], capture_output=True, timeout=5)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        fallback = np.ones((H, W, 3), dtype=np.float32) * 0.05
+        capture_frame("45", fallback)
+        save(fallback, mn(45, "Graphviz"), out_dir)
+        return
+
+    # ── Build DOT graph ──
     dot_lines = [
         "graph G {",
         f"  layout={layout};",
@@ -568,30 +618,47 @@ def method_graphviz(out_dir: Path, seed: int, params=None):
         f'  edge [color="{edge_color}", len={edge_len}];',
     ]
     for i in range(n_nodes):
-        r_c = random.randint(20, 60)
-        g_c = random.randint(20, 50)
-        b_c = random.randint(30, 60)
+        if anim_mode == "color_cycle":
+            hue = (i / n_nodes + hue_shift) % 1.0
+            r_c = int(255 * (0.5 + 0.5 * math.sin(hue * 2 * math.pi)))
+            g_c = int(255 * (0.5 + 0.5 * math.sin(hue * 2 * math.pi + 2.094)))
+            b_c = int(255 * (0.5 + 0.5 * math.sin(hue * 2 * math.pi + 4.189)))
+        else:
+            r_c = rng.randint(20, 60)
+            g_c = rng.randint(20, 50)
+            b_c = rng.randint(30, 60)
         dot_lines.append(f'  n{i} [fillcolor="#{r_c:02x}{g_c:02x}{b_c:02x}", label=""];')
     for _ in range(n_nodes * edge_density):
-        a = random.randint(0, n_nodes - 1)
-        b_node = random.randint(0, n_nodes - 1)
+        a = rng.randint(0, n_nodes - 1)
+        b_node = rng.randint(0, n_nodes - 1)
         if a != b_node:
             dot_lines.append(f"  n{a} -- n{b_node};")
     dot_lines.append("}")
     dot_content = "\n".join(dot_lines)
+
+    # ── Render via dot ──
     try:
         result = subprocess.run(
             ["dot", "-Tpng", f"-Gsize={W / dpi},{H / dpi}", f"-Gdpi={dpi}"],
             input=dot_content.encode(), capture_output=True, timeout=30,
         )
         if result.returncode == 0:
-            img = Image.open(BytesIO(result.stdout)).convert("RGB")
-            img = img.resize((W, H), Image.LANCZOS)
-            save(img, mn(45, "Graphviz"), out_dir)
-            return
+            try:
+                img = Image.open(BytesIO(result.stdout)).convert("RGB")
+                img = img.resize((W, H), Image.LANCZOS)
+                arr = np.array(img, dtype=np.float32) / 255.0
+                capture_frame("45", arr)
+                save(img, mn(45, "Graphviz"), out_dir)
+                return
+            except Exception:
+                pass
     except (FileNotFoundError, Exception):
         pass
-    save(np.ones((H, W, 3), dtype=np.float32) * 0.05, mn(45, "Graphviz"), out_dir)
+
+    # ── Fallback ──
+    fallback = np.ones((H, W, 3), dtype=np.float32) * 0.05
+    capture_frame("45", fallback)
+    save(fallback, mn(45, "Graphviz"), out_dir)
 
 
 @method(id="46", name="ImageMagick Plasma", category="cli_tools", tags=["imagemagick", "expanded"],
