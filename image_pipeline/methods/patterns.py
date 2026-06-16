@@ -323,7 +323,7 @@ def method_quasicrystal(out_dir: Path, seed: int, params=None):
     """
     if params is None:
         params = {}
-    t = float(params.get("time", 0.0)) * 2 * math.pi
+    t = float(params.get("time", 0.0))
     seed_all(seed)
     yy, xx = np.mgrid[:H, :W].astype(np.float32)
     cx, cy = W / 2.0, H / 2.0
