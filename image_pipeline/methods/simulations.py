@@ -2299,26 +2299,64 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
              "palette": {"description": "PALETTES name", "default": ""},
              "algorithm": {"description": "topple algorithm", "choices": ["classic", "extended", "manna", "singularity"], "default": "classic"},
              "extended_range": {"description": "extended topple range (cells)", "min": 1, "max": 5, "default": 2},
-             "animation_mode": {"description": "animation mode", "choices": ["none", "topple_wave", "grain_drop", "topple_spark"], "default": "none"},
-             "time": {"description": "animation time", "min": 0.0, "max": 100.0, "default": 0.0},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "topple_wave", "topple_spark"], "default": "none"},
+             "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
+             "time": {"description": "animation time in radians", "min": 0.0, "max": 6.28, "default": 0.0},
          })
 def method_sandpile(out_dir: Path, seed: int, params=None):
-    import cv2
+    """Render Sandpile — cellular automaton simulation of sand grain toppling.
+
+    Drops grains on a grid according to a pattern, then iteratively topples
+    cells that exceed the threshold, distributing grains to neighbors. Supports
+    4 algorithms and 6 color modes. Animation captures intermediate topple
+    states (topple_wave, topple_spark).
+
+    Args:
+        out_dir: Output directory for the generated image.
+        seed: Random seed for deterministic output.
+        params: Dict with keys:
+            grains: sand grains (50000-1000000)
+            threshold: topple threshold (3-8)
+            drop_pattern: grain placement pattern
+            n_drops: num drops for multi_drop
+            color_mode: coloring scheme
+            palette: PALETTES name
+            algorithm: topple algorithm
+            extended_range: extended topple range (cells)
+            anim_mode: animation mode (none/topple_wave/topple_spark)
+            anim_speed: animation speed multiplier
+            time: animation time in radians
+    """
+    if params is None:
+        params = {}
+    anim_time = float(params.get("time", 0.0))
+    anim_mode = params.get("anim_mode", "none")
+    anim_speed = float(params.get("anim_speed", 1.0))
     seed_all(seed)
-    if params is None: params = {}
-    n_grains = params.get("grains", 200000)
-    threshold = params.get("threshold", 4)
+    rng = random.Random(seed)
+
+    # ── Optional imports ──
+    try:
+        import cv2
+        _has_cv2 = True
+    except ImportError:
+        _has_cv2 = False
+    from ..core.utils import PALETTES, quantize_to_palette
+
+    # ── Animation ──
+    t = anim_time * anim_speed
+    if anim_mode == "none":
+        t = 0.0
+
+    # ── Params ──
+    n_grains = int(params.get("grains", 200000))
+    threshold = int(params.get("threshold", 4))
     drop = params.get("drop_pattern", "center")
-    n_drops = params.get("n_drops", 10)
+    n_drops = int(params.get("n_drops", 10))
     cm = params.get("color_mode", "classic")
     pal_name = params.get("palette", "")
     algo = params.get("algorithm", "classic")
-    ext_r = params.get("extended_range", 2)
-    anim = params.get("animation_mode", "none")
-    t = params.get("time", 0.0)
-    from ..core.utils import PALETTES, quantize_to_palette
-    # Use t to seed per-frame so time-based animation produces evolving grain placements
-    seed_all(seed + int(t * 100))
+    ext_r = int(params.get("extended_range", 2))
     pal = PALETTES.get(pal_name, [])
 
     size = min(W, H)
@@ -2330,8 +2368,8 @@ def method_sandpile(out_dir: Path, seed: int, params=None):
         grid[size // 2, size // 2] = n_grains
     elif drop == "multi_drop":
         for _ in range(n_drops):
-            x = random.randint(0, size - 1)
-            y = random.randint(0, size - 1)
+            x = rng.randint(0, size - 1)
+            y = rng.randint(0, size - 1)
             grid[y, x] += n_grains // n_drops
     elif drop == "line":
         y = size // 2
@@ -2409,7 +2447,7 @@ def method_sandpile(out_dir: Path, seed: int, params=None):
             result = np.zeros((size, size, 3), dtype=np.uint8)
             for v in range(5):
                 result[g == v] = classic_colors[min(v, 4)]
-        result = cv2.resize(result.astype(np.float32) / 255.0, (W, H), interpolation=cv2.INTER_NEAREST)
+        result = cv2.resize(result.astype(np.float32) / 255.0, (W, H), interpolation=cv2.INTER_NEAREST) if _has_cv2 else np.kron(result.astype(np.float32) / 255.0, np.ones((H // size + 1, W // size + 1, 1)))[:H, :W]
         if pal_name and pal_name in PALETTES:
             result = quantize_to_palette(result.clip(0, 1), pal_name)
         return result
@@ -2439,7 +2477,7 @@ def method_sandpile(out_dir: Path, seed: int, params=None):
                 # Distribute remainder to random neighbors
                 for y, x in zip(*np.where(topple)):
                     for _ in range(remainder):
-                        dy, dx = random.choice([(-1,0),(1,0),(0,-1),(0,1)])
+                        dy, dx = rng.choice([(-1,0),(1,0),(0,-1),(0,1)])
                         ny, nx = y + dy, x + dx
                         if 0 <= ny < size and 0 <= nx < size:
                             grid[ny, nx] += 1
@@ -2469,7 +2507,7 @@ def method_sandpile(out_dir: Path, seed: int, params=None):
             grid[topple] -= threshold
             for y, x in zip(*np.where(topple)):
                 dirs = [(-1, 0), (1, 0), (0, -1), (0, 1)]
-                random.shuffle(dirs)
+                rng.shuffle(dirs)
                 for dy, dx in dirs:
                     ny, nx = y + dy, x + dx
                     if 0 <= ny < size and 0 <= nx < size:
@@ -2495,14 +2533,14 @@ def method_sandpile(out_dir: Path, seed: int, params=None):
                 grid[shifted] += 1
 
         # ── Animation ──
-        if anim != "none":
-            if anim == "topple_wave":
+        if anim_mode != "none":
+            if anim_mode == "topple_wave":
                 # Color by topple iteration (wave propagation)
                 rendered = render_grid(grid, topple_count)
-            elif anim == "topple_spark":
+            elif anim_mode == "topple_spark":
                 rendered = render_grid(grid, topple_count)
                 # Add bright sparks where toppling
-                if np.any(topple):
+                if _has_cv2 and np.any(topple):
                     y_idx, x_idx = np.where(topple)
                     for i in range(min(10, len(y_idx))):
                         sy = int(y_idx[i] * H / size)
