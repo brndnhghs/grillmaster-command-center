@@ -35,7 +35,7 @@ def _render_wave_preview(result, h, w, r2=2.0):
     "bg_color": {"description": "background color (dark/light/transparent/gradient)", "default": "dark"},
     "anim_mode": {"description": "animation mode: none, tile_morph, size_wave, gap_pulse", "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},
-    "time": {"description": "animation time (0.0-1.0 for phase shift)", "min": 0.0, "max": 1.0, "default": 0.0},
+    "time": {"description": "animation time (0.0-6.28 for phase shift)", "min": 0.0, "max": 6.28, "default": 0.0},
 })
 def method_truchet(out_dir: Path, seed: int, params=None):
     """Render Truchet tiling patterns with multiple tile types and color modes.
@@ -45,9 +45,9 @@ def method_truchet(out_dir: Path, seed: int, params=None):
     """
     if params is None:
         params = {}
-    raw_t = float(params.get("time", 0.0))
-    t = raw_t  # pipeline already gives 0→2π
+    t = float(params.get("time", 0.0))  # pipeline already gives 0→2π
     seed_all(seed)  # fixed seed — animate via continuous param oscillation
+    rng = random.Random(seed)
 
     tile_type = params.get("tile_type", "arcs")
     tile_size = int(params.get("tile_size", 40))
@@ -60,6 +60,14 @@ def method_truchet(out_dir: Path, seed: int, params=None):
     bg_style = params.get("bg_color", "dark")
     anim_mode = params.get("anim_mode", "none")
     anim_speed = float(params.get("anim_speed", 0.25))
+
+    # ── Matplotlib import (with fallback) ──
+    try:
+        from matplotlib import cm
+        _has_mpl = True
+    except ImportError:
+        _has_mpl = False
+
     from ..core.utils import PALETTES
 
     # ── Animation: operate on tile grid parameters ──
@@ -127,13 +135,17 @@ def method_truchet(out_dir: Path, seed: int, params=None):
                 g = int(30 + 150 * (1 - val))
                 b = int(80 + 100 * val)
             elif cmode == "heatmap":
-                from matplotlib import cm
-                c = cm.inferno(val)
-                r, g, b = int(c[0]*255), int(c[1]*255), int(c[2]*255)
+                if _has_mpl:
+                    c = cm.inferno(val)
+                    r, g, b = int(c[0]*255), int(c[1]*255), int(c[2]*255)
+                else:
+                    r, g, b = int(50 + 200 * val), int(30 + 150 * (1 - val)), int(80 + 100 * val)
             elif cmode == "spectral":
-                from matplotlib import cm
-                c = cm.nipy_spectral(val)
-                r, g, b = int(c[0]*255), int(c[1]*255), int(c[2]*255)
+                if _has_mpl:
+                    c = cm.nipy_spectral(val)
+                    r, g, b = int(c[0]*255), int(c[1]*255), int(c[2]*255)
+                else:
+                    r, g, b = int(50 + 200 * val), int(30 + 150 * (1 - val)), int(80 + 100 * val)
             elif cmode == "fire":
                 r = int(255 * val)
                 g = int(100 * val)
@@ -143,9 +155,11 @@ def method_truchet(out_dir: Path, seed: int, params=None):
                 g = int(100 * val)
                 b = int(200 * val)
             elif cmode == "dual_layer":
-                from matplotlib import cm
-                c = cm.viridis(val) if val < 0.5 else cm.inferno(val)
-                r, g, b = int(c[0]*255), int(c[1]*255), int(c[2]*255)
+                if _has_mpl:
+                    c = cm.viridis(val) if val < 0.5 else cm.inferno(val)
+                    r, g, b = int(c[0]*255), int(c[1]*255), int(c[2]*255)
+                else:
+                    r, g, b = int(50 + 200 * val), int(30 + 150 * (1 - val)), int(80 + 100 * val)
             return (r, g, b)
         return (200, 150, 100)
 
