@@ -11,8 +11,14 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
 from ..core.registry import method
-from ..core.utils import save, norm, mn, seed_all, BLACK, W, H
+from ..core.utils import save, norm, mn, seed_all, BLACK, W, H, PALETTES, quantize_to_palette, load_input
 from ..core.animation import capture_frame
+
+try:
+    import cv2
+    _has_cv2 = True
+except ImportError:
+    _has_cv2 = False
 
 
 @method(
@@ -228,6 +234,26 @@ def method_glitch(out_dir: Path, seed: int, params=None):
     },
 )
 def method_dither(out_dir: Path, seed: int, params=None):
+    """Dither an image using various algorithms (Floyd-Steinberg, Bayer, Atkinson, etc.).
+
+    Generates a procedural noise source (or uses input image) and applies
+    ordered dither, error diffusion, or random dither. Supports multi-tone
+    quantization and palette mapping.
+
+    Params:
+        algorithm: dither algorithm (fs, atkinson, stucki, sierra, jarvis,
+                   bayer2, bayer4, bayer8, random, cluster3, cluster4)
+        levels: output levels per channel (2=binary, 3-8=multi-tone)
+        palette: quantize output to named palette (none=grayscale)
+        serpentine: alternate scan direction each row (error diffusion only)
+        input_as_source: use input image as source instead of noise
+        noise_type: source noise (sine, perlin, perlin_color, voronoi, plasma)
+        contrast: source contrast boost (0.5-3.0)
+        error_scale: error diffusion strength (0=no dither, 1=full)
+        time: animation time (0-2pi)
+        anim_mode: animation mode (none, error_reveal)
+        anim_speed: animation speed multiplier
+    """
     if params is None:
         params = {}
     t = float(params.get("time", 0.0))
@@ -241,8 +267,6 @@ def method_dither(out_dir: Path, seed: int, params=None):
     noise_type = params.get("noise_type", "perlin")
     contrast = params.get("contrast", 1.0)
     error_scale = float(params.get("error_scale", 1.0))
-    from ..core.utils import PALETTES, quantize_to_palette
-    import cv2
 
     # --- Animation: error reveal ---
     # Sweep error_scale from 0→1 so the dither progressively appears
@@ -302,7 +326,6 @@ def method_dither(out_dir: Path, seed: int, params=None):
             b8 = np.zeros((8, 8))
             for r in range(4):
                 for c in range(4):
-                    b8[r*2:c*2, r+1] = 0
                     v = b4[r, c]
                     b8[r*2, c*2] = v * 4 + 0
                     b8[r*2, c*2+1] = v * 4 + 2
@@ -416,7 +439,7 @@ def method_dither(out_dir: Path, seed: int, params=None):
         a = np.stack([binary / 255.0] * 3, axis=2)
 
     elif algorithm == "random":
-        rng = random.Random(seed + 999)
+        rng = random.Random(seed)
         noise_map = np.array([[rng.random() for _ in range(W)] for _ in range(H)])
         binary = (source > noise_map).astype(np.uint8)
         a = np.stack([binary / 255.0] * 3, axis=2)
