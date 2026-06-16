@@ -1816,47 +1816,112 @@ def method_fourier_circles(out_dir: Path, seed: int, params=None):
          params={"chart_type":{"description":"chart type","choices":["bar","scatter","line","pie","histogram"],"default":"bar"},
                  "n_points":{"description":"data points","min":5,"max":50,"default":10},
                  "color":{"description":"color hex","default":"#3366FF"},
-                 "title":{"description":"chart title","default":"Data Viz"}})
+                 "title":{"description":"chart title","default":"Data Viz"},
+                 "time": {"description": "animation time in radians (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
+                 "anim_mode": {"description": "animation mode", "choices": ["none", "data_shuffle", "bar_rise", "pie_spin"], "default": "none"},
+                 "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0}})
 def method_dataviz(out_dir: Path, seed: int, params=None):
-    import cv2; seed_all(seed)
-    if params is None: params = {}
-    ct = params.get("chart_type","bar"); n_pts = params.get("n_points",10)
-    col_hex = params.get("color","#3366FF"); title = params.get("title","Data Viz")
-    col = tuple(int(col_hex[i:i+2],16)/255.0 for i in (1,3,5))
-    img = np.ones((H,W,3),dtype=np.float32)*0.95
-    data = np.random.rand(n_pts)*0.8+0.1
-    margin = 60; chart_w = W-2*margin; chart_h = H-2*margin
-    if ct=="bar":
-        bw = chart_w//n_pts
-        for i,v in enumerate(data):
-            bh = int(v*chart_h)
-            x0 = margin+i*bw; y0 = H-margin-bh
-            cv2.rectangle(img,(x0,y0),(x0+bw-2,H-margin),col,-1)
-    elif ct=="scatter":
-        for i,v in enumerate(data):
-            x = margin+int(i*chart_w/(n_pts-1))
-            y = H-margin-int(v*chart_h)
-            cv2.circle(img,(x,y),4,col,-1)
-    elif ct=="line":
+    """Generate a data visualization chart (bar, scatter, line, pie, histogram).
+
+    Creates a clean chart with random data points. Supports 5 chart types
+    with customizable color and title. Animation modes shuffle data, animate
+    bar rise, or spin pie charts.
+
+    Args:
+        out_dir: Output directory for the generated image.
+        seed: Random seed for deterministic output.
+        params: Dict with keys:
+            chart_type: chart type (bar/scatter/line/pie/histogram)
+            n_points: data points (5-50)
+            color: color hex string (e.g. '#3366FF')
+            title: chart title
+            time: animation time in radians (0-6.28)
+            anim_mode: animation mode (none/data_shuffle/bar_rise/pie_spin)
+            anim_speed: animation speed multiplier (0.1-5.0)
+    """
+    import cv2
+    if params is None:
+        params = {}
+    anim_time = float(params.get("time", 0.0))
+    anim_mode = params.get("anim_mode", "none")
+    anim_speed = float(params.get("anim_speed", 1.0))
+    seed_all(seed)
+    rng = np.random.default_rng(seed)
+
+    ct = params.get("chart_type", "bar")
+    n_pts = int(params.get("n_points", 10))
+    col_hex = params.get("color", "#3366FF")
+    title = params.get("title", "Data Viz")
+
+    try:
+        col = tuple(int(col_hex[i:i+2], 16) / 255.0 for i in (1, 3, 5))
+    except (ValueError, IndexError):
+        col = (0.2, 0.4, 1.0)
+
+    # ── Animation ──
+    t = anim_time * anim_speed
+    data = rng.random(n_pts) * 0.8 + 0.1
+
+    if anim_mode == "data_shuffle":
+        # Reorder data based on t
+        order = np.argsort(np.sin(np.arange(n_pts) + t * 2))
+        data = data[order]
+    elif anim_mode == "bar_rise":
+        # Scale bar heights by t
+        data = data * (0.2 + 0.8 * abs(math.sin(t * 0.5)))
+    elif anim_mode == "pie_spin":
+        pass  # Pie start angle modulated below
+    # else: none — use data as-is
+
+    img = np.ones((H, W, 3), dtype=np.float32) * 0.95
+    margin = 60
+    chart_w = W - 2 * margin
+    chart_h = H - 2 * margin
+
+    if ct == "bar":
+        bw = chart_w // n_pts
+        for i, v in enumerate(data):
+            bh = int(v * chart_h)
+            x0 = margin + i * bw
+            y0 = H - margin - bh
+            cv2.rectangle(img, (x0, y0), (x0 + bw - 2, H - margin), col, -1)
+    elif ct == "scatter":
+        for i, v in enumerate(data):
+            x = margin + int(i * chart_w / (n_pts - 1))
+            y = H - margin - int(v * chart_h)
+            cv2.circle(img, (x, y), 4, col, -1)
+    elif ct == "line":
         pts = []
-        for i,v in enumerate(data):
-            x = margin+int(i*chart_w/(n_pts-1))
-            y = H-margin-int(v*chart_h)
-            pts.append((x,y))
-        for i in range(len(pts)-1): cv2.line(img,pts[i],pts[i+1],col,2)
-    elif ct=="pie":
-        cx,cy = W//2,H//2; r = min(W,H)//3
-        total = data.sum(); start = 0
+        for i, v in enumerate(data):
+            x = margin + int(i * chart_w / (n_pts - 1))
+            y = H - margin - int(v * chart_h)
+            pts.append((x, y))
+        for i in range(len(pts) - 1):
+            cv2.line(img, pts[i], pts[i + 1], col, 2)
+    elif ct == "pie":
+        cx, cy = W // 2, H // 2
+        r = min(W, H) // 3
+        total = data.sum()
+        start = 0.0
+        if anim_mode == "pie_spin":
+            start = t * 30.0  # Rotate start angle
         for v in data:
-            ang = v/total*2*math.pi
-            cv2.ellipse(img,(cx,cy),(r,r),0,start*180/math.pi,(start+ang)*180/math.pi,col,-1)
+            ang = v / total * 2 * math.pi
+            cv2.ellipse(img, (cx, cy), (r, r), 0,
+                        (start * 180 / math.pi),
+                        ((start + ang) * 180 / math.pi),
+                        col, -1)
             start += ang
-    elif ct=="histogram":
-        bins = 10; bw = chart_w//bins
-        hist,_ = np.histogram(data,bins=bins,range=(0,1))
-        hist = hist/hist.max()
-        for i,v in enumerate(hist):
-            bh = int(v*chart_h)
-            x0 = margin+i*bw; y0 = H-margin-bh
-            cv2.rectangle(img,(x0,y0),(x0+bw-2,H-margin),col,-1)
-    save(img.clip(0,1), mn(38,"Dataviz"), out_dir)
+    elif ct == "histogram":
+        bins = 10
+        bw = chart_w // bins
+        hist, _ = np.histogram(data, bins=bins, range=(0, 1))
+        hist = hist / hist.max()
+        for i, v in enumerate(hist):
+            bh = int(v * chart_h)
+            x0 = margin + i * bw
+            y0 = H - margin - bh
+            cv2.rectangle(img, (x0, y0), (x0 + bw - 2, H - margin), col, -1)
+
+    capture_frame("38", img.clip(0, 1))
+    save(img.clip(0, 1), mn(38, "Dataviz"), out_dir)
