@@ -360,20 +360,34 @@ def method_cowsay(out_dir: Path, seed: int, params=None):
             "ecc_level": {"description": "QR error correction level (L/M/Q/H)", "default": "H"},
         })
 def method_qrencode(out_dir: Path, seed: int, params=None):
-    seed_all(seed)
+    """Generate a QR code using the qrencode CLI tool, with pure-Python fallback.
+
+    Uses the system `qrencode` binary for fast QR generation. Falls back to
+    the pure-Python QR code method (#09) if the CLI tool is unavailable.
+
+    Args:
+        out_dir: Output directory for the generated image.
+        seed: Random seed for deterministic output.
+        params: Dict with keys:
+            qr_data: QR code payload text (default: "ImagePipeline v2: method 27 (QR Code)")
+            module_size: QR module size in pixels, 1-20 (default: 8)
+            ecc_level: Error correction level, L/M/Q/H (default: "H")
+    """
     if params is None:
         params = {}
+    seed_all(seed)
     qr_data = params.get("qr_data", "ImagePipeline v2: method 27 (QR Code)")
-    module_size = params.get("module_size", 8)
+    module_size = int(params.get("module_size", 8))
     ecc_level = params.get("ecc_level", "H")
-    r = subprocess.run(["which", "qrencode"], capture_output=True, text=True)
-    if r.returncode != 0:
-        subprocess.run(["brew", "install", "qrencode"], capture_output=True)
-    subprocess.run(
-        ["qrencode", "-o", str(out_dir / mn(27, "qrencode")), "-s", str(module_size), "-l", ecc_level, qr_data],
-        capture_output=True, timeout=10,
-    )
+    try:
+        subprocess.run(
+            ["qrencode", "-o", str(out_dir / mn(27, "qrencode")), "-s", str(module_size), "-l", ecc_level, qr_data],
+            capture_output=True, timeout=10,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
     if (out_dir / mn(27, "qrencode")).exists():
+        capture_frame("27", out_dir / mn(27, "qrencode"))
         print(f"  ✓ {mn(27, 'qrencode')}  ({(out_dir / mn(27, 'qrencode')).stat().st_size // 1024} KB)")
     else:
         # Fall back to pure-Python QR
@@ -381,6 +395,7 @@ def method_qrencode(out_dir: Path, seed: int, params=None):
         method_qr(out_dir, seed)
         import shutil
         shutil.copy(str(out_dir / mn(9, "QR Code")), str(out_dir / mn(27, "qrencode")))
+        capture_frame("27", out_dir / mn(27, "qrencode"))
         print(f"  ✓ {mn(27, 'qrencode')} (fallback)")
 
 
