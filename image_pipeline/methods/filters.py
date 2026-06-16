@@ -526,23 +526,54 @@ def method_dither(out_dir: Path, seed: int, params=None):
         "step": {"description": "row/column sampling step", "min": 1, "max": 20, "default": 2},
         "color_mode": {"description": "coloring: source, palette, per_interval_hue, gradient, glitch_rgb, neon, inverted", "default": "source"},
         "palette_name": {"description": "palette name for palette mode", "default": "vapor"},
-        "color_speed": {"description": "color rotation speed", "min": 0.5, "max": 8.0, "default": 2.0},
-        "color_offset": {"description": "hue shift offset", "min": 0.0, "max": 6.28, "default": 0.0},
         "blur_sigma": {"description": "source blur sigma (noise mode)", "min": 3, "max": 60, "default": 15},
         "noise_amp": {"description": "source noise amplitude", "min": 0.1, "max": 2.0, "default": 0.5},
         "interval_jitter": {"description": "random interval start jitter (px)", "min": 0, "max": 20, "default": 0},
-        "animation_mode": {"description": "animation: none, drift, pulse, color_cycle, threshold_sweep, axis_rotate", "default": "none"},
-        "anim_speed": {"description": "animation speed", "min": 0.1, "max": 3.0, "default": 1.0},
+        "time": {"description": "animation time in radians (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
+        "anim_mode": {"description": "animation: none, drift, pulse, color_cycle, threshold_sweep, axis_rotate", "default": "none"},
+        "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
     },
 )
 def method_pixelsort(out_dir: Path, seed: int, params=None):
+    """Sort pixels along an axis based on a brightness/hue criterion.
+
+    Applies glitch-style pixel sorting to a generated or input source image.
+    Supports 8 sort axes, 8 sort criteria, 5 threshold modes, 7 color modes,
+    and 5 animation modes (drift, pulse, color_cycle, threshold_sweep,
+    axis_rotate).
+
+    Args:
+        out_dir: Output directory for the generated image.
+        seed: Random seed for deterministic output.
+        params: Dict with keys:
+            source: source type (noise/input_image/gradient/palette/rainbow/procedural)
+            sort_axis: sort direction (horizontal/vertical/diagonal/both/radial/angular/spiral/random)
+            threshold: brightness sort threshold (10-250)
+            threshold_mode: threshold mode (above/below/between/edge/random)
+            threshold_low: lower threshold for between mode (0-255)
+            sort_order: sort order (ascending/descending/reverse/random/alternate)
+            sort_criterion: sort by (brightness/hue/saturation/red/green/blue/luminance/random)
+            interval_length: min interval length to sort (2-100)
+            step: row/column sampling step (1-20)
+            color_mode: coloring (source/palette/per_interval_hue/gradient/glitch_rgb/neon/inverted)
+            palette_name: palette name for palette mode
+            blur_sigma: source blur sigma for noise mode (3-60)
+            noise_amp: source noise amplitude (0.1-2.0)
+            interval_jitter: random interval start jitter in px (0-20)
+            time: animation time in radians (0-6.28)
+            anim_mode: animation mode (none/drift/pulse/color_cycle/threshold_sweep/axis_rotate)
+            anim_speed: animation speed multiplier (0.1-5.0)
+    """
+    import cv2
     if params is None:
         params = {}
-    t = params.get("time", 0.0)
-    seed_all(seed + int(t * 100))
-
+    anim_time = float(params.get("time", 0.0))
+    anim_mode = params.get("anim_mode", "none")
+    anim_speed = float(params.get("anim_speed", 1.0))
+    seed_all(seed)
+    rng = np.random.default_rng(seed)
+    py_rng = random.Random(seed)
     from ..core.utils import load_input, PALETTES
-    import cv2
 
     source = str(params.get("source", "noise"))
     sort_axis = str(params.get("sort_axis", "horizontal"))
@@ -555,13 +586,23 @@ def method_pixelsort(out_dir: Path, seed: int, params=None):
     step = int(params.get("step", 2))
     color_mode = str(params.get("color_mode", "source"))
     pal_name = str(params.get("palette_name", "vapor"))
-    c_speed = float(params.get("color_speed", 2.0))
-    c_off = float(params.get("color_offset", 0.0))
     blur_sigma = float(params.get("blur_sigma", 15))
     noise_amp = float(params.get("noise_amp", 0.5))
     interval_jitter = int(params.get("interval_jitter", 0))
-    anim_mode = str(params.get("animation_mode", "none"))
-    anim_speed = float(params.get("anim_speed", 1.0))
+
+    # ── Animation ──
+    t = anim_time * anim_speed
+    if anim_mode == "threshold_sweep":
+        threshold = int(threshold * (0.5 + 0.5 * abs(math.sin(t * 0.3))))
+        threshold = max(10, min(250, threshold))
+    elif anim_mode == "axis_rotate":
+        axes = ["horizontal", "vertical", "diagonal", "both"]
+        sort_axis = axes[int(t * 0.5) % len(axes)]
+    elif anim_mode == "pulse":
+        interval_length = max(2, int(interval_length * (0.5 + 0.5 * abs(math.sin(t * 0.4)))))
+    elif anim_mode == "color_cycle":
+        pass  # Applied in apply_color_mode below
+    # else: none/drift — use params as-is
 
     # ── Palette ──
     pal_arr = None
@@ -579,7 +620,7 @@ def method_pixelsort(out_dir: Path, seed: int, params=None):
         xx, yy = np.meshgrid(x, y)
         base = (np.stack([xx, yy, 1.0 - xx * yy], axis=-1) * 255).astype(np.uint8)
     elif source == "palette" and pal_arr is not None:
-        noise = np.random.rand(H, W).astype(np.float32)
+        noise = rng.random((H, W)).astype(np.float32)
         noise = cv2.GaussianBlur(noise, (0, 0), sigmaX=blur_sigma, sigmaY=blur_sigma)
         noise = norm(noise)
         idx = (noise * (len(pal_arr) - 1)).astype(np.int32)
@@ -595,11 +636,11 @@ def method_pixelsort(out_dir: Path, seed: int, params=None):
             np.sin(hue * np.pi * 6 + 4.2) * 0.5 + 0.5,
         ], axis=-1) * 255).astype(np.uint8)
     elif source == "procedural":
-        noise = np.random.randn(H, W, 3).astype(np.float32) * noise_amp + 0.5
+        noise = rng.standard_normal((H, W, 3)).astype(np.float32) * noise_amp + 0.5
         noise = cv2.GaussianBlur(noise, (0, 0), sigmaX=blur_sigma, sigmaY=blur_sigma)
         base = (norm(noise) * 255).astype(np.uint8)
     else:
-        noise = np.random.randn(H, W, 3).astype(np.float32) * noise_amp + 0.5
+        noise = rng.standard_normal((H, W, 3)).astype(np.float32) * noise_amp + 0.5
         noise = cv2.GaussianBlur(noise, (0, 0), sigmaX=blur_sigma, sigmaY=blur_sigma)
         base = (norm(noise) * 255).astype(np.uint8)
 
@@ -630,18 +671,10 @@ def method_pixelsort(out_dir: Path, seed: int, params=None):
         elif sort_criterion == "luminance":
             return (arr[:, :, 0].astype(float) * 0.2126 + arr[:, :, 1].astype(float) * 0.7152 + arr[:, :, 2].astype(float) * 0.0722)
         elif sort_criterion == "random":
-            return np.random.rand(arr.shape[0], arr.shape[1]) * 255
+            return rng.random((arr.shape[0], arr.shape[1])) * 255
         return (arr[:, :, 0].astype(float) * 0.299 + arr[:, :, 1].astype(float) * 0.587 + arr[:, :, 2].astype(float) * 0.114)
 
     criterion = get_criterion(result)
-
-    # ── Animation ──
-    if anim_mode == "threshold_sweep":
-        threshold = int(threshold * (0.5 + 0.5 * math.sin(t * 0.3 * anim_speed)))
-        threshold = max(10, min(250, threshold))
-    elif anim_mode == "axis_rotate":
-        axes = ["horizontal", "vertical", "diagonal", "both"]
-        sort_axis = axes[int(t * 0.5 * anim_speed) % len(axes)]
 
     # ── Threshold check ──
     def passes_threshold(val):
@@ -654,7 +687,7 @@ def method_pixelsort(out_dir: Path, seed: int, params=None):
         elif threshold_mode == "edge":
             return abs(val - threshold) < 20
         elif threshold_mode == "random":
-            return np.random.rand() < 0.3
+            return rng.random() < 0.3
         return val > threshold
 
     # ── Sort a 1D interval ──
@@ -667,7 +700,7 @@ def method_pixelsort(out_dir: Path, seed: int, params=None):
         elif sort_order == "reverse":
             idx = np.arange(len(vals) - 1, -1, -1)
         elif sort_order == "random":
-            idx = np.random.permutation(len(vals))
+            idx = rng.permutation(len(vals))
         elif sort_order == "alternate":
             idx = np.argsort(vals)
             idx[::2] = idx[::2][::-1]
@@ -689,7 +722,6 @@ def method_pixelsort(out_dir: Path, seed: int, params=None):
             factor = (xx + yy) % 1.0
             return (arr.astype(float) * (0.5 + 0.5 * factor[:, :, np.newaxis])).astype(np.uint8)
         elif color_mode == "glitch_rgb":
-            # Shift color channels
             shift = int(t * 10) % 20 if anim_mode != "none" else 5
             arr2 = arr.copy()
             arr2[:, :, 0] = np.roll(arr[:, :, 0], shift, axis=1)
@@ -714,7 +746,7 @@ def method_pixelsort(out_dir: Path, seed: int, params=None):
             for x in range(W):
                 if not in_interval and passes_threshold(row_crit[x]):
                     in_interval = True
-                    start = x + (random.randint(-interval_jitter, interval_jitter) if interval_jitter > 0 else 0)
+                    start = x + (py_rng.randint(-interval_jitter, interval_jitter) if interval_jitter > 0 else 0)
                     start = max(0, min(W - 1, start))
                 elif in_interval and (not passes_threshold(row_crit[x]) or x == W - 1):
                     end = x if not passes_threshold(row_crit[x]) else x + 1
@@ -732,7 +764,7 @@ def method_pixelsort(out_dir: Path, seed: int, params=None):
             for y in range(H):
                 if not in_interval and passes_threshold(col_crit[y]):
                     in_interval = True
-                    start = y + (random.randint(-interval_jitter, interval_jitter) if interval_jitter > 0 else 0)
+                    start = y + (py_rng.randint(-interval_jitter, interval_jitter) if interval_jitter > 0 else 0)
                     start = max(0, min(H - 1, start))
                 elif in_interval and (not passes_threshold(col_crit[y]) or y == H - 1):
                     end = y if not passes_threshold(col_crit[y]) else y + 1
@@ -827,9 +859,9 @@ def method_pixelsort(out_dir: Path, seed: int, params=None):
     if sort_axis == "random":
         # Random intervals
         for _ in range(500):
-            y = random.randint(0, H - 1)
-            x = random.randint(0, W - 10)
-            length = random.randint(interval_length, 30)
+            y = py_rng.randint(0, H - 1)
+            x = py_rng.randint(0, W - 10)
+            length = py_rng.randint(interval_length, 30)
             end = min(W, x + length)
             if end - x > interval_length:
                 interval = result[y, x:end].copy()
@@ -839,13 +871,12 @@ def method_pixelsort(out_dir: Path, seed: int, params=None):
     # ── Apply color mode ──
     result = apply_color_mode(result)
 
-    capture_frame("40", np.clip(result.astype(np.float32) / 255.0, 0, 1))
-
-    # ── Drift animation ──
+    # ── Drift animation (applied before capture) ──
     if anim_mode == "drift":
-        shift = int(t * 20 * anim_speed) % W
+        shift = int(t * 20) % W
         result = np.roll(result, shift, axis=1)
 
+    capture_frame("40", np.clip(result.astype(np.float32) / 255.0, 0, 1))
     save(result, mn(40, "Pixel Sort"), out_dir)
 
 
