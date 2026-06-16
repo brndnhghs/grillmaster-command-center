@@ -1266,10 +1266,68 @@ def method_chaotic_map(out_dir: Path, seed: int, params=None):
 
     # ── Params ──
     mt = params.get("map_type", "henon")
-    a = float(params.get("a", 1.4))
-    b = float(params.get("b", 0.3))
-    c = float(params.get("c", 2.0))
-    d = float(params.get("d", 0.5))
+
+    # ── Per-map defaults ──
+    if mt == "henon":
+        a = float(params.get("a", 1.4))
+        b = float(params.get("b", 0.3))
+        c = float(params.get("c", 2.0))
+        d = float(params.get("d", 0.5))
+    elif mt == "logistic":
+        a = float(params.get("a", 3.8))
+        b = float(params.get("b", 0.3))
+        c = float(params.get("c", 2.0))
+        d = float(params.get("d", 0.5))
+    elif mt == "tinkerbell":
+        a = float(params.get("a", 0.9))
+        b = float(params.get("b", -0.6013))
+        c = float(params.get("c", 2.0))
+        d = float(params.get("d", 0.5))
+    elif mt == "gingerbreadman":
+        a = float(params.get("a", 1.4))
+        b = float(params.get("b", 0.3))
+        c = float(params.get("c", 2.0))
+        d = float(params.get("d", 0.5))
+    elif mt == "ikeda":
+        a = float(params.get("a", 1.4))
+        b = float(params.get("b", 0.3))
+        c = float(params.get("c", 0.9))
+        d = float(params.get("d", 0.5))
+    elif mt == "lorenz":
+        a = float(params.get("a", 1.4))
+        b = float(params.get("b", 0.3))
+        c = float(params.get("c", 2.0))
+        d = float(params.get("d", 0.5))
+    elif mt == "standard_map":
+        a = float(params.get("a", 1.0))
+        b = float(params.get("b", 0.3))
+        c = float(params.get("c", 2.0))
+        d = float(params.get("d", 0.5))
+    elif mt == "bakers_map":
+        a = float(params.get("a", 0.5))
+        b = float(params.get("b", 0.5))
+        c = float(params.get("c", 2.0))
+        d = float(params.get("d", 0.5))
+    elif mt == "arnold_cat":
+        a = float(params.get("a", 1.4))
+        b = float(params.get("b", 0.3))
+        c = float(params.get("c", 2.0))
+        d = float(params.get("d", 0.5))
+    elif mt == "duffing":
+        a = float(params.get("a", 0.2))
+        b = float(params.get("b", 0.3))
+        c = float(params.get("c", 2.0))
+        d = float(params.get("d", 0.5))
+    elif mt == "rossler":
+        a = float(params.get("a", 0.2))
+        b = float(params.get("b", 0.2))
+        c = float(params.get("c", 5.7))
+        d = float(params.get("d", 0.5))
+    else:
+        a = float(params.get("a", 1.4))
+        b = float(params.get("b", 0.3))
+        c = float(params.get("c", 2.0))
+        d = float(params.get("d", 0.5))
     n = int(params.get("n", 500000))
     di = float(params.get("density_inc", 0.002))
     style = params.get("style", "density")
@@ -1351,6 +1409,45 @@ def method_chaotic_map(out_dir: Path, seed: int, params=None):
             return (x + dx, y + dy, z + dz)
         return (x, y, z)
 
+    # ── Per-map coordinate scaling ──
+    if mt == "henon":
+        scale_x, scale_y = 1.5, 0.5
+        cx_shift, cy_shift = 0.0, 0.0
+    elif mt == "logistic":
+        scale_x, scale_y = 0.5, 0.5
+        cx_shift, cy_shift = -0.5, 0.0
+    elif mt == "tinkerbell":
+        scale_x, scale_y = 3.0, 3.0
+        cx_shift, cy_shift = 0.0, 0.0
+    elif mt == "gingerbreadman":
+        scale_x, scale_y = 0.5, 0.5
+        cx_shift, cy_shift = -1.0, -1.0
+        di = float(params.get("density_inc", 0.01))
+    elif mt == "ikeda":
+        scale_x, scale_y = 5.0, 5.0
+        cx_shift, cy_shift = 0.0, 0.0
+    elif mt == "lorenz":
+        scale_x, scale_y = 20.0, 20.0
+        cx_shift, cy_shift = 0.0, 0.0
+    elif mt == "standard_map":
+        scale_x, scale_y = math.pi, math.pi
+        cx_shift, cy_shift = 0.0, 0.0
+    elif mt == "bakers_map":
+        scale_x, scale_y = 1.0, 1.0
+        cx_shift, cy_shift = 0.0, 0.0
+    elif mt == "arnold_cat":
+        scale_x, scale_y = 0.5, 0.5
+        cx_shift, cy_shift = -0.5, -0.5
+    elif mt == "duffing":
+        scale_x, scale_y = 3.0, 3.0
+        cx_shift, cy_shift = 0.0, 0.0
+    elif mt == "rossler":
+        scale_x, scale_y = 20.0, 20.0
+        cx_shift, cy_shift = 0.0, 0.0
+    else:
+        scale_x, scale_y = 2.0, 2.0
+        cx_shift, cy_shift = 0.0, 0.0
+
     def ts(x, y, z):
         if mt == "lorenz":
             if effective_lproj == "xy":
@@ -1366,9 +1463,9 @@ def method_chaotic_map(out_dir: Path, seed: int, params=None):
         else:
             sx, sy = x, y
         # Clamp to valid range to prevent NaN/Inf crashes
-        sx = max(-2, min(2, sx))
-        sy = max(-2, min(2, sy))
-        return int((sx + 2) / 4 * W), int((sy + 2) / 4 * H)
+        sx = max(-scale_x * 2, min(scale_x * 2, sx))
+        sy = max(-scale_y * 2, min(scale_y * 2, sy))
+        return int(max(0, min(W - 1, ((sx + cx_shift) / scale_x + 1) / 2 * W))), int(max(0, min(H - 1, ((sy + cy_shift) / scale_y + 1) / 2 * H)))
 
     if style == "bifurcation":
         vals = np.linspace(bifmin, bifmax, W)
@@ -1384,14 +1481,25 @@ def method_chaotic_map(out_dir: Path, seed: int, params=None):
                 x, y, z = ms(x, y, z, mt, p["a"], p["b"], p["c"], p["d"], t)
                 if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(z)):
                     break
-                py = int(max(0, min(H - 1, (x + 2) / 4 * H)))
+                py = int(max(0, min(H - 1, (x / scale_x + 1) / 2 * H)))
                 if 0 <= py < H:
                     density[py, px] += di
     else:
         x = y = z = 0.5
-        for _ in range(1000):
-            x, y, z = ms(x, y, z, mt, effective_a, effective_b, effective_c, effective_d, t)
-            if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(z)):
+        # Retry warmup with different starting points if map diverges
+        for attempt in range(5):
+            x = y = z = 0.5 + attempt * 0.1
+            diverged = False
+            for _ in range(1000):
+                x, y, z = ms(x, y, z, mt, effective_a, effective_b, effective_c, effective_d, t)
+                # Clamp during warmup to prevent transient overflow
+                x = max(-1e6, min(1e6, x))
+                y = max(-1e6, min(1e6, y))
+                z = max(-1e6, min(1e6, z))
+                if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(z)):
+                    diverged = True
+                    break
+            if not diverged:
                 break
         trail = []
         for i in range(n):
