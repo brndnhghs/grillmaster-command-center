@@ -1,18 +1,15 @@
-"""
-Code-gen method — auto-split from codegen.py
-"""
+"""Code-gen method - auto-split from codegen.py"""
 from __future__ import annotations
 import colorsys
 import math
-import random
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, save, get_font, BLACK, W, H
+from ...core.utils import save, mn, seed_all, W, H
 from ...core.animation import capture_frame
 
 # --- 30 SVG Vector ---
@@ -24,17 +21,43 @@ from ...core.animation import capture_frame
              "stroke_width": {"description": "stroke width", "min": 1, "max": 10, "default": 2},
              "fill": {"description": "fill shapes with color", "default": True},
              "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "animate"], "default": "animate"},
+             "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
 def method_30_svg_vector(out_dir: Path, seed: int, params=None):
-    """Render geometric SVG patterns using xml.etree.ElementTree."""
+    """Render geometric SVG patterns using xml.etree.ElementTree.
+
+    Generates both an SVG file and a PNG raster for each of 5 geometric
+    patterns (grid, circles, stars, waves, mandala). All patterns animate
+    via structural parameters (position, size, rotation, phase) modulated
+    by the animation time.
+
+    Args:
+        out_dir: Output directory for the generated image.
+        seed: Random seed for deterministic output.
+        params: Dict with keys:
+            pattern: SVG pattern type (grid/circles/stars/waves/mandala)
+            stroke_width: stroke width in pixels (1-10)
+            fill: fill shapes with color
+            time: animation time in radians (0-6.28)
+            anim_mode: animation mode (none/animate)
+            anim_speed: animation speed multiplier (0.1-5.0)
+    """
     if params is None:
         params = {}
     t = float(params.get("time", 0.0))
+    anim_mode = params.get("anim_mode", "animate")
+    anim_speed = float(params.get("anim_speed", 1.0))
     seed_all(seed)
 
     pattern = params.get("pattern", "grid")
     stroke_width = int(params.get("stroke_width", 2))
     fill_enabled = params.get("fill", True)
+
+    if anim_mode == "none":
+        t = 0.0
+    else:
+        t = t * anim_speed
 
     svg = ET.Element("svg", {
         "xmlns": "http://www.w3.org/2000/svg",
@@ -150,9 +173,12 @@ def method_30_svg_vector(out_dir: Path, seed: int, params=None):
     svg_str = '<?xml version="1.0" encoding="utf-8"?>\n' + ET.tostring(svg, encoding="unicode")
     svg_path = out_dir / mn(30, f"svg-vector-{pattern}")
     svg_path = svg_path.with_suffix(".svg")
-    with open(svg_path, "w") as f:
-        f.write(svg_str)
-    print(f"  \u2713 {svg_path.name}")
+    try:
+        with open(svg_path, "w") as f:
+            f.write(svg_str)
+        print(f"  ✓ {svg_path.name}")
+    except OSError as e:
+        print(f"  ✗ SVG write failed: {e}")
 
     img = Image.new("RGB", (W, H), (10, 10, 18))
     draw = ImageDraw.Draw(img)
