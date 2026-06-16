@@ -2,17 +2,15 @@
 Code-gen method — auto-split from codegen.py
 """
 from __future__ import annotations
-import colorsys
 import math
 import random
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, save, get_font, BLACK, W, H
+from ...core.utils import save, mn, get_font, W, H
 from ...core.animation import capture_frame
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -35,7 +33,7 @@ from ...core.animation import capture_frame
              "spacing": {"description": "line spacing multiplier", "min": 0.5, "max": 3.0, "default": 1.2},
              "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
              "anim_mode": {"description": "animation mode", "choices": ["none", "typewriter", "scrolling", "fade_in", "bounce", "wave", "glitch"], "default": "none"},
-             "anim_speed": {"description": "animation speed multiplier", "min": 0.0, "max": 3.0, "default": 1.0},
+             "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
          })
 def method_15_typography(out_dir: Path, seed: int, params=None):
     """Render typography with 13+ source modes and animation support."""
@@ -51,6 +49,9 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
     alignment = params.get("alignment", "center")
     spacing = float(params.get("spacing", 1.2))
     anim_mode = params.get("anim_mode", "none")
+
+    # ── Deterministic RNG ──
+    rng = random.Random(seed)
 
     # ── Wire anim_mode to override source_mode ──
     if anim_mode == "scrolling":
@@ -169,7 +170,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
         while y < H:
             line = ""
             while True:
-                word = words[random.randint(0, len(words) - 1)]
+                word = words[rng.randint(0, len(words) - 1)]
                 test = line + (" " if line else "") + word
                 tw, _ = _get_text_size(font, test)
                 if tw < W - 20:
@@ -383,14 +384,14 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
         img = _make_base_image()
         draw = ImageDraw.Draw(img)
         # Bounce: vertical bounce animation
-        bounce_offset = int(abs(math.sin(t * 2 * anim_speed)) * 60)
+        bounce_offset = int(abs(math.sin(t * 0.75 * anim_speed)) * 60)
         lines = content.split("\n") if "\n" in content else [content]
         line_h = int(font_size * spacing)
         total_h = len(lines) * line_h
         base_y = (H - total_h) // 2
         for i, line in enumerate(lines):
             # Stagger bounce per line
-            phase = t * 2 * anim_speed + i * 0.7
+            phase = t * 0.75 * anim_speed + i * 0.7
             y_offset = int(abs(math.sin(phase)) * 40)
             _render_text(draw, line, base_y + i * line_h - y_offset, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
