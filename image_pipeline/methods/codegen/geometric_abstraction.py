@@ -2,17 +2,15 @@
 Code-gen method — auto-split from codegen.py
 """
 from __future__ import annotations
-import colorsys
 import math
 import random
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, save, get_font, BLACK, W, H
+from ...core.utils import save, norm, mn, get_font, BLACK, W, H
 from ...core.animation import capture_frame
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -30,8 +28,8 @@ from ...core.animation import capture_frame
              "rotation": {"description": "global rotation offset (degrees)", "min": 0.0, "max": 360.0, "default": 0.0},
              "translucent": {"description": "use translucent fills (RGBA)", "default": True},
              "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
-             "anim_mode": {"description": "animation mode", "choices": ["rotation", "layout_morph", "shape_morph", "color_morph"], "default": "rotation"},
-             "anim_speed": {"description": "animation speed multiplier", "min": 0.0, "max": 2.0, "default": 0.25},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "rotation", "layout_morph", "shape_morph", "color_morph"], "default": "rotation"},
+             "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 2.0, "default": 0.25},
          })
 def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
     """Render geometric abstraction with arranged shapes and animation support."""
@@ -150,10 +148,10 @@ def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
             f = h - int(h)
             p = v * (1 - s)
             q = v * (1 - f * s)
-            t2 = v * (1 - (1 - f) * s)
+            t_hsv = v * (1 - (1 - f) * s)
             rgb_map = {
-                0: (v, t2, p), 1: (q, v, p), 2: (p, v, t2),
-                3: (p, q, v), 4: (t2, p, v), 5: (v, p, q),
+                0: (v, t_hsv, p), 1: (q, v, p), 2: (p, v, t_hsv),
+                3: (p, q, v), 4: (t_hsv, p, v), 5: (v, p, q),
             }
             r, g, b = rgb_map[hi]
             r, g, b = int(r * 255), int(g * 255), int(b * 255)
