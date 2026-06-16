@@ -1,5 +1,0 @@
-@lru_cache(maxsize=None)
-    def _grad_table(seed_val: int, table_size: int = 256) -> np.ndarray:
-        rng = np.random.RandomState(seed_val & 0xFFFFFFFF)
-        angles = rng.uniform(0, 2 * np.pi, (table_size, table_size))
-        return np.stack([np.cos(angles), np.sin(angles)], axis=-1)  # (T,T,2)
