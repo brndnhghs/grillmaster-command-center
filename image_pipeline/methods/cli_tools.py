@@ -2,16 +2,15 @@
 CLI tool methods — ffmpeg, ImageMagick, Chafa, Graphviz, pyfiglet, etc.
 """
 from __future__ import annotations
-import random
+import shlex
 import subprocess
-from io import BytesIO
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw
 
 from ..core.registry import method
-from ..core.utils import save, norm, mn, seed_all, get_font, BLACK, W, H
+from ..core.utils import save, mn, seed_all, get_font, W, H, load_input
 from ..core.animation import capture_frame
 
 
@@ -24,23 +23,32 @@ from ..core.animation import capture_frame
             "font_path": {"description": "TTF font file path", "default": "/System/Library/Fonts/Helvetica.ttc"},
         })
 def method_ffmpeg(out_dir: Path, seed: int, params=None):
-    seed_all(seed)
+    """Generate a frame with ffmpeg drawtext filter, with PIL fallback.
+
+    Uses ffmpeg's drawtext filter to render text over a solid color or
+    input image. Falls back to PIL ImageDraw if ffmpeg is unavailable.
+
+    Params:
+        text: overlay text on frame
+        bg_color: background hex color
+        text_color: text hex color
+        font_size: text font size (12-120)
+        font_path: TTF font file path
+    """
     if params is None:
         params = {}
-    if params.get("input_image"):
-        from ..core.utils import load_input
-        img_arr = load_input(params["input_image"])
-        # use it
-        _input_img = Image.fromarray((img_arr * 255).astype(np.uint8))
-        _input_path = str(out_dir / "_ffmpeg_input.png")
-        _input_img.save(_input_path)
+    seed_all(seed)
     text = params.get("text", "ffmpeg Frame")
     bg_color = params.get("bg_color", "#0a0a12").lstrip("#")
     text_color = params.get("text_color", "#4a3a2a").lstrip("#")
-    font_size = params.get("font_size", 24)
+    font_size = int(params.get("font_size", 24))
     font_path = params.get("font_path", "/System/Library/Fonts/Helvetica.ttc")
     outpath = str(out_dir / mn(22, "ffmpeg Frame"))
     if params.get("input_image"):
+        img_arr = load_input(params["input_image"])
+        _input_img = Image.fromarray((img_arr * 255).astype(np.uint8))
+        _input_path = str(out_dir / "_ffmpeg_input.png")
+        _input_img.save(_input_path)
         cmd = [
             "ffmpeg", "-y",
             "-i", _input_path,
@@ -64,6 +72,7 @@ def method_ffmpeg(out_dir: Path, seed: int, params=None):
         draw = ImageDraw.Draw(img)
         tc = tuple(int(text_color[i:i+2], 16) for i in (0, 2, 4))
         draw.text((W // 2 - 120, H // 2 - 20), text, fill=tc, font=get_font(font_size, font_path))
+        capture_frame("22", np.array(img, dtype=np.float32) / 255.0)
         save(img, mn(22, "ffmpeg Frame"), out_dir)
 
 
