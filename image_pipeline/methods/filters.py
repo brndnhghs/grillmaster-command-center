@@ -40,14 +40,44 @@ except ImportError:
         "jpeg_quality": {"description": "JPEG artifact quality (1=worst, 100=best, 0=none)", "min": 0, "max": 100, "default": 0},
         "bit_depth": {"description": "bit crush depth (8=full, 1=extreme, 0=none)", "min": 0, "max": 8, "default": 0},
         "wave_distort": {"description": "wave distortion amplitude (0=none)", "min": 0, "max": 20, "default": 0},
-        "time": {"description": "animation time param (0-2π)", "default": None},
+        "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
+        "anim_mode": {"description": "animation mode", "choices": ["none", "intensity_pulse", "wave_intensity", "vhs_jitter", "mode_cycle"], "default": "none"},
+        "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},
     },
 )
 def method_glitch(out_dir: Path, seed: int, params=None):
+    """Apply glitch art effects (classic, datamosh, VHS, JPEG, bit crush, wave, etc.).
+
+    Generates a procedural gradient source (or uses input image), then applies
+    up to 11 glitch effects in sequence with configurable intensity and
+    animation support via time-domain modulation.
+
+    Params:
+        glitch_type: glitch style (classic, pixel_sort, datamosh, vhs,
+                     screen_tear, jpeg, bit_crush, wave, all)
+        intensity: overall glitch intensity (0-1)
+        shift_count: number of horizontal shift lines (×intensity)
+        shift_max_height: max height of a glitch row (px)
+        shift_magnitude: horizontal shift magnitude (×intensity)
+        channel_offset: RGB channel offset magnitude (×intensity)
+        noise_blocks: number of random noise rectangles (×intensity)
+        palette: PALETTES name for noise blocks (none=grayscale)
+        scanlines: CRT scanline intensity (0=none)
+        vhs_tracking: VHS tracking error intensity (0=none)
+        jpeg_quality: JPEG artifact quality (1=worst, 100=best, 0=none)
+        bit_depth: bit crush depth (8=full, 1=extreme, 0=none)
+        wave_distort: wave distortion amplitude (0=none)
+        time: animation time (0-6.28)
+        anim_mode: animation mode (none, intensity_pulse, wave_intensity,
+                   vhs_jitter, mode_cycle)
+        anim_speed: animation speed multiplier (0.1-3.0)
+    """
     if params is None:
         params = {}
-    import cv2
-    from ..core.utils import PALETTES, quantize_to_palette, norm
+    anim_mode = params.get("anim_mode", "none")
+    anim_speed = float(params.get("anim_speed", 0.25))
+    anim_time = float(params.get("time", 0.0))
+    has_anim = anim_time > 0.0
 
     glitch_type = params.get("glitch_type", "classic")
     intensity = max(0.0, min(1.0, params.get("intensity", 0.5)))
@@ -62,31 +92,44 @@ def method_glitch(out_dir: Path, seed: int, params=None):
     jpeg_quality = max(0, min(100, int(params.get("jpeg_quality", 0))))
     bit_depth = max(0, min(8, int(params.get("bit_depth", 0))))
     wave_distort = max(0, min(20, params.get("wave_distort", 0)))
-    anim_time = params.get("time", None)
 
     # --- Build source image ---
     if params.get("input_image"):
-        from ..core.utils import load_input
         a = (load_input(params["input_image"]) * 255).astype(np.uint8)
     else:
-        # Use anim_time to seed per-frame for evolving noise
-        t_seed = int(anim_time * 100) if anim_time is not None else 0
-        seed_all(seed + t_seed)
+        # Fixed seed — animation comes from param modulation
+        seed_all(seed)
         a = np.zeros((H, W, 3), dtype=np.uint8)
         for y in range(H):
-            t = y / H
-            a[y, :] = [int(20 + 40 * t), int(20 + 30 * t), int(30 + 20 * t)]
+            grad_pos = y / H
+            a[y, :] = [int(20 + 40 * grad_pos), int(20 + 30 * grad_pos), int(30 + 20 * grad_pos)]
 
-    # --- Time-based animation overrides ---
-    if anim_time is not None:
-        t_norm = (math.sin(anim_time) + 1) / 2
-        intensity = 0.3 + 0.7 * t_norm
-        shift_count = int(30 * intensity)
-        shift_magnitude = int(30 * intensity)
-        channel_offset = int(10 * intensity)
-        noise_blocks = int(20 * intensity)
-        vhs_tracking = 0.3 + 0.7 * abs(math.sin(anim_time * 2))
-        wave_distort = 5 + 15 * abs(math.sin(anim_time * 1.5))
+    # ── Deterministic RNG for glitch effects ──
+    rng = random.Random(seed)
+
+    # --- Animation modulation ---
+    if has_anim:
+        # Base intensity pulse
+        t_mod = (math.sin(anim_time * 0.75 * anim_speed) + 1) / 2
+        intensity_pulse = 0.3 + 0.7 * t_mod
+
+        if anim_mode == "mode_cycle":
+            modes = ["classic", "pixel_sort", "datamosh", "vhs", "screen_tear", "jpeg"]
+            mode_idx = int(anim_time / 6.28 * anim_speed * len(modes)) % len(modes)
+            glitch_type = modes[mode_idx]
+
+        if anim_mode in ("none", "intensity_pulse") or anim_mode == "mode_cycle":
+            intensity = intensity_pulse
+            shift_count = int(30 * intensity)
+            shift_magnitude = int(30 * intensity)
+            channel_offset = int(10 * intensity)
+            noise_blocks = int(20 * intensity)
+
+        if anim_mode == "wave_intensity":
+            wave_distort = 5 + 15 * abs(math.sin(anim_time * 0.75 * anim_speed))
+
+        if anim_mode == "vhs_jitter":
+            vhs_tracking = 0.3 + 0.7 * abs(math.sin(anim_time * 0.75 * anim_speed))
 
     # --- Apply glitch effects ---
     result = a.copy().astype(np.float32)
@@ -94,21 +137,21 @@ def method_glitch(out_dir: Path, seed: int, params=None):
     # 1. Horizontal shift (classic glitch)
     if glitch_type in ("classic", "all"):
         for _ in range(shift_count):
-            y = random.randint(0, H - 1)
-            h = random.randint(1, shift_max_height)
-            s = random.choice(list(range(-shift_magnitude, 0)) + list(range(1, shift_magnitude + 1)))
+            y = rng.randint(0, H - 1)
+            h = rng.randint(1, shift_max_height)
+            s = rng.choice(list(range(-shift_magnitude, 0)) + list(range(1, shift_magnitude + 1)))
             ye = min(y + h, H)
             if s > 0 and s < W:
                 result[y:ye, s:] = result[y:ye, :-s].copy()
-                result[y:ye, :s] = float(random.randint(0, 255))
+                result[y:ye, :s] = float(rng.randint(0, 255))
             elif s < 0 and -s < W:
                 result[y:ye, :s] = result[y:ye, -s:].copy()
-                result[y:ye, s:] = float(random.randint(0, 255))
+                result[y:ye, s:] = float(rng.randint(0, 255))
 
     # 2. RGB channel offset
     if glitch_type in ("classic", "all"):
         for c in range(3):
-            o = random.choice(list(range(-channel_offset, 0)) + list(range(1, channel_offset + 1)))
+            o = rng.choice(list(range(-channel_offset, 0)) + list(range(1, channel_offset + 1)))
             og = result[:, :, c].copy()
             if o > 0:
                 result[:, o:, c] = og[:, :-o]
@@ -118,14 +161,14 @@ def method_glitch(out_dir: Path, seed: int, params=None):
     # 3. Noise blocks
     if glitch_type in ("classic", "all"):
         for _ in range(noise_blocks):
-            x = random.randint(0, W - 1)
-            y = random.randint(0, H - 1)
-            w = min(random.randint(5, 40), W - x)
-            h = min(random.randint(3, 15), H - y)
+            x = rng.randint(0, W - 1)
+            y = rng.randint(0, H - 1)
+            w = min(rng.randint(5, 40), W - x)
+            h = min(rng.randint(3, 15), H - y)
             if palette_name and palette_name != "none":
                 pal = PALETTES.get(palette_name, [])
                 if pal:
-                    c = random.choice(pal)
+                    c = rng.choice(pal)
                     result[y:y+h, x:x+w] = np.array(c, dtype=np.float32)
                 else:
                     result[y:y+h, x:x+w] = np.random.randint(0, 255, (h, w, 3)).astype(np.float32)
@@ -140,17 +183,17 @@ def method_glitch(out_dir: Path, seed: int, params=None):
             mask = gray[y] > 128
             if mask.sum() > 1:
                 sorted_pixels = row[mask]
-                np.random.shuffle(sorted_pixels)
+                rng.shuffle(sorted_pixels)
                 row[mask] = sorted_pixels
             result[y] = row
 
     # 5. Datamosh (frame blending)
     if glitch_type in ("datamosh", "all"):
         for _ in range(int(10 * intensity)):
-            y = random.randint(0, H - 1)
-            h = random.randint(5, 30)
+            y = rng.randint(0, H - 1)
+            h = rng.randint(5, 30)
             ye = min(y + h, H)
-            src_y = random.randint(0, H - 1)
+            src_y = rng.randint(0, H - 1)
             src_ye = min(src_y + h, H)
             actual_h = min(ye - y, src_ye - src_y)
             if actual_h > 0:
@@ -160,7 +203,7 @@ def method_glitch(out_dir: Path, seed: int, params=None):
     if glitch_type in ("vhs", "all") or vhs_tracking > 0:
         vt = vhs_tracking if vhs_tracking > 0 else 0.5
         for y in range(0, H, int(4 / (vt + 0.1))):
-            offset = int(vt * 20 * (random.random() - 0.5))
+            offset = int(vt * 20 * (rng.random() - 0.5))
             if offset != 0:
                 if offset > 0:
                     result[y:y+2, offset:] = result[y:y+2, :-offset].copy()
@@ -171,8 +214,8 @@ def method_glitch(out_dir: Path, seed: int, params=None):
 
     # 7. Screen tear
     if glitch_type in ("screen_tear", "all"):
-        tear_y = random.randint(H // 3, 2 * H // 3)
-        tear_offset = random.randint(-W // 4, W // 4)
+        tear_y = rng.randint(H // 3, 2 * H // 3)
+        tear_offset = rng.randint(-W // 4, W // 4)
         if tear_offset > 0:
             result[tear_y:, tear_offset:] = result[tear_y:, :-tear_offset].copy()
             result[tear_y:, :tear_offset] = 0.0
@@ -196,8 +239,7 @@ def method_glitch(out_dir: Path, seed: int, params=None):
     # 10. Wave distortion
     if wave_distort > 0 and glitch_type in ("wave", "all"):
         yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
-        t = anim_time if anim_time is not None else 0
-        wave = wave_distort * np.sin(yy * 0.1 + t * 3) * np.cos(xx * 0.05 + t * 2)
+        wave = wave_distort * np.sin(yy * 0.1 + anim_time * 0.75 * anim_speed) * np.cos(xx * 0.05 + anim_time * 0.75 * anim_speed)
         map_x = (xx + wave).astype(np.float32)
         map_y = yy.astype(np.float32)
         result = cv2.remap(result.astype(np.float32) / 255.0, map_x, map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
