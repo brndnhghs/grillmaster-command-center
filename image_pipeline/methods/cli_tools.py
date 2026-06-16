@@ -92,13 +92,31 @@ def method_ffmpeg(out_dir: Path, seed: int, params=None):
             "min_bytes": {"description": "minimum output file size to accept", "min": 100, "max": 100000, "default": 1000},
         })
 def method_imagemagick(out_dir: Path, seed: int, params=None):
-    seed_all(seed)
+    """Generate an image using ImageMagick's convert command, with PIL fallback.
+
+    Uses ImageMagick to render text over a colored canvas with spread and
+    noise effects. Falls back to a solid-color PIL image if ImageMagick
+    is unavailable or produces a file below min_bytes.
+
+    Params:
+        bg_color: canvas background color (hex)
+        fill_color: text fill color (hex)
+        title: title text
+        subtitle: subtitle text
+        detail: detail line text
+        title_size: title font size (12-120)
+        subtitle_size: subtitle font size (8-72)
+        detail_size: detail font size (8-72)
+        font: font name
+        spread: pixel spread amount (0-50)
+        noise_type: ImageMagick noise type
+        min_bytes: minimum output file size to accept (100-100000)
+    """
     if params is None:
         params = {}
+    seed_all(seed)
     if params.get("input_image"):
-        from ..core.utils import load_input
         img_arr = load_input(params["input_image"])
-        # use it
         _input_img = Image.fromarray((img_arr * 255).astype(np.uint8))
         _input_path = str(out_dir / "_imagemagick_input.png")
         _input_img.save(_input_path)
@@ -107,13 +125,13 @@ def method_imagemagick(out_dir: Path, seed: int, params=None):
     title = params.get("title", "ImageMagick")
     subtitle = params.get("subtitle", "text overlay")
     detail = params.get("detail", "font=Helvetica, size=36/18/12")
-    title_size = params.get("title_size", 36)
-    subtitle_size = params.get("subtitle_size", 18)
-    detail_size = params.get("detail_size", 12)
+    title_size = int(params.get("title_size", 36))
+    subtitle_size = int(params.get("subtitle_size", 18))
+    detail_size = int(params.get("detail_size", 12))
     font_name = params.get("font", "Helvetica")
-    spread = params.get("spread", 5)
+    spread = int(params.get("spread", 5))
     noise_type = params.get("noise_type", "Gaussian")
-    min_bytes = params.get("min_bytes", 1000)
+    min_bytes = int(params.get("min_bytes", 1000))
     r = subprocess.run(["which", "convert"], capture_output=True, text=True)
     if r.returncode != 0:
         subprocess.run(["brew", "install", "imagemagick"], capture_output=True)
@@ -136,11 +154,16 @@ def method_imagemagick(out_dir: Path, seed: int, params=None):
             "-pointsize", str(detail_size), "-annotate", "+0+60", detail,
             "-spread", str(spread), "+noise", noise_type, outpath,
         ]
-    subprocess.run(cmd, capture_output=True, timeout=15)
+    try:
+        subprocess.run(cmd, capture_output=True, timeout=15)
+    except Exception:
+        pass
     if (out_dir / mn(23, "ImageMagick")).exists() and (out_dir / mn(23, "ImageMagick")).stat().st_size > min_bytes:
         print(f"  ✓ {mn(23, 'ImageMagick')}  ({(out_dir / mn(23, 'ImageMagick')).stat().st_size // 1024} KB)")
     else:
-        save(Image.new("RGB", (W, H), tuple(int(bg_color.lstrip("#")[i:i+2], 16) for i in (0, 2, 4))), mn(23, "ImageMagick"), out_dir)
+        img = Image.new("RGB", (W, H), tuple(int(bg_color.lstrip("#")[i:i+2], 16) for i in (0, 2, 4)))
+        capture_frame("23", np.array(img, dtype=np.float32) / 255.0)
+        save(img, mn(23, "ImageMagick"), out_dir)
 
 
 @method(id="24", name="pyfiglet", category="cli_tools", tags=["text", "expanded"],
