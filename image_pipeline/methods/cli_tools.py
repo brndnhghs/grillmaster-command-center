@@ -668,27 +668,77 @@ def method_graphviz(out_dir: Path, seed: int, params=None):
             "oil_paint": {"description": "oil paint effect radius", "min": 0, "max": 20, "default": 3},
             "blur": {"description": "Gaussian blur radius", "default": "0x1"},
             "min_bytes": {"description": "minimum output file size to accept", "min": 100, "max": 100000, "default": 1000},
+            "time": {"description": "animation time in radians", "min": 0, "max": 6.28, "default": 0.0},
+            "anim_mode": {"description": "animation mode", "choices": ["none", "plasma_pulse", "blur_cycle"], "default": "none"},
+            "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
         })
 def method_gmic_plasma(out_dir: Path, seed: int, params=None):
-    seed_all(seed)
+    """Generate a fractal plasma image using ImageMagick convert, with PIL fallback.
+
+    Uses ImageMagick's `convert` CLI to generate a fractal plasma image with
+    optional oil paint and blur effects. Falls back to a PIL-generated noise
+    image if convert is unavailable.
+
+    Args:
+        out_dir: Output directory for the generated image.
+        seed: Random seed for deterministic output.
+        params: Dict with keys:
+            plasma_type: plasma type for convert (fractal/tile)
+            oil_paint: oil paint effect radius (0-20)
+            blur: Gaussian blur radius (e.g. "0x1")
+            min_bytes: minimum output file size to accept (100-100000)
+            time: animation time in radians (0-6.28)
+            anim_mode: animation mode (none/plasma_pulse/blur_cycle)
+            anim_speed: animation speed multiplier (0.1-5.0)
+    """
     if params is None:
         params = {}
+    anim_time = float(params.get("time", 0.0))
+    anim_mode = params.get("anim_mode", "none")
+    anim_speed = float(params.get("anim_speed", 1.0))
+    seed_all(seed)
+    rng = np.random.default_rng(seed)
+
     plasma_type = params.get("plasma_type", "fractal")
-    oil_paint = params.get("oil_paint", 3)
+    oil_paint = int(params.get("oil_paint", 3))
     blur = params.get("blur", "0x1")
-    min_bytes = params.get("min_bytes", 1000)
-    r = subprocess.run(["which", "convert"], capture_output=True, text=True)
-    if r.returncode != 0:
-        subprocess.run(["brew", "install", "imagemagick"], capture_output=True)
+    min_bytes = int(params.get("min_bytes", 1000))
+
+    # ── Animation ──
+    t = anim_time * anim_speed
+    if anim_mode == "plasma_pulse":
+        oil_paint = max(0, int(oil_paint * (0.5 + 0.5 * abs(math.sin(t * 0.5)))))
+    elif anim_mode == "blur_cycle":
+        blur_val = 0.5 + 2.0 * (0.5 + 0.5 * math.sin(t * 0.3))
+        blur = f"0x{blur_val:.1f}"
+
+    # ── Check for convert binary ──
+    try:
+        subprocess.run(["convert", "--version"], capture_output=True, timeout=5)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        # PIL fallback
+        fallback = rng.random((H, W, 3)).astype(np.float32) * 0.1 + 0.05
+        capture_frame("46", fallback)
+        save(fallback, mn(46, "ImageMagick Plasma"), out_dir)
+        return
+
+    # ── Render via convert ──
     outpath = str(out_dir / mn(46, "ImageMagick Plasma"))
-    subprocess.run(
-        ["convert", "-size", f"{W}x{H}", f"plasma:{plasma_type}", "-oil-paint", str(oil_paint), "-blur", blur, outpath],
-        capture_output=True, text=True, timeout=30,
-    )
+    try:
+        subprocess.run(
+            ["convert", "-size", f"{W}x{H}", f"plasma:{plasma_type}", "-oil-paint", str(oil_paint), "-blur", blur, outpath],
+            capture_output=True, text=True, timeout=30,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
     if (out_dir / mn(46, "ImageMagick Plasma")).exists() and (out_dir / mn(46, "ImageMagick Plasma")).stat().st_size > min_bytes:
+        capture_frame("46", out_dir / mn(46, "ImageMagick Plasma"))
         print(f"  ✓ {mn(46, 'ImageMagick Plasma')}  ({(out_dir / mn(46, 'ImageMagick Plasma')).stat().st_size // 1024} KB)")
     else:
-        save(np.random.rand(H, W, 3).astype(np.float32) * 0.1 + 0.05, mn(46, "ImageMagick Plasma"), out_dir)
+        fallback = rng.random((H, W, 3)).astype(np.float32) * 0.1 + 0.05
+        capture_frame("46", fallback)
+        save(fallback, mn(46, "ImageMagick Plasma"), out_dir)
 
 
 @method(id="47", name="Chafa", category="cli_tools", tags=["text", "caca", "expanded"],
