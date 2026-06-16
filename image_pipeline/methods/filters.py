@@ -3123,23 +3123,48 @@ def method_pixel_mosaic(out_dir: Path, seed: int, params=None):
         "thread_variation": {"description": "thread color random range", "min": 0, "max": 80, "default": 30},
         "color_mode": {"description": "coloring: source, palette, per_stitch_hue, gradient, monochrome, duo_tone", "default": "source"},
         "palette_name": {"description": "palette name for palette mode", "default": "vapor"},
-        "color_speed": {"description": "color rotation speed", "min": 0.5, "max": 8.0, "default": 2.0},
-        "color_offset": {"description": "hue shift offset", "min": 0.0, "max": 6.28, "default": 0.0},
         "blur_sigma": {"description": "source blur sigma (noise mode)", "min": 3, "max": 60, "default": 15},
         "noise_amp": {"description": "source noise amplitude", "min": 0.1, "max": 2.0, "default": 0.5},
         "thread_density": {"description": "stitch density (0-1, 1=full coverage)", "min": 0.1, "max": 1.0, "default": 1.0},
-        "animation_mode": {"description": "animation: none, reveal, color_cycle, pulse, weave", "default": "none"},
+        "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
+        "anim_mode": {"description": "animation mode", "choices": ["none", "reveal", "color_cycle", "pulse", "weave"], "default": "none"},
         "anim_speed": {"description": "animation speed", "min": 0.1, "max": 3.0, "default": 1.0},
     },
 )
 def method_cross_stitch(out_dir: Path, seed: int, params=None):
+    """Generate cross-stitch embroidery patterns with various stitch types and fabric textures.
+
+    Renders a grid of stitches on a fabric background, with configurable stitch patterns
+    (cross, half_cross, quarter, backstitch, satin, running, french_knot, chain,
+    lazy_daisy, herringbone, chevron, seed), fabric textures (linen, aida, evenweave,
+    canvas, perforated), and color modes (source, palette, per_stitch_hue, gradient,
+    monochrome, duo_tone). Animation modes: reveal (progressive reveal), color_cycle
+    (hue rotation), pulse (brightness pulse), weave (oscillating reveal).
+
+    Params:
+        source: stitch source (noise, gradient, input_image, palette, rainbow, procedural)
+        thread_step: stitch grid step in pixels (4-32, default 8)
+        line_width: stitch line width (1-8, default 2)
+        stitch_pattern: stitch type (cross, half_cross, quarter, backstitch, satin, ...)
+        fabric: fabric texture (none, linen, aida, evenweave, canvas, perforated)
+        fabric_color: fabric background color as r,g,b (0-1)
+        speckle_count: random speckles per cell (0-20, default 3)
+        thread_variation: thread color random range (0-80, default 30)
+        color_mode: coloring mode (source, palette, per_stitch_hue, gradient, monochrome, duo_tone)
+        palette_name: palette name for palette mode
+        blur_sigma: source blur sigma for noise modes (3-60, default 15)
+        noise_amp: source noise amplitude (0.1-2.0, default 0.5)
+        thread_density: stitch density 0-1 (default 1.0)
+        time: animation time (0-6.28)
+        anim_mode: animation mode (none, reveal, color_cycle, pulse, weave)
+        anim_speed: animation speed multiplier (0.1-3.0, default 1.0)
+    """
     if params is None:
         params = {}
-    t = params.get("time", 0.0)
-    seed_all(seed + int(t * 100))
-
-    from ..core.utils import load_input, PALETTES
-    from PIL import Image as PILImage, ImageDraw
+    t = float(params.get("time", 0.0))
+    seed_all(seed)
+    rng = random.Random(seed)
+    np_rng = np.random.default_rng(seed)
 
     source = str(params.get("source", "noise"))
     step = int(params.get("thread_step", 8))
@@ -3153,12 +3178,10 @@ def method_cross_stitch(out_dir: Path, seed: int, params=None):
     thread_variation = int(params.get("thread_variation", 30))
     color_mode = str(params.get("color_mode", "source"))
     pal_name = str(params.get("palette_name", "vapor"))
-    c_speed = float(params.get("color_speed", 2.0))
-    c_off = float(params.get("color_offset", 0.0))
     blur_sigma = float(params.get("blur_sigma", 15))
     noise_amp = float(params.get("noise_amp", 0.5))
     thread_density = float(params.get("thread_density", 1.0))
-    anim_mode = str(params.get("animation_mode", "none"))
+    anim_mode = str(params.get("anim_mode", "none"))
     anim_speed = float(params.get("anim_speed", 1.0))
 
     cols, rows = W // step, H // step
@@ -3172,16 +3195,16 @@ def method_cross_stitch(out_dir: Path, seed: int, params=None):
     # ── Generate source ──
     if source == "input_image" and params.get('input_image'):
         img_arr = load_input(params['input_image'])
-        base = np.array(PILImage.fromarray((img_arr * 255).astype(np.uint8)).resize((cols, rows), PILImage.LANCZOS))
+        base = np.array(Image.fromarray((img_arr * 255).astype(np.uint8)).resize((cols, rows), Image.LANCZOS))
     elif source == "gradient":
         x = np.linspace(0, 1, cols, dtype=np.float32)
         y = np.linspace(0, 1, rows, dtype=np.float32)
         xx, yy = np.meshgrid(x, y)
         base = (np.stack([xx, yy, 1.0 - xx * yy], axis=-1) * 255).astype(np.uint8)
     elif source == "palette" and pal_arr is not None:
-        noise = np.random.rand(rows, cols).astype(np.float32)
-        import cv2
-        noise = cv2.GaussianBlur(noise, (0, 0), sigmaX=blur_sigma * cols / W, sigmaY=blur_sigma * rows / H)
+        noise = np_rng.random((rows, cols)).astype(np.float32)
+        if _has_cv2:
+            noise = cv2.GaussianBlur(noise, (0, 0), sigmaX=blur_sigma * cols / W, sigmaY=blur_sigma * rows / H)
         noise = norm(noise)
         idx = (noise * (len(pal_arr) - 1)).astype(np.int32)
         base = pal_arr[idx].reshape(rows, cols, 3)
@@ -3196,14 +3219,14 @@ def method_cross_stitch(out_dir: Path, seed: int, params=None):
             np.sin(hue * np.pi * 6 + 4.2) * 0.5 + 0.5,
         ], axis=-1) * 255).astype(np.uint8)
     elif source == "procedural":
-        import cv2
-        noise = np.random.randn(rows, cols, 3).astype(np.float32) * noise_amp + 0.5
-        noise = cv2.GaussianBlur(noise, (0, 0), sigmaX=blur_sigma * cols / W, sigmaY=blur_sigma * rows / H)
+        noise = np_rng.standard_normal((rows, cols, 3)).astype(np.float32) * noise_amp + 0.5
+        if _has_cv2:
+            noise = cv2.GaussianBlur(noise, (0, 0), sigmaX=blur_sigma * cols / W, sigmaY=blur_sigma * rows / H)
         base = (norm(noise) * 255).astype(np.uint8)
     else:
-        import cv2
-        noise = np.random.randn(rows, cols, 3).astype(np.float32) * noise_amp + 0.5
-        noise = cv2.GaussianBlur(noise, (0, 0), sigmaX=blur_sigma * cols / W, sigmaY=blur_sigma * rows / H)
+        noise = np_rng.standard_normal((rows, cols, 3)).astype(np.float32) * noise_amp + 0.5
+        if _has_cv2:
+            noise = cv2.GaussianBlur(noise, (0, 0), sigmaX=blur_sigma * cols / W, sigmaY=blur_sigma * rows / H)
         base = (norm(noise) * 255).astype(np.uint8)
 
     # ── Animation: reveal ──
@@ -3219,7 +3242,7 @@ def method_cross_stitch(out_dir: Path, seed: int, params=None):
         bg = np.ones((H, W, 3), dtype=np.uint8) * np.array(fabric_color, dtype=np.uint8)
         # Add subtle thread texture
         for y in range(0, H, 2):
-            variation = random.randint(-8, 8)
+            variation = rng.randint(-8, 8)
             bg[y, :] = np.clip(bg[y, :].astype(int) + variation, 0, 255).astype(np.uint8)
     elif fabric == "aida":
         # Gridded fabric
@@ -3254,13 +3277,13 @@ def method_cross_stitch(out_dir: Path, seed: int, params=None):
         bg = np.ones((H, W, 3), dtype=np.uint8) * np.array(fabric_color, dtype=np.uint8)
 
     # ── Render stitches ──
-    img = PILImage.fromarray(bg)
+    img = Image.fromarray(bg)
     draw = ImageDraw.Draw(img)
 
     total_cells = rows * cols
     cells_to_draw = int(total_cells * thread_density * reveal_progress)
     cell_indices = list(range(total_cells))
-    random.shuffle(cell_indices)
+    rng.shuffle(cell_indices)
     cells_drawn = 0
 
     for idx in cell_indices:
@@ -3278,7 +3301,7 @@ def method_cross_stitch(out_dir: Path, seed: int, params=None):
             pi = min(pi, len(pal_arr) - 1)
             r, g, b = pal_arr[pi].tolist()
         elif color_mode == "per_stitch_hue":
-            hue = ((y / rows + x / cols) + c_off / 6.28) % 1.0
+            hue = ((y / rows + x / cols) + t * 0.1 * anim_speed) % 1.0
             hr = int((np.sin(hue * np.pi * 6) * 0.5 + 0.5) * 255)
             hg = int((np.sin(hue * np.pi * 6 + 2.1) * 0.5 + 0.5) * 255)
             hb = int((np.sin(hue * np.pi * 6 + 4.2) * 0.5 + 0.5) * 255)
@@ -3303,9 +3326,9 @@ def method_cross_stitch(out_dir: Path, seed: int, params=None):
             r, g, b = blended.tolist()
 
         # Thread variation
-        tr = max(0, min(255, r + random.randint(-10, thread_variation)))
-        tg = max(0, min(255, g + random.randint(-10, thread_variation)))
-        tb = max(0, min(255, b + random.randint(-10, thread_variation)))
+        tr = max(0, min(255, r + rng.randint(-10, thread_variation)))
+        tg = max(0, min(255, g + rng.randint(-10, thread_variation)))
+        tb = max(0, min(255, b + rng.randint(-10, thread_variation)))
         thread_color = (tr, tg, tb)
 
         # ── Stitch pattern ──
@@ -3365,10 +3388,10 @@ def method_cross_stitch(out_dir: Path, seed: int, params=None):
         elif stitch_pattern == "seed":
             # Random small stitches
             for _ in range(3):
-                sx = px + random.randint(0, step)
-                sy = py + random.randint(0, step)
-                ex = sx + random.randint(-2, 2)
-                ey = sy + random.randint(-2, 2)
+                sx = px + rng.randint(0, step)
+                sy = py + rng.randint(0, step)
+                ex = sx + rng.randint(-2, 2)
+                ey = sy + rng.randint(-2, 2)
                 draw.line([(sx, sy), (ex, ey)], fill=thread_color, width=1)
 
         else:
@@ -3378,11 +3401,26 @@ def method_cross_stitch(out_dir: Path, seed: int, params=None):
 
         # Speckles
         for _ in range(speckle_count):
-            sx = px + random.randint(0, step)
-            sy = py + random.randint(0, step)
+            sx = px + rng.randint(0, step)
+            sy = py + rng.randint(0, step)
             draw.point((sx, sy), fill=(tr // 2, tg // 2, tb // 2))
 
         cells_drawn += 1
 
-    capture_frame("80", np.array(img, dtype=np.float32) / 255.0)
-    save(img, mn(80, "Cross Stitch"), out_dir)
+    # ── Animation: color_cycle ──
+    if anim_mode == "color_cycle":
+        hue_shift = (math.sin(t * 0.5 * anim_speed) * 0.5 + 0.5) * 0.3
+        arr = np.array(img, dtype=np.float32) / 255.0
+        arr = np.roll(arr * 255, int(hue_shift * 255), axis=-1) / 255.0
+        img = Image.fromarray((np.clip(arr, 0, 1) * 255).astype(np.uint8))
+        draw = ImageDraw.Draw(img)
+
+    # ── Animation: pulse ──
+    if anim_mode == "pulse":
+        pulse = 0.5 + 0.5 * math.sin(t * 0.5 * anim_speed)
+        arr = np.array(img, dtype=np.float32) / 255.0
+        arr = arr * (0.5 + 0.5 * pulse)
+        img = Image.fromarray((np.clip(arr, 0, 1) * 255).astype(np.uint8))
+
+    capture_frame("63", np.array(img, dtype=np.float32) / 255.0)
+    save(img, mn(63, "Cross Stitch"), out_dir)
