@@ -751,45 +751,102 @@ def method_gmic_plasma(out_dir: Path, seed: int, params=None):
             "text_color": {"description": "text color RGB tuple as string", "default": "60,50,40"},
             "chafa_symbols": {"description": "chafa --symbols argument", "default": "all"},
             "chafa_size": {"description": "chafa --size argument", "default": "80x40"},
-            "chafa_colors": {"description": "chafa -c color count", "default": "256"},
+            "chafa_colors": {"description": "chafa -c color count", "default": 256},
             "font_size": {"description": "PIL font size for rendering", "min": 6, "max": 48, "default": 10},
+            "time": {"description": "animation time in radians", "min": 0, "max": 6.28, "default": 0.0},
+            "anim_mode": {"description": "animation mode", "choices": ["none", "shape_morph", "color_cycle"], "default": "none"},
+            "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
         })
 def method_chafa(out_dir: Path, seed: int, params=None):
-    seed_all(seed)
+    """Generate ASCII art from random shapes using Chafa CLI, with PIL fallback.
+
+    Creates a canvas of random shapes (lines, ellipses), converts to ASCII art
+    via the Chafa CLI tool, and renders the result as a colored text image.
+    Falls back to a simple text placeholder if Chafa is unavailable.
+
+    Args:
+        out_dir: Output directory for the generated image.
+        seed: Random seed for deterministic output.
+        params: Dict with keys:
+            shape_count: number of random shapes (10-200)
+            circle_radius: circle outline radius (5-60)
+            line_width_min: minimum random line width (1-10)
+            line_width_max: maximum random line width (1-20)
+            bg_color: background RGB tuple as string ("r,g,b")
+            text_color: text color RGB tuple as string ("r,g,b")
+            chafa_symbols: chafa --symbols argument
+            chafa_size: chafa --size argument (e.g. "80x40")
+            chafa_colors: chafa -c color count
+            font_size: PIL font size for rendering (6-48)
+            time: animation time in radians (0-6.28)
+            anim_mode: animation mode (none/shape_morph/color_cycle)
+            anim_speed: animation speed multiplier (0.1-5.0)
+    """
     if params is None:
         params = {}
+    anim_time = float(params.get("time", 0.0))
+    anim_mode = params.get("anim_mode", "none")
+    anim_speed = float(params.get("anim_speed", 1.0))
+    seed_all(seed)
+    rng = random.Random(seed)
+
+    shape_count = int(params.get("shape_count", 60))
+    circle_radius = int(params.get("circle_radius", 15))
+    line_width_min = int(params.get("line_width_min", 1))
+    line_width_max = int(params.get("line_width_max", 5))
+    chafa_symbols = params.get("chafa_symbols", "all")
+    chafa_size = params.get("chafa_size", "80x40")
+    chafa_colors = int(params.get("chafa_colors", 256))
+    font_size = int(params.get("font_size", 10))
+
+    # ── Parse color strings ──
+    try:
+        bg_color = tuple(int(x) for x in params.get("bg_color", "10,10,18").split(",")[:3])
+    except (ValueError, TypeError):
+        bg_color = (10, 10, 18)
+    try:
+        text_color = tuple(int(x) for x in params.get("text_color", "60,50,40").split(",")[:3])
+    except (ValueError, TypeError):
+        text_color = (60, 50, 40)
+
+    # ── Animation ──
+    t = anim_time * anim_speed
+    if anim_mode == "shape_morph":
+        shape_count = max(10, int(shape_count * (0.5 + 0.5 * abs(math.sin(t * 0.3)))))
+        circle_radius = max(3, int(circle_radius * (0.5 + 0.5 * abs(math.sin(t * 0.5 + 1.0)))))
+    elif anim_mode == "color_cycle":
+        hue_shift = (t * 0.1) % 1.0
+        # Modulate text color via hue rotation
+        r_c = int(60 * (0.5 + 0.5 * math.sin(hue_shift * 2 * math.pi)))
+        g_c = int(50 * (0.5 + 0.5 * math.sin(hue_shift * 2 * math.pi + 2.094)))
+        b_c = int(40 * (0.5 + 0.5 * math.sin(hue_shift * 2 * math.pi + 4.189)))
+        text_color = (r_c, g_c, b_c)
+
+    # ── Build source image ──
     if params.get("input_image"):
         from ..core.utils import load_input
         img_arr = load_input(params["input_image"])
-        # use it
-        _input_img = Image.fromarray((img_arr * 255).astype(np.uint8))
-    shape_count = params.get("shape_count", 60)
-    circle_radius = params.get("circle_radius", 15)
-    line_width_min = params.get("line_width_min", 1)
-    line_width_max = params.get("line_width_max", 5)
-    bg_color = tuple(int(x) for x in params.get("bg_color", "10,10,18").split(",")[:3])
-    text_color = tuple(int(x) for x in params.get("text_color", "60,50,40").split(",")[:3])
-    chafa_symbols = params.get("chafa_symbols", "all")
-    chafa_size = params.get("chafa_size", "80x40")
-    chafa_colors = params.get("chafa_colors", 256)
-    font_size = params.get("font_size", 10)
-    if params.get("input_image"):
-        img = _input_img
+        img = Image.fromarray((img_arr * 255).astype(np.uint8))
     else:
         img = Image.new("RGB", (W, H), bg_color)
         draw = ImageDraw.Draw(img)
         for i in range(shape_count):
-            x0 = random.randint(0, W)
-            y0 = random.randint(0, H)
-            x1 = random.randint(0, W)
-            y1 = random.randint(0, H)
-            r = random.randint(30, 80)
-            g = random.randint(30, 70)
-            b = random.randint(40, 60)
-            draw.line([(x0, y0), (x1, y1)], fill=(r, g, b), width=random.randint(line_width_min, line_width_max))
+            x0 = rng.randint(0, W)
+            y0 = rng.randint(0, H)
+            x1 = rng.randint(0, W)
+            y1 = rng.randint(0, H)
+            r = rng.randint(30, 80)
+            g = rng.randint(30, 70)
+            b = rng.randint(40, 60)
+            draw.line([(x0, y0), (x1, y1)], fill=(r, g, b), width=rng.randint(line_width_min, line_width_max))
             draw.ellipse([x0 - circle_radius, y0 - circle_radius, x0 + circle_radius, y0 + circle_radius], outline=(r + 20, g, b), width=2)
+
+    # ── Convert via Chafa ──
     src = out_dir / "_chafa_src.png"
-    img.save(str(src))
+    try:
+        img.save(str(src))
+    except OSError:
+        pass
     chafa_out = ""
     try:
         result = subprocess.run(
@@ -800,11 +857,21 @@ def method_chafa(out_dir: Path, seed: int, params=None):
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
     src.unlink(missing_ok=True)
+
+    # ── Render ASCII text to image ──
     lines = chafa_out.split("\n")
+    if not lines or all(l.strip() == "" for l in lines):
+        lines = ["Chafa unavailable", "  :(  "]
+
+    font = get_font(font_size)
+    fw, fh = font.getbbox("A")[2:4]
+    fw = max(4, fw)
+    fh = max(8, fh)
+
     out_img = Image.new("L", (W, H), 0)
     out_draw = ImageDraw.Draw(out_img)
-    font = get_font(font_size)
     for y, line in enumerate(lines):
-        out_draw.text((10, 10 + y * 12), line, fill=255, font=font)
+        out_draw.text((4, 4 + y * fh), line, fill=255, font=font)
     colored = ImageOps.colorize(out_img, bg_color, text_color)
+    capture_frame("47", colored)
     save(colored, mn(47, "Chafa"), out_dir)
