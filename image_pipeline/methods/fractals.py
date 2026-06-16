@@ -3461,27 +3461,52 @@ def method_pythagorean_tree(out_dir: Path, seed: int, params=None):
         "taper": {"description": "line width taper (0=uniform, 1=max taper)", "min": 0.0, "max": 1.0, "default": 0.5},
         "leaves": {"description": "draw leaf nodes at endpoints", "default": True},
         "branch_angle": {"description": "additional branch angle variation in degrees", "min": 0, "max": 30, "default": 0},
-        "time": {"description": "animation time param (0-2π)", "default": None},
+        "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
+        "anim_mode": {"description": "animation mode", "choices": ["none", "wind_sway", "growth", "color_cycle"], "default": "none"},
+        "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},
     },
 )
 def method_lsystem(out_dir: Path, seed: int, params=None):
+    """Render L-system fractals (plant, sierpinski, dragon, koch, hilbert, etc.).
+
+    Generates a turtle-graphics L-system from preset or custom rules, with
+    auto-centering, color modes, line taper, leaf nodes, and animation
+    support via wind sway, growth, or color cycling.
+
+    Params:
+        preset: system preset (plant, sierpinski, dragon, koch, hilbert,
+                tree, weed, bush, coral, snowflake, custom)
+        iterations: L-system rewrite iterations (2-7)
+        axiom: starting axiom string (custom mode)
+        rule_f/rule_x/rule_y: rewrite rules (custom mode)
+        angle_inc: turn angle in degrees (5-90)
+        step_size: forward step in pixels (1-50)
+        start_y_offset: y offset from bottom (0-200)
+        palette: PALETTES name for coloring
+        color_mode: coloring (single, gradient, age, rainbow)
+        taper: line width taper (0=uniform, 1=max taper)
+        leaves: draw leaf nodes at endpoints
+        branch_angle: additional branch angle variation (0-30)
+        time: animation time (0-6.28)
+        anim_mode: animation mode (none, wind_sway, growth, color_cycle)
+        anim_speed: animation speed multiplier (0.1-3.0)
+    """
     if params is None:
         params = {}
-    anim_time = params.get("time", None)
-    seed_all(seed + int((anim_time or 0.0) * 100))
-    from ..core.utils import PALETTES, quantize_to_palette
-    from PIL import Image as PILImage, ImageDraw
-
+    anim_mode = params.get("anim_mode", "none")
+    anim_speed = float(params.get("anim_speed", 0.25))
+    anim_time = float(params.get("time", 0.0))
+    has_anim = anim_time > 0.0
+    seed_all(seed)
+    rng = random.Random(seed)
+    pal = PALETTES.get(params.get("palette", "cool"), [(40, 50, 30), (80, 100, 60)])
+    n_pal = len(pal)
     preset = params.get("preset", "plant")
     rewrite_it = max(2, min(7, int(params.get("iterations", 4))))
-    palette_name = params.get("palette", "cool")
     color_mode = params.get("color_mode", "gradient")
     taper = max(0.0, min(1.0, params.get("taper", 0.5)))
     show_leaves = params.get("leaves", True)
     branch_angle_var = max(0, min(30, params.get("branch_angle", 0)))
-
-    pal = PALETTES.get(palette_name, [(40, 50, 30), (80, 100, 60)])
-    n_pal = len(pal)
 
     # --- Presets ---
     presets = {
@@ -3518,14 +3543,19 @@ def method_lsystem(out_dir: Path, seed: int, params=None):
     y_off = params.get("start_y_offset", 10)
 
     # --- Animation overrides ---
-    if anim_time is not None:
-        t_norm = (math.sin(anim_time) + 1) / 2
-        # Wind sway: add branch angle variation
-        branch_angle_var = 10 * abs(math.sin(anim_time * 2))
-        # Growth: scale step size from 0 to full
-        st = max(1, st * (0.2 + 0.8 * t_norm))
-        # Color shift
-        color_mode = "gradient"
+    if has_anim:
+        t_mod = (math.sin(anim_time * 0.75 * anim_speed) + 1) / 2
+
+        if anim_mode in ("none", "wind_sway"):
+            branch_angle_var = 10 * abs(math.sin(anim_time * 0.75 * anim_speed))
+
+        if anim_mode == "growth":
+            st = max(1, st * (0.2 + 0.8 * t_mod))
+
+        if anim_mode == "color_cycle":
+            color_modes = ["gradient", "age", "rainbow", "single"]
+            mode_idx = int(anim_time * 3 * anim_speed) % len(color_modes)
+            color_mode = color_modes[mode_idx]
 
     # --- L-system rewrite ---
     def _ls(axi, rules_dict, it):
@@ -3545,7 +3575,7 @@ def method_lsystem(out_dir: Path, seed: int, params=None):
             if c == "F" or c == "G":
                 # Branch angle variation
                 if branch_angle_var > 0:
-                    current_ang += (random.random() - 0.5) * branch_angle_var
+                    current_ang += (rng.random() - 0.5) * branch_angle_var
                 nx = x + step * math.cos(math.radians(current_ang))
                 ny = y + step * math.sin(math.radians(current_ang))
                 pts.append((nx, ny))
@@ -3568,7 +3598,9 @@ def method_lsystem(out_dir: Path, seed: int, params=None):
     raw_pts, depths = draw(ins, ang_inc, 0, 0, st)
 
     if not raw_pts:
-        save(PILImage.new("RGB", (W, H), (10, 10, 18)), mn(19, "L-System"), out_dir)
+        img = Image.new("RGB", (W, H), (10, 10, 18))
+        capture_frame("19", np.array(img, dtype=np.float32) / 255.0)
+        save(img, mn(19, "L-System"), out_dir)
         return
 
     # Auto-center: compute bounding box
@@ -3593,7 +3625,7 @@ def method_lsystem(out_dir: Path, seed: int, params=None):
     pts = [(px * scale + offset_x, py * scale + offset_y) for px, py in raw_pts]
 
     # --- Render ---
-    img = PILImage.new("RGB", (W, H), (10, 10, 18))
+    img = Image.new("RGB", (W, H), (10, 10, 18))
     draw_img = ImageDraw.Draw(img)
 
     max_depth = max(depths) if depths else 1
@@ -3622,8 +3654,8 @@ def method_lsystem(out_dir: Path, seed: int, params=None):
         width = max(1, int(3 - taper * 2 * frac))
 
         # Wind sway during animation
-        if anim_time is not None:
-            sway = math.sin(anim_time * 2 + depth * 0.5) * depth * 0.5
+        if has_anim and anim_mode in ("none", "wind_sway"):
+            sway = math.sin(anim_time * 0.75 * anim_speed + depth * 0.5) * depth * 0.5
             x1 += sway
             x2 += sway
 
