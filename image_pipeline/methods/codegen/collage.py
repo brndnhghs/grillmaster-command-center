@@ -1,18 +1,15 @@
-"""
-Code-gen method — auto-split from codegen.py
-"""
+"""Code-gen method - auto-split from codegen.py"""
 from __future__ import annotations
 import colorsys
 import math
 import random
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, save, get_font, BLACK, W, H
+from ...core.utils import save, mn, seed_all, W, H
 from ...core.animation import capture_frame
 
 # --- 37 Collage ---
@@ -25,13 +22,36 @@ from ...core.animation import capture_frame
              "blend_mode": {"description": "compositing blend mode", "choices": ["normal", "multiply", "screen", "overlay"], "default": "normal"},
              "gap": {"description": "gap between tiles (pixels)", "min": 0, "max": 20, "default": 2},
              "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "rotate", "drift", "morph"], "default": "none"},
+             "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
 def method_37_collage(out_dir: Path, seed: int, params=None):
-    """Composite multiple pattern tiles into a collage layout."""
+    """Composite multiple pattern tiles into a collage layout.
+
+    Generates sub-tiles with random geometric patterns (rects, circles,
+    lines, dots, triangles) and arranges them in one of 4 layouts (grid,
+    mosaic, stack, spiral). Supports blend modes and animation via tile
+    rotation, position drift, or morph line shift.
+
+    Args:
+        out_dir: Output directory for the generated image.
+        seed: Random seed for deterministic output.
+        params: Dict with keys:
+            layout: tile layout pattern (grid/mosaic/stack/spiral)
+            n_tiles: number of sub-tiles (2-16)
+            blend_mode: compositing blend mode (normal/multiply/screen/overlay)
+            gap: gap between tiles in pixels (0-20)
+            time: animation time in radians (0-6.28)
+            anim_mode: animation mode (none/rotate/drift/morph)
+            anim_speed: animation speed multiplier (0.1-5.0)
+    """
     if params is None:
         params = {}
     t = float(params.get("time", 0.0))
+    anim_mode = params.get("anim_mode", "none")
+    anim_speed = float(params.get("anim_speed", 1.0))
     seed_all(seed)
+    rng = random.Random(seed)
 
     layout = params.get("layout", "grid")
     n_tiles = int(params.get("n_tiles", 4))
@@ -39,18 +59,24 @@ def method_37_collage(out_dir: Path, seed: int, params=None):
     gap = int(params.get("gap", 2))
     n_tiles = max(2, min(n_tiles, 16))
 
+    # Apply animation
+    if anim_mode == "none":
+        t = 0.0
+    else:
+        t = t * anim_speed
+
     def _make_tile(tw: int, th: int, tile_idx: int) -> Image.Image:
         tile = Image.new("RGB", (tw, th), (10, 10, 18))
         draw = ImageDraw.Draw(tile)
-        rng_t = random.Random(tile_idx * 777 + seed)
-        ptype = rng_t.choice(["rects", "circles", "lines", "dots", "triangles"])
-        n = rng_t.randint(10, 50)
+        tile_rng = random.Random(tile_idx * 777 + seed)
+        ptype = tile_rng.choice(["rects", "circles", "lines", "dots", "triangles"])
+        n = tile_rng.randint(10, 50)
         for _ in range(n):
-            x = rng_t.uniform(0, tw)
-            y = rng_t.uniform(0, th)
-            sz = rng_t.uniform(5, min(tw, th) * 0.15)
-            hue = rng_t.uniform(0, 1)
-            col = tuple(int(c * 255) for c in colorsys.hsv_to_rgb(hue, rng_t.uniform(0.5, 1.0), rng_t.uniform(0.7, 1.0)))
+            x = tile_rng.uniform(0, tw)
+            y = tile_rng.uniform(0, th)
+            sz = tile_rng.uniform(5, min(tw, th) * 0.15)
+            hue = tile_rng.uniform(0, 1)
+            col = tuple(int(c * 255) for c in colorsys.hsv_to_rgb(hue, tile_rng.uniform(0.5, 1.0), tile_rng.uniform(0.7, 1.0)))
             if ptype == "rects":
                 draw.rectangle([x, y, x + sz, y + sz], fill=col)
             elif ptype == "circles":
@@ -61,8 +87,9 @@ def method_37_collage(out_dir: Path, seed: int, params=None):
                 draw.ellipse([x - 3, y - 3, x + 3, y + 3], fill=col)
             elif ptype == "triangles":
                 draw.polygon([(x, y - sz / 2), (x - sz / 2, y + sz / 2), (x + sz / 2, y + sz / 2)], fill=col)
-        morph_shift = int(t * 20 * (tile_idx + 1)) % max(tw, th)
-        draw.line([(morph_shift % tw, 0), (morph_shift % tw, th)], fill=(255, 255, 255), width=1)
+        if anim_mode == "morph":
+            morph_shift = int(t * 20 * (tile_idx + 1)) % max(tw, th)
+            draw.line([(morph_shift % tw, 0), (morph_shift % tw, th)], fill=(255, 255, 255), width=1)
         return tile
 
     canvas = Image.new("RGB", (W, H), (10, 10, 18))
@@ -76,20 +103,25 @@ def method_37_collage(out_dir: Path, seed: int, params=None):
             gx = idx % cols
             gy = idx // cols
             tile = _make_tile(tw, th, idx)
-            if t > 0:
+            if anim_mode == "rotate" and t > 0:
                 tile = tile.rotate(t * 20 * (idx + 1), expand=False, fillcolor=(10, 10, 18))
+            elif anim_mode == "drift":
+                pass  # No rotation, just position drift below
             px = gap + gx * (tw + gap)
             py = gap + gy * (th + gap)
+            if anim_mode == "drift":
+                px += int(20 * math.sin(t * 0.5 + idx * 1.3))
+                py += int(20 * math.cos(t * 0.7 + idx * 1.7))
             canvas.paste(tile, (px, py))
     elif layout == "mosaic":
         positions = []
         used = np.zeros((H, W), dtype=bool)
         for idx in range(n_tiles):
             for _ in range(50):
-                cxi = random.randint(50, W - 50)
-                cyi = random.randint(50, H - 50)
-                tw = random.randint(80, 300)
-                th = random.randint(80, 300)
+                cxi = rng.randint(50, W - 50)
+                cyi = rng.randint(50, H - 50)
+                tw = rng.randint(80, 300)
+                th = rng.randint(80, 300)
                 x0 = max(0, cxi - tw // 2)
                 y0 = max(0, cyi - th // 2)
                 x1 = min(W, x0 + tw)
@@ -105,7 +137,7 @@ def method_37_collage(out_dir: Path, seed: int, params=None):
             if tw < 10 or th < 10:
                 continue
             tile = _make_tile(tw, th, idx)
-            if t > 0:
+            if anim_mode == "rotate" and t > 0:
                 tile = tile.rotate(t * 15 * (idx + 1), expand=False, fillcolor=(10, 10, 18))
             canvas.paste(tile, (x0, y0))
     elif layout == "stack":
@@ -117,8 +149,9 @@ def method_37_collage(out_dir: Path, seed: int, params=None):
             tw = max(20, int(base_tw * scale))
             th = max(20, int(base_th * scale))
             tile = _make_tile(tw, th, idx)
-            angle = t * 30 * (idx + 1) + idx * 15
-            tile = tile.rotate(angle, expand=True, fillcolor=(10, 10, 18))
+            if anim_mode == "rotate":
+                angle = t * 30 * (idx + 1) + idx * 15
+                tile = tile.rotate(angle, expand=True, fillcolor=(10, 10, 18))
             ox = int(gap + (base_tw - tw) / 2 + math.sin(t * 0.5 + idx * 1.3) * 20)
             oy = int(gap + (base_th - th) / 2 + math.cos(t * 0.7 + idx * 1.7) * 20)
             canvas.paste(tile, (ox, oy))
@@ -132,8 +165,9 @@ def method_37_collage(out_dir: Path, seed: int, params=None):
             y = cys + radius * math.sin(angle) - 75
             tw = th = 150
             tile = _make_tile(tw, th, idx)
-            rot = t * 25 * (idx + 1) + idx * 20
-            tile = tile.rotate(rot, expand=False, fillcolor=(10, 10, 18))
+            if anim_mode == "rotate":
+                rot = t * 25 * (idx + 1) + idx * 20
+                tile = tile.rotate(rot, expand=False, fillcolor=(10, 10, 18))
             px = max(0, min(W - tw, int(x)))
             py = max(0, min(H - th, int(y)))
             canvas.paste(tile, (px, py))
