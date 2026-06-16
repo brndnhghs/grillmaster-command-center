@@ -1937,18 +1937,22 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
 
     def _render_wireframe(grid, iso):
         """Contour lines only (no fill)."""
+        if not _has_cv2:
+            return _render_filled(grid, iso)
         edges = cv2.Canny((iso * 255).astype(np.uint8), 50, 150)
         result = np.zeros((H, W, 3), dtype=np.float32)
         result[edges > 0] = [0.2, 0.6, 0.9]
         return result
 
     def _render_glow(grid, iso):
-        """Bright center + soft edges (Gaussian blur the isosurface)."""
-        blurred = cv2.GaussianBlur(iso, (0, 0), sigmaX=8, sigmaY=8)
-        r = np.clip(blurred * 2.0 + grid * 0.3, 0, 1)
-        g = np.clip(blurred * 1.5 + grid * 0.2, 0, 1)
-        b = np.clip(blurred * 0.8 + grid * 0.1, 0, 1)
-        return np.stack([r, g, b], axis=-1)
+        """Bright center + soft edges (Gaussian blur the smooth field)."""
+        if not _has_cv2:
+            return _render_filled(grid, iso)
+        blurred = cv2.GaussianBlur(grid, (0, 0), sigmaX=8, sigmaY=8)
+        r = np.clip(blurred * 2.0 + grid * 0.5, 0, 1)
+        g = np.clip(blurred * 1.5 + grid * 0.3, 0, 1)
+        b = np.clip(blurred * 0.8 + grid * 0.2, 0, 1)
+        return np.stack([r, g, b], axis=-1) * iso[:, :, None]
 
     def _render_multi_threshold(grid, iso):
         """N contour levels with different colors."""
@@ -1968,6 +1972,8 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
 
     def _render_heightmap_3d(grid, iso):
         """Shaded relief of the field."""
+        if not _has_cv2:
+            return _render_filled(grid, iso)
         grad_x = cv2.Sobel(grid, cv2.CV_32F, 1, 0, ksize=3)
         grad_y = cv2.Sobel(grid, cv2.CV_32F, 0, 1, ksize=3)
         # Light from top-left
@@ -1978,6 +1984,8 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
 
     def _render_edge_glow(grid, iso):
         """Bright edge on the isosurface boundary."""
+        if not _has_cv2:
+            return _render_filled(grid, iso)
         edges = cv2.Canny((iso * 255).astype(np.uint8), 30, 100)
         edges = cv2.dilate(edges, np.ones((2, 2), np.uint8), iterations=1)
         result = np.zeros((H, W, 3), dtype=np.float32)
@@ -1991,6 +1999,8 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
 
     def _render_inner_glow(grid, iso):
         """Brighter inside, darker outside."""
+        if not _has_cv2:
+            return _render_filled(grid, iso)
         dist_from_edge = cv2.distanceTransform((iso * 255).astype(np.uint8), cv2.DIST_L2, 3)
         dist_from_edge = dist_from_edge.astype(np.float32) / max(H, W)
         glow = np.clip(1 - dist_from_edge * 3, 0, 1)
@@ -2001,6 +2011,8 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
 
     def _render_shadow(grid, iso):
         """Drop shadow offset."""
+        if not _has_cv2:
+            return _render_filled(grid, iso)
         shadow_offset = 8
         shadow = np.roll(iso, shadow_offset, axis=0)
         shadow = np.roll(shadow, shadow_offset, axis=1)
@@ -2076,8 +2088,8 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
         # Random dots weighted by field value
         n_dots = int(iso.sum() * 0.3)
         for _ in range(min(n_dots, 50000)):
-            y = rng.randint(0, H)
-            x = rng.randint(0, W)
+            y = rng.randint(0, H - 1)
+            x = rng.randint(0, W - 1)
             if iso[y, x] > 0.5 and rng.random() < grid[y, x]:
                 size = int(1 + rng.random() * 2)
                 y0 = max(0, y - size)
@@ -2088,16 +2100,20 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
         return result
 
     def _render_neon(grid, iso):
-        """Bright neon glow with thin bright core."""
-        blurred = cv2.GaussianBlur(iso, (0, 0), sigmaX=6, sigmaY=6)
-        core = cv2.GaussianBlur(iso, (0, 0), sigmaX=1, sigmaY=1)
-        r = np.clip(blurred * 1.5 + core * 2.0 + grid * 0.2, 0, 1)
-        g = np.clip(blurred * 0.3 + core * 0.5 + grid * 0.1, 0, 1)
-        b = np.clip(blurred * 0.8 + core * 1.5 + grid * 0.3, 0, 1)
-        return np.stack([r, g, b], axis=-1)
+        """Bright neon glow with thin bright core (smooth field)."""
+        if not _has_cv2:
+            return _render_filled(grid, iso)
+        blurred = cv2.GaussianBlur(grid, (0, 0), sigmaX=6, sigmaY=6)
+        core = cv2.GaussianBlur(grid, (0, 0), sigmaX=1, sigmaY=1)
+        r = np.clip(blurred * 1.5 + core * 2.0 + grid * 0.3, 0, 1)
+        g = np.clip(blurred * 0.3 + core * 0.5 + grid * 0.2, 0, 1)
+        b = np.clip(blurred * 0.8 + core * 1.5 + grid * 0.4, 0, 1)
+        return np.stack([r, g, b], axis=-1) * iso[:, :, None]
 
     def _render_oil_paint(grid, iso):
         """Thick oil paint look with color variation."""
+        if not _has_cv2:
+            return _render_filled(grid, iso)
         base = _render_filled(grid, iso)
         # Bilateral filter for oil paint effect
         base_uint8 = (base * 255).astype(np.uint8)
@@ -2109,6 +2125,8 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
 
     def _render_mosaic(grid, iso):
         """Pixelated mosaic inside the blob."""
+        if not _has_cv2:
+            return _render_filled(grid, iso)
         base = _render_filled(grid, iso)
         # Downsample then upsample
         small = cv2.resize(base, (W // 16, H // 16), interpolation=cv2.INTER_NEAREST)
@@ -2131,6 +2149,8 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
 
     def _render_glass(grid, iso):
         """Semi-transparent glass look with edge highlight."""
+        if not _has_cv2:
+            return _render_filled(grid, iso)
         edges = cv2.Canny((iso * 255).astype(np.uint8), 30, 100)
         edges = cv2.dilate(edges, np.ones((2, 2), np.uint8), iterations=1)
         result = np.zeros((H, W, 3), dtype=np.float32)
@@ -2149,7 +2169,9 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
 
     def _render_luminous(grid, iso):
         """Self-illuminated look with bright center and color gradient."""
-        blurred = cv2.GaussianBlur(iso, (0, 0), sigmaX=4, sigmaY=4)
+        if not _has_cv2:
+            return _render_filled(grid, iso)
+        blurred = cv2.GaussianBlur(grid, (0, 0), sigmaX=4, sigmaY=4)
         # Color gradient from center
         y_norm = np.tile(np.linspace(0, 1, H)[:, None], (1, W))
         r = np.clip(blurred * (1.5 + 0.5 * (1 - y_norm)), 0, 1)
