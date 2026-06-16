@@ -873,7 +873,7 @@ def method_worley_noise(out_dir: Path, seed: int, params=None):
     """
     if params is None:
         params = {}
-    t = float(params.get("time", 0.0)) * 2 * math.pi
+    t = float(params.get("time", 0.0))
     anim_mode = params.get("anim_mode", "none")
     anim_speed = float(params.get("anim_speed", 0.5))
     seed_all(seed)
