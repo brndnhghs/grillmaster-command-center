@@ -6,6 +6,7 @@ import math
 import random
 import shlex
 import subprocess
+from io import BytesIO
 from pathlib import Path
 
 import numpy as np
