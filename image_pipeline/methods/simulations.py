@@ -1437,31 +1437,78 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
              "color_speed": {"description": "color animation speed", "min": 0.0, "max": 5.0, "default": 1.0},
              "ball_speed": {"description": "ball movement speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
              "trail_frames": {"description": "number of ghost trail frames (0=none)", "min": 0, "max": 20, "default": 0},
-             "time": {"description": "animation time parameter", "min": 0.0, "max": 100.0, "default": 0.0},
+             "time": {"description": "animation time in radians", "min": 0.0, "max": 6.28, "default": 0.0},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "animate"], "default": "animate"},
+             "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
 def method_metaballs(out_dir: Path, seed: int, params=None):
-    import cv2
-    from collections import deque
+    """Render metaballs — organic blobs from isosurface of overlapping fields.
 
-    seed_all(seed)
+    Creates a set of metaballs (blobs) that move according to a behavior
+    pattern, computes their combined field, and renders the isosurface with
+    various visual styles. Supports 20 behaviors, 7 field functions, 20
+    rendering styles, and 6 background styles.
+
+    Args:
+        out_dir: Output directory for the generated image.
+        seed: Random seed for deterministic output.
+        params: Dict with keys:
+            balls: metaball count (3-80)
+            radius_min: minimum metaball radius (5-80)
+            radius_max: maximum metaball radius (20-200)
+            isovalue: isosurface threshold (0.05-0.8)
+            behavior: ball movement pattern
+            field_fn: metaball field function
+            style: rendering style
+            palette: PALETTES name for coloring
+            bg_style: background style
+            multi_threshold_levels: contour levels for multi_threshold (2-20)
+            color_speed: color animation speed (0.0-5.0)
+            ball_speed: ball movement speed multiplier (0.1-5.0)
+            trail_frames: ghost trail frames (0-20)
+            time: animation time in radians (0-6.28)
+            anim_mode: animation mode (none/animate)
+            anim_speed: animation speed multiplier (0.1-5.0)
+    """
     if params is None:
         params = {}
+    anim_time = float(params.get("time", 0.0))
+    anim_mode = params.get("anim_mode", "animate")
+    anim_speed = float(params.get("anim_speed", 1.0))
+    seed_all(seed)
+    rng = random.Random(seed)
+
+    # ── Optional imports ──
+    try:
+        import cv2
+        _has_cv2 = True
+    except ImportError:
+        _has_cv2 = False
+    try:
+        from collections import deque
+        _has_deque = True
+    except ImportError:
+        _has_deque = False
 
     # ── Parse params ────────────────────────────────────────────────
-    n_balls = params.get("balls", 20)
-    r_min = params.get("radius_min", 30)
-    r_max = params.get("radius_max", 80)
-    iso_threshold = params.get("isovalue", 0.3)
+    n_balls = int(params.get("balls", 20))
+    r_min = float(params.get("radius_min", 30))
+    r_max = float(params.get("radius_max", 80))
+    iso_threshold = float(params.get("isovalue", 0.3))
     behavior = params.get("behavior", "random_walk")
     field_fn_name = params.get("field_fn", "inverse_square")
     style = params.get("style", "filled")
     palette_name = params.get("palette", "")
     bg_style = params.get("bg_style", "dark")
-    multi_levels = params.get("multi_threshold_levels", 5)
-    color_speed = params.get("color_speed", 1.0)
-    ball_speed = params.get("ball_speed", 1.0)
-    trail_frames = params.get("trail_frames", 0)
-    t = params.get("time", 0.0)
+    multi_levels = int(params.get("multi_threshold_levels", 5))
+    color_speed = float(params.get("color_speed", 1.0))
+    ball_speed = float(params.get("ball_speed", 1.0))
+    trail_frames = int(params.get("trail_frames", 0))
+
+    # ── Animation ──
+    t = anim_time * anim_speed
+    if anim_mode == "none":
+        t = 0.0
 
     cx, cy = W / 2, H / 2  # canvas center
 
@@ -1524,12 +1571,12 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
                 for gx, gy in grid_pts:
                     px = start_x + ci * (cell_w + spacing) + gx * 6
                     py = start_y + gy * 6
-                    r = random.uniform(r_min, r_max)
+                    r = rng.uniform(r_min, r_max)
                     balls.append({
                         "x": float(px), "y": float(py),
                         "r": r, "vx": 0.0, "vy": 0.0,
-                        "phase": random.uniform(0, 2 * math.pi),
-                        "color": (random.random(), random.random(), random.random()),
+                        "phase": rng.uniform(0, 2 * math.pi),
+                        "color": (rng.random(), rng.random(), rng.random()),
                         "init_x": float(px), "init_y": float(py),
                     })
         elif behavior == "lattice":
@@ -1542,12 +1589,12 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
                 row = i // cols
                 px = spacing_x * (col + 1)
                 py = spacing_y * (row + 1)
-                r = random.uniform(r_min, r_max)
+                r = rng.uniform(r_min, r_max)
                 balls.append({
                     "x": float(px), "y": float(py),
                     "r": r, "vx": 0.0, "vy": 0.0,
-                    "phase": random.uniform(0, 2 * math.pi),
-                    "color": (random.random(), random.random(), random.random()),
+                    "phase": rng.uniform(0, 2 * math.pi),
+                    "color": (rng.random(), rng.random(), rng.random()),
                     "init_x": float(px), "init_y": float(py),
                     "lattice_col": col, "lattice_row": row,
                 })
@@ -1560,16 +1607,16 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
                 angle = arm_angle + dist_from_center * 0.05
                 px = cx + dist_from_center * math.cos(angle)
                 py = cy + dist_from_center * math.sin(angle)
-                r = random.uniform(r_min, r_max)
+                r = rng.uniform(r_min, r_max)
                 balls.append({
                     "x": float(px), "y": float(py),
                     "r": r, "vx": 0.0, "vy": 0.0,
-                    "phase": random.uniform(0, 2 * math.pi),
-                    "color": (random.random(), random.random(), random.random()),
+                    "phase": rng.uniform(0, 2 * math.pi),
+                    "color": (rng.random(), rng.random(), rng.random()),
                     "init_x": float(px), "init_y": float(py),
                     "orbit_radius": dist_from_center,
                     "orbit_angle": angle,
-                    "orbit_speed": (0.5 + random.random()) * (1 if random.random() > 0.3 else -1),
+                    "orbit_speed": (0.5 + rng.random()) * (1 if rng.random() > 0.3 else -1),
                 })
         elif behavior == "spiral":
             for i in range(n_balls):
@@ -1578,12 +1625,12 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
                 radius = frac * min(W, H) * 0.4
                 px = cx + radius * math.cos(angle)
                 py = cy + radius * math.sin(angle)
-                r = random.uniform(r_min, r_max)
+                r = rng.uniform(r_min, r_max)
                 balls.append({
                     "x": float(px), "y": float(py),
                     "r": r, "vx": 0.0, "vy": 0.0,
-                    "phase": random.uniform(0, 2 * math.pi),
-                    "color": (random.random(), random.random(), random.random()),
+                    "phase": rng.uniform(0, 2 * math.pi),
+                    "color": (rng.random(), rng.random(), rng.random()),
                     "init_x": float(px), "init_y": float(py),
                     "spiral_frac": frac,
                 })
@@ -1592,12 +1639,12 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
                 frac = i / max(1, n_balls - 1)
                 px = 50 + frac * (W - 100)
                 py = H / 2 + 80 * math.sin(frac * 4 * math.pi)
-                r = random.uniform(r_min, r_max)
+                r = rng.uniform(r_min, r_max)
                 balls.append({
                     "x": float(px), "y": float(py),
                     "r": r, "vx": 0.0, "vy": 0.0,
-                    "phase": random.uniform(0, 2 * math.pi),
-                    "color": (random.random(), random.random(), random.random()),
+                    "phase": rng.uniform(0, 2 * math.pi),
+                    "color": (rng.random(), rng.random(), rng.random()),
                     "init_x": float(px), "init_y": float(py),
                 })
         elif behavior == "painting":
@@ -1609,25 +1656,25 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
                 py = cy + 150 * math.cos(angle * 0.7) * (1 + 0.2 * math.cos(frac * 5 * math.pi))
                 path_pts.append((float(px), float(py)))
             for i, (px, py) in enumerate(path_pts):
-                r = random.uniform(r_min, r_max)
+                r = rng.uniform(r_min, r_max)
                 balls.append({
                     "x": float(px), "y": float(py),
                     "r": r, "vx": 0.0, "vy": 0.0,
-                    "phase": random.uniform(0, 2 * math.pi),
-                    "color": (random.random(), random.random(), random.random()),
+                    "phase": rng.uniform(0, 2 * math.pi),
+                    "color": (rng.random(), rng.random(), rng.random()),
                     "init_x": float(px), "init_y": float(py),
                 })
         else:
             # Default: random positions
             for i in range(n_balls):
-                px = random.uniform(0, W)
-                py = random.uniform(0, H)
-                r = random.uniform(r_min, r_max)
+                px = rng.uniform(0, W)
+                py = rng.uniform(0, H)
+                r = rng.uniform(r_min, r_max)
                 balls.append({
                     "x": float(px), "y": float(py),
-                    "r": r, "vx": random.uniform(-1, 1), "vy": random.uniform(-1, 1),
-                    "phase": random.uniform(0, 2 * math.pi),
-                    "color": (random.random(), random.random(), random.random()),
+                    "r": r, "vx": rng.uniform(-1, 1), "vy": rng.uniform(-1, 1),
+                    "phase": rng.uniform(0, 2 * math.pi),
+                    "color": (rng.random(), rng.random(), rng.random()),
                     "init_x": float(px), "init_y": float(py),
                 })
         return balls
@@ -1639,8 +1686,8 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
         speed = ball_speed * dt
         if behavior == "random_walk":
             for b in balls:
-                b["vx"] += random.uniform(-2, 2) * speed
-                b["vy"] += random.uniform(-2, 2) * speed
+                b["vx"] += rng.uniform(-2, 2) * speed
+                b["vy"] += rng.uniform(-2, 2) * speed
                 max_v = 3 * speed
                 v = math.sqrt(b["vx"] ** 2 + b["vy"] ** 2)
                 if v > max_v:
@@ -1684,8 +1731,8 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
                 b["y"] = max(0, min(H, b["y"]))
         elif behavior == "bounce":
             for b in balls:
-                b["vx"] += random.uniform(-0.5, 0.5) * speed
-                b["vy"] += random.uniform(-0.5, 0.5) * speed
+                b["vx"] += rng.uniform(-0.5, 0.5) * speed
+                b["vy"] += rng.uniform(-0.5, 0.5) * speed
                 b["x"] += b["vx"] * speed
                 b["y"] += b["vy"] * speed
                 if b["x"] < 0 or b["x"] > W:
@@ -1752,7 +1799,7 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
             # Interpolate between two random configurations
             if not hasattr(_update_balls, "_morph_targets"):
                 _update_balls._morph_targets = [
-                    {"x": random.uniform(50, W - 50), "y": random.uniform(50, H - 50)}
+                    {"x": rng.uniform(50, W - 50), "y": rng.uniform(50, H - 50)}
                     for _ in balls
                 ]
             targets = _update_balls._morph_targets
@@ -1817,24 +1864,24 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
         elif behavior == "cellular":
             # Balls divide and merge
             for b in balls:
-                b["x"] += random.uniform(-1, 1) * speed
-                b["y"] += random.uniform(-1, 1) * speed
-                b["r"] += random.uniform(-0.5, 0.5)
+                b["x"] += rng.uniform(-1, 1) * speed
+                b["y"] += rng.uniform(-1, 1) * speed
+                b["r"] += rng.uniform(-0.5, 0.5)
                 b["r"] = max(r_min * 0.5, min(r_max * 1.5, b["r"]))
                 b["x"] = max(0, min(W, b["x"]))
                 b["y"] = max(0, min(H, b["y"]))
         elif behavior == "pulse":
             for b in balls:
                 pulse = 1 + 0.3 * math.sin(t * 2 * speed + b["phase"])
-                b["r"] = b.get("_base_r", random.uniform(r_min, r_max)) * pulse
                 if "_base_r" not in b:
-                    b["_base_r"] = b["r"]
+                    b["_base_r"] = rng.uniform(r_min, r_max)
+                b["r"] = b["_base_r"] * pulse
         elif behavior == "breathing":
             breath = 1 + 0.2 * math.sin(t * 1.5 * speed)
             for b in balls:
-                b["r"] = b.get("_base_r", random.uniform(r_min, r_max)) * breath
                 if "_base_r" not in b:
-                    b["_base_r"] = b["r"]
+                    b["_base_r"] = rng.uniform(r_min, r_max)
+                b["r"] = b["_base_r"] * breath
         elif behavior == "text":
             # Hold position
             pass
@@ -2026,7 +2073,6 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
         # Background
         result[:, :] = [0.05, 0.05, 0.1]
         # Random dots weighted by field value
-        rng = np.random.RandomState(int(seed + t * 100))
         n_dots = int(iso.sum() * 0.3)
         for _ in range(min(n_dots, 50000)):
             y = rng.randint(0, H)
@@ -2131,10 +2177,9 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
             return bg
         elif bg_style == "stars":
             bg = np.ones((H, W, 3), dtype=np.float32) * 0.02
-            rng = np.random.RandomState(seed)
             for _ in range(300):
-                sx = rng.randint(0, W)
-                sy = rng.randint(0, H)
+                sx = rng.randint(0, W - 1)
+                sy = rng.randint(0, H - 1)
                 brightness = 0.3 + rng.random() * 0.7
                 bg[sy, sx] = [brightness, brightness, brightness * 0.9]
             return bg
