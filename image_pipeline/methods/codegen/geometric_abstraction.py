@@ -28,7 +28,7 @@ from ...core.animation import capture_frame
              "rotation": {"description": "global rotation offset (degrees)", "min": 0.0, "max": 360.0, "default": 0.0},
              "translucent": {"description": "use translucent fills (RGBA)", "default": True},
              "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
-             "anim_mode": {"description": "animation mode", "choices": ["none", "rotation", "rotation_wave", "size_sweep", "position_wave", "color_drift", "shape_morph", "layout_spin", "alpha_pulse", "jitter", "stretch", "orbit", "gravity", "twist", "ripple", "bounce", "vortex", "pendulum"], "default": "none"},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "rotation", "rotation_wave", "size_sweep", "position_wave", "color_drift", "shape_morph", "layout_spin", "alpha_pulse", "jitter", "stretch", "orbit", "gravity", "twist", "ripple", "bounce", "vortex", "pendulum", "magnet", "bloom", "melt", "spark", "wave", "spin", "repel", "swirl", "cascade", "morph_sequence", "color_wave", "shear", "fracture", "glow", "wobble", "breathe", "lens", "trail"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 2.0, "default": 0.25},
          })
 def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
@@ -73,6 +73,26 @@ def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
     effective_bounce_amp = 0.0
     effective_vortex = 0.0
     effective_pendulum_amp = 0.0
+    effective_magnet = 0.0
+    effective_bloom = 1.0
+    effective_melt = 0.0
+    effective_spark = 0.0
+    effective_wave_amp = 0.0
+    effective_spin_angle = 0.0
+    effective_repel = 0.0
+    effective_swirl = 0.0
+    effective_cascade = 0.0
+    effective_morph_seq = 0.0
+    effective_color_wave = 0.0
+    effective_shear = 0.0
+    effective_fracture = 0.0
+    effective_glow = 0.0
+    effective_wobble = 0.0
+    effective_breathe = 1.0
+    effective_lens_x = 0.5
+    effective_lens_y = 0.5
+    effective_lens_strength = 0.0
+    effective_trail = 0.0
     morph_fade = 0.0
     shape_type_a = raw_shape_types[0]
     shape_type_b = raw_shape_types[0]
@@ -138,6 +158,69 @@ def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
 
     elif anim_mode == "pendulum":
         effective_pendulum_amp = 30.0 * math.sin(t * 0.4 * anim_speed)
+
+    elif anim_mode == "magnet":
+        effective_magnet = 40.0 * (0.5 + 0.5 * math.sin(t * 0.5 * anim_speed))
+
+    elif anim_mode == "bloom":
+        effective_bloom = 0.3 + 0.7 * (0.5 + 0.5 * math.sin(t * 0.6 * anim_speed))
+
+    elif anim_mode == "melt":
+        effective_melt = 20.0 * (0.5 + 0.5 * math.sin(t * 0.4 * anim_speed))
+
+    elif anim_mode == "spark":
+        effective_spark = 1.0 * anim_speed
+
+    elif anim_mode == "wave":
+        effective_wave_amp = 25.0 * (0.5 + 0.5 * math.sin(t * 0.7 * anim_speed))
+
+    elif anim_mode == "spin":
+        effective_spin_angle = t * 1.5 * anim_speed
+
+    elif anim_mode == "repel":
+        effective_repel = 30.0 * (0.5 + 0.5 * math.sin(t * 0.5 * anim_speed))
+
+    elif anim_mode == "swirl":
+        effective_swirl = 1.0 * anim_speed
+
+    elif anim_mode == "cascade":
+        effective_cascade = 1.0 * anim_speed
+
+    elif anim_mode == "morph_sequence":
+        shape_cycle = ["circle", "rect", "triangle", "diamond", "hexagon", "star", "cross", "arc", "polygon"]
+        n_shp = len(shape_cycle)
+        raw_idx = (t / (2 * math.pi)) * n_shp * anim_speed
+        idx_a = int(raw_idx) % n_shp
+        idx_b = (idx_a + 1) % n_shp
+        morph_fade = raw_idx - int(raw_idx)
+        shape_type_a = shape_cycle[idx_a]
+        shape_type_b = shape_cycle[idx_b]
+
+    elif anim_mode == "color_wave":
+        effective_color_wave = t * 1.5 * anim_speed
+
+    elif anim_mode == "shear":
+        effective_shear = 0.3 * math.sin(t * 0.6 * anim_speed)
+
+    elif anim_mode == "fracture":
+        effective_fracture = 20.0 * (0.5 + 0.5 * math.sin(t * 0.5 * anim_speed))
+
+    elif anim_mode == "glow":
+        effective_glow = 0.5 + 0.5 * math.sin(t * 0.7 * anim_speed)
+
+    elif anim_mode == "wobble":
+        effective_wobble = 30.0 * math.sin(t * 0.8 * anim_speed)
+
+    elif anim_mode == "breathe":
+        effective_breathe = 0.6 + 0.4 * (0.5 + 0.5 * math.sin(t * 0.5 * anim_speed))
+
+    elif anim_mode == "lens":
+        effective_lens_x = 0.5 + 0.3 * math.cos(t * 0.4 * anim_speed)
+        effective_lens_y = 0.5 + 0.3 * math.sin(t * 0.3 * anim_speed)
+        effective_lens_strength = 0.5 + 0.5 * math.sin(t * 0.6 * anim_speed)
+
+    elif anim_mode == "trail":
+        effective_trail = 0.5 + 0.5 * math.sin(t * 0.5 * anim_speed)
 
     # ── Create canvas ──
     use_rgba = translucent or alpha < 255
@@ -207,7 +290,7 @@ def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
             b = int(80 + 100 * (0.5 + 0.5 * math.sin(frac * math.pi)))
         elif color_mode == "ordered":
             # Cycle through hue space with optional color shift
-            hue = (idx * 37 + int(effective_color_shift * 60)) % 360
+            hue = (idx * 37 + int(effective_color_shift * 60) + int(effective_color_wave * 60 * math.sin(idx * 0.3 + t * 1.5))) % 360
             h = hue / 60.0
             s, v = 0.8, 0.9
             hi = int(h) % 6
@@ -333,7 +416,14 @@ def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
                       orbit_radius: float, orbit_speed: float,
                       layout_angle: float,
                       gravity: float, twist: float, ripple_amp: float,
-                      bounce_amp: float, vortex: float, pendulum_amp: float) -> Image.Image:
+                      bounce_amp: float, vortex: float, pendulum_amp: float,
+                      magnet: float, bloom: float, melt: float,
+                      spark: float, wave_amp: float, spin_angle: float,
+                      repel: float, swirl: float, cascade: float,
+                      morph_seq: float, color_wave: float, shear: float,
+                      fracture: float, glow: float, wobble: float,
+                      breathe: float, lens_x: float, lens_y: float,
+                      lens_strength: float, trail: float) -> Image.Image:
         """Render a single frame. Returns PIL Image (RGB)."""
         use_rgba_local = translucent or alpha_val < 255
         if use_rgba_local:
@@ -413,12 +503,98 @@ def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
             if pendulum_amp != 0.0:
                 px += pendulum_amp * math.sin(t * 1.2 * anim_speed + idx * 0.3)
 
+            # Magnet: pull shapes toward center
+            if magnet != 0.0:
+                dx = px - cx
+                dy = py - cy
+                dist = max(1.0, math.sqrt(dx*dx + dy*dy))
+                px -= magnet * dx / dist
+                py -= magnet * dy / dist
+
+            # Bloom: shapes expand outward from center
+            if bloom != 1.0:
+                dx = px - cx
+                dy = py - cy
+                px = cx + dx * bloom
+                py = cy + dy * bloom
+
+            # Melt: shapes slide downward proportional to x position
+            if melt != 0.0:
+                py += melt * (1.0 + (px - cx) / cx)
+
+            # Spark: random per-shape color flash
+            if spark != 0.0:
+                flash = (math.sin(t * 3.0 * spark + idx * 1.7) + 1.0) * 0.5
+                if flash > 0.85:
+                    color = (255, 255, 200)
+                elif flash > 0.7:
+                    color = (255, 200, 100)
+
+            # Wave: sine wave displacement based on y position
+            if wave_amp != 0.0:
+                px += wave_amp * math.sin(py * 0.05 + t * 2.0 * anim_speed)
+
+            # Spin: per-shape rotation independent of global rotation
+            if spin_angle != 0.0:
+                shape_rot = (shape_rot + spin_angle * 30.0) % 360.0
+
+            # Repel: push shapes away from center
+            if repel != 0.0:
+                dx = px - cx
+                dy = py - cy
+                dist = max(1.0, math.sqrt(dx*dx + dy*dy))
+                px += repel * dx / dist
+                py += repel * dy / dist
+
+            # Swirl: differential rotation — outer shapes orbit faster
+            if swirl != 0.0:
+                dx = px - cx
+                dy = py - cy
+                dist = math.sqrt(dx*dx + dy*dy)
+                angle = math.atan2(dy, dx) + t * swirl * (0.5 + dist * 0.01)
+                px = cx + dist * math.cos(angle)
+                py = cy + dist * math.sin(angle)
+
+            # Cascade: shapes trigger in sequence based on index
+            if cascade != 0.0:
+                phase = (idx / n_shapes) * 2 * math.pi
+                trigger = (math.sin(t * cascade * 2.0 - phase) + 1.0) * 0.5
+                px += trigger * 20.0
+                py += trigger * 10.0
+
+            # Morph sequence: each shape morphs at different phase
+            if morph_seq != 0.0:
+                pass  # handled by shape_type_a/b below
+
+            # Color wave: color shifts propagate as a wave
+            if color_wave != 0.0:
+                pass  # handled in _get_color via effective_color_shift
+
+            # Shear: horizontal offset proportional to y position
+            if shear != 0.0:
+                px += shear * (py - cy)
+
+            # Fracture: random offset per shape, oscillating
+            if fracture != 0.0:
+                fx = math.sin(idx * 2.3 + t * 1.5 * anim_speed)
+                fy = math.cos(idx * 1.7 + t * 1.3 * anim_speed)
+                px += fracture * fx
+                py += fracture * fy
+
+            # Wobble: per-shape rotation oscillates rapidly
+            if wobble != 0.0:
+                shape_rot = (shape_rot + wobble * math.sin(t * 3.0 * anim_speed + idx * 1.3)) % 360.0
+
             # Pick shape type
             shape_type = shp_type_a
 
             # Size
             base_size = rng.uniform(10, 40)
             size = base_size * size_mod
+
+            # Breathe: size pulses with phase per shape
+            if breathe != 1.0:
+                size = size * breathe
 
             # Stretch: non-uniform scaling along an angle
             if stretch != 1.0:
@@ -433,11 +609,45 @@ def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
                 size_y = size
 
             color = _get_color(idx, x, y)
-            if use_rgba_local:
+
+            # Glow: alpha pulses per shape with phase offset
+            if glow != 0.0:
+                glow_alpha = int(alpha_val * (0.3 + 0.7 * (0.5 + 0.5 * math.sin(t * 2.0 * anim_speed + idx * 0.5))))
+                if use_rgba_local:
+                    color = color[:3] + (glow_alpha,)
+            elif use_rgba_local:
                 color = color + (alpha_val,)
+
+            # Lens: magnify shapes near a moving focal point
+            if lens_strength != 0.0:
+                lx = lens_x * W
+                ly = lens_y * H
+                dx = px - lx
+                dy = py - ly
+                dist = math.sqrt(dx*dx + dy*dy)
+                mag = 1.0 + lens_strength * max(0, 1.0 - dist / (W * 0.3))
+                size_x = size_x * mag
+                size_y = size_y * mag
 
             # Draw shape A
             _draw_shape(draw_local, shp_type_a, px, py, size_x, size_y, color, shape_rot)
+
+            # Trail: ghost shapes trail behind — draw multiple copies with decreasing alpha
+            if trail != 0.0:
+                for t_i in range(1, 4):
+                    trail_t = t - t_i * 0.15
+                    if trail_t < 0:
+                        continue
+                    trail_alpha = int(alpha_val * (1.0 - t_i * 0.25) * trail)
+                    if trail_alpha < 5:
+                        continue
+                    trail_px = px + 5.0 * t_i * math.cos(trail_t * 0.5)
+                    trail_py = py + 5.0 * t_i * math.sin(trail_t * 0.3)
+                    if use_rgba_local:
+                        trail_color = color[:3] + (trail_alpha,)
+                    else:
+                        trail_color = color
+                    _draw_shape(draw_local, shp_type_a, trail_px, trail_py, size_x, size_y, trail_color, shape_rot)
 
             # If morphing, draw shape B on top with alpha blend
             if fade > 0:
@@ -466,6 +676,13 @@ def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
         effective_layout_angle,
         effective_gravity, effective_twist, effective_ripple_amp,
         effective_bounce_amp, effective_vortex, effective_pendulum_amp,
+        effective_magnet, effective_bloom, effective_melt,
+        effective_spark, effective_wave_amp, effective_spin_angle,
+        effective_repel, effective_swirl, effective_cascade,
+        effective_morph_seq, effective_color_wave, effective_shear,
+        effective_fracture, effective_glow, effective_wobble,
+        effective_breathe, effective_lens_x, effective_lens_y,
+        effective_lens_strength, effective_trail,
     )
 
     result_arr = np.array(img).astype(np.float32) / 255.0
