@@ -12,6 +12,7 @@ from PIL import Image
 
 from ..core.registry import method
 from ..core.utils import save, seed_all
+from ..core.animation import capture_frame
 from ..core.shaders import render_procedural, list_shaders, SHADERS
 
 SHADER_NAMES = sorted([k for k, v in SHADERS.items() if v["type"] == "procedural"])
@@ -31,15 +32,35 @@ SHADER_NAMES = sorted([k for k, v in SHADERS.items() if v["type"] == "procedural
         "p2": {"description": "generic float param 2", "min": 0.0, "max": 1.0, "default": 0.5},
         "p3": {"description": "generic float param 3", "min": 0.0, "max": 1.0, "default": 0.5},
         "p4": {"description": "generic float param 4", "min": 0.0, "max": 1.0, "default": 0.5},
-        "time": {"description": "animation time offset", "min": 0.0, "max": 100.0, "default": 0.0},
+        "time": {"description": "animation time offset", "min": 0.0, "max": 6.28, "default": 0.0},
+        "anim_mode": {"description": "animation mode", "choices": ["none", "animate"], "default": "none"},
+        "anim_speed": {"description": "animation speed multiplier", "min": 0.0, "max": 5.0, "default": 1.0},
     },
 )
 def method_gpu_procedural(out_dir: Path, seed: int, params=None):
+    """GPU Procedural Shaders — generate imagery from GLSL fragment shaders on the GPU.
+
+    Renders procedural textures, fractals, noise, cellular patterns, fire, smoke,
+    terrain, and more using 25+ GLSL fragment shaders via ModernGL (Apple M1 Metal).
+
+    Parameters:
+        shader (str): Shader name (domain_warp, mandelbrot, julia, fire, smoke, terrain, etc.)
+        p1 (float): Generic float param 1 (0-1, default 0.5)
+        p2 (float): Generic float param 2 (0-1, default 0.5)
+        p3 (float): Generic float param 3 (0-1, default 0.5)
+        p4 (float): Generic float param 4 (0-1, default 0.5)
+        time (float): Animation time offset (0-6.28, default 0.0)
+        anim_mode (str): Animation mode (none, animate)
+        anim_speed (float): Animation speed multiplier (0-5, default 1.0)
+    """
     if params is None:
         params = {}
 
-    t = float(params.get("time", 0.0))
-    seed_all(seed + int(t * 100))
+    raw_time = float(params.get("time", 0.0))
+    anim_mode = params.get("anim_mode", "none")
+    anim_speed = float(params.get("anim_speed", 1.0))
+    t = raw_time * anim_speed
+    seed_all(seed)
 
     shader_name = params.get("shader", "domain_warp")
     if shader_name not in SHADERS or SHADERS[shader_name]["type"] != "procedural":
