@@ -16,7 +16,7 @@ from ...core.animation import capture_frame
          params={
     "time": {"description": "animation phase (0 to 2pi)", "min": 0.0, "max": 6.28, "default": 0.0},
     "content": {"description": "text content to encode as QR", "default": "HELLO"},
-    "anim_mode": {"description": "QR animation mode", "choices": ["none", "rotate_pulse", "mask_morph", "ring_pulse", "color_sweep"], "default": "none"},
+    "anim_mode": {"description": "QR animation mode", "choices": ["none", "rotate_pulse", "mask_morph", "color_sweep"], "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.0, "max": 2.0, "default": 0.25},
 })
 def method_09_qr_code(out_dir: Path, seed: int, params=None):
@@ -54,14 +54,9 @@ def method_09_qr_code(out_dir: Path, seed: int, params=None):
         q.make()
         return q.make_image(fill_color="black", back_color="white").convert("RGB")
 
-    def _draw_ring(draw_obj, center, radius, width=2, color=(40, 40, 40)):
-        draw_obj.ellipse([center[0] - radius, center[1] - radius,
-                          center[0] + radius, center[1] + radius],
-                         outline=color, width=width)
-
-    def _render_centered(qr_img, scale_factor=0.7, fallback_scale=None):
+    def _render_centered(qr_img, scale_factor=0.7):
         qw, qh = qr_img.size
-        base_scale = min(W * scale_factor / qw, H * scale_factor / qh) if fallback_scale is None else fallback_scale
+        base_scale = min(W * scale_factor / qw, H * scale_factor / qh)
         dw = max(1, int(qw * base_scale))
         dh = max(1, int(qh * base_scale))
         qr_img = qr_img.resize((dw, dh), Image.LANCZOS)
@@ -69,51 +64,16 @@ def method_09_qr_code(out_dir: Path, seed: int, params=None):
         x = (W - dw) // 2
         y = (H - dh) // 2
         img.paste(qr_img, (x, y))
-        return img, x, y, dw, dh
-
-    # ── Ring animation — common across modes ──
-    ring_pulse_t = t * anim_speed
-    if anim_mode == "ring_pulse":
-        ring_r_raw = W * (0.08 + 0.40 * (0.5 + 0.5 * math.sin(ring_pulse_t * 2.37)))
-        ring_w_raw = 2.0 + 7.0 * (0.5 + 0.5 * math.sin(ring_pulse_t * 1.3))
-        ring_r = int(ring_r_raw)
-        ring_w = int(ring_w_raw)
-        ring_c = (40, 40, 40)
-        # Draw ring only (no QR)
-        img = Image.new("RGB", (W, H), (255, 255, 255))
-        draw = ImageDraw.Draw(img)
-        _draw_ring(draw, (W // 2, H // 2), ring_r, ring_w, ring_c)
-        # Crosshair decoration
-        draw.line([(W // 2 - ring_r - 10, H // 2), (W // 2 + ring_r + 10, H // 2)],
-                  fill=(200, 200, 200), width=1)
-        draw.line([(W // 2, H // 2 - ring_r - 10), (W // 2, H // 2 + ring_r + 10)],
-                  fill=(200, 200, 200), width=1)
-        arr = np.array(img).astype(np.float32) / 255.0
-        capture_frame("09", arr)
-        save(img, mn(9, "qr-ring-pulse"), out_dir)
-        return
+        return img
 
     # ── Color sweep: QR fill color oscillates — modules change hue ──
     if anim_mode == "color_sweep":
-        hue = int(128 + 127 * math.sin(t * 2.37 * anim_speed))  # 1→255, avoids 0 plateau
-        qr_img = _make_qr()
+        hue = int(128 + 126 * math.sin(t * 3.71 * anim_speed))
         q = qrcode.QRCode(box_size=DEFAULT_BOX, border=BORDER, mask_pattern=None)
         q.add_data(content)
         q.make()
         qr_img = q.make_image(fill_color=(hue, 255 - hue, 128), back_color="white").convert("RGB")
-        qw, qh = qr_img.size
-        base_scale = min(W * 0.7 / qw, H * 0.7 / qh)
-        dw = max(1, int(qw * base_scale))
-        dh = max(1, int(qh * base_scale))
-        qr_img = qr_img.resize((dw, dh), Image.LANCZOS)
-        img = Image.new("RGB", (W, H), (255, 255, 255))
-        x = (W - dw) // 2
-        y = (H - dh) // 2
-        img.paste(qr_img, (x, y))
-        draw = ImageDraw.Draw(img)
-        ring_r = dw // 2 + 8
-        ring_w = max(1, int(2 + 2 * (0.5 + 0.5 * math.sin(t * 0.8 * anim_speed))))
-        _draw_ring(draw, (W // 2, H // 2), ring_r, ring_w, color=(hue, 0, 80))
+        img = _render_centered(qr_img)
         arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("09", arr)
         save(img, mn(9, "qr-color-sweep"), out_dir)
@@ -128,24 +88,17 @@ def method_09_qr_code(out_dir: Path, seed: int, params=None):
         fade = raw_idx - int(raw_idx)
 
         qr_a = _make_qr(mask_pattern=idx_a)
-        img_a, _, _, _, _ = _render_centered(qr_a, scale_factor=0.7)
+        img_a = _render_centered(qr_a)
         qr_b = _make_qr(mask_pattern=idx_b)
-        img_b, _, _, _, _ = _render_centered(qr_b, scale_factor=0.7)
+        img_b = _render_centered(qr_b)
 
         img = Image.blend(img_a, img_b, fade)
-        draw = ImageDraw.Draw(img)
-        qw, qh = qr_a.size
-        base_scale = min(W * 0.7 / qw, H * 0.7 / qh)
-        dw = int(qw * base_scale)
-        ring_r = dw // 2 + 8
-        ring_w = max(1, int(2 + 2 * (0.5 + 0.5 * math.sin(t * anim_speed))))
-        _draw_ring(draw, (W // 2, H // 2), ring_r, ring_w)
         arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("09", arr)
         save(img, mn(9, "qr-mask-morph"), out_dir)
         return
 
-    # ── Rotate pulse (default for anim_mode not none) ──
+    # ── Rotate pulse ──
     if anim_mode == "rotate_pulse":
         qr_img = _make_qr()
         qw, qh = qr_img.size
@@ -167,11 +120,6 @@ def method_09_qr_code(out_dir: Path, seed: int, params=None):
         crop_x = cx - W // 2
         crop_y = cy - H // 2
         img = rotated.crop((crop_x, crop_y, crop_x + W, crop_y + H))
-        draw = ImageDraw.Draw(img)
-        # Animated ring
-        ring_r = W // 2 - 10 + int(5 * math.sin(t * anim_speed))
-        ring_w = max(1, int(2 + 2 * (0.5 + 0.5 * math.sin(t * 1.3 * anim_speed))))
-        _draw_ring(draw, (W // 2, H // 2), ring_r, ring_w)
         arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("09", arr)
         save(img, mn(9, "qr-rotate-pulse"), out_dir)
@@ -179,7 +127,7 @@ def method_09_qr_code(out_dir: Path, seed: int, params=None):
 
     # ── Static (anim_mode == "none") ──
     qr_img = _make_qr()
-    img, _, _, _, _ = _render_centered(qr_img, scale_factor=0.7)
+    img = _render_centered(qr_img)
     arr = np.array(img).astype(np.float32) / 255.0
     capture_frame("09", arr)
     save(img, mn(9, "qr"), out_dir)
