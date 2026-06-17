@@ -53,7 +53,7 @@ BUILTIN_CHARSETS = {
              "dither_strength": {"description": "dither/effect strength", "min": 0.0, "max": 1.0, "default": 0.5},
              "input_path": {"description": "path to input image (for input_image source)", "default": ""},
              "time": {"description": "animation time for drift/scroll/char_morph/wave effects", "min": 0.0, "max": 6.28, "default": 0.0},
-             "anim_mode": {"description": "animation mode", "choices": ["none", "charset_morph", "font_pulse", "dither_strength_sweep"], "default": "none"},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "charset_morph", "font_pulse", "dither_strength_sweep", "char_spacing_pulse"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.0, "max": 2.0, "default": 0.25},
          })
 def method_ascii(out_dir: Path, seed: int, params=None):
@@ -97,6 +97,9 @@ def method_ascii(out_dir: Path, seed: int, params=None):
     elif anim_mode == "dither_strength_sweep":
         # Sweep dither_strength 0→1 over the animation cycle
         dither_strength = 0.5 + 0.5 * math.sin(time_param * anim_speed)
+    elif anim_mode == "char_spacing_pulse":
+        # Characters breathe horizontally — tight→loose→tight
+        char_spacing = 0.3 + 1.7 * (0.5 + 0.5 * math.sin(time_param * anim_speed))
 
     # ── Resolve charset ──
     if raw_charset:

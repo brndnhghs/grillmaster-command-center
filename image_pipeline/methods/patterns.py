@@ -310,7 +310,7 @@ def method_truchet(out_dir: Path, seed: int, params=None):
     "mod_strength": {"description": "modulation strength", "min": 0.0, "max": 1.0, "default": 0.3},
     "palette": {"description": "color palette name (PALETTES keys)", "default": "vapor"},
     "rotation": {"description": "global rotation offset (radians)", "min": 0.0, "max": 6.2832, "default": 0.0},
-    "anim_mode": {"description": "animation mode: none, plane_rotate, freq_sweep, lattice_morph, wave_morph", "default": "none"},
+    "anim_mode": {"description": "animation mode: none, plane_rotate, freq_sweep, counter_rotate, multi_plane_freq, wave_count_sweep", "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
     "time": {"description": "animation time (0.0-6.28 for drift)", "min": 0.0, "max": 6.28, "default": 0.0},
 })
@@ -350,40 +350,29 @@ def method_quasicrystal(out_dir: Path, seed: int, params=None):
         _has_mpl = False
 
     # ── Animation: operate on wave plane parameters ──
-    effective_lattice = lattice
-    effective_wave_fn = wave_fn
     effective_freq = freq
     effective_rot = rot
-    morph_fade = 0.0
-    _morph_lattice_b = lattice
-    _morph_wave_b = wave_fn
     if anim_mode == "plane_rotate":
         # All wave plane angles rotate uniformly — the diffraction pattern spins
         effective_rot = rot + t * 0.5 * anim_speed
     elif anim_mode == "freq_sweep":
         # Frequency sweeps up and down — interference fringes zoom in/out
         effective_freq = freq * (0.3 + 0.7 * abs(math.sin(t * 0.3 * anim_speed)))
-    elif anim_mode == "lattice_morph":
-        # Cycle through lattice symmetries with cross-fade
-        lattice_cycle = ["penrose", "octagonal", "dodecagonal", "decagonal", "hexagon", "triangular"]
-        raw_idx = t * 0.2 * anim_speed * len(lattice_cycle)
-        idx_a = int(raw_idx) % len(lattice_cycle)
-        idx_b = (idx_a + 1) % len(lattice_cycle)
-        morph_fade = raw_idx - int(raw_idx)
-        effective_lattice = lattice_cycle[idx_a]
-        _morph_lattice_b = lattice_cycle[idx_b]
-    elif anim_mode == "wave_morph":
-        # Cycle through wave functions with cross-fade
-        wave_cycle = ["sin", "triangle", "square", "sawtooth", "gabor", "pulse"]
-        raw_idx = t * 0.2 * anim_speed * len(wave_cycle)
-        idx_a = int(raw_idx) % len(wave_cycle)
-        idx_b = (idx_a + 1) % len(wave_cycle)
-        morph_fade = raw_idx - int(raw_idx)
-        effective_wave_fn = wave_cycle[idx_a]
-        _morph_wave_b = wave_cycle[idx_b]
+    elif anim_mode == "counter_rotate":
+        # Half the waves rotate forward, half backward — shearing/interference motion
+        pass  # applied per-wave in the field builder
+    elif anim_mode == "multi_plane_freq":
+        # Each wave plane's frequency oscillates out of phase — ripples cross at different rates
+        pass  # applied per-wave in the field builder
+    elif anim_mode == "wave_count_sweep":
+        # Number of wave planes sweeps up and down — complexity of the pattern changes
+        n_waves = max(2, int(n_waves * (0.3 + 0.7 * abs(math.sin(t * 0.2 * anim_speed)))))
 
-    # ── Generate wave-plane angles ──
+    # ── Generate wave-plane data (deterministic — pre-computed once) ──
     rng = np.random.default_rng(seed)
+    max_waves = n_waves  # n_waves may shrink due to wave_count_sweep, generate enough
+    if anim_mode == "wave_count_sweep":
+        max_waves = int(params.get("waves", 8))  # original value before potential reduction
 
     def _lattice_angles(n, sym):
         angles = []
@@ -422,24 +411,29 @@ def method_quasicrystal(out_dir: Path, seed: int, params=None):
             angles = [rng.uniform(0, 2 * math.pi) for _ in range(n)]
         return angles[:n]
 
-    thetas = _lattice_angles(n_waves, effective_lattice)
-    thetas = [(a + effective_rot) % (2 * math.pi) for a in thetas]
-    phases = [rng.uniform(0, 2 * math.pi) + t * 0.3 * anim_speed for _ in range(n_waves)]
-    freqs = [effective_freq * (0.5 + rng.random()) for _ in range(n_waves)]
+    base_thetas = _lattice_angles(max_waves, lattice)
+    base_thetas = [(a + rot) % (2 * math.pi) for a in base_thetas]
+    base_phases = [rng.uniform(0, 2 * math.pi) for _ in range(max_waves)]
+    base_freqs = [freq * (0.5 + rng.random()) for _ in range(max_waves)]
 
-    # ── Build wave field ──
+    # ── Build wave field from pre-computed per-wave data ──
     xc = xx - cx
     yc = yy - cy
 
-    def _build_field(lat, wfn, fr, rot_val):
-        """Build raw wave field for given lattice/wave_fn/freq/rot. Returns (H,W) float32."""
-        th = _lattice_angles(n_waves, lat)
-        th = [(a + rot_val) % (2 * math.pi) for a in th]
+    def _build_field(thetas_a, phases_a, freqs_a, wfn, t_phase, t_rot, n):
+        """Build raw wave field. Uses pre-computed theta/phase/freq arrays.
+        t_phase: time-based phase shift applied to all waves.
+        t_rot: optional per-wave rotation offset [n] or scalar.
+        Returns (H,W) float32."""
+        if np.ndim(t_rot) == 0:
+            t_rot_arr = np.full(n, t_rot)
+        else:
+            t_rot_arr = np.asarray(t_rot, dtype=np.float32)[:n]
         fld = np.zeros((H, W), dtype=np.float32)
-        for i in range(n_waves):
-            theta = th[i]
-            ph = phases[i]
-            f = fr * (0.5 + rng.random())
+        for i in range(n):
+            theta = (thetas_a[i] + t_rot_arr[i]) % (2 * math.pi)
+            ph = phases_a[i] + t_phase
+            f = freqs_a[i]
             proj = xc * math.cos(theta) + yc * math.sin(theta)
             raw = proj * f + ph
             if wfn == "sin":
@@ -451,7 +445,7 @@ def method_quasicrystal(out_dir: Path, seed: int, params=None):
             elif wfn == "sawtooth":
                 w = 2 * (raw / (2 * math.pi) - np.floor(raw / (2 * math.pi) + 0.5))
             elif wfn == "gabor":
-                gauss = np.exp(-0.5 * (proj * fr * 0.5) ** 2)
+                gauss = np.exp(-0.5 * (proj * f * 0.5) ** 2)
                 w = np.sin(raw) * gauss
             elif wfn == "gaussian":
                 w = np.exp(-0.5 * (np.sin(raw) * 2) ** 2)
@@ -462,17 +456,38 @@ def method_quasicrystal(out_dir: Path, seed: int, params=None):
             fld += w * amp
         return fld
 
-    # ── Cross-fade for morph modes ──
-    if morph_fade > 0.0 and anim_mode == "lattice_morph":
-        result_a = _build_field(effective_lattice, effective_wave_fn, effective_freq, effective_rot)
-        result_b = _build_field(_morph_lattice_b, effective_wave_fn, effective_freq, effective_rot)
-        result = result_a * (1 - morph_fade) + result_b * morph_fade
-    elif morph_fade > 0.0 and anim_mode == "wave_morph":
-        result_a = _build_field(effective_lattice, effective_wave_fn, effective_freq, effective_rot)
-        result_b = _build_field(effective_lattice, _morph_wave_b, effective_freq, effective_rot)
-        result = result_a * (1 - morph_fade) + result_b * morph_fade
-    else:
-        result = _build_field(effective_lattice, effective_wave_fn, effective_freq, effective_rot)
+    t_phase = t * 0.3 * anim_speed
+    t_rot = 0.0
+    effective_freqs = list(base_freqs)
+
+    if anim_mode == "plane_rotate":
+        t_rot = t * 0.5 * anim_speed
+    elif anim_mode == "freq_sweep":
+        # Scale all wave frequencies uniformly — ripples zoom in/out coherently
+        ratio = effective_freq / freq if freq > 0 else 1.0
+        for i in range(n_waves):
+            effective_freqs[i] = base_freqs[i] * ratio
+    elif anim_mode == "counter_rotate":
+        # Each wave plane rotates at different speed based on its angle index
+        n = n_waves
+        t_rot_per = np.empty(n, dtype=np.float32)
+        for i in range(n):
+            base_angle = base_thetas[i] % (2 * math.pi)
+            # Even-indexed waves rotate forward, odd-indexed backward
+            sign = 1.0 if i % 2 == 0 else -1.0
+            # Speed varies by angle quadrant to create complex interference
+            speed = 0.3 + 0.5 * abs(math.sin(base_angle))
+            t_rot_per[i] = sign * speed * t * anim_speed
+        t_rot = t_rot_per
+    elif anim_mode == "multi_plane_freq":
+        # Each wave plane's frequency oscillates independently
+        for i in range(n_waves):
+            offset = i * 0.7  # phase offset per wave
+            osc = 0.5 + 0.5 * math.sin(t * 0.25 * anim_speed + offset)
+            effective_freqs[i] = base_freqs[i] * (0.5 + osc)
+
+    result = _build_field(base_thetas, base_phases, effective_freqs,
+                          wave_fn, t_phase, t_rot, n_waves)
 
     if mod_type != "none":
         r = np.sqrt(xc ** 2 + yc ** 2)
