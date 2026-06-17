@@ -3783,53 +3783,57 @@ def method_pythagorean_tree(out_dir: Path, seed: int, params=None):
 
         # Tree type determines branching
         if tree_type == "pythagorean":
+            # Classic 2-branch: symmetric split
             branch(x2, y2, length * len_scale, curve_angle - ang_delta + av, d - 1)
             branch(x2, y2, length * len_scale, curve_angle + ang_delta + av, d - 1)
 
         elif tree_type == "fractal_tree":
-            # Classic fractal tree: 3 branches
-            branch(x2, y2, length * len_scale, curve_angle - ang_delta + av, d - 1)
-            branch(x2, y2, length * len_scale, curve_angle + av, d - 1)
-            branch(x2, y2, length * len_scale, curve_angle + ang_delta + av, d - 1)
+            # 3 branches: center branch is longer (dominant trunk)
+            branch(x2, y2, length * len_scale * 0.9, curve_angle - ang_delta + av, d - 1)
+            branch(x2, y2, length * len_scale * 1.15, curve_angle + av, d - 1)
+            branch(x2, y2, length * len_scale * 0.9, curve_angle + ang_delta + av, d - 1)
 
         elif tree_type == "binary":
-            branch(x2, y2, length * len_scale, curve_angle - ang_delta + av, d - 1)
-            branch(x2, y2, length * len_scale, curve_angle + ang_delta + av, d - 1)
+            # 2 branches with narrower spread (denser canopy)
+            branch(x2, y2, length * len_scale, curve_angle - ang_delta * 0.5 + av, d - 1)
+            branch(x2, y2, length * len_scale, curve_angle + ang_delta * 0.5 + av, d - 1)
 
         elif tree_type == "ternary":
-            for i in range(3):
-                a = curve_angle - ang_delta + i * ang_delta + av
-                branch(x2, y2, length * len_scale, a, d - 1)
+            # 3 branches with wider spread
+            branch(x2, y2, length * len_scale, curve_angle - ang_delta * 1.5 + av, d - 1)
+            branch(x2, y2, length * len_scale, curve_angle + av, d - 1)
+            branch(x2, y2, length * len_scale, curve_angle + ang_delta * 1.5 + av, d - 1)
 
         elif tree_type == "quaternary":
-            for i in range(4):
-                a = curve_angle - ang_delta * 1.5 + i * ang_delta + av
-                branch(x2, y2, length * len_scale, a, d - 1)
+            # 4 branches: two inner, two outer
+            branch(x2, y2, length * len_scale * 0.85, curve_angle - ang_delta * 1.5 + av, d - 1)
+            branch(x2, y2, length * len_scale * 1.0, curve_angle - ang_delta * 0.4 + av, d - 1)
+            branch(x2, y2, length * len_scale * 1.0, curve_angle + ang_delta * 0.4 + av, d - 1)
+            branch(x2, y2, length * len_scale * 0.85, curve_angle + ang_delta * 1.5 + av, d - 1)
 
         elif tree_type == "asymmetric":
-            # Left branch shorter, right branch longer
-            branch(x2, y2, length * len_scale * 0.8, curve_angle - ang_delta + av, d - 1)
-            branch(x2, y2, length * len_scale * 1.1, curve_angle + ang_delta + av, d - 1)
+            # Left branch shorter and steeper, right branch longer and shallower
+            branch(x2, y2, length * len_scale * 0.7, curve_angle - ang_delta * 1.2 + av, d - 1)
+            branch(x2, y2, length * len_scale * 1.2, curve_angle + ang_delta * 0.8 + av, d - 1)
 
         elif tree_type == "weeping":
-            # Weeping willow: branches droop
-            branch(x2, y2, length * len_scale, curve_angle - ang_delta + 5 + av, d - 1)
-            branch(x2, y2, length * len_scale, curve_angle + ang_delta - 5 + av, d - 1)
+            # Weeping willow: branches droop, longer and thinner
+            branch(x2, y2, length * len_scale * 1.3, curve_angle - ang_delta * 0.6 + 10 + av, d - 1)
+            branch(x2, y2, length * len_scale * 1.3, curve_angle + ang_delta * 0.6 - 10 + av, d - 1)
 
         elif tree_type == "fibonacci":
-            # Fibonacci angle: 137.5 degrees
-            fib_angle = 137.5
-            branch(x2, y2, length * len_scale, curve_angle - fib_angle + av, d - 1)
-            branch(x2, y2, length * len_scale, curve_angle + fib_angle + av, d - 1)
+            # Fibonacci phyllotaxis: 137.5° angle, very short branches (spiral pattern)
+            branch(x2, y2, length * 0.5, curve_angle - 137.5 + av, d - 1)
+            branch(x2, y2, length * 0.5, curve_angle + 137.5 + av, d - 1)
 
         elif tree_type == "golden":
-            # Golden ratio branching
+            # Golden ratio branching: ~68.8° angle, moderate length
             golden = 180 * (1.0 - 1.0 / 1.618)
-            branch(x2, y2, length * len_scale, curve_angle - golden + av, d - 1)
-            branch(x2, y2, length * len_scale, curve_angle + golden + av, d - 1)
+            branch(x2, y2, length * len_scale * 0.8, curve_angle - golden + av, d - 1)
+            branch(x2, y2, length * len_scale * 0.8, curve_angle + golden + av, d - 1)
 
         elif tree_type == "spiral":
-            # Single spiral branch
+            # Single spiral branch: angle accumulates each level
             branch(x2, y2, length * len_scale, curve_angle + ang_delta + av, d - 1)
 
         else:
