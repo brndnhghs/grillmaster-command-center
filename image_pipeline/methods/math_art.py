@@ -2771,6 +2771,21 @@ def method_fourier_circles(out_dir: Path, seed: int, params=None):
         norm_factor = 1.0 / total_amp
         coeffs = [(a * norm_factor, b * norm_factor) for a, b in coeffs]
 
+    # Compute centroid of the shape (DC offset) by sampling one full cycle
+    n_samples = 360
+    centroid_x, centroid_y = 0.0, 0.0
+    for si in range(n_samples):
+        angle = si * 2 * math.pi / n_samples
+        sx, sy = 0.0, 0.0
+        for i, (a, b) in enumerate(coeffs):
+            n = i + 1
+            sx += a * math.cos(n * angle) + b * math.sin(n * angle)
+            sy += a * math.sin(n * angle) - b * math.cos(n * angle)
+        centroid_x += sx
+        centroid_y += sy
+    centroid_x /= n_samples
+    centroid_y /= n_samples
+
     # ── Animation: morph ──
     if anim_mode == "morph":
         # Sweep through shapes by modulating coefficients
@@ -2794,7 +2809,8 @@ def method_fourier_circles(out_dir: Path, seed: int, params=None):
     trace = []
 
     # ── Draw epicycles ──
-    x, y = float(cx), float(cy)
+    x = float(cx) - r * centroid_x
+    y = float(cy) - r * centroid_y
 
     # Trace grows: use anim_time to control how much of the path is revealed
     if trace_length > 0:
