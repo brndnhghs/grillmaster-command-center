@@ -53,7 +53,7 @@ BUILTIN_CHARSETS = {
              "dither_strength": {"description": "dither/effect strength", "min": 0.0, "max": 1.0, "default": 0.5},
              "input_path": {"description": "path to input image (for input_image source)", "default": ""},
              "time": {"description": "animation time for drift/scroll/char_morph/wave effects", "min": 0.0, "max": 6.28, "default": 0.0},
-             "anim_mode": {"description": "animation mode", "choices": ["none", "effect_morph", "charset_morph", "font_pulse", "dither_strength_sweep"], "default": "none"},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "charset_morph", "font_pulse", "dither_strength_sweep"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.0, "max": 2.0, "default": 0.25},
          })
 def method_ascii(out_dir: Path, seed: int, params=None):
@@ -84,16 +84,7 @@ def method_ascii(out_dir: Path, seed: int, params=None):
     # ── Effective effect/source for morph modes ──
     effective_effect = effect
     morph_fade = 0.0  # cross-fade blend factor for smooth transitions
-    if anim_mode == "effect_morph":
-        effects_list = ["none", "dither", "edge_emphasis", "glow", "color_bleed", "drift", "scroll", "char_morph", "wave"]
-        raw_idx = (time_param / (2 * math.pi)) * len(effects_list) * anim_speed
-        idx_a = int(raw_idx) % len(effects_list)
-        idx_b = (idx_a + 1) % len(effects_list)
-        morph_fade = raw_idx - int(raw_idx)  # 0.0 → 1.0
-        effective_effect = effects_list[idx_a]
-        # Store for cross-fade in rendering
-        _morph_effect_b = effects_list[idx_b]
-    elif anim_mode == "charset_morph":
+    if anim_mode == "charset_morph":
         charset_keys = list(BUILTIN_CHARSETS.keys())
         raw_idx = (time_param / (2 * math.pi)) * len(charset_keys) * anim_speed
         idx_a = int(raw_idx) % len(charset_keys)
@@ -382,51 +373,6 @@ def method_ascii(out_dir: Path, seed: int, params=None):
         coords = np.stack([yy2, xx], axis=0)
         gray_arr = map_coordinates(gray_arr, coords, order=1, mode="reflect")
 
-    # ── Save original for cross-fade rendering ──
-    gray_arr_orig = np.array(gray_arr, dtype=np.float32)
-
-    def _apply_effect(eff, arr, t, a_speed, d_strength, sd):
-        """Apply a single effect to a grayscale array in-place."""
-        if eff == "edge_emphasis":
-            g = Image.fromarray((arr * 255).astype(np.uint8), "L")
-            g = g.filter(ImageFilter.FIND_EDGES)
-            arr[:] = np.array(g, dtype=np.float32) / 255.0
-        elif eff == "glow":
-            blur_r = max(1, int(2 + math.sin(t * a_speed) * 1.5))
-            g = Image.fromarray((arr * 255).astype(np.uint8), "L")
-            g = g.filter(ImageFilter.GaussianBlur(radius=blur_r))
-            glow_arr = np.array(g, dtype=np.float32) / 255.0
-            arr[:] = np.clip(arr * 1.2 + glow_arr * 0.3, 0, 1)
-        elif eff == "dither":
-            n_levels = int(2 + 6 * d_strength + 2 * math.sin(t * 2 * a_speed))
-            arr[:] = ordered_dither(arr, levels=max(2, n_levels))
-        elif eff == "color_bleed":
-            rnd = np.random.RandomState(sd + 42)
-            bleed = rnd.randn(H, W) * d_strength * 0.1
-            arr[:] = np.clip(arr + bleed, 0, 1)
-        elif eff == "drift":
-            yy, xx = np.mgrid[:H, :W].astype(np.float32)
-            dx = d_strength * 10 * np.sin(yy * 0.05 + t * a_speed)
-            dy = d_strength * 10 * np.cos(xx * 0.05 + t * 0.5 * a_speed)
-            coords = np.stack([np.clip(yy + dy, 0, H - 1), np.clip(xx + dx, 0, W - 1)], axis=0)
-            arr[:] = map_coordinates(arr, coords, order=1, mode="reflect")
-        elif eff == "scroll":
-            shift = (t * 20 * a_speed) % W
-            yy, xx = np.mgrid[:H, :W].astype(np.float32)
-            coords = np.stack([yy, (xx - shift) % W], axis=0)
-            arr[:] = map_coordinates(arr, coords, order=1, mode="wrap")
-        elif eff == "char_morph":
-            blur_r = int(1 + d_strength * 4 + math.sin(t * 1.5 * a_speed) * 2)
-            g = Image.fromarray((arr * 255).astype(np.uint8), "L")
-            g = g.filter(ImageFilter.GaussianBlur(radius=max(1, blur_r)))
-            arr[:] = np.array(g, dtype=np.float32) / 255.0
-        elif eff == "wave":
-            yy, xx = np.mgrid[:H, :W].astype(np.float32)
-            wave_shift = d_strength * 15 * np.sin(xx * 0.03 + t * 2 * a_speed)
-            yy2 = np.clip(yy + wave_shift, 0, H - 1)
-            coords = np.stack([yy2, xx], axis=0)
-            arr[:] = map_coordinates(arr, coords, order=1, mode="reflect")
-
     # ── ASCII render ──
     font = get_font(font_size)
     try:
@@ -490,20 +436,7 @@ def method_ascii(out_dir: Path, seed: int, params=None):
         return img
 
     # ── Cross-fade rendering ──
-    if anim_mode == "effect_morph" and morph_fade > 0.0:
-        # Render with effect A and effect B, then blend
-        _saved_effect = effective_effect
-        effective_effect = _morph_effect_b
-        # Re-apply effect B to gray_arr (need fresh copy)
-        gray_arr_b = np.array(gray_arr_orig, dtype=np.float32)
-        _apply_effect(effective_effect, gray_arr_b, time_param, anim_speed, dither_strength, seed)
-        img_b = _render_ascii(gray_arr_b, CHARS, font_size, invert, use_color, img_src)
-
-        effective_effect = _saved_effect
-        img_a = _render_ascii(gray_arr, CHARS, font_size, invert, use_color, img_src)
-
-        out_img = Image.blend(img_a, img_b, morph_fade)
-    elif anim_mode == "charset_morph" and morph_fade > 0.0:
+    if anim_mode == "charset_morph" and morph_fade > 0.0:
         charset_b = BUILTIN_CHARSETS.get(_morph_charset_b, BUILTIN_CHARSETS["default"])
         img_a = _render_ascii(gray_arr, CHARS, font_size, invert, use_color, img_src)
         img_b = _render_ascii(gray_arr, charset_b, font_size, invert, use_color, img_src)
