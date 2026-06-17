@@ -28,7 +28,7 @@ from ...core.animation import capture_frame
              "rotation": {"description": "global rotation offset (degrees)", "min": 0.0, "max": 360.0, "default": 0.0},
              "translucent": {"description": "use translucent fills (RGBA)", "default": True},
              "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
-             "anim_mode": {"description": "animation mode", "choices": ["none", "rotation", "rotation_wave", "size_sweep", "position_wave", "color_drift"], "default": "none"},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "rotation", "rotation_wave", "size_sweep", "position_wave", "color_drift", "shape_morph", "layout_spin", "alpha_pulse", "jitter", "stretch", "orbit"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 2.0, "default": 0.25},
          })
 def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
@@ -60,13 +60,23 @@ def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
     effective_pos_dx = 0.0
     effective_pos_dy = 0.0
     effective_color_shift = 0.0
+    effective_alpha = alpha
+    effective_jitter_amp = 0.0
+    effective_stretch = 1.0
+    effective_stretch_angle = 0.0
+    effective_orbit_radius = 0.0
+    effective_orbit_speed = 0.0
+    effective_layout_angle = 0.0
+    morph_fade = 0.0
+    shape_type_a = raw_shape_types[0]
+    shape_type_b = raw_shape_types[0]
 
     if anim_mode == "rotation":
         effective_rotation = (rotation + t * 30.0 * anim_speed) % 360.0
 
     elif anim_mode == "rotation_wave":
         effective_rotation = rotation
-        effective_rot_wave_amp = 45.0  # degrees of per-shape rotation wave
+        effective_rot_wave_amp = 45.0
 
     elif anim_mode == "size_sweep":
         effective_size_mod = 0.3 + 0.7 * (0.5 + 0.5 * math.sin(t * 0.8 * anim_speed))
@@ -77,6 +87,33 @@ def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
 
     elif anim_mode == "color_drift":
         effective_color_shift = t * 1.5 * anim_speed
+
+    elif anim_mode == "shape_morph":
+        shape_cycle = ["circle", "rect", "triangle", "diamond", "hexagon", "star", "cross", "arc", "polygon"]
+        n_shp = len(shape_cycle)
+        raw_idx = (t / (2 * math.pi)) * n_shp * anim_speed
+        idx_a = int(raw_idx) % n_shp
+        idx_b = (idx_a + 1) % n_shp
+        morph_fade = raw_idx - int(raw_idx)
+        shape_type_a = shape_cycle[idx_a]
+        shape_type_b = shape_cycle[idx_b]
+
+    elif anim_mode == "layout_spin":
+        effective_layout_angle = t * 0.8 * anim_speed
+
+    elif anim_mode == "alpha_pulse":
+        effective_alpha = int(30 + 225 * (0.5 + 0.5 * math.sin(t * 0.9 * anim_speed)))
+
+    elif anim_mode == "jitter":
+        effective_jitter_amp = 12.0 * (0.5 + 0.5 * math.sin(t * 0.7 * anim_speed))
+
+    elif anim_mode == "stretch":
+        effective_stretch = 0.3 + 0.7 * (0.5 + 0.5 * math.sin(t * 0.6 * anim_speed))
+        effective_stretch_angle = t * 0.5 * anim_speed
+
+    elif anim_mode == "orbit":
+        effective_orbit_radius = 8.0
+        effective_orbit_speed = 2.0 * anim_speed
 
     # ── Create canvas ──
     use_rgba = translucent or alpha < 255
@@ -167,19 +204,20 @@ def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
         return (r, g, b)
 
     # ── Shape function ──
-    def _draw_shape(draw_obj, shape_type, x, y, size, color, rot_deg):
-        half = size / 2.0
+    def _draw_shape(draw_obj, shape_type, x, y, size_x, size_y, color, rot_deg):
+        half_x = size_x / 2.0
+        half_y = size_y / 2.0
+        half = max(half_x, half_y)
         if shape_type == "circle":
-            draw_obj.ellipse([x - half, y - half, x + half, y + half], fill=color)
+            draw_obj.ellipse([x - half_x, y - half_y, x + half_x, y + half_y], fill=color)
         elif shape_type == "rect":
-            # Draw as rotated polygon - always
             cos_a = math.cos(math.radians(rot_deg))
             sin_a = math.sin(math.radians(rot_deg))
             corners = [
-                (x - half, y - half),
-                (x + half, y - half),
-                (x + half, y + half),
-                (x - half, y + half),
+                (x - half_x, y - half_y),
+                (x + half_x, y - half_y),
+                (x + half_x, y + half_y),
+                (x - half_x, y + half_y),
             ]
             rotated = []
             for px, py in corners:
@@ -239,7 +277,6 @@ def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
             thick = half * 0.3
             cos_a = math.cos(math.radians(rot_deg))
             sin_a = math.sin(math.radians(rot_deg))
-            # Two rectangles for cross
             for xo, yo, w2, h2 in [(0, 0, thick, half), (0, 0, half, thick)]:
                 pts = [
                     (-w2, -h2), (w2, -h2), (w2, h2), (-w2, h2),
@@ -264,37 +301,111 @@ def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
             draw_obj.polygon(pts, fill=color)
 
     # ── Draw shapes ──
-    for idx in range(n_shapes):
-        x, y = positions[idx]
+    def _render_frame(shp_type_a: str, shp_type_b: str, fade: float,
+                      rot: float, rot_wave_amp: float,
+                      size_mod: float, pos_dx: float, pos_dy: float,
+                      color_shift: float, alpha_val: int,
+                      jitter_amp: float, stretch: float, stretch_angle: float,
+                      orbit_radius: float, orbit_speed: float,
+                      layout_angle: float) -> Image.Image:
+        """Render a single frame. Returns PIL Image (RGB)."""
+        use_rgba_local = translucent or alpha_val < 255
+        if use_rgba_local:
+            img_local = Image.new("RGBA", (W, H), (10, 10, 18, 255))
+        else:
+            img_local = Image.new("RGB", (W, H), (10, 10, 18))
+        draw_local = ImageDraw.Draw(img_local)
 
-        # Per-shape rotation: gated by mode
-        shape_rot = effective_rotation
-        if anim_mode == "rotation_wave":
-            wave_off = effective_rot_wave_amp * math.sin(x * 0.05 + y * 0.03 + t * 1.5 * anim_speed)
-            shape_rot = (rotation + wave_off) % 360.0
+        for idx in range(n_shapes):
+            x, y = positions[idx]
 
-        # Position offset: gated by mode
-        px = x + effective_pos_dx
-        py = y + effective_pos_dy
+            # Layout spin: rotate position around center
+            if layout_angle != 0.0:
+                dx = x - cx
+                dy = y - cy
+                cos_a = math.cos(layout_angle)
+                sin_a = math.sin(layout_angle)
+                x = cx + dx * cos_a - dy * sin_a
+                y = cy + dx * sin_a + dy * cos_a
 
-        # Pick shape type
-        shape_type = raw_shape_types[idx % len(raw_shape_types)]
+            # Per-shape rotation
+            shape_rot = rot
+            if rot_wave_amp != 0.0:
+                wave_off = rot_wave_amp * math.sin(x * 0.05 + y * 0.03 + t * 1.5 * anim_speed)
+                shape_rot = (rotation + wave_off) % 360.0
 
-        # Size: gated by mode
-        base_size = rng.uniform(10, 40)
-        size = base_size * effective_size_mod
+            # Position offset
+            px = x + pos_dx
+            py = y + pos_dy
 
-        color = _get_color(idx, x, y)
-        if use_rgba:
-            color = color + (alpha,)
+            # Jitter: per-frame random offset
+            if jitter_amp != 0.0:
+                jx = (idx * 7.3 + t * 100) % 1000
+                jy = (idx * 11.7 + t * 100 + 50) % 1000
+                px += jitter_amp * (0.5 - ((jx * 0.001) % 1.0))
+                py += jitter_amp * (0.5 - ((jy * 0.001) % 1.0))
 
-        _draw_shape(draw, shape_type, px, py, size, color, shape_rot)
+            # Orbit: circular motion around base position
+            if orbit_radius != 0.0:
+                orbit_angle = t * orbit_speed + idx * 0.7
+                px += orbit_radius * math.cos(orbit_angle)
+                py += orbit_radius * math.sin(orbit_angle)
 
-    # ── Convert RGBA→RGB if needed ──
-    if img.mode == "RGBA":
-        bg = Image.new("RGB", img.size, (10, 10, 18))
-        bg.paste(img, mask=img.split()[3])
-        img = bg
+            # Pick shape type (with cross-fade)
+            if fade > 0:
+                shape_type = shp_type_a
+            else:
+                shape_type = shp_type_a
+
+            # Size
+            base_size = rng.uniform(10, 40)
+            size = base_size * size_mod
+
+            # Stretch: non-uniform scaling along an angle
+            if stretch != 1.0:
+                sa = stretch_angle
+                cos_s = math.cos(sa)
+                sin_s = math.sin(sa)
+                # Project size onto stretch axis
+                size_x = size * (1.0 + (stretch - 1.0) * abs(cos_s))
+                size_y = size * (1.0 + (stretch - 1.0) * abs(sin_s))
+            else:
+                size_x = size
+                size_y = size
+
+            color = _get_color(idx, x, y)
+            if use_rgba_local:
+                color = color + (alpha_val,)
+
+            # Draw shape A
+            _draw_shape(draw_local, shp_type_a, px, py, size_x, size_y, color, shape_rot)
+
+            # If morphing, draw shape B on top with alpha blend
+            if fade > 0:
+                alpha_b = int(alpha_val * fade)
+                if use_rgba_local:
+                    color_b = color[:3] + (alpha_b,)
+                else:
+                    color_b = color
+                _draw_shape(draw_local, shp_type_b, px, py, size_x, size_y, color_b, shape_rot)
+
+        # Convert RGBA→RGB if needed
+        if img_local.mode == "RGBA":
+            bg = Image.new("RGB", img_local.size, (10, 10, 18))
+            bg.paste(img_local, mask=img_local.split()[3])
+            img_local = bg
+        return img_local
+
+    # ── Render frame ──
+    img = _render_frame(
+        shape_type_a, shape_type_b, morph_fade,
+        effective_rotation, effective_rot_wave_amp,
+        effective_size_mod, effective_pos_dx, effective_pos_dy,
+        effective_color_shift, effective_alpha,
+        effective_jitter_amp, effective_stretch, effective_stretch_angle,
+        effective_orbit_radius, effective_orbit_speed,
+        effective_layout_angle,
+    )
 
     result_arr = np.array(img).astype(np.float32) / 255.0
     capture_frame("14", result_arr)
