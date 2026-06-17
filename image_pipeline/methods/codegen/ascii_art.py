@@ -83,16 +83,26 @@ def method_ascii(out_dir: Path, seed: int, params=None):
 
     # ── Effective effect/source for morph modes ──
     effective_effect = effect
+    morph_fade = 0.0  # cross-fade blend factor for smooth transitions
     if anim_mode == "effect_morph":
         effects_list = ["none", "dither", "edge_emphasis", "glow", "color_bleed", "drift", "scroll", "char_morph", "wave"]
-        idx = int((time_param / (2 * math.pi)) * len(effects_list) * anim_speed) % len(effects_list)
-        effective_effect = effects_list[idx]
+        raw_idx = (time_param / (2 * math.pi)) * len(effects_list) * anim_speed
+        idx_a = int(raw_idx) % len(effects_list)
+        idx_b = (idx_a + 1) % len(effects_list)
+        morph_fade = raw_idx - int(raw_idx)  # 0.0 → 1.0
+        effective_effect = effects_list[idx_a]
+        # Store for cross-fade in rendering
+        _morph_effect_b = effects_list[idx_b]
     elif anim_mode == "charset_morph":
         charset_keys = list(BUILTIN_CHARSETS.keys())
-        idx = int((time_param / (2 * math.pi)) * len(charset_keys) * anim_speed) % len(charset_keys)
-        preset = charset_keys[idx]
+        raw_idx = (time_param / (2 * math.pi)) * len(charset_keys) * anim_speed
+        idx_a = int(raw_idx) % len(charset_keys)
+        idx_b = (idx_a + 1) % len(charset_keys)
+        morph_fade = raw_idx - int(raw_idx)
+        preset = charset_keys[idx_a]
+        _morph_charset_b = charset_keys[idx_b]
     elif anim_mode == "font_pulse":
-        font_size = int(6 + 14 * (0.5 + 0.5 * math.sin(time_param * anim_speed)))
+        font_size = 6 + 14 * (0.5 + 0.5 * math.sin(time_param * anim_speed))
 
     # ── Resolve charset ──
     if raw_charset:
@@ -347,8 +357,10 @@ def method_ascii(out_dir: Path, seed: int, params=None):
         coords = np.stack([np.clip(yy + dy, 0, H - 1), np.clip(xx + dx, 0, W - 1)], axis=0)
         gray_arr = map_coordinates(gray_arr, coords, order=1, mode="reflect")
     elif effective_effect == "scroll":
-        shift = int(time_param * 20 * anim_speed) % W
-        gray_arr = np.roll(gray_arr, shift, axis=1)
+        shift = (time_param * 20 * anim_speed) % W  # float, not int
+        yy, xx = np.mgrid[:H, :W].astype(np.float32)
+        coords = np.stack([yy, (xx - shift) % W], axis=0)
+        gray_arr = map_coordinates(gray_arr, coords, order=1, mode="wrap")
     elif effective_effect == "char_morph":
         # Blur-warp effect
         blur_r = int(1 + dither_strength * 4 + math.sin(time_param * 1.5 * anim_speed) * 2)
@@ -361,6 +373,51 @@ def method_ascii(out_dir: Path, seed: int, params=None):
         yy2 = np.clip(yy + wave_shift, 0, H - 1)
         coords = np.stack([yy2, xx], axis=0)
         gray_arr = map_coordinates(gray_arr, coords, order=1, mode="reflect")
+
+    # ── Save original for cross-fade rendering ──
+    gray_arr_orig = np.array(gray_arr, dtype=np.float32)
+
+    def _apply_effect(eff, arr, t, a_speed, d_strength, sd):
+        """Apply a single effect to a grayscale array in-place."""
+        if eff == "edge_emphasis":
+            g = Image.fromarray((arr * 255).astype(np.uint8), "L")
+            g = g.filter(ImageFilter.FIND_EDGES)
+            arr[:] = np.array(g, dtype=np.float32) / 255.0
+        elif eff == "glow":
+            blur_r = max(1, int(2 + math.sin(t * a_speed) * 1.5))
+            g = Image.fromarray((arr * 255).astype(np.uint8), "L")
+            g = g.filter(ImageFilter.GaussianBlur(radius=blur_r))
+            glow_arr = np.array(g, dtype=np.float32) / 255.0
+            arr[:] = np.clip(arr * 1.2 + glow_arr * 0.3, 0, 1)
+        elif eff == "dither":
+            n_levels = int(2 + 6 * d_strength + 2 * math.sin(t * 2 * a_speed))
+            arr[:] = ordered_dither(arr, levels=max(2, n_levels))
+        elif eff == "color_bleed":
+            rnd = np.random.RandomState(sd + 42)
+            bleed = rnd.randn(H, W) * d_strength * 0.1
+            arr[:] = np.clip(arr + bleed, 0, 1)
+        elif eff == "drift":
+            yy, xx = np.mgrid[:H, :W].astype(np.float32)
+            dx = d_strength * 10 * np.sin(yy * 0.05 + t * a_speed)
+            dy = d_strength * 10 * np.cos(xx * 0.05 + t * 0.5 * a_speed)
+            coords = np.stack([np.clip(yy + dy, 0, H - 1), np.clip(xx + dx, 0, W - 1)], axis=0)
+            arr[:] = map_coordinates(arr, coords, order=1, mode="reflect")
+        elif eff == "scroll":
+            shift = (t * 20 * a_speed) % W
+            yy, xx = np.mgrid[:H, :W].astype(np.float32)
+            coords = np.stack([yy, (xx - shift) % W], axis=0)
+            arr[:] = map_coordinates(arr, coords, order=1, mode="wrap")
+        elif eff == "char_morph":
+            blur_r = int(1 + d_strength * 4 + math.sin(t * 1.5 * a_speed) * 2)
+            g = Image.fromarray((arr * 255).astype(np.uint8), "L")
+            g = g.filter(ImageFilter.GaussianBlur(radius=max(1, blur_r)))
+            arr[:] = np.array(g, dtype=np.float32) / 255.0
+        elif eff == "wave":
+            yy, xx = np.mgrid[:H, :W].astype(np.float32)
+            wave_shift = d_strength * 15 * np.sin(xx * 0.03 + t * 2 * a_speed)
+            yy2 = np.clip(yy + wave_shift, 0, H - 1)
+            coords = np.stack([yy2, xx], axis=0)
+            arr[:] = map_coordinates(arr, coords, order=1, mode="reflect")
 
     # ── ASCII render ──
     font = get_font(font_size)
@@ -376,45 +433,75 @@ def method_ascii(out_dir: Path, seed: int, params=None):
     cols = max(1, W // step_x)
     rows = max(1, H // step_y)
 
-    out_img = Image.new("RGB", (W, H), (255, 255, 255) if invert else (10, 10, 18))
-    draw_out = ImageDraw.Draw(out_img)
+    def _render_ascii(gray_src, charset, fs, invert_flag, use_color_flag, img_src_ref):
+        """Render ASCII from grayscale source. Returns PIL Image."""
+        f = get_font(fs)
+        try:
+            fw2 = f.getbbox("A")[2]
+            fh2 = f.getbbox("A")[3]
+        except (AttributeError, TypeError):
+            fw2, fh2 = f.getsize("A")
+        fw2 = max(fw2, 4)
+        fh2 = max(fh2, 4)
+        sx2 = int(fw2 * char_spacing)
+        sy2 = fh2
+        c2 = max(1, W // sx2)
+        r2 = max(1, H // sy2)
 
-    for r in range(rows):
-        for c in range(cols):
-            x, y = c * step_x, r * step_y
-            # Map character cell to source image area
-            sx = int(c * W / cols)
-            sy = int(r * H / rows)
-            ex = min(sx + W // cols, W)
-            ey = min(sy + H // rows, H)
-            patch = gray_arr[sy:ey, sx:ex]
-            if patch.size == 0:
-                continue
-            avg = patch.mean()
-            ci = int(avg * (len(CHARS) - 1))
-            ci = max(0, min(ci, len(CHARS) - 1))
-            ch = CHARS[ci]
-            fg = (10, 10, 18) if invert else (220, 220, 200)
+        img = Image.new("RGB", (W, H), (255, 255, 255) if invert_flag else (10, 10, 18))
+        d = ImageDraw.Draw(img)
+        for rr in range(r2):
+            for cc in range(c2):
+                xx2, yy2 = cc * sx2, rr * sy2
+                sx_src = int(cc * W / c2)
+                sy_src = int(rr * H / r2)
+                ex_src = min(sx_src + W // c2, W)
+                ey_src = min(sy_src + H // r2, H)
+                patch = gray_src[sy_src:ey_src, sx_src:ex_src]
+                if patch.size == 0:
+                    continue
+                avg = patch.mean()
+                ci = int(avg * (len(charset) - 1))
+                ci = max(0, min(ci, len(charset) - 1))
+                ch = charset[ci]
+                fg = (10, 10, 18) if invert_flag else (220, 220, 200)
+                if use_color_flag:
+                    sy2 = min(yy2, H - 1)
+                    sx2 = min(xx2, W - 1)
+                    c_pixel = np.array(img_src_ref)[sy2, sx2]
+                    fg = (int(c_pixel[0]), int(c_pixel[1]), int(c_pixel[2]))
+                if not invert_flag:
+                    lum = int(220 * avg)
+                    if not use_color_flag:
+                        fg = (lum, lum, max(180, lum))
+                else:
+                    lum = int(220 * (1 - avg))
+                    if not use_color_flag:
+                        fg = (lum, lum, max(180, lum))
+                d.text((xx2, yy2), ch, fill=fg, font=f)
+        return img
 
-            if use_color:
-                # Sample color from source
-                sy2 = min(y, H - 1)
-                sx2 = min(x, W - 1)
-                c_pixel = np.array(img_src)[sy2, sx2]
-                fg = (int(c_pixel[0]), int(c_pixel[1]), int(c_pixel[2]))
+    # ── Cross-fade rendering ──
+    if anim_mode == "effect_morph" and morph_fade > 0.0:
+        # Render with effect A and effect B, then blend
+        _saved_effect = effective_effect
+        effective_effect = _morph_effect_b
+        # Re-apply effect B to gray_arr (need fresh copy)
+        gray_arr_b = np.array(gray_arr_orig, dtype=np.float32)
+        _apply_effect(effective_effect, gray_arr_b, time_param, anim_speed, dither_strength, seed)
+        img_b = _render_ascii(gray_arr_b, CHARS, font_size, invert, use_color, img_src)
 
-            # Character color blend
-            if not invert:
-                # Dark bg, light text
-                lum = int(220 * avg)
-                if not use_color:
-                    fg = (lum, lum, max(180, lum))
-            else:
-                lum = int(220 * (1 - avg))
-                if not use_color:
-                    fg = (lum, lum, max(180, lum))
+        effective_effect = _saved_effect
+        img_a = _render_ascii(gray_arr, CHARS, font_size, invert, use_color, img_src)
 
-            draw_out.text((x, y), ch, fill=fg, font=font)
+        out_img = Image.blend(img_a, img_b, morph_fade)
+    elif anim_mode == "charset_morph" and morph_fade > 0.0:
+        charset_b = BUILTIN_CHARSETS.get(_morph_charset_b, BUILTIN_CHARSETS["default"])
+        img_a = _render_ascii(gray_arr, CHARS, font_size, invert, use_color, img_src)
+        img_b = _render_ascii(gray_arr, charset_b, font_size, invert, use_color, img_src)
+        out_img = Image.blend(img_a, img_b, morph_fade)
+    else:
+        out_img = _render_ascii(gray_arr, CHARS, font_size, invert, use_color, img_src)
 
     # ── Output ──
     if output_format == "html":
