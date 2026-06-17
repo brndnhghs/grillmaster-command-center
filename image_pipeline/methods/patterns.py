@@ -1124,7 +1124,7 @@ def method_worley_noise(out_dir: Path, seed: int, params=None):
     "scale_variation": {"description": "per-tile scale jitter", "min": 0.0, "max": 0.5, "default": 0.0},
     "penrose_generations": {"description": "Penrose inflation iterations", "min": 2, "max": 8, "default": 4},
     "star_rays": {"description": "star polygon rays (for star/islamic motifs)", "min": 4, "max": 16, "default": 8},
-    "anim_mode": {"description": "animation mode: none, rotation_wave, scale_spiral, color_drift, position_wave, mosaic_shuffle, breathe_wave, vortex_spin, color_wave", "default": "none"},
+    "anim_mode": {"description": "animation mode: none, rotation_wave, scale_spiral, color_drift, position_wave, mosaic_shuffle, breathe_wave, vortex_spin, color_wave, deform, echo, glow, orbit", "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},
     "time": {"description": "animation time (drives ripple wave + rotation)", "min": 0.0, "max": 6.28, "default": 0.0},
 })
@@ -1232,7 +1232,10 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
 
     # ── Motif drawing functions ─────────────────────────────────────────
 
-    def _motif_diamond(d, cx, cy, sz, color, angle=0):
+    # Deform parameter: 0-1 controls internal geometry (inner radius, arm width,
+    # spiral turns, etc). Used by deform mode.
+
+    def _motif_diamond(d, cx, cy, sz, color, angle=0, deform=0.5):
         hsz = sz / 2
         pts = [(cx, cy - hsz), (cx + hsz, cy), (cx, cy + hsz), (cx - hsz, cy)]
         if angle:
@@ -1240,12 +1243,12 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
             c, s = m2.cos(m2.radians(angle)), m2.sin(m2.radians(angle))
             pts = [(cx + (x-cx)*c - (y-cy)*s, cy + (x-cx)*s + (y-cy)*c) for x,y in pts]
         d.polygon(pts, fill=color, outline=(10,10,18))
-        inner_sz = max(2, sz * 0.3)
+        inner_sz = max(2, sz * (0.1 + 0.4 * deform))
         d.ellipse([cx - inner_sz, cy - inner_sz, cx + inner_sz, cy + inner_sz],
                   fill=_inv_color(color), outline=None)
 
-    def _motif_triangle(d, cx, cy, sz, color, angle=0):
-        h = sz * (3**0.5) / 2
+    def _motif_triangle(d, cx, cy, sz, color, angle=0, deform=0.5):
+        h = sz * (3**0.5) / 2 * (1.0 - 0.3 * deform)  # deform = height variation
         pts = [(cx, cy - h/2), (cx + sz/2, cy + h/2), (cx - sz/2, cy + h/2)]
         if angle:
             import math as m2
@@ -1253,19 +1256,22 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
             pts = [(cx + (x-cx)*c - (y-cy)*s, cy + (x-cx)*s + (y-cy)*c) for x,y in pts]
         d.polygon(pts, fill=color, outline=(10,10,18))
 
-    def _motif_hexagon(d, cx, cy, sz, color, angle=0):
+    def _motif_hexagon(d, cx, cy, sz, color, angle=0, deform=0.5):
         pts = []
         import math as m2
+        # deform stretches hexagon into an elongated shape
+        x_scale = 1.0 + 0.3 * deform
+        y_scale = 1.0 - 0.2 * deform
         for i in range(6):
             a = m2.radians(60 * i - 30 + angle)
-            pts.append((cx + sz/2 * m2.cos(a), cy + sz/2 * m2.sin(a)))
+            pts.append((cx + sz/2 * m2.cos(a) * x_scale, cy + sz/2 * m2.sin(a) * y_scale))
         d.polygon(pts, fill=color, outline=(10,10,18))
 
-    def _motif_star(d, cx, cy, sz, color, angle=0):
+    def _motif_star(d, cx, cy, sz, color, angle=0, deform=0.5):
         n = star_rays
         import math as m2
         outer = sz / 2
-        inner = outer * 0.4
+        inner = outer * (0.2 + 0.5 * deform)  # deform = inner radius (sharp→rounded)
         pts = []
         for i in range(n * 2):
             a = m2.radians(360 * i / (n * 2) - 90 + angle)
@@ -1273,8 +1279,8 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
             pts.append((cx + r * m2.cos(a), cy + r * m2.sin(a)))
         d.polygon(pts, fill=color, outline=(10,10,18))
 
-    def _motif_cross(d, cx, cy, sz, color, angle=0):
-        arm_w = sz * 0.2
+    def _motif_cross(d, cx, cy, sz, color, angle=0, deform=0.5):
+        arm_w = sz * (0.1 + 0.2 * deform)  # deform = arm width (thin→thick)
         arm_l = sz * 0.4
         pts = [
             (cx - arm_w/2, cy - arm_l),
@@ -1296,9 +1302,9 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
             pts = [(cx + (x-cx)*c - (y-cy)*s, cy + (x-cx)*s + (y-cy)*c) for x,y in pts]
         d.polygon(pts, fill=color, outline=(10,10,18))
 
-    def _motif_spiral(d, cx, cy, sz, color, angle=0):
+    def _motif_spiral(d, cx, cy, sz, color, angle=0, deform=0.5):
         import math as m2
-        turns = 3
+        turns = int(2 + 4 * deform)  # deform = number of turns (2→6)
         pts = [(cx, cy)]
         for ti in range(int(sz * turns)):
             a = m2.radians(ti * 10 + angle)
@@ -1307,29 +1313,30 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
         if len(pts) > 2:
             d.line(pts, fill=color, width=max(1, int(sz/30)))
 
-    def _motif_wave(d, cx, cy, sz, color, angle=0):
+    def _motif_wave(d, cx, cy, sz, color, angle=0, deform=0.5):
         import math as m2
         hsz = sz / 2
+        amp_mod = 0.2 + 0.4 * deform  # deform = wave amplitude
         pts = []
         for x in range(int(-hsz), int(hsz)):
-            y = m2.sin((x + hsz) / sz * 4 * m2.pi + m2.radians(angle)) * hsz * 0.3
+            y = m2.sin((x + hsz) / sz * 4 * m2.pi + m2.radians(angle)) * hsz * amp_mod
             pts.append((cx + x, cy + y))
         if len(pts) > 2:
             d.line(pts, fill=color, width=max(1, int(sz/20)))
         pts2 = []
         for x in range(int(-hsz), int(hsz)):
-            y = m2.sin((x + hsz) / sz * 4 * m2.pi + m2.radians(angle) + m2.pi) * hsz * 0.3
-            pts2.append((cx + x, cy + y + hsz * 0.3))
+            y = m2.sin((x + hsz) / sz * 4 * m2.pi + m2.radians(angle) + m2.pi) * hsz * amp_mod
+            pts2.append((cx + x, cy + y + hsz * amp_mod))
         if len(pts2) > 2:
             d.line(pts2, fill=_inv_color(color), width=max(1, int(sz/25)))
 
-    def _motif_scales(d, cx, cy, sz, color, angle=0):
-        r = sz * 0.35
+    def _motif_scales(d, cx, cy, sz, color, angle=0, deform=0.5):
+        r = sz * (0.25 + 0.2 * deform)  # deform = scale size
         for ox, oy in [(0, 0), (r*0.6, -r*0.6), (-r*0.6, -r*0.6)]:
             d.ellipse([cx + ox - r, cy + oy - r, cx + ox + r, cy + oy + r],
                       fill=None, outline=color, width=max(1, int(sz/50)))
 
-    def _motif_escher_bird(d, cx, cy, sz, color, angle=0):
+    def _motif_escher_bird(d, cx, cy, sz, color, angle=0, deform=0.5):
         import math as m2
         hsz = sz / 2
         pts = []
@@ -1341,7 +1348,7 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
         d.ellipse([cx - hsz*0.12, cy - hsz*0.15, cx + hsz*0.12, cy + hsz*0.05],
                   fill=(10,10,18), outline=None)
 
-    def _motif_escher_fish(d, cx, cy, sz, color, angle=0):
+    def _motif_escher_fish(d, cx, cy, sz, color, angle=0, deform=0.5):
         import math as m2
         hsz = sz / 2
         pts = []
@@ -1354,11 +1361,11 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
         d.polygon([(cx - hsz*0.6, cy), (cx - hsz, cy - tail_sz), (cx - hsz, cy + tail_sz)],
                   fill=color, outline=(10,10,18))
 
-    def _motif_islamic_star(d, cx, cy, sz, color, angle=0):
+    def _motif_islamic_star(d, cx, cy, sz, color, angle=0, deform=0.5):
         n = star_rays
         import math as m2
         outer = sz * 0.45
-        inner = outer * 0.35
+        inner = outer * (0.15 + 0.5 * deform)  # deform = inner radius
         pts = []
         for i in range(n * 2):
             a = m2.radians(360 * i / (n * 2) + angle)
@@ -1373,7 +1380,7 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
             d.ellipse([dx - dot_r, dy - dot_r, dx + dot_r, dy + dot_r],
                       fill=_inv_color(color), outline=None)
 
-    def _motif_arabesque(d, cx, cy, sz, color, angle=0):
+    def _motif_arabesque(d, cx, cy, sz, color, angle=0, deform=0.5):
         import math as m2
         hsz = sz / 2
         d.line([(cx, cy - hsz*0.6), (cx, cy + hsz*0.6)],
@@ -1390,7 +1397,7 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
         d.ellipse([cx - hsz*0.08, cy - hsz*0.08, cx + hsz*0.08, cy + hsz*0.08],
                   fill=_inv_color(color), outline=None)
 
-    def _motif_penrose_kite(d, cx, cy, sz, color, angle=0):
+    def _motif_penrose_kite(d, cx, cy, sz, color, angle=0, deform=0.5):
         import math as m2
         phi = (1 + 5**0.5) / 2
         a = sz * 0.3
@@ -1401,7 +1408,7 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
             pts = [(cx + (x-cx)*c - (y-cy)*s, cy + (x-cx)*s + (y-cy)*c) for x,y in pts]
         d.polygon(pts, fill=color, outline=(10,10,18))
 
-    def _motif_penrose_dart(d, cx, cy, sz, color, angle=0):
+    def _motif_penrose_dart(d, cx, cy, sz, color, angle=0, deform=0.5):
         import math as m2
         phi = (1 + 5**0.5) / 2
         a = sz * 0.3
@@ -1412,7 +1419,7 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
             pts = [(cx + (x-cx)*c - (y-cy)*s, cy + (x-cx)*s + (y-cy)*c) for x,y in pts]
         d.polygon(pts, fill=color, outline=(10,10,18))
 
-    def _motif_truchet_arc(d, cx, cy, sz, color, angle=0):
+    def _motif_truchet_arc(d, cx, cy, sz, color, angle=0, deform=0.5):
         hsz = sz / 2
         opts = rng.randint(0, 3)
         corners = [(cx - hsz, cy - hsz), (cx + hsz, cy - hsz),
@@ -1422,7 +1429,7 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
                 d.arc([sx, sy, sx + hsz, sy + hsz],
                       90 * j, 90 * (j + 1), fill=color, width=max(1, int(sz/20)))
 
-    def _motif_truchet_line(d, cx, cy, sz, color, angle=0):
+    def _motif_truchet_line(d, cx, cy, sz, color, angle=0, deform=0.5):
         hsz = sz / 2
         opts = rng.randint(0, 3)
         if opts == 0:
@@ -1436,7 +1443,7 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
         else:
             d.line([(cx + hsz, cy - hsz), (cx - hsz, cy + hsz)], fill=color, width=max(1, int(sz/20)))
 
-    def _motif_truchet_circle(d, cx, cy, sz, color, angle=0):
+    def _motif_truchet_circle(d, cx, cy, sz, color, angle=0, deform=0.5):
         r = sz * rng.uniform(0.2, 0.45)
         d.ellipse([cx - r, cy - r, cx + r, cy + r],
                   fill=None, outline=color, width=max(1, int(sz/25)))
@@ -1468,11 +1475,16 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
             fn_key = _motif_cycle[idx]
         fn = MOTIF_FN.get(fn_key, _motif_diamond)
 
+        # Deform parameter (0-1): controls motif-specific internal geometry
+        if anim_mode == "deform":
+            deform = 0.5 + 0.5 * math.sin(cx * 0.04 + cy * 0.03 + t * 1.2 * anim_speed)
+        else:
+            deform = 0.5
+
         # Color
         if anim_mode == "color_drift":
             c = _drift_color(cx, cy)
         elif anim_mode == "color_wave":
-            # Per-tile color wave using deterministic H/S/V from position + time
             h = int(128 + 127 * math.sin(cx * 0.05 + cy * 0.03 + t * 1.8 * anim_speed))
             s = int(155 + 100 * math.cos(cx * 0.04 - cy * 0.06 + t * 1.5 * anim_speed))
             v = int(150 + 100 * math.sin(cx * 0.06 + cy * 0.07 + t * 2.0 * anim_speed))
@@ -1495,15 +1507,39 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
 
         # Scale
         sv = _tile_scale(cx, cy) * (1 + rng.uniform(-scale_variation, scale_variation) if scale_variation > 0 else 1)
-        # Gap (reduces effective size)
         gap_off = _tile_gap_offset(cx, cy)
         sv = sv * max(0.1, 1.0 - gap_off / (sz + 1))
 
-        # Position
+        # Position with orbit mode
         px = cx + _tile_pos_dx(cx, cy)
         py = cy + _tile_pos_dy(cx, cy)
+        if anim_mode == "orbit":
+            orbit_r = 8.0
+            orbit_a = math.atan2(cy, cx) + t * 1.5 * anim_speed
+            px += orbit_r * math.cos(orbit_a)
+            py += orbit_r * math.sin(orbit_a)
 
-        fn(draw, px, py, sz * sv, c, angle=a)
+        # Echo mode: draw ghost copies trailing behind
+        if anim_mode == "echo":
+            for ei in range(3):
+                fade = 0.15 + 0.2 * (1.0 - ei / 3.0)
+                ghost = (int(c[0] * fade), int(c[1] * fade), int(c[2] * fade))
+                dt = t * 1.5 * anim_speed + ei * 1.2
+                ex = px + 15 * math.cos(dt + ei * 2.0)
+                ey = py + 15 * math.sin(dt + ei * 1.5)
+                fn(draw, ex, ey, sz * sv * (0.5 + 0.2 * ei), ghost, angle=a - 10 * ei, deform=deform)
+
+        # Glow mode: draw concentric outline rings that pulse
+        if anim_mode == "glow":
+            glow_mod = 0.5 + 0.5 * math.sin(t * 1.5 * anim_speed + math.sqrt(cx*cx+cy*cy) * 0.03)
+            for gi in range(3):
+                gs = sz * sv * (1.0 + (gi + 1) * 0.25 * glow_mod)
+                gf = int(40 + 60 * (1.0 - gi / 3.0))
+                gcol = (min(255, c[0] + gf), min(255, c[1] + gf), min(255, c[2] + gf))
+                fn(draw, px, py, gs, gcol, angle=a, deform=deform)
+
+        # Main motif
+        fn(draw, px, py, sz * sv, c, angle=a, deform=deform)
 
     # ── Penrose tiling ──────────────────────────────────────────────────
     if effective_group == "penrose":
