@@ -33,7 +33,7 @@ def _render_wave_preview(result, h, w, r2=2.0):
     "rotation_noise": {"description": "per-tile rotation randomness (0=none, 1=max)", "min": 0.0, "max": 1.0, "default": 0.0},
     "color_variation": {"description": "per-tile color variation (0=none, 1=max)", "min": 0.0, "max": 1.0, "default": 0.3},
     "bg_color": {"description": "background color (dark/light/transparent/gradient)", "default": "dark"},
-    "anim_mode": {"description": "animation mode: none, tile_morph, size_wave, gap_pulse", "default": "none"},
+    "anim_mode": {"description": "animation mode: none, size_wave, gap_pulse, arc_rotation, color_osc, arc_stretch, weave_pulse", "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},
     "time": {"description": "animation time (0.0-6.28 for phase shift)", "min": 0.0, "max": 6.28, "default": 0.0},
 })
@@ -70,21 +70,49 @@ def method_truchet(out_dir: Path, seed: int, params=None):
 
     from ..core.utils import PALETTES
 
-    # ── Animation: operate on tile grid parameters ──
+    # ── Animation: operate on tile parameters ──
     effective_tile_type = tile_type
-    effective_tile_size = tile_size
     effective_gap = gap
-    if anim_mode == "tile_morph":
-        # Cycle through tile patterns (~1 full cycle over 3s)
-        tile_cycle = ["arcs", "diagonals", "crosses", "chevrons", "circles", "spirals", "rings", "weave"]
-        raw_idx = t * 0.48 * anim_speed * len(tile_cycle)
-        effective_tile_type = tile_cycle[int(raw_idx) % len(tile_cycle)]
-    elif anim_mode == "size_wave":
-        # Per-tile size oscillation — wave propagates across grid
-        pass  # handled per-tile via continuous size_mod
-    elif anim_mode == "gap_pulse":
-        # Breathing gap oscillation
-        effective_gap = max(0, gap + int(4 * (1.0 + math.sin(t * 0.3 * anim_speed))))
+
+    # Per-tile continuous parameters (gated by mode)
+    def _tile_angle(tx, ty, idx, base_rot=0):
+        """Arc start angle in degrees. Continuous rotation for arc-based tiles."""
+        if anim_mode == "arc_rotation":
+            return (t * 120 * anim_speed + idx * 23.0) % 360
+        return base_rot
+
+    def _tile_rot_selection(tx, ty, idx):
+        """Discrete rotation (0-3) for symmetric tiles. Uses position hash for determinism."""
+        if anim_mode in ("arc_rotation", "color_osc", "arc_stretch", "weave_pulse"):
+            return idx % 4  # deterministic from position
+        return 0
+
+    def _tile_hue_offset(tx, ty, idx):
+        """Per-tile color index oscillation or deterministic hue."""
+        if anim_mode == "color_osc":
+            # Deterministic per-tile hue drift — use sin of position + time
+            h = int(128 + 127 * math.sin(tx * 0.05 + ty * 0.03 + t * 1.8 * anim_speed))
+            s = int(155 + 100 * math.cos(tx * 0.04 - ty * 0.06 + t * 1.5 * anim_speed))
+            v = int(150 + 100 * math.sin(tx * 0.06 + ty * 0.07 + t * 2.0 * anim_speed))
+            return (h, s, v)
+        return None
+
+    def _tile_arc_span(tx, ty, idx):
+        """Arc angular span in degrees. Used by arc_stretch mode."""
+        if anim_mode == "arc_stretch":
+            return 45 + 90 * (0.5 + 0.5 * math.sin(t * 1.2 * anim_speed + idx * 0.5))
+        return 90
+
+    def _tile_weave_width(tx, ty, idx):
+        """Weave arm width as fraction of tile size. Used by weave_pulse mode."""
+        if anim_mode == "weave_pulse":
+            return 0.2 + 0.3 * (0.5 + 0.5 * math.sin(t * 1.2 * anim_speed + idx * 0.7))
+        return 0.333
+
+    if anim_mode == "gap_pulse":
+        # Breathing gap — continuous float for step, int only for grid count
+        breathing = gap + 4.0 + 4.0 * math.sin(t * 1.5 * anim_speed)
+        effective_gap = breathing  # keep as float, step = tile_size + float = valid
 
     # ── Background ──
     if bg_style == "dark":
@@ -164,9 +192,9 @@ def method_truchet(out_dir: Path, seed: int, params=None):
         return (200, 150, 100)
 
     # ── Draw tiles ──
-    step = effective_tile_size + effective_gap
-    cols = W // step + 1
-    rows = H // step + 1
+    step = float(tile_size + effective_gap)  # may be float from gap_pulse
+    cols = W // int(step) + 1
+    rows = H // int(step) + 1
 
     for ry in range(rows):
         for rx in range(cols):
@@ -180,24 +208,24 @@ def method_truchet(out_dir: Path, seed: int, params=None):
                 px = rx / max(1, cols)
                 py = ry / max(1, rows)
                 size_mod = 0.7 + 0.3 * math.sin(t * 0.5 * anim_speed + px * 4 + py * 3)
-            ts = max(2, int(effective_tile_size * size_mod))
+            ts = max(2, int(tile_size * size_mod))
 
-            # Per-tile rotation and color drift
-            angle_off = (t * 360 * anim_speed + idx * 22.5) % 360
-            rot = int((t * 4 * anim_speed + idx * 1.618) * 0.5) % 4
-            if rot_noise > 0 and random.random() < rot_noise:
-                rot = random.randint(0, 3)
-                angle_off = rot * 90.0
+            # Per-tile animation parameters (gated by mode)
+            angle_off = _tile_angle(tx, ty, idx)
+            rot = _tile_rot_selection(tx, ty, idx)
+            hue_off = _tile_hue_offset(tx, ty, idx)
+            arc_span = _tile_arc_span(tx, ty, idx)
+            weave_arm = _tile_weave_width(tx, ty, idx)
 
-            # Per-tile hue drift — cycles through palette continuously
-            hue_offset = int(6 * math.sin(t * 2 * anim_speed + idx * 0.7))
-
-            color = _tile_color(tx, ty, idx + hue_offset)
+            if anim_mode == "color_osc" and isinstance(hue_off, tuple):
+                color = hue_off  # Use deterministic HSV directly
+            else:
+                color = _tile_color(tx, ty, idx + (hue_off if isinstance(hue_off, int) else 0))
 
             if effective_tile_type == "arcs":
-                # Continuous arc rotation — smooth, no discrete jumps
-                draw.arc([tx, ty, tx + ts, ty + ts], angle_off, 90 + angle_off, fill=color, width=lw)
-                draw.arc([tx, ty, tx + ts, ty + ts], 180 + angle_off, 270 + angle_off, fill=color, width=lw)
+                # Continuous arc rotation — arc span animated by arc_stretch
+                draw.arc([tx, ty, tx + ts, ty + ts], angle_off, arc_span + angle_off, fill=color, width=lw)
+                draw.arc([tx, ty, tx + ts, ty + ts], 180 + angle_off, 180 + arc_span + angle_off, fill=color, width=lw)
             elif effective_tile_type == "diagonals":
                 # Diagonal lines
                 if rot % 2 == 0:
@@ -275,9 +303,9 @@ def method_truchet(out_dir: Path, seed: int, params=None):
                     draw.ellipse([cx - rr, cy - rr, cx + rr, cy + rr], outline=color, width=max(1, lw - ri))
 
             elif effective_tile_type == "weave":
-                # Weave/interlace pattern
+                # Weave/interlace pattern — arm width animated by weave_pulse
                 cx, cy = tx + ts // 2, ty + ts // 2
-                arm = ts // 3
+                arm = max(2, int(ts * weave_arm))
                 # Horizontal
                 draw.rectangle([tx, cy - arm, tx + ts, cy + arm], fill=color)
                 # Vertical (alternating)
