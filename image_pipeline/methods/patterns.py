@@ -627,11 +627,12 @@ def method_moire(out_dir: Path, seed: int, params=None):
     effective_pat_fade = 0.0
 
     if anim_mode == "layer_rotate":
-        # One gentle pulse of rotation over the full animation — 1.5 sin cycles
-        effective_rot = rot * (0.5 + 0.5 * abs(math.sin(t * 1.5 * anim_speed)))
+        # Smooth bounce: sin² avoids the cusp of abs(sin)
+        effective_rot = rot * (0.5 + 0.5 * math.sin(t * 1.5 * anim_speed) ** 2)
     elif anim_mode == "op_morph":
         # Slowly cycle through blend operations (~1 full cycle) with cross-fade
-        ops_list = ["multiply", "add", "difference", "screen", "overlay", "exclusion"]
+        ops_list = ["multiply", "add", "difference", "screen", "overlay", "exclusion",
+                    "divide", "average", "xor", "negation", "luminosity", "min", "max"]
         n_ops = len(ops_list)
         raw_idx = t * 0.95 * anim_speed
         idx_a = int(raw_idx) % n_ops
@@ -656,188 +657,181 @@ def method_moire(out_dir: Path, seed: int, params=None):
     max_r = np.sqrt(cx ** 2 + cy ** 2) or 1
     theta = np.arctan2(yc, xc)
 
-    def _grid_pattern(x, y, fx, fy, phase, thick_scale=1.0):
-        """Generate a single grid layer for the given pattern."""
-        if effective_pattern == "radial":
+    def _grid_pattern(x, y, fx, fy, phase, pat, thick_scale=1.0):
+        """Generate a single grid layer for the given pattern type."""
+        if pat == "radial":
             rr = r * fx + phase
             return np.sin(rr) * thick_scale
-        elif effective_pattern == "linear":
+        elif pat == "linear":
             val = (x * fx + y * fy + phase)
             return np.sin(val) * thick_scale
-        elif effective_pattern == "concentric":
+        elif pat == "concentric":
             rr = r * fx + phase
             return np.sin(rr) * thick_scale
-        elif effective_pattern == "spiral":
+        elif pat == "spiral":
             sp = r * fx + theta * fy * 3 + phase
             return np.sin(sp) * thick_scale
-        elif effective_pattern == "wave":
+        elif pat == "wave":
             wx = x * fx + phase
             wy = y * fy + phase
             return np.sin(wx) * np.cos(wy) * thick_scale
-        elif effective_pattern == "honeycomb":
-            # Hexagonal pattern
+        elif pat == "honeycomb":
             hx = x * fx + phase
             hy = y * fy * 0.866 + phase
             d = np.sin(hx)
             d2 = np.sin(hx * 0.5 + hy * 0.866)
             d3 = np.sin(hx * 0.5 - hy * 0.866)
             return (d + d2 + d3) / 3 * thick_scale
-        elif effective_pattern == "hexagon":
+        elif pat == "hexagon":
             hx = x * fx + phase
             hy = y * fy + phase
             return np.sin(hx) * np.sin(hy) * thick_scale
-        elif effective_pattern == "triangle":
+        elif pat == "triangle":
             tx = x * fx + phase
             ty = y * fy + phase
-            # 3-way symmetry
             return (np.sin(tx) + np.sin(tx * 0.5 + ty * 0.866) + np.sin(tx * 0.5 - ty * 0.866)) / 3 * thick_scale
-        elif effective_pattern == "circle_grid":
+        elif pat == "circle_grid":
             rr = r * fx + phase
             ang = theta * 6 + phase * 0.5
             return np.sin(rr) * np.cos(ang) * thick_scale
-        elif effective_pattern == "fractal":
+        elif pat == "fractal":
             rr = r * fx + phase
             ang = theta * 3 + phase * 0.3
             return (np.sin(rr + np.sin(ang * 3 + rr * 0.2))) * thick_scale
-        elif effective_pattern == "checkerboard":
+        elif pat == "checkerboard":
             return np.sin(x * fx + phase) * np.sin(y * fy + phase) * thick_scale
-        elif effective_pattern == "star":
+        elif pat == "star":
             ang = theta * 5 + phase * 0.5
             rr = r * fx + phase
             return np.sin(rr) * np.cos(ang) * thick_scale
-        elif effective_pattern == "bullseye":
+        elif pat == "bullseye":
             rr = r * fx + phase
             return np.sin(rr * math.pi) * thick_scale
         return np.sin(x * fx + y * fy + phase) * thick_scale
 
-    # ── Build layers ──
-    layers = []
+    def _blend_layers(layers_in, op):
+        """Blend a list of normalized [-1,1] layers using the given operation. Returns raw result."""
+        if len(layers_in) == 0:
+            return np.zeros((H, W), dtype=np.float32)
+        if len(layers_in) == 1:
+            return layers_in[0]
+        if op == "multiply":
+            return np.prod(np.stack(layers_in, axis=-1), axis=-1)
+        elif op == "min":
+            return np.min(np.stack(layers_in, axis=-1), axis=-1)
+        elif op == "max":
+            return np.max(np.stack(layers_in, axis=-1), axis=-1)
+        elif op == "add":
+            return np.sum(np.stack(layers_in, axis=-1), axis=-1)
+        elif op == "difference":
+            return np.abs(layers_in[0] - layers_in[1] if len(layers_in) >= 2 else layers_in[0])
+        elif op == "xor":
+            return np.bitwise_xor(
+                ((layers_in[0] + 1) * 127.5).astype(np.int32),
+                ((layers_in[1] + 1) * 127.5).astype(np.int32)
+            ).astype(np.float32) / 255.0 * 2 - 1
+        elif op == "divide":
+            return layers_in[0] / (np.abs(layers_in[1]) + 0.1) if len(layers_in) >= 2 else layers_in[0]
+        elif op == "average":
+            return np.mean(np.stack(layers_in, axis=-1), axis=-1)
+        elif op == "overlay":
+            a = (layers_in[0] + 1) / 2
+            b = (layers_in[1] + 1) / 2 if len(layers_in) >= 2 else a
+            r = np.where(a < 0.5, 2 * a * b, 1 - 2 * (1 - a) * (1 - b))
+            return r * 2 - 1
+        elif op == "screen":
+            a = (layers_in[0] + 1) / 2
+            b = (layers_in[1] + 1) / 2 if len(layers_in) >= 2 else a
+            r = 1 - (1 - a) * (1 - b)
+            return r * 2 - 1
+        elif op == "exclusion":
+            a = (layers_in[0] + 1) / 2
+            b = (layers_in[1] + 1) / 2 if len(layers_in) >= 2 else a
+            r = a + b - 2 * a * b
+            return r * 2 - 1
+        elif op == "negation":
+            a = (layers_in[0] + 1) / 2
+            b = (layers_in[1] + 1) / 2 if len(layers_in) >= 2 else a
+            r = 1 - np.abs(a + b - 1)
+            return r * 2 - 1
+        elif op == "luminosity":
+            return layers_in[0] * (1 - amp * 0.3) + layers_in[1] * amp * 0.3 if len(layers_in) >= 2 else layers_in[0]
+        return layers_in[0]
+
+    # ── Pre-compute per-layer random data (deterministic) ──
+    layer_data = []
     for i in range(n_grids):
-        # Continuous frequency oscillation per layer — visible motion in every mode
-        freq_mod = 1.0 + 0.25 * math.sin(t * 0.8 + i * 0.7)
-        fi = freq * (1.0 + freq_var * rng.uniform(-1, 1)) * freq_mod
+        fi = freq * (1.0 + freq_var * rng.uniform(-1, 1))
         fxi = fi * (0.5 + rng.uniform(0, 1))
         fyi = fi * (0.5 + rng.uniform(0, 1))
-        phase_i = rng.uniform(0, 2 * math.pi) + t * (i + 1) * 0.15
-
-        # Rotate coordinates
-        angle_i = i * effective_rot + rng.uniform(-0.02, 0.02)
+        base_phase = rng.uniform(0, 2 * math.pi)
+        angle_i = i * rot + rng.uniform(-0.02, 0.02)
         cos_a = math.cos(angle_i)
         sin_a = math.sin(angle_i)
-        rx = xc * cos_a - yc * sin_a
-        ry = xc * sin_a + yc * cos_a
-
         # Offset
         if offset_mode == "linear":
-            rx += i * 5.0
-            ry += i * 5.0
+            ox = i * 5.0
+            oy = i * 5.0
         elif offset_mode == "radial":
-            rx += math.cos(angle_i) * i * 8.0
-            ry += math.sin(angle_i) * i * 8.0
+            ox = math.cos(angle_i) * i * 8.0
+            oy = math.sin(angle_i) * i * 8.0
         elif offset_mode == "random":
-            rx += rng.uniform(-20, 20)
-            ry += rng.uniform(-20, 20)
+            ox = rng.uniform(-20, 20)
+            oy = rng.uniform(-20, 20)
+        else:
+            ox, oy = 0.0, 0.0
+        layer_data.append((fxi, fyi, base_phase, cos_a, sin_a, ox, oy))
 
-        # Wobble
-        if wobble > 0:
-            wx = np.sin(ry * 0.1 + t) * wobble
-            wy = np.cos(rx * 0.1 + t * 1.3) * wobble
-            rx = rx + wx
-            ry = ry + wy
+    # ── Build layers ──
+    def _build_layers(pat, rot_val):
+        """Build layers for a given pattern and rotation value. Returns list of normalized [-1,1] arrays."""
+        out = []
+        for i, (fxi, fyi, base_phase, cos_a, sin_a, ox, oy) in enumerate(layer_data):
+            # Continuous frequency oscillation per layer — wired to anim_speed
+            freq_mod = 1.0 + 0.25 * math.sin(t * 0.8 * anim_speed + i * 0.7)
+            fi_mod = fxi * freq_mod
+            fy_mod = fyi * freq_mod
+            phase_i = base_phase + t * (i + 1) * 0.15 * anim_speed
 
-        layer = _grid_pattern(rx, ry, fxi, fyi, phase_i, thick)
-        layers.append(layer)
+            # Rotate coordinates
+            angle_i = i * rot_val
+            ca = math.cos(angle_i)
+            sa = math.sin(angle_i)
+            rx = xc * ca - yc * sa + ox
+            ry = xc * sa + yc * ca + oy
 
-    # ── Blend layers ──
-    if len(layers) == 0:
-        result = np.zeros((H, W), dtype=np.float32)
-    elif len(layers) == 1:
-        result = layers[0]
-    else:
-        # Normalize layers to [-1, 1] first
-        for i in range(len(layers)):
-            lmin, lmax = layers[i].min(), layers[i].max()
+            # Wobble — wired to anim_speed
+            if wobble > 0:
+                wx = np.sin(ry * 0.1 + t * anim_speed) * wobble
+                wy = np.cos(rx * 0.1 + t * 1.3 * anim_speed) * wobble
+                rx = rx + wx
+                ry = ry + wy
+
+            layer = _grid_pattern(rx, ry, fi_mod, fy_mod, phase_i, pat, thick)
+            out.append(layer)
+        # Normalize layers to [-1, 1]
+        for i in range(len(out)):
+            lmin, lmax = out[i].min(), out[i].max()
             if lmax - lmin > 1e-8:
-                layers[i] = 2 * (layers[i] - lmin) / (lmax - lmin) - 1.0
+                out[i] = 2 * (out[i] - lmin) / (lmax - lmin) - 1.0
+        return out
 
-        if effective_operation == "multiply":
-            result = np.prod(np.stack(layers, axis=-1), axis=-1)
-        elif effective_operation == "min":
-            result = np.min(np.stack(layers, axis=-1), axis=-1)
-        elif effective_operation == "max":
-            result = np.max(np.stack(layers, axis=-1), axis=-1)
-        elif effective_operation == "add":
-            result = np.sum(np.stack(layers, axis=-1), axis=-1)
-        elif effective_operation == "difference":
-            result = np.abs(layers[0] - layers[1] if len(layers) >= 2 else layers[0])
-        elif effective_operation == "xor":
-            result = np.bitwise_xor(
-                ((layers[0] + 1) * 127.5).astype(np.int32),
-                ((layers[1] + 1) * 127.5).astype(np.int32)
-            ).astype(np.float32) / 255.0 * 2 - 1
-        elif effective_operation == "divide":
-            result = layers[0] / (np.abs(layers[1]) + 0.1) if len(layers) >= 2 else layers[0]
-        elif effective_operation == "average":
-            result = np.mean(np.stack(layers, axis=-1), axis=-1)
-        elif effective_operation == "overlay":
-            a = (layers[0] + 1) / 2
-            b = (layers[1] + 1) / 2 if len(layers) >= 2 else a
-            result = np.where(a < 0.5, 2 * a * b, 1 - 2 * (1 - a) * (1 - b))
-            result = result * 2 - 1
-        elif effective_operation == "screen":
-            a = (layers[0] + 1) / 2
-            b = (layers[1] + 1) / 2 if len(layers) >= 2 else a
-            result = 1 - (1 - a) * (1 - b)
-            result = result * 2 - 1
-        elif effective_operation == "exclusion":
-            a = (layers[0] + 1) / 2
-            b = (layers[1] + 1) / 2 if len(layers) >= 2 else a
-            result = a + b - 2 * a * b
-            result = result * 2 - 1
-        elif effective_operation == "negation":
-            a = (layers[0] + 1) / 2
-            b = (layers[1] + 1) / 2 if len(layers) >= 2 else a
-            result = 1 - np.abs(a + b - 1)
-            result = result * 2 - 1
-        elif effective_operation == "luminosity":
-            result = layers[0] * (1 - amp * 0.3) + layers[1] * amp * 0.3 if len(layers) >= 2 else layers[0]
-        else:
-            result = layers[0]
+    layers = _build_layers(effective_pattern, effective_rot)
+    result = _blend_layers(layers, effective_operation)
+    result = norm(result)
 
-    result = norm(result)  # Normalize to [0,1]
-
-    # ── Cross-fade for op_morph: blend layers with both operations and lerp ──
+    # ── Cross-fade for op_morph: blend layers with both operations ──
     if anim_mode == "op_morph" and effective_op_fade > 0.0:
-        # Same layers, different blend operation
-        temp_layers = [l.copy() for l in layers]
-        if len(temp_layers) >= 2:
-            if effective_next_op == "multiply":
-                result_b = np.prod(np.stack(temp_layers, axis=-1), axis=-1)
-            elif effective_next_op == "add":
-                result_b = np.sum(np.stack(temp_layers, axis=-1), axis=-1)
-            elif effective_next_op == "difference":
-                result_b = np.abs(temp_layers[0] - temp_layers[1])
-            elif effective_next_op == "screen":
-                a = (temp_layers[0] + 1) / 2
-                b = (temp_layers[1] + 1) / 2
-                result_b = 1 - (1 - a) * (1 - b)
-                result_b = result_b * 2 - 1
-            elif effective_next_op == "overlay":
-                a = (temp_layers[0] + 1) / 2
-                b = (temp_layers[1] + 1) / 2
-                result_b = np.where(a < 0.5, 2 * a * b, 1 - 2 * (1 - a) * (1 - b))
-                result_b = result_b * 2 - 1
-            elif effective_next_op == "exclusion":
-                a = (temp_layers[0] + 1) / 2
-                b = (temp_layers[1] + 1) / 2
-                result_b = a + b - 2 * a * b
-                result_b = result_b * 2 - 1
-            else:
-                result_b = result
-        else:
-            result_b = result
+        result_b = _blend_layers(layers, effective_next_op)
         result_b = norm(result_b)
         result = result * (1.0 - effective_op_fade) + result_b * effective_op_fade
+
+    # ── Cross-fade for pattern_morph: rebuild layers with next pattern ──
+    if anim_mode == "pattern_morph" and effective_pat_fade > 0.0:
+        layers_b = _build_layers(effective_next_pattern, effective_rot)
+        result_b = _blend_layers(layers_b, effective_operation)
+        result_b = norm(result_b)
+        result = result * (1.0 - effective_pat_fade) + result_b * effective_pat_fade
 
     # ── Color ──
     if cmode == "grayscale":
