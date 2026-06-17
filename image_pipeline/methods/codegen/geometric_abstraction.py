@@ -10,7 +10,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, get_font, BLACK, W, H
+from ...core.utils import save, norm, mn, get_font, seed_all, BLACK, W, H
 from ...core.animation import capture_frame
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -28,7 +28,7 @@ from ...core.animation import capture_frame
              "rotation": {"description": "global rotation offset (degrees)", "min": 0.0, "max": 360.0, "default": 0.0},
              "translucent": {"description": "use translucent fills (RGBA)", "default": True},
              "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
-             "anim_mode": {"description": "animation mode", "choices": ["none", "rotation", "layout_morph", "shape_morph", "color_morph"], "default": "rotation"},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "rotation", "rotation_wave", "size_sweep", "position_wave", "color_drift"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 2.0, "default": 0.25},
          })
 def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
@@ -38,7 +38,7 @@ def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
     t = float(params.get("time", 0.0))
     anim_speed = float(params.get("anim_speed", 0.25))
 
-    # Fixed seed: use a seeded Random instance for all randomness
+    seed_all(seed)
     rng = random.Random(seed)
 
     # ── Parse params ──
@@ -51,26 +51,32 @@ def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
     n_shapes = int(params.get("n_shapes", 50))
     rotation = float(params.get("rotation", 0.0))
     translucent = params.get("translucent", True)
-    anim_mode = params.get("anim_mode", "rotation")
+    anim_mode = params.get("anim_mode", "none")
 
-    # ── Effective params for animation ──
-    effective_layout = layout
-    effective_shape_types = raw_shape_types[:]
-    effective_color_mode = color_mode
+    # ── Animation: effective parameters (all gated by mode) ──
+    effective_rotation = rotation
+    effective_rot_wave_amp = 0.0
+    effective_size_mod = 1.0
+    effective_pos_dx = 0.0
+    effective_pos_dy = 0.0
+    effective_color_shift = 0.0
 
-    shape_cycle = ["circle", "rect", "triangle", "diamond", "hexagon", "star", "cross", "arc", "polygon"]
-    color_cycle = ["random", "gradient", "ordered"]
-    layout_cycle = ["random", "grid", "radial", "sunburst", "spiral"]
+    if anim_mode == "rotation":
+        effective_rotation = (rotation + t * 30.0 * anim_speed) % 360.0
 
-    if anim_mode == "layout_morph":
-        idx = int(t * 0.8 * anim_speed * len(layout_cycle)) % len(layout_cycle)
-        effective_layout = layout_cycle[idx]
-    elif anim_mode == "shape_morph":
-        idx = int(t * 0.8 * anim_speed * len(shape_cycle)) % len(shape_cycle)
-        effective_shape_types = [shape_cycle[idx]]
-    elif anim_mode == "color_morph":
-        idx = int(t * 0.8 * anim_speed * len(color_cycle)) % len(color_cycle)
-        effective_color_mode = color_cycle[idx]
+    elif anim_mode == "rotation_wave":
+        effective_rotation = rotation
+        effective_rot_wave_amp = 45.0  # degrees of per-shape rotation wave
+
+    elif anim_mode == "size_sweep":
+        effective_size_mod = 0.3 + 0.7 * (0.5 + 0.5 * math.sin(t * 0.8 * anim_speed))
+
+    elif anim_mode == "position_wave":
+        effective_pos_dx = 15.0 * math.sin(t * 0.6 * anim_speed)
+        effective_pos_dy = 15.0 * math.cos(t * 0.5 * anim_speed)
+
+    elif anim_mode == "color_drift":
+        effective_color_shift = t * 1.5 * anim_speed
 
     # ── Create canvas ──
     use_rgba = translucent or alpha < 255
@@ -85,10 +91,10 @@ def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
     # ── Generate positions ──
     positions = []
     for idx in range(n_shapes):
-        if effective_layout == "random":
+        if layout == "random":
             x = rng.uniform(20, W - 20)
             y = rng.uniform(20, H - 20)
-        elif effective_layout == "grid":
+        elif layout == "grid":
             cols = int(math.ceil(math.sqrt(n_shapes * W / H)))
             rows = int(math.ceil(n_shapes / cols))
             gx = idx % cols
@@ -98,28 +104,28 @@ def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
             # Jitter
             x += rng.uniform(-8, 8)
             y += rng.uniform(-8, 8)
-        elif effective_layout == "radial":
+        elif layout == "radial":
             angle = (idx / n_shapes) * 2 * math.pi + rng.uniform(-0.1, 0.1)
             radius = rng.uniform(30, min(W, H) * 0.45)
             x = cx + radius * math.cos(angle)
             y = cy + radius * math.sin(angle)
-        elif effective_layout == "sunburst":
+        elif layout == "sunburst":
             rings = max(1, int(math.sqrt(n_shapes)))
             per_ring = max(1, n_shapes // rings)
             ring = idx // per_ring
             pos_in_ring = idx % per_ring
             ring_frac = (ring + 0.5) / rings
             radius = ring_frac * min(W, H) * 0.45
-            angle = (pos_in_ring / max(1, per_ring)) * 2 * math.pi + t * 0.3 * anim_speed
+            angle = (pos_in_ring / max(1, per_ring)) * 2 * math.pi
             radius += rng.uniform(-6, 6)
             angle += rng.uniform(-0.08, 0.08)
             x = cx + radius * math.cos(angle)
             y = cy + radius * math.sin(angle)
-        elif effective_layout == "spiral":
+        elif layout == "spiral":
             max_radius = min(W, H) * 0.45
             frac = idx / max(1, n_shapes)
             radius = frac * max_radius + rng.uniform(-4, 4)
-            angle = frac * 4 * math.pi + t * 0.5 * anim_speed + rng.uniform(-0.05, 0.05)
+            angle = frac * 4 * math.pi + rng.uniform(-0.05, 0.05)
             x = cx + radius * math.cos(angle)
             y = cy + radius * math.sin(angle)
         else:
@@ -129,19 +135,18 @@ def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
 
     # ── Color helpers ──
     def _get_color(idx, x, y):
-        if effective_color_mode == "random":
+        if color_mode == "random":
             r = rng.randint(40, 255)
             g = rng.randint(30, 230)
             b = rng.randint(50, 220)
-        elif effective_color_mode == "gradient":
+        elif color_mode == "gradient":
             frac = idx / max(1, n_shapes)
             r = int(50 + 200 * (1 - frac))
             g = int(30 + 150 * frac)
             b = int(80 + 100 * (0.5 + 0.5 * math.sin(frac * math.pi)))
-        elif effective_color_mode == "ordered":
-            # Cycle through hue space
-            hue = (idx * 37) % 360
-            # Simple HSV-to-RGB
+        elif color_mode == "ordered":
+            # Cycle through hue space with optional color shift
+            hue = (idx * 37 + int(effective_color_shift * 60)) % 360
             h = hue / 60.0
             s, v = 0.8, 0.9
             hi = int(h) % 6
@@ -261,26 +266,29 @@ def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
     # ── Draw shapes ──
     for idx in range(n_shapes):
         x, y = positions[idx]
-        # Per-shape rotation
-        shape_rot = t * 60 * anim_speed + idx * 23.5
 
-        # Add global rotation offset
-        shape_rot = shape_rot + rotation
+        # Per-shape rotation: gated by mode
+        shape_rot = effective_rotation
+        if anim_mode == "rotation_wave":
+            wave_off = effective_rot_wave_amp * math.sin(x * 0.05 + y * 0.03 + t * 1.5 * anim_speed)
+            shape_rot = (rotation + wave_off) % 360.0
+
+        # Position offset: gated by mode
+        px = x + effective_pos_dx
+        py = y + effective_pos_dy
 
         # Pick shape type
-        shape_type = effective_shape_types[idx % len(effective_shape_types)]
+        shape_type = raw_shape_types[idx % len(raw_shape_types)]
 
-        # Size variation
+        # Size: gated by mode
         base_size = rng.uniform(10, 40)
-        # Animate size with gentle oscillation
-        size_mod = 0.7 + 0.3 * math.sin(t * 0.5 * anim_speed + idx * 0.7)
-        size = base_size * size_mod
+        size = base_size * effective_size_mod
 
         color = _get_color(idx, x, y)
         if use_rgba:
             color = color + (alpha,)
 
-        _draw_shape(draw, shape_type, x, y, size, color, shape_rot)
+        _draw_shape(draw, shape_type, px, py, size, color, shape_rot)
 
     # ── Convert RGBA→RGB if needed ──
     if img.mode == "RGBA":
