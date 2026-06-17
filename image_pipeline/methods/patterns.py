@@ -1124,7 +1124,7 @@ def method_worley_noise(out_dir: Path, seed: int, params=None):
     "scale_variation": {"description": "per-tile scale jitter", "min": 0.0, "max": 0.5, "default": 0.0},
     "penrose_generations": {"description": "Penrose inflation iterations", "min": 2, "max": 8, "default": 4},
     "star_rays": {"description": "star polygon rays (for star/islamic motifs)", "min": 4, "max": 16, "default": 8},
-    "anim_mode": {"description": "animation mode: none, motif_morph, group_morph", "default": "none"},
+    "anim_mode": {"description": "animation mode: none, rotation, ripple", "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},
     "time": {"description": "animation time (drives ripple wave + rotation)", "min": 0.0, "max": 6.28, "default": 0.0},
 })
@@ -1156,17 +1156,19 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
 
     from ..core.utils import PALETTES, quantize_to_palette
 
-    # ── Animation: morph motif or group ──
+    # ── Animation ──
     effective_motif = motif
     effective_group = group
-    if anim_mode == "motif_morph":
-        motif_cycle = ["diamond", "triangle", "hexagon", "star", "cross", "spiral", "wave", "scales"]
-        idx = int((t / (2 * math.pi)) * len(motif_cycle) * anim_speed) % len(motif_cycle)
-        effective_motif = motif_cycle[idx]
-    elif anim_mode == "group_morph":
-        group_cycle = ["p1", "p2", "pm", "pg", "pmm", "pmg", "pgg", "cmm", "p4", "p4m", "p4g", "p3", "p3m1", "p31m", "p6", "p6m"]
-        idx = int((t / (2 * math.pi)) * len(group_cycle) * anim_speed) % len(group_cycle)
-        effective_group = group_cycle[idx]
+    if anim_mode == "rotation":
+        # Global rotation sweeps continuously — all tiles rotate uniformly
+        global_rot = t * 120 * anim_speed  # degrees
+    else:
+        global_rot = 0.0
+    if anim_mode == "ripple":
+        # Scale wave pulses across the grid — tiles breathe in sequence
+        scale_wave = 0.7 + 0.6 * math.sin(t * 0.5 * anim_speed) ** 2  # sin² for smooth derivative
+    else:
+        scale_wave = 1.0
 
     img = Image.new("RGB", (W, H), (10, 10, 18))
     draw = ImageDraw.Draw(img)
@@ -1422,10 +1424,8 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
             if pal_colors:
                 c = rng.choice(pal_colors)
         a = angle + rng.uniform(-rotation_noise, rotation_noise) if rotation_noise > 0 else angle
-        # Per-tile scale wave: ripple propagates across the grid
-        tile_phase = (cx * 0.02 + cy * 0.03 + t * 0.8)
-        ripple = 0.7 + 0.3 * (0.5 + 0.5 * math.sin(tile_phase))
-        sv = ripple * (1 + rng.uniform(-scale_variation, scale_variation) if scale_variation > 0 else 1)
+        # Per-tile scale wave: only active in ripple mode
+        sv = scale_wave * (1 + rng.uniform(-scale_variation, scale_variation) if scale_variation > 0 else 1)
         fn(draw, cx, cy, sz * sv, c, angle=a)
 
     # ── Penrose tiling ──────────────────────────────────────────────────
