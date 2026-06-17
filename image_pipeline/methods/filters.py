@@ -271,7 +271,7 @@ def method_glitch(out_dir: Path, seed: int, params=None):
         "contrast": {"description": "source contrast boost", "min": 0.5, "max": 3.0, "default": 1.0},
         "error_scale": {"description": "error diffusion strength (0=no dither, 1=full)", "min": 0.0, "max": 1.0, "default": 1.0},
         "time": {"description": "animation time (0-2pi) - sweeps error_scale from 0→1", "min": 0.0, "max": 6.28, "default": 0.0},
-        "anim_mode": {"description": "animation mode: none, error_reveal, threshold_sweep, contrast_sweep", "default": "none"},
+        "anim_mode": {"description": "animation mode: none, error_reveal, threshold_sweep, serpentine_toggle, algorithm_morph", "default": "none"},
         "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},
     },
 )
@@ -314,6 +314,10 @@ def method_dither(out_dir: Path, seed: int, params=None):
     effective_error_scale = error_scale
     effective_levels = levels
     effective_contrast = contrast
+    effective_serpentine = serpentine
+    effective_algorithm = algorithm
+    morph_fade = 0.0
+    algorithm_b = algorithm
     if anim_mode == "error_reveal":
         sweep = (t / (2 * math.pi)) * anim_speed  # 0→1 over full animation
         effective_error_scale = sweep
@@ -321,9 +325,19 @@ def method_dither(out_dir: Path, seed: int, params=None):
         # Sweep levels continuously from 2→8
         sweep = 2.0 + 6.0 * (0.5 + 0.5 * math.sin(t * 0.8 * anim_speed))
         effective_levels = sweep
-    elif anim_mode == "contrast_sweep":
-        # Sweep contrast from 0.5→3.0
-        effective_contrast = 0.5 + 2.5 * (0.5 + 0.5 * math.sin(t * 0.7 * anim_speed))
+    elif anim_mode == "serpentine_toggle":
+        # Blend between serpentine on/off — the scan direction changes error propagation
+        morph_fade = 0.5 + 0.5 * math.sin(t * 0.6 * anim_speed)
+    elif anim_mode == "algorithm_morph":
+        # Cross-fade between error diffusion algorithms
+        algo_cycle = ["fs", "atkinson", "stucki", "sierra", "jarvis"]
+        n_algos = len(algo_cycle)
+        raw_idx = (t / (2 * math.pi)) * n_algos * anim_speed
+        idx_a = int(raw_idx) % n_algos
+        idx_b = (idx_a + 1) % n_algos
+        morph_fade = raw_idx - int(raw_idx)
+        effective_algorithm = algo_cycle[idx_a]
+        algorithm_b = algo_cycle[idx_b]
 
     # --- Build source image ---
     if use_input and params.get("input_image"):
@@ -477,37 +491,54 @@ def method_dither(out_dir: Path, seed: int, params=None):
     JARVIS = [(0, 1, 7 / 48), (0, 2, 5 / 48), (1, -2, 3 / 48), (1, -1, 5 / 48), (1, 0, 7 / 48), (1, 1, 5 / 48), (1, 2, 3 / 48), (2, -2, 1 / 48), (2, -1, 3 / 48), (2, 0, 5 / 48), (2, 1, 3 / 48), (2, 2, 1 / 48)]
 
     # ---- Apply chosen algorithm ----
-    if algorithm in ("bayer2", "bayer4", "bayer8"):
-        size = {"bayer2": 2, "bayer4": 4, "bayer8": 8}[algorithm]
-        mat = bayer_matrix(size)
-        binary = ordered_dither(source, mat)
-        a = np.stack([binary / 255.0] * 3, axis=2)
-
-    elif algorithm in ("cluster3", "cluster4"):
-        hs = {"cluster3": 3, "cluster4": 4}[algorithm]
-        binary = cluster_dot_dither(source, hs)
-        a = np.stack([binary / 255.0] * 3, axis=2)
-
-    elif algorithm == "random":
-        rng = random.Random(seed)
-        noise_map = np.array([[rng.random() for _ in range(W)] for _ in range(H)])
-        binary = (source > noise_map).astype(np.uint8)
-        a = np.stack([binary / 255.0] * 3, axis=2)
-
-    else:
-        kernel_map = {
-            "fs": (FS, "Floyd-Steinberg"),
-            "atkinson": (ATKINSON, "Atkinson"),
-            "stucki": (STUCKI, "Stucki"),
-            "sierra": (SIERRA, "Sierra"),
-            "jarvis": (JARVIS, "Jarvis"),
-        }
-        kernel, name = kernel_map.get(algorithm, (FS, "Floyd-Steinberg"))
-        if effective_levels > 2:
-            gray_out = multi_tone_diffuse(source, effective_levels, kernel, serpentine, effective_error_scale)
+    def _render_algorithm(algo: str, src: np.ndarray, lvls: float,
+                          serp: bool, err_scale: float) -> np.ndarray:
+        """Render a dither frame. Returns H×W×3 float32 [0,1] array."""
+        if algo in ("bayer2", "bayer4", "bayer8"):
+            size = {"bayer2": 2, "bayer4": 4, "bayer8": 8}[algo]
+            mat = bayer_matrix(size)
+            binary = ordered_dither(src, mat)
+            return np.stack([binary / 255.0] * 3, axis=2)
+        elif algo in ("cluster3", "cluster4"):
+            hs = {"cluster3": 3, "cluster4": 4}[algo]
+            binary = cluster_dot_dither(src, hs)
+            return np.stack([binary / 255.0] * 3, axis=2)
+        elif algo == "random":
+            rng = random.Random(seed)
+            noise_map = np.array([[rng.random() for _ in range(W)] for _ in range(H)])
+            binary = (src > noise_map).astype(np.uint8)
+            return np.stack([binary / 255.0] * 3, axis=2)
         else:
-            gray_out = error_diffuse(source, kernel, serpentine, effective_error_scale)
-        a = np.stack([gray_out / 255.0] * 3, axis=2)
+            kernel_map = {
+                "fs": (FS, "Floyd-Steinberg"),
+                "atkinson": (ATKINSON, "Atkinson"),
+                "stucki": (STUCKI, "Stucki"),
+                "sierra": (SIERRA, "Sierra"),
+                "jarvis": (JARVIS, "Jarvis"),
+            }
+            kernel, name = kernel_map.get(algo, (FS, "Floyd-Steinberg"))
+            if lvls > 2:
+                gray_out = multi_tone_diffuse(src, lvls, kernel, serp, err_scale)
+            else:
+                gray_out = error_diffuse(src, kernel, serp, err_scale)
+            return np.stack([gray_out / 255.0] * 3, axis=2)
+
+    if anim_mode == "algorithm_morph" and morph_fade > 0:
+        img_a = _render_algorithm(effective_algorithm, source, effective_levels,
+                                   effective_serpentine, effective_error_scale)
+        img_b = _render_algorithm(algorithm_b, source, effective_levels,
+                                   effective_serpentine, effective_error_scale)
+        a = (1.0 - morph_fade) * img_a + morph_fade * img_b
+    elif anim_mode == "serpentine_toggle":
+        # Render with serpentine on, then blend with serpentine off
+        img_on = _render_algorithm(effective_algorithm, source, effective_levels,
+                                    True, effective_error_scale)
+        img_off = _render_algorithm(effective_algorithm, source, effective_levels,
+                                     False, effective_error_scale)
+        a = (1.0 - morph_fade) * img_on + morph_fade * img_off
+    else:
+        a = _render_algorithm(effective_algorithm, source, effective_levels,
+                              effective_serpentine, effective_error_scale)
 
     # ---- Apply palette ----
     if palette_name and palette_name != "none":
