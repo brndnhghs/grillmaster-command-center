@@ -566,6 +566,101 @@ _PALETTE_CHOICES = sorted(_PALETTE_GENERATORS.keys())
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# RENDER HELPER — shared between single and morph modes
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def _render_palette_layout(colors: list, layout: str, palette_type: str,
+                           n_colors: int, phase_offset: float = 0.0,
+                           rot_offset: float = 0.0) -> Image.Image:
+    """Render a palette layout to an Image. Returns PIL Image."""
+    n = len(colors)
+    img = Image.new("RGB", (W, H), (10, 10, 18))
+    draw = ImageDraw.Draw(img)
+    cx, cy = W / 2.0, H / 2.0
+
+    if layout == "wheel":
+        radius = min(W, H) * 0.38
+        for i, (r, g, b) in enumerate(colors):
+            start_angle = (i / n) * 360.0 + rot_offset
+            end_angle = ((i + 1) / n) * 360.0 + rot_offset
+            draw.pieslice(
+                [cx - radius, cy - radius, cx + radius, cy + radius],
+                start_angle, end_angle,
+                fill=(r, g, b), outline=(220, 220, 200), width=1,
+            )
+        draw.ellipse(
+            [cx - 20, cy - 20, cx + 20, cy + 20],
+            fill=(10, 10, 18), outline=(220, 220, 200), width=1,
+        )
+
+    elif layout == "gradient":
+        rgb_colors = [(rr / 255.0, gg / 255.0, bb / 255.0) for rr, gg, bb in colors]
+        for x in range(W):
+            frac = (x / max(1, W - 1) + phase_offset) % 1.0
+            pos = frac * (n - 1)
+            idx = int(pos)
+            frac_in = pos - idx
+            if idx >= n - 1:
+                r, g, b = rgb_colors[-1]
+            else:
+                c1 = rgb_colors[idx]
+                c2 = rgb_colors[idx + 1]
+                r = c1[0] + (c2[0] - c1[0]) * frac_in
+                g = c1[1] + (c2[1] - c1[1]) * frac_in
+                b = c1[2] + (c2[2] - c1[2]) * frac_in
+            draw.line([(x, 0), (x, H - 1)], fill=(int(r * 255), int(g * 255), int(b * 255)))
+
+    elif layout == "vertical":
+        band_h = H / n
+        for i, (r, g, b) in enumerate(colors):
+            y0 = int(i * band_h)
+            y1 = int((i + 1) * band_h)
+            draw.rectangle([0, y0, W - 1, y1], fill=(r, g, b))
+            if i > 0:
+                draw.line([(0, y0), (W - 1, y0)], fill=(220, 220, 200), width=1)
+
+    elif layout == "horizontal":
+        band_w = W / n
+        for i, (r, g, b) in enumerate(colors):
+            x0 = int(i * band_w)
+            x1 = int((i + 1) * band_w)
+            draw.rectangle([x0, 0, x1, H - 1], fill=(r, g, b))
+            if i > 0:
+                draw.line([(x0, 0), (x0, H - 1)], fill=(220, 220, 200), width=1)
+
+    elif layout == "grid":
+        cols = max(1, int(math.ceil(math.sqrt(n * W / H))))
+        rows = max(1, int(math.ceil(n / cols)))
+        cell_w = W / cols
+        cell_h = H / rows
+        for idx, (r, g, b) in enumerate(colors):
+            col_i = idx % cols
+            row_i = idx // cols
+            x0 = int(col_i * cell_w)
+            y0 = int(row_i * cell_h)
+            x1 = int((col_i + 1) * cell_w)
+            y1 = int((row_i + 1) * cell_h)
+            draw.rectangle([x0 + 2, y0 + 2, x1 - 2, y1 - 2], fill=(r, g, b))
+
+    elif layout == "overlay":
+        strip_h = max(60, H // 5)
+        band_w = W / n
+        for i, (r, g, b) in enumerate(colors):
+            x0 = int(i * band_w)
+            x1 = int((i + 1) * band_w)
+            y0 = H - strip_h
+            draw.rectangle([x0, y0, x1, H - 1], fill=(r, g, b))
+            if i > 0:
+                draw.line([(x0, y0), (x0, H - 1)], fill=(220, 220, 200), width=1)
+        label_font = get_font(14)
+        draw.text((10, H - strip_h - 18), f"Palette ({palette_type}, {n_colors} colors)",
+                  fill=(200, 200, 200), font=label_font)
+
+    return img
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # METHOD
 # ════════════════════════════════════════════════════════════════════════════
 
@@ -611,8 +706,8 @@ _PALETTE_CHOICES = sorted(_PALETTE_GENERATORS.keys())
         },
         "anim_mode": {
             "description": "palette animation mode",
-            "choices": ["none", "wheel_spin", "gradient_sweep", "hue_rotate"],
-            "default": "wheel_spin",
+            "choices": ["none", "wheel_spin", "gradient_sweep", "hue_rotate", "palette_morph", "saturation_pulse", "value_pulse"],
+            "default": "none",
         },
         "anim_speed": {
             "description": "animation speed multiplier",
@@ -631,11 +726,13 @@ def method_10_color_palette(out_dir: Path, seed: int, params=None):
     t = float(params.get("time", 0.0))
     anim_speed = float(params.get("anim_speed", 0.25))
 
+    seed_all(seed)
+
     # ── Parse params ──
     n_colors = int(params.get("n_colors", 8))
     layout = params.get("layout", "vertical")
     palette_type = params.get("palette_type", "golden-ratio")
-    anim_mode = params.get("anim_mode", "wheel_spin")
+    anim_mode = params.get("anim_mode", "none")
     sat_override = float(params.get("saturation", -1.0))
     val_override = float(params.get("value", -1.0))
 
@@ -677,118 +774,58 @@ def method_10_color_palette(out_dir: Path, seed: int, params=None):
     effective_hue_offset = 0.0
     effective_rot_offset = 0.0
     effective_phase_offset = 0.0
+    effective_sat = sat
+    effective_val = val
+    palette_morph_type_a = palette_type
+    palette_morph_type_b = palette_type
+    palette_morph_fade = 0.0
+
     if anim_mode == "wheel_spin":
         effective_hue_offset = t * 30.0 * anim_speed
         effective_rot_offset = t * 30.0 * anim_speed
+
     elif anim_mode == "gradient_sweep":
         effective_phase_offset = (t * anim_speed) % 1.0
+
     elif anim_mode == "hue_rotate":
-        effective_hue_offset = t * 60.0 * anim_speed  # faster rotation
+        effective_hue_offset = t * 60.0 * anim_speed
 
-    # ── Generate palette colors ──
-    gen_fn = _PALETTE_GENERATORS.get(palette_type, _golden_ratio_palette)
-    colors = gen_fn(n_colors, seed, hue_off=effective_hue_offset, sat=sat, val=val)
+    elif anim_mode == "palette_morph":
+        palette_keys = _PALETTE_CHOICES
+        n_palettes = len(palette_keys)
+        raw_idx = (t / (2 * math.pi)) * n_palettes * anim_speed
+        idx_a = int(raw_idx) % n_palettes
+        idx_b = (idx_a + 1) % n_palettes
+        palette_morph_fade = raw_idx - int(raw_idx)
+        palette_morph_type_a = palette_keys[idx_a]
+        palette_morph_type_b = palette_keys[idx_b]
 
-    # ── Create output canvas ──
-    img = Image.new("RGB", (W, H), (10, 10, 18))
-    draw = ImageDraw.Draw(img)
-    cx, cy = W / 2.0, H / 2.0
+    elif anim_mode == "saturation_pulse":
+        effective_sat = sat * (0.2 + 0.8 * (0.5 + 0.5 * math.sin(t * 1.5 * anim_speed)))
 
-    # ── Layout rendering ──
+    elif anim_mode == "value_pulse":
+        effective_val = val * (0.3 + 0.7 * (0.5 + 0.5 * math.sin(t * 1.3 * anim_speed)))
 
-    if layout == "wheel":
-        n = len(colors)
-        radius = min(W, H) * 0.38
-        rot_offset = effective_rot_offset
-        for i, (r, g, b) in enumerate(colors):
-            start_angle = (i / n) * 360.0 + rot_offset
-            end_angle = ((i + 1) / n) * 360.0 + rot_offset
-            draw.pieslice(
-                [cx - radius, cy - radius, cx + radius, cy + radius],
-                start_angle, end_angle,
-                fill=(r, g, b),
-                outline=(220, 220, 200),
-                width=1,
-            )
-        center_r = 20
-        draw.ellipse(
-            [cx - center_r, cy - center_r, cx + center_r, cy + center_r],
-            fill=(10, 10, 18), outline=(220, 220, 200), width=1,
-        )
+    # ── Generate palette(s) and render ──
 
-    elif layout == "gradient":
-        n = len(colors)
-        rgb_colors = [(rr / 255.0, gg / 255.0, bb / 255.0) for rr, gg, bb in colors]
-        phase_offset = effective_phase_offset
-        for x in range(W):
-            frac = (x / max(1, W - 1) + phase_offset) % 1.0
-            pos = frac * (n - 1)
-            idx = int(pos)
-            frac_in = pos - idx
-            if idx >= n - 1:
-                r, g, b = rgb_colors[-1]
-            else:
-                c1 = rgb_colors[idx]
-                c2 = rgb_colors[idx + 1]
-                r = c1[0] + (c2[0] - c1[0]) * frac_in
-                g = c1[1] + (c2[1] - c1[1]) * frac_in
-                b = c1[2] + (c2[2] - c1[2]) * frac_in
-            color_byte = (int(r * 255), int(g * 255), int(b * 255))
-            draw.line([(x, 0), (x, H - 1)], fill=color_byte)
-
-    elif layout == "vertical":
-        n = len(colors)
-        band_h = H / n
-        for i, (r, g, b) in enumerate(colors):
-            y0 = int(i * band_h)
-            y1 = int((i + 1) * band_h)
-            draw.rectangle([0, y0, W - 1, y1], fill=(r, g, b))
-            if i > 0:
-                draw.line([(0, y0), (W - 1, y0)], fill=(220, 220, 200), width=1)
-
-    elif layout == "horizontal":
-        n = len(colors)
-        band_w = W / n
-        for i, (r, g, b) in enumerate(colors):
-            x0 = int(i * band_w)
-            x1 = int((i + 1) * band_w)
-            draw.rectangle([x0, 0, x1, H - 1], fill=(r, g, b))
-            if i > 0:
-                draw.line([(x0, 0), (x0, H - 1)], fill=(220, 220, 200), width=1)
-
-    elif layout == "grid":
-        n = len(colors)
-        cols = max(1, int(math.ceil(math.sqrt(n * W / H))))
-        rows = max(1, int(math.ceil(n / cols)))
-        cell_w = W / cols
-        cell_h = H / rows
-        for idx, (r, g, b) in enumerate(colors):
-            col_idx = idx % cols
-            row_idx = idx // cols
-            x0 = int(col_idx * cell_w)
-            y0 = int(row_idx * cell_h)
-            x1 = int((col_idx + 1) * cell_w)
-            y1 = int((row_idx + 1) * cell_h)
-            gap = 2
-            draw.rectangle(
-                [x0 + gap, y0 + gap, x1 - gap, y1 - gap],
-                fill=(r, g, b),
-            )
-
-    elif layout == "overlay":
-        n = len(colors)
-        strip_h = max(60, H // 5)
-        band_w = W / n
-        for i, (r, g, b) in enumerate(colors):
-            x0 = int(i * band_w)
-            x1 = int((i + 1) * band_w)
-            y0 = H - strip_h
-            draw.rectangle([x0, y0, x1, H - 1], fill=(r, g, b))
-            if i > 0:
-                draw.line([(x0, y0), (x0, H - 1)], fill=(220, 220, 200), width=1)
-        label_font = get_font(14)
-        draw.text((10, H - strip_h - 18), f"Palette ({palette_type}, {n} colors)",
-                  fill=(200, 200, 200), font=label_font)
+    if anim_mode == "palette_morph":
+        # Render both palette types and blend
+        gen_a = _PALETTE_GENERATORS.get(palette_morph_type_a, _golden_ratio_palette)
+        gen_b = _PALETTE_GENERATORS.get(palette_morph_type_b, _golden_ratio_palette)
+        colors_a = gen_a(n_colors, seed, hue_off=0.0, sat=sat, val=val)
+        colors_b = gen_b(n_colors, seed, hue_off=0.0, sat=sat, val=val)
+        img_a = _render_palette_layout(colors_a, layout, palette_morph_type_a,
+                                       n_colors, phase_offset=0.0, rot_offset=0.0)
+        img_b = _render_palette_layout(colors_b, layout, palette_morph_type_b,
+                                       n_colors, phase_offset=0.0, rot_offset=0.0)
+        img = Image.blend(img_a, img_b, palette_morph_fade)
+    else:
+        gen_fn = _PALETTE_GENERATORS.get(palette_type, _golden_ratio_palette)
+        colors = gen_fn(n_colors, seed, hue_off=effective_hue_offset,
+                        sat=effective_sat, val=effective_val)
+        img = _render_palette_layout(colors, layout, palette_type, n_colors,
+                                     phase_offset=effective_phase_offset,
+                                     rot_offset=effective_rot_offset)
 
     # ── Convert to numpy array, capture frame, save ──
     result_arr = np.array(img).astype(np.float32) / 255.0
