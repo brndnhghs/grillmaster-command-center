@@ -50,7 +50,7 @@ from ...core.animation import capture_frame
         },
         "anim_mode": {
             "description": "kaleidoscope animation mode",
-            "choices": ["none", "rotation", "pattern_morph", "segment_morph", "source_morph"],
+            "choices": ["none", "rotation", "wobble", "pulse_zoom", "wedge_dance", "petal_breathe", "color_wash"],
             "default": "none",
         },
         "anim_speed": {
@@ -94,15 +94,19 @@ def method_kaleidoscope(out_dir: Path, seed: int, params=None):
 
     # ── Render helper that builds a complete kaleidoscope frame ──
 
-    def _render_frame(pat: str, seg: int, src: str, rot: float) -> np.ndarray:
+    def _render_frame(pat: str, seg: int, src: str, rot: float,
+                      wobble_x: float = 0.0, wobble_y: float = 0.0,
+                      zoom: float = 1.0,
+                      wedge_rot_offset: list = None,
+                      color_shift: float = 0.0) -> np.ndarray:
         """Render a full kaleidoscope frame. Returns H×W×3 float32 [0,1] array."""
         wedge_size = max(W, H)
         base = np.zeros((wedge_size, wedge_size, 3), dtype=np.float32)
 
-        cx_ws = wedge_size / 2.0
-        cy_ws = wedge_size / 2.0
-        xs = (np.arange(wedge_size, dtype=np.float32) - cx_ws) / cx_ws
-        ys = (np.arange(wedge_size, dtype=np.float32) - cy_ws) / cy_ws
+        cx_ws = wedge_size / 2.0 + wobble_x * wedge_size * 0.15
+        cy_ws = wedge_size / 2.0 + wobble_y * wedge_size * 0.15
+        xs = (np.arange(wedge_size, dtype=np.float32) - cx_ws) / (cx_ws * zoom)
+        ys = (np.arange(wedge_size, dtype=np.float32) - cy_ws) / (cy_ws * zoom)
         xv, yv = np.meshgrid(xs, ys)
         r = np.sqrt(xv ** 2 + yv ** 2)
         theta = np.arctan2(yv, xv)
@@ -110,23 +114,26 @@ def method_kaleidoscope(out_dir: Path, seed: int, params=None):
         if src == "random":
             rng_skip = np.random.default_rng(seed % 100000)
             noise_layer = rng_skip.random((wedge_size, wedge_size)).astype(np.float32)
-            for c in range(3):
-                base[:, :, c] = noise_layer * 0.3 + rng_skip.random((wedge_size, wedge_size)).astype(np.float32) * 0.7
+            base[:, :, 0] = noise_layer * 0.3 + rng_skip.random((wedge_size, wedge_size)).astype(np.float32) * 0.7
+            base[:, :, 1] = np.roll(base[:, :, 0], 2, axis=0)
+            base[:, :, 2] = np.roll(base[:, :, 0], -2, axis=1)
 
         elif src == "gradient":
             t_grad = r * 0.5
-            r_ch = 0.5 + 0.5 * np.sin(t_grad * 3.0)
-            g_ch = 0.5 + 0.5 * np.cos(t_grad * 2.7 + 1.0)
-            b_ch = 0.5 + 0.5 * np.sin(t_grad * 3.3 + 2.0)
+            hue_offset = color_shift
+            r_ch = 0.5 + 0.5 * np.sin(t_grad * 3.0 + hue_offset)
+            g_ch = 0.5 + 0.5 * np.cos(t_grad * 2.7 + 1.0 + hue_offset)
+            b_ch = 0.5 + 0.5 * np.sin(t_grad * 3.3 + 2.0 + hue_offset)
             base = np.stack([r_ch, g_ch, b_ch], axis=-1)
 
         elif src == "noise":
             rng_skip = np.random.default_rng(seed % 100000 + 1)
             n = rng_skip.standard_normal((wedge_size, wedge_size)).astype(np.float32)
             n = (n - n.min()) / (n.max() - n.min() + 1e-8)
-            base[:, :, 0] = n
-            base[:, :, 1] = np.roll(n, 3, axis=0)
-            base[:, :, 2] = np.roll(n, -3, axis=1)
+            hue_offset = color_shift
+            base[:, :, 0] = (n + math.sin(hue_offset)) * 0.5
+            base[:, :, 1] = (np.roll(n, 3, axis=0) + math.sin(hue_offset + 2.094)) * 0.5
+            base[:, :, 2] = (np.roll(n, -3, axis=1) + math.sin(hue_offset + 4.189)) * 0.5
 
         # ── Apply pattern modulation ──
         if pat == "radial":
@@ -169,11 +176,19 @@ def method_kaleidoscope(out_dir: Path, seed: int, params=None):
         rot_rad = math.radians(rot)
         out_theta += rot_rad
 
+        # ── Wedge dance: alternating wedge offsets ──
+        if wedge_rot_offset is not None and len(wedge_rot_offset) >= seg:
+            wedge_angle = math.pi / seg
+            wedge_idx = np.floor(out_theta / wedge_angle).astype(int) % seg
+            for w_idx in range(seg):
+                mask = wedge_idx == w_idx
+                out_theta[mask] += wedge_rot_offset[w_idx]
+
         wedge_angle = math.pi / seg
         folded_theta = np.abs(out_theta % (2.0 * wedge_angle) - wedge_angle)
 
-        src_x = cx_ws + out_r * np.cos(folded_theta)
-        src_y = cy_ws + out_r * np.sin(folded_theta)
+        src_x = cx_ws + out_r * np.cos(folded_theta) / zoom
+        src_y = cy_ws + out_r * np.sin(folded_theta) / zoom
 
         src_x = np.clip(src_x, 0, wedge_size - 1)
         src_y = np.clip(src_y, 0, wedge_size - 1)
@@ -185,63 +200,53 @@ def method_kaleidoscope(out_dir: Path, seed: int, params=None):
         return np.clip(result, 0.0, 1.0)
 
     # ── Compute effective parameters based on anim_mode ──
-    effective_pattern = pattern
-    effective_segments = segments
-    effective_source = source
     effective_rotation = rotation
-    morph_fade = 0.0
-    pattern_b = pattern
-    source_b = source
-    segments_b = segments
+    effective_wobble_x = 0.0
+    effective_wobble_y = 0.0
+    effective_zoom = 1.0
+    effective_wedge_rot = None
+    effective_color_shift = 0.0
 
     if anim_mode == "rotation":
         effective_rotation = (rotation + t * 30.0 * anim_speed) % 360.0
 
-    elif anim_mode == "pattern_morph":
-        pattern_cycle = ["radial", "spiral", "hexagonal", "mandala"]
-        n_pats = len(pattern_cycle)
-        raw_idx = (t / (2 * math.pi)) * n_pats * anim_speed
-        idx_a = int(raw_idx) % n_pats
-        idx_b = (idx_a + 1) % n_pats
-        morph_fade = raw_idx - int(raw_idx)
-        effective_pattern = pattern_cycle[idx_a]
-        pattern_b = pattern_cycle[idx_b]
+    elif anim_mode == "wobble":
+        effective_rotation = rotation
+        w_angle = t * anim_speed * 1.3
+        effective_wobble_x = math.sin(w_angle)
+        effective_wobble_y = math.cos(w_angle * 0.7)
 
-    elif anim_mode == "segment_morph":
-        seg_range = list(range(3, 17))
-        n_segs = len(seg_range)
-        raw_idx = (t / (2 * math.pi)) * n_segs * anim_speed
-        idx_a = int(raw_idx) % n_segs
-        idx_b = (idx_a + 1) % n_segs
-        morph_fade = raw_idx - int(raw_idx)
-        effective_segments = seg_range[idx_a]
-        segments_b = seg_range[idx_b]
+    elif anim_mode == "pulse_zoom":
+        effective_rotation = rotation
+        effective_zoom = 0.6 + 0.4 * (0.5 + 0.5 * math.sin(t * 1.5 * anim_speed))
 
-    elif anim_mode == "source_morph":
-        source_cycle = ["random", "gradient", "noise"]
-        n_srcs = len(source_cycle)
-        raw_idx = (t / (2 * math.pi)) * n_srcs * anim_speed
-        idx_a = int(raw_idx) % n_srcs
-        idx_b = (idx_a + 1) % n_srcs
-        morph_fade = raw_idx - int(raw_idx)
-        effective_source = source_cycle[idx_a]
-        source_b = source_cycle[idx_b]
+    elif anim_mode == "wedge_dance":
+        effective_rotation = rotation
+        offsets = []
+        for w in range(segments):
+            off = math.sin(t * anim_speed * 1.2 + w * 1.8) * 0.3 * (math.pi / segments)
+            offsets.append(off)
+        effective_wedge_rot = offsets
 
-    # ── Render frame(s) and blend if morphing ──
-    if anim_mode in ("pattern_morph", "segment_morph") and morph_fade > 0:
-        img_a = _render_frame(effective_pattern, effective_segments,
-                              effective_source, effective_rotation)
-        img_b = _render_frame(pattern_b, segments_b, source_b, effective_rotation)
-        img = (1.0 - morph_fade) * img_a + morph_fade * img_b
-    elif anim_mode == "source_morph" and morph_fade > 0:
-        img_a = _render_frame(effective_pattern, effective_segments,
-                              effective_source, effective_rotation)
-        img_b = _render_frame(effective_pattern, effective_segments,
-                              source_b, effective_rotation)
-        img = (1.0 - morph_fade) * img_a + morph_fade * img_b
-    else:
-        img = _render_frame(effective_pattern, effective_segments,
-                            effective_source, effective_rotation)
+    elif anim_mode == "petal_breathe":
+        effective_rotation = rotation
+        breathe = 0.3 + 0.7 * (0.5 + 0.5 * math.sin(t * anim_speed * 1.1))
+        # We modulate pattern intensity by scaling the modulation amplitude
+        # This is applied via the pattern — effect visible in mandala/radial
+        # We'll use effective_zoom as a proxy for breathe amplitude
+        effective_zoom = breathe
+
+    elif anim_mode == "color_wash":
+        effective_rotation = rotation
+        effective_color_shift = t * 1.5 * anim_speed
+
+    # ── Render ──
+    img = _render_frame(
+        pattern, segments, source, effective_rotation,
+        wobble_x=effective_wobble_x, wobble_y=effective_wobble_y,
+        zoom=effective_zoom, wedge_rot_offset=effective_wedge_rot,
+        color_shift=effective_color_shift,
+    )
 
     capture_frame("12", img)
     save(img, mn(12, "Kaleidoscope"), out_dir)
