@@ -813,7 +813,7 @@ def method_maze(out_dir: Path, seed: int, params=None):
 @method(id="73", name="Low Poly", category="math_art", tags=["triangulation", "fast", "expanded"],
          params={"points":{"description":"triangulation points","min":50,"max":500,"default":200},
                  "jitter":{"description":"jitter","min":2,"max":30,"default":10},
-                 "point_distribution":{"description":"placement","choices":["uniform","grid_jitter","fibonacci","edge_weighted","perlin_weighted","input_edges","multi_res"],"default":"uniform"},
+                 "point_distribution":{"description":"placement","choices":["uniform","grid_jitter","fibonacci","edge_weighted","perlin_weighted","input_edges","multi_res","poisson_disc","spiral","concentric","gaussian_clusters","wave","lattice"],"default":"uniform"},
                  "mesh_type":{"description":"mesh","choices":["delaunay","voronoi","delaunay_wireframe","dual"],"default":"delaunay"},
                  "color_source":{"description":"coloring","choices":["position","input_image","palette","gradient","random_palette","noise","brightness"],"default":"position"},
                  "palette":{"description":"PALETTES","default":""},
@@ -899,6 +899,98 @@ def method_lowpoly(out_dir: Path, seed: int, params=None):
             theta = i * math.pi * (3 - math.sqrt(5))
             r = math.sqrt(i / n_pts) * min(W, H) * 0.45
             pts.append((W / 2 + r * math.cos(theta), H / 2 + r * math.sin(theta)))
+    elif dist == "poisson_disc":
+        # Bridson's algorithm — minimum distance between points
+        cell_size = max(W, H) / math.sqrt(n_pts) * 1.5
+        cols_g = int(math.ceil(W / cell_size))
+        rows_g = int(math.ceil(H / cell_size))
+        grid = {}
+        active = []
+        # Seed
+        sx, sy = rng.uniform(0, W), rng.uniform(0, H)
+        grid[(int(sx / cell_size), int(sy / cell_size))] = (sx, sy)
+        active.append((sx, sy))
+        pts.append((sx, sy))
+        min_dist = max(W, H) * 0.5 / math.sqrt(n_pts)
+        while active and len(pts) < n_pts:
+            idx = rng.randint(0, len(active) - 1)
+            px, py = active[idx]
+            found = False
+            for _ in range(30):
+                angle = rng.random() * math.pi * 2
+                radius = rng.uniform(min_dist, min_dist * 2)
+                nx = px + math.cos(angle) * radius
+                ny = py + math.sin(angle) * radius
+                if nx < 0 or nx >= W or ny < 0 or ny >= H:
+                    continue
+                gx, gy = int(nx / cell_size), int(ny / cell_size)
+                ok = True
+                for dx in (-1, 0, 1):
+                    for dy in (-1, 0, 1):
+                        key = (gx + dx, gy + dy)
+                        if key in grid:
+                            ox, oy = grid[key]
+                            if math.hypot(nx - ox, ny - oy) < min_dist:
+                                ok = False
+                                break
+                    if not ok:
+                        break
+                if ok:
+                    grid[(gx, gy)] = (nx, ny)
+                    active.append((nx, ny))
+                    pts.append((nx, ny))
+                    found = True
+                    break
+            if not found:
+                active.pop(idx)
+    elif dist == "spiral":
+        # Archimedean spiral from center
+        for i in range(n_pts):
+            theta = i * 0.1
+            r = i * max(W, H) * 0.4 / n_pts
+            pts.append((W / 2 + r * math.cos(theta), H / 2 + r * math.sin(theta)))
+    elif dist == "concentric":
+        # Concentric rings radiating from center
+        cx, cy = W / 2, H / 2
+        max_r = math.hypot(cx, cy)
+        rings = max(3, int(math.sqrt(n_pts * 0.5)))
+        per_ring = n_pts // rings
+        for ri in range(rings):
+            ring_r = max_r * (ri + 1) / rings
+            n_on_ring = per_ring + (1 if ri < n_pts % rings else 0)
+            for j in range(n_on_ring):
+                angle = j * 2 * math.pi / n_on_ring + ri * 0.3
+                pts.append((cx + ring_r * math.cos(angle), cy + ring_r * math.sin(angle)))
+    elif dist == "gaussian_clusters":
+        # K random Gaussian clusters
+        n_clusters = max(2, min(8, n_pts // 20))
+        cluster_centers = [(rng.uniform(W * 0.15, W * 0.85), rng.uniform(H * 0.15, H * 0.85)) for _ in range(n_clusters)]
+        cluster_std = min(W, H) * 0.08
+        for i in range(n_pts):
+            ccx, ccy = rng.choice(cluster_centers)
+            px = np_rng.normal(ccx, cluster_std)
+            py = np_rng.normal(ccy, cluster_std)
+            pts.append((max(0, min(W - 1, px)), max(0, min(H - 1, py))))
+    elif dist == "wave":
+        # Points along a sine wave with phase offset
+        amplitude = H * 0.3
+        freq = 0.02 + rng.random() * 0.03
+        for i in range(n_pts):
+            x = i * W / n_pts
+            y = H / 2 + amplitude * math.sin(x * freq + t * 0.5) + rng.uniform(-10, 10)
+            pts.append((x, max(0, min(H - 1, y))))
+    elif dist == "lattice":
+        # Hexagonal lattice with random perturbation
+        spacing = math.sqrt(W * H / n_pts) * 1.1
+        for row in range(int(H / spacing) + 2):
+            for col in range(int(W / spacing) + 2):
+                ox = col * spacing + (row % 2) * spacing * 0.5
+                oy = row * spacing * 0.866
+                px = ox + rng.uniform(-jitter * 0.5, jitter * 0.5)
+                py = oy + rng.uniform(-jitter * 0.5, jitter * 0.5)
+                if 0 <= px < W and 0 <= py < H:
+                    pts.append((px, py))
+        pts = pts[:n_pts]
     elif dist in ("edge_weighted", "input_edges", "multi_res"):
         yy, xx = np.ogrid[:H, :W]
         noise = np.sin(xx * 0.05 + t) * np.cos(yy * 0.05 + t * 0.7) + np.sin(xx * 0.1 + t * 1.3) * np.cos(yy * 0.08 + t * 0.5)
