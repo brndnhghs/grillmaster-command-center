@@ -271,7 +271,7 @@ def method_glitch(out_dir: Path, seed: int, params=None):
         "contrast": {"description": "source contrast boost", "min": 0.5, "max": 3.0, "default": 1.0},
         "error_scale": {"description": "error diffusion strength (0=no dither, 1=full)", "min": 0.0, "max": 1.0, "default": 1.0},
         "time": {"description": "animation time (0-2pi) - sweeps error_scale from 0→1", "min": 0.0, "max": 6.28, "default": 0.0},
-        "anim_mode": {"description": "animation mode: none, error_reveal", "default": "none"},
+        "anim_mode": {"description": "animation mode: none, error_reveal, threshold_sweep, contrast_sweep", "default": "none"},
         "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},
     },
 )
@@ -310,12 +310,20 @@ def method_dither(out_dir: Path, seed: int, params=None):
     contrast = params.get("contrast", 1.0)
     error_scale = float(params.get("error_scale", 1.0))
 
-    # --- Animation: error reveal ---
-    # Sweep error_scale from 0→1 so the dither progressively appears
+    # --- Animation ---
     effective_error_scale = error_scale
+    effective_levels = levels
+    effective_contrast = contrast
     if anim_mode == "error_reveal":
         sweep = (t / (2 * math.pi)) * anim_speed  # 0→1 over full animation
         effective_error_scale = sweep
+    elif anim_mode == "threshold_sweep":
+        # Sweep levels continuously from 2→8
+        sweep = 2.0 + 6.0 * (0.5 + 0.5 * math.sin(t * 0.8 * anim_speed))
+        effective_levels = sweep
+    elif anim_mode == "contrast_sweep":
+        # Sweep contrast from 0.5→3.0
+        effective_contrast = 0.5 + 2.5 * (0.5 + 0.5 * math.sin(t * 0.7 * anim_speed))
 
     # --- Build source image ---
     if use_input and params.get("input_image"):
@@ -355,7 +363,7 @@ def method_dither(out_dir: Path, seed: int, params=None):
                 p = np.random.randn(H // (8 // freq) + 1, W // (8 // freq) + 1)
                 up = cv2.resize(p, (W, H), interpolation=cv2.INTER_LINEAR)
                 z += up / (o + 1)
-        source = norm(z) * contrast
+        source = norm(z) * effective_contrast
         source = source.clip(0, 1)
         source_rgb = np.stack([source] * 3, axis=2)
 
@@ -495,8 +503,8 @@ def method_dither(out_dir: Path, seed: int, params=None):
             "jarvis": (JARVIS, "Jarvis"),
         }
         kernel, name = kernel_map.get(algorithm, (FS, "Floyd-Steinberg"))
-        if levels > 2:
-            gray_out = multi_tone_diffuse(source, levels, kernel, serpentine, effective_error_scale)
+        if effective_levels > 2:
+            gray_out = multi_tone_diffuse(source, effective_levels, kernel, serpentine, effective_error_scale)
         else:
             gray_out = error_diffuse(source, kernel, serpentine, effective_error_scale)
         a = np.stack([gray_out / 255.0] * 3, axis=2)
