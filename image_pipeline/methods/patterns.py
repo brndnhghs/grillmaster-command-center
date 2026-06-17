@@ -354,6 +354,9 @@ def method_quasicrystal(out_dir: Path, seed: int, params=None):
     effective_wave_fn = wave_fn
     effective_freq = freq
     effective_rot = rot
+    morph_fade = 0.0
+    _morph_lattice_b = lattice
+    _morph_wave_b = wave_fn
     if anim_mode == "plane_rotate":
         # All wave plane angles rotate uniformly — the diffraction pattern spins
         effective_rot = rot + t * 0.5 * anim_speed
@@ -361,15 +364,23 @@ def method_quasicrystal(out_dir: Path, seed: int, params=None):
         # Frequency sweeps up and down — interference fringes zoom in/out
         effective_freq = freq * (0.3 + 0.7 * abs(math.sin(t * 0.3 * anim_speed)))
     elif anim_mode == "lattice_morph":
-        # Cycle through lattice symmetries — the entire pattern symmetry changes
+        # Cycle through lattice symmetries with cross-fade
         lattice_cycle = ["penrose", "octagonal", "dodecagonal", "decagonal", "hexagon", "triangular"]
-        idx = int(t * 0.2 * anim_speed * len(lattice_cycle)) % len(lattice_cycle)
-        effective_lattice = lattice_cycle[idx]
+        raw_idx = t * 0.2 * anim_speed * len(lattice_cycle)
+        idx_a = int(raw_idx) % len(lattice_cycle)
+        idx_b = (idx_a + 1) % len(lattice_cycle)
+        morph_fade = raw_idx - int(raw_idx)
+        effective_lattice = lattice_cycle[idx_a]
+        _morph_lattice_b = lattice_cycle[idx_b]
     elif anim_mode == "wave_morph":
-        # Cycle through wave functions — fringe character changes
+        # Cycle through wave functions with cross-fade
         wave_cycle = ["sin", "triangle", "square", "sawtooth", "gabor", "pulse"]
-        idx = int(t * 0.2 * anim_speed * len(wave_cycle)) % len(wave_cycle)
-        effective_wave_fn = wave_cycle[idx]
+        raw_idx = t * 0.2 * anim_speed * len(wave_cycle)
+        idx_a = int(raw_idx) % len(wave_cycle)
+        idx_b = (idx_a + 1) % len(wave_cycle)
+        morph_fade = raw_idx - int(raw_idx)
+        effective_wave_fn = wave_cycle[idx_a]
+        _morph_wave_b = wave_cycle[idx_b]
 
     # ── Generate wave-plane angles ──
     rng = np.random.default_rng(seed)
@@ -413,41 +424,55 @@ def method_quasicrystal(out_dir: Path, seed: int, params=None):
 
     thetas = _lattice_angles(n_waves, effective_lattice)
     thetas = [(a + effective_rot) % (2 * math.pi) for a in thetas]
-    phases = [rng.uniform(0, 2 * math.pi) + t * 0.3 for _ in range(n_waves)]
+    phases = [rng.uniform(0, 2 * math.pi) + t * 0.3 * anim_speed for _ in range(n_waves)]
     freqs = [effective_freq * (0.5 + rng.random()) for _ in range(n_waves)]
 
     # ── Build wave field ──
-    result = np.zeros((H, W), dtype=np.float32)
-
-    # Center coordinates
     xc = xx - cx
     yc = yy - cy
 
-    for i in range(n_waves):
-        theta = thetas[i]
-        ph = phases[i]
-        f = freqs[i]
-        proj = xc * math.cos(theta) + yc * math.sin(theta)
-        raw = proj * f + ph
+    def _build_field(lat, wfn, fr, rot_val):
+        """Build raw wave field for given lattice/wave_fn/freq/rot. Returns (H,W) float32."""
+        th = _lattice_angles(n_waves, lat)
+        th = [(a + rot_val) % (2 * math.pi) for a in th]
+        fld = np.zeros((H, W), dtype=np.float32)
+        for i in range(n_waves):
+            theta = th[i]
+            ph = phases[i]
+            f = fr * (0.5 + rng.random())
+            proj = xc * math.cos(theta) + yc * math.sin(theta)
+            raw = proj * f + ph
+            if wfn == "sin":
+                w = np.sin(raw)
+            elif wfn == "triangle":
+                w = 2 * np.abs(2 * (raw / (2 * math.pi) - np.floor(raw / (2 * math.pi) + 0.5))) - 1
+            elif wfn == "square":
+                w = np.where(np.sin(raw) >= 0, 1.0, -1.0)
+            elif wfn == "sawtooth":
+                w = 2 * (raw / (2 * math.pi) - np.floor(raw / (2 * math.pi) + 0.5))
+            elif wfn == "gabor":
+                gauss = np.exp(-0.5 * (proj * fr * 0.5) ** 2)
+                w = np.sin(raw) * gauss
+            elif wfn == "gaussian":
+                w = np.exp(-0.5 * (np.sin(raw) * 2) ** 2)
+            elif wfn == "pulse":
+                w = np.where(np.abs(np.sin(raw)) > 0.95, 1.0, -0.5)
+            else:
+                w = np.sin(raw)
+            fld += w * amp
+        return fld
 
-        if effective_wave_fn == "sin":
-            w = np.sin(raw)
-        elif effective_wave_fn == "triangle":
-            w = 2 * np.abs(2 * (raw / (2 * math.pi) - np.floor(raw / (2 * math.pi) + 0.5))) - 1
-        elif effective_wave_fn == "square":
-            w = np.where(np.sin(raw) >= 0, 1.0, -1.0)
-        elif effective_wave_fn == "sawtooth":
-            w = 2 * (raw / (2 * math.pi) - np.floor(raw / (2 * math.pi) + 0.5))
-        elif effective_wave_fn == "gabor":
-            gauss = np.exp(-0.5 * (proj * freq * 0.5) ** 2)
-            w = np.sin(raw) * gauss
-        elif effective_wave_fn == "gaussian":
-            w = np.exp(-0.5 * (np.sin(raw) * 2) ** 2)
-        elif effective_wave_fn == "pulse":
-            w = np.where(np.abs(np.sin(raw)) > 0.95, 1.0, -0.5)
-        else:
-            w = np.sin(raw)
-        result += w * amp
+    # ── Cross-fade for morph modes ──
+    if morph_fade > 0.0 and anim_mode == "lattice_morph":
+        result_a = _build_field(effective_lattice, effective_wave_fn, effective_freq, effective_rot)
+        result_b = _build_field(_morph_lattice_b, effective_wave_fn, effective_freq, effective_rot)
+        result = result_a * (1 - morph_fade) + result_b * morph_fade
+    elif morph_fade > 0.0 and anim_mode == "wave_morph":
+        result_a = _build_field(effective_lattice, effective_wave_fn, effective_freq, effective_rot)
+        result_b = _build_field(effective_lattice, _morph_wave_b, effective_freq, effective_rot)
+        result = result_a * (1 - morph_fade) + result_b * morph_fade
+    else:
+        result = _build_field(effective_lattice, effective_wave_fn, effective_freq, effective_rot)
 
     if mod_type != "none":
         r = np.sqrt(xc ** 2 + yc ** 2)
