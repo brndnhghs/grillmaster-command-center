@@ -1124,7 +1124,7 @@ def method_worley_noise(out_dir: Path, seed: int, params=None):
     "scale_variation": {"description": "per-tile scale jitter", "min": 0.0, "max": 0.5, "default": 0.0},
     "penrose_generations": {"description": "Penrose inflation iterations", "min": 2, "max": 8, "default": 4},
     "star_rays": {"description": "star polygon rays (for star/islamic motifs)", "min": 4, "max": 16, "default": 8},
-    "anim_mode": {"description": "animation mode: none, rotation, ripple", "default": "none"},
+    "anim_mode": {"description": "animation mode: none, rotation_wave, scale_spiral, color_drift, position_wave", "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},
     "time": {"description": "animation time (drives ripple wave + rotation)", "min": 0.0, "max": 6.28, "default": 0.0},
 })
@@ -1159,37 +1159,51 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
     # ── Animation ──
     effective_motif = motif
     effective_group = group
-    if anim_mode == "rotation":
-        # Global rotation sweeps continuously — all tiles rotate uniformly
-        global_rot = t * 120 * anim_speed  # degrees
-    else:
-        global_rot = 0.0
-    if anim_mode == "ripple":
-        # Scale wave pulses across the grid — tiles breathe in sequence
-        scale_wave = 0.7 + 0.6 * math.sin(t * 0.5 * anim_speed) ** 2  # sin² for smooth derivative
-    else:
-        scale_wave = 1.0
+    effective_color_var = color_variation
+    global_rot = 0.0
+
+    def _tile_angle_offset(x, y):
+        """Per-tile rotation offset in degrees. 0 for none."""
+        if anim_mode == "rotation_wave":
+            return 45.0 * math.sin(x * 0.05 + y * 0.03 + t * 1.5 * anim_speed)
+        return 0.0
+
+    def _tile_pos_dx(x, y):
+        if anim_mode == "position_wave":
+            return 8.0 * math.sin(y * 0.025 + t * 1.5 * anim_speed)
+        return 0.0
+
+    def _tile_pos_dy(x, y):
+        if anim_mode == "position_wave":
+            return 8.0 * math.cos(x * 0.025 + t * 1.5 * anim_speed)
+        return 0.0
+
+    def _tile_scale(x, y):
+        if anim_mode == "scale_spiral":
+            d = math.sqrt(x * x + y * y) * 0.012
+            return 0.6 + 0.4 * (0.5 + 0.5 * math.sin(d - t * 1.2 * anim_speed))
+        return 1.0
 
     img = Image.new("RGB", (W, H), (10, 10, 18))
     draw = ImageDraw.Draw(img)
 
     # ── Helper: random per-tile color ───────────────────────────────────
     def _tile_color(variation=1.0):
-        r = int(rng.randint(30, 255) * (1 - variation * 0.5) + 128 * variation * 0.5)
-        g = int(rng.randint(30, 220) * (1 - variation * 0.5) + 128 * variation * 0.5)
-        b = int(rng.randint(50, 200) * (1 - variation * 0.5) + 128 * variation * 0.5)
+        var = variation * effective_color_var
+        r = int(rng.randint(30, 255) * (1 - var * 0.5) + 128 * var * 0.5)
+        g = int(rng.randint(30, 220) * (1 - var * 0.5) + 128 * var * 0.5)
+        b = int(rng.randint(50, 200) * (1 - var * 0.5) + 128 * var * 0.5)
         return (r, g, b)
+
+    def _drift_color(x, y):
+        """Deterministic color from position + time. Used in color_drift mode."""
+        h = math.sin(x * 0.07 + y * 0.05 + t * 0.8 * anim_speed) * 127 + 128
+        s = math.cos(x * 0.04 - y * 0.06 + t * 0.9 * anim_speed) * 100 + 155
+        v = math.sin(x * 0.05 + y * 0.08 - t * 0.7 * anim_speed) * 50 + 150
+        return (int(h), int(s), int(v))
 
     def _inv_color(c):
         return (255 - c[0], 255 - c[1], 255 - c[2])
-
-    # Time-driven scale wave — tiles pulse in a ripple across the grid
-    scale_wave = 0.7 + 0.6 * abs(math.sin(t * 0.5))  # stronger breathing
-
-    # ── Animation: continuous rotation sweep ──
-    global_rot = t * 120 * anim_speed  # degrees of continuous rotation over 3s
-
-    # Per-tile phase offset computed in _draw_motif
 
     # ── Motif drawing functions ─────────────────────────────────────────
 
@@ -1418,15 +1432,20 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
 
     def _draw_motif(cx, cy, sz, angle=0):
         fn = MOTIF_FN.get(effective_motif, _motif_diamond)
-        c = _tile_color(color_variation)
-        if pal and pal != "none" and pal in PALETTES:
-            pal_colors = PALETTES[pal]
-            if pal_colors:
-                c = rng.choice(pal_colors)
+        if anim_mode == "color_drift":
+            c = _drift_color(cx, cy)
+        else:
+            c = _tile_color(color_variation)
+            if pal and pal != "none" and pal in PALETTES:
+                pal_colors = PALETTES[pal]
+                if pal_colors:
+                    c = rng.choice(pal_colors)
         a = angle + rng.uniform(-rotation_noise, rotation_noise) if rotation_noise > 0 else angle
-        # Per-tile scale wave: only active in ripple mode
-        sv = scale_wave * (1 + rng.uniform(-scale_variation, scale_variation) if scale_variation > 0 else 1)
-        fn(draw, cx, cy, sz * sv, c, angle=a)
+        a += _tile_angle_offset(cx, cy)
+        sv = _tile_scale(cx, cy) * (1 + rng.uniform(-scale_variation, scale_variation) if scale_variation > 0 else 1)
+        px = cx + _tile_pos_dx(cx, cy)
+        py = cy + _tile_pos_dy(cx, cy)
+        fn(draw, px, py, sz * sv, c, angle=a)
 
     # ── Penrose tiling ──────────────────────────────────────────────────
     if effective_group == "penrose":
