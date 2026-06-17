@@ -2538,7 +2538,8 @@ def method_fractal_flame(out_dir: Path, seed: int, params=None):
     "color_mode": {"description": "coloring method", "choices": ["classic", "palette", "position_gradient", "vertex_blend", "age"], "default": "classic"},
     "palette": {"description": "PALETTES name for palette/vertex_blend color modes", "default": "vapor"},
     "render_style": {"description": "rendering style", "choices": ["density", "trail", "scatter", "connected", "glow", "stippled"], "default": "density"},
-    "animation": {"description": "animation mode", "choices": ["none", "growth", "vertex_cycle", "color_cycle", "param_morph"], "default": "none"},
+    "anim_mode": {"description": "animation mode", "choices": ["none", "growth", "vertex_cycle", "color_cycle", "param_morph"], "default": "none"},
+    "anim_speed": {"description": "animation speed multiplier", "min": 0.0, "max": 5.0, "default": 1.0},
     "time": {"description": "animation time (0-2pi)", "min": 0.0, "max": 6.28, "default": 0.0},
     "multi_chaos": {"description": "comma-separated preset names for multi-chaos blend (empty=off)", "default": ""},
     "density_increment": {"description": "accumulation per hit", "min": 0.0001, "max": 0.01, "default": 0.002},
@@ -2549,10 +2550,31 @@ def method_fractal_flame(out_dir: Path, seed: int, params=None):
     "offset_b": {"description": "B channel offset (classic mode)", "min": 0.0, "max": 1.0, "default": 0.3},
 })
 def method_chaos_game(out_dir: Path, seed: int, params=None):
+    """Chaos Game — IFS-based fractal renderer with multiple presets, color modes, and animation.
+
+    Parameters:
+        particles (int): Number of chaos game points (50K-500K, default 100K)
+        preset (str): Chaos game preset (sierpinski_triangle, dragon, barnsley_fern, etc.)
+        ratio (float): Distance ratio toward chosen vertex (0.1-0.9, default 0.5)
+        weighted_vertices (float): Use weighted vertex selection (0=uniform, 1=fully weighted)
+        color_mode (str): Coloring method (classic, palette, position_gradient, vertex_blend, age)
+        palette (str): PALETTES name for palette/vertex_blend color modes
+        render_style (str): Rendering style (density, trail, scatter, connected, glow, stippled)
+        anim_mode (str): Animation mode (none, growth, vertex_cycle, color_cycle, param_morph)
+        anim_speed (float): Animation speed multiplier (0.0-5.0, default 1.0)
+        time (float): Animation time in radians (0-2pi, default 0.0)
+        multi_chaos (str): Comma-separated preset names for multi-chaos blend (empty=off)
+        density_increment (float): Accumulation per hit (0.0001-0.01, default 0.002)
+        color_r (float): R channel multiplier (classic mode, 0.0-5.0, default 1.8)
+        color_g (float): G channel multiplier (classic mode, 0.0-5.0, default 1.2)
+        color_b (float): B channel multiplier (classic mode, 0.0-5.0, default 0.5)
+        offset_g (float): G channel offset (classic mode, 0.0-1.0, default 0.1)
+        offset_b (float): B channel offset (classic mode, 0.0-1.0, default 0.3)
+    """
     if params is None:
         params = {}
-    anim_time = float(params.get("time", 0.0))
-    seed_all(seed + int(anim_time * 100))
+    seed_all(seed)
+    rng = random.Random(seed)
     from ..core.utils import PALETTES, quantize_to_palette
 
     n_particles = int(params.get("particles", 100000))
@@ -2562,7 +2584,10 @@ def method_chaos_game(out_dir: Path, seed: int, params=None):
     color_mode = params.get("color_mode", "classic")
     palette_name = params.get("palette", "vapor")
     render_style = params.get("render_style", "density")
-    animation = params.get("animation", "none")
+    anim_mode = params.get("anim_mode", "none")
+    anim_speed = float(params.get("anim_speed", 1.0))
+    anim_time = float(params.get("time", 0.0))
+    t = anim_time * anim_speed
     multi_chaos_str = params.get("multi_chaos", "")
     d_inc = float(params.get("density_increment", 0.002))
     c_r = float(params.get("color_r", 1.8))
@@ -2585,18 +2610,18 @@ def method_chaos_game(out_dir: Path, seed: int, params=None):
 
     # Animation overrides
     current_ratio = ratio
-    if animation == "param_morph":
-        current_ratio = ratio * (0.5 + 0.5 * math.sin(anim_time * 0.5))
+    if anim_mode == "param_morph":
+        current_ratio = ratio * (0.5 + 0.5 * math.sin(t * 0.5))
 
-    if animation == "color_cycle":
-        cc_r, cc_g, cc_b = _flame_color_cycle(anim_time)
+    if anim_mode == "color_cycle":
+        cc_r, cc_g, cc_b = _flame_color_cycle(t)
         c_r = c_r * (0.5 + 0.5 * cc_r)
         c_g = c_g * (0.5 + 0.5 * cc_g)
         c_b = c_b * (0.5 + 0.5 * cc_b)
 
     growth_limit = n_particles
-    if animation == "growth":
-        growth_limit = int(n_particles * min(1.0, abs(math.sin(anim_time))))
+    if anim_mode == "growth":
+        growth_limit = int(n_particles * min(1.0, abs(math.sin(t))))
 
     def _process_preset(p_name, total_particles, density_arr, age_arr, vc_map, scatter_pts, start_idx):
         """Run one chaos game preset, accumulating into shared arrays."""
@@ -2614,9 +2639,9 @@ def method_chaos_game(out_dir: Path, seed: int, params=None):
             else:
                 cum_weights = np.linspace(1.0 / len(ifs), 1.0, len(ifs))
 
-            x, y = 0.0, 0.0
+            x, y = rng.uniform(-0.5, 0.5), rng.uniform(-0.5, 0.5)
             for i in range(total_particles):
-                r = random.random()
+                r = rng.random()
                 idx = np.searchsorted(cum_weights, r)
                 idx = min(idx, len(ifs) - 1)
                 row = ifs[idx]
@@ -2626,8 +2651,8 @@ def method_chaos_game(out_dir: Path, seed: int, params=None):
                 x, y = nx, ny
 
                 # Vertex-cycle animation
-                if animation == "vertex_cycle":
-                    vr = math.sin(anim_time + idx) * 0.5 + 0.5
+                if anim_mode == "vertex_cycle":
+                    vr = math.sin(t + idx) * 0.5 + 0.5
                     x += vr * 0.01
                     y += (1 - vr) * 0.01
 
@@ -2639,7 +2664,7 @@ def method_chaos_game(out_dir: Path, seed: int, params=None):
                 if 0 <= ix < W and 0 <= iy < H:
                     density_arr[iy, ix] = min(1.0, density_arr[iy, ix] + d_inc)
                     age_arr[iy, ix] = max(age_arr[iy, ix], (start_idx + i) / max(growth_limit, 1))
-                    if render_style == "scatter" and random.random() < 0.05:
+                    if render_style == "scatter" and rng.random() < 0.05:
                         scatter_pts.append((ix, iy))
 
                 if (start_idx + i) % cap_interval == 0:
@@ -2650,7 +2675,7 @@ def method_chaos_game(out_dir: Path, seed: int, params=None):
             nv = len(verts)
             # Build weighted vertex probabilities
             if weighted > 0:
-                weights = [1.0 + weighted * (math.sin(anim_time + vi * 2.0) if animation == "vertex_cycle" else 0.0) for vi in range(nv)]
+                weights = [1.0 + weighted * (math.sin(t + vi * 2.0) if anim_mode == "vertex_cycle" else 0.0) for vi in range(nv)]
                 weights = [max(0.1, w) for w in weights]
                 total = sum(weights)
                 cum_weights = np.cumsum([w / total for w in weights])
@@ -2658,18 +2683,18 @@ def method_chaos_game(out_dir: Path, seed: int, params=None):
                 cum_weights = np.linspace(1.0 / nv, 1.0, nv)
 
             # Pick initial vertex
-            x, y = verts[random.randint(0, nv - 1)]
+            x, y = verts[rng.randint(0, nv - 1)]
 
             for i in range(total_particles):
                 # Pick vertex
-                r = random.random()
+                r = rng.random()
                 idx = np.searchsorted(cum_weights, r)
                 idx = min(idx, nv - 1)
                 vx, vy = verts[idx]
 
                 # Move toward vertex by ratio
-                if animation == "param_morph":
-                    local_ratio = current_ratio * (0.8 + 0.2 * math.sin(anim_time * 2 + idx))
+                if anim_mode == "param_morph":
+                    local_ratio = current_ratio * (0.8 + 0.2 * math.sin(t * 2 + idx))
                 else:
                     local_ratio = current_ratio
 
@@ -2696,7 +2721,7 @@ def method_chaos_game(out_dir: Path, seed: int, params=None):
                     for ch in range(3):
                         vc_map[iy, ix, ch] = max(vc_map[iy, ix, ch], vertex_color[ch])
 
-                    if render_style == "scatter" and random.random() < 0.05:
+                    if render_style == "scatter" and rng.random() < 0.05:
                         scatter_pts.append((ix, iy))
 
                 if (start_idx + i) % cap_interval == 0:
@@ -2746,8 +2771,9 @@ def method_chaos_game(out_dir: Path, seed: int, params=None):
 
     # Black-output protection
     if result.max() < 0.01:
-        result = np.random.rand(H, W, 3).astype(np.float32) * 0.08 + 0.02
+        result = np.random.default_rng(seed).random((H, W, 3)).astype(np.float32) * 0.08 + 0.02
 
+    capture_frame('71', result)
     save(result, mn(71, "Chaos Game"), out_dir)
 
 
