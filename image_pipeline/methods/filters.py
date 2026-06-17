@@ -2752,25 +2752,45 @@ def method_swirl(out_dir: Path, seed: int, params=None):
         "grout_color": {"description": "grout color as r,g,b (0-1)", "default": "0.05,0.05,0.08"},
         "grout_width": {"description": "grout width in px", "min": 1, "max": 10, "default": 2},
         "color_mode": {"description": "coloring: source, palette, per_tile_hue, gradient, edge_highlight, neon", "default": "source"},
-        "color_speed": {"description": "color rotation speed", "min": 0.5, "max": 8.0, "default": 2.0},
-        "color_offset": {"description": "hue shift offset", "min": 0.0, "max": 6.28, "default": 0.0},
         "blur_sigma": {"description": "source blur sigma (noise mode)", "min": 3, "max": 60, "default": 15},
         "noise_amp": {"description": "source noise amplitude", "min": 0.1, "max": 2.0, "default": 0.5},
         "tile_jitter": {"description": "random tile position jitter (px)", "min": 0, "max": 10, "default": 0},
-        "animation_mode": {"description": "animation: none, drift, pulse, morph, color_cycle", "default": "none"},
+        "anim_mode": {"description": "animation: none, drift, pulse, morph, color_cycle", "default": "none"},
         "anim_speed": {"description": "animation speed", "min": 0.1, "max": 3.0, "default": 1.0},
+        "time": {"description": "animation time (0-2pi)", "min": 0.0, "max": 6.28, "default": 0.0},
         "voronoi_points": {"description": "voronoi seed point count", "min": 20, "max": 500, "default": 100},
     },
 )
 def method_pixel_mosaic(out_dir: Path, seed: int, params=None):
+    """Pixel Mosaic — tile-based image generator with multiple grid types, tile shapes, and animation.
+
+    Parameters:
+        source (str): Mosaic source (noise, gradient, input_image, palette, rainbow, procedural_texture)
+        grid_type (str): Tile grid (square, hex, triangle, diamond, voronoi, concentric, spiral, radial, honeycomb)
+        tile_size (int): Mosaic tile size in px (4-128, default 16)
+        tile_shape (str): Individual tile shape (rectangle, circle, diamond, hex, star, cross)
+        render_mode (str): Tile color (average, median, brightest, darkest, palette, nearest_pixel, noise, histogram_eq)
+        palette_name (str): Palette name for palette mode
+        grout (str): Grout style (none, thin, thick, colored, variable, gradient_grout)
+        grout_color (str): Grout color as r,g,b (0-1)
+        grout_width (int): Grout width in px (1-10, default 2)
+        color_mode (str): Coloring (source, palette, per_tile_hue, gradient, edge_highlight, neon)
+        blur_sigma (float): Source blur sigma for noise mode (3-60, default 15)
+        noise_amp (float): Source noise amplitude (0.1-2.0, default 0.5)
+        tile_jitter (int): Random tile position jitter in px (0-10, default 0)
+        anim_mode (str): Animation mode (none, drift, pulse, morph, color_cycle)
+        anim_speed (float): Animation speed multiplier (0.1-3.0, default 1.0)
+        time (float): Animation time in radians (0-6.28, default 0.0)
+        voronoi_points (int): Voronoi seed point count (20-500, default 100)
+    """
     import cv2
     from scipy.spatial import Voronoi as VoronoiClass
     from ..core.utils import load_input, PALETTES
 
     if params is None:
         params = {}
-    t = params.get("time", 0.0)
-    seed_all(seed + int(t * 100))
+    seed_all(seed)
+    rng = np.random.default_rng(seed)
 
     source = str(params.get("source", "noise"))
     grid_type = str(params.get("grid_type", "square"))
@@ -2784,13 +2804,13 @@ def method_pixel_mosaic(out_dir: Path, seed: int, params=None):
     grout_color = np.array(grout_parts[:3], dtype=np.float32)
     grout_width = int(params.get("grout_width", 2))
     color_mode = str(params.get("color_mode", "source"))
-    c_speed = float(params.get("color_speed", 2.0))
-    c_off = float(params.get("color_offset", 0.0))
     blur_sigma = float(params.get("blur_sigma", 15))
     noise_amp = float(params.get("noise_amp", 0.5))
     tile_jitter = int(params.get("tile_jitter", 0))
-    anim_mode = str(params.get("animation_mode", "none"))
+    anim_mode = str(params.get("anim_mode", "none"))
     anim_speed = float(params.get("anim_speed", 1.0))
+    anim_time = float(params.get("time", 0.0))
+    t = anim_time * anim_speed
     voronoi_pts = int(params.get("voronoi_points", 100))
 
     # ── Palette ──
@@ -2803,15 +2823,15 @@ def method_pixel_mosaic(out_dir: Path, seed: int, params=None):
     if source == "input_image" and params.get('input_image'):
         src = load_input(params['input_image'])
         if src.shape[:2] != (H, W):
-            from PIL import Image as PILImage
-            src = np.array(PILImage.fromarray((src * 255).astype(np.uint8)).resize((W, H))) / 255.0
+            from PIL import Image
+            src = np.array(Image.fromarray((src * 255).astype(np.uint8)).resize((W, H))) / 255.0
     elif source == "gradient":
         x = np.linspace(0, 1, W, dtype=np.float32)
         y = np.linspace(0, 1, H, dtype=np.float32)
         xx, yy = np.meshgrid(x, y)
         src = np.stack([xx, yy, 1.0 - xx * yy], axis=-1)
     elif source == "palette" and pal_arr is not None:
-        noise = np.random.rand(H, W).astype(np.float32)
+        noise = rng.random((H, W)).astype(np.float32)
         noise = cv2.GaussianBlur(noise, (0, 0), sigmaX=blur_sigma, sigmaY=blur_sigma)
         noise = norm(noise)
         idx = (noise * (len(pal_arr) - 1)).astype(np.int32)
@@ -2827,7 +2847,7 @@ def method_pixel_mosaic(out_dir: Path, seed: int, params=None):
             np.sin(hue * np.pi * 6 + 4.2) * 0.5 + 0.5,
         ], axis=-1)
     elif source == "procedural_texture":
-        noise = np.random.randn(H, W).astype(np.float32) * noise_amp + 0.5
+        noise = rng.standard_normal((H, W)).astype(np.float32) * noise_amp + 0.5
         noise = cv2.GaussianBlur(noise, (0, 0), sigmaX=blur_sigma, sigmaY=blur_sigma)
         # Add some procedural pattern
         yy, xx = np.meshgrid(np.linspace(-1, 1, H), np.linspace(-1, 1, W), indexing='ij')
@@ -2835,16 +2855,16 @@ def method_pixel_mosaic(out_dir: Path, seed: int, params=None):
         src = norm(np.stack([fbm, fbm * 0.8, fbm * 0.6], axis=-1))
     else:
         # Default noise
-        noise = np.random.randn(H, W, 3).astype(np.float32) * noise_amp + 0.5
+        noise = rng.standard_normal((H, W, 3)).astype(np.float32) * noise_amp + 0.5
         noise = cv2.GaussianBlur(noise, (0, 0), sigmaX=blur_sigma, sigmaY=blur_sigma)
         src = norm(noise)
 
     # ── Animation: tile size morph ──
     if anim_mode == "morph":
-        tile_size = max(4, int(tile_size * (0.5 + 0.5 * math.sin(t * 0.3 * anim_speed))))
+        tile_size = max(4, int(tile_size * (0.5 + 0.5 * math.sin(t * 0.3))))
     elif anim_mode == "drift":
-        shift_x = int(t * 10 * anim_speed) % tile_size
-        shift_y = int(t * 8 * anim_speed) % tile_size
+        shift_x = int(t * 10) % tile_size
+        shift_y = int(t * 8) % tile_size
         src = np.roll(src, shift_x, axis=1)
         src = np.roll(src, shift_y, axis=0)
 
@@ -2859,8 +2879,8 @@ def method_pixel_mosaic(out_dir: Path, seed: int, params=None):
                 th = min(tile_size, H - y)
                 tw = min(tile_size, W - x)
                 if th > 0 and tw > 0:
-                    jx = random.randint(-tile_jitter, tile_jitter) if tile_jitter > 0 else 0
-                    jy = random.randint(-tile_jitter, tile_jitter) if tile_jitter > 0 else 0
+                    jx = int(rng.integers(-tile_jitter, tile_jitter + 1)) if tile_jitter > 0 else 0
+                    jy = int(rng.integers(-tile_jitter, tile_jitter + 1)) if tile_jitter > 0 else 0
                     tiles.append((max(0, y + jy), max(0, x + jx), th, tw))
 
     elif grid_type == "hex":
@@ -2897,7 +2917,7 @@ def method_pixel_mosaic(out_dir: Path, seed: int, params=None):
 
     elif grid_type == "voronoi":
         # Generate voronoi seed points
-        points = np.random.rand(voronoi_pts, 2)
+        points = rng.random((voronoi_pts, 2))
         points[:, 0] *= W
         points[:, 1] *= H
         # Add grid-like seeds for coverage
@@ -3014,7 +3034,7 @@ def method_pixel_mosaic(out_dir: Path, seed: int, params=None):
         elif render_mode == "nearest_pixel":
             col = tile[tile.shape[0] // 2, tile.shape[1] // 2]
         elif render_mode == "noise":
-            col = np.random.rand(3).astype(np.float32) * 0.5 + 0.3
+            col = rng.random(3).astype(np.float32) * 0.5 + 0.3
         elif render_mode == "histogram_eq":
             # Simplified: use per-channel max
             col = np.array([tile[:, :, c].max() for c in range(3)])
@@ -3029,7 +3049,7 @@ def method_pixel_mosaic(out_dir: Path, seed: int, params=None):
             col = pal_arr[idx].astype(np.float32) / 255.0
         elif color_mode == "per_tile_hue":
             # Vary hue based on tile position
-            hue = ((ty / H + tx / W) + c_off / 6.28) % 1.0
+            hue = ((ty / H + tx / W) + t * 0.5 / 6.28) % 1.0
             r = np.sin(hue * np.pi * 6) * 0.5 + 0.5
             g = np.sin(hue * np.pi * 6 + 2.1) * 0.5 + 0.5
             b = np.sin(hue * np.pi * 6 + 4.2) * 0.5 + 0.5
@@ -3138,20 +3158,20 @@ def method_pixel_mosaic(out_dir: Path, seed: int, params=None):
 
         if grid_type == "square" and gw > 0:
             for y in range(0, H, tile_size):
-                result[max(0, y - gw // 2):min(H, y + gw // 2 + 1), :] = grout_color
+                result[max(0, y - gw // 2):min(H, y + gw // 2 + 1), :] = grout_color[np.newaxis, np.newaxis, :]
             for x in range(0, W, tile_size):
-                result[:, max(0, x - gw // 2):min(W, x + gw // 2 + 1)] = grout_color[:, np.newaxis]
+                result[:, max(0, x - gw // 2):min(W, x + gw // 2 + 1)] = grout_color[np.newaxis, np.newaxis, :]
         elif grid_type == "hex" and gw > 0:
             # Hex grid lines
             h = tile_size
             for row in range(0, H, h):
-                result[max(0, row - gw // 2):min(H, row + gw // 2 + 1), :] = grout_color[:, np.newaxis]
+                result[max(0, row - gw // 2):min(H, row + gw // 2 + 1), :] = grout_color[np.newaxis, np.newaxis, :]
             w = int(tile_size * 0.866)
             for col in range(0, W, w * 2):
-                result[:, max(0, col - gw // 2):min(W, col + gw // 2 + 1)] = grout_color[:, np.newaxis]
+                result[:, max(0, col - gw // 2):min(W, col + gw // 2 + 1)] = grout_color[np.newaxis, np.newaxis, :]
             # Offset columns
             for col in range(w, W, w * 2):
-                result[:, max(0, col - gw // 2):min(W, col + gw // 2 + 1)] = grout_color[:, np.newaxis]
+                result[:, max(0, col - gw // 2):min(W, col + gw // 2 + 1)] = grout_color[np.newaxis, np.newaxis, :]
 
         # Voronoi grout: draw edges of voronoi cells
         if grid_type == "voronoi" and gw > 0 and 'region_map' in dir():
@@ -3159,12 +3179,12 @@ def method_pixel_mosaic(out_dir: Path, seed: int, params=None):
 
     # ── Animation: pulse ──
     if anim_mode == "pulse":
-        pulse = 0.6 + 0.4 * math.sin(t * 1.5 * anim_speed)
+        pulse = 0.6 + 0.4 * math.sin(t * 1.5)
         result = result * pulse
 
     # ── Animation: color_cycle ──
     if anim_mode == "color_cycle":
-        hue_shift = (math.sin(t * 0.5 * anim_speed) * 0.5 + 0.5) * 0.3
+        hue_shift = (math.sin(t * 0.5) * 0.5 + 0.5) * 0.3
         result = np.roll(result * 255, int(hue_shift * 255), axis=-1) / 255.0
 
     capture_frame("80", np.clip(result, 0, 1))
