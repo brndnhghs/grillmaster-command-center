@@ -2651,8 +2651,6 @@ def method_density_heatmap(out_dir: Path, seed: int, params=None):
     "shape": {"description": "target shape: circle, square, triangle, sawtooth, star, heart, butterfly, spiral, custom", "default": "circle"},
     "render_style": {"description": "rendering: epicycles, trace_only, ghost_trace, filled, radial, scatter, glow, dual_trace", "default": "epicycles"},
     "color_mode": {"description": "coloring: single, rainbow, gradient, per_circle_hue, trace_gradient, fire, ice, spectral, neon", "default": "single"},
-    "color_speed": {"description": "color rotation speed", "min": 0.5, "max": 8.0, "default": 2.0},
-    "color_offset": {"description": "hue shift offset", "min": 0.0, "max": 6.28, "default": 0.0},
     "speed": {"description": "animation speed", "min": 0.1, "max": 5.0, "default": 1.0},
     "line_width": {"description": "line width", "min": 1, "max": 8, "default": 2},
     "color": {"description": "base color hex", "default": "#FF6600"},
@@ -2661,26 +2659,46 @@ def method_density_heatmap(out_dir: Path, seed: int, params=None):
     "show_circles": {"description": "draw epicycle circles", "default": True},
     "show_axes": {"description": "draw reference axes", "default": False},
     "background": {"description": "background: dark, light, gradient, radial", "default": "dark"},
-    "animation_mode": {"description": "animation: none, rotate, morph, color_cycle, pulse, trace_grow", "default": "none"},
+    "anim_mode": {"description": "animation: none, rotate, morph, color_cycle, pulse, trace_grow", "default": "none"},
     "anim_speed": {"description": "animation speed factor", "min": 0.1, "max": 3.0, "default": 1.0},
     "scale": {"description": "epicycle scale factor", "min": 0.1, "max": 2.0, "default": 1.0},
     "offset_x": {"description": "x offset (center-relative)", "min": -0.5, "max": 0.5, "default": 0.0},
     "offset_y": {"description": "y offset (center-relative)", "min": -0.5, "max": 0.5, "default": 0.0},
-    "time": {"description": "animation time — drives epicycle rotation angle", "default": None},
+    "time": {"description": "animation time — drives epicycle rotation angle", "min": 0.0, "max": 6.28, "default": 0.0},
 })
 def method_fourier_circles(out_dir: Path, seed: int, params=None):
+    """Fourier Circles — epicycle-based Fourier series visualization with multiple shapes and animation.
+
+    Parameters:
+        n_circles (int): Epicycle count (3-100, default 15)
+        shape (str): Target shape (circle, square, triangle, sawtooth, star, heart, butterfly, spiral, custom)
+        render_style (str): Rendering style (epicycles, trace_only, ghost_trace, filled, radial, scatter, glow, dual_trace)
+        color_mode (str): Coloring method (single, rainbow, gradient, per_circle_hue, trace_gradient, fire, ice, spectral, neon)
+        speed (float): Base epicycle rotation speed (0.1-5.0, default 1.0)
+        line_width (int): Line width (1-8, default 2)
+        color (str): Base color hex (default #FF6600)
+        trace_length (int): Trace trail length in steps (0=off, 0-500, default 0)
+        trace_fade (float): Trace fade rate (0-0.99, default 0.9)
+        show_circles (bool): Draw epicycle circles (default True)
+        show_axes (bool): Draw reference axes (default False)
+        background (str): Background style (dark, light, gradient, radial)
+        anim_mode (str): Animation mode (none, rotate, morph, color_cycle, pulse, trace_grow)
+        anim_speed (float): Animation speed multiplier (0.1-3.0, default 1.0)
+        scale (float): Epicycle scale factor (0.1-2.0, default 1.0)
+        offset_x (float): X offset center-relative (-0.5-0.5, default 0.0)
+        offset_y (float): Y offset center-relative (-0.5-0.5, default 0.0)
+        time (float): Animation time in radians (0-6.28, default 0.0)
+    """
     import cv2
     if params is None:
         params = {}
-    t = float(params.get("time", 0.0))
-    seed_all(seed + int(t * 100))
+    seed_all(seed)
+    rng = np.random.default_rng(seed)
 
     nc = int(params.get("n_circles", 15))
     shape = str(params.get("shape", "circle"))
     render_style = str(params.get("render_style", "epicycles"))
     color_mode = str(params.get("color_mode", "single"))
-    c_speed = float(params.get("color_speed", 2.0))
-    c_off = float(params.get("color_offset", 0.0))
     speed = float(params.get("speed", 1.0))
     lw = int(params.get("line_width", 2))
     col_hex = str(params.get("color", "#FF6600"))
@@ -2689,11 +2707,13 @@ def method_fourier_circles(out_dir: Path, seed: int, params=None):
     show_circles = bool(params.get("show_circles", True))
     show_axes = bool(params.get("show_axes", False))
     bg = str(params.get("background", "dark"))
-    anim_mode = str(params.get("animation_mode", "none"))
+    anim_mode = str(params.get("anim_mode", "none"))
     anim_speed = float(params.get("anim_speed", 1.0))
     scale = float(params.get("scale", 1.0))
     ox = float(params.get("offset_x", 0.0))
     oy = float(params.get("offset_y", 0.0))
+    raw_time = float(params.get("time", 0.0))
+    t = raw_time * anim_speed
 
     # ── Background ──
     if bg == "light":
@@ -2749,7 +2769,7 @@ def method_fourier_circles(out_dir: Path, seed: int, params=None):
     # ── Animation: morph ──
     if anim_mode == "morph":
         # Sweep through shapes by modulating coefficients
-        morph_t = math.sin(t * 0.3 * anim_speed) * 0.5 + 0.5
+        morph_t = math.sin(t * 0.3) * 0.5 + 0.5
         for i in range(len(coeffs)):
             n = i + 1
             a_sq = 4.0 / (n * math.pi) * math.sin(n * math.pi / 2)
@@ -2763,7 +2783,7 @@ def method_fourier_circles(out_dir: Path, seed: int, params=None):
         cv2.line(img, (cx, 0), (cx, H), (0.2, 0.2, 0.2), 1)
 
     # ── Animation time ──
-    anim_time = t * speed * anim_speed
+    anim_time = t * speed
 
     # ── Trace buffer — grows with time ──
     trace = []
@@ -2776,7 +2796,7 @@ def method_fourier_circles(out_dir: Path, seed: int, params=None):
         max_steps = min(trace_length, 200)
         # t controls how much of the trace is revealed: 0→1 over full animation
         t_norm = (anim_time % (2 * math.pi)) / (2 * math.pi)  # 0→1 loop
-        reveal_steps = max(2, int(max_steps * t_norm)) if t is not None else max_steps
+        reveal_steps = max(2, int(max_steps * t_norm))
         # Compute trace points up to reveal_steps
         for step in range(reveal_steps):
             step_angle = step * 2 * math.pi / max(1, max_steps)
@@ -2838,7 +2858,7 @@ def method_fourier_circles(out_dir: Path, seed: int, params=None):
             for i in range(1, len(trace)):
                 alpha = i / max(1, len(trace))
                 if color_mode == "trace_gradient":
-                    hue = (alpha + c_off / 6.28) % 1.0
+                    hue = (alpha + t * 0.5 / 6.28) % 1.0
                     tc = (np.sin(hue * np.pi * 6) * 0.5 + 0.5,
                           np.sin(hue * np.pi * 6 + 2.1) * 0.5 + 0.5,
                           np.sin(hue * np.pi * 6 + 4.2) * 0.5 + 0.5)
@@ -2897,12 +2917,12 @@ def method_fourier_circles(out_dir: Path, seed: int, params=None):
 
     # ── Animation: pulse ──
     if anim_mode == "pulse":
-        pulse = 0.6 + 0.4 * math.sin(t * 1.5 * anim_speed)
+        pulse = 0.6 + 0.4 * math.sin(t * 1.5)
         img = img * pulse
 
     # ── Animation: color_cycle ──
     if anim_mode == "color_cycle":
-        hue_shift = (math.sin(t * 0.5 * anim_speed) * 0.5 + 0.5) * 0.3
+        hue_shift = (math.sin(t * 0.5) * 0.5 + 0.5) * 0.3
         img = np.roll(img * 255, int(hue_shift * 255), axis=-1) / 255.0
 
     capture_frame("81", np.clip(img, 0, 1))
