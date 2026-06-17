@@ -166,17 +166,22 @@ def method_ascii(out_dir: Path, seed: int, params=None):
         glow = 1.0 + dither_strength * 0.5 + 0.2 * math.sin(time_param * 1.5 * anim_speed)
         src = np.clip(src * glow, 0, 1)
     elif effective_effect == "drift":
-        drift_x = int(time_param * 10 * dither_strength * anim_speed) % W
-        src = np.roll(src, drift_x, axis=1)
+        drift_x = (time_param * 10 * dither_strength * anim_speed) % W
+        yy, xx = np.mgrid[:H, :W].astype(np.float32)
+        coords = np.stack([yy, (xx - drift_x) % W], axis=0)
+        src = map_coordinates(src, coords, order=1, mode="wrap")
     elif effective_effect == "scroll":
-        scroll_y = int(time_param * 8 * dither_strength * anim_speed) % H
-        src = np.roll(src, scroll_y, axis=0)
+        scroll_y = (time_param * 8 * dither_strength * anim_speed) % H
+        yy, xx = np.mgrid[:H, :W].astype(np.float32)
+        coords = np.stack([(yy - scroll_y) % H, xx], axis=0)
+        src = map_coordinates(src, coords, order=1, mode="wrap")
     elif effective_effect == "wave":
-        wave_amp = int(8 * dither_strength)
-        ys = np.arange(H)
-        shifts = (wave_amp * np.sin(ys * 0.1 + time_param * 5 * anim_speed)).astype(int)
-        for y in range(H):
-            src[y] = np.roll(src[y], shifts[y])
+        wave_amp = 8 * dither_strength
+        yy, xx = np.mgrid[:H, :W].astype(np.float32)
+        wave_shift = wave_amp * np.sin(xx * 0.1 + time_param * 5 * anim_speed)
+        yy2 = np.clip(yy + wave_shift, 0, H - 1)
+        coords = np.stack([yy2, xx], axis=0)
+        src = map_coordinates(src, coords, order=1, mode="reflect")
 
     # ── Quantize to characters ──
     # (indices computed inline per-cell now)
