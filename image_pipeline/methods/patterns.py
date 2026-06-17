@@ -1124,7 +1124,7 @@ def method_worley_noise(out_dir: Path, seed: int, params=None):
     "scale_variation": {"description": "per-tile scale jitter", "min": 0.0, "max": 0.5, "default": 0.0},
     "penrose_generations": {"description": "Penrose inflation iterations", "min": 2, "max": 8, "default": 4},
     "star_rays": {"description": "star polygon rays (for star/islamic motifs)", "min": 4, "max": 16, "default": 8},
-    "anim_mode": {"description": "animation mode: none, rotation_wave, scale_spiral, color_drift, position_wave", "default": "none"},
+    "anim_mode": {"description": "animation mode: none, rotation_wave, scale_spiral, color_drift, position_wave, mosaic_shuffle, breathe_wave, vortex_spin, color_wave", "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},
     "time": {"description": "animation time (drives ripple wave + rotation)", "min": 0.0, "max": 6.28, "default": 0.0},
 })
@@ -1165,24 +1165,49 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
     def _tile_angle_offset(x, y):
         """Per-tile rotation offset in degrees. 0 for none."""
         if anim_mode == "rotation_wave":
-            return 45.0 * math.sin(x * 0.05 + y * 0.03 + t * 1.5 * anim_speed)
+            return 60.0 * math.sin(x * 0.06 + y * 0.04 + t * 1.5 * anim_speed)
         return 0.0
 
     def _tile_pos_dx(x, y):
         if anim_mode == "position_wave":
-            return 8.0 * math.sin(y * 0.025 + t * 1.5 * anim_speed)
+            return 12.0 * math.sin(y * 0.03 + t * 1.8 * anim_speed)
         return 0.0
 
     def _tile_pos_dy(x, y):
         if anim_mode == "position_wave":
-            return 8.0 * math.cos(x * 0.025 + t * 1.5 * anim_speed)
+            return 12.0 * math.cos(x * 0.03 + t * 1.8 * anim_speed)
         return 0.0
 
     def _tile_scale(x, y):
         if anim_mode == "scale_spiral":
-            d = math.sqrt(x * x + y * y) * 0.012
-            return 0.6 + 0.4 * (0.5 + 0.5 * math.sin(d - t * 1.2 * anim_speed))
+            d = math.sqrt(x * x + y * y) * 0.015
+            return 0.5 + 0.5 * (0.5 + 0.5 * math.sin(d - t * 1.5 * anim_speed))
         return 1.0
+
+    def _tile_gap_offset(x, y):
+        """Effective gap per tile — 0 for none."""
+        if anim_mode == "breathe_wave":
+            wave = 0.5 + 0.5 * math.sin(x * 0.04 + y * 0.03 + t * 1.2 * anim_speed)
+            return wave * 8.0  # 0-8px gap oscillates per tile
+        return 0.0
+
+    def _vortex_rotation(x, y, base_angle):
+        """Add vortex rotation for vortex_spin mode."""
+        if anim_mode == "vortex_spin":
+            d = math.sqrt(x * x + y * y) * 0.008
+            return base_angle + d * 360.0 * (0.5 + 0.5 * math.sin(t * 0.8 * anim_speed))
+        return base_angle
+
+    def _tile_motif_index(x, y, n_motifs, idx_map):
+        """Per-tile motif index for mosaic_shuffle mode — oscillates tile by tile."""
+        if anim_mode == "mosaic_shuffle":
+            phase = math.sin(x * 0.12 + y * 0.08) * math.pi
+            # Each tile independently toggles between two motifs based on time
+            flip = 0.5 + 0.5 * math.sin(t * 1.5 * anim_speed + phase)
+            return idx_map[int(flip * (len(idx_map) - 1))] if idx_map else 0
+        return -1
+
+    _shuffle_motif = None  # populated by mosaic_shuffle in _draw_motif
 
     img = Image.new("RGB", (W, H), (10, 10, 18))
     draw = ImageDraw.Draw(img)
@@ -1430,21 +1455,54 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
         "truchet_circle": _motif_truchet_circle,
     }
 
+    MOTIF_FN_KEYS = list(MOTIF_FN.keys())
+    _motif_cycle = ["diamond", "hexagon", "star", "cross", "spiral", "scales"]
+
     def _draw_motif(cx, cy, sz, angle=0):
-        fn = MOTIF_FN.get(effective_motif, _motif_diamond)
+        # Determine motif function (may change per tile in mosaic_shuffle)
+        fn_key = effective_motif
+        if anim_mode == "mosaic_shuffle":
+            phase = math.sin(cx * 0.12 + cy * 0.08) * math.pi
+            flip = 0.5 + 0.5 * math.sin(t * 1.5 * anim_speed + phase)
+            idx = int(flip * (len(_motif_cycle) - 1))
+            fn_key = _motif_cycle[idx]
+        fn = MOTIF_FN.get(fn_key, _motif_diamond)
+
+        # Color
         if anim_mode == "color_drift":
             c = _drift_color(cx, cy)
+        elif anim_mode == "color_wave":
+            # Per-tile color wave using deterministic H/S/V from position + time
+            h = int(128 + 127 * math.sin(cx * 0.05 + cy * 0.03 + t * 1.8 * anim_speed))
+            s = int(155 + 100 * math.cos(cx * 0.04 - cy * 0.06 + t * 1.5 * anim_speed))
+            v = int(150 + 100 * math.sin(cx * 0.06 + cy * 0.07 + t * 2.0 * anim_speed))
+            c = (h, s, v)
         else:
             c = _tile_color(color_variation)
             if pal and pal != "none" and pal in PALETTES:
                 pal_colors = PALETTES[pal]
                 if pal_colors:
                     c = rng.choice(pal_colors)
+
+        # Rotation
         a = angle + rng.uniform(-rotation_noise, rotation_noise) if rotation_noise > 0 else angle
         a += _tile_angle_offset(cx, cy)
+
+        # Vortex spin
+        if anim_mode == "vortex_spin":
+            d = math.sqrt(cx * cx + cy * cy) * 0.008
+            a += d * 360.0 * (0.5 + 0.5 * math.sin(t * 0.8 * anim_speed))
+
+        # Scale
         sv = _tile_scale(cx, cy) * (1 + rng.uniform(-scale_variation, scale_variation) if scale_variation > 0 else 1)
+        # Gap (reduces effective size)
+        gap_off = _tile_gap_offset(cx, cy)
+        sv = sv * max(0.1, 1.0 - gap_off / (sz + 1))
+
+        # Position
         px = cx + _tile_pos_dx(cx, cy)
         py = cy + _tile_pos_dy(cx, cy)
+
         fn(draw, px, py, sz * sv, c, angle=a)
 
     # ── Penrose tiling ──────────────────────────────────────────────────
