@@ -2753,7 +2753,6 @@ def method_fourier_circles(out_dir: Path, seed: int, params=None):
             a = 1.0 / (n ** 1.5) * math.cos(n * 0.5)
             b = 1.0 / (n ** 1.5) * math.sin(n * 0.5)
         elif shape == "heart":
-            # Heart shape Fourier approximation
             a = (1.0 / n) * (math.sin(n * 0.5) + 0.3 * math.sin(n * 1.0))
             b = (1.0 / n) * (math.cos(n * 0.5) - 0.3 * math.cos(n * 1.0))
         elif shape == "butterfly":
@@ -2765,6 +2764,12 @@ def method_fourier_circles(out_dir: Path, seed: int, params=None):
         else:
             a, b = (0.0, 0.0)
         coeffs.append((a, b))
+
+    # Normalize coefficients so the shape fits within r from center
+    total_amp = sum(math.sqrt(a * a + b * b) for a, b in coeffs)
+    if total_amp > 0:
+        norm_factor = 1.0 / total_amp
+        coeffs = [(a * norm_factor, b * norm_factor) for a, b in coeffs]
 
     # ── Animation: morph ──
     if anim_mode == "morph":
