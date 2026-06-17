@@ -28,7 +28,7 @@ from ...core.animation import capture_frame
              "rotation": {"description": "global rotation offset (degrees)", "min": 0.0, "max": 360.0, "default": 0.0},
              "translucent": {"description": "use translucent fills (RGBA)", "default": True},
              "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
-             "anim_mode": {"description": "animation mode", "choices": ["none", "rotation", "rotation_wave", "size_sweep", "position_wave", "color_drift", "shape_morph", "layout_spin", "alpha_pulse", "jitter", "stretch", "orbit"], "default": "none"},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "rotation", "rotation_wave", "size_sweep", "position_wave", "color_drift", "shape_morph", "layout_spin", "alpha_pulse", "jitter", "stretch", "orbit", "gravity", "twist", "ripple", "bounce", "vortex", "pendulum"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 2.0, "default": 0.25},
          })
 def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
@@ -67,6 +67,12 @@ def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
     effective_orbit_radius = 0.0
     effective_orbit_speed = 0.0
     effective_layout_angle = 0.0
+    effective_gravity = 0.0
+    effective_twist = 0.0
+    effective_ripple_amp = 0.0
+    effective_bounce_amp = 0.0
+    effective_vortex = 0.0
+    effective_pendulum_amp = 0.0
     morph_fade = 0.0
     shape_type_a = raw_shape_types[0]
     shape_type_b = raw_shape_types[0]
@@ -114,6 +120,24 @@ def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
     elif anim_mode == "orbit":
         effective_orbit_radius = 8.0
         effective_orbit_speed = 2.0 * anim_speed
+
+    elif anim_mode == "gravity":
+        effective_gravity = 30.0 * (0.5 + 0.5 * math.sin(t * 0.5 * anim_speed))
+
+    elif anim_mode == "twist":
+        effective_twist = 0.3 * math.sin(t * 0.6 * anim_speed)
+
+    elif anim_mode == "ripple":
+        effective_ripple_amp = 20.0 * (0.5 + 0.5 * math.sin(t * 0.7 * anim_speed))
+
+    elif anim_mode == "bounce":
+        effective_bounce_amp = 15.0 * (0.5 + 0.5 * math.sin(t * 0.9 * anim_speed))
+
+    elif anim_mode == "vortex":
+        effective_vortex = 1.0 * anim_speed
+
+    elif anim_mode == "pendulum":
+        effective_pendulum_amp = 30.0 * math.sin(t * 0.4 * anim_speed)
 
     # ── Create canvas ──
     use_rgba = translucent or alpha < 255
@@ -307,7 +331,9 @@ def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
                       color_shift: float, alpha_val: int,
                       jitter_amp: float, stretch: float, stretch_angle: float,
                       orbit_radius: float, orbit_speed: float,
-                      layout_angle: float) -> Image.Image:
+                      layout_angle: float,
+                      gravity: float, twist: float, ripple_amp: float,
+                      bounce_amp: float, vortex: float, pendulum_amp: float) -> Image.Image:
         """Render a single frame. Returns PIL Image (RGB)."""
         use_rgba_local = translucent or alpha_val < 255
         if use_rgba_local:
@@ -351,11 +377,44 @@ def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
                 px += orbit_radius * math.cos(orbit_angle)
                 py += orbit_radius * math.sin(orbit_angle)
 
-            # Pick shape type (with cross-fade)
-            if fade > 0:
-                shape_type = shp_type_a
-            else:
-                shape_type = shp_type_a
+            # Gravity: pull shapes downward, oscillating
+            if gravity != 0.0:
+                py += gravity
+
+            # Twist: rotate position around center proportional to radius
+            if twist != 0.0:
+                dx = px - cx
+                dy = py - cy
+                dist = math.sqrt(dx*dx + dy*dy)
+                twist_angle = twist * dist * 0.02
+                cos_t = math.cos(twist_angle)
+                sin_t = math.sin(twist_angle)
+                px = cx + dx * cos_t - dy * sin_t
+                py = cy + dx * sin_t + dy * cos_t
+
+            # Ripple: sine wave displacement based on x position
+            if ripple_amp != 0.0:
+                py += ripple_amp * math.sin(px * 0.05 + t * 2.0 * anim_speed)
+
+            # Bounce: vertical oscillation with phase per shape
+            if bounce_amp != 0.0:
+                py += bounce_amp * abs(math.sin(t * 2.0 * anim_speed + idx * 0.5))
+
+            # Vortex: spiral rotation — outer shapes rotate faster
+            if vortex != 0.0:
+                dx = px - cx
+                dy = py - cy
+                dist = math.sqrt(dx*dx + dy*dy)
+                angle = math.atan2(dy, dx) + t * vortex * (1.0 + dist * 0.02)
+                px = cx + dist * math.cos(angle)
+                py = cy + dist * math.sin(angle)
+
+            # Pendulum: horizontal swing with phase per shape
+            if pendulum_amp != 0.0:
+                px += pendulum_amp * math.sin(t * 1.2 * anim_speed + idx * 0.3)
+
+            # Pick shape type
+            shape_type = shp_type_a
 
             # Size
             base_size = rng.uniform(10, 40)
@@ -405,6 +464,8 @@ def method_14_geometric_abstraction(out_dir: Path, seed: int, params=None):
         effective_jitter_amp, effective_stretch, effective_stretch_angle,
         effective_orbit_radius, effective_orbit_speed,
         effective_layout_angle,
+        effective_gravity, effective_twist, effective_ripple_amp,
+        effective_bounce_amp, effective_vortex, effective_pendulum_amp,
     )
 
     result_arr = np.array(img).astype(np.float32) / 255.0
