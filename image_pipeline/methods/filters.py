@@ -2510,18 +2510,40 @@ def _ht_color(intensity, color_mode, pal_arr, t, anim_speed, y, H, x, W):
         "rotation": {"description": "global rotation offset", "min": 0.0, "max": 6.2832, "default": 0.0},
         "zoom": {"description": "zoom factor for kaleidoscope", "min": 0.5, "max": 5.0, "default": 1.0},
         "segments": {"description": "symmetry segments for kaleidoscope", "min": 2, "max": 32, "default": 6},
-        "time": {"description": "animation time (0.0-1.0)", "min": 0.0, "max": 1.0, "default": 0.0},
+        "anim_mode": {"description": "animation mode (none/morph/speed_pulse/rotation_cycle)", "choices": ["none", "morph", "speed_pulse", "rotation_cycle"], "default": "none"},
+        "anim_speed": {"description": "animation speed multiplier", "min": 0.0, "max": 5.0, "default": 1.0},
+        "time": {"description": "animation time (0-2pi)", "min": 0.0, "max": 6.28, "default": 0.0},
     },
 )
 def method_swirl(out_dir: Path, seed: int, params=None):
-    """Render image displacement effects — swirl, pinch, bulge, ripple, and more.
+    """Swirl Displacement — geometric image remapping with 9 displacement types and animation.
 
     Applies geometric remapping to a source image using polar/coordinate
-    transforms. Supports animated morphing between displacement types.
+    transforms. Supports animated morphing between displacement types,
+    speed pulsing, and rotation cycling.
+
+    Parameters:
+        displacement (str): Displacement type (swirl/pinch/bulge/twist/ripple/fisheye/wave/kaleidoscope/spiralize)
+        source (str): Source image type (noise/gradient/input_image/palette/rainbow/procedural)
+        colormode (str): Color mode (source/palette/heatmap/spectral/fire/ice/dual_layer)
+        palette (str): Color palette name
+        strength (float): Displacement strength (0-0.5, default 0.01)
+        blur_sigma (float): Gaussian blur sigma for noise source (1-50, default 15)
+        noise_amp (float): Noise amplitude (0.1-1.0, default 0.3)
+        frequency (float): Spatial frequency for wave/ripple (0.01-0.5, default 0.05)
+        amplitude (float): Wave amplitude for displacement (1-100, default 20)
+        rotation (float): Global rotation offset (0-2pi, default 0)
+        zoom (float): Zoom factor for kaleidoscope (0.5-5.0, default 1.0)
+        segments (int): Symmetry segments for kaleidoscope (2-32, default 6)
+        anim_mode (str): Animation mode (none/morph/speed_pulse/rotation_cycle)
+        anim_speed (float): Animation speed multiplier (0-5, default 1.0)
+        time (float): Animation time in radians (0-2pi, default 0.0)
     """
     if params is None:
         params = {}
     import cv2
+    seed_all(seed)
+    rng = np.random.default_rng(seed)
 
     disp_type = params.get("displacement", "swirl")
     source = params.get("source", "noise")
@@ -2535,8 +2557,25 @@ def method_swirl(out_dir: Path, seed: int, params=None):
     rot = float(params.get("rotation", 0.0))
     zoom = float(params.get("zoom", 1.0))
     segs = int(params.get("segments", 6))
-    t = float(params.get("time", 0.0)) * 2 * math.pi
+    anim_mode = params.get("anim_mode", "none")
+    anim_speed = float(params.get("anim_speed", 1.0))
+    anim_time = float(params.get("time", 0.0))
+    t = anim_time * anim_speed
     from ..core.utils import PALETTES
+
+    # Animation: morph between displacement types
+    if anim_mode == "morph":
+        disp_types = ["swirl", "pinch", "bulge", "twist", "ripple", "fisheye", "wave", "kaleidoscope", "spiralize"]
+        idx = int(t * 0.3) % len(disp_types)
+        disp_type = disp_types[idx]
+
+    # Animation: modulate strength
+    if anim_mode == "speed_pulse":
+        strength = strength * (0.5 + 0.5 * math.sin(t * 0.5))
+
+    # Animation: modulate rotation
+    if anim_mode == "rotation_cycle":
+        rot = rot + t * 0.3
 
     # ── Generate source image ──
     def _make_source():
@@ -2544,9 +2583,7 @@ def method_swirl(out_dir: Path, seed: int, params=None):
             from ..core.utils import load_input
             return load_input(params["input_image"])
         elif source == "noise":
-            # Use t to seed per-frame so time-based animation produces evolving noise
-            seed_all(seed + int(t * 100))
-            noise = np.random.randn(H, W, 3).astype(np.float32) * noise_amp + 0.5
+            noise = rng.standard_normal((H, W, 3)).astype(np.float32) * noise_amp + 0.5
             noise = cv2.GaussianBlur(noise, (0, 0), sigmaX=blur_sigma, sigmaY=blur_sigma)
             noise = norm(noise)
             return noise
@@ -2574,14 +2611,12 @@ def method_swirl(out_dir: Path, seed: int, params=None):
                 np.sin(hue + 4.189) * 0.5 + 0.5
             ], axis=-1).astype(np.float32)
         elif source == "procedural":
-            seed_all(seed + int(t * 100))
             yy, xx = np.mgrid[:H, :W].astype(np.float32)
             g = np.sin(xx * 0.03 + yy * 0.02 + t * 0.5) * \
                 np.cos(xx * 0.02 - yy * 0.03 + t * 0.3) * 0.5 + 0.5
             return np.stack([g, g * 0.6, 1 - g * 0.8], axis=-1).astype(np.float32)
         else:
-            seed_all(seed)
-            noise = np.random.randn(H, W, 3).astype(np.float32) * noise_amp + 0.5
+            noise = rng.standard_normal((H, W, 3)).astype(np.float32) * noise_amp + 0.5
             noise = cv2.GaussianBlur(noise, (0, 0), sigmaX=blur_sigma, sigmaY=blur_sigma)
             return norm(noise)
 
@@ -2649,7 +2684,7 @@ def method_swirl(out_dir: Path, seed: int, params=None):
     elif disp_type == "spiralize":
         # Logarithmic spiral
         spiral_theta = theta + r * strength * 5.0 * (1.0 + 0.2 * math.sin(t))
-        new_r = r * (1.0 + strength * 2.0 * math.sin(theta * 3 + t))
+        new_r = r * (1.0 + strength * 2.0 * np.sin(theta * 3 + t))
         src_x = cx + new_r * np.cos(spiral_theta)
         src_y = cy + new_r * np.sin(spiral_theta)
 
