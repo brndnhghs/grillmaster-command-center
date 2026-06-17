@@ -1732,18 +1732,43 @@ def method_julia_set(out_dir: Path, seed: int, params=None):
     "equation": {"description": "logistic map variant: logistic, logistic_tent, cubic, gauss, circle, henon_map, sine_map, custom", "default": "logistic"},
     "color_mode": {"description": "coloring: lyapunov_value, sine, palette, heatmap, fire, ice, spectral, dual_layer, stability, bifurcation", "default": "lyapunov_value"},
     "palette_name": {"description": "palette name (retro palettes)", "default": "vapor"},
-    "color_speed": {"description": "color rotation speed", "min": 0.5, "max": 8.0, "default": 2.0},
-    "color_offset": {"description": "hue shift offset", "min": 0.0, "max": 6.28, "default": 0.0},
     "r2_min": {"description": "optional second axis r_min (if not set, uses r_min/r_max)", "default": None},
     "r2_max": {"description": "optional second axis r_max", "default": None},
     "stable_color": {"description": "color for stable (negative exponent) regions: dark, green, blue, auto", "default": "dark"},
-    "animation_mode": {"description": "animation: none, param_sweep, color_cycle, morph", "default": "none"},
+    "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
+    "anim_mode": {"description": "animation mode", "choices": ["none", "param_sweep", "color_cycle", "morph"], "default": "none"},
+    "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
     "epsilon": {"description": "log epsilon to prevent log(0)", "min": 1e-15, "max": 1e-5, "default": 1e-10},
 })
 def method_lyapunov(out_dir: Path, seed: int, params=None):
-    seed_all(seed)
+    """Generate Lyapunov fractal exponent maps with various equation variants and color modes.
+
+    Computes the Lyapunov exponent for each point in a 2D parameter space (r_A, r_B)
+    using a logistic map variant driven by an A/B perturbation sequence. Supports 8
+    equation variants (logistic, logistic_tent, cubic, gauss, circle, henon_map,
+    sine_map, custom) and 10 color modes. Animation modes: param_sweep (r range
+    oscillation), color_cycle (hue rotation), morph (sequence shift).
+
+    Params:
+        sequence: A/B perturbation pattern (A/B string, default "ABABABAB")
+        warmup: warmup iterations before measuring (10-500, default 80)
+        measure: iterations used for lyapunov sum (10-500, default 80)
+        r_min: min r value for both axes (1.5-4.0, default 2.0)
+        r_max: max r value for both axes (2.0-5.0, default 4.0)
+        equation: logistic map variant (logistic, logistic_tent, cubic, ...)
+        color_mode: coloring mode (lyapunov_value, sine, palette, heatmap, ...)
+        palette_name: palette name for palette mode
+        r2_min: optional second axis r_min
+        r2_max: optional second axis r_max
+        stable_color: color for stable regions (dark, green, blue, auto)
+        time: animation time (0-6.28)
+        anim_mode: animation mode (none, param_sweep, color_cycle, morph)
+        anim_speed: animation speed multiplier (0.1-3.0, default 1.0)
+        epsilon: log epsilon to prevent log(0) (1e-15 to 1e-5, default 1e-10)
+    """
     if params is None:
         params = {}
+    seed_all(seed)
 
     seq_str = str(params.get("sequence", "ABABABAB"))
     warmup = int(params.get("warmup", 80))
@@ -1759,12 +1784,11 @@ def method_lyapunov(out_dir: Path, seed: int, params=None):
     equation = str(params.get("equation", "logistic"))
     color_mode = str(params.get("color_mode", "lyapunov_value"))
     pal_name = str(params.get("palette_name", "vapor"))
-    c_speed = float(params.get("color_speed", 2.0))
-    c_off = float(params.get("color_offset", 0.0))
     stable_color = str(params.get("stable_color", "dark"))
-    anim_mode = str(params.get("animation_mode", "none"))
+    anim_mode = str(params.get("anim_mode", "none"))
+    anim_speed = float(params.get("anim_speed", 1.0))
     eps = float(params.get("epsilon", 1e-10))
-    t = params.get("time", 0.0)
+    t = float(params.get("time", 0.0))
 
     use_pal = None
     if color_mode == "palette":
@@ -1773,12 +1797,12 @@ def method_lyapunov(out_dir: Path, seed: int, params=None):
 
     # ── Animation: param sweep ──
     if anim_mode == "param_sweep":
-        sweep = math.sin(t * 0.3) * 0.3
+        sweep = math.sin(t * 0.3 * anim_speed) * 0.3
         r_min = max(1.5, r_min + sweep)
         r_max = min(5.0, r_max + sweep)
     elif anim_mode == "morph":
         # Sweep the pattern phase: shift the sequence
-        shift = int(t * 2) % len(seq_str)
+        shift = int(t * 2 * anim_speed) % len(seq_str)
         seq_str = seq_str[shift:] + seq_str[:shift]
 
     # ── Equation functions ──
@@ -1870,9 +1894,9 @@ def method_lyapunov(out_dir: Path, seed: int, params=None):
         result = np.stack([r, g, b], axis=-1)
 
     elif color_mode == "sine":
-        r = np.sin(d * c_speed + c_off) * 0.5 + 0.5
-        g = np.sin(d * c_speed * 0.75 + 2 + c_off) * 0.5 + 0.5
-        b = np.sin(d * c_speed * 0.5 + 4 + c_off) * 0.5 + 0.5
+        r = np.sin(d * 3.0 + t * 0.5 * anim_speed) * 0.5 + 0.5
+        g = np.sin(d * 3.0 * 0.75 + 2 + t * 0.5 * anim_speed) * 0.5 + 0.5
+        b = np.sin(d * 3.0 * 0.5 + 4 + t * 0.5 * anim_speed) * 0.5 + 0.5
         result = np.stack([r, g, b], axis=-1)
 
     elif color_mode == "palette" and use_pal is not None:
@@ -1881,27 +1905,27 @@ def method_lyapunov(out_dir: Path, seed: int, params=None):
         result = use_pal[idx.ravel()].reshape(H, W, 3).astype(np.float32) / 255.0
 
     elif color_mode == "heatmap":
-        r = np.clip(d * 3.0 + c_off * 0.3, 0, 1)
+        r = np.clip(d * 3.0 + t * 0.5 * anim_speed * 0.3, 0, 1)
         g = np.clip(d * 2.0 - 0.3, 0, 1)
         b = np.clip(d * 1.5 - 0.5, 0, 1)
         result = np.stack([r, g, b], axis=-1)
 
     elif color_mode == "fire":
-        frac = np.clip(d * c_speed, 0, 1)
+        frac = np.clip(d * (1.0 + 0.5 * math.sin(t * 0.3 * anim_speed)), 0, 1)
         r = frac ** 0.8
         g = np.clip(frac ** 1.5 * 1.2 - 0.1, 0, 1)
         b = np.clip(frac ** 3.0 - 0.3, 0, 0.6)
         result = np.stack([r, g, b], axis=-1)
 
     elif color_mode == "ice":
-        frac = np.clip(d * c_speed, 0, 1)
+        frac = np.clip(d * (1.0 + 0.5 * math.sin(t * 0.3 * anim_speed + 1.0)), 0, 1)
         r = np.clip(frac ** 3.0 - 0.3, 0, 0.7)
         g = np.clip(frac ** 1.8 - 0.1, 0, 1)
         b = frac ** 0.9
         result = np.stack([r, g, b], axis=-1)
 
     elif color_mode == "spectral":
-        idx = (d + c_off / 6.28) % 1.0
+        idx = (d + t * 0.5 * anim_speed / 6.28) % 1.0
         r = np.clip(np.sin(idx * np.pi * 6) * 0.7 + 0.5, 0, 1)
         g = np.clip(np.sin(idx * np.pi * 6 + 2.1) * 0.7 + 0.5, 0, 1)
         b = np.clip(np.sin(idx * np.pi * 6 + 4.2) * 0.7 + 0.5, 0, 1)
@@ -1951,10 +1975,12 @@ def method_lyapunov(out_dir: Path, seed: int, params=None):
         neg_3d = np.stack([neg_mask, neg_mask, neg_mask], axis=-1)
         result = np.where(neg_3d, result * 0.3 + blue * 0.7, result)
 
-    # Animation frames during render (if animating)
-    if anim_mode != "none":
-        capture_frame("69", np.clip(result, 0, 1))
+    # ── Color cycle animation ──
+    if anim_mode == "color_cycle":
+        hue_shift = (math.sin(t * 0.5 * anim_speed) * 0.5 + 0.5) * 0.3
+        result = np.roll(result * 255, int(hue_shift * 255), axis=-1) / 255.0
 
+    capture_frame("69", np.clip(result, 0, 1))
     save(np.clip(result, 0, 1), mn(69, "Lyapunov Fractal"), out_dir)
 
 
