@@ -2330,19 +2330,37 @@ def _render_trail(density, age_arr):
     "palette": {"description": "PALETTES name for palette color mode", "default": "vapor"},
     "color_decay": {"description": "color channel decay per step", "min": 0.9, "max": 1.0, "default": 0.99},
     "color_jitter": {"description": "random color drift amplitude", "min": 0.001, "max": 0.1, "default": 0.01},
-    "animation": {"description": "animation mode", "choices": ["none", "transform_morph", "param_sweep", "growth_reveal", "color_cycle"], "default": "none"},
+    "anim_mode": {"description": "animation mode", "choices": ["none", "transform_morph", "param_sweep", "growth_reveal", "color_cycle"], "default": "none"},
+    "anim_speed": {"description": "animation speed multiplier", "min": 0.0, "max": 5.0, "default": 1.0},
     "time": {"description": "animation time (0-2pi)", "min": 0.0, "max": 6.28, "default": 0.0},
 })
 def method_fractal_flame(out_dir: Path, seed: int, params=None):
+    """Fractal Flame — IFS-based flame renderer with multiple variations, color modes, and animation.
+
+    Parameters:
+        points (int): Number of flame points (50K-2M, default 200K)
+        scale (float): Coordinate scale factor (0=auto, default 3.0)
+        variation (str): Flame variation name, 'multi' for multi-transform, or 'ifs' for IFS presets
+        variations (str): Comma-separated variations for multi mode
+        ifs_preset (str): IFS preset for ifs variation mode
+        color_mode (str): Coloring method (flame_colored, density_only, palette, age, channel_mix)
+        palette (str): PALETTES name for palette color mode
+        color_decay (float): Color channel decay per step (0.9-1.0, default 0.99)
+        color_jitter (float): Random color drift amplitude (0.001-0.1, default 0.01)
+        anim_mode (str): Animation mode (none, transform_morph, param_sweep, growth_reveal, color_cycle)
+        anim_speed (float): Animation speed multiplier (0.0-5.0, default 1.0)
+        time (float): Animation time in radians (0-2pi, default 0.0)
+    """
     if params is None:
         params = {}
-    seed_all(seed + int(params.get("time", 0.0) * 100))
+    seed_all(seed)
+    rng = random.Random(seed)
     from ..core.utils import PALETTES, quantize_to_palette
 
     density = np.zeros((H, W), dtype=np.float64)
     colors = np.zeros((H, W, 3), dtype=np.float64)
     age_map = np.zeros((H, W), dtype=np.float32)
-    x, y = 0.0, 0.0
+    x, y = rng.uniform(-0.5, 0.5), rng.uniform(-0.5, 0.5)
     cr, cg, cb = 1.0, 0.5, 0.2
 
     n_points = int(params.get("points", 200000))
@@ -2352,8 +2370,10 @@ def method_fractal_flame(out_dir: Path, seed: int, params=None):
     palette_name = params.get("palette", "vapor")
     c_decay = float(params.get("color_decay", 0.99))
     c_jitter = float(params.get("color_jitter", 0.01))
-    animation = params.get("animation", "none")
+    anim_mode = params.get("anim_mode", "none")
+    anim_speed = float(params.get("anim_speed", 1.0))
     anim_time = float(params.get("time", 0.0))
+    t = anim_time * anim_speed
     ifs_preset_name = params.get("ifs_preset", "sierpinski_triangle")
     cap_interval = max(1, n_points // 60)
 
@@ -2396,17 +2416,17 @@ def method_fractal_flame(out_dir: Path, seed: int, params=None):
         var_weights = [1.0]
 
     # Animation: param sweep on scale
-    if animation == "param_sweep":
-        flame_scale = flame_scale * (0.6 + 0.4 * math.sin(anim_time * 0.5))
+    if anim_mode == "param_sweep":
+        flame_scale = flame_scale * (0.6 + 0.4 * math.sin(t * 0.5))
 
     # Color animation
-    if animation == "color_cycle":
-        cr, cg, cb = _flame_color_cycle(anim_time)
+    if anim_mode == "color_cycle":
+        cr, cg, cb = _flame_color_cycle(t)
 
     # Growth reveal
     growth_limit = n_points
-    if animation == "growth_reveal":
-        growth_limit = int(n_points * min(1.0, abs(math.sin(anim_time))))
+    if anim_mode == "growth_reveal":
+        growth_limit = int(n_points * min(1.0, abs(math.sin(t))))
 
     # Track extent for auto-scale
     x_vals, y_vals = [], []
@@ -2416,9 +2436,9 @@ def method_fractal_flame(out_dir: Path, seed: int, params=None):
         if isinstance(var_funcs[0], list):
             # IFS-style affine transforms
             if var_weights:
-                tf = random.choices(var_funcs, weights=var_weights)[0]
+                tf = rng.choices(var_funcs, weights=var_weights)[0]
             else:
-                r = random.random()
+                r = rng.random()
                 tf = var_funcs[-1]
                 for row in var_funcs:
                     if r <= row[0]:
@@ -2429,19 +2449,19 @@ def method_fractal_flame(out_dir: Path, seed: int, params=None):
             ny = c * x + d * y + f
 
             # Animation: transform morph
-            if animation == "transform_morph":
-                m = math.sin(anim_time * 0.5) * 0.1
+            if anim_mode == "transform_morph":
+                m = math.sin(t * 0.5) * 0.1
                 nx += m * (math.sin(y * 2) * 0.3)
                 ny += m * (math.cos(x * 2) * 0.3)
 
             x, y = nx, ny
         else:
             # Flame variation function
-            var_fn = random.choices(var_funcs, weights=var_weights)[0]
+            var_fn = rng.choices(var_funcs, weights=var_weights)[0]
             nx, ny = var_fn(x, y)
 
-            if animation == "transform_morph":
-                m = math.sin(anim_time * 0.5) * 0.2
+            if anim_mode == "transform_morph":
+                m = math.sin(t * 0.5) * 0.2
                 nx += m * math.sin(y * 2)
                 ny += m * math.cos(x * 2)
 
@@ -2458,9 +2478,9 @@ def method_fractal_flame(out_dir: Path, seed: int, params=None):
 
         # Color evolution
         if color_mode == "flame_colored":
-            cr = cr * c_decay + random.uniform(-c_jitter, c_jitter)
-            cg = cg * c_decay + random.uniform(-c_jitter, c_jitter)
-            cb = cb * c_decay + random.uniform(-c_jitter, c_jitter)
+            cr = cr * c_decay + rng.uniform(-c_jitter, c_jitter)
+            cg = cg * c_decay + rng.uniform(-c_jitter, c_jitter)
+            cb = cb * c_decay + rng.uniform(-c_jitter, c_jitter)
             cr = max(0, min(1, cr))
             cg = max(0, min(1, cg))
             cb = max(0, min(1, cb))
@@ -2499,8 +2519,9 @@ def method_fractal_flame(out_dir: Path, seed: int, params=None):
 
     # Black-output fix
     if result.max() < 0.01:
-        result = np.random.rand(H, W, 3).astype(np.float32) * 0.08 + 0.02
+        result = np.random.default_rng(seed).random((H, W, 3)).astype(np.float32) * 0.08 + 0.02
 
+    capture_frame('70', result)
     save(result, mn(70, "Fractal Flame"), out_dir)
 
 
