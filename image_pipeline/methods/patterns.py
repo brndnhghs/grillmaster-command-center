@@ -894,7 +894,7 @@ def method_moire(out_dir: Path, seed: int, params=None):
     "fractal": {"description": "fractal Worley layers (1=off, 2-4=layered FBM)", "min": 1, "max": 4, "default": 1},
     "fractal_gain": {"description": "amplitude scaling per fractal layer", "min": 0.1, "max": 1.0, "default": 0.5},
     "cell_border": {"description": "cell edge highlight width (0=off)", "min": 0, "max": 20, "default": 0},
-    "anim_mode": {"description": "animation mode: none, point_drift, metric_morph, feature_sweep", "default": "none"},
+    "anim_mode": {"description": "animation mode: none, point_drift, feature_sweep, gain_sweep", "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.5},
     "time": {"description": "animation time for point drift", "min": 0.0, "max": 6.28, "default": 0.0},
 })
@@ -937,16 +937,27 @@ def method_worley_noise(out_dir: Path, seed: int, params=None):
     except ImportError:
         _has_scipy = False
 
-    # ── Animation: operate on distance metric, feature index, or point drift ──
+    # ── Animation: operate on feature index, point drift, or fractal gain ──
     effective_metric = dist_metric
     effective_feature = feature_idx
-    effective_drift = t * anim_speed
-    if anim_mode == "metric_morph":
-        metric_cycle = ["euclidean", "manhattan", "chebyshev", "minkowski", "angular"]
-        idx = int((t / (2 * math.pi)) * len(metric_cycle) * anim_speed) % len(metric_cycle)
-        effective_metric = metric_cycle[idx]
-    elif anim_mode == "feature_sweep":
-        effective_feature = max(1, min(4, int(1 + 3 * (0.5 + 0.5 * math.sin(t * anim_speed)))))
+    effective_gain = fractal_gain
+    effective_drift = t * 30 * anim_speed
+    # Cross-fade state for feature_sweep
+    effective_next_feature = feature_idx
+    feature_morph_fade = 0.0
+    if anim_mode == "feature_sweep":
+        # Feature index cycles 1→2→3→4→3→2→1 (triangle wave) with cross-fade
+        feat_cycle = [1, 2, 3, 4, 3, 2]
+        n_feat = len(feat_cycle)
+        raw_idx = t * 0.4 * anim_speed * n_feat
+        idx_a = int(raw_idx) % n_feat
+        idx_b = (idx_a + 1) % n_feat
+        feature_morph_fade = raw_idx - int(raw_idx)
+        effective_feature = feat_cycle[idx_a]
+        effective_next_feature = feat_cycle[idx_b]
+    elif anim_mode == "gain_sweep":
+        # Fractal gain sweeps 0.1→1.0 — amplitude contrast changes
+        effective_gain = 0.1 + 0.9 * (0.5 + 0.5 * math.sin(t * 0.3 * anim_speed))
     # point_drift uses effective_drift directly in _generate_points
 
     def _generate_points(n, jit, drift):
@@ -988,46 +999,47 @@ def method_worley_noise(out_dir: Path, seed: int, params=None):
             p = 3.0
             return (np.abs(dx) ** p + np.abs(dy) ** p) ** (1.0 / p)
         elif metric == "angular":
-            # Angle from point to pixel (for star-burst effects)
             return np.arctan2(dy, dx) % (2 * math.pi)
         return np.sqrt(dx ** 2 + dy ** 2)
 
-    # ── Build result ──
-    if fractal_layers > 1:
-        result = np.zeros((H, W), dtype=np.float32)
-        total_amp = 0.0
-        for layer in range(fractal_layers):
-            n_layer = max(5, n_points // (layer + 1))
-            scale = 1.0 / (layer + 1)
-            jit_layer = max(0.1, jitter * (1.0 - layer * 0.2))
-            pts = _generate_points(n_layer, jit_layer, effective_drift * (layer + 1))
-            dist = _distance_matrix(pts, xx, yy, effective_metric)
-            # Get the k-th nearest distance where k = effective_feature
+    def _render_worley(metric, feature, drift, gain):
+        """Render Worley noise result for given params. Returns (H,W) float32 in [0,1]."""
+        if fractal_layers > 1:
+            result = np.zeros((H, W), dtype=np.float32)
+            total_amp = 0.0
+            for layer in range(fractal_layers):
+                n_layer = max(5, n_points // (layer + 1))
+                scale = 1.0 / (layer + 1)
+                jit_layer = max(0.1, jitter * (1.0 - layer * 0.2))
+                pts = _generate_points(n_layer, jit_layer, drift * (layer + 1))
+                dist = _distance_matrix(pts, xx, yy, metric)
+                sorted_dist = np.sort(dist, axis=0)
+                k_idx = min(feature, sorted_dist.shape[0] - 1)
+                layer_val = sorted_dist[k_idx]
+                amp_val = gain ** layer
+                result += norm(layer_val) * amp_val * scale
+                total_amp += amp_val * scale
+            return norm(result / total_amp)
+        else:
+            pts = _generate_points(n_points, jitter, drift)
+            dist = _distance_matrix(pts, xx, yy, metric)
             sorted_dist = np.sort(dist, axis=0)
-            k_idx = min(effective_feature, sorted_dist.shape[0] - 1)
-            layer_val = sorted_dist[k_idx]
-            amp = fractal_gain ** layer
-            result += norm(layer_val) * amp * scale
-            total_amp += amp * scale
-        result = norm(result / total_amp)
-    else:
-        pts = _generate_points(n_points, jitter, effective_drift)
-        dist = _distance_matrix(pts, xx, yy, effective_metric)
-        sorted_dist = np.sort(dist, axis=0)
-        k_idx = min(effective_feature, sorted_dist.shape[0] - 1)
-        raw = sorted_dist[k_idx]
-        result = norm(raw)
+            k_idx = min(feature, sorted_dist.shape[0] - 1)
+            return norm(sorted_dist[k_idx])
+
+    # ── Build result with possible cross-fade for feature_sweep ──
+    result = _render_worley(effective_metric, effective_feature, effective_drift, effective_gain)
+    if anim_mode == "feature_sweep" and feature_morph_fade > 0.0:
+        result_b = _render_worley(effective_metric, effective_next_feature, effective_drift, effective_gain)
+        result = result * (1.0 - feature_morph_fade) + result_b * feature_morph_fade
 
     # ── Cell borders ──
     if cell_border > 0 and _has_scipy:
-        # Detect cells by finding the nearest point's index
         dist = _distance_matrix(_generate_points(n_points, jitter, 0), xx, yy, effective_metric)
         nearest = np.argmin(dist, axis=0)
-        # Sobel edge detect
         edge_x = sobel(nearest.astype(np.float32), axis=1)
         edge_y = sobel(nearest.astype(np.float32), axis=0)
         edges = np.sqrt(edge_x ** 2 + edge_y ** 2) > 0.01
-        # Darken result at edges
         result = np.where(edges, result * (1.0 - min(cell_border / 20.0, 0.8)), result)
 
     # ── Color ──
