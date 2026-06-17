@@ -2571,10 +2571,9 @@ def method_sandpile(out_dir: Path, seed: int, params=None):
     "color_mode": {"description": "coloring: per_walker, steps, velocity, position_x, position_y, gradient, palette, rainbow, heatmap, age", "default": "per_walker"},
     "palette_name": {"description": "palette name for palette color mode", "default": "vapor"},
     "background": {"description": "background: dark, light, transparent, gradient, radial", "default": "dark"},
-    "color_speed": {"description": "color rotation speed", "min": 0.5, "max": 8.0, "default": 1.5},
-    "color_offset": {"description": "hue shift offset", "min": 0.0, "max": 6.28, "default": 0.0},
-    "animation_mode": {"description": "animation: none, reveal, stroke, sparkle, pulse", "default": "none"},
+    "anim_mode": {"description": "animation: none, reveal, stroke, sparkle, pulse", "default": "none"},
     "anim_speed": {"description": "animation speed", "min": 0.1, "max": 3.0, "default": 1.0},
+    "time": {"description": "animation time (0-2pi)", "min": 0.0, "max": 6.28, "default": 0.0},
     "drift_x": {"description": "horizontal drift per step", "min": -0.5, "max": 0.5, "default": 0.0},
     "drift_y": {"description": "vertical drift per step", "min": -0.5, "max": 0.5, "default": 0.0},
     "attractor_x": {"description": "attractor point x (center-relative)", "min": -1.0, "max": 1.0, "default": 0.0},
@@ -2586,11 +2585,36 @@ def method_sandpile(out_dir: Path, seed: int, params=None):
     "boundary": {"description": "boundary: wrap, bounce, stop, kill, mirror", "default": "stop"},
 })
 def method_random_walk(out_dir: Path, seed: int, params=None):
+    """Random Walk — multi-walker path simulation with multiple walker types, styles, and animation.
+
+    Parameters:
+        walkers (int): Number of random walk threads (1-200, default 30)
+        steps (int): Walk steps per walker (100-50000, default 3000)
+        step_size (float): Max pixel offset per step (0.5-20, default 2.5)
+        walker_type (str): Walk type (classic, brownian, levy_flight, constrained, drift, attractor, self_avoiding, trail, flock)
+        walk_style (str): How paths render (line, dots, connected_dots, glow_lines, particle_trail, spline, fade)
+        color_mode (str): Coloring method (per_walker, steps, velocity, position_x, position_y, gradient, palette, rainbow, heatmap, age)
+        palette_name (str): Palette name for palette color mode
+        background (str): Background style (dark, light, transparent, gradient, radial)
+        anim_mode (str): Animation mode (none, reveal, stroke, sparkle, pulse)
+        anim_speed (float): Animation speed multiplier (0.1-3.0, default 1.0)
+        time (float): Animation time in radians (0-2pi, default 0.0)
+        drift_x (float): Horizontal drift per step (-0.5-0.5, default 0.0)
+        drift_y (float): Vertical drift per step (-0.5-0.5, default 0.0)
+        attractor_x (float): Attractor point x (center-relative, -1.0-1.0, default 0.0)
+        attractor_y (float): Attractor point y (center-relative, -1.0-1.0, default 0.0)
+        attractor_strength (float): Attractor pull strength (0-0.5, default 0.02)
+        walk_width (int): Line width (1-10, default 2)
+        fade_alpha (float): Fade alpha for fade style (0.01-0.9, default 0.3)
+        noise_scale (float): Perlin noise influence scale (0-1, default 0.0)
+        boundary (str): Boundary behavior (wrap, bounce, stop, kill, mirror)
+    """
     if params is None:
         params = {}
-    seed_all(seed + int(params.get("time", 0.0) * 100))
+    seed_all(seed)
+    rng = random.Random(seed)
 
-    from PIL import Image as PILImage, ImageDraw
+    from PIL import Image, ImageDraw
     from ..core.utils import load_input, PALETTES
 
     n_walkers = int(params.get("walkers", 30))
@@ -2601,10 +2625,10 @@ def method_random_walk(out_dir: Path, seed: int, params=None):
     color_mode = str(params.get("color_mode", "per_walker"))
     pal_name = str(params.get("palette_name", "vapor"))
     bg = str(params.get("background", "dark"))
-    c_speed = float(params.get("color_speed", 1.5))
-    c_off = float(params.get("color_offset", 0.0))
-    anim_mode = str(params.get("animation_mode", "none"))
+    anim_mode = str(params.get("anim_mode", "none"))
     anim_speed = float(params.get("anim_speed", 1.0))
+    anim_time = float(params.get("time", 0.0))
+    t = anim_time * anim_speed
     drift_x = float(params.get("drift_x", 0.0))
     drift_y = float(params.get("drift_y", 0.0))
     attractor_x = float(params.get("attractor_x", 0.0))
@@ -2614,7 +2638,6 @@ def method_random_walk(out_dir: Path, seed: int, params=None):
     fade_alpha = float(params.get("fade_alpha", 0.3))
     noise_scale = float(params.get("noise_scale", 0.0))
     boundary = str(params.get("boundary", "stop"))
-    t = params.get("time", 0.0)
 
     # ── Palette ──
     pal_arr = None
@@ -2641,7 +2664,7 @@ def method_random_walk(out_dir: Path, seed: int, params=None):
     if params.get('input_image'):
         try:
             img_arr = load_input(params['input_image'])
-            bg_arr = np.array(PILImage.fromarray((img_arr * 255).astype(np.uint8)).resize((W, H))) / 255.0
+            bg_arr = np.array(Image.fromarray((img_arr * 255).astype(np.uint8)).resize((W, H))) / 255.0
             if bg_arr.shape[-1] == 4:
                 base = bg_arr[:, :, :3] * 0.5 + base * 0.5
             else:
@@ -2654,11 +2677,11 @@ def method_random_walk(out_dir: Path, seed: int, params=None):
     # ── Init walkers ──
     walkers = []
     for i in range(n_walkers):
-        x = random.uniform(0, W)
-        y = random.uniform(0, H)
+        x = rng.uniform(0, W)
+        y = rng.uniform(0, H)
         age = 0.0
         # Per-walker base color
-        hue = (i / max(1, n_walkers) + c_off) % 1.0
+        hue = (i / max(1, n_walkers) + t * 0.5 / 6.28) % 1.0
         col = (
             int(np.sin(hue * np.pi * 6) * 100 + 100),
             int(np.sin(hue * np.pi * 6 + 2.1) * 100 + 100),
@@ -2670,8 +2693,8 @@ def method_random_walk(out_dir: Path, seed: int, params=None):
     # ── Perlin noise field (simple approximation) ──
     if noise_scale > 0:
         from scipy.ndimage import gaussian_filter
-        noise_field_x = gaussian_filter(np.random.randn(H, W).astype(np.float32), sigma=30) * noise_scale * 10
-        noise_field_y = gaussian_filter(np.random.randn(H, W).astype(np.float32), sigma=30) * noise_scale * 10
+        noise_field_x = gaussian_filter(rng.standard_normal((H, W)).astype(np.float32), sigma=30) * noise_scale * 10
+        noise_field_y = gaussian_filter(rng.standard_normal((H, W)).astype(np.float32), sigma=30) * noise_scale * 10
     else:
         noise_field_x = np.zeros((H, W))
         noise_field_y = np.zeros((H, W))
@@ -2700,44 +2723,44 @@ def method_random_walk(out_dir: Path, seed: int, params=None):
 
             # ── Step calculation per type ──
             if walker_type == "classic":
-                dx = random.uniform(-step_size, step_size)
-                dy = random.uniform(-step_size, step_size)
+                dx = rng.uniform(-step_size, step_size)
+                dy = rng.uniform(-step_size, step_size)
 
             elif walker_type == "brownian":
                 # Smaller steps, more frequent direction changes
-                dx = random.gauss(0, step_size * 0.4)
-                dy = random.gauss(0, step_size * 0.4)
+                dx = rng.gauss(0, step_size * 0.4)
+                dy = rng.gauss(0, step_size * 0.4)
 
             elif walker_type == "levy_flight":
                 # Occasional long jumps
-                if random.random() < 0.05:
-                    dx = random.uniform(-step_size * 8, step_size * 8)
-                    dy = random.uniform(-step_size * 8, step_size * 8)
+                if rng.random() < 0.05:
+                    dx = rng.uniform(-step_size * 8, step_size * 8)
+                    dy = rng.uniform(-step_size * 8, step_size * 8)
                 else:
-                    dx = random.gauss(0, step_size * 0.3)
-                    dy = random.gauss(0, step_size * 0.3)
+                    dx = rng.gauss(0, step_size * 0.3)
+                    dy = rng.gauss(0, step_size * 0.3)
 
             elif walker_type == "constrained":
                 # Biased toward center
                 to_center_x = W / 2 - w["x"]
                 to_center_y = H / 2 - w["y"]
                 bias = 0.02
-                dx = random.uniform(-step_size, step_size) + to_center_x * bias
-                dy = random.uniform(-step_size, step_size) + to_center_y * bias
+                dx = rng.uniform(-step_size, step_size) + to_center_x * bias
+                dy = rng.uniform(-step_size, step_size) + to_center_y * bias
 
             elif walker_type == "drift":
-                dx = random.uniform(-step_size * 0.5, step_size * 0.5) + drift_x * step_size
-                dy = random.uniform(-step_size * 0.5, step_size * 0.5) + drift_y * step_size
+                dx = rng.uniform(-step_size * 0.5, step_size * 0.5) + drift_x * step_size
+                dy = rng.uniform(-step_size * 0.5, step_size * 0.5) + drift_y * step_size
 
             elif walker_type == "attractor":
                 to_ax = ax - w["x"]
                 to_ay = ay - w["y"]
-                dx = random.uniform(-step_size, step_size) + to_ax * attractor_strength
-                dy = random.uniform(-step_size, step_size) + to_ay * attractor_strength
+                dx = rng.uniform(-step_size, step_size) + to_ax * attractor_strength
+                dy = rng.uniform(-step_size, step_size) + to_ay * attractor_strength
 
             elif walker_type == "self_avoiding":
-                dx = random.uniform(-step_size, step_size)
-                dy = random.uniform(-step_size, step_size)
+                dx = rng.uniform(-step_size, step_size)
+                dy = rng.uniform(-step_size, step_size)
                 nx = w["x"] + dx
                 ny = w["y"] + dy
                 # Check if this position was visited (check trail)
@@ -2754,21 +2777,21 @@ def method_random_walk(out_dir: Path, seed: int, params=None):
 
             elif walker_type == "trail":
                 # Walker tends to follow previous walker's trail (like ant pheromone)
-                dx = random.uniform(-step_size, step_size)
-                dy = random.uniform(-step_size, step_size)
+                dx = rng.uniform(-step_size, step_size)
+                dy = rng.uniform(-step_size, step_size)
 
             elif walker_type == "flock":
                 # Simple flocking: align with other walkers' average direction
                 avg_vx = sum(w2["vx"] for w2 in walkers) / max(1, len(walkers))
                 avg_vy = sum(w2["vy"] for w2 in walkers) / max(1, len(walkers))
-                w["vx"] = w["vx"] * 0.9 + avg_vx * 0.1 + random.uniform(-0.3, 0.3) * step_size
-                w["vy"] = w["vy"] * 0.9 + avg_vy * 0.1 + random.uniform(-0.3, 0.3) * step_size
+                w["vx"] = w["vx"] * 0.9 + avg_vx * 0.1 + rng.uniform(-0.3, 0.3) * step_size
+                w["vy"] = w["vy"] * 0.9 + avg_vy * 0.1 + rng.uniform(-0.3, 0.3) * step_size
                 dx = w["vx"]
                 dy = w["vy"]
 
             else:
-                dx = random.uniform(-step_size, step_size)
-                dy = random.uniform(-step_size, step_size)
+                dx = rng.uniform(-step_size, step_size)
+                dy = rng.uniform(-step_size, step_size)
 
             # Perlin noise addition
             if noise_scale > 0:
@@ -2822,9 +2845,9 @@ def method_random_walk(out_dir: Path, seed: int, params=None):
                 b = w["color"][2] / 255.0
             elif color_mode == "steps":
                 frac = (s / max(1, steps)) % 1.0
-                r = np.sin(frac * np.pi * 6 + c_off) * 0.5 + 0.5
-                g = np.sin(frac * np.pi * 6 + 2.1 + c_off) * 0.5 + 0.5
-                b = np.sin(frac * np.pi * 6 + 4.2 + c_off) * 0.5 + 0.5
+                r = np.sin(frac * np.pi * 6 + t * 0.5) * 0.5 + 0.5
+                g = np.sin(frac * np.pi * 6 + 2.1 + t * 0.5) * 0.5 + 0.5
+                b = np.sin(frac * np.pi * 6 + 4.2 + t * 0.5) * 0.5 + 0.5
             elif color_mode == "velocity":
                 speed = min(1.0, math.sqrt(dx**2 + dy**2) / step_size)
                 r = speed
@@ -2832,16 +2855,16 @@ def method_random_walk(out_dir: Path, seed: int, params=None):
                 b = 0.2 + speed * 0.8
             elif color_mode == "position_x":
                 frac = nx / W
-                r = np.sin(frac * np.pi * 6 + c_off) * 0.5 + 0.5
-                g = np.sin(frac * np.pi * 6 + 2.1 + c_off) * 0.5 + 0.5
-                b = np.sin(frac * np.pi * 6 + 4.2 + c_off) * 0.5 + 0.5
+                r = np.sin(frac * np.pi * 6 + t * 0.5) * 0.5 + 0.5
+                g = np.sin(frac * np.pi * 6 + 2.1 + t * 0.5) * 0.5 + 0.5
+                b = np.sin(frac * np.pi * 6 + 4.2 + t * 0.5) * 0.5 + 0.5
             elif color_mode == "position_y":
                 frac = ny / H
-                r = np.sin(frac * np.pi * 6 + c_off) * 0.5 + 0.5
-                g = np.sin(frac * np.pi * 6 + 2.1 + c_off) * 0.5 + 0.5
-                b = np.sin(frac * np.pi * 6 + 4.2 + c_off) * 0.5 + 0.5
+                r = np.sin(frac * np.pi * 6 + t * 0.5) * 0.5 + 0.5
+                g = np.sin(frac * np.pi * 6 + 2.1 + t * 0.5) * 0.5 + 0.5
+                b = np.sin(frac * np.pi * 6 + 4.2 + t * 0.5) * 0.5 + 0.5
             elif color_mode == "gradient":
-                frac = math.sin(s * 0.01 + c_off) * 0.5 + 0.5
+                frac = math.sin(s * 0.01 + t * 0.5) * 0.5 + 0.5
                 r = frac * 0.8 + 0.2
                 g = (1.0 - frac) * 0.6 + 0.2
                 b = math.sin(frac * np.pi) * 0.5 + 0.3
@@ -2850,7 +2873,7 @@ def method_random_walk(out_dir: Path, seed: int, params=None):
                 idx = min(idx, len(pal_arr) - 1)
                 r, g, b = pal_arr[idx][0] / 255.0, pal_arr[idx][1] / 255.0, pal_arr[idx][2] / 255.0
             elif color_mode == "rainbow":
-                hue = ((s * 0.005 + c_off / 6.28) % 1.0)
+                hue = ((s * 0.005 + t * 0.5 / 6.28) % 1.0)
                 r = np.sin(hue * np.pi * 6) * 0.5 + 0.5
                 g = np.sin(hue * np.pi * 6 + 2.1) * 0.5 + 0.5
                 b = np.sin(hue * np.pi * 6 + 4.2) * 0.5 + 0.5
@@ -2952,7 +2975,7 @@ def method_random_walk(out_dir: Path, seed: int, params=None):
 
     # ── Animation: pulse ──
     if anim_mode == "pulse":
-        pulse = 0.5 + 0.5 * math.sin(t * 2.0 * anim_speed)
+        pulse = 0.5 + 0.5 * math.sin(t * 2.0)
         result = np.clip(acc[:, :, :3] * pulse, 0, 1)
     else:
         result = np.clip(acc[:, :, :3], 0, 1)
@@ -2961,13 +2984,14 @@ def method_random_walk(out_dir: Path, seed: int, params=None):
     if anim_mode == "sparkle":
         # Add bright dots at walker positions
         for w in walkers:
-            if random.random() < 0.05:
+            if rng.random() < 0.05:
                 sx, sy = max(0, min(W-1, int(w["x"]))), max(0, min(H-1, int(w["y"])))
                 for dy in (-1, 0, 1):
                     for dx in (-1, 0, 1):
                         if 0 <= sx+dx < W and 0 <= sy+dy < H:
                             result[sy+dy, sx+dx] = 1.0
 
+    capture_frame("79", result)
     save(np.clip(result, 0, 1), mn(79, "Random Walk"), out_dir)
 
 
