@@ -1736,7 +1736,7 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
     "center_x": {"description": "center X offset (-1 to 1, 0=center)", "min": -1.0, "max": 1.0, "default": 0.0},
     "center_y": {"description": "center Y offset (-1 to 1, 0=center)", "min": -1.0, "max": 1.0, "default": 0.0},
     "petal_angle": {"description": "rotate each petal toward center (degrees)", "min": 0, "max": 90, "default": 0},
-    "anim_mode": {"description": "animation mode: none, spiral_morph, shape_morph", "default": "none"},
+    "anim_mode": {"description": "animation mode: none, rotation, shape_morph, size_sweep, petal_spin, angle_drift, radius_breathe", "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},
     "time": {"description": "animation time (drives rotation + seed)", "min": 0.0, "max": 6.28, "default": 0.0},
 })
@@ -1768,21 +1768,21 @@ def method_phyllotaxis(out_dir: Path, seed: int, params=None):
 
     from ..core.utils import PALETTES, quantize_to_palette
 
-    # ── Animation: morph spiral type and point shape with cross-fade ──
+    # ── Animation: operate on phyllotaxis parameters ──
     effective_spiral_type = spiral_type
     effective_point_shape = point_shape
-    effective_next_spiral_type = spiral_type
     effective_next_point_shape = point_shape
     effective_morph_fade = 0.0
-    if anim_mode == "spiral_morph":
-        spiral_cycle = ["classic", "sunflower", "alternating", "double"]
-        n_s = len(spiral_cycle)
-        raw_idx = t * 0.4 * anim_speed * n_s
-        idx_a = int(raw_idx) % n_s
-        idx_b = (idx_a + 1) % n_s
-        effective_spiral_type = spiral_cycle[idx_a]
-        effective_next_spiral_type = spiral_cycle[idx_b]
-        effective_morph_fade = raw_idx - int(raw_idx)
+    effective_rotation_offset = 0.0
+    effective_size_min = psize_min
+    effective_size_max = psize_max
+    effective_fade = fade
+    effective_angle_offset = 0.0
+    effective_radius_scale = radius_scale
+
+    if anim_mode == "rotation":
+        # Continuous rotation — spiral spins around center
+        effective_rotation_offset = t * 120 * anim_speed  # degrees
     elif anim_mode == "shape_morph":
         shape_cycle = ["circle", "square", "diamond", "petal", "ring", "star"]
         n_sh = len(shape_cycle)
@@ -1792,6 +1792,20 @@ def method_phyllotaxis(out_dir: Path, seed: int, params=None):
         effective_point_shape = shape_cycle[idx_a]
         effective_next_point_shape = shape_cycle[idx_b]
         effective_morph_fade = raw_idx - int(raw_idx)
+    elif anim_mode == "size_sweep":
+        # Point size range oscillates 0.5x → 2.0x — no clipping, continuous at extremes
+        factor = 0.5 + 1.5 * (0.5 + 0.5 * math.sin(t * 1.3 * anim_speed))
+        effective_size_min = psize_min * factor
+        effective_size_max = psize_max * factor
+    elif anim_mode == "petal_spin":
+        # Petal rotation angle oscillates — only visible for petal shape
+        pass  # applied in _render_spiral via effective_petal_angle
+    elif anim_mode == "angle_drift":
+        # Divergence angle oscillates around the set value — spiral tightness breathes
+        effective_angle_offset = 10.0 * math.sin(t * 0.8 * anim_speed)
+    elif anim_mode == "radius_breathe":
+        # Radius scale oscillates — the entire spiral expands and contracts
+        effective_radius_scale = radius_scale * (0.6 + 0.4 * (0.5 + 0.5 * math.sin(t * 0.6 * anim_speed)))
 
     img = Image.new("RGB", (W, H), (10, 10, 18))
     cx = W // 2 + int(cx_off * W * 0.4)
@@ -1864,25 +1878,25 @@ def method_phyllotaxis(out_dir: Path, seed: int, params=None):
             base_a = angle_deg
         fn = SHAPE_FN.get(point_shape_val, _draw_circle)
         max_r = max(W, H) * 0.5
-        rot_rad = math.radians(rotation + t * 30)
+        rot_rad = math.radians(rotation + effective_rotation_offset)
         for n in range(n_points):
             if spiral_type_val == "alternating":
-                an = n * math.radians(base_a + (10 if n % 2 == 0 else -10))
+                an = n * math.radians(base_a + effective_angle_offset + (10 if n % 2 == 0 else -10))
             elif spiral_type_val == "double":
-                an = n * math.radians(base_a)
+                an = n * math.radians(base_a + effective_angle_offset)
                 if n % 2 == 0:
                     an += math.radians(180)
             else:
-                an = n * math.radians(base_a)
+                an = n * math.radians(base_a + effective_angle_offset)
             an += rot_rad
-            rr = radius_scale * math.sqrt(n)
+            rr = effective_radius_scale * math.sqrt(n)
             if rr > max_r:
                 break
             xx = cx + rr * math.cos(an)
             yy = cy + rr * math.sin(an)
             if 0 <= xx < W and 0 <= yy < H:
-                sz = psize_max - (psize_max - psize_min) * (rr / max_r)
-                sz = max(psize_min, min(psize_max, sz))
+                sz = effective_size_max - (effective_size_max - effective_size_min) * (rr / max_r)
+                sz = max(effective_size_min, min(effective_size_max, sz))
                 if pal_colors:
                     ci = n % len(pal_colors)
                     c = pal_colors[ci]
@@ -1892,12 +1906,14 @@ def method_phyllotaxis(out_dir: Path, seed: int, params=None):
                     bc = int(200 + 55 * math.sin(an * 5))
                     c = (rc, gc, bc)
                 alpha = 1.0
-                if fade > 0:
-                    alpha = 1.0 - (rr / max_r) * fade
+                if effective_fade > 0:
+                    alpha = 1.0 - (rr / max_r) * effective_fade
                     if alpha < 0.05:
                         continue
                 if point_shape_val == "petal":
                     pa = math.degrees(math.atan2(cy - yy, cx - xx)) + petal_angle
+                    if anim_mode == "petal_spin":
+                        pa += t * 90 * anim_speed
                     _draw_petal(d, xx, yy, sz, c, alpha, petal_rot=pa)
                 else:
                     fn(d, xx, yy, sz, c, alpha)
@@ -1908,10 +1924,7 @@ def method_phyllotaxis(out_dir: Path, seed: int, params=None):
 
     if effective_morph_fade > 0.0:
         img_b = Image.new("RGB", (W, H), (10, 10, 18))
-        if anim_mode == "spiral_morph":
-            _render_spiral(img_b, effective_next_spiral_type, effective_point_shape)
-        else:
-            _render_spiral(img_b, effective_spiral_type, effective_next_point_shape)
+        _render_spiral(img_b, effective_spiral_type, effective_next_point_shape)
         img = Image.blend(img, img_b, effective_morph_fade)
 
     capture_frame("08", np.array(img, dtype=np.float32) / 255.0)
