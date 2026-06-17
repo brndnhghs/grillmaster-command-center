@@ -2949,9 +2949,9 @@ def method_plasma(out_dir: Path, seed: int, params=None):
     "color_mode": {"description": "coloring: sine, palette, heatmap, fire, ice, spectral, per_level, depth_gradient, neon, rainbow, input_blend", "default": "sine"},
     "palette_name": {"description": "palette name (retro palettes)", "default": "vapor"},
     "fill_style": {"description": "fill style: standard, inverted, outline, glow, dotted, checkerboard, concentric, radial_fade", "default": "standard"},
-    "color_speed": {"description": "color rotation speed", "min": 0.5, "max": 8.0, "default": 2.0},
-    "color_offset": {"description": "hue shift offset", "min": 0.0, "max": 6.28, "default": 0.0},
-    "animation_mode": {"description": "animation: none, zoom, rotate, pulse, depth_morph, color_cycle, breath", "default": "none"},
+    "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
+    "anim_mode": {"description": "animation mode", "choices": ["none", "zoom", "rotate", "pulse", "depth_morph", "color_cycle", "breath"], "default": "none"},
+    "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
     "anim_target_depth": {"description": "target depth for depth_morph animation", "min": 2, "max": 7, "default": 6},
     "anim_zoom_speed": {"description": "zoom speed", "min": 0.1, "max": 2.0, "default": 0.5},
     "rotations": {"description": "rotation angle in degrees (applied post-render)", "min": -180, "max": 180, "default": 0},
@@ -2959,25 +2959,45 @@ def method_plasma(out_dir: Path, seed: int, params=None):
     "thickness": {"description": "outline thickness for outline style", "min": 1, "max": 10, "default": 2},
 })
 def method_sierpinski(out_dir: Path, seed: int, params=None):
-    seed_all(seed + int(params.get("time", 0.0) * 100))
+    """Generate Sierpinski carpet and related fractal patterns with various color modes and fill styles.
+
+    Renders deterministic fractals (carpet, triangle, hexagon, pentagon, menger_sponge,
+    vicsek, carpet_triangle_hybrid) with 11 color modes and 8 fill styles. Animation
+    modes: zoom (viewport zoom), rotate (post-render rotation), pulse (breathing scale),
+    depth_morph (subdivision depth oscillation), color_cycle (hue rotation),
+    breath (slow scale oscillation).
+
+    Params:
+        depth: subdivision depth (1-7, default 5)
+        fractal_type: fractal type (carpet, triangle, hexagon, pentagon, ...)
+        color_mode: coloring mode (sine, palette, heatmap, fire, ice, ...)
+        palette_name: palette name for palette mode
+        fill_style: fill style (standard, inverted, outline, glow, ...)
+        time: animation time (0-6.28)
+        anim_mode: animation mode (none, zoom, rotate, pulse, depth_morph, color_cycle, breath)
+        anim_speed: animation speed multiplier (0.1-3.0, default 1.0)
+        anim_target_depth: target depth for depth_morph animation (2-7, default 6)
+        anim_zoom_speed: zoom speed (0.1-2.0, default 0.5)
+        rotations: rotation angle in degrees (-180 to 180, default 0)
+        overlay_alpha: input image overlay alpha (0=no overlay, default 0.0)
+        thickness: outline thickness for outline style (1-10, default 2)
+    """
     if params is None:
         params = {}
-
-    import math
-    from PIL import Image as PILImage
+    seed_all(seed)
+    rng = random.Random(seed)
 
     depth = int(params.get("depth", 5))
     fractal_type = str(params.get("fractal_type", "carpet"))
     color_mode = str(params.get("color_mode", "sine"))
     pal_name = str(params.get("palette_name", "vapor"))
     fill_style = str(params.get("fill_style", "standard"))
-    c_speed = float(params.get("color_speed", 2.0))
-    c_off = float(params.get("color_offset", 0.0))
-    anim_mode = str(params.get("animation_mode", "none"))
+    anim_mode = str(params.get("anim_mode", "none"))
+    anim_speed = float(params.get("anim_speed", 1.0))
     rot = float(params.get("rotations", 0.0))
     overlay_alpha = float(params.get("overlay_alpha", 0.0))
     thickness = int(params.get("thickness", 2))
-    t = params.get("time", 0.0)
+    t = float(params.get("time", 0.0))
 
     # ── Palette ──
     use_pal = None
@@ -2989,7 +3009,7 @@ def method_sierpinski(out_dir: Path, seed: int, params=None):
     effective_depth = depth
     if anim_mode == "depth_morph":
         target = int(params.get("anim_target_depth", 6))
-        morph_t = (math.sin(t * 0.3) * 0.5 + 0.5)
+        morph_t = (math.sin(t * 0.3 * anim_speed) * 0.5 + 0.5)
         effective_depth = int(depth + (target - depth) * morph_t)
         effective_depth = max(1, min(7, effective_depth))
 
@@ -3162,8 +3182,8 @@ def method_sierpinski(out_dir: Path, seed: int, params=None):
         carve(0, 0, size, effective_depth)
 
     # ── Resize to canvas ──
-    carpet_img = PILImage.fromarray(grid.astype(np.uint8) * 255, "L")
-    carpet_img = carpet_img.resize((W, H), PILImage.NEAREST)
+    carpet_img = Image.fromarray(grid.astype(np.uint8) * 255, "L")
+    carpet_img = carpet_img.resize((W, H), Image.NEAREST)
     arr = np.array(carpet_img, dtype=np.float32) / 255.0
 
     # ── Build depth map for per-level coloring ──
@@ -3203,9 +3223,9 @@ def method_sierpinski(out_dir: Path, seed: int, params=None):
 
     # ── Color ──
     if color_mode == "sine":
-        r = np.sin(arr * c_speed + c_off) * 0.5 + 0.5
-        g = np.sin(arr * c_speed * 0.75 + 2 + c_off) * 0.5 + 0.5
-        b = np.sin(arr * c_speed * 0.5 + 4 + c_off) * 0.5 + 0.5
+        r = np.sin(arr * 3.0 + t * 0.5 * anim_speed) * 0.5 + 0.5
+        g = np.sin(arr * 3.0 * 0.75 + 2 + t * 0.5 * anim_speed) * 0.5 + 0.5
+        b = np.sin(arr * 3.0 * 0.5 + 4 + t * 0.5 * anim_speed) * 0.5 + 0.5
         result = np.stack([r, g, b], axis=-1)
 
     elif color_mode == "palette" and use_pal is not None:
@@ -3215,27 +3235,27 @@ def method_sierpinski(out_dir: Path, seed: int, params=None):
         result = use_pal[idx.ravel()].reshape(H, W, 3).astype(np.float32) / 255.0
 
     elif color_mode == "heatmap":
-        r = np.clip(arr * 3.0 + c_off * 0.3, 0, 1)
+        r = np.clip(arr * 3.0 + t * 0.5 * anim_speed * 0.3, 0, 1)
         g = np.clip(arr * 2.0 - 0.3, 0, 1)
         b = np.clip(arr * 1.5 - 0.5, 0, 1)
         result = np.stack([r, g, b], axis=-1)
 
     elif color_mode == "fire":
-        frac = np.clip(arr * c_speed, 0, 1)
+        frac = np.clip(arr * (1.0 + 0.5 * math.sin(t * 0.3 * anim_speed)), 0, 1)
         r = frac ** 0.8
         g = np.clip(frac ** 1.5 * 1.2 - 0.1, 0, 1)
         b = np.clip(frac ** 3.0 - 0.3, 0, 0.6)
         result = np.stack([r, g, b], axis=-1)
 
     elif color_mode == "ice":
-        frac = np.clip(arr * c_speed, 0, 1)
+        frac = np.clip(arr * (1.0 + 0.5 * math.sin(t * 0.3 * anim_speed + 1.0)), 0, 1)
         r = np.clip(frac ** 3.0 - 0.3, 0, 0.7)
         g = np.clip(frac ** 1.8 - 0.1, 0, 1)
         b = frac ** 0.9
         result = np.stack([r, g, b], axis=-1)
 
     elif color_mode == "spectral":
-        idx = (arr + c_off / 6.28) % 1.0
+        idx = (arr + t * 0.5 * anim_speed / 6.28) % 1.0
         r = np.clip(np.sin(idx * np.pi * 6) * 0.7 + 0.5, 0, 1)
         g = np.clip(np.sin(idx * np.pi * 6 + 2.1) * 0.7 + 0.5, 0, 1)
         b = np.clip(np.sin(idx * np.pi * 6 + 4.2) * 0.7 + 0.5, 0, 1)
@@ -3245,9 +3265,9 @@ def method_sierpinski(out_dir: Path, seed: int, params=None):
         # Color by depth level using a color wheel
         if np.any(depth_map > 0):
             d = depth_map
-            r = np.sin(d * np.pi * 3 + c_off) * 0.5 + 0.5
-            g = np.sin(d * np.pi * 3 + 2.1 + c_off) * 0.5 + 0.5
-            b = np.sin(d * np.pi * 3 + 4.2 + c_off) * 0.5 + 0.5
+            r = np.sin(d * np.pi * 3 + t * 0.5 * anim_speed) * 0.5 + 0.5
+            g = np.sin(d * np.pi * 3 + 2.1 + t * 0.5 * anim_speed) * 0.5 + 0.5
+            b = np.sin(d * np.pi * 3 + 4.2 + t * 0.5 * anim_speed) * 0.5 + 0.5
             result = np.stack([r, g, b], axis=-1)
             # Mask empty regions black
             empty_3d = np.stack([arr < 0.5, arr < 0.5, arr < 0.5], axis=-1)
@@ -3260,9 +3280,9 @@ def method_sierpinski(out_dir: Path, seed: int, params=None):
         if np.any(depth_map > 0):
             d = depth_map
             frac = d
-            r = np.clip(np.sin(frac * np.pi * 2 + c_off) * 0.6 + 0.5, 0, 1)
-            g = np.clip(np.sin(frac * np.pi * 2 + 1.5 + c_off) * 0.6 + 0.5, 0, 1)
-            b = np.clip(np.sin(frac * np.pi * 2 + 3.0 + c_off) * 0.6 + 0.5, 0, 1)
+            r = np.clip(np.sin(frac * np.pi * 2 + t * 0.5 * anim_speed) * 0.6 + 0.5, 0, 1)
+            g = np.clip(np.sin(frac * np.pi * 2 + 1.5 + t * 0.5 * anim_speed) * 0.6 + 0.5, 0, 1)
+            b = np.clip(np.sin(frac * np.pi * 2 + 3.0 + t * 0.5 * anim_speed) * 0.6 + 0.5, 0, 1)
             result = np.stack([r, g, b], axis=-1)
             empty_3d = np.stack([arr < 0.5, arr < 0.5, arr < 0.5], axis=-1)
             result = np.where(empty_3d, 0.0, result)
@@ -3273,9 +3293,9 @@ def method_sierpinski(out_dir: Path, seed: int, params=None):
         # Bright neon on dark background
         bg = np.zeros((H, W, 3), dtype=np.float32)
         neon = np.stack([
-            np.sin(arr * c_speed + c_off) * 0.5 + 0.5,
-            np.sin(arr * c_speed * 0.8 + 2 + c_off) * 0.5 + 0.5,
-            np.sin(arr * c_speed * 0.6 + 3 + c_off) * 0.5 + 0.5,
+            np.sin(arr * 3.0 + t * 0.5 * anim_speed) * 0.5 + 0.5,
+            np.sin(arr * 3.0 * 0.8 + 2 + t * 0.5 * anim_speed) * 0.5 + 0.5,
+            np.sin(arr * 3.0 * 0.6 + 3 + t * 0.5 * anim_speed) * 0.5 + 0.5,
         ], axis=-1)
         # Only color the solid regions
         solid_3d = np.stack([arr > 0.5, arr > 0.5, arr > 0.5], axis=-1)
@@ -3284,7 +3304,7 @@ def method_sierpinski(out_dir: Path, seed: int, params=None):
     elif color_mode == "rainbow":
         # Rainbow across the fractal based on position
         yy, xx = np.meshgrid(np.linspace(0, 1, H), np.linspace(0, 1, W), indexing='ij')
-        hue = (xx * 2 + yy + c_off / 6.28) % 1.0
+        hue = (xx * 2 + yy + t * 0.5 * anim_speed / 6.28) % 1.0
         r = np.sin(hue * np.pi * 6) * 0.5 + 0.5
         g = np.sin(hue * np.pi * 6 + 2.1) * 0.5 + 0.5
         b = np.sin(hue * np.pi * 6 + 4.2) * 0.5 + 0.5
@@ -3298,16 +3318,16 @@ def method_sierpinski(out_dir: Path, seed: int, params=None):
             from ..core.utils import load_input
             input_img = load_input(params['input_image'])
             if input_img.shape[:2] != (H, W):
-                input_img = np.array(PILImage.fromarray((input_img * 255).astype(np.uint8)).resize((W, H))) / 255.0
+                input_img = np.array(Image.fromarray((input_img * 255).astype(np.uint8)).resize((W, H))) / 255.0
         else:
             input_img = np.stack([arr * 0.3 + 0.7] * 3, axis=-1)
         solid_3d = np.stack([arr > 0.5, arr > 0.5, arr > 0.5], axis=-1)
         result = np.where(solid_3d, input_img, np.zeros_like(input_img) * 0.1)
 
     else:
-        r = np.sin(arr * c_speed + c_off) * 0.5 + 0.5
-        g = np.sin(arr * c_speed * 0.75 + 2 + c_off) * 0.5 + 0.5
-        b = np.sin(arr * c_speed * 0.5 + 4 + c_off) * 0.5 + 0.5
+        r = np.sin(arr * 3.0 + t * 0.5 * anim_speed) * 0.5 + 0.5
+        g = np.sin(arr * 3.0 * 0.75 + 2 + t * 0.5 * anim_speed) * 0.5 + 0.5
+        b = np.sin(arr * 3.0 * 0.5 + 4 + t * 0.5 * anim_speed) * 0.5 + 0.5
         result = np.stack([r, g, b], axis=-1)
 
     # ── Fill styles ──
@@ -3316,18 +3336,24 @@ def method_sierpinski(out_dir: Path, seed: int, params=None):
 
     elif fill_style == "outline":
         # Edge detection on the binary mask
-        from scipy.ndimage import sobel
-        edges = np.abs(sobel(arr.astype(np.float32)))
-        edge_mask = edges > 0.05
-        result = np.zeros_like(result)
-        edge_3d = np.stack([edge_mask, edge_mask, edge_mask], axis=-1)
-        result = np.where(edge_3d, np.ones_like(result) * np.array([1.0, 1.0, 1.0]), result)
+        try:
+            from scipy.ndimage import sobel
+            edges = np.abs(sobel(arr.astype(np.float32)))
+            edge_mask = edges > 0.05
+            result = np.zeros_like(result)
+            edge_3d = np.stack([edge_mask, edge_mask, edge_mask], axis=-1)
+            result = np.where(edge_3d, np.ones_like(result) * np.array([1.0, 1.0, 1.0]), result)
+        except ImportError:
+            pass
 
     elif fill_style == "glow":
         # Blur the mask for a glow effect
-        from scipy.ndimage import gaussian_filter
-        glow = gaussian_filter(arr.astype(np.float32), sigma=3)
-        result = result * glow[:, :, np.newaxis]
+        try:
+            from scipy.ndimage import gaussian_filter
+            glow = gaussian_filter(arr.astype(np.float32), sigma=3)
+            result = result * glow[:, :, np.newaxis]
+        except ImportError:
+            pass
 
     elif fill_style == "dotted":
         # Only show every other pixel
@@ -3349,7 +3375,7 @@ def method_sierpinski(out_dir: Path, seed: int, params=None):
         # Overlay concentric rings
         yy, xx = np.meshgrid(np.linspace(-1, 1, H), np.linspace(-1, 1, W), indexing='ij')
         dist = np.sqrt(xx**2 + yy**2)
-        rings = np.sin(dist * 30 + c_off) * 0.5 + 0.5
+        rings = np.sin(dist * 30 + t * 0.5 * anim_speed) * 0.5 + 0.5
         solid_3d = np.stack([arr > 0.5, arr > 0.5, arr > 0.5], axis=-1)
         ring_color = np.stack([rings, rings, rings], axis=-1)
         result = np.where(solid_3d, result * ring_color, result * 0.3)
@@ -3362,32 +3388,35 @@ def method_sierpinski(out_dir: Path, seed: int, params=None):
 
     # ── Animation: rotation ──
     if anim_mode == "rotate":
-        rot_t = (t * 30) % 360
+        rot_t = (t * 30 * anim_speed) % 360
     elif rot != 0:
         rot_t = rot
     else:
         rot_t = 0.0
 
     if rot_t != 0.0:
-        from scipy.ndimage import rotate as nd_rotate
-        result = nd_rotate(result, rot_t, reshape=False, order=1, mode='constant', cval=0.0)
-        result = np.clip(result, 0, 1)
+        try:
+            from scipy.ndimage import rotate as nd_rotate
+            result = nd_rotate(result, rot_t, reshape=False, order=1, mode='constant', cval=0.0)
+            result = np.clip(result, 0, 1)
+        except ImportError:
+            pass
 
     # ── Animation: pulse ──
     if anim_mode == "pulse":
-        pulse = 0.7 + 0.3 * math.sin(t * 2.0)
+        pulse = 0.7 + 0.3 * math.sin(t * 2.0 * anim_speed)
         result = result * pulse
 
     # ── Animation: breath ──
     if anim_mode == "breath":
         # Throb the brightness
-        breath = 0.6 + 0.4 * math.sin(t * 1.5)
+        breath = 0.6 + 0.4 * math.sin(t * 1.5 * anim_speed)
         result = result * breath
 
     # ── Animation: zoom (scale the fractal in place) ──
     if anim_mode == "zoom":
         zt = float(params.get("anim_zoom_speed", 0.5))
-        scale = 1.0 + 0.2 * math.sin(t * zt)
+        scale = 1.0 + 0.2 * math.sin(t * zt * anim_speed)
         cy, cx = H // 2, W // 2
         ys = np.linspace(cy - H/2/scale, cy + H/2/scale, H).astype(np.int32)
         xs = np.linspace(cx - W/2/scale, cx + W/2/scale, W).astype(np.int32)
@@ -3397,7 +3426,7 @@ def method_sierpinski(out_dir: Path, seed: int, params=None):
 
     # ── Animation: color_cycle (post-render hue shift) ──
     if anim_mode == "color_cycle":
-        hue_shift = (math.sin(t * 0.5) * 0.5 + 0.5) * 0.3
+        hue_shift = (math.sin(t * 0.5 * anim_speed) * 0.5 + 0.5) * 0.3
         result = np.roll(result * 255, int(hue_shift * 255), axis=-1) / 255.0
 
     # ── Overlay input image ──
@@ -3405,7 +3434,7 @@ def method_sierpinski(out_dir: Path, seed: int, params=None):
         from ..core.utils import load_input
         overlay = load_input(params['input_image'])
         if overlay.shape[:2] != (H, W):
-            overlay = np.array(PILImage.fromarray((overlay * 255).astype(np.uint8)).resize((W, H))) / 255.0
+            overlay = np.array(Image.fromarray((overlay * 255).astype(np.uint8)).resize((W, H))) / 255.0
         result = result * (1.0 - overlay_alpha) + overlay * overlay_alpha
 
     capture_frame("67", np.clip(result, 0, 1))
