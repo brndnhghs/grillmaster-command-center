@@ -697,16 +697,23 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
         save(img, mn(15, "typography-lettershake"), out_dir)
 
     elif source_mode == "letter_flip":
-        """Characters flip horizontally/vertically."""
+        """Characters flip horizontally (mirror) with oscillation."""
         img = _make_base_image()
         draw = ImageDraw.Draw(img)
         chars, lines, y_start, line_h = _get_chars_and_positions_multiline(content, font)
         for ch, x, y, cw, ch_h, li in chars:
-            flip_angle = t * 180 * anim_speed + x * 0.3 + li * 20
-            # Use rotation to simulate flip
-            cx = x + cw // 2
-            cy = y + ch_h // 2
-            _draw_rotated_char(draw, ch, cx, cy, flip_angle, font, text_color)
+            # Flip oscillates: 0=normal, 1=mirrored
+            flip_progress = 0.5 + 0.5 * math.sin(t * 1.5 * anim_speed + x * 0.05 + li * 0.8)
+            if flip_progress > 0.5:
+                # Draw mirrored character using temp image
+                pad = 4
+                tmp = Image.new("RGBA", (cw + pad * 2, ch_h + pad * 2), (0, 0, 0, 0))
+                tmp_draw = ImageDraw.Draw(tmp)
+                tmp_draw.text((pad, pad), ch, fill=text_color, font=font)
+                flipped = tmp.transpose(Image.FLIP_LEFT_RIGHT)
+                draw._image.paste(flipped, (x, y), flipped)
+            else:
+                _draw_char_at(draw, ch, x, y, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
         save(img, mn(15, "typography-letterflip"), out_dir)
@@ -851,14 +858,19 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
         save(img, mn(15, "typography-letterexplode"), out_dir)
 
     elif source_mode == "letter_twist":
-        """Characters twist with perspective-like rotation."""
+        """Line twist: left chars twist one way, right chars twist opposite."""
         img = _make_base_image()
         draw = ImageDraw.Draw(img)
         chars, lines, y_start, line_h = _get_chars_and_positions_multiline(content, font)
+        # Find the horizontal center of the text block
+        total_w = max(x + cw for ch, x, y, cw, ch_h, li in chars) if chars else W
+        center_x = 20 + total_w // 2
         for ch, x, y, cw, ch_h, li in chars:
-            twist_angle = t * 90 * anim_speed + x * 0.2 + li * 15
             cx = x + cw // 2
             cy = y + ch_h // 2
+            # Distance from center: left chars get positive twist, right chars negative
+            dist_from_center = cx - center_x
+            twist_angle = dist_from_center * 0.3 * math.sin(t * 1.0 * anim_speed + li * 0.5)
             _draw_rotated_char(draw, ch, cx, cy, twist_angle, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
@@ -899,15 +911,25 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
         save(img, mn(15, "typography-letterglow"), out_dir)
 
     elif source_mode == "letter_skew":
-        """Characters skew/slant with oscillation."""
+        """Characters shear/slant with oscillation using affine transform."""
         img = _make_base_image()
         draw = ImageDraw.Draw(img)
         chars, lines, y_start, line_h = _get_chars_and_positions_multiline(content, font)
         for ch, x, y, cw, ch_h, li in chars:
-            skew_angle = t * 60 * anim_speed + x * 0.15 + li * 10
-            cx = x + cw // 2
-            cy = y + ch_h // 2
-            _draw_rotated_char(draw, ch, cx, cy, skew_angle, font, text_color)
+            # Shear factor: positive = slant right, negative = slant left
+            shear = 0.5 * math.sin(t * 1.5 * anim_speed + x * 0.04 + li * 0.6)
+            pad = int(abs(shear) * ch_h) + 4
+            tmp = Image.new("RGBA", (cw + pad * 2, ch_h + pad * 2), (0, 0, 0, 0))
+            tmp_draw = ImageDraw.Draw(tmp)
+            tmp_draw.text((pad, pad), ch, fill=text_color, font=font)
+            # Affine shear: x' = x + shear * y, y' = y
+            sheared = tmp.transform(
+                tmp.size,
+                Image.AFFINE,
+                (1.0, shear, -shear * pad, 0.0, 1.0, 0.0),
+                resample=Image.BILINEAR
+            )
+            draw._image.paste(sheared, (x - pad, y - pad), sheared)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
         save(img, mn(15, "typography-letterskew"), out_dir)
