@@ -3016,7 +3016,7 @@ def method_random_walk(out_dir: Path, seed: int, params=None):
              "brightness_mult": {"description": "life-to-brightness multiplier", "min": 0.5, "max": 10, "default": 3},
              "capture_interval": {"description": "capture every N frames", "min": 1, "max": 50, "default": 10},
              "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
-             "anim_mode": {"description": "animation mode", "choices": ["none", "emitter_dance", "wind_cycle", "turbulence_pulse", "gravity_swing", "size_pulse", "speed_burst", "life_cycle", "color_morph", "spawn_rate", "vortex_spin", "attractor_orbital"], "default": "none"},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "emitter_dance", "wind_cycle", "turbulence_pulse", "spiral_spawn", "ring_burst", "dual_emitter", "edge_wave", "scatter_radius", "color_morph", "vortex_spin", "attractor_orbital"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},
          })
 def method_particles(out_dir: Path, seed: int, params=None):
@@ -3097,6 +3097,8 @@ def method_particles(out_dir: Path, seed: int, params=None):
     effective_attractor_strength = 0.3
     effective_repulsion_strength = 0.5
     effective_spawn_radius = 10
+    # Multi-spawn-point system
+    effective_spawn_points = [(W // 2, H // 2)]
 
     if anim_mode == "emitter_dance":
         effective_emitter_cx = W // 2 + 150 * math.sin(anim_time * 0.75 * anim_speed)
@@ -3106,22 +3108,54 @@ def method_particles(out_dir: Path, seed: int, params=None):
         effective_wind_angle = anim_time * 0.75 * anim_speed
     elif anim_mode == "turbulence_pulse":
         effective_turb_scale = 0.5 + 0.5 * math.sin(anim_time * 0.75 * anim_speed)
-    elif anim_mode == "gravity_swing":
-        effective_gravity = math.sin(anim_time * 0.5 * anim_speed) * 0.5
-    elif anim_mode == "size_pulse":
-        effective_size_max = max(1, int(size_max * (0.5 + 0.5 * math.sin(anim_time * 0.6 * anim_speed))))
-    elif anim_mode == "speed_burst":
-        effective_speed = speed * (0.3 + 0.7 * (0.5 + 0.5 * math.sin(anim_time * 0.5 * anim_speed)))
-    elif anim_mode == "life_cycle":
-        effective_life_decay = max(0.1, life_decay * (0.3 + 0.7 * (0.5 + 0.5 * math.sin(anim_time * 0.4 * anim_speed))))
+    elif anim_mode == "spiral_spawn":
+        # Spiral arm spawn points — particles emerge from a rotating spiral
+        n_arms = 3
+        arm_angle_offset = anim_time * 0.5 * anim_speed
+        pts = []
+        for arm in range(n_arms):
+            angle = arm_angle_offset + arm * (2 * math.pi / n_arms)
+            for r in range(0, 200, 20):
+                px = W // 2 + r * math.cos(angle + r * 0.05)
+                py = H // 2 + r * math.sin(angle + r * 0.05)
+                pts.append((px, py))
+        effective_spawn_points = pts
+    elif anim_mode == "ring_burst":
+        # Expanding ring of spawn points — particles burst from a growing circle
+        ring_radius = 30 + 120 * (0.5 + 0.5 * math.sin(anim_time * 0.4 * anim_speed))
+        pts = []
+        for a in range(0, 360, 15):
+            rad = math.radians(a)
+            px = W // 2 + ring_radius * math.cos(rad)
+            py = H // 2 + ring_radius * math.sin(rad)
+            pts.append((px, py))
+        effective_spawn_points = pts
+    elif anim_mode == "dual_emitter":
+        # Two emitters orbiting each other
+        e1x = W // 2 + 100 * math.cos(anim_time * 0.5 * anim_speed)
+        e1y = H // 2 + 100 * math.sin(anim_time * 0.5 * anim_speed)
+        e2x = W // 2 + 100 * math.cos(anim_time * 0.5 * anim_speed + math.pi)
+        e2y = H // 2 + 100 * math.sin(anim_time * 0.5 * anim_speed + math.pi)
+        pts = []
+        for _ in range(50):
+            pts.append((e1x + rng.uniform(-10, 10), e1y + rng.uniform(-10, 10)))
+            pts.append((e2x + rng.uniform(-10, 10), e2y + rng.uniform(-10, 10)))
+        effective_spawn_points = pts
+    elif anim_mode == "edge_wave":
+        # Spawn points sweep along the edges like a wave
+        wave_phase = anim_time * 0.6 * anim_speed
+        pts = []
+        for x in range(0, W, 20):
+            y_offset = 30 * math.sin(x * 0.05 + wave_phase)
+            pts.append((x, max(5, min(H - 5, H // 2 + y_offset))))
+        effective_spawn_points = pts
+    elif anim_mode == "scatter_radius":
+        # Spawn radius pulses — particles scatter from a growing/shrinking area
+        effective_spawn_radius = 5 + 100 * (0.5 + 0.5 * math.sin(anim_time * 0.5 * anim_speed))
     elif anim_mode == "color_morph":
-        # Cycle through color modes
         color_modes = ["life", "velocity", "position", "rainbow", "single"]
         cm_idx = int(anim_time * 2 * anim_speed) % len(color_modes)
         color_mode = color_modes[cm_idx]
-    elif anim_mode == "spawn_rate":
-        # Modulate life_max (particles live longer/shorter = effective spawn rate)
-        effective_life_max = life_max * (0.3 + 0.7 * (0.5 + 0.5 * math.sin(anim_time * 0.5 * anim_speed)))
     elif anim_mode == "vortex_spin":
         effective_emitter_cx = W // 2 + 80 * math.sin(anim_time * 0.6 * anim_speed)
         effective_emitter_cy = H // 2 + 80 * math.cos(anim_time * 0.6 * anim_speed)
@@ -3324,9 +3358,15 @@ def method_particles(out_dir: Path, seed: int, params=None):
         for p in ps:
             if p["life"] <= 0:
                 life = rng.uniform(life_min, life_max)
-                if anim_mode == "spawn_rate":
-                    life = rng.uniform(life_min, effective_life_max)
-                if emitter_type == "trail":
+
+                # Multi-spawn-point modes: pick a random spawn point
+                if len(effective_spawn_points) > 1:
+                    sp = rng.choice(effective_spawn_points)
+                    p["x"] = sp[0] + rng.uniform(-5, 5)
+                    p["y"] = sp[1] + rng.uniform(-5, 5)
+                    p["vx"] = rng.uniform(-effective_speed, effective_speed)
+                    p["vy"] = rng.uniform(-effective_speed, effective_speed)
+                elif emitter_type == "trail":
                     p["x"] = emitter_cx + rng.uniform(-10, 10)
                     p["y"] = emitter_cy + rng.uniform(-10, 10)
                     p["vx"] = rng.uniform(-1, 1)
@@ -3343,8 +3383,14 @@ def method_particles(out_dir: Path, seed: int, params=None):
                     p["vx"] = math.cos(angle) * effective_speed * 2
                     p["vy"] = math.sin(angle) * effective_speed * 2
                 elif emitter_type == "point":
-                    p["x"] = emitter_cx + rng.uniform(-5, 5)
-                    p["y"] = emitter_cy + rng.uniform(-5, 5)
+                    if anim_mode == "scatter_radius":
+                        angle = rng.uniform(0, 2 * math.pi)
+                        dist = rng.uniform(0, effective_spawn_radius)
+                        p["x"] = emitter_cx + dist * math.cos(angle)
+                        p["y"] = emitter_cy + dist * math.sin(angle)
+                    else:
+                        p["x"] = emitter_cx + rng.uniform(-5, 5)
+                        p["y"] = emitter_cy + rng.uniform(-5, 5)
                     p["vx"] = rng.uniform(-effective_speed, effective_speed)
                     p["vy"] = rng.uniform(-effective_speed, effective_speed)
                 else:
