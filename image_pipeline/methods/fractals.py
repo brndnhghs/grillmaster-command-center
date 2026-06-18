@@ -2858,6 +2858,7 @@ def method_plasma(out_dir: Path, seed: int, params=None):
     active_terrain = terrain_mode
     _height_warp_frac = 0.0
     _height_warp_base_oct = 0
+    _light_orbit_high_contrast = False
     
     if anim_mode == "roughness_wave":
         roughness = 0.1 + 1.7 * (0.5 + 0.5 * math.sin(t * 0.6))
@@ -2899,9 +2900,14 @@ def method_plasma(out_dir: Path, seed: int, params=None):
             n_pal = len(pal)
     elif anim_mode == "light_orbit":
         active_light = (light_angle + t * 30) % 360
-        # Light orbit needs geometry to shade — use craters terrain
+        # Light orbit needs high-relief geometry to show shadow movement
         active_terrain = "craters"
         color_mode = "shaded"
+        # Use high-contrast shading for light orbit
+        _light_orbit_high_contrast = True
+        # Single-color palette so shading is the only visible variation
+        pal = [(200, 180, 150)]
+        n_pal = 1
     elif anim_mode == "terrain_morph":
         terrain_options = ["height", "island", "craters", "fault", "thermal"]
         raw_idx = t * 0.25
@@ -2970,6 +2976,10 @@ def method_plasma(out_dir: Path, seed: int, params=None):
     yy, xx = np.mgrid[0:size + 1, 0:size + 1]
     cx, cy = size // 2, size // 2
     max_dist = np.sqrt(cx ** 2 + cy ** 2)
+    
+    # Save base heightmap for terrain_morph blending
+    if anim_mode == "terrain_morph":
+        saved_height = height.copy()
 
     if active_terrain == "island":
         # Circular mask: center is high, edges are sea level
@@ -3043,15 +3053,28 @@ def method_plasma(out_dir: Path, seed: int, params=None):
         # Directional lighting
         light_rad = math.radians(active_light)
         lx, ly = math.cos(light_rad), math.sin(light_rad)
-        for y in range(1, size):
-            for x in range(1, size):
-                dx_grad = height[y, x + 1] - height[y, x - 1]
-                dy_grad = height[y + 1, x] - height[y - 1, x]
-                brightness = 0.5 + 0.5 * (dx_grad * lx + dy_grad * ly)
-                brightness = max(0.1, min(1.0, brightness))
-                ci = min(int(height[y, x] * (n_pal - 1)), n_pal - 1)
-                c = np.array(pal[ci], dtype=np.float32) / 255.0
-                result[y, x] = c * brightness
+        # High-contrast shading for light_orbit mode
+        if _light_orbit_high_contrast:
+            # Extreme shading contrast — full 0-1 range
+            for y in range(1, size):
+                for x in range(1, size):
+                    dx_grad = height[y, x + 1] - height[y, x - 1]
+                    dy_grad = height[y + 1, x] - height[y - 1, x]
+                    brightness = 0.5 + 2.0 * (dx_grad * lx + dy_grad * ly)
+                    brightness = max(0.0, min(1.0, brightness))
+                    ci = min(int(height[y, x] * (n_pal - 1)), n_pal - 1)
+                    c = np.array(pal[ci], dtype=np.float32) / 255.0
+                    result[y, x] = c * brightness
+        else:
+            for y in range(1, size):
+                for x in range(1, size):
+                    dx_grad = height[y, x + 1] - height[y, x - 1]
+                    dy_grad = height[y + 1, x] - height[y - 1, x]
+                    brightness = 0.5 + 0.5 * (dx_grad * lx + dy_grad * ly)
+                    brightness = max(0.1, min(1.0, brightness))
+                    ci = min(int(height[y, x] * (n_pal - 1)), n_pal - 1)
+                    c = np.array(pal[ci], dtype=np.float32) / 255.0
+                    result[y, x] = c * brightness
 
     elif color_mode == "contour":
         # Topographic contour lines
@@ -3076,20 +3099,16 @@ def method_plasma(out_dir: Path, seed: int, params=None):
     # --- Resize to canvas ---
     result = cv2.resize(result, (W, H), interpolation=cv2.INTER_LANCZOS4)
     
-    # ── Terrain morph cross-fade ──
+    # ── Terrain morph: blend heightmaps, not rendered outputs ──
     if anim_mode == "terrain_morph" and terra_morph_frac > 0.01:
-        # Re-render with next terrain type and blend
-        saved_height = height.copy()
-        saved_water_mask = water_mask.copy() if active_water > 0 else None
-        
-        # Apply next terrain
+        # Generate the next terrain's heightmap from the same base height
+        height_next = saved_height.copy()
         if terra_morph_next == "island":
             dist = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
             island_mask = 1 - dist / max_dist
             island_mask = np.clip(island_mask, 0, 1) ** 0.5
-            height = saved_height * island_mask
+            height_next = height_next * island_mask
         elif terra_morph_next == "craters":
-            height = saved_height.copy()
             crater_rng = random.Random(seed)
             for _ in range(crater_rng.randint(3, 8)):
                 cx2 = crater_rng.randint(size // 4, 3 * size // 4)
@@ -3097,38 +3116,36 @@ def method_plasma(out_dir: Path, seed: int, params=None):
                 crater_r = crater_rng.randint(20, 80)
                 dist = np.sqrt((xx - cx2) ** 2 + (yy - cy2) ** 2)
                 crater = np.exp(-(dist ** 2) / (2 * (crater_r * 0.3) ** 2))
-                height = height - crater * 0.3 * crater_rng.uniform(0.5, 1.5)
+                height_next = height_next - crater * 0.3 * crater_rng.uniform(0.5, 1.5)
         elif terra_morph_next == "fault":
-            height = saved_height.copy()
             fault_y = size // 2 + rng.standard_normal() * size * 0.1
             side = (yy > fault_y).astype(float)
-            height = height + side * 0.2 - 0.1
+            height_next = height_next + side * 0.2 - 0.1
         elif terra_morph_next == "thermal":
-            height = saved_height.copy()
             for _ in range(20):
-                dx = np.zeros_like(height)
-                dy = np.zeros_like(height)
-                dx[:, :-1] = height[:, 1:] - height[:, :-1]
-                dy[:-1, :] = height[1:, :] - height[:-1, :]
-                laplacian = np.zeros_like(height)
+                dx = np.zeros_like(height_next)
+                dy = np.zeros_like(height_next)
+                dx[:, :-1] = height_next[:, 1:] - height_next[:, :-1]
+                dy[:-1, :] = height_next[1:, :] - height_next[:-1, :]
+                laplacian = np.zeros_like(height_next)
                 laplacian[1:-1, 1:-1] = (dx[1:-1, :-2] + dy[:-2, 1:-1] +
-                                         height[2:, 1:-1] + height[:-2, 1:-1] +
-                                         height[1:-1, 2:] + height[1:-1, :-2] - 6 * height[1:-1, 1:-1])
-                height = height + laplacian * 0.02 * erosion
+                                         height_next[2:, 1:-1] + height_next[:-2, 1:-1] +
+                                         height_next[1:-1, 2:] + height_next[1:-1, :-2] - 6 * height_next[1:-1, 1:-1])
+                height_next = height_next + laplacian * 0.02 * erosion
         
+        height_next = (height_next - height_next.min()) / (height_next.max() - height_next.min() + 0.0001)
+        
+        # Blend heightmaps, then color once
+        height = height * (1 - terra_morph_frac) + height_next * terra_morph_frac
         height = (height - height.min()) / (height.max() - height.min() + 0.0001)
         
-        # Render next terrain
-        result_b = np.zeros((size + 1, size + 1, 3), dtype=np.float32)
+        # Re-color the blended heightmap
+        result = np.zeros((size + 1, size + 1, 3), dtype=np.float32)
         for y in range(size + 1):
             for x in range(size + 1):
                 ci = min(int(height[y, x] * (n_pal - 1)), n_pal - 1)
-                result_b[y, x] = np.array(pal[ci], dtype=np.float32) / 255.0
-        
-        result_b = cv2.resize(result_b, (W, H), interpolation=cv2.INTER_LANCZOS4)
-        
-        # Blend
-        result = result * (1 - terra_morph_frac) + result_b * terra_morph_frac
+                result[y, x] = np.array(pal[ci], dtype=np.float32) / 255.0
+        result = cv2.resize(result, (W, H), interpolation=cv2.INTER_LANCZOS4)
     
     capture_frame("31", result.clip(0, 1))
     save(result.clip(0, 1), mn(31, "Plasma Fractal"), out_dir)
