@@ -3099,12 +3099,8 @@ def method_particles(out_dir: Path, seed: int, params=None):
     effective_spawn_radius = 10
 
     if anim_mode == "emitter_dance":
-        if emitter_type == "trail":
-            effective_emitter_cx = W // 2 + 150 * math.sin(anim_time * 0.75 * anim_speed)
-            effective_emitter_cy = H // 2 + 100 * math.sin(anim_time * 0.75 * anim_speed * 0.65)
-        elif emitter_type == "vortex":
-            effective_emitter_cx = W // 2 + 50 * math.sin(anim_time * 0.75 * anim_speed)
-            effective_emitter_cy = H // 2 + 50 * math.cos(anim_time * 0.75 * anim_speed)
+        effective_emitter_cx = W // 2 + 150 * math.sin(anim_time * 0.75 * anim_speed)
+        effective_emitter_cy = H // 2 + 100 * math.sin(anim_time * 0.75 * anim_speed * 0.65)
     elif anim_mode == "wind_cycle":
         effective_wind_strength = 0.5 + 0.5 * math.sin(anim_time * 0.75 * anim_speed)
         effective_wind_angle = anim_time * 0.75 * anim_speed
@@ -3208,28 +3204,45 @@ def method_particles(out_dir: Path, seed: int, params=None):
             p["x"] += p["vx"]
             p["y"] += p["vy"]
 
-            # Physics (using effective parameters)
+            # Physics (base mode)
             if physics_mode == "gravity":
-                p["vy"] += effective_gravity * 0.5
+                p["vy"] += gravity_val * 0.5
             elif physics_mode == "attractor":
+                dx = emitter_cx - p["x"]
+                dy = emitter_cy - p["y"]
+                dist = math.sqrt(dx*dx + dy*dy) + 1
+                p["vx"] += dx / dist * 0.3
+                p["vy"] += dy / dist * 0.3
+            elif physics_mode == "repulsion":
+                dx = p["x"] - emitter_cx
+                dy = p["y"] - emitter_cy
+                dist = math.sqrt(dx*dx + dy*dy) + 1
+                p["vx"] += dx / dist * 0.5
+                p["vy"] += dy / dist * 0.5
+            elif physics_mode == "wind":
+                p["vx"] += 0.05 * math.cos(anim_time * 0.5)
+                p["vy"] += 0.02 * math.sin(anim_time * 0.3)
+            elif physics_mode == "turbulence":
+                noise_val = math.sin(p["y"] * 0.05 + anim_time) * 0.3 + math.cos(p["x"] * 0.03 + anim_time) * 0.3
+                p["vx"] += noise_val * 0.1
+                p["vy"] += math.sin(p["x"] * 0.04 + anim_time * 2.5) * 0.1
+
+            # Animation-specific forces (additive on top of base physics)
+            if anim_mode == "gravity_swing":
+                p["vy"] += effective_gravity * 0.5
+            elif anim_mode == "wind_cycle":
+                p["vx"] += effective_wind_strength * 0.1 * math.cos(effective_wind_angle)
+                p["vy"] += 0.02 * math.sin(effective_wind_angle * 2)
+            elif anim_mode == "turbulence_pulse":
+                noise_val = math.sin(p["y"] * 0.05 + anim_time * 0.75 * anim_speed) * 0.3 * effective_turb_scale + math.cos(p["x"] * 0.03 + anim_time * 0.75 * anim_speed) * 0.3 * effective_turb_scale
+                p["vx"] += noise_val * 0.1
+                p["vy"] += math.sin(p["x"] * 0.04 + anim_time * 0.75 * anim_speed * 2.5) * 0.1 * effective_turb_scale
+            elif anim_mode == "attractor_orbital":
                 dx = emitter_cx - p["x"]
                 dy = emitter_cy - p["y"]
                 dist = math.sqrt(dx*dx + dy*dy) + 1
                 p["vx"] += dx / dist * effective_attractor_strength
                 p["vy"] += dy / dist * effective_attractor_strength
-            elif physics_mode == "repulsion":
-                dx = p["x"] - emitter_cx
-                dy = p["y"] - emitter_cy
-                dist = math.sqrt(dx*dx + dy*dy) + 1
-                p["vx"] += dx / dist * effective_repulsion_strength
-                p["vy"] += dy / dist * effective_repulsion_strength
-            elif physics_mode == "wind":
-                p["vx"] += effective_wind_strength * 0.1 * math.cos(effective_wind_angle)
-                p["vy"] += 0.02 * math.sin(effective_wind_angle * 2)
-            elif physics_mode == "turbulence":
-                noise_val = math.sin(p["y"] * 0.05 + anim_time * 0.75 * anim_speed) * 0.3 * effective_turb_scale + math.cos(p["x"] * 0.03 + anim_time * 0.75 * anim_speed) * 0.3 * effective_turb_scale
-                p["vx"] += noise_val * 0.1
-                p["vy"] += math.sin(p["x"] * 0.04 + anim_time * 0.75 * anim_speed * 2.5) * 0.1 * effective_turb_scale
 
             # Jitter (noise)
             p["vx"] += rng.uniform(-effective_jitter, effective_jitter)
