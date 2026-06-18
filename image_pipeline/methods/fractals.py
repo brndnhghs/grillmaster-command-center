@@ -2866,16 +2866,14 @@ def method_plasma(out_dir: Path, seed: int, params=None):
         # Erosion applies to all terrains, not just thermal
         active_terrain = "thermal"
     elif anim_mode == "height_warp":
-        # Modulate roughness_decay + initial corner seed for structural change
+        # Smooth octave + roughness_decay sweep — same seed, no jumps
         raw_oct = 1 + 4 * (0.5 + 0.5 * math.sin(t * 0.4))
         active_octaves = int(raw_oct)
         oct_frac = raw_oct - active_octaves
         _height_warp_frac = oct_frac
         _height_warp_base_oct = active_octaves
         # Modulate roughness_decay so detail propagation changes structurally
-        r_decay = 0.3 + 0.5 * (0.5 + 0.5 * math.sin(t * 0.5))
-        # Use a time-varying seed for the diamond-square to change base shape
-        rng = np.random.default_rng(seed + int(t * 100))
+        r_decay = 0.2 + 0.6 * (0.5 + 0.5 * math.sin(t * 0.5))
     elif anim_mode == "water_tide":
         active_water = 0.4 * (0.5 + 0.5 * math.sin(t * 0.5))
     elif anim_mode == "palette_morph":
@@ -2906,9 +2904,13 @@ def method_plasma(out_dir: Path, seed: int, params=None):
         color_mode = "shaded"
     elif anim_mode == "terrain_morph":
         terrain_options = ["height", "island", "craters", "fault", "thermal"]
-        t_idx = int(t * 0.3) % len(terrain_options)
+        raw_idx = t * 0.25
+        t_idx = int(raw_idx) % len(terrain_options)
+        t_next = (t_idx + 1) % len(terrain_options)
+        t_frac = raw_idx % 1.0
         active_terrain = terrain_options[t_idx]
-        # Use shaded coloring so structural differences are visible
+        terra_morph_next = terrain_options[t_next]
+        terra_morph_frac = t_frac
         color_mode = "shaded"
 
     # --- Diamond-square algorithm ---
@@ -3073,6 +3075,61 @@ def method_plasma(out_dir: Path, seed: int, params=None):
 
     # --- Resize to canvas ---
     result = cv2.resize(result, (W, H), interpolation=cv2.INTER_LANCZOS4)
+    
+    # ── Terrain morph cross-fade ──
+    if anim_mode == "terrain_morph" and terra_morph_frac > 0.01:
+        # Re-render with next terrain type and blend
+        saved_height = height.copy()
+        saved_water_mask = water_mask.copy() if active_water > 0 else None
+        
+        # Apply next terrain
+        if terra_morph_next == "island":
+            dist = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
+            island_mask = 1 - dist / max_dist
+            island_mask = np.clip(island_mask, 0, 1) ** 0.5
+            height = saved_height * island_mask
+        elif terra_morph_next == "craters":
+            height = saved_height.copy()
+            crater_rng = random.Random(seed)
+            for _ in range(crater_rng.randint(3, 8)):
+                cx2 = crater_rng.randint(size // 4, 3 * size // 4)
+                cy2 = crater_rng.randint(size // 4, 3 * size // 4)
+                crater_r = crater_rng.randint(20, 80)
+                dist = np.sqrt((xx - cx2) ** 2 + (yy - cy2) ** 2)
+                crater = np.exp(-(dist ** 2) / (2 * (crater_r * 0.3) ** 2))
+                height = height - crater * 0.3 * crater_rng.uniform(0.5, 1.5)
+        elif terra_morph_next == "fault":
+            height = saved_height.copy()
+            fault_y = size // 2 + rng.standard_normal() * size * 0.1
+            side = (yy > fault_y).astype(float)
+            height = height + side * 0.2 - 0.1
+        elif terra_morph_next == "thermal":
+            height = saved_height.copy()
+            for _ in range(20):
+                dx = np.zeros_like(height)
+                dy = np.zeros_like(height)
+                dx[:, :-1] = height[:, 1:] - height[:, :-1]
+                dy[:-1, :] = height[1:, :] - height[:-1, :]
+                laplacian = np.zeros_like(height)
+                laplacian[1:-1, 1:-1] = (dx[1:-1, :-2] + dy[:-2, 1:-1] +
+                                         height[2:, 1:-1] + height[:-2, 1:-1] +
+                                         height[1:-1, 2:] + height[1:-1, :-2] - 6 * height[1:-1, 1:-1])
+                height = height + laplacian * 0.02 * erosion
+        
+        height = (height - height.min()) / (height.max() - height.min() + 0.0001)
+        
+        # Render next terrain
+        result_b = np.zeros((size + 1, size + 1, 3), dtype=np.float32)
+        for y in range(size + 1):
+            for x in range(size + 1):
+                ci = min(int(height[y, x] * (n_pal - 1)), n_pal - 1)
+                result_b[y, x] = np.array(pal[ci], dtype=np.float32) / 255.0
+        
+        result_b = cv2.resize(result_b, (W, H), interpolation=cv2.INTER_LANCZOS4)
+        
+        # Blend
+        result = result * (1 - terra_morph_frac) + result_b * terra_morph_frac
+    
     capture_frame("31", result.clip(0, 1))
     save(result.clip(0, 1), mn(31, "Plasma Fractal"), out_dir)
 
