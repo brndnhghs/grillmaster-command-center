@@ -42,13 +42,11 @@ except ImportError:
         "wave_distort": {"description": "wave distortion amplitude (0=none)", "min": 0, "max": 20, "default": 0},
         "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
         "anim_mode": {"description": "animation mode",
-                        "choices": ["none", "intensity_pulse", "wave_intensity", "vhs_jitter", "mode_cycle",
-                                    "shift_dance", "noise_bloom", "rgb_cycle", "crush_wave", "tear_wave",
-                                    "scan_wave", "jpeg_storm", "channel_trail", "color_pop", "palette_morph",
-                                    "snow_storm", "data_corrupt", "scan_lines", "chromatic", "block_rain",
-                                    "wave_ripple", "pixel_sort_wave", "datamosh_intensity", "flicker",
-                                    "tunnel_vision", "double_vision", "feedback", "rainbow_tear",
-                                    "edge_fracture", "frame_shift"],
+                        "choices": ["none", "intensity_pulse", "shift_dance", "noise_bloom",
+                                    "rgb_cycle", "crush_wave", "wave_ripple", "vhs_jitter",
+                                    "pixel_sort_wave", "datamosh_intensity", "screen_tear",
+                                    "scan_wave", "mode_cycle", "flicker",
+                                    "tunnel_vision", "double_vision"],
                         "default": "none"},
         "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},
     },
@@ -105,12 +103,56 @@ def method_glitch(out_dir: Path, seed: int, params=None):
         from ..core.utils import load_input
         a = (load_input(params["input_image"]) * 255).astype(np.uint8)
     else:
-        # Fixed seed — animation comes from param modulation
+        # Rich colorful source that glitches will actually tear apart
         seed_all(seed)
         a = np.zeros((H, W, 3), dtype=np.uint8)
+
+        # Multi-color rainbow horizontal bands
         for y in range(H):
-            grad_pos = y / H
-            a[y, :] = [int(20 + 40 * grad_pos), int(20 + 30 * grad_pos), int(30 + 20 * grad_pos)]
+            frac = y / H
+            r = int(120 + 120 * math.sin(frac * math.pi * 2 + 0.0))
+            g = int(120 + 120 * math.sin(frac * math.pi * 2 + 2.094))
+            b = int(120 + 120 * math.sin(frac * math.pi * 2 + 4.189))
+            a[y, :, 0] = r
+            a[y, :, 1] = g
+            a[y, :, 2] = b
+
+        # Overlay vertical stripes
+        for x in range(0, W, 40):
+            frac = x / W
+            stripe = int(40 + 40 * math.sin(frac * math.pi * 3))
+            a[:, x:x+10, 0] = np.clip(a[:, x:x+10, 0].astype(int) + stripe, 0, 255).astype(np.uint8)
+            a[:, x:x+10, 1] = np.clip(a[:, x:x+10, 1].astype(int) - stripe, 0, 255).astype(np.uint8)
+
+        # Add some bright spots / circles (using int math to avoid uint8 overflow)
+        rng_src = random.Random(seed + 99)
+        for _ in range(15):
+            cx = rng_src.randint(0, W - 1)
+            cy = rng_src.randint(0, H - 1)
+            radius = rng_src.randint(10, 60)
+            a_float = a.astype(np.int32)
+            for dy in range(-radius, radius):
+                for dx in range(-radius, radius):
+                    if dx*dx + dy*dy < radius*radius:
+                        px, py = cx + dx, cy + dy
+                        if 0 <= px < W and 0 <= py < H:
+                            brightness = 1.0 - math.sqrt(dx*dx + dy*dy) / radius
+                            a_float[py, px, 0] = min(255, a_float[py, px, 0] + int(100 * brightness))
+                            a_float[py, px, 1] = min(255, a_float[py, px, 1] + int(80 * brightness))
+                            a_float[py, px, 2] = min(255, a_float[py, px, 2] + int(60 * brightness))
+            a = np.clip(a_float, 0, 255).astype(np.uint8)
+
+        # Add text-like horizontal bars (bright horizontal rectangles)
+        for _ in range(8):
+            by = rng_src.randint(50, H - 50)
+            bh = rng_src.randint(8, 25)
+            bc = (rng_src.randint(150, 255), rng_src.randint(100, 255), rng_src.randint(50, 255))
+            for dy in range(-bh // 2, bh // 2):
+                py = by + dy
+                if 0 <= py < H:
+                    a[py, :, 0] = np.clip(a[py, :, 0].astype(int) + bc[0] // 3, 0, 255).astype(np.uint8)
+                    a[py, :, 1] = np.clip(a[py, :, 1].astype(int) + bc[1] // 3, 0, 255).astype(np.uint8)
+                    a[py, :, 2] = np.clip(a[py, :, 2].astype(int) + bc[2] // 3, 0, 255).astype(np.uint8)
 
     # ── Time-based RNG for glitch effects ──
     # Use anim_time-based seed so glitch positions change each frame
@@ -129,159 +171,128 @@ def method_glitch(out_dir: Path, seed: int, params=None):
     effective_scanlines = scanlines
     effective_glitch_type = glitch_type
 
-    # Base pulse always active
+    # Base pulse always active (gentle underlying motion)
     t_base = 0.5 + 0.5 * math.sin(anim_time * 0.5 * anim_speed)
 
     if anim_mode == "intensity_pulse":
         effective_intensity = intensity * (0.3 + 0.7 * t_base)
-        effective_shift_count = int(base_shift_count * effective_intensity)
-        effective_shift_mag = int(shift_magnitude * effective_intensity)
-        effective_channel_offset = int(channel_offset_base * effective_intensity)
-        effective_noise_blocks = int(noise_blocks_base * effective_intensity)
-
-    elif anim_mode == "wave_intensity":
-        effective_wave = 5 + 15 * abs(math.sin(anim_time * 0.75 * anim_speed))
-
-    elif anim_mode == "vhs_jitter":
-        effective_vhs = 0.3 + 0.7 * abs(math.sin(anim_time * 1.5 * anim_speed))
-
-    elif anim_mode == "mode_cycle":
-        modes = ["classic", "pixel_sort", "datamosh", "vhs", "screen_tear", "jpeg", "bit_crush", "wave"]
-        mode_idx = int(anim_time / 6.28 * anim_speed * len(modes)) % len(modes)
-        effective_glitch_type = modes[mode_idx]
-        effective_intensity = intensity * (0.3 + 0.7 * t_base)
-        effective_shift_count = int(base_shift_count * effective_intensity)
-        effective_shift_mag = int(shift_magnitude * effective_intensity)
-        effective_channel_offset = int(channel_offset_base * effective_intensity)
-        effective_noise_blocks = int(noise_blocks_base * effective_intensity)
 
     elif anim_mode == "shift_dance":
-        # Shift positions dance with time — RNG seed handles position variation
-        effective_shift_count = int(base_shift_count * (0.5 + 0.5 * t_base))
-        effective_shift_mag = int(shift_magnitude * (0.3 + 0.7 * t_base))
+        # Only horizontal shift blocks — no noise, no RGB offset
+        effective_noise_blocks = 0
+        effective_channel_offset = 0
 
     elif anim_mode == "noise_bloom":
+        # Only noise rectangles — no shift, no RGB offset
+        effective_shift_count = 0
+        effective_shift_mag = 0
+        effective_channel_offset = 0
         effective_noise_blocks = int(noise_blocks_base * (0.2 + 0.8 * (0.5 + 0.5 * math.sin(anim_time * 0.8 * anim_speed))))
 
     elif anim_mode == "rgb_cycle":
-        # RGB channel offset oscillates direction and magnitude
-        effective_channel_offset = int(channel_offset_base * (0.5 + 0.5 * math.sin(anim_time * 1.0 * anim_speed)))
+        # Only RGB channel offset — no shift, no noise
+        effective_shift_count = 0
+        effective_shift_mag = 0
+        effective_noise_blocks = 0
+        effective_channel_offset = int(channel_offset_base * (0.5 + 0.5 * math.sin(anim_time * 1.5 * anim_speed)))
 
     elif anim_mode == "crush_wave":
+        # Only bit crush — no shift, no noise, no RGB
+        effective_shift_count = 0
+        effective_shift_mag = 0
+        effective_channel_offset = 0
+        effective_noise_blocks = 0
         effective_bit = 1 + 7 * (0.5 + 0.5 * math.sin(anim_time * 0.7 * anim_speed))
-
-    elif anim_mode == "tear_wave":
-        # Screen tear position oscillates + intensity pulses
-        effective_intensity = intensity * (0.3 + 0.7 * t_base)
-
-    elif anim_mode == "scan_wave":
-        effective_scanlines = 0.3 + 0.7 * (0.5 + 0.5 * math.sin(anim_time * 1.2 * anim_speed))
-
-    elif anim_mode == "jpeg_storm":
-        effective_jpeg = 1 + int(99 * (0.5 + 0.5 * math.sin(anim_time * 0.9 * anim_speed)))
-
-    elif anim_mode == "channel_trail":
-        # Progressive offset: increasing channel offset creates trailing effect
-        effective_channel_offset = int(channel_offset_base * (1.0 + 2.0 * (0.5 + 0.5 * math.sin(anim_time * 0.5 * anim_speed))))
-        effective_glitch_type = "classic"
-
-    elif anim_mode == "color_pop":
-        # Random noise blocks with palette cycling
-        effective_noise_blocks = int(noise_blocks_base * (0.3 + 0.7 * (0.5 + 0.5 * math.sin(anim_time * 0.6 * anim_speed))))
-        palette_names = [k for k in PALETTES.keys() if k != "none"]
-        if palette_names:
-            pal_idx = int(anim_time * anim_speed * 2) % len(palette_names)
-            palette_name = palette_names[pal_idx]
-
-    elif anim_mode == "palette_morph":
-        palette_names = [k for k in PALETTES.keys() if k != "none"]
-        if palette_names:
-            pal_idx = int(anim_time * anim_speed * 1.5) % len(palette_names)
-            palette_name = palette_names[pal_idx]
-
-    elif anim_mode == "snow_storm":
-        effective_noise_blocks = int(80 * (0.5 + 0.5 * t_base))
-        effective_shift_mag = int(40 * t_base)
-
-    elif anim_mode == "data_corrupt":
-        effective_shift_mag = int(60 * (0.3 + 0.7 * t_base))
-        effective_channel_offset = int(20 * t_base)
-        effective_noise_blocks = int(30 * t_base)
-
-    elif anim_mode == "scan_lines":
-        effective_scanlines = 0.5 + 0.5 * (0.5 + 0.5 * math.sin(anim_time * 0.5 * anim_speed))
-
-    elif anim_mode == "chromatic":
-        effective_channel_offset = int(15 * (0.5 + 0.5 * math.sin(anim_time * 0.6 * anim_speed)))
-        effective_shift_count = 0
-
-    elif anim_mode == "block_rain":
-        effective_noise_blocks = int(50 * (0.5 + 0.5 * t_base))
-        effective_shift_count = 0
-        # Only noise blocks and channel offset
+        effective_glitch_type = "bit_crush"
 
     elif anim_mode == "wave_ripple":
+        # Only sine-wave distortion (cv2 remap) — no shift/noise/RGB
+        effective_shift_count = 0
+        effective_shift_mag = 0
+        effective_channel_offset = 0
+        effective_noise_blocks = 0
         effective_wave = 3 + 17 * (0.5 + 0.5 * math.sin(anim_time * 0.5 * anim_speed))
+        effective_glitch_type = "wave"
+
+    elif anim_mode == "vhs_jitter":
+        # Only VHS tracking error — horizontal slice wobble
+        effective_shift_count = 0
+        effective_shift_mag = 0
+        effective_channel_offset = 0
+        effective_noise_blocks = 0
+        effective_vhs = 0.3 + 0.7 * abs(math.sin(anim_time * 1.5 * anim_speed))
+        effective_glitch_type = "vhs"
 
     elif anim_mode == "pixel_sort_wave":
-        effective_glitch_type = "all"
+        # Only pixel sorting — no noise, no shift
         effective_shift_count = 0
+        effective_shift_mag = 0
         effective_noise_blocks = 0
-        effective_channel_offset = 3
+        effective_channel_offset = 0
+        effective_glitch_type = "pixel_sort"
         effective_intensity = intensity * (0.3 + 0.7 * t_base)
 
     elif anim_mode == "datamosh_intensity":
+        # Only frame blending — no shift/noise/RGB/pixel_sort
+        effective_shift_count = 0
+        effective_shift_mag = 0
+        effective_channel_offset = 0
+        effective_noise_blocks = 0
         effective_glitch_type = "datamosh"
         effective_intensity = intensity * (0.2 + 0.8 * t_base)
 
+    elif anim_mode == "screen_tear":
+        # Only screen tear — single large horizontal split
+        effective_shift_count = 0
+        effective_shift_mag = 0
+        effective_channel_offset = 0
+        effective_noise_blocks = 0
+        effective_glitch_type = "screen_tear"
+
+    elif anim_mode == "scan_wave":
+        # Only CRT scanlines — alternating dark rows
+        effective_shift_count = 0
+        effective_shift_mag = 0
+        effective_channel_offset = 0
+        effective_noise_blocks = 0
+        effective_scanlines = 0.3 + 0.7 * (0.5 + 0.5 * math.sin(anim_time * 1.2 * anim_speed))
+
+    elif anim_mode == "mode_cycle":
+        # Cycles through every glitch type
+        modes = ["classic", "pixel_sort", "datamosh", "vhs", "screen_tear", "jpeg", "bit_crush", "wave"]
+        mode_idx = int(anim_time / 6.28 * anim_speed * len(modes)) % len(modes)
+        effective_glitch_type = modes[mode_idx]
+
     elif anim_mode == "flicker":
-        effective_glitch_type = "classic"
-        # Rapid on/off flicker
+        # Strobe: full glitch or nothing
         flicker = int(anim_time * 4 * anim_speed) % 2
         if flicker == 0:
             effective_shift_count = 0
-            effective_noise_blocks = 0
+            effective_shift_mag = 0
             effective_channel_offset = 0
-        else:
-            effective_intensity = intensity * 1.0
+            effective_noise_blocks = 0
 
     elif anim_mode == "tunnel_vision":
-        # Vignette + wave distortion
+        # Vignette darkening around edges + wave distortion
+        effective_shift_count = 0
+        effective_shift_mag = 0
+        effective_channel_offset = 0
+        effective_noise_blocks = 0
         effective_wave = 3 + 7 * (0.5 + 0.5 * math.sin(anim_time * 0.4 * anim_speed))
-        yy, xx = np.mgrid[0:H, 0:W]
-        dist = np.sqrt((xx - W//2)**2 + (yy - H//2)**2)
-        # Will apply as vignette after rendering
+        effective_glitch_type = "wave"
 
     elif anim_mode == "double_vision":
-        # Extreme channel offset for double-vision effect
-        effective_glitch_type = "all"
-        effective_channel_offset = int(25 + 25 * (0.5 + 0.5 * math.sin(anim_time * 0.5 * anim_speed)))
-        effective_shift_count = int(5 * (0.3 + 0.7 * (0.5 + 0.5 * math.sin(anim_time * 0.7 * anim_speed))))
-        effective_shift_mag = int(50 * (0.5 + 0.5 * math.sin(anim_time * 0.3 * anim_speed)))
+        # Extreme RGB offset with small shifts — no noise
         effective_noise_blocks = 0
-
-    elif anim_mode == "feedback":
-        # Recursive frame blending simulated by datamosh
-        effective_glitch_type = "datamosh"
-        effective_intensity = intensity * (0.3 + 0.7 * t_base)
-
-    elif anim_mode == "rainbow_tear":
-        effective_channel_offset = int(20 * (0.5 + 0.5 * math.sin(anim_time * 0.7 * anim_speed)))
-        effective_shift_mag = int(50 * t_base)
-
-    elif anim_mode == "edge_fracture":
-        effective_glitch_type = "screen_tear"
-        effective_intensity = intensity * (0.3 + 0.7 * t_base)
-
-    elif anim_mode == "frame_shift":
-        effective_shift_mag = int(40 * t_base)
-        effective_channel_offset = int(channel_offset_base * t_base)
+        effective_channel_offset = int(25 + 25 * (0.5 + 0.5 * math.sin(anim_time * 0.5 * anim_speed)))
+        effective_shift_count = int(3 * (0.3 + 0.7 * (0.5 + 0.5 * math.sin(anim_time * 0.7 * anim_speed))))
+        effective_shift_mag = int(50 * (0.5 + 0.5 * math.sin(anim_time * 0.3 * anim_speed)))
 
     # --- Apply glitch effects ---
     result = a.copy().astype(np.float32)
 
     # 1. Horizontal shift (classic glitch)
-    if effective_glitch_type in ("classic", "all"):
+    if effective_glitch_type in ("classic", "all") and effective_shift_mag > 0 and effective_shift_count > 0:
         for _ in range(effective_shift_count):
             y = rng.randint(0, H - 1)
             h = rng.randint(1, shift_max_height)
@@ -295,7 +306,7 @@ def method_glitch(out_dir: Path, seed: int, params=None):
                 result[y:ye, s:] = float(rng.randint(0, 255))
 
     # 2. RGB channel offset
-    if effective_glitch_type in ("classic", "all"):
+    if effective_glitch_type in ("classic", "all") and effective_channel_offset > 0:
         for c in range(3):
             o = rng.choice(list(range(-effective_channel_offset, 0)) + list(range(1, effective_channel_offset + 1)))
             og = result[:, :, c].copy()
