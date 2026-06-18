@@ -3016,7 +3016,7 @@ def method_random_walk(out_dir: Path, seed: int, params=None):
              "brightness_mult": {"description": "life-to-brightness multiplier", "min": 0.5, "max": 10, "default": 6},
              "capture_interval": {"description": "capture every N frames", "min": 1, "max": 50, "default": 10},
              "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
-             "anim_mode": {"description": "animation mode", "choices": ["none", "emitter_dance", "wind_cycle", "turbulence_pulse", "spiral_spawn", "ring_burst", "dual_emitter", "edge_wave", "scatter_radius", "color_morph", "vortex_spin", "attractor_orbital"], "default": "none"},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "emitter_dance", "wind_cycle", "turbulence_pulse", "spiral_spawn", "ring_burst", "dual_emitter", "edge_wave", "scatter_radius", "speed_surge", "vortex_spin", "gravity_swing"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},
          })
 def method_particles(out_dir: Path, seed: int, params=None):
@@ -3083,142 +3083,192 @@ def method_particles(out_dir: Path, seed: int, params=None):
     cap_interval = 1  # capture every frame for smooth video
 
     # Each anim_mode sets its own optimal defaults so they look different
-    # without manual param tuning. User params still override.
-    effective_gravity = gravity_val
-    effective_jitter = jitter
-    effective_speed = speed
-    effective_life_decay = life_decay
-    effective_size_max = size_max
-    effective_brightness = brightness_mult
+    # without manual param tuning. Mode-specific parameters start from
+    # user-supplied params then get overridden by mode defaults.
     effective_emitter_cx = W // 2
     effective_emitter_cy = H // 2
     effective_wind_strength = 0.0
     effective_wind_angle = 0.0
     effective_turb_scale = 1.0
     effective_attractor_strength = 0.3
-    effective_repulsion_strength = 0.5
     effective_spawn_radius = 10
     effective_spawn_points = [(W // 2, H // 2)]
-    # Mode-specific defaults (overridden by user params)
-    mode_physics = physics_mode
-    mode_jitter = jitter
-    mode_trail = trail_length
-    mode_life_min = life_min
-    mode_life_max = life_max
-    mode_speed = speed
+    effective_gravity_x = 0.0
+    effective_gravity_y = 0.0
+    effective_drag = 0.0
+    effective_speed = speed
+    # Mode-specific defaults (kick in when anim_mode != none)
+    mode_physics = physics_mode if anim_mode == "none" else "jitter"
+    mode_jitter = jitter if anim_mode == "none" else 0.03
+    mode_trail = trail_length if anim_mode == "none" else 15
+    mode_life_min = life_min if anim_mode == "none" else 20
+    mode_life_max = life_max if anim_mode == "none" else 60
+    mode_speed = speed if anim_mode == "none" else 6
+    mode_life_decay = life_decay if anim_mode == "none" else 1.0
+    mode_size_max = size_max if anim_mode == "none" else 4
 
     if anim_mode == "emitter_dance":
+        # Sparkler — moving emitter with gravity drip
         effective_emitter_cx = W // 2 + 150 * math.sin(anim_time * 0.75 * anim_speed)
         effective_emitter_cy = H // 2 + 100 * math.sin(anim_time * 0.75 * anim_speed * 0.65)
-        mode_physics = "repulsion"
-        mode_jitter = 0.0
-        mode_trail = 15
-        mode_life_min = 20
-        mode_life_max = 50
-        mode_speed = 3
+        mode_physics = "gravity"
+        effective_gravity_y = 0.8
+        mode_jitter = 0.02
+        mode_trail = 20
+        mode_life_min = 10
+        mode_life_max = 30
+        mode_speed = 4
+        mode_life_decay = 1.2
+        mode_size_max = 5
     elif anim_mode == "wind_cycle":
-        effective_wind_strength = 0.5 + 0.5 * math.sin(anim_time * 0.75 * anim_speed)
-        effective_wind_angle = anim_time * 0.75 * anim_speed
-        mode_jitter = 0.02
+        # Wind — particles sweep side to side
+        effective_wind_strength = 0.8 + 0.6 * math.sin(anim_time * 0.5 * anim_speed)
+        effective_wind_angle = anim_time * 0.4 * anim_speed
+        mode_physics = "wind"
+        mode_jitter = 0.01
         mode_trail = 25
         mode_life_min = 20
-        mode_life_max = 50
+        mode_life_max = 60
+        mode_speed = 6
+        mode_life_decay = 0.5
     elif anim_mode == "turbulence_pulse":
-        effective_turb_scale = 0.5 + 0.5 * math.sin(anim_time * 0.75 * anim_speed)
-        mode_jitter = 0.02
-        mode_trail = 25
+        # Turbulence — calm↔chaotic oscillation
+        effective_turb_scale = 0.5 + 0.5 * math.sin(anim_time * 0.5 * anim_speed)
+        mode_physics = "turbulence"
+        mode_jitter = 0.08
+        mode_trail = 12
         mode_life_min = 20
         mode_life_max = 50
+        mode_speed = 5
+        mode_life_decay = 0.8
     elif anim_mode == "spiral_spawn":
+        # Galaxy — spiral arms with inward attractor
         n_arms = 3
-        arm_angle_offset = anim_time * 0.5 * anim_speed
+        arm_angle_offset = anim_time * 0.4 * anim_speed
         pts = []
         for arm in range(n_arms):
             angle = arm_angle_offset + arm * (2 * math.pi / n_arms)
-            for r in range(0, 200, 20):
-                px = W // 2 + r * math.cos(angle + r * 0.05)
-                py = H // 2 + r * math.sin(angle + r * 0.05)
+            for r in range(0, 250, 15):
+                px = W // 2 + r * math.cos(angle + r * 0.04)
+                py = H // 2 + r * math.sin(angle + r * 0.04)
                 pts.append((px, py))
         effective_spawn_points = pts
-        mode_physics = "repulsion"
-        mode_jitter = 0.0
-        mode_trail = 15
-        mode_life_min = 20
-        mode_life_max = 50
-        mode_speed = 3
+        mode_physics = "attractor"
+        effective_attractor_strength = 0.08
+        mode_jitter = 0.005
+        mode_trail = 25
+        mode_life_min = 40
+        mode_life_max = 120
+        mode_speed = 4
+        mode_life_decay = 0.3
+        mode_size_max = 3
     elif anim_mode == "ring_burst":
+        # Planetary rings — burst expands and collapses
         ring_radius = 30 + 120 * (0.5 + 0.5 * math.sin(anim_time * 0.4 * anim_speed))
         pts = []
-        for a in range(0, 360, 15):
+        for a in range(0, 360, 10):
             rad = math.radians(a)
             px = W // 2 + ring_radius * math.cos(rad)
             py = H // 2 + ring_radius * math.sin(rad)
             pts.append((px, py))
         effective_spawn_points = pts
         mode_physics = "repulsion"
-        mode_jitter = 0.0
-        mode_trail = 15
-        mode_life_min = 20
-        mode_life_max = 50
-        mode_speed = 3
+        effective_gravity_x = 0.0
+        effective_gravity_y = 0.3  # slight gravity pulls burst back
+        mode_jitter = 0.005
+        mode_trail = 12
+        mode_life_min = 10
+        mode_life_max = 30
+        mode_speed = 8
+        mode_life_decay = 1.5
+        mode_size_max = 4
     elif anim_mode == "dual_emitter":
-        e1x = W // 2 + 100 * math.cos(anim_time * 0.5 * anim_speed)
-        e1y = H // 2 + 100 * math.sin(anim_time * 0.5 * anim_speed)
-        e2x = W // 2 + 100 * math.cos(anim_time * 0.5 * anim_speed + math.pi)
-        e2y = H // 2 + 100 * math.sin(anim_time * 0.5 * anim_speed + math.pi)
+        # Binary star — two emitters orbit, attract particles
+        e_pos = anim_time * 0.5 * anim_speed
+        dual_e1x = W // 2 + 100 * math.cos(e_pos)
+        dual_e1y = H // 2 + 100 * math.sin(e_pos)
+        dual_e2x = W // 2 + 100 * math.cos(e_pos + math.pi)
+        dual_e2y = H // 2 + 100 * math.sin(e_pos + math.pi)
+        # Spawn points between the two emitters
         pts = []
-        for _ in range(50):
-            pts.append((e1x + rng.uniform(-10, 10), e1y + rng.uniform(-10, 10)))
-            pts.append((e2x + rng.uniform(-10, 10), e2y + rng.uniform(-10, 10)))
+        for _ in range(150):
+            pts.append(((dual_e1x + dual_e2x) * 0.5 + rng.uniform(-15, 15),
+                        (dual_e1y + dual_e2y) * 0.5 + rng.uniform(-15, 15)))
         effective_spawn_points = pts
-        mode_physics = "repulsion"
-        mode_jitter = 0.0
-        mode_trail = 15
-        mode_life_min = 20
-        mode_life_max = 50
-        mode_speed = 3
+        mode_physics = "dual_attractor"
+        mode_jitter = 0.008
+        mode_trail = 18
+        mode_life_min = 25
+        mode_life_max = 80
+        mode_speed = 5
+        mode_life_decay = 0.4
+        mode_size_max = 5
     elif anim_mode == "edge_wave":
+        # Waterfall — particles stream down from wavy line
         wave_phase = anim_time * 0.6 * anim_speed
         pts = []
-        for x in range(0, W, 20):
-            y_offset = 30 * math.sin(x * 0.05 + wave_phase)
-            pts.append((x, max(5, min(H - 5, H // 2 + y_offset))))
+        for x in range(0, W, 15):
+            y_offset = 40 * math.sin(x * 0.04 + wave_phase)
+            pts.append((x, max(5, min(H - 5, H // 3 + y_offset))))
         effective_spawn_points = pts
-        mode_physics = "repulsion"
-        mode_jitter = 0.0
-        mode_trail = 15
-        mode_life_min = 20
-        mode_life_max = 50
+        mode_physics = "gravity"
+        effective_gravity_y = 1.5
+        mode_jitter = 0.05
+        mode_trail = 8
+        mode_life_min = 8
+        mode_life_max = 25
         mode_speed = 3
+        mode_life_decay = 2.0
+        mode_size_max = 2
     elif anim_mode == "scatter_radius":
-        effective_spawn_radius = 5 + 100 * (0.5 + 0.5 * math.sin(anim_time * 0.5 * anim_speed))
+        # Breathing star — spawn radius pulses
+        effective_spawn_radius = 5 + 130 * (0.5 + 0.5 * math.sin(anim_time * 0.4 * anim_speed))
         mode_physics = "repulsion"
-        mode_jitter = 0.0
-        mode_trail = 15
-        mode_life_min = 20
-        mode_life_max = 50
-        mode_speed = 3
-    elif anim_mode == "color_morph":
-        color_modes = ["life", "velocity", "position", "rainbow", "single"]
-        cm_idx = int(anim_time * 2 * anim_speed) % len(color_modes)
-        color_mode = color_modes[cm_idx]
+        effective_gravity_y = 0.2  # slight settling
+        mode_jitter = 0.005
+        mode_trail = 8
+        mode_life_min = 10
+        mode_life_max = 30
+        mode_speed = 7
+        mode_life_decay = 1.5
+        mode_size_max = 5
+    elif anim_mode == "speed_surge":
+        # Pulsar — speed + life decay pulse in sync, like stellar pulses
+        burst = 0.5 + 0.5 * math.sin(anim_time * 0.8 * anim_speed)
+        mode_speed = 2 + 10 * burst  # 2→12 surge
+        mode_life_decay = 0.5 + 3.0 * burst  # slow→fast kill
+        mode_physics = "jitter"
+        mode_jitter = 0.08 if burst > 0.7 else 0.02
+        mode_trail = 10
+        mode_life_min = 10
+        mode_life_max = 25
+        mode_size_max = 5
     elif anim_mode == "vortex_spin":
-        effective_emitter_cx = W // 2 + 80 * math.sin(anim_time * 0.6 * anim_speed)
-        effective_emitter_cy = H // 2 + 80 * math.cos(anim_time * 0.6 * anim_speed)
-        mode_physics = "repulsion"
-        mode_jitter = 0.0
-        mode_trail = 15
-        mode_life_min = 20
-        mode_life_max = 50
-        mode_speed = 3
-    elif anim_mode == "attractor_orbital":
-        effective_attractor_strength = 0.1 + 0.5 * (0.5 + 0.5 * math.sin(anim_time * 0.4 * anim_speed))
-        effective_emitter_cx = W // 2 + 60 * math.sin(anim_time * 0.5 * anim_speed)
-        effective_emitter_cy = H // 2 + 60 * math.cos(anim_time * 0.5 * anim_speed)
+        # Whirlpool — orbiting emitter + tangential velocity + inward pull
+        effective_emitter_cx = W // 2 + 80 * math.sin(anim_time * 0.5 * anim_speed)
+        effective_emitter_cy = H // 2 + 80 * math.cos(anim_time * 0.5 * anim_speed)
+        mode_physics = "vortex"
+        mode_jitter = 0.005
+        mode_trail = 30
+        mode_life_min = 30
+        mode_life_max = 100
+        mode_speed = 5
+        mode_life_decay = 0.3
+        mode_size_max = 3
+    elif anim_mode == "gravity_swing":
+        # Pendulum — gravity direction rotates
+        g_angle = anim_time * 0.3 * anim_speed  # rotates 360° over ~21s
+        g_mag = 0.3 + 0.7 * (0.5 + 0.5 * math.sin(anim_time * 0.5 * anim_speed))  # strength pulses
+        effective_gravity_x = g_mag * math.cos(g_angle)
+        effective_gravity_y = g_mag * math.sin(g_angle)
+        mode_physics = "gravity"
         mode_jitter = 0.02
         mode_trail = 25
-        mode_life_min = 20
-        mode_life_max = 50
+        mode_life_min = 30
+        mode_life_max = 80
+        mode_speed = 5
+        mode_life_decay = 0.4
+        mode_size_max = 4
 
     # Background
     if params.get('input_image'):
@@ -3302,54 +3352,68 @@ def method_particles(out_dir: Path, seed: int, params=None):
                 draw.ellipse([sx-3, sy-3, sx+3, sy+3], fill=(255, 255, 255))
 
         for p in list(ps):
-            p["x"] += p["vx"]
-            p["y"] += p["vy"]
-
-            # Physics (base mode — uses mode_physics from anim_mode)
+            # ── Physics (driven by mode_physics from anim_mode) ──
             if mode_physics == "gravity":
-                p["vy"] += gravity_val * 0.5
+                p["vx"] += effective_gravity_x
+                p["vy"] += effective_gravity_y
             elif mode_physics == "attractor":
                 dx = emitter_cx - p["x"]
                 dy = emitter_cy - p["y"]
                 dist = math.sqrt(dx*dx + dy*dy) + 1
-                p["vx"] += dx / dist * 0.3
-                p["vy"] += dy / dist * 0.3
+                p["vx"] += dx / dist * effective_attractor_strength * 2
+                p["vy"] += dy / dist * effective_attractor_strength * 2
             elif mode_physics == "repulsion":
+                dx = p["x"] - W // 2
+                dy = p["y"] - H // 2
+                dist = math.sqrt(dx*dx + dy*dy) + 1
+                p["vx"] += dx / dist * 0.8
+                p["vy"] += dy / dist * 0.8
+                if abs(effective_gravity_y) > 0.01:
+                    p["vy"] += effective_gravity_y
+            elif mode_physics == "wind":
+                p["vx"] += effective_wind_strength * 0.12 * math.cos(effective_wind_angle)
+                p["vy"] += effective_wind_strength * 0.06 * math.sin(effective_wind_angle * 2)
+            elif mode_physics == "turbulence":
+                t_phase = anim_time * 0.75 * anim_speed
+                noise_val = math.sin(p["y"] * 0.05 + t_phase) * 0.3 * effective_turb_scale + math.cos(p["x"] * 0.03 + t_phase) * 0.3 * effective_turb_scale
+                p["vx"] += noise_val * 0.12
+                p["vy"] += math.sin(p["x"] * 0.04 + t_phase * 2.5) * 0.12 * effective_turb_scale
+            elif mode_physics == "vortex":
+                # Tangential velocity around emitter
                 dx = p["x"] - emitter_cx
                 dy = p["y"] - emitter_cy
                 dist = math.sqrt(dx*dx + dy*dy) + 1
-                p["vx"] += dx / dist * 0.5
-                p["vy"] += dy / dist * 0.5
-            elif mode_physics == "wind":
-                p["vx"] += 0.05 * math.cos(anim_time * 0.5)
-                p["vy"] += 0.02 * math.sin(anim_time * 0.3)
-            elif mode_physics == "turbulence":
-                noise_val = math.sin(p["y"] * 0.05 + anim_time) * 0.3 + math.cos(p["x"] * 0.03 + anim_time) * 0.3
-                p["vx"] += noise_val * 0.1
-                p["vy"] += math.sin(p["x"] * 0.04 + anim_time * 2.5) * 0.1
-
-            # Animation-specific forces (additive on top of base physics)
-            if anim_mode == "gravity_swing":
-                p["vy"] += effective_gravity * 0.5
-            elif anim_mode == "wind_cycle":
-                p["vx"] += effective_wind_strength * 0.1 * math.cos(effective_wind_angle)
-                p["vy"] += 0.02 * math.sin(effective_wind_angle * 2)
-            elif anim_mode == "turbulence_pulse":
-                noise_val = math.sin(p["y"] * 0.05 + anim_time * 0.75 * anim_speed) * 0.3 * effective_turb_scale + math.cos(p["x"] * 0.03 + anim_time * 0.75 * anim_speed) * 0.3 * effective_turb_scale
-                p["vx"] += noise_val * 0.1
-                p["vy"] += math.sin(p["x"] * 0.04 + anim_time * 0.75 * anim_speed * 2.5) * 0.1 * effective_turb_scale
-            elif anim_mode == "attractor_orbital":
-                dx = emitter_cx - p["x"]
-                dy = emitter_cy - p["y"]
-                dist = math.sqrt(dx*dx + dy*dy) + 1
-                p["vx"] += dx / dist * effective_attractor_strength
-                p["vy"] += dy / dist * effective_attractor_strength
+                # Tangential (perpendicular to radius)
+                p["vx"] += -dy / dist * 0.5
+                p["vy"] += dx / dist * 0.5
+                # Slight inward pull
+                p["vx"] -= dx / dist * 0.04
+                p["vy"] -= dy / dist * 0.04
+            elif mode_physics == "dual_attractor":
+                # Two attractors — particles pulled toward both emitters
+                dx1 = dual_e1x - p["x"]
+                dy1 = dual_e1y - p["y"]
+                dist1 = math.sqrt(dx1*dx1 + dy1*dy1) + 1
+                dx2 = dual_e2x - p["x"]
+                dy2 = dual_e2y - p["y"]
+                dist2 = math.sqrt(dx2*dx2 + dy2*dy2) + 1
+                p["vx"] += dx1 / dist1 * 0.08 + dx2 / dist2 * 0.08
+                p["vy"] += dy1 / dist1 * 0.08 + dy2 / dist2 * 0.08
 
             # Jitter (noise) — uses mode_jitter from anim_mode
             p["vx"] += rng.uniform(-mode_jitter, mode_jitter)
             p["vy"] += rng.uniform(-mode_jitter, mode_jitter)
 
-            p["life"] -= effective_life_decay
+            # Drag (velocity damping)
+            if effective_drag > 0:
+                p["vx"] *= (1.0 - effective_drag)
+                p["vy"] *= (1.0 - effective_drag)
+
+            # Position update
+            p["x"] += p["vx"]
+            p["y"] += p["vy"]
+
+            p["life"] -= mode_life_decay
 
             # Bounce / wrap
             if p["x"] < 0 or p["x"] > W:
@@ -3385,16 +3449,16 @@ def method_particles(out_dir: Path, seed: int, params=None):
                 c = pal[ci]
 
                 # Brightness from life
-                brightness = min(1.0, life_frac * effective_brightness * 0.5)
+                brightness = min(1.0, life_frac * brightness_mult * 0.5)
                 c = tuple(int(v * brightness) for v in c)
 
-                # Size from life (using effective size_max)
-                size = max(size_min, int(effective_size_max * life_frac))
+                # Size from life (using mode_size_max)
+                size = max(size_min, int(mode_size_max * life_frac))
 
                 px, py = int(p["x"]), int(p["y"])
 
                 # Draw trail
-                if idx in trail_buf and trail_length > 0 and len(trail_buf[idx]) > 1:
+                if idx in trail_buf and mode_trail > 0 and len(trail_buf[idx]) > 1:
                     trail = trail_buf[idx]
                     for ti in range(1, len(trail)):
                         t_frac = ti / len(trail)
@@ -3424,15 +3488,15 @@ def method_particles(out_dir: Path, seed: int, params=None):
         # Respawn dead particles
         for p in ps:
             if p["life"] <= 0:
-                life = rng.uniform(life_min, life_max)
+                life = rng.uniform(mode_life_min, mode_life_max)
 
                 # Multi-spawn-point modes: pick a random spawn point
                 if len(effective_spawn_points) > 1:
                     sp = rng.choice(effective_spawn_points)
                     p["x"] = sp[0] + rng.uniform(-5, 5)
                     p["y"] = sp[1] + rng.uniform(-5, 5)
-                    p["vx"] = rng.uniform(-effective_speed, effective_speed)
-                    p["vy"] = rng.uniform(-effective_speed, effective_speed)
+                    p["vx"] = rng.uniform(-mode_speed, mode_speed)
+                    p["vy"] = rng.uniform(-mode_speed, mode_speed)
                 elif emitter_type == "trail":
                     p["x"] = emitter_cx + rng.uniform(-10, 10)
                     p["y"] = emitter_cy + rng.uniform(-10, 10)
@@ -3441,14 +3505,14 @@ def method_particles(out_dir: Path, seed: int, params=None):
                 elif emitter_type == "fountain":
                     p["x"] = cx + rng.uniform(-20, 20)
                     p["y"] = H - 10
-                    p["vy"] = -abs(rng.uniform(-effective_speed, -effective_speed * 2))
+                    p["vy"] = -abs(rng.uniform(-mode_speed, -mode_speed * 2))
                     p["vx"] = rng.uniform(-1, 1)
                 elif emitter_type in ("radial", "vortex"):
                     angle = rng.uniform(0, 2 * math.pi)
                     p["x"] = emitter_cx + effective_spawn_radius * math.cos(angle)
                     p["y"] = emitter_cy + effective_spawn_radius * math.sin(angle)
-                    p["vx"] = math.cos(angle) * effective_speed * 2
-                    p["vy"] = math.sin(angle) * effective_speed * 2
+                    p["vx"] = math.cos(angle) * mode_speed * 2
+                    p["vy"] = math.sin(angle) * mode_speed * 2
                 elif emitter_type == "point":
                     if anim_mode == "scatter_radius":
                         angle = rng.uniform(0, 2 * math.pi)
@@ -3458,13 +3522,13 @@ def method_particles(out_dir: Path, seed: int, params=None):
                     else:
                         p["x"] = emitter_cx + rng.uniform(-5, 5)
                         p["y"] = emitter_cy + rng.uniform(-5, 5)
-                    p["vx"] = rng.uniform(-effective_speed, effective_speed)
-                    p["vy"] = rng.uniform(-effective_speed, effective_speed)
+                    p["vx"] = rng.uniform(-mode_speed, mode_speed)
+                    p["vy"] = rng.uniform(-mode_speed, mode_speed)
                 else:
                     p["x"] = rng.uniform(0, W)
                     p["y"] = rng.uniform(0, H)
-                    p["vx"] = rng.uniform(-effective_speed, effective_speed)
-                    p["vy"] = rng.uniform(-effective_speed, effective_speed)
+                    p["vx"] = rng.uniform(-mode_speed, mode_speed)
+                    p["vy"] = rng.uniform(-mode_speed, mode_speed)
                 p["life"] = life
                 p["init_life"] = life
                 idx = ps.index(p)
