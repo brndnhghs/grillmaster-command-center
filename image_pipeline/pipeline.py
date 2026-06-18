@@ -143,7 +143,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--cols", type=int, default=3, help="Grid columns for composite")
     p.add_argument("--animate", type=str, default="",
                    help="Animate a method: '07' or '07,34,50'. Uses natural loops or tween.")
-    p.add_argument("--anim-duration", type=float, default=5.0, help="Animation duration in seconds (default 5.0)")
+    p.add_argument("--anim-duration", type=float, default=4.0, help="Animation duration in seconds (default 4.0)")
     p.add_argument("--anim-fps", type=int, default=24, help="Animation FPS (default 24)")
     p.add_argument("--demo", action="store_true", help="Annotate output images with method params + ranges")
     p.add_argument("--input", type=str, default="",
