@@ -42,7 +42,15 @@ from ...core.animation import capture_frame
                                        "letter_ripple", "letter_explode", "letter_twist",
                                        "letter_gravity", "letter_glow_pulse", "letter_skew",
                                        "letter_stagger", "letter_hop", "letter_dance",
-                                       "letter_wipe", "letter_scan", "letter_matrix", "letter_neon"],
+                                       "letter_wipe", "letter_scan", "letter_matrix", "letter_neon",
+                                       "letter_morph", "letter_dissolve", "letter_blinds", "letter_radar",
+                                       "letter_pendulum", "letter_elastic", "letter_wobble", "letter_spring",
+                                       "letter_scramble", "letter_static", "letter_fire", "letter_rain", "letter_smoke",
+                                       "letter_perspective", "letter_depth", "letter_zoom", "letter_parallax",
+                                       "letter_cascade", "letter_alternate", "letter_pingpong", "letter_march",
+                                       "letter_circle_reveal", "letter_split", "letter_compress", "letter_unfold",
+                                       "letter_heatmap", "letter_xray", "letter_ghost", "letter_shadow", "letter_outline",
+                                       "word_rotate", "word_scale", "word_drop", "word_scatter", "word_swirl"],
                            "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
          })
@@ -102,6 +110,41 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
         "letter_scan": "letter_scan",
         "letter_matrix": "letter_matrix",
         "letter_neon": "letter_neon",
+        "letter_morph": "letter_morph",
+        "letter_dissolve": "letter_dissolve",
+        "letter_blinds": "letter_blinds",
+        "letter_radar": "letter_radar",
+        "letter_pendulum": "letter_pendulum",
+        "letter_elastic": "letter_elastic",
+        "letter_wobble": "letter_wobble",
+        "letter_spring": "letter_spring",
+        "letter_scramble": "letter_scramble",
+        "letter_static": "letter_static",
+        "letter_fire": "letter_fire",
+        "letter_rain": "letter_rain",
+        "letter_smoke": "letter_smoke",
+        "letter_perspective": "letter_perspective",
+        "letter_depth": "letter_depth",
+        "letter_zoom": "letter_zoom",
+        "letter_parallax": "letter_parallax",
+        "letter_cascade": "letter_cascade",
+        "letter_alternate": "letter_alternate",
+        "letter_pingpong": "letter_pingpong",
+        "letter_march": "letter_march",
+        "letter_circle_reveal": "letter_circle_reveal",
+        "letter_split": "letter_split",
+        "letter_compress": "letter_compress",
+        "letter_unfold": "letter_unfold",
+        "letter_heatmap": "letter_heatmap",
+        "letter_xray": "letter_xray",
+        "letter_ghost": "letter_ghost",
+        "letter_shadow": "letter_shadow",
+        "letter_outline": "letter_outline",
+        "word_rotate": "word_rotate",
+        "word_scale": "word_scale",
+        "word_drop": "word_drop",
+        "word_scatter": "word_scatter",
+        "word_swirl": "word_swirl",
     }
     if anim_mode in anim_to_source:
         source_mode = anim_to_source[anim_mode]
@@ -1093,6 +1136,762 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
         save(img, mn(15, "typography-letterneon"), out_dir)
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # MORPH / TRANSITION MODES
+    # ═══════════════════════════════════════════════════════════════════════
+
+    elif source_mode == "letter_morph":
+        """Cross-fade between two content strings character by character."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        content_b = params.get("content_b", "Goodbye World")
+        morph_progress = (t * anim_speed) % 1.0
+        # Render both strings
+        lines_a = _wrap_lines(content, font)
+        lines_b = _wrap_lines(content_b, font)
+        line_h = int(font_size * spacing * 1.3)
+        max_lines = max(len(lines_a), len(lines_b))
+        total_h = max_lines * line_h
+        y_start = (H - total_h) // 2
+        for li in range(max_lines):
+            line_a = lines_a[li] if li < len(lines_a) else ""
+            line_b = lines_b[li] if li < len(lines_b) else ""
+            max_chars = max(len(line_a), len(line_b))
+            x_offset = 20
+            y_pos = y_start + li * line_h
+            for ci in range(max_chars):
+                ch_a = line_a[ci] if ci < len(line_a) else " "
+                ch_b = line_b[ci] if ci < len(line_b) else " "
+                # Per-character morph phase
+                char_phase = (morph_progress + ci * 0.05 + li * 0.1) % 1.0
+                if char_phase < 0.5:
+                    alpha = int(255 * (1.0 - char_phase * 2))
+                    _draw_char_at(draw, ch_a, x_offset, y_pos, font, text_color, alpha)
+                else:
+                    alpha = int(255 * (char_phase - 0.5) * 2)
+                    _draw_char_at(draw, ch_b, x_offset, y_pos, font, text_color, alpha)
+                cw, _ = _get_text_size(font, ch_a if char_phase < 0.5 else ch_b)
+                x_offset += cw
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-lettermorph"), out_dir)
+
+    elif source_mode == "letter_dissolve":
+        """Random pixel dissolve reveal."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        rng_dissolve = random.Random(seed + int(t * 500))
+        lines = _wrap_lines(content, font)
+        line_h = int(font_size * spacing * 1.3)
+        total_h = len(lines) * line_h
+        y_start = (H - total_h) // 2
+        dissolve = (t * anim_speed) % 1.0
+        for li, line in enumerate(lines):
+            chars = list(line)
+            x_offset = 20
+            y_pos = y_start + li * line_h
+            for ci, ch in enumerate(chars):
+                cw, _ = _get_text_size(font, ch)
+                if rng_dissolve.random() < dissolve:
+                    _draw_char_at(draw, ch, x_offset, y_pos, font, text_color)
+                x_offset += cw
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-letterdissolve"), out_dir)
+
+    elif source_mode == "letter_blinds":
+        """Venetian blind reveal — horizontal strips."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        lines = _wrap_lines(content, font)
+        line_h = int(font_size * spacing * 1.3)
+        total_h = len(lines) * line_h
+        y_start = (H - total_h) // 2
+        blind_progress = (t * anim_speed) % 1.0
+        blind_count = 12
+        blind_h = H // blind_count
+        for li, line in enumerate(lines):
+            y_pos = y_start + li * line_h
+            for bi in range(blind_count):
+                blind_y = bi * blind_h
+                blind_phase = (blind_progress + bi * 0.08) % 1.0
+                if blind_phase > 0.3:
+                    alpha = int(255 * min(1.0, (blind_phase - 0.3) / 0.7))
+                    _render_text(draw, line, y_pos, font, text_color, alpha)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-letterblinds"), out_dir)
+
+    elif source_mode == "letter_radar":
+        """Circular sweep reveal from center."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        lines = _wrap_lines(content, font)
+        line_h = int(font_size * spacing * 1.3)
+        total_h = len(lines) * line_h
+        y_start = (H - total_h) // 2
+        sweep_angle = (t * anim_speed * 2 * math.pi) % (2 * math.pi)
+        cx_center = W // 2
+        cy_center = H // 2
+        for li, line in enumerate(lines):
+            chars = list(line)
+            x_offset = 20
+            y_pos = y_start + li * line_h
+            for ci, ch in enumerate(chars):
+                cw, _ = _get_text_size(font, ch)
+                cx = x_offset + cw // 2
+                cy = y_pos + line_h // 2
+                char_angle = math.atan2(cy - cy_center, cx - cx_center)
+                if char_angle < 0:
+                    char_angle += 2 * math.pi
+                angle_diff = (sweep_angle - char_angle) % (2 * math.pi)
+                if angle_diff < math.pi:
+                    _draw_char_at(draw, ch, x_offset, y_pos, font, text_color)
+                x_offset += cw
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-letterradar"), out_dir)
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # PHYSICS MODES
+    # ═══════════════════════════════════════════════════════════════════════
+
+    elif source_mode == "letter_pendulum":
+        """Characters swing like pendulums with per-char phase."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        chars, lines, y_start, line_h = _get_chars_and_positions_multiline(content, font)
+        for ch, x, y, cw, ch_h, li in chars:
+            cx = x + cw // 2
+            cy = y + ch_h // 2
+            swing = 45 * math.sin(t * 1.2 * anim_speed + x * 0.03 + li * 0.4)
+            _draw_rotated_char(draw, ch, cx, cy, swing, font, text_color)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-letterpendulum"), out_dir)
+
+    elif source_mode == "letter_elastic":
+        """Characters stretch vertically with elastic bounce."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        chars, lines, y_start, line_h = _get_chars_and_positions_multiline(content, font)
+        for ch, x, y, cw, ch_h, li in chars:
+            stretch = 0.5 + 0.5 * math.sin(t * 2.0 * anim_speed + x * 0.04 + li * 0.5)
+            # Elastic: stretch > 0.5 = tall, < 0.5 = squished
+            scale_y = 0.3 + 1.7 * stretch
+            fs = int(font_size * scale_y)
+            f_elastic = get_font(fs, "/System/Library/Fonts/Helvetica.ttc")
+            cx = x + cw // 2
+            cy = y + ch_h // 2
+            _draw_rotated_char(draw, ch, cx, cy, 0, f_elastic, text_color)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-letterelastic"), out_dir)
+
+    elif source_mode == "letter_wobble":
+        """Jello wobble — characters oscillate in x and y at different frequencies."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        chars, lines, y_start, line_h = _get_chars_and_positions_multiline(content, font)
+        for ch, x, y, cw, ch_h, li in chars:
+            phase = t * 3.0 * anim_speed + x * 0.06 + li * 0.8
+            wx = int(8 * math.sin(phase * 1.3))
+            wy = int(6 * math.sin(phase * 0.9 + 0.5))
+            _draw_char_at(draw, ch, x + wx, y + wy, font, text_color)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-letterwobble"), out_dir)
+
+    elif source_mode == "letter_spring":
+        """Characters oscillate to rest like a spring."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        chars, lines, y_start, line_h = _get_chars_and_positions_multiline(content, font)
+        for ch, x, y, cw, ch_h, li in chars:
+            delay = x * 0.02 + li * 0.3
+            raw = t * anim_speed - delay
+            if raw > 0:
+                decay = math.exp(-raw * 0.5)
+                spring = decay * math.sin(raw * 4.0)
+                sy = y + int(spring * 30)
+                _draw_char_at(draw, ch, x, sy, font, text_color)
+            else:
+                _draw_char_at(draw, ch, x, y, font, text_color)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-letterspring"), out_dir)
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # CHAOS / EFFECT MODES
+    # ═══════════════════════════════════════════════════════════════════════
+
+    elif source_mode == "letter_scramble":
+        """Characters randomly swap positions."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        rng_scramble = random.Random(seed + int(t * 300))
+        chars, lines, y_start, line_h = _get_chars_and_positions_multiline(content, font)
+        # Build list of all characters
+        all_chars = [ch for ch, x, y, cw, ch_h, li in chars]
+        rng_scramble.shuffle(all_chars)
+        for (ch, x, y, cw, ch_h, li), new_ch in zip(chars, all_chars):
+            _draw_char_at(draw, new_ch, x, y, font, text_color)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-letterscramble"), out_dir)
+
+    elif source_mode == "letter_static":
+        """TV static noise on characters."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        rng_static = random.Random(seed + int(t * 1000))
+        lines = _wrap_lines(content, font)
+        line_h = int(font_size * spacing * 1.3)
+        total_h = len(lines) * line_h
+        y_start = (H - total_h) // 2
+        static_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&*"
+        for li, line in enumerate(lines):
+            chars = list(line)
+            x_offset = 20
+            y_pos = y_start + li * line_h
+            for ci, ch in enumerate(chars):
+                cw, _ = _get_text_size(font, ch)
+                if rng_static.random() < 0.4:
+                    ch = static_chars[rng_static.randint(0, len(static_chars) - 1)]
+                _draw_char_at(draw, ch, x_offset, y_pos, font, text_color)
+                x_offset += cw
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-letterstatic"), out_dir)
+
+    elif source_mode == "letter_fire":
+        """Characters flicker upward like flames."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        rng_fire = random.Random(seed + int(t * 800))
+        chars, lines, y_start, line_h = _get_chars_and_positions_multiline(content, font)
+        for ch, x, y, cw, ch_h, li in chars:
+            flicker = rng_fire.random() * 15
+            fy = y - int(flicker)
+            # Warm color
+            warmth = 0.5 + 0.5 * math.sin(t * 3.0 * anim_speed + x * 0.1)
+            r = min(255, int(200 + 55 * warmth))
+            g = int(100 + 100 * warmth)
+            b = int(20 * warmth)
+            _draw_char_at(draw, ch, x, fy, font, (r, g, b))
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-letterfire"), out_dir)
+
+    elif source_mode == "letter_rain":
+        """Characters fall downward like rain."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        rng_rain = random.Random(seed + int(t * 600))
+        chars, lines, y_start, line_h = _get_chars_and_positions_multiline(content, font)
+        for ch, x, y, cw, ch_h, li in chars:
+            rain_offset = int((t * 2.0 * anim_speed + x * 0.05) % 60)
+            ry = y + rain_offset - 30
+            alpha = int(255 * max(0, 1.0 - abs(rain_offset - 30) / 30.0))
+            _draw_char_at(draw, ch, x, ry, font, text_color, alpha)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-letterrain"), out_dir)
+
+    elif source_mode == "letter_smoke":
+        """Characters drift upward and fade like smoke."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        rng_smoke = random.Random(seed + int(t * 400))
+        chars, lines, y_start, line_h = _get_chars_and_positions_multiline(content, font)
+        for ch, x, y, cw, ch_h, li in chars:
+            drift = (t * 0.8 * anim_speed + x * 0.01 + li * 0.2) % 1.0
+            sy = y - int(drift * 80)
+            sx = x + int(20 * math.sin(drift * 4 + x * 0.05))
+            alpha = int(255 * (1.0 - drift))
+            _draw_char_at(draw, ch, sx, sy, font, text_color, alpha)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-lettersmoke"), out_dir)
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # 3D / PERSPECTIVE MODES
+    # ═══════════════════════════════════════════════════════════════════════
+
+    elif source_mode == "letter_perspective":
+        """3D perspective tilt — characters scale by distance from center."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        chars, lines, y_start, line_h = _get_chars_and_positions_multiline(content, font)
+        cx_center = W // 2
+        cy_center = H // 2
+        for ch, x, y, cw, ch_h, li in chars:
+            dx = x + cw // 2 - cx_center
+            dy = y + ch_h // 2 - cy_center
+            dist = math.sqrt(dx * dx + dy * dy)
+            tilt = 0.5 + 0.5 * math.sin(t * 0.8 * anim_speed + dist * 0.01)
+            scale = 0.5 + tilt * 0.8
+            fs = max(8, int(font_size * scale))
+            f_persp = get_font(fs, "/System/Library/Fonts/Helvetica.ttc")
+            cx = x + cw // 2
+            cy = y + ch_h // 2
+            _draw_rotated_char(draw, ch, cx, cy, 0, f_persp, text_color)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-letterperspective"), out_dir)
+
+    elif source_mode == "letter_depth":
+        """Z-axis push — characters move toward/away from viewer."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        chars, lines, y_start, line_h = _get_chars_and_positions_multiline(content, font)
+        for ch, x, y, cw, ch_h, li in chars:
+            depth = 0.5 + 0.5 * math.sin(t * 1.0 * anim_speed + x * 0.02 + li * 0.3)
+            scale = 0.3 + 1.2 * depth
+            fs = max(8, int(font_size * scale))
+            f_depth = get_font(fs, "/System/Library/Fonts/Helvetica.ttc")
+            cx = x + cw // 2
+            cy = y + ch_h // 2
+            _draw_rotated_char(draw, ch, cx, cy, 0, f_depth, text_color)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-letterdepth"), out_dir)
+
+    elif source_mode == "letter_zoom":
+        """Zoom in/out — text scales from center."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        zoom = 0.5 + 0.5 * math.sin(t * 0.8 * anim_speed)
+        fs = max(8, int(font_size * (0.3 + 1.2 * zoom)))
+        f_zoom = get_font(fs, "/System/Library/Fonts/Helvetica.ttc")
+        lines = _wrap_lines(content, f_zoom)
+        line_h = int(fs * spacing * 1.3)
+        total_h = len(lines) * line_h
+        y_start = (H - total_h) // 2
+        for li, line in enumerate(lines):
+            _render_text(draw, line, y_start + li * line_h, f_zoom, text_color)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-letterzoom"), out_dir)
+
+    elif source_mode == "letter_parallax":
+        """Layers move at different speeds — multi-line depth effect."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        lines = _wrap_lines(content, font)
+        line_h = int(font_size * spacing * 1.3)
+        total_h = len(lines) * line_h
+        y_start = (H - total_h) // 2
+        for li, line in enumerate(lines):
+            speed = 0.5 + li * 0.3
+            offset = int(t * 30 * anim_speed * speed) % W
+            tw, _ = _get_text_size(font, line)
+            x_pos = 20 + offset
+            if x_pos + tw > W:
+                x_pos = x_pos - W - 20
+            _render_text(draw, line, y_start + li * line_h, font, text_color)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-letterparallax"), out_dir)
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # PATTERN / SEQUENCE MODES
+    # ═══════════════════════════════════════════════════════════════════════
+
+    elif source_mode == "letter_cascade":
+        """Sequential wave through characters."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        chars, lines, y_start, line_h = _get_chars_and_positions_multiline(content, font)
+        for ch, x, y, cw, ch_h, li in chars:
+            delay = x * 0.015 + li * 0.2
+            phase = t * 2.0 * anim_speed - delay
+            cascade_y = int(20 * math.sin(phase))
+            alpha = int(180 + 75 * (0.5 + 0.5 * math.sin(phase)))
+            _draw_char_at(draw, ch, x, y + cascade_y, font, text_color, alpha)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-lettercascade"), out_dir)
+
+    elif source_mode == "letter_alternate":
+        """Every other character animates in opposite phase."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        chars, lines, y_start, line_h = _get_chars_and_positions_multiline(content, font)
+        for idx, (ch, x, y, cw, ch_h, li) in enumerate(chars):
+            phase = t * 2.0 * anim_speed + (idx % 2) * math.pi
+            ay = y + int(15 * math.sin(phase))
+            _draw_char_at(draw, ch, x, ay, font, text_color)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-letteralternate"), out_dir)
+
+    elif source_mode == "letter_pingpong":
+        """Characters bounce back and forth horizontally."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        chars, lines, y_start, line_h = _get_chars_and_positions_multiline(content, font)
+        for ch, x, y, cw, ch_h, li in chars:
+            ping = math.sin(t * 1.5 * anim_speed + x * 0.02 + li * 0.3)
+            px = x + int(ping * 20)
+            _draw_char_at(draw, ch, px, y, font, text_color)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-letterpingpong"), out_dir)
+
+    elif source_mode == "letter_march":
+        """Characters move in sequence like a marching band."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        chars, lines, y_start, line_h = _get_chars_and_positions_multiline(content, font)
+        for ch, x, y, cw, ch_h, li in chars:
+            phase = t * 2.5 * anim_speed + x * 0.03 + li * 0.4
+            mx = x + int(10 * math.sin(phase))
+            my = y + int(8 * abs(math.sin(phase * 0.5)))
+            _draw_char_at(draw, ch, mx, my, font, text_color)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-lettermarch"), out_dir)
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # MASK / REVEAL MODES
+    # ═══════════════════════════════════════════════════════════════════════
+
+    elif source_mode == "letter_circle_reveal":
+        """Expanding circle reveal from center."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        lines = _wrap_lines(content, font)
+        line_h = int(font_size * spacing * 1.3)
+        total_h = len(lines) * line_h
+        y_start = (H - total_h) // 2
+        cx_center = W // 2
+        cy_center = H // 2
+        radius = ((t * anim_speed) % 1.0) * math.sqrt(W * W + H * H) / 2
+        for li, line in enumerate(lines):
+            chars = list(line)
+            x_offset = 20
+            y_pos = y_start + li * line_h
+            for ci, ch in enumerate(chars):
+                cw, _ = _get_text_size(font, ch)
+                cx = x_offset + cw // 2
+                cy = y_pos + line_h // 2
+                dist = math.sqrt((cx - cx_center) ** 2 + (cy - cy_center) ** 2)
+                if dist < radius:
+                    _draw_char_at(draw, ch, x_offset, y_pos, font, text_color)
+                x_offset += cw
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-lettercirclereveal"), out_dir)
+
+    elif source_mode == "letter_split":
+        """Text splits apart from center."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        chars, lines, y_start, line_h = _get_chars_and_positions_multiline(content, font)
+        split = 0.5 + 0.5 * math.sin(t * 0.8 * anim_speed)
+        for ch, x, y, cw, ch_h, li in chars:
+            cx = x + cw // 2
+            cy = y + ch_h // 2
+            dx = cx - W // 2
+            dy = cy - H // 2
+            sx = x + int(dx * split)
+            sy = y + int(dy * split)
+            _draw_char_at(draw, ch, sx, sy, font, text_color)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-lettersplit"), out_dir)
+
+    elif source_mode == "letter_compress":
+        """Text compresses horizontally then expands."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        compress = 0.3 + 0.7 * (0.5 + 0.5 * math.sin(t * 1.0 * anim_speed))
+        fs = int(font_size * compress)
+        f_compress = get_font(max(8, fs), "/System/Library/Fonts/Helvetica.ttc")
+        lines = _wrap_lines(content, f_compress)
+        line_h = int(fs * spacing * 1.3)
+        total_h = len(lines) * line_h
+        y_start = (H - total_h) // 2
+        for li, line in enumerate(lines):
+            _render_text(draw, line, y_start + li * line_h, f_compress, text_color)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-lettercompress"), out_dir)
+
+    elif source_mode == "letter_unfold":
+        """Text unfolds from center outward."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        chars, lines, y_start, line_h = _get_chars_and_positions_multiline(content, font)
+        unfold = (t * anim_speed) % 1.0
+        for ch, x, y, cw, ch_h, li in chars:
+            cx = x + cw // 2
+            delay = abs(cx - W // 2) * 0.005 + li * 0.15
+            char_progress = max(0.0, min(1.0, (unfold - delay) / 0.3))
+            scale = 0.1 + 0.9 * char_progress
+            fs = max(8, int(font_size * scale))
+            f_unfold = get_font(fs, "/System/Library/Fonts/Helvetica.ttc")
+            cx_char = x + cw // 2
+            cy_char = y + ch_h // 2
+            _draw_rotated_char(draw, ch, cx_char, cy_char, 0, f_unfold, text_color)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-letterunfold"), out_dir)
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # COLOR / EFFECT MODES
+    # ═══════════════════════════════════════════════════════════════════════
+
+    elif source_mode == "letter_heatmap":
+        """Temperature color mapping based on position + time."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        chars, lines, y_start, line_h = _get_chars_and_positions_multiline(content, font)
+        for ch, x, y, cw, ch_h, li in chars:
+            heat = 0.5 + 0.5 * math.sin(t * 0.8 * anim_speed + x * 0.01 + y * 0.02)
+            r = int(255 * heat)
+            g = int(255 * (1.0 - heat) * 0.5)
+            b = int(255 * (1.0 - heat) * 0.2)
+            _draw_char_at(draw, ch, x, y, font, (r, g, b))
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-letterheatmap"), out_dir)
+
+    elif source_mode == "letter_xray":
+        """Inverted colors with glow — x-ray effect."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        chars, lines, y_start, line_h = _get_chars_and_positions_multiline(content, font)
+        inv_color = tuple(255 - c for c in text_color)
+        pulse = 0.5 + 0.5 * math.sin(t * 1.5 * anim_speed)
+        for ch, x, y, cw, ch_h, li in chars:
+            # Glow layer
+            glow_fs = int(font_size * 1.2)
+            f_glow = get_font(glow_fs, "/System/Library/Fonts/Helvetica.ttc")
+            gc = tuple(min(255, int(c * pulse * 0.3)) for c in inv_color)
+            gx = x - int(cw * 0.1)
+            gy = y - int(ch_h * 0.1)
+            _draw_char_at(draw, ch, gx, gy, f_glow, gc, int(100 * pulse))
+            # Main inverted character
+            _draw_char_at(draw, ch, x, y, font, inv_color)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-letterxray"), out_dir)
+
+    elif source_mode == "letter_ghost":
+        """Fade trail — characters leave ghost copies."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        chars, lines, y_start, line_h = _get_chars_and_positions_multiline(content, font)
+        for ch, x, y, cw, ch_h, li in chars:
+            # Draw 3 ghost copies with decreasing alpha
+            for gi in range(3):
+                ghost_t = t * anim_speed - gi * 0.15
+                if ghost_t > 0:
+                    ghost_x = x + int(20 * math.sin(ghost_t * 2 + gi))
+                    ghost_y = y + int(15 * math.cos(ghost_t * 1.5 + gi))
+                    ghost_alpha = max(0, int(80 - gi * 25))
+                    _draw_char_at(draw, ch, ghost_x, ghost_y, font, text_color, ghost_alpha)
+            _draw_char_at(draw, ch, x, y, font, text_color)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-letterghost"), out_dir)
+
+    elif source_mode == "letter_shadow":
+        """Animated drop shadow — shadow moves independently."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        lines = _wrap_lines(content, font)
+        line_h = int(font_size * spacing * 1.3)
+        total_h = len(lines) * line_h
+        y_start = (H - total_h) // 2
+        shadow_dx = int(8 * math.sin(t * 1.0 * anim_speed))
+        shadow_dy = int(8 * math.cos(t * 0.8 * anim_speed))
+        shadow_color = tuple(max(0, c // 3) for c in text_color)
+        for li, line in enumerate(lines):
+            y_pos = y_start + li * line_h
+            # Shadow
+            tw, _ = _get_text_size(font, line)
+            if alignment == "center":
+                sx = (W - tw) // 2 + shadow_dx
+            elif alignment == "left":
+                sx = 20 + shadow_dx
+            else:
+                sx = W - tw - 20 + shadow_dx
+            draw.text((sx, y_pos + shadow_dy), line, fill=shadow_color, font=font)
+            # Main text
+            _render_text(draw, line, y_pos, font, text_color)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-lettershadow"), out_dir)
+
+    elif source_mode == "letter_outline":
+        """Stroke width pulses — outline effect."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        lines = _wrap_lines(content, font)
+        line_h = int(font_size * spacing * 1.3)
+        total_h = len(lines) * line_h
+        y_start = (H - total_h) // 2
+        outline_width = int(1 + 3 * (0.5 + 0.5 * math.sin(t * 1.5 * anim_speed)))
+        for li, line in enumerate(lines):
+            y_pos = y_start + li * line_h
+            # Draw outline (multiple passes with offset)
+            for ox in range(-outline_width, outline_width + 1):
+                for oy in range(-outline_width, outline_width + 1):
+                    if ox == 0 and oy == 0:
+                        continue
+                    tw, _ = _get_text_size(font, line)
+                    if alignment == "center":
+                        x_pos = (W - tw) // 2 + ox
+                    elif alignment == "left":
+                        x_pos = 20 + ox
+                    else:
+                        x_pos = W - tw - 20 + ox
+                    draw.text((x_pos, y_pos + oy), line, fill=bg_color, font=font)
+            # Main text
+            _render_text(draw, line, y_pos, font, text_color)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-letteroutline"), out_dir)
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # WORD-LEVEL MODES
+    # ═══════════════════════════════════════════════════════════════════════
+
+    elif source_mode == "word_rotate":
+        """Each word independently rotates."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        words = content.split()
+        line_h = int(font_size * spacing * 1.5)
+        cols = max(1, W // (font_size * 6))
+        rows = (len(words) + cols - 1) // cols
+        y_start = (H - rows * line_h) // 2
+        for i, word in enumerate(words):
+            col = i % cols
+            row = i // cols
+            x = 20 + col * (W - 40) // cols
+            y = y_start + row * line_h
+            cw, ch_h = _get_text_size(font, word)
+            cx = x + cw // 2
+            cy = y + ch_h // 2
+            angle = t * 90 * anim_speed + i * 30
+            _draw_rotated_char(draw, word, cx, cy, angle, font, text_color)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-wordrotate"), out_dir)
+
+    elif source_mode == "word_scale":
+        """Each word pulses in size."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        words = content.split()
+        line_h = int(font_size * spacing * 1.5)
+        cols = max(1, W // (font_size * 6))
+        rows = (len(words) + cols - 1) // cols
+        y_start = (H - rows * line_h) // 2
+        for i, word in enumerate(words):
+            col = i % cols
+            row = i // cols
+            x = 20 + col * (W - 40) // cols
+            y = y_start + row * line_h
+            scale = 0.5 + 0.5 * math.sin(t * 1.5 * anim_speed + i * 0.8)
+            fs = max(8, int(font_size * scale))
+            f_scale = get_font(fs, "/System/Library/Fonts/Helvetica.ttc")
+            cw, ch_h = _get_text_size(f_scale, word)
+            cx = x + cw // 2
+            cy = y + ch_h // 2
+            _draw_rotated_char(draw, word, cx, cy, 0, f_scale, text_color)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-wordscale"), out_dir)
+
+    elif source_mode == "word_drop":
+        """Words fall from above into position."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        words = content.split()
+        line_h = int(font_size * spacing * 1.5)
+        cols = max(1, W // (font_size * 6))
+        rows = (len(words) + cols - 1) // cols
+        y_start = (H - rows * line_h) // 2
+        for i, word in enumerate(words):
+            col = i % cols
+            row = i // cols
+            x = 20 + col * (W - 40) // cols
+            y = y_start + row * line_h
+            delay = i * 0.15
+            progress = max(0.0, min(1.0, (t * anim_speed - delay) / 2.0))
+            eased = 1.0 - (1.0 - progress) ** 2
+            drop_y = y - (1.0 - eased) * 200
+            alpha = int(255 * min(1.0, progress * 3))
+            _draw_char_at(draw, word, x, int(drop_y), font, text_color, alpha)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-worddrop"), out_dir)
+
+    elif source_mode == "word_scatter":
+        """Words scatter outward from center."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        words = content.split()
+        line_h = int(font_size * spacing * 1.5)
+        cols = max(1, W // (font_size * 6))
+        rows = (len(words) + cols - 1) // cols
+        y_start = (H - rows * line_h) // 2
+        cx_center = W // 2
+        cy_center = H // 2
+        for i, word in enumerate(words):
+            col = i % cols
+            row = i // cols
+            x = 20 + col * (W - 40) // cols
+            y = y_start + row * line_h
+            cw, ch_h = _get_text_size(font, word)
+            dx = x + cw // 2 - cx_center
+            dy = y + ch_h // 2 - cy_center
+            dist = math.sqrt(dx * dx + dy * dy) + 1
+            angle = math.atan2(dy, dx)
+            scatter = 0.5 + 0.5 * math.sin(t * 1.0 * anim_speed + i * 0.5)
+            offset = scatter * 60
+            sx = x + int(offset * math.cos(angle))
+            sy = y + int(offset * math.sin(angle))
+            _draw_char_at(draw, word, sx, sy, font, text_color)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-wordscatter"), out_dir)
+
+    elif source_mode == "word_swirl":
+        """Words orbit around center in spiral."""
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        words = content.split()
+        line_h = int(font_size * spacing * 1.5)
+        cols = max(1, W // (font_size * 6))
+        rows = (len(words) + cols - 1) // cols
+        y_start = (H - rows * line_h) // 2
+        cx_center = W // 2
+        cy_center = H // 2
+        for i, word in enumerate(words):
+            col = i % cols
+            row = i // cols
+            x = 20 + col * (W - 40) // cols
+            y = y_start + row * line_h
+            cw, ch_h = _get_text_size(font, word)
+            dx = x + cw // 2 - cx_center
+            dy = y + ch_h // 2 - cy_center
+            base_dist = math.sqrt(dx * dx + dy * dy)
+            base_angle = math.atan2(dy, dx)
+            swirl = t * 1.5 * anim_speed + i * 0.3
+            r = base_dist + 20 * math.sin(t * 0.5 * anim_speed + i * 0.4)
+            sx = cx_center + int(r * math.cos(base_angle + swirl))
+            sy = cy_center + int(r * math.sin(base_angle + swirl))
+            _draw_char_at(draw, word, sx - cw // 2, sy - ch_h // 2, font, text_color)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-wordswirl"), out_dir)
 
     else:
         # Fallback to simple text render
