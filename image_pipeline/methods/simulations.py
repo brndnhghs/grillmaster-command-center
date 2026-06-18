@@ -1160,15 +1160,18 @@ def method_dla(out_dir: Path, seed: int, params=None):
              "boundary": {"description": "boundary condition: wrap, reflect, zero, noise, periodic, clamped, mirror", "default": "wrap"},
              "color_mode": {"description": "color mapping: v_norm, u, u_minus_v, phase, gradient, frequency, divergence, curl, laplacian, b_over_a, lighting", "default": "v_norm"},
              "palette": {"description": "PALETTES name", "default": "cool"},
-             "style_map": {"description": "spatial variation: none, perlin, gradient_x, gradient_y, radial, checker, spots, stripes", "default": "none"},
+             "style_map": {"description": "spatial variation: none, perlin, gradient_x, gradient_y, radial, checker, spots, stripes, u_feedback, v_feedback, gradient_u, gradient_v, input_image", "default": "none"},
              "style_map_axis": {"description": "parameter to modulate: f, k, du, dv, all", "default": "f"},
+             "feedback_strength": {"description": "strength of cell-value feedback modulation (0-1)", "min": 0.0, "max": 1.0, "default": 0.5},
              "bias_x": {"description": "anisotropic diffusion bias X (-1 to 1, 0=isotropic)", "min": -1.0, "max": 1.0, "default": 0.0},
              "bias_y": {"description": "anisotropic diffusion bias Y (-1 to 1, 0=isotropic)", "min": -1.0, "max": 1.0, "default": 0.0},
              "inject_x": {"description": "injection X position (0-1 fraction, 0=none)", "min": 0.0, "max": 1.0, "default": 0.0},
              "inject_y": {"description": "injection Y position (0-1 fraction)", "min": 0.0, "max": 1.0, "default": 0.0},
              "inject_strength": {"description": "injection strength multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
+             "particle_count": {"description": "number of trail particles (0=none)", "min": 0, "max": 200, "default": 0},
+             "particle_speed": {"description": "particle movement speed", "min": 0.1, "max": 5.0, "default": 1.0},
              "time": {"description": "animation time param (0-2π)", "min": 0.0, "max": 6.28, "default": 0.0},
-             "anim_mode": {"description": "animation mode", "choices": ["none", "f_sweep", "k_sweep", "fk_orbit", "preset_cycle", "color_morph", "diffusion_wave", "injection_orbit", "style_map_sweep", "bias_rotate", "seed_morph"], "default": "none"},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "f_sweep", "k_sweep", "fk_orbit", "preset_cycle", "color_morph", "diffusion_wave", "injection_orbit", "style_map_sweep", "bias_rotate", "seed_morph", "particle_trails"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
 def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
@@ -1273,6 +1276,9 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
     inject_y = max(0.0, min(1.0, float(params.get("inject_y", 0.0))))
     inject_strength = max(0.1, min(3.0, float(params.get("inject_strength", 1.0))))
     dt = max(0.1, min(2.0, float(params.get("dt", 1.0))))
+    feedback_strength = max(0.0, min(1.0, float(params.get("feedback_strength", 0.5))))
+    particle_count = max(0, min(200, int(params.get("particle_count", 0))))
+    particle_speed = max(0.1, min(5.0, float(params.get("particle_speed", 1.0))))
 
     pal = PALETTES.get(palette_name, [(80, 60, 40)])
     n_pal = len(pal)
@@ -1450,8 +1456,13 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
         )
 
     # --- Style map: spatial parameter variation ---
-    def build_style_map():
-        """Build spatial variation maps for F, k, Du, Dv."""
+    def build_style_map(u_arr=None, v_arr=None):
+        """Build spatial variation maps for F, k, Du, Dv.
+        
+        Static types (perlin, gradient_x, etc.) are built once.
+        Dynamic types (u_feedback, v_feedback, gradient_u, gradient_v)
+        are rebuilt each frame because U/V change during simulation.
+        """
         if style_map == "none":
             return None
         yy, xx = np.mgrid[0:rH, 0:rW]
@@ -1475,11 +1486,34 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
             noise = rng.random((rH, rW)).astype(np.float32)
             noise = cv2.GaussianBlur(noise, (51, 51), 15)
             base = (noise - noise.min()) / (noise.max() - noise.min() + 1e-8)
+        elif style_map == "u_feedback" and u_arr is not None:
+            # U itself modulates parameters — self-organizing feedback
+            base = _norm(u_arr)
+        elif style_map == "v_feedback" and v_arr is not None:
+            # V itself modulates parameters — pattern reinforces itself
+            base = _norm(v_arr)
+        elif style_map == "gradient_u" and u_arr is not None:
+            # |∇U| — modulate at U boundaries
+            gy = np.abs(np.diff(u_arr, axis=0, append=u_arr[-1:, :]))
+            gx = np.abs(np.diff(u_arr, axis=1, append=u_arr[:, -1:]))
+            base = _norm(gx + gy)
+        elif style_map == "gradient_v" and v_arr is not None:
+            # |∇V| — modulate at V boundaries (pattern edges)
+            gy = np.abs(np.diff(v_arr, axis=0, append=v_arr[-1:, :]))
+            gx = np.abs(np.diff(v_arr, axis=1, append=v_arr[:, -1:]))
+            base = _norm(gx + gy)
+        elif style_map == "input_image" and params.get("input_image"):
+            # Load an image as the parameter map
+            from ..core.utils import load_input
+            src = load_input(params["input_image"])
+            src = cv2.resize(src, (rW, rH))
+            base = np.mean(src, axis=2).astype(np.float32) / 255.0
         else:
             return None
         return base
 
-    _style_map = build_style_map()
+    _dynamic_style_map = style_map in ("u_feedback", "v_feedback", "gradient_u", "gradient_v")
+    _style_map = build_style_map(u, v) if _dynamic_style_map else build_style_map()
 
     # If style map is active, convert parameters to 2D arrays
     if _style_map is not None:
@@ -1517,6 +1551,18 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
     _anim_preset_names = list(PRESETS.keys())
     _color_weights = [1.0]
     _color_modes_list = [color_mode]
+
+    # --- Particle system for trail modulation ---
+    _particles = None
+    if particle_count > 0:
+        _particles = {
+            "x": rng.random(particle_count).astype(np.float32) * rW,
+            "y": rng.random(particle_count).astype(np.float32) * rH,
+            "vx": (rng.random(particle_count).astype(np.float32) - 0.5) * 2 * particle_speed,
+            "vy": (rng.random(particle_count).astype(np.float32) - 0.5) * 2 * particle_speed,
+        }
+        # Create a trail map: particles leave a Gaussian footprint
+        _trail_map = np.zeros((rH, rW), dtype=np.float32)
 
     # --- Color function ---
     def render_frame(u_arr, v_arr, w_arr=None):
@@ -1608,6 +1654,60 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
             v[max(0,iy-r):min(rH,iy+r), max(0,ix-r):min(rW,ix+r)] += 0.2 * inject_strength
             u = u.clip(0, 1)
             v = v.clip(0, 1)
+
+        # Dynamic style map: rebuild from current U/V each frame
+        if _dynamic_style_map:
+            _style_map = build_style_map(u, v)
+            if _style_map is not None:
+                s = _style_map
+                if style_map_axis == "f":
+                    F = 0.01 + 0.09 * s
+                elif style_map_axis == "k":
+                    k = 0.04 + 0.03 * s
+                elif style_map_axis == "du":
+                    Du = 0.05 + 0.25 * s
+                elif style_map_axis == "dv":
+                    Dv = 0.02 + 0.18 * s
+                elif style_map_axis == "all":
+                    F = 0.01 + 0.09 * s
+                    k = 0.04 + 0.03 * s
+                    Du = 0.05 + 0.25 * s
+                    Dv = 0.02 + 0.18 * s
+
+        # Particle trails: move particles and leave parameter modifications
+        if _particles is not None:
+            p = _particles
+            p["x"] += p["vx"]
+            p["y"] += p["vy"]
+            # Wrap around
+            p["x"] = p["x"] % rW
+            p["y"] = p["y"] % rH
+            # Decay trail map
+            _trail_map *= 0.95
+            # Add Gaussian blobs at particle positions
+            for pi in range(particle_count):
+                px = int(p["x"][pi])
+                py = int(p["y"][pi])
+                if 0 <= px < rW and 0 <= py < rH:
+                    r_t = max(2, int(8 * scale))
+                    _trail_map[max(0,py-r_t):min(rH,py+r_t), max(0,px-r_t):min(rW,px+r_t)] += 0.05
+            _trail_map = _trail_map.clip(0, 1)
+            # Modulate F/k using trail map
+            if _style_map is None:
+                # No static style map — use trail map directly
+                F = _anim_base_F * (1.0 + 0.5 * _trail_map)
+                k = _anim_base_k * (1.0 - 0.3 * _trail_map)
+            else:
+                # Blend trail map into existing style map
+                s = _style_map
+                trail_blend = 0.3 * _trail_map
+                if style_map_axis == "f":
+                    F = 0.01 + 0.09 * (s * (1 - trail_blend) + trail_blend)
+                elif style_map_axis == "k":
+                    k = 0.04 + 0.03 * (s * (1 - trail_blend) + trail_blend)
+                elif style_map_axis == "all":
+                    F = 0.01 + 0.09 * (s * (1 - trail_blend) + trail_blend)
+                    k = 0.04 + 0.03 * (s * (1 - trail_blend) + trail_blend)
 
         # Animate parameters during simulation
         if _anim_active:
