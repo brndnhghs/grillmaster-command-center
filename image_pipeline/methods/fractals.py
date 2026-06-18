@@ -54,8 +54,11 @@ def _render_flame_preview(density, colors, h, w):
     "trap_y": {"description": "orbital trap point Y (0=off)", "min": -2.0, "max": 2.0, "default": 0.0},
     "trap_strength": {"description": "orbital trap blend strength (0=off)", "min": 0.0, "max": 1.0, "default": 0.0},
     "color_shift": {"description": "hue rotation for default coloring", "min": 0.0, "max": 6.28, "default": 0.0},
+    "trap_orbit_radius": {"description": "orbital trap orbit radius for trap_orbit mode", "min": 0.01, "max": 2.0, "default": 0.5},
+    "julia_orbit_radius": {"description": "Julia c orbit radius for julia_sweep mode", "min": 0.01, "max": 1.0, "default": 0.3},
+    "deep_zoom_target": {"description": "deep zoom target as 'x,y' (default=seahorse valley)", "default": "-0.7435,0.1314"},
     "time": {"description": "animation time in radians (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
-    "anim_mode": {"description": "animation mode", "choices": ["none", "zoom", "color_cycle", "center_orbit", "formula_cycle"], "default": "none"},
+    "anim_mode": {"description": "animation mode", "choices": ["none", "zoom", "color_cycle", "center_orbit", "formula_cycle", "escape_sweep", "iteration_sweep", "trap_orbit", "julia_sweep", "deep_zoom"], "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
 })
 def method_fractal(out_dir: Path, seed: int, params=None):
@@ -110,7 +113,13 @@ def method_fractal(out_dir: Path, seed: int, params=None):
     trap_y = float(params.get("trap_y", 0.0))
     trap_strength = float(params.get("trap_strength", 0.0))
     color_shift = float(params.get("color_shift", 0.0))
-
+    trap_orbit_radius = float(params.get("trap_orbit_radius", 0.5))
+    julia_orbit_radius = float(params.get("julia_orbit_radius", 0.3))
+    deep_zoom_target = params.get("deep_zoom_target", "-0.7435,0.1314")
+    smooth = params.get("smooth", True)
+    if isinstance(smooth, str):
+        smooth = smooth.lower() in ("true", "1", "yes")
+    smooth = bool(smooth)
     from ..core.utils import PALETTES, quantize_to_palette
 
     # ── Animation ────────────────────────────────────────────────────────
@@ -129,6 +138,30 @@ def method_fractal(out_dir: Path, seed: int, params=None):
         formula = formula_names[idx]
         if formula == "julia":
             julia_c_str = "-0.7,0.27"
+    elif anim_mode == "escape_sweep":
+        escape_r = 2.0 + 8.0 * (0.5 + 0.5 * math.sin(t * 0.3))
+    elif anim_mode == "iteration_sweep":
+        max_iter = int(max_iter * (0.5 + 0.5 * math.sin(t * 0.2)))
+        max_iter = max(50, min(2000, max_iter))
+    elif anim_mode == "trap_orbit":
+        trap_x = trap_orbit_radius * math.cos(t * 0.4)
+        trap_y = trap_orbit_radius * math.sin(t * 0.4)
+        trap_strength = max(trap_strength, 0.3)
+    elif anim_mode == "julia_sweep":
+        # Only works with julia formula
+        formula = "julia"
+        c_re = -0.7 + julia_orbit_radius * math.cos(t * 0.3)
+        c_im = 0.27 + julia_orbit_radius * math.sin(t * 0.5)
+        julia_c_str = f"{c_re:.4f},{c_im:.4f}"
+    elif anim_mode == "deep_zoom":
+        try:
+            dz_parts = [float(p.strip()) for p in deep_zoom_target.split(",")]
+            dz_x, dz_y = dz_parts[0], dz_parts[1]
+        except (ValueError, IndexError):
+            dz_x, dz_y = -0.7435, 0.1314
+        cx = dz_x
+        cy = dz_y
+        zoom = 1.0 + (1000.0 - 1.0) * (0.5 + 0.5 * math.sin(t * 0.15))
     # else: none — use params as-is
 
     # ── Viewport ────────────────────────────────────────────────────────
@@ -171,9 +204,8 @@ def method_fractal(out_dir: Path, seed: int, params=None):
         z[:] = 0.0
 
     div = np.full(c.shape, max_iter, dtype=np.int32)
-    # For smooth coloring: track last 2 |z| values
+    # For smooth coloring: track last |z| value
     last_z = np.zeros_like(z, dtype=np.float64)
-    last_z2 = np.zeros_like(z, dtype=np.float64)
 
     # For orbital trap: track minimum distance to trap point
     trap = complex(trap_x, trap_y)
@@ -203,9 +235,8 @@ def method_fractal(out_dir: Path, seed: int, params=None):
         elif formula == "mandelbrot4":
             z[m] = z[m] ** 4 + c[m]
 
-        # Track last 2 |z| for smooth coloring
+        # Track last |z| for smooth coloring
         if smooth:
-            last_z2[m] = last_z[m]
             last_z[m] = np.abs(z[m])
 
         # Orbital trap
