@@ -1161,9 +1161,8 @@ def method_dla(out_dir: Path, seed: int, params=None):
              "palette": {"description": "PALETTES name", "default": "cool"},
              "inject_x": {"description": "injection X position (0-1 fraction, 0=none)", "min": 0.0, "max": 1.0, "default": 0.0},
              "inject_y": {"description": "injection Y position (0-1 fraction)", "min": 0.0, "max": 1.0, "default": 0.0},
-             "sweep_axis": {"description": "parameter sweep for animation: none, f, k, both, cycle", "default": "none"},
              "time": {"description": "animation time param (0-2π)", "min": 0.0, "max": 6.28, "default": 0.0},
-             "anim_mode": {"description": "animation mode", "choices": ["none", "sweep"], "default": "none"},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "f_sweep", "k_sweep", "fk_orbit", "preset_cycle", "color_morph", "diffusion_wave", "injection_orbit"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
 def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
@@ -1236,7 +1235,6 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
     palette_name = params.get("palette", "cool")
     inject_x = max(0.0, min(1.0, float(params.get("inject_x", 0.0))))
     inject_y = max(0.0, min(1.0, float(params.get("inject_y", 0.0))))
-    sweep_axis = params.get("sweep_axis", "none")
 
     pal = PALETTES.get(palette_name, [(80, 60, 40)])
     n_pal = len(pal)
@@ -1326,25 +1324,22 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
 
     # --- Time-based animation ---
     t = anim_time * anim_speed
-    if anim_mode == "sweep" and sweep_axis != "none":
-        t_norm = t / (2 * math.pi)
-        if sweep_axis == "f":
-            F = 0.015 + 0.045 * abs(math.sin(t * 0.5))
-        elif sweep_axis == "k":
-            k = 0.045 + 0.025 * abs(math.sin(t * 0.7))
-        elif sweep_axis == "both":
-            # Orbit through F-k phase space
-            F = 0.015 + 0.045 * abs(math.sin(t * 0.4))
-            k = 0.045 + 0.025 * abs(math.cos(t * 0.3))
-        elif sweep_axis == "cycle":
-            # Cycle through presets
-            preset_names = list(PRESETS.keys())
-            idx = int(t_norm * len(preset_names)) % len(preset_names)
-            preset_p = PRESETS[preset_names[idx]]
-            F = preset_p["F"]
-            k = preset_p["k"]
-            Du = preset_p["Du"]
-            Dv = preset_p["Dv"]
+    _color_modes = ["v_norm", "u", "u_minus_v", "phase", "gradient", "frequency"]
+    _anim_active = anim_mode != "none"
+    _anim_base_F = F
+    _anim_base_k = k
+    _anim_base_Du = Du
+    _anim_base_Dv = Dv
+    _anim_base_color = color_mode
+    _anim_base_inject_x = inject_x
+    _anim_base_inject_y = inject_y
+    _anim_base_has_injection = has_injection
+    _anim_preset_names = list(PRESETS.keys())
+    _blend_color = 0.0
+    _color_a = color_mode
+    _color_b = color_mode
+    _color_weights = [1.0]
+    _color_modes_list = [color_mode]
 
     # --- Color function ---
     def render_frame(u_arr, v_arr, w_arr=None):
@@ -1408,8 +1403,64 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
             u = u.clip(0, 1)
             v = v.clip(0, 1)
 
+        # Animate parameters during simulation
+        if _anim_active:
+            _t = t + (i / max(1, iterations)) * 4 * math.pi * anim_speed
+            if anim_mode == "f_sweep":
+                F = 0.015 + 0.045 * (0.5 + 0.5 * math.sin(_t))
+            elif anim_mode == "k_sweep":
+                k = 0.045 + 0.025 * (0.5 + 0.5 * math.sin(_t * 1.4))
+            elif anim_mode == "fk_orbit":
+                F = 0.015 + 0.045 * (0.5 + 0.5 * math.sin(_t * 0.8))
+                k = 0.045 + 0.025 * (0.5 + 0.5 * math.cos(_t * 0.6))
+            elif anim_mode == "preset_cycle":
+                raw_idx = _t * 0.4
+                idx_a = int(raw_idx) % len(_anim_preset_names)
+                idx_b = (idx_a + 1) % len(_anim_preset_names)
+                frac = raw_idx % 1.0
+                pa = PRESETS[_anim_preset_names[idx_a]]
+                pb = PRESETS[_anim_preset_names[idx_b]]
+                F = pa["F"] * (1 - frac) + pb["F"] * frac
+                k = pa["k"] * (1 - frac) + pb["k"] * frac
+                Du = pa["Du"] * (1 - frac) + pb["Du"] * frac
+                Dv = pa["Dv"] * (1 - frac) + pb["Dv"] * frac
+            elif anim_mode == "color_morph":
+                # Continuous blend across all color modes — no discrete switching
+                raw_idx = _t * 0.4
+                n_modes = len(_color_modes)
+                weights = []
+                for j in range(n_modes):
+                    w = 0.5 + 0.5 * math.cos(raw_idx - j * 2 * math.pi / n_modes)
+                    weights.append(w ** 4)  # Sharpen peaks
+                total = sum(weights)
+                weights = [w / total for w in weights]
+                _color_weights = weights
+                _color_modes_list = _color_modes
+            elif anim_mode == "diffusion_wave":
+                Du = 0.08 + 0.2 * (0.5 + 0.5 * math.sin(_t * 0.8))
+                Dv = 0.03 + 0.15 * (0.5 + 0.5 * math.cos(_t * 0.6))
+            elif anim_mode == "injection_orbit":
+                has_injection = True
+                inject_x = 0.5 + 0.4 * math.cos(_t)
+                inject_y = 0.5 + 0.4 * math.sin(_t)
+
         if i % _cap_interval == 0:
-            frame = render_frame(u, v, w if species == "bz_3species" else None)
+            if _anim_active and anim_mode == "color_morph":
+                # Weighted blend across all color modes
+                _saved_color = color_mode
+                frame = None
+                for _ci, _cm in enumerate(_color_modes_list):
+                    if _color_weights[_ci] < 0.01:
+                        continue
+                    color_mode = _cm
+                    _f = render_frame(u, v, w if species == "bz_3species" else None)
+                    if frame is None:
+                        frame = _f * _color_weights[_ci]
+                    else:
+                        frame += _f * _color_weights[_ci]
+                color_mode = _saved_color
+            else:
+                frame = render_frame(u, v, w if species == "bz_3species" else None)
             if scale != 1.0:
                 frame = cv2.resize(frame, (W, H), interpolation=cv2.INTER_LINEAR)
             capture_frame('32', frame)
