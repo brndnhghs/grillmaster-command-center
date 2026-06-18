@@ -12,4 +12,6 @@ from . import (
     collage,
     posterize,
     false_color_ir,
+    flow_field,
+    simulations,
 )
