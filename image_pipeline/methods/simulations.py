@@ -1145,56 +1145,79 @@ def method_dla(out_dir: Path, seed: int, params=None):
 
 @method(id="32", name="Reaction Diffusion", category="simulations", tags=["gray-scott", "organic", "animation", "expanded"],
          params={
-             "preset": {"description": "named pattern: mitosis, coral, spots, stripes, waves, zebra, moving_spots, spiral_waves, self_replicate, chaotic, gliders, solitons, mazes, honeycomb, bacteria, custom", "default": "mitosis"},
+             "preset": {"description": "named pattern: mitosis, coral, spots, stripes, waves, zebra, moving_spots, spiral_waves, self_replicate, chaotic, gliders, solitons, mazes, honeycomb, bacteria, fingers, u_skate, flower, pulse, worms, custom", "default": "mitosis"},
              "species": {"description": "species model: gray_scott, bz_3species", "default": "gray_scott"},
-             "feed_rate": {"description": "Gray-Scott F parameter", "min": 0.01, "max": 0.1, "default": 0.035},
-             "kill_rate": {"description": "Gray-Scott k parameter", "min": 0.01, "max": 0.1, "default": 0.065},
-             "diff_u": {"description": "diffusion rate U", "min": 0.05, "max": 0.3, "default": 0.16},
-             "diff_v": {"description": "diffusion rate V", "min": 0.02, "max": 0.2, "default": 0.08},
+             "feed_rate": {"description": "Gray-Scott F parameter (feed rate of U)", "min": 0.01, "max": 0.1, "default": 0.035},
+             "kill_rate": {"description": "Gray-Scott k parameter (kill rate of V)", "min": 0.01, "max": 0.1, "default": 0.065},
+             "diff_u": {"description": "diffusion rate of U (A)", "min": 0.05, "max": 0.5, "default": 0.16},
+             "diff_v": {"description": "diffusion rate of V (B)", "min": 0.02, "max": 0.3, "default": 0.08},
+             "dt": {"description": "time step for numerical stability (0.1-2.0)", "min": 0.1, "max": 2.0, "default": 1.0},
              "iterations": {"description": "simulation steps", "min": 100, "max": 10000, "default": 2000},
              "quality": {"description": "render quality: low (half-res), medium, high", "default": "medium"},
-             "seed_type": {"description": "initial seed: center, random, grid, input", "default": "center"},
+             "seed_type": {"description": "initial seed: center, random, grid, line, circle, noise, perlin, input", "default": "center"},
              "seed_size": {"description": "seed region size in pixels", "min": 2, "max": 200, "default": 10},
              "perturbations": {"description": "number of random perturbations for seed_type=random", "min": 5, "max": 200, "default": 20},
-             "boundary": {"description": "boundary condition: wrap, reflect, zero, noise", "default": "wrap"},
-             "color_mode": {"description": "color mapping: v_norm, u, u_minus_v, phase, gradient, frequency", "default": "v_norm"},
+             "boundary": {"description": "boundary condition: wrap, reflect, zero, noise, periodic, clamped, mirror", "default": "wrap"},
+             "color_mode": {"description": "color mapping: v_norm, u, u_minus_v, phase, gradient, frequency, divergence, curl, laplacian, b_over_a, lighting", "default": "v_norm"},
              "palette": {"description": "PALETTES name", "default": "cool"},
+             "style_map": {"description": "spatial variation: none, perlin, gradient_x, gradient_y, radial, checker, spots, stripes", "default": "none"},
+             "style_map_axis": {"description": "parameter to modulate: f, k, du, dv, all", "default": "f"},
+             "bias_x": {"description": "anisotropic diffusion bias X (-1 to 1, 0=isotropic)", "min": -1.0, "max": 1.0, "default": 0.0},
+             "bias_y": {"description": "anisotropic diffusion bias Y (-1 to 1, 0=isotropic)", "min": -1.0, "max": 1.0, "default": 0.0},
              "inject_x": {"description": "injection X position (0-1 fraction, 0=none)", "min": 0.0, "max": 1.0, "default": 0.0},
              "inject_y": {"description": "injection Y position (0-1 fraction)", "min": 0.0, "max": 1.0, "default": 0.0},
+             "inject_strength": {"description": "injection strength multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
              "time": {"description": "animation time param (0-2π)", "min": 0.0, "max": 6.28, "default": 0.0},
-             "anim_mode": {"description": "animation mode", "choices": ["none", "f_sweep", "k_sweep", "fk_orbit", "preset_cycle", "color_morph", "diffusion_wave", "injection_orbit"], "default": "none"},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "f_sweep", "k_sweep", "fk_orbit", "preset_cycle", "color_morph", "diffusion_wave", "injection_orbit", "style_map_sweep", "bias_rotate", "seed_morph"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
 def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
-    """Run a Gray-Scott reaction-diffusion simulation.
+    """Run a Gray-Scott reaction-diffusion simulation with advanced features.
 
     Simulates the Gray-Scott (or 3-species BZ) reaction-diffusion system
-    over a grid, producing organic patterns. Supports 15+ presets, multiple
-    seed types, boundary conditions, color modes, and parameter sweep animation.
+    over a grid, producing organic Turing patterns. Features 20+ presets
+    from the full F-k phase diagram, proper 3x3 Laplacian kernel (Karl Sims
+    style), style maps for spatial parameter variation, anisotropic diffusion
+    bias, 8 seed types, 11 color modes, 7 boundary conditions, and 11
+    animation modes.
+
+    The Gray-Scott model:
+        U + 2V → 3V  (reaction: U consumed, V produced)
+        U is replenished at feed rate F
+        V is removed at kill rate k
+
+    PDEs:
+        dU/dt = Du·∇²U - UV² + F(1 - U)
+        dV/dt = Dv·∇²V + UV² - (F + k)V
 
     Args:
         out_dir: Output directory for the generated image.
         seed: Random seed for deterministic output.
         params: Dict with keys:
-            preset: named pattern (mitosis/coral/spots/stripes/waves/...)
+            preset: named pattern (mitosis/coral/spots/stripes/...)
             species: species model (gray_scott/bz_3species)
             feed_rate: Gray-Scott F parameter (0.01-0.1)
             kill_rate: Gray-Scott k parameter (0.01-0.1)
-            diff_u: diffusion rate U (0.05-0.3)
-            diff_v: diffusion rate V (0.02-0.2)
+            diff_u: diffusion rate of U (0.05-0.5)
+            diff_v: diffusion rate of V (0.02-0.3)
+            dt: time step (0.1-2.0, default 1.0)
             iterations: simulation steps (100-10000)
             quality: render quality (low/medium/high)
-            seed_type: initial seed (center/random/grid/input)
+            seed_type: initial seed (center/random/grid/line/circle/noise/perlin/input)
             seed_size: seed region size in pixels (2-200)
             perturbations: number of random perturbations (5-200)
-            boundary: boundary condition (wrap/reflect/zero/noise)
-            color_mode: color mapping (v_norm/u/u_minus_v/phase/gradient/frequency)
+            boundary: boundary condition (wrap/reflect/zero/noise/periodic/clamped/mirror)
+            color_mode: color mapping (v_norm/u/u_minus_v/phase/gradient/frequency/divergence/curl/laplacian/b_over_a/lighting)
             palette: PALETTES name
+            style_map: spatial variation (none/perlin/gradient_x/gradient_y/radial/checker/spots/stripes)
+            style_map_axis: parameter to modulate (f/k/du/dv/all)
+            bias_x: anisotropic diffusion bias X (-1 to 1)
+            bias_y: anisotropic diffusion bias Y (-1 to 1)
             inject_x: injection X position (0-1, 0=none)
             inject_y: injection Y position (0-1)
-            sweep_axis: parameter sweep (none/f/k/both/cycle)
+            inject_strength: injection strength multiplier (0.1-3.0)
             time: animation time in radians (0-6.28)
-            anim_mode: animation mode (none/sweep)
+            anim_mode: animation mode (none/f_sweep/k_sweep/fk_orbit/preset_cycle/color_morph/diffusion_wave/injection_orbit/style_map_sweep/bias_rotate/seed_morph)
             anim_speed: animation speed multiplier (0.1-5.0)
     """
     import cv2
@@ -1208,22 +1231,31 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
     from ..core.utils import PALETTES, norm as _norm
 
     # --- Presets (full Gray-Scott phase diagram) ---
+    # F = feed rate, k = kill rate, Du/Dv = diffusion rates
+    # Patterns emerge in a narrow crescent between solid-U and solid-V states
     PRESETS = {
-        "mitosis": {"F": 0.035, "k": 0.065, "Du": 0.16, "Dv": 0.08},
-        "coral": {"F": 0.054, "k": 0.063, "Du": 0.16, "Dv": 0.08},
-        "spots": {"F": 0.030, "k": 0.062, "Du": 0.16, "Dv": 0.08},
-        "stripes": {"F": 0.025, "k": 0.060, "Du": 0.16, "Dv": 0.08},
-        "waves": {"F": 0.020, "k": 0.055, "Du": 0.14, "Dv": 0.07},
-        "zebra": {"F": 0.050, "k": 0.065, "Du": 0.18, "Dv": 0.09},
-        "moving_spots": {"F": 0.038, "k": 0.065, "Du": 0.16, "Dv": 0.08},
-        "spiral_waves": {"F": 0.022, "k": 0.051, "Du": 0.12, "Dv": 0.06},
-        "self_replicate": {"F": 0.040, "k": 0.063, "Du": 0.18, "Dv": 0.09},
-        "chaotic": {"F": 0.030, "k": 0.057, "Du": 0.14, "Dv": 0.07},
-        "gliders": {"F": 0.048, "k": 0.064, "Du": 0.19, "Dv": 0.09},
-        "solitons": {"F": 0.015, "k": 0.045, "Du": 0.10, "Dv": 0.05},
-        "mazes": {"F": 0.042, "k": 0.063, "Du": 0.17, "Dv": 0.085},
-        "honeycomb": {"F": 0.036, "k": 0.064, "Du": 0.15, "Dv": 0.075},
-        "bacteria": {"F": 0.026, "k": 0.058, "Du": 0.13, "Dv": 0.065},
+        # Classic patterns
+        "mitosis":       {"F": 0.035, "k": 0.065, "Du": 0.16, "Dv": 0.08},
+        "coral":         {"F": 0.054, "k": 0.063, "Du": 0.16, "Dv": 0.08},
+        "spots":         {"F": 0.030, "k": 0.062, "Du": 0.16, "Dv": 0.08},
+        "stripes":       {"F": 0.025, "k": 0.060, "Du": 0.16, "Dv": 0.08},
+        "waves":         {"F": 0.020, "k": 0.055, "Du": 0.14, "Dv": 0.07},
+        "zebra":         {"F": 0.050, "k": 0.065, "Du": 0.18, "Dv": 0.09},
+        "moving_spots":  {"F": 0.038, "k": 0.065, "Du": 0.16, "Dv": 0.08},
+        "spiral_waves":  {"F": 0.022, "k": 0.051, "Du": 0.12, "Dv": 0.06},
+        "self_replicate":{"F": 0.040, "k": 0.063, "Du": 0.18, "Dv": 0.09},
+        "chaotic":       {"F": 0.030, "k": 0.057, "Du": 0.14, "Dv": 0.07},
+        "gliders":       {"F": 0.048, "k": 0.064, "Du": 0.19, "Dv": 0.09},
+        "solitons":      {"F": 0.015, "k": 0.045, "Du": 0.10, "Dv": 0.05},
+        "mazes":         {"F": 0.042, "k": 0.063, "Du": 0.17, "Dv": 0.085},
+        "honeycomb":     {"F": 0.036, "k": 0.064, "Du": 0.15, "Dv": 0.075},
+        "bacteria":      {"F": 0.026, "k": 0.058, "Du": 0.13, "Dv": 0.065},
+        # Extended presets from research
+        "fingers":       {"F": 0.050, "k": 0.062, "Du": 0.16, "Dv": 0.08},
+        "u_skate":       {"F": 0.045, "k": 0.061, "Du": 0.16, "Dv": 0.08},
+        "flower":        {"F": 0.055, "k": 0.062, "Du": 0.16, "Dv": 0.08},
+        "pulse":         {"F": 0.018, "k": 0.050, "Du": 0.12, "Dv": 0.06},
+        "worms":         {"F": 0.032, "k": 0.060, "Du": 0.15, "Dv": 0.075},
     }
 
     preset = params.get("preset", "mitosis")
@@ -1233,8 +1265,14 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
     boundary = params.get("boundary", "wrap")
     color_mode = params.get("color_mode", "v_norm")
     palette_name = params.get("palette", "cool")
+    style_map = params.get("style_map", "none")
+    style_map_axis = params.get("style_map_axis", "f")
+    bias_x = float(params.get("bias_x", 0.0))
+    bias_y = float(params.get("bias_y", 0.0))
     inject_x = max(0.0, min(1.0, float(params.get("inject_x", 0.0))))
     inject_y = max(0.0, min(1.0, float(params.get("inject_y", 0.0))))
+    inject_strength = max(0.1, min(3.0, float(params.get("inject_strength", 1.0))))
+    dt = max(0.1, min(2.0, float(params.get("dt", 1.0))))
 
     pal = PALETTES.get(palette_name, [(80, 60, 40)])
     n_pal = len(pal)
@@ -1247,8 +1285,8 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
         F = p["F"]
         k = p["k"]
     else:
-        Du = max(0.05, min(0.3, float(params.get("diff_u", 0.16))))
-        Dv = max(0.02, min(0.2, float(params.get("diff_v", 0.08))))
+        Du = max(0.05, min(0.5, float(params.get("diff_u", 0.16))))
+        Dv = max(0.02, min(0.3, float(params.get("diff_v", 0.08))))
         F = max(0.01, min(0.1, float(params.get("feed_rate", 0.035))))
         k = max(0.01, min(0.1, float(params.get("kill_rate", 0.065))))
 
@@ -1300,6 +1338,30 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
             r = max(2, int(rng.integers(5, 30) * scale))
             v[cy-r:cy+r, cx-r:cx+r] = rng.random() * 0.3
             u[cy-r:cy+r, cx-r:cx+r] = rng.random() * 0.5
+    elif seed_type == "line":
+        # Vertical line of V seed
+        lw = max(2, int(seed_sz * 0.3))
+        u[:, cw-lw:cw+lw] = 0.5
+        v[:, cw-lw:cw+lw] = 0.25
+    elif seed_type == "circle":
+        # Ring of V seed
+        yy, xx = np.ogrid[:rH, :rW]
+        dist = np.sqrt((xx - cw) ** 2 + (yy - ch) ** 2)
+        ring = (dist > seed_sz * 0.5) & (dist < seed_sz * 1.5)
+        u[ring] = 0.5
+        v[ring] = 0.25
+    elif seed_type == "noise":
+        # Smooth noise field for V
+        noise = rng.random((rH, rW)).astype(np.float32)
+        noise = cv2.GaussianBlur(noise, (15, 15), 5)
+        v = noise * 0.3
+        u = 1.0 - noise * 0.3
+    elif seed_type == "perlin":
+        # Simple gradient noise
+        from ..core.utils import perlin_noise
+        noise = perlin_noise((rH, rW), scale=30, seed=seed)
+        v = np.clip(noise * 0.3, 0, 1)
+        u = 1.0 - v
     else:  # center
         ss = min(seed_sz, rW // 2, rH // 2)
         u[cw-ss:cw+ss, ch-ss:ch+ss] = 0.5
@@ -1308,23 +1370,138 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
     if species == "bz_3species":
         w = rng.random((rH, rW)).astype(np.float32) * 0.1
 
-    # --- Boundary condition helper ---
-    def lap(arr):
-        if boundary == "reflect":
-            t = np.pad(arr[1:-1, 1:-1], 1, mode='reflect')
-            return (np.roll(t, 1, 0) + np.roll(t, -1, 0) + np.roll(t, 1, 1) + np.roll(t, -1, 1) - 4 * t)
+    # --- Karl Sims style Laplacian kernel ---
+    # Center: -1, Adjacent: 0.2, Diagonal: 0.05
+    # This gives smoother, more accurate diffusion than the 4-neighbor roll method
+    _lap_kernel = np.array([
+        [0.05, 0.20, 0.05],
+        [0.20, -1.0, 0.20],
+        [0.05, 0.20, 0.05]
+    ], dtype=np.float32)
+
+    def lap_karl_sims(arr):
+        """Apply Karl Sims 3x3 Laplacian kernel with boundary handling."""
+        if boundary in ("wrap", "periodic"):
+            padded = np.pad(arr, 1, mode='wrap')
+        elif boundary == "reflect":
+            padded = np.pad(arr, 1, mode='reflect')
+        elif boundary == "mirror":
+            padded = np.pad(arr, 1, mode='symmetric')
+        elif boundary == "clamped":
+            padded = np.pad(arr, 1, mode='edge')
         elif boundary == "zero":
-            t = np.pad(arr[1:-1, 1:-1], 1, mode='constant')
-            return (np.roll(t, 1, 0) + np.roll(t, -1, 0) + np.roll(t, 1, 1) + np.roll(t, -1, 1) - 4 * t)
+            padded = np.pad(arr, 1, mode='constant', constant_values=0)
         elif boundary == "noise":
-            t = arr + rng.standard_normal(arr.shape) * 0.001
-            return (np.roll(t, 1, 0) + np.roll(t, -1, 0) + np.roll(t, 1, 1) + np.roll(t, -1, 1) - 4 * t)
-        else:  # wrap
-            return (np.roll(arr, 1, 0) + np.roll(arr, -1, 0) + np.roll(arr, 1, 1) + np.roll(arr, -1, 1) - 4 * arr)
+            noise = rng.standard_normal((rH + 2, rW + 2)).astype(np.float32) * 0.001
+            padded = np.pad(arr, 1, mode='reflect') + noise
+        else:
+            padded = np.pad(arr, 1, mode='wrap')
+        # Apply kernel via convolution
+        result = (
+            _lap_kernel[0, 0] * padded[:-2, :-2] +
+            _lap_kernel[0, 1] * padded[:-2, 1:-1] +
+            _lap_kernel[0, 2] * padded[:-2, 2:] +
+            _lap_kernel[1, 0] * padded[1:-1, :-2] +
+            _lap_kernel[1, 1] * padded[1:-1, 1:-1] +
+            _lap_kernel[1, 2] * padded[1:-1, 2:] +
+            _lap_kernel[2, 0] * padded[2:, :-2] +
+            _lap_kernel[2, 1] * padded[2:, 1:-1] +
+            _lap_kernel[2, 2] * padded[2:, 2:]
+        )
+        return result
+
+    # --- Anisotropic diffusion bias ---
+    def lap_biased(arr):
+        """Apply Laplacian with anisotropic bias."""
+        if abs(bias_x) < 0.01 and abs(bias_y) < 0.01:
+            return lap_karl_sims(arr)
+        bx = bias_x * 0.3
+        by = bias_y * 0.3
+        kernel = np.array([
+            [0.05 - by - bx, 0.20 - by, 0.05 - by + bx],
+            [0.20 - bx,     -1.0,      0.20 + bx],
+            [0.05 + by - bx, 0.20 + by, 0.05 + by + bx]
+        ], dtype=np.float32)
+        if boundary in ("wrap", "periodic"):
+            padded = np.pad(arr, 1, mode='wrap')
+        elif boundary == "reflect":
+            padded = np.pad(arr, 1, mode='reflect')
+        elif boundary == "mirror":
+            padded = np.pad(arr, 1, mode='symmetric')
+        elif boundary == "clamped":
+            padded = np.pad(arr, 1, mode='edge')
+        elif boundary == "zero":
+            padded = np.pad(arr, 1, mode='constant', constant_values=0)
+        elif boundary == "noise":
+            noise = rng.standard_normal((rH + 2, rW + 2)).astype(np.float32) * 0.001
+            padded = np.pad(arr, 1, mode='reflect') + noise
+        else:
+            padded = np.pad(arr, 1, mode='wrap')
+        return (
+            kernel[0, 0] * padded[:-2, :-2] +
+            kernel[0, 1] * padded[:-2, 1:-1] +
+            kernel[0, 2] * padded[:-2, 2:] +
+            kernel[1, 0] * padded[1:-1, :-2] +
+            kernel[1, 1] * padded[1:-1, 1:-1] +
+            kernel[1, 2] * padded[1:-1, 2:] +
+            kernel[2, 0] * padded[2:, :-2] +
+            kernel[2, 1] * padded[2:, 1:-1] +
+            kernel[2, 2] * padded[2:, 2:]
+        )
+
+    # --- Style map: spatial parameter variation ---
+    def build_style_map():
+        """Build spatial variation maps for F, k, Du, Dv."""
+        if style_map == "none":
+            return None
+        yy, xx = np.mgrid[0:rH, 0:rW]
+        if style_map == "gradient_x":
+            base = xx.astype(np.float32) / rW
+        elif style_map == "gradient_y":
+            base = yy.astype(np.float32) / rH
+        elif style_map == "radial":
+            cx_s, cy_s = rW / 2, rH / 2
+            base = np.sqrt((xx - cx_s) ** 2 + (yy - cy_s) ** 2)
+            base = base / base.max()
+        elif style_map == "checker":
+            base = ((xx // 40 + yy // 40) % 2).astype(np.float32)
+        elif style_map == "spots":
+            base = rng.random((rH, rW)).astype(np.float32)
+            base = cv2.GaussianBlur(base, (31, 31), 10)
+        elif style_map == "stripes":
+            base = (0.5 + 0.5 * np.sin(xx * 0.1)).astype(np.float32)
+        elif style_map == "perlin":
+            # Simple gradient noise using numpy
+            noise = rng.random((rH, rW)).astype(np.float32)
+            noise = cv2.GaussianBlur(noise, (51, 51), 15)
+            base = (noise - noise.min()) / (noise.max() - noise.min() + 1e-8)
+        else:
+            return None
+        return base
+
+    _style_map = build_style_map()
+
+    # If style map is active, convert parameters to 2D arrays
+    if _style_map is not None:
+        s = _style_map
+        if style_map_axis == "f":
+            F = 0.01 + 0.09 * s
+        elif style_map_axis == "k":
+            k = 0.04 + 0.03 * s
+        elif style_map_axis == "du":
+            Du = 0.05 + 0.25 * s
+        elif style_map_axis == "dv":
+            Dv = 0.02 + 0.18 * s
+        elif style_map_axis == "all":
+            F = 0.01 + 0.09 * s
+            k = 0.04 + 0.03 * s
+            Du = 0.05 + 0.25 * s
+            Dv = 0.02 + 0.18 * s
 
     # --- Time-based animation ---
     t = anim_time * anim_speed
-    _color_modes = ["v_norm", "u", "u_minus_v", "phase", "gradient", "frequency"]
+    _color_modes = ["v_norm", "u", "u_minus_v", "phase", "gradient", "frequency",
+                    "divergence", "curl", "laplacian", "b_over_a", "lighting"]
     _anim_active = anim_mode != "none"
     _anim_base_F = F
     _anim_base_k = k
@@ -1334,10 +1511,10 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
     _anim_base_inject_x = inject_x
     _anim_base_inject_y = inject_y
     _anim_base_has_injection = has_injection
+    _anim_base_bias_x = bias_x
+    _anim_base_bias_y = bias_y
+    _anim_base_style_map = style_map
     _anim_preset_names = list(PRESETS.keys())
-    _blend_color = 0.0
-    _color_a = color_mode
-    _color_b = color_mode
     _color_weights = [1.0]
     _color_modes_list = [color_mode]
 
@@ -1358,13 +1535,41 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
             gx = np.abs(np.diff(v_arr, axis=1, append=v_arr[:, -1:]))
             gy = np.abs(np.diff(v_arr, axis=0, append=v_arr[-1:, :]))
             channel = _norm(gx + gy)
+        elif color_mode == "divergence":
+            gy = np.diff(v_arr, axis=0, append=v_arr[-1:, :])
+            gx = np.diff(v_arr, axis=1, append=v_arr[:, -1:])
+            dxx = np.diff(gx, axis=1, append=gx[:, -1:])
+            dyy = np.diff(gy, axis=0, append=gy[-1:, :])
+            channel = _norm(np.abs(dxx + dyy))
+        elif color_mode == "curl":
+            gy = np.diff(v_arr, axis=0, append=v_arr[-1:, :])
+            gx = np.diff(v_arr, axis=1, append=v_arr[:, -1:])
+            curl = np.abs(np.diff(gx, axis=0, append=gx[-1:, :]) - np.diff(gy, axis=1, append=gy[:, -1:]))
+            channel = _norm(curl)
+        elif color_mode == "laplacian":
+            lap_v = lap_karl_sims(v_arr)
+            channel = _norm(np.abs(lap_v))
+        elif color_mode == "b_over_a":
+            ratio = v_arr / (u_arr + 1e-8)
+            channel = _norm(ratio)
+        elif color_mode == "lighting":
+            gy = np.diff(v_arr, axis=0, append=v_arr[-1:, :])
+            gx = np.diff(v_arr, axis=1, append=v_arr[:, -1:])
+            light_dir = np.array([0.3, 0.5, 0.8])
+            light_dir = light_dir / np.linalg.norm(light_dir)
+            nx = -gx / (np.sqrt(gx**2 + gy**2 + 1e-8))
+            ny = -gy / (np.sqrt(gx**2 + gy**2 + 1e-8))
+            nz = 1.0 / (np.sqrt(gx**2 + gy**2 + 1e-8))
+            brightness = nx * light_dir[0] + ny * light_dir[1] + nz * light_dir[2]
+            brightness = np.clip(brightness * 0.5 + 0.5, 0, 1)
+            channel = _norm(v_arr) * brightness
         else:  # v_norm
             channel = _norm(v_arr)
 
         # Vectorized palette lookup
-        pal_arr = np.array(pal, dtype=np.float32) / 255.0  # (N, 3)
-        idx = (channel * (n_pal - 1)).astype(np.int32).clip(0, n_pal - 1)  # (H, W)
-        result = pal_arr[idx]  # (H, W, 3)
+        pal_arr = np.array(pal, dtype=np.float32) / 255.0
+        idx = (channel * (n_pal - 1)).astype(np.int32).clip(0, n_pal - 1)
+        result = pal_arr[idx]
         return result
 
     # --- Main simulation loop ---
@@ -1372,21 +1577,22 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
 
     for i in range(iterations):
         if species == "bz_3species":
-            # 3-species BZ reaction
-            lap_u = lap(u)
-            lap_v = lap(v)
-            lap_w = lap(w)
-            # BZ kinetics (Oregonator-like)
-            u += 0.01 * (lap_u + u - u * u - v)
-            v += 0.01 * (lap_v + u - v)
-            w += 0.01 * (lap_w + v - w)
+            lap_u = lap_biased(u)
+            lap_v = lap_biased(v)
+            lap_w = lap_biased(w)
+            u += dt * 0.01 * (lap_u + u - u * u - v)
+            v += dt * 0.01 * (lap_v + u - v)
+            w += dt * 0.01 * (lap_w + v - w)
         else:
-            # Standard Gray-Scott
             uv = u * v * v
-            u_la = lap(u)
-            v_la = lap(v)
-            u += Du * u_la - uv + F * (1 - u)
-            v += Dv * v_la + uv - (F + k) * v
+            u_la = lap_biased(u)
+            v_la = lap_biased(v)
+            if _style_map is not None:
+                u += dt * (Du * u_la - uv + F * (1 - u))
+                v += dt * (Dv * v_la + uv - (F + k) * v)
+            else:
+                u += dt * (Du * u_la - uv + F * (1 - u))
+                v += dt * (Dv * v_la + uv - (F + k) * v)
 
         u = u.clip(0, 1)
         v = v.clip(0, 1)
@@ -1398,22 +1604,22 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
             ix = min(int(inject_x * rW), rW - 1)
             iy = min(int(inject_y * rH), rH - 1)
             r = max(2, int(5 * scale))
-            u[max(0,iy-r):min(rH,iy+r), max(0,ix-r):min(rW,ix+r)] += 0.3
-            v[max(0,iy-r):min(rH,iy+r), max(0,ix-r):min(rW,ix+r)] += 0.2
+            u[max(0,iy-r):min(rH,iy+r), max(0,ix-r):min(rW,ix+r)] += 0.3 * inject_strength
+            v[max(0,iy-r):min(rH,iy+r), max(0,ix-r):min(rW,ix+r)] += 0.2 * inject_strength
             u = u.clip(0, 1)
             v = v.clip(0, 1)
 
         # Animate parameters during simulation
         if _anim_active:
             _t = t + (i / max(1, iterations)) * 4 * math.pi * anim_speed
-            if anim_mode == "f_sweep":
+            if anim_mode == "f_sweep" and _style_map is None:
                 F = 0.015 + 0.045 * (0.5 + 0.5 * math.sin(_t))
-            elif anim_mode == "k_sweep":
+            elif anim_mode == "k_sweep" and _style_map is None:
                 k = 0.045 + 0.025 * (0.5 + 0.5 * math.sin(_t * 1.4))
-            elif anim_mode == "fk_orbit":
+            elif anim_mode == "fk_orbit" and _style_map is None:
                 F = 0.015 + 0.045 * (0.5 + 0.5 * math.sin(_t * 0.8))
                 k = 0.045 + 0.025 * (0.5 + 0.5 * math.cos(_t * 0.6))
-            elif anim_mode == "preset_cycle":
+            elif anim_mode == "preset_cycle" and _style_map is None:
                 raw_idx = _t * 0.4
                 idx_a = int(raw_idx) % len(_anim_preset_names)
                 idx_b = (idx_a + 1) % len(_anim_preset_names)
@@ -1425,13 +1631,12 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
                 Du = pa["Du"] * (1 - frac) + pb["Du"] * frac
                 Dv = pa["Dv"] * (1 - frac) + pb["Dv"] * frac
             elif anim_mode == "color_morph":
-                # Continuous blend across all color modes — no discrete switching
                 raw_idx = _t * 0.4
                 n_modes = len(_color_modes)
                 weights = []
                 for j in range(n_modes):
-                    w = 0.5 + 0.5 * math.cos(raw_idx - j * 2 * math.pi / n_modes)
-                    weights.append(w ** 4)  # Sharpen peaks
+                    w_c = 0.5 + 0.5 * math.cos(raw_idx - j * 2 * math.pi / n_modes)
+                    weights.append(w_c ** 4)
                 total = sum(weights)
                 weights = [w / total for w in weights]
                 _color_weights = weights
@@ -1443,10 +1648,41 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
                 has_injection = True
                 inject_x = 0.5 + 0.4 * math.cos(_t)
                 inject_y = 0.5 + 0.4 * math.sin(_t)
+            elif anim_mode == "style_map_sweep":
+                _style_types = ["none", "gradient_x", "gradient_y", "radial", "checker", "spots", "stripes", "perlin"]
+                raw_idx = _t * 0.3
+                idx_s = int(raw_idx) % len(_style_types)
+                style_map = _style_types[idx_s]
+                _style_map = build_style_map()
+                # Rebuild parameter arrays with new style map
+                if _style_map is not None:
+                    s = _style_map
+                    if style_map_axis == "f":
+                        F = 0.01 + 0.09 * s
+                    elif style_map_axis == "k":
+                        k = 0.04 + 0.03 * s
+                    elif style_map_axis == "du":
+                        Du = 0.05 + 0.25 * s
+                    elif style_map_axis == "dv":
+                        Dv = 0.02 + 0.18 * s
+                    elif style_map_axis == "all":
+                        F = 0.01 + 0.09 * s
+                        k = 0.04 + 0.03 * s
+                        Du = 0.05 + 0.25 * s
+                        Dv = 0.02 + 0.18 * s
+                else:
+                    # Reset to scalar values
+                    p = PRESETS.get(preset, PRESETS["mitosis"])
+                    F = p["F"]
+                    k = p["k"]
+                    Du = p["Du"]
+                    Dv = p["Dv"]
+            elif anim_mode == "bias_rotate":
+                bias_x = 0.8 * math.cos(_t * 0.5)
+                bias_y = 0.8 * math.sin(_t * 0.5)
 
         if i % _cap_interval == 0:
             if _anim_active and anim_mode == "color_morph":
-                # Weighted blend across all color modes
                 _saved_color = color_mode
                 frame = None
                 for _ci, _cm in enumerate(_color_modes_list):
