@@ -3016,7 +3016,7 @@ def method_random_walk(out_dir: Path, seed: int, params=None):
              "brightness_mult": {"description": "life-to-brightness multiplier", "min": 0.5, "max": 10, "default": 6},
              "capture_interval": {"description": "capture every N frames", "min": 1, "max": 50, "default": 10},
              "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
-             "anim_mode": {"description": "animation mode", "choices": ["none", "emitter_dance", "wind_cycle", "turbulence_pulse", "spiral_spawn", "ring_burst", "dual_emitter", "edge_wave", "scatter_radius", "speed_surge", "vortex_spin", "gravity_swing"], "default": "none"},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "emitter_dance", "wind_cycle", "turbulence_pulse", "spiral_spawn", "ring_burst", "dual_emitter", "edge_wave", "scatter_radius", "speed_surge", "vortex_spin", "gravity_swing", "color_morph"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},
          })
 def method_particles(out_dir: Path, seed: int, params=None):
@@ -3269,6 +3269,11 @@ def method_particles(out_dir: Path, seed: int, params=None):
         mode_speed = 5
         mode_life_decay = 0.4
         mode_size_max = 4
+    elif anim_mode == "color_morph":
+        # Cycle through color_mode choices like the old system
+        color_mode_choices = ["life", "velocity", "position", "rainbow", "single"]
+        cm_idx = int(anim_time * 2 * anim_speed) % len(color_mode_choices)
+        color_mode = color_mode_choices[cm_idx]
 
     # Background
     if params.get('input_image'):
