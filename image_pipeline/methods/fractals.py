@@ -3886,7 +3886,7 @@ def method_pythagorean_tree(out_dir: Path, seed: int, params=None):
         "leaves": {"description": "draw leaf nodes at endpoints", "default": True},
         "branch_angle": {"description": "additional branch angle variation in degrees", "min": 0, "max": 30, "default": 0},
         "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
-        "anim_mode": {"description": "animation mode", "choices": ["none", "wind_sway", "growth", "color_cycle"], "default": "none"},
+        "anim_mode": {"description": "animation mode", "choices": ["none", "wind_sway", "growth", "color_cycle", "breathe", "angle_morph", "twist", "rotation", "taper_sweep", "leaf_bloom", "palette_morph"], "default": "none"},
         "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},
     },
 )
@@ -3967,19 +3967,40 @@ def method_lsystem(out_dir: Path, seed: int, params=None):
     y_off = params.get("start_y_offset", 10)
 
     # --- Animation overrides ---
-    if has_anim:
-        t_mod = (math.sin(anim_time * 0.75 * anim_speed) + 1) / 2
+    et = anim_time * anim_speed
+    wind_sway_active = False
 
-        if anim_mode in ("none", "wind_sway"):
-            branch_angle_var = 10 * abs(math.sin(anim_time * 0.75 * anim_speed))
-
-        if anim_mode == "growth":
-            st = max(1, st * (0.2 + 0.8 * t_mod))
-
-        if anim_mode == "color_cycle":
-            color_modes = ["gradient", "age", "rainbow", "single"]
-            mode_idx = int(anim_time * 3 * anim_speed) % len(color_modes)
-            color_mode = color_modes[mode_idx]
+    if anim_mode == "wind_sway":
+        wind_sway_active = True
+    elif anim_mode == "growth":
+        growth_frac = 0.2 + 0.8 * (0.5 + 0.5 * math.sin(anim_time * 0.5 * anim_speed))
+        st = max(1, st * growth_frac)
+    elif anim_mode == "color_cycle":
+        # Continuous hue shift: sweep the color index offset through palette
+        hue_offset = int(et * 20) % n_pal
+    elif anim_mode == "breathe":
+        breathe_frac = 0.5 + 0.5 * math.sin(anim_time * 0.6 * anim_speed)
+        st = max(1, int(st * (0.6 + 0.4 * breathe_frac)))
+    elif anim_mode == "angle_morph":
+        angle_mod = 0.3 + 0.7 * (0.5 + 0.5 * math.sin(anim_time * 0.4 * anim_speed))
+        ang_inc = max(5, int(ang_inc * angle_mod))
+    elif anim_mode == "twist":
+        twist_angle = et * 30  # accumulated twist rotation
+    elif anim_mode == "rotation":
+        rot_angle = et * 360  # full rotation
+    elif anim_mode == "taper_sweep":
+        taper = 0.5 + 0.5 * math.sin(anim_time * 0.5 * anim_speed)
+    elif anim_mode == "leaf_bloom":
+        leaf_size_mod = 0.5 + 0.5 * math.sin(anim_time * 0.7 * anim_speed)
+    elif anim_mode == "palette_morph":
+        # Cross-fade between palette colors (skip "none" which is empty)
+        palette_names = [k for k in PALETTES.keys() if k != "none"]
+        raw_idx = (anim_time / (2 * math.pi)) * len(palette_names) * anim_speed * 2
+        p_idx_a = int(raw_idx) % len(palette_names)
+        p_idx_b = (p_idx_a + 1) % len(palette_names)
+        p_fade = raw_idx - int(raw_idx)
+        pal_a = PALETTES[palette_names[p_idx_a]]
+        pal_b = PALETTES[palette_names[p_idx_b]]
 
     # --- L-system rewrite ---
     def _ls(axi, rules_dict, it):
@@ -4060,8 +4081,48 @@ def method_lsystem(out_dir: Path, seed: int, params=None):
         frac = i / max(1, len(pts))
         depth = depths[i] if i < len(depths) else 0
 
+        # Apply rotation/twist
+        if anim_mode == "rotation":
+            cx_r, cy_r = W / 2, H / 2
+            rad = math.radians(rot_angle)
+            for pt in [(x1, y1), (x2, y2)]:
+                pass  # points are already computed
+            x1, y1 = (
+                cx_r + (x1 - cx_r) * math.cos(rad) - (y1 - cy_r) * math.sin(rad),
+                cy_r + (x1 - cx_r) * math.sin(rad) + (y1 - cy_r) * math.cos(rad),
+            )
+            x2, y2 = (
+                cx_r + (x2 - cx_r) * math.cos(rad) - (y2 - cy_r) * math.sin(rad),
+                cy_r + (x2 - cx_r) * math.sin(rad) + (y2 - cy_r) * math.cos(rad),
+            )
+        elif anim_mode == "twist":
+            cx_t, cy_t = W / 2, H / 2
+            # Distance from center determines twist amount
+            twist_rad = math.radians(twist_angle * (frac - 0.5) * 2)
+            for pt_name, (px, py) in [("x1y1", (x1, y1)), ("x2y2", (x2, y2))]:
+                dx, dy = px - cx_t, py - cy_t
+                tw, tc = math.sin(twist_rad), math.cos(twist_rad)
+                nx, ny = cx_t + dx * tc - dy * tw, cy_t + dx * tw + dy * tc
+                if pt_name == "x1y1":
+                    x1, y1 = nx, ny
+                else:
+                    x2, y2 = nx, ny
+
         # Determine color
-        if color_mode == "gradient":
+        if anim_mode == "palette_morph":
+            # Blend between two palette colors
+            n_a, n_b = len(pal_a), len(pal_b)
+            ci_a = min(max(int(frac * (n_a - 1)), 0), n_a - 1) if n_a > 0 else 0
+            ci_b = min(max(int(frac * (n_b - 1)), 0), n_b - 1) if n_b > 0 else 0
+            c = (
+                int(pal_a[ci_a][0] * (1 - p_fade) + pal_b[ci_b][0] * p_fade),
+                int(pal_a[ci_a][1] * (1 - p_fade) + pal_b[ci_b][1] * p_fade),
+                int(pal_a[ci_a][2] * (1 - p_fade) + pal_b[ci_b][2] * p_fade),
+            )
+        elif anim_mode == "color_cycle":
+            ci = (int(frac * (n_pal - 1)) + hue_offset) % n_pal
+            c = pal[min(ci, n_pal - 1)]
+        elif color_mode == "gradient":
             ci = int(frac * (n_pal - 1))
             c = pal[min(ci, n_pal - 1)]
         elif color_mode == "age":
@@ -4075,10 +4136,11 @@ def method_lsystem(out_dir: Path, seed: int, params=None):
             c = pal[min(0, n_pal - 1)]
 
         # Line width taper
-        width = max(1, int(3 - taper * 2 * frac))
+        effective_taper = taper
+        width = max(1, int(3 - effective_taper * 2 * frac))
 
-        # Wind sway during animation
-        if has_anim and anim_mode in ("none", "wind_sway"):
+        # Wind sway
+        if wind_sway_active:
             sway = math.sin(anim_time * 0.75 * anim_speed + depth * 0.5) * depth * 0.5
             x1 += sway
             x2 += sway
@@ -4088,8 +4150,10 @@ def method_lsystem(out_dir: Path, seed: int, params=None):
         # Leaf nodes at endpoints
         if show_leaves and i > len(pts) * 0.7 and width <= 2:
             leaf_color = pal[min(1, n_pal - 1)] if n_pal > 1 else (100, 180, 80)
-            r = max(1, 3 - int(frac * 3))
-            draw_img.ellipse([x2 - r, y2 - r, x2 + r, y2 + r], fill=leaf_color)
+            lr = max(1, 3 - int(frac * 3))
+            if anim_mode == "leaf_bloom":
+                lr = max(1, int(lr * (1.0 + leaf_size_mod)))
+            draw_img.ellipse([x2 - lr, y2 - lr, x2 + lr, y2 + lr], fill=leaf_color)
 
     capture_frame("19", np.array(img, dtype=np.float32) / 255.0)
     save(img, mn(19, "L-System"), out_dir)
