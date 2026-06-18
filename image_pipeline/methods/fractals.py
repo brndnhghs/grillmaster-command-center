@@ -2856,6 +2856,8 @@ def method_plasma(out_dir: Path, seed: int, params=None):
     active_water = water_level
     active_light = light_angle
     active_terrain = terrain_mode
+    _height_warp_frac = 0.0
+    _height_warp_base_oct = 0
     
     if anim_mode == "roughness_wave":
         roughness = 0.1 + 1.7 * (0.5 + 0.5 * math.sin(t * 0.6))
@@ -2864,15 +2866,24 @@ def method_plasma(out_dir: Path, seed: int, params=None):
         # Erosion applies to all terrains, not just thermal
         active_terrain = "thermal"
     elif anim_mode == "height_warp":
-        active_octaves = max(1, min(6, int(1 + 4 * (0.5 + 0.5 * math.sin(t * 0.4)))))
+        # Modulate roughness_decay + initial corner seed for structural change
+        raw_oct = 1 + 4 * (0.5 + 0.5 * math.sin(t * 0.4))
+        active_octaves = int(raw_oct)
+        oct_frac = raw_oct - active_octaves
+        _height_warp_frac = oct_frac
+        _height_warp_base_oct = active_octaves
+        # Modulate roughness_decay so detail propagation changes structurally
+        r_decay = 0.3 + 0.5 * (0.5 + 0.5 * math.sin(t * 0.5))
+        # Use a time-varying seed for the diamond-square to change base shape
+        rng = np.random.default_rng(seed + int(t * 100))
     elif anim_mode == "water_tide":
         active_water = 0.4 * (0.5 + 0.5 * math.sin(t * 0.5))
     elif anim_mode == "palette_morph":
-        # Sweep through palette name cycle
+        # Sweep through palette name cycle, skip 3 between each step
         pal_names = [n for n in PALETTES.keys() if len(PALETTES[n]) > 0]
         if pal_names:
             p_idx = int(t * 0.4) % len(pal_names)
-            p_next = (p_idx + 1) % len(pal_names)
+            p_next = (p_idx + 4) % len(pal_names)  # skip 3 for more variation
             p_frac = (t * 0.4) % 1.0
             pal_a = PALETTES[pal_names[p_idx]]
             pal_b = PALETTES[pal_names[p_next]]
@@ -2890,12 +2901,15 @@ def method_plasma(out_dir: Path, seed: int, params=None):
             n_pal = len(pal)
     elif anim_mode == "light_orbit":
         active_light = (light_angle + t * 30) % 360
-        # Light orbit only visible with shaded coloring
+        # Light orbit needs geometry to shade — use craters terrain
+        active_terrain = "craters"
         color_mode = "shaded"
     elif anim_mode == "terrain_morph":
         terrain_options = ["height", "island", "craters", "fault", "thermal"]
         t_idx = int(t * 0.3) % len(terrain_options)
         active_terrain = terrain_options[t_idx]
+        # Use shaded coloring so structural differences are visible
+        color_mode = "shaded"
 
     # --- Diamond-square algorithm ---
     def diamond_square(sz, rough, rough_decay):
@@ -2939,6 +2953,14 @@ def method_plasma(out_dir: Path, seed: int, params=None):
         height += sub_resized * amp
         amp *= 0.5
         freq *= 2
+    
+    # Fractional octave blending for height_warp mode
+    if anim_mode == "height_warp" and _height_warp_frac > 0.01:
+        # Add one more octave weighted by the fractional part
+        sub_size = int(max(64, size // freq))
+        sub = diamond_square(sub_size, roughness * amp, r_decay)
+        sub_resized = cv2.resize(sub, (size + 1, size + 1), interpolation=cv2.INTER_LINEAR)
+        height += sub_resized * amp * _height_warp_frac
 
     height = (height - height.min()) / (height.max() - height.min() + 0.0001)
 
