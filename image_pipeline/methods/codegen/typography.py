@@ -32,7 +32,7 @@ from ...core.animation import capture_frame
              "alignment": {"description": "text alignment", "choices": ["left", "center", "right"], "default": "center"},
              "spacing": {"description": "line spacing multiplier", "min": 0.5, "max": 3.0, "default": 1.2},
              "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
-             "anim_mode": {"description": "animation mode", "choices": ["none", "typewriter", "scrolling", "fade_in", "bounce", "wave", "glitch"], "default": "none"},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "typewriter", "scrolling", "fade_in", "bounce", "wave", "glitch", "font_size_pulse", "spacing_morph", "color_cycle"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
          })
 def method_15_typography(out_dir: Path, seed: int, params=None):
@@ -66,6 +66,12 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
         source_mode = "wave"
     elif anim_mode == "glitch":
         source_mode = "glitch"
+    elif anim_mode == "font_size_pulse":
+        source_mode = "font_size_pulse"
+    elif anim_mode == "spacing_morph":
+        source_mode = "spacing_morph"
+    elif anim_mode == "color_cycle":
+        source_mode = "color_cycle"
 
     # ── Parse colors ──
     def _hex_to_rgb(h):
@@ -397,6 +403,133 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
         save(img, mn(15, "typography-bounce"), out_dir)
+
+    elif source_mode == "wave":
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        # Wave: sine wave displacement per character
+        chars = list(content)
+        line_h = int(font_size * spacing * 1.3)
+        # Wrap into lines
+        lines = []
+        current = ""
+        for word in content.split():
+            test = current + (" " if current else "") + word
+            tw, _ = _get_text_size(font, test)
+            if tw < W - 40:
+                current = test
+            else:
+                if current:
+                    lines.append(current)
+                current = word
+        if current:
+            lines.append(current)
+        total_h = len(lines) * line_h
+        y_start = (H - total_h) // 2
+        for li, line in enumerate(lines):
+            chars = list(line)
+            x_offset = 20
+            for ci, ch in enumerate(chars):
+                wave_y = int(12 * math.sin(t * 2.0 * anim_speed + ci * 0.5 + li * 1.2))
+                wave_x = int(4 * math.sin(t * 1.3 * anim_speed + ci * 0.3 + li * 0.8))
+                draw.text((x_offset + wave_x, y_start + li * line_h + wave_y), ch, fill=text_color, font=font)
+                tw, _ = _get_text_size(font, ch)
+                x_offset += tw
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-wave"), out_dir)
+
+    elif source_mode == "glitch":
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        # Glitch: random horizontal offset + color shift per character
+        # Use time-based seed so glitch pattern changes each frame
+        rng_glitch = random.Random(seed + int(t * 1000))
+        chars = list(content)
+        line_h = int(font_size * spacing * 1.3)
+        # Wrap into lines
+        lines = []
+        current = ""
+        for word in content.split():
+            test = current + (" " if current else "") + word
+            tw, _ = _get_text_size(font, test)
+            if tw < W - 40:
+                current = test
+            else:
+                if current:
+                    lines.append(current)
+                current = word
+        if current:
+            lines.append(current)
+        total_h = len(lines) * line_h
+        y_start = (H - total_h) // 2
+        for li, line in enumerate(lines):
+            chars = list(line)
+            x_offset = 20
+            for ci, ch in enumerate(chars):
+                glitch_intensity = 0.5 + 0.5 * math.sin(t * 3.0 * anim_speed + ci * 1.7 + li * 2.3)
+                glitch_off = int(glitch_intensity * 15 * rng_glitch.random())
+                r_shift = int(glitch_intensity * 60 * rng_glitch.random())
+                gc = (min(255, text_color[0] + r_shift),
+                      max(0, text_color[1] - int(glitch_intensity * 30)),
+                      max(0, text_color[2] - int(glitch_intensity * 40)))
+                draw.text((x_offset + glitch_off, y_start + li * line_h), ch, fill=gc, font=font)
+                tw, _ = _get_text_size(font, ch)
+                x_offset += tw
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-glitch"), out_dir)
+
+    elif source_mode == "font_size_pulse":
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        # Font size pulse: oscillate font size over time
+        pulse = 0.5 + 0.5 * math.sin(t * 1.5 * anim_speed)
+        fs = int(24 + 80 * pulse)
+        f_pulse = get_font(fs, "/System/Library/Fonts/Helvetica.ttc")
+        lines = content.split("\n") if "\n" in content else [content]
+        line_h = int(fs * spacing * 1.3)
+        total_h = len(lines) * line_h
+        y_start = (H - total_h) // 2
+        for i, line in enumerate(lines):
+            _render_text(draw, line, y_start + i * line_h, f_pulse, text_color)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-fontpulse"), out_dir)
+
+    elif source_mode == "spacing_morph":
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        # Spacing morph: oscillate line spacing
+        sp = 0.6 + 0.8 * (0.5 + 0.5 * math.sin(t * 1.0 * anim_speed))
+        lines = content.split("\n") if "\n" in content else [content]
+        line_h = int(font_size * sp * 1.3)
+        total_h = len(lines) * line_h
+        y_start = (H - total_h) // 2
+        for i, line in enumerate(lines):
+            _render_text(draw, line, y_start + i * line_h, font, text_color)
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-spacing"), out_dir)
+
+    elif source_mode == "color_cycle":
+        img = _make_base_image()
+        draw = ImageDraw.Draw(img)
+        # Color cycle: sweep text hue through rainbow
+        hue_shift = t * 1.5 * anim_speed
+        lines = content.split("\n") if "\n" in content else [content]
+        line_h = int(font_size * spacing * 1.3)
+        total_h = len(lines) * line_h
+        y_start = (H - total_h) // 2
+        for i, line in enumerate(lines):
+            frac = i / max(1, len(lines))
+            r = int(50 + 200 * (0.5 + 0.5 * math.sin(hue_shift + frac * 2.0 * math.pi)))
+            g = int(50 + 200 * (0.5 + 0.5 * math.sin(hue_shift + frac * 2.0 * math.pi + 2.094)))
+            b = int(50 + 200 * (0.5 + 0.5 * math.sin(hue_shift + frac * 2.0 * math.pi + 4.189)))
+            _render_text(draw, line, y_start + i * line_h, font, (r, g, b))
+        result_arr = np.array(img).astype(np.float32) / 255.0
+        capture_frame("15", result_arr)
+        save(img, mn(15, "typography-colorcycle"), out_dir)
 
     else:
         # Fallback to simple text render
