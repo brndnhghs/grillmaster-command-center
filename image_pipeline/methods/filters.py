@@ -332,17 +332,8 @@ def method_glitch(out_dir: Path, seed: int, params=None):
             else:
                 result[y:y+h, x:x+w] = np.random.randint(0, 255, (h, w, 3)).astype(np.float32)
 
-    # 4. Pixel sort
-    if effective_glitch_type in ("pixel_sort", "all"):
-        gray = np.mean(result, axis=2)
-        for y in range(0, H, 2):
-            row = result[y].copy()
-            mask = gray[y] > 128
-            if mask.sum() > 1:
-                sorted_pixels = row[mask]
-                rng.shuffle(sorted_pixels)
-                row[mask] = sorted_pixels
-            result[y] = row
+    # 4. Pixel sort — REMOVED (moved to section 9b to run after all other effects
+    #    so it works as the sole glitch mechanism)
 
     # 5. Datamosh (frame blending)
     if effective_glitch_type in ("datamosh", "all"):
@@ -392,6 +383,25 @@ def method_glitch(out_dir: Path, seed: int, params=None):
         levels = 2 ** effective_bit
         result = (result / 255.0 * levels).astype(np.int32) * (255.0 / levels)
         result = result.clip(0, 255)
+
+    # 9b. Pixel sort (separate from all other effects)
+    if effective_glitch_type in ("pixel_sort", "all"):
+        gray = np.mean(result, axis=2)
+        threshold = 128
+        if anim_mode == "pixel_sort_wave":
+            threshold = 64 + 128 * (0.5 + 0.5 * math.sin(anim_time * 1.5 * anim_speed))
+            effective_scanlines = 0.3 + 0.3 * (0.5 + 0.5 * math.sin(anim_time * 1.0 * anim_speed))
+            # Apply scanlines too for visual variety
+            for y in range(0, H, 2):
+                result[y] *= (1.0 - effective_scanlines * 0.5)
+        for y in range(0, H, 2):
+            row = result[y].copy()
+            mask = gray[y] > int(threshold)
+            if mask.sum() > 1:
+                sorted_pixels = row[mask]
+                rng.shuffle(sorted_pixels)
+                row[mask] = sorted_pixels
+            result[y] = row
 
     # 10. Wave distortion
     if effective_wave > 0 and effective_glitch_type in ("wave", "all"):
