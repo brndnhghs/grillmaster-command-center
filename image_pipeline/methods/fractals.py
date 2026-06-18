@@ -54,11 +54,8 @@ def _render_flame_preview(density, colors, h, w):
     "trap_y": {"description": "orbital trap point Y (0=off)", "min": -2.0, "max": 2.0, "default": 0.0},
     "trap_strength": {"description": "orbital trap blend strength (0=off)", "min": 0.0, "max": 1.0, "default": 0.0},
     "color_shift": {"description": "hue rotation for default coloring", "min": 0.0, "max": 6.28, "default": 0.0},
-    "trap_orbit_radius": {"description": "orbital trap orbit radius for trap_orbit mode", "min": 0.01, "max": 2.0, "default": 0.5},
-    "julia_orbit_radius": {"description": "Julia c orbit radius for julia_sweep mode", "min": 0.01, "max": 1.0, "default": 0.3},
-    "deep_zoom_target": {"description": "deep zoom target as 'x,y' (default=seahorse valley)", "default": "-0.7435,0.1314"},
     "time": {"description": "animation time in radians (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
-    "anim_mode": {"description": "animation mode", "choices": ["none", "zoom", "color_cycle", "center_orbit", "formula_cycle", "escape_sweep", "iteration_sweep", "trap_orbit", "julia_sweep", "deep_zoom"], "default": "none"},
+    "anim_mode": {"description": "animation mode", "choices": ["none", "julia_morph", "julia_surface", "julia_spiral", "mandelbrot_flythrough", "burning_orbit", "julia_burning_hybrid", "julia_zoom", "multi_formula_blend", "colormap_morph", "trap_morph"], "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
 })
 def method_fractal(out_dir: Path, seed: int, params=None):
@@ -124,44 +121,113 @@ def method_fractal(out_dir: Path, seed: int, params=None):
 
     # ── Animation ────────────────────────────────────────────────────────
     t = anim_time * anim_speed
-    if anim_mode == "zoom":
-        zoom = zoom * (1.0 + 0.5 * math.sin(t * 0.3))
-    elif anim_mode == "color_cycle":
-        color_shift = t * 0.5
-    elif anim_mode == "center_orbit":
-        orbit_r = 0.3 / max(1.0, zoom)
-        cx = cx + orbit_r * math.cos(t * 0.5)
-        cy = cy + orbit_r * math.sin(t * 0.7)
-    elif anim_mode == "formula_cycle":
-        formula_names = ["mandelbrot", "julia", "burning_ship", "tricorn", "celtic", "mandelbrot3", "mandelbrot4"]
-        idx = int(t * 0.2) % len(formula_names)
+    if anim_mode == "julia_morph":
+        # Julia c follows a Lissajous curve through famous Julia parameters
+        # Each frame shows a completely different Julia set shape
+        formula = "julia"
+        c_re = -0.8 + 0.6 * math.cos(t * 0.4)
+        c_im = 0.4 * math.sin(t * 0.5) + 0.2 * math.sin(t * 0.9)
+        julia_c_str = f"{c_re:.4f},{c_im:.4f}"
+        # Zoom to keep interesting areas visible
+        zoom = 1.0 + 0.5 * math.sin(t * 0.3)
+    elif anim_mode == "julia_surface":
+        # Sweep along the boundary of the Mandelbrot set (where Julia shapes change most)
+        # Different c on the M-set boundary produces radically different connected Julias
+        formula = "julia"
+        angle = t * 0.3
+        # Famous M-set boundary points
+        c_library = [
+            (0.25, 0.0),           # cardioid cusp — dendrite Julia
+            (-0.75, 0.0),          # myrberg feigenbaum point
+            (-1.25, 0.0),          # tip of the main cardioid — cauliflower
+            (-0.1565, 1.0322),     # douady rabbit
+            (-0.1, 0.9),           # near rabbit
+            (-0.7269, 0.1889),     # siamese valley
+            (-0.8, 0.156),         # classic dendrite
+            (-0.4, 0.6),           # spiral julia
+            (-0.55, 0.6),          # twin dragon
+            (0.285, 0.01),         # near seahorse valley
+            (-0.5, 0.5),           # elegant spiral
+            (-0.618, 0.0),         # golden ratio
+            (-1.5, 0.0),           # tip
+            (-0.2, 0.8),           # another rabbit variant
+            (0.0, 0.0),            # basilica (c=0 is just a disk)
+            (-0.7, 0.27),          # classic julia
+            (-0.79, 0.15),         # dendrite
+            (-0.12, 0.75),         # rabbit
+        ]
+        idx_float = len(c_library) * (0.5 + 0.5 * math.sin(t * 0.15))
+        idx_a = int(idx_float) % len(c_library)
+        idx_b = (idx_a + 1) % len(c_library)
+        frac = idx_float % 1.0
+        ca = c_library[idx_a]
+        cb = c_library[idx_b]
+        c_re = ca[0] * (1 - frac) + cb[0] * frac
+        c_im = ca[1] * (1 - frac) + cb[1] * frac
+        julia_c_str = f"{c_re:.4f},{c_im:.4f}"
+        zoom = 1.2
+    elif anim_mode == "julia_spiral":
+        # Julia c follows a tight logarithmic spiral through the complex plane
+        # Visually stunning: shapes unfold and morph continuously
+        formula = "julia"
+        r = 1.0 * math.exp(-t * 0.05)
+        theta = t
+        c_re = -0.5 + r * math.cos(theta)
+        c_im = 0.0 + r * math.sin(theta)
+        julia_c_str = f"{c_re:.4f},{c_im:.4f}"
+        zoom = 1.0 + r * 0.5
+    elif anim_mode == "mandelbrot_flythrough":
+        # Orbit the Mandelbrot set along a cardioid path through its interior
+        # Produces a space-flight feel through fractal geometry
+        formula = "mandelbrot"
+        cx = -0.5 + 0.5 * math.cos(t * 0.15)
+        cy = 0.0 + 0.5 * math.sin(t * 0.12)
+        zoom = 1.0 + 10.0 * (0.5 + 0.5 * math.sin(t * 0.1))
+    elif anim_mode == "burning_orbit":
+        # Orbit the burning ship interior — chaotic, asymmetric, dramatic
+        formula = "burning_ship"
+        cx = -0.5 + 0.8 * math.cos(t * 0.2)
+        cy = 0.0 + 0.6 * math.sin(t * 0.18)
+        zoom = 1.0 + 5.0 * (0.5 + 0.5 * math.sin(t * 0.15))
+    elif anim_mode == "julia_burning_hybrid":
+        # Alternating between Julia and Burning Ship — visual whiplash
+        formula_names = ["julia", "burning_ship"]
+        idx = int(t * 0.15) % 2
         formula = formula_names[idx]
         if formula == "julia":
-            julia_c_str = "-0.7,0.27"
-    elif anim_mode == "escape_sweep":
-        escape_r = 2.0 + 8.0 * (0.5 + 0.5 * math.sin(t * 0.3))
-    elif anim_mode == "iteration_sweep":
-        max_iter = int(max_iter * (0.5 + 0.5 * math.sin(t * 0.2)))
-        max_iter = max(50, min(2000, max_iter))
-    elif anim_mode == "trap_orbit":
-        trap_x = trap_orbit_radius * math.cos(t * 0.4)
-        trap_y = trap_orbit_radius * math.sin(t * 0.4)
-        trap_strength = max(trap_strength, 0.3)
-    elif anim_mode == "julia_sweep":
-        # Only works with julia formula
+            c_re = -0.8 + 0.6 * math.cos(t * 0.4)
+            c_im = 0.4 * math.sin(t * 0.5)
+            julia_c_str = f"{c_re:.4f},{c_im:.4f}"
+        cx = -0.5 + 0.3 * math.cos(t * 0.2)
+        cy = 0.0 + 0.3 * math.sin(t * 0.2)
+    elif anim_mode == "julia_zoom":
+        # Deep zoom into a fascinating Julia set while morphing c
         formula = "julia"
-        c_re = -0.7 + julia_orbit_radius * math.cos(t * 0.3)
-        c_im = 0.27 + julia_orbit_radius * math.sin(t * 0.5)
+        c_re = -0.7269 + 0.1 * math.cos(t * 0.3)
+        c_im = 0.1889 + 0.1 * math.sin(t * 0.4)
         julia_c_str = f"{c_re:.4f},{c_im:.4f}"
-    elif anim_mode == "deep_zoom":
-        try:
-            dz_parts = [float(p.strip()) for p in deep_zoom_target.split(",")]
-            dz_x, dz_y = dz_parts[0], dz_parts[1]
-        except (ValueError, IndexError):
-            dz_x, dz_y = -0.7435, 0.1314
-        cx = dz_x
-        cy = dz_y
-        zoom = 1.0 + (1000.0 - 1.0) * (0.5 + 0.5 * math.sin(t * 0.15))
+        zoom = 1.0 + 50.0 * (0.5 + 0.5 * math.sin(t * 0.15))
+    elif anim_mode == "multi_formula_blend":
+        # Walk through different formulas at different c values
+        formulas_list = ["mandelbrot", "julia", "burning_ship", "tricorn", "celtic", "mandelbrot3", "mandelbrot4"]
+        idx = int(t * 0.12) % len(formulas_list)
+        formula = formulas_list[idx]
+        cx = -0.5 + 0.5 * math.cos(t * 0.2)
+        cy = 0.0 + 0.5 * math.sin(t * 0.18)
+        if formula == "julia":
+            julia_c_str = "-0.7,0.27"
+    elif anim_mode == "colormap_morph":
+        # Cycle through matplotlib colormaps for dramatic color shifts
+        formula = "mandelbrot"
+        cmaps_list = ["magma", "inferno", "plasma", "viridis", "twilight", "hsv", "coolwarm", "Spectral", "RdYlBu", "cubehelix"]
+        idx = int(t * 0.15) % len(cmaps_list)
+        cmap_name = cmaps_list[idx]
+    elif anim_mode == "trap_morph":
+        # Orbital trap follows a complex path — highlights dance across the fractal
+        formula = "mandelbrot"
+        trap_x = 0.8 * math.cos(t * 0.3)
+        trap_y = 0.8 * math.sin(t * 0.5)
+        trap_strength = 0.5 + 0.4 * math.sin(t * 0.2)
     # else: none — use params as-is
 
     # ── Viewport ────────────────────────────────────────────────────────

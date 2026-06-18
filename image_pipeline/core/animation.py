@@ -157,7 +157,10 @@ def animate_method(
     n_frames = int(fps * duration)
 
     # ── Time-based animation (natural parameter interpolation) ──
-    if user_params and "time" in user_params:
+    # If anim_mode is set (not "none"), auto-inject time so each frame gets different params
+    should_time_animate = (user_params and "time" in user_params) or \
+                          (user_params and user_params.get("anim_mode", "none") != "none")
+    if should_time_animate:
         import tempfile, shutil
         from pathlib import Path as PPath
         tmp = PPath(tempfile.mkdtemp())
