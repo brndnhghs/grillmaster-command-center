@@ -2794,7 +2794,7 @@ def method_chaos_game(out_dir: Path, seed: int, params=None):
         "light_angle": {"description": "sunlight angle in degrees for shaded mode", "min": 0, "max": 360, "default": 45},
         "erosion": {"description": "thermal erosion intensity (0=none)", "min": 0, "max": 1, "default": 0},
         "time": {"description": "animation time param (0-2π)", "min": 0.0, "max": 6.28, "default": 0.0},
-        "anim_mode": {"description": "animation mode", "choices": ["none", "animate"], "default": "none"},
+        "anim_mode": {"description": "animation mode", "choices": ["none", "roughness_wave", "erosion_wave", "height_warp", "water_tide", "palette_morph", "light_orbit", "terrain_morph"], "default": "none"},
         "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
     },
 )
@@ -2850,12 +2850,52 @@ def method_plasma(out_dir: Path, seed: int, params=None):
 
     # --- Time-based animation ---
     t = anim_time * anim_speed
-    if anim_mode == "animate":
-        roughness = 0.2 + 1.8 * abs(math.sin(t * 0.5))
-        erosion = 0.2 + 0.8 * abs(math.sin(t * 0.7))
-    else:
-        roughness = base_roughness
-        erosion = base_erosion
+    roughness = base_roughness
+    erosion = base_erosion
+    active_octaves = octaves
+    active_water = water_level
+    active_light = light_angle
+    active_terrain = terrain_mode
+    
+    if anim_mode == "roughness_wave":
+        roughness = 0.1 + 1.7 * (0.5 + 0.5 * math.sin(t * 0.6))
+    elif anim_mode == "erosion_wave":
+        erosion = 0.2 + 0.8 * (0.5 + 0.5 * math.sin(t * 0.5))
+        # Erosion applies to all terrains, not just thermal
+        active_terrain = "thermal"
+    elif anim_mode == "height_warp":
+        active_octaves = max(1, min(6, int(1 + 4 * (0.5 + 0.5 * math.sin(t * 0.4)))))
+    elif anim_mode == "water_tide":
+        active_water = 0.4 * (0.5 + 0.5 * math.sin(t * 0.5))
+    elif anim_mode == "palette_morph":
+        # Sweep through palette name cycle
+        pal_names = [n for n in PALETTES.keys() if len(PALETTES[n]) > 0]
+        if pal_names:
+            p_idx = int(t * 0.4) % len(pal_names)
+            p_next = (p_idx + 1) % len(pal_names)
+            p_frac = (t * 0.4) % 1.0
+            pal_a = PALETTES[pal_names[p_idx]]
+            pal_b = PALETTES[pal_names[p_next]]
+            if len(pal_a) < 2:
+                pal_a = pal_a * 2
+            if len(pal_b) < 2:
+                pal_b = pal_b * 2
+            new_pal = []
+            for i in range(max(len(pal_a), len(pal_b))):
+                ca = pal_a[i % len(pal_a)]
+                cb = pal_b[i % len(pal_b)]
+                cc = tuple(int(a * (1 - p_frac) + b * p_frac) for a, b in zip(ca, cb))
+                new_pal.append(cc)
+            pal = new_pal
+            n_pal = len(pal)
+    elif anim_mode == "light_orbit":
+        active_light = (light_angle + t * 30) % 360
+        # Light orbit only visible with shaded coloring
+        color_mode = "shaded"
+    elif anim_mode == "terrain_morph":
+        terrain_options = ["height", "island", "craters", "fault", "thermal"]
+        t_idx = int(t * 0.3) % len(terrain_options)
+        active_terrain = terrain_options[t_idx]
 
     # --- Diamond-square algorithm ---
     def diamond_square(sz, rough, rough_decay):
@@ -2891,7 +2931,7 @@ def method_plasma(out_dir: Path, seed: int, params=None):
     height = np.zeros((size + 1, size + 1), dtype=np.float32)
     amp = 1.0
     freq = 1.0
-    for o in range(octaves):
+    for o in range(active_octaves):
         sub_size = int(max(64, size // freq))
         sub = diamond_square(sub_size, roughness * amp, r_decay)
         # Resize to full size
@@ -2907,14 +2947,14 @@ def method_plasma(out_dir: Path, seed: int, params=None):
     cx, cy = size // 2, size // 2
     max_dist = np.sqrt(cx ** 2 + cy ** 2)
 
-    if terrain_mode == "island":
+    if active_terrain == "island":
         # Circular mask: center is high, edges are sea level
         dist = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
         island_mask = 1 - dist / max_dist
         island_mask = np.clip(island_mask, 0, 1) ** 0.5
         height = height * island_mask
 
-    elif terrain_mode == "craters":
+    elif active_terrain == "craters":
         # Multiple impact depressions
         crater_rng = random.Random(seed)
         for _ in range(crater_rng.randint(3, 8)):
@@ -2925,13 +2965,13 @@ def method_plasma(out_dir: Path, seed: int, params=None):
             crater = np.exp(-(dist ** 2) / (2 * (crater_r * 0.3) ** 2))
             height = height - crater * 0.3 * crater_rng.uniform(0.5, 1.5)
 
-    elif terrain_mode == "fault":
+    elif active_terrain == "fault":
         # Tectonic fault line
         fault_y = size // 2 + rng.standard_normal() * size * 0.1
         side = (yy > fault_y).astype(float)
         height = height + side * 0.2 - 0.1
 
-    elif terrain_mode == "thermal":
+    elif active_terrain == "thermal":
         # Thermal erosion: diffuse steep slopes
         for _ in range(20):
             dx = np.zeros_like(height)
@@ -2947,8 +2987,8 @@ def method_plasma(out_dir: Path, seed: int, params=None):
     height = (height - height.min()) / (height.max() - height.min() + 0.0001)
 
     # --- Apply water fill ---
-    if water_level > 0:
-        water_mask = height < water_level
+    if active_water > 0:
+        water_mask = height < active_water
 
     # --- Color / Render ---
     result = np.zeros((size + 1, size + 1, 3), dtype=np.float32)
@@ -2977,7 +3017,7 @@ def method_plasma(out_dir: Path, seed: int, params=None):
 
     elif color_mode == "shaded":
         # Directional lighting
-        light_rad = math.radians(light_angle)
+        light_rad = math.radians(active_light)
         lx, ly = math.cos(light_rad), math.sin(light_rad)
         for y in range(1, size):
             for x in range(1, size):
@@ -3003,7 +3043,7 @@ def method_plasma(out_dir: Path, seed: int, params=None):
                     result[y, x] = np.array(pal[ci], dtype=np.float32) / 255.0
 
     # --- Apply water ---
-    if water_level > 0:
+    if active_water > 0:
         water_color = np.array(pal[min(1, n_pal - 1)], dtype=np.float32) / 255.0
         water_color = water_color * 0.6 + np.array([0.1, 0.2, 0.4])  # blue tint
         for c in range(3):
