@@ -70,8 +70,9 @@ def _render_sandpile_preview(grid, colors, size, h, w):
              "obstacle_avoid": {"description": "obstacle avoidance strength", "min": 0.0, "max": 10.0, "default": 3.0},
              "perch_mode": {"description": "perching behavior", "choices": ["none", "random", "timed"], "default": "none"},
              "food_sources": {"description": "number of food attraction points", "min": 0, "max": 10, "default": 0},
+             "wind_strength": {"description": "external wind force for wind_gust mode", "min": 0.0, "max": 5.0, "default": 1.0},
              "time": {"description": "animation time in radians (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
-             "anim_mode": {"description": "animation mode", "choices": ["none", "speed_pulse", "cohesion_wave", "obstacle_dance"], "default": "none"},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "speed_pulse", "cohesion_wave", "obstacle_dance", "predator_burst", "food_orbit", "sep_pulse", "align_wave", "obstacle_field", "wind_gust"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
 def method_boids(out_dir: Path, seed: int, params=None):
@@ -142,16 +143,26 @@ def method_boids(out_dir: Path, seed: int, params=None):
     obstacle_avoid = float(params.get("obstacle_avoid", 3.0))
     perch_mode = params.get("perch_mode", "none")
     n_food = int(params.get("food_sources", 0))
+    wind_strength = float(params.get("wind_strength", 1.0))
 
-    # ── Animation ──
+    # ── Per-frame internal time tracking ──
     t = anim_time * anim_speed
-    if anim_mode == "speed_pulse":
-        max_speed = max_speed * (0.5 + 0.5 * abs(math.sin(t * 0.3)))
-    elif anim_mode == "cohesion_wave":
-        cohesion_w = cohesion_w * (0.3 + 0.7 * abs(math.sin(t * 0.5)))
-    elif anim_mode == "obstacle_dance":
-        pass  # Obstacle positions modulated below
-    # else: none — use params as-is
+    # Animation base params (modulated per-frame inside the loop)
+    _anim_speed_pulse = anim_mode == "speed_pulse"
+    _anim_cohesion_wave = anim_mode == "cohesion_wave"
+    _anim_obstacle_dance = anim_mode == "obstacle_dance"
+    _anim_predator_burst = anim_mode == "predator_burst"
+    _anim_food_orbit = anim_mode == "food_orbit"
+    _anim_sep_pulse = anim_mode == "sep_pulse"
+    _anim_align_wave = anim_mode == "align_wave"
+    _anim_obstacle_field = anim_mode == "obstacle_field"
+    _anim_wind_gust = anim_mode == "wind_gust"
+    _anim_base_max_speed = max_speed
+    _anim_base_cohesion = cohesion_w
+    _anim_base_sep_px = sep_px
+    _anim_base_align = align_w
+    _anim_base_n_obstacles = n_obstacles
+    _anim_base_n_food = n_food
 
     # ── Palette ──
     from ..core.utils import PALETTES
@@ -210,12 +221,11 @@ def method_boids(out_dir: Path, seed: int, params=None):
         r = rng.randint(15, 45)
         ox = rng.randint(r + 10, W - r - 10)
         oy = rng.randint(r + 10, H - r - 10)
-        if anim_mode == "obstacle_dance":
-            ox += int(30 * math.sin(t * 0.5 + i * 1.3))
-            oy += int(30 * math.cos(t * 0.7 + i * 0.9))
         obstacles.append({
-            "x": ox,
-            "y": oy,
+            "x": float(ox),
+            "y": float(oy),
+            "_init_x": float(ox),
+            "_init_y": float(oy),
             "r": r,
         })
 
@@ -316,6 +326,42 @@ def method_boids(out_dir: Path, seed: int, params=None):
     img = base_img.copy()
 
     for frame in range(frames):
+        # ── Per-frame internal time (evolves as simulation runs) ──
+        _t = t + (frame / max(1, frames)) * 4 * math.pi * anim_speed
+        if _anim_speed_pulse:
+            max_speed = _anim_base_max_speed * (0.5 + 0.5 * math.sin(_t * 0.3))
+        elif _anim_cohesion_wave:
+            cohesion_w = _anim_base_cohesion * (0.3 + 0.7 * (0.5 + 0.5 * math.sin(_t * 0.5)))
+        elif _anim_predator_burst and species_mode == "predator_prey":
+            spd_boost = 1.0 + 1.5 * (0.5 + 0.5 * math.sin(_t * 0.4))
+            speeds[1] = _anim_base_max_speed * 1.8 * spd_boost
+        elif _anim_sep_pulse:
+            sep_px = _anim_base_sep_px * (0.5 + 0.5 * math.sin(_t * 0.3) + 0.5)
+            sep_sq = sep_px * sep_px
+        elif _anim_align_wave:
+            align_w = _anim_base_align * (0.3 + 0.7 * (0.5 + 0.5 * math.sin(_t * 0.4)))
+        elif _anim_food_orbit:
+            for fi, f in enumerate(food):
+                orbit_r = 150 + 50 * math.sin(_t * 0.2 + fi * 1.5)
+                orbit_angle = _t * 0.3 + fi * 2.1
+                f["x"] = W / 2 + orbit_r * math.cos(orbit_angle)
+                f["y"] = H / 2 + orbit_r * math.sin(orbit_angle)
+        elif _anim_wind_gust:
+            gust = wind_strength * math.sin(_t * 0.5)
+            for b in boids:
+                b["vx"] += gust * 0.02
+
+        # ── Per-frame obstacle updates ──
+        if _anim_obstacle_dance or _anim_obstacle_field:
+            for oi, ob in enumerate(obstacles):
+                if _anim_obstacle_dance:
+                    ob["x"] = ob.get("_init_x", ob["x"]) + 30 * math.sin(_t * 0.5 + oi * 1.3)
+                    ob["y"] = ob.get("_init_y", ob["y"]) + 30 * math.cos(_t * 0.7 + oi * 0.9)
+                elif _anim_obstacle_field:
+                    ob["x"] = ob.get("_init_x", ob["x"]) + 80 * math.sin(_t * 0.3 + oi * 2.0)
+                    ob["y"] = ob.get("_init_y", ob["y"]) + 80 * math.cos(_t * 0.4 + oi * 1.5)
+                    ob["r"] = 25 + 20 * (0.5 + 0.5 * math.sin(_t * 0.2 + oi))
+
         # ── Fade for trail modes ──
         if trail_mode == "fade":
             img = Image.blend(img, Image.new("RGB", (W, H), (0, 0, 0)), 0.12)
@@ -346,7 +392,7 @@ def method_boids(out_dir: Path, seed: int, params=None):
                 if b["perch_target"]:
                     tx, ty = b["perch_target"]
                     dx = tx - b["x"]
-                    dy = ty - b["x"]
+                    dy = ty - b["y"]
                     d = max(0.1, math.hypot(dx, dy))
                     b["vx"] += dx / d * 0.08
                     b["vy"] += dy / d * 0.08
