@@ -870,15 +870,15 @@ def method_boids(out_dir: Path, seed: int, params=None):
              "speed": {"description": "particle speed per frame", "min": 0.5, "max": 15, "default": 2.0},
              "frames": {"description": "simulation steps", "min": 10, "max": 500, "default": 200},
              "blur_sigma": {"description": "gaussian blur on random field", "min": 1, "max": 80, "default": 25},
-             "field_type": {"description": "flow field pattern", "choices": ["random", "perlin", "vortex", "radial", "sinusoidal", "checker", "spiral", "cross", "gabor", "perlin_warp", "cellular"], "default": "random"},
+             "field_type": {"description": "flow field pattern", "choices": ["random", "perlin", "vortex", "radial", "sinusoidal", "checker", "spiral", "cross", "gabor", "perlin_warp", "cellular", "maze", "wave", "turbulence", "vortex_field"], "default": "random"},
              "palette": {"description": "color palette name", "default": "cool"},
-             "color_mode": {"description": "particle coloring", "choices": ["velocity", "position_x", "position_y", "random", "field_angle"], "default": "velocity"},
-             "trail_mode": {"description": "trail rendering", "choices": ["none", "fade", "motion_blur", "comet", "ribbon"], "default": "none"},
+             "color_mode": {"description": "particle coloring", "choices": ["velocity", "position_x", "position_y", "random", "field_angle", "trail_age", "field_divergence"], "default": "velocity"},
+             "trail_mode": {"description": "trail rendering", "choices": ["none", "fade", "motion_blur", "comet", "ribbon", "neon", "trail_art"], "default": "none"},
              "particle_size": {"description": "particle point size", "min": 1, "max": 6, "default": 1},
              "reseed": {"description": "fraction of particles to reseed per frame", "min": 0.0, "max": 0.5, "default": 0.01},
              "field_freq": {"description": "field spatial frequency multiplier", "min": 0.5, "max": 10.0, "default": 2.0},
              "time": {"description": "animation time (drives field morph)", "min": 0.0, "max": 6.28, "default": 0.0},
-             "anim_mode": {"description": "animation mode", "choices": ["none", "speed_pulse", "field_morph", "vortex_orbit"], "default": "none"},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "speed_pulse", "field_morph", "vortex_orbit", "field_cycle", "reseed_wave", "spiral_pulse", "vortex_field_anim", "turbulence_surge", "maze_walk"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
 def method_flowfield(out_dir: Path, seed: int, params=None):
@@ -942,16 +942,19 @@ def method_flowfield(out_dir: Path, seed: int, params=None):
 
     # ── Animation ──
     t = anim_time * anim_speed
-    if anim_mode == "speed_pulse":
-        speed = base_speed * (0.5 + 0.5 * abs(math.sin(t * 0.3)))
-    elif anim_mode == "field_morph":
-        speed = base_speed
-        # Field morph rate is applied via t_val in build_field
-    elif anim_mode == "vortex_orbit":
-        speed = base_speed
-        # Vortex center modulated in build_field
-    else:
-        speed = base_speed
+    _anim_speed_pulse = anim_mode == "speed_pulse"
+    _anim_field_morph = anim_mode == "field_morph"
+    _anim_vortex_orbit = anim_mode == "vortex_orbit"
+    _anim_field_cycle = anim_mode == "field_cycle"
+    _anim_reseed_wave = anim_mode == "reseed_wave"
+    _anim_spiral_pulse = anim_mode == "spiral_pulse"
+    _anim_vortex_field_anim = anim_mode == "vortex_field_anim"
+    _anim_turbulence_surge = anim_mode == "turbulence_surge"
+    _anim_maze_walk = anim_mode == "maze_walk"
+    _anim_base_speed = base_speed
+    _anim_base_reseed = reseed
+    _anim_base_field_type = field_type
+    _anim_base_blur = blur_sigma
 
     # ── Palette ──
     pal = PALETTES.get(palette_name, [(220, 220, 200)])
@@ -1034,7 +1037,7 @@ def method_flowfield(out_dir: Path, seed: int, params=None):
                                    sigmaY=max(blur_sigma * 0.3, 2))
             remapped = cv2.remap(g3, map_x, map_y, cv2.INTER_LINEAR)
             return remapped * np.pi + t_val * 0.2
-        else:  # cellular
+        elif field_type == "cellular":
             n_cells = int(blur_sigma * 0.3) + 3
             # Distance to nearest random cell center
             cell_x = rng.random(n_cells) * W
@@ -1047,9 +1050,53 @@ def method_flowfield(out_dir: Path, seed: int, params=None):
                 dists = np.minimum(dists, d)
             return (np.sin(np.sqrt(dists) * 0.05 + t_val * 0.5) * np.pi +
                     np.cos(np.sqrt(dists) * 0.02 + t_val * 0.3) * 0.5)
+        elif field_type == "maze":
+            # Maze-like field: alternating wall/passage angles
+            cell_sz = 40 + 20 * math.sin(t_val * 0.2)
+            cx = np.floor(xx * W / cell_sz).astype(np.int32)
+            cy = np.floor(yy * H / cell_sz).astype(np.int32)
+            # Deterministic maze from cell coords
+            seed_m = int(cx * 7 + cy * 13 + t_val * 10) & 0xFFFFFFFF
+            rng_maze = np.random.default_rng(seed_m)
+            angles = rng_maze.random((H // int(cell_sz) + 2, W // int(cell_sz) + 2)).astype(np.float32) * np.pi
+            return angles[np.clip(cy, 0, angles.shape[0]-1), np.clip(cx, 0, angles.shape[1]-1)]
+        elif field_type == "wave":
+            # Traveling wave: phase sweeps across the canvas
+            phase = xx * field_freq * 2 + yy * field_freq + t_val * 2
+            return np.sin(phase) * np.pi * 0.8 + np.cos(phase * 0.5 + t_val) * np.pi * 0.2
+        elif field_type == "turbulence":
+            # Multi-octave turbulent noise
+            turb = np.zeros((H, W), dtype=np.float32)
+            amp = 1.0
+            freq = 1.0
+            for o in range(4):
+                noise = rng.standard_normal((H, W)).astype(np.float32)
+                noise = cv2.GaussianBlur(noise, (0, 0), sigmaX=max(blur_sigma / freq, 2),
+                                       sigmaY=max(blur_sigma / freq, 2))
+                turb += noise * amp * np.sin(t_val * 0.3 + o)
+                amp *= 0.5
+                freq *= 2.0
+            return turb * np.pi + t_val * 0.3
+        elif field_type == "vortex_field":
+            # Multiple interacting vortices
+            n_v = 3 + int(2 * math.sin(t_val * 0.15))
+            field = np.zeros((H, W), dtype=np.float32)
+            for vi in range(n_v):
+                vx = W/2 + 200 * math.cos(t_val * 0.2 + vi * 2.1)
+                vy = H/2 + 150 * math.sin(t_val * 0.25 + vi * 1.7)
+                dx = xx * W - vx
+                dy = yy * H - vy
+                strength = 1.0 + math.sin(t_val * 0.3 + vi)
+                field += np.arctan2(dy, dx) * strength
+            return field
+        else:
+            # Fallback: random field
+            raw = rng.standard_normal((H, W)).astype(np.float32) * (2 * np.pi)
+            raw = cv2.GaussianBlur(raw, (0, 0), sigmaX=blur_sigma, sigmaY=blur_sigma)
+            return raw
 
     # ── Particle color ──
-    def get_particle_colors(p, vel_mag):
+    def get_particle_colors(p, vel_mag, trail_idx=None):
         if color_mode == "velocity":
             idx = (np.clip(vel_mag / (speed * 2), 0, 1) * (n_pal - 1)).astype(np.int32)
         elif color_mode == "position_x":
@@ -1063,6 +1110,17 @@ def method_flowfield(out_dir: Path, seed: int, params=None):
             fj = np.clip(p[:, 1].astype(np.int32), 0, H - 1)
             angles = flow[fj, fi]
             idx = (((angles / (2 * np.pi) + 0.5) % 1.0) * (n_pal - 1)).astype(np.int32)
+        elif color_mode == "trail_age" and trail_idx is not None:
+            idx = (np.clip(trail_idx / max_trail, 0, 1) * (n_pal - 1)).astype(np.int32) if max_trail > 0 else np.zeros(n_p, dtype=np.int32)
+        elif color_mode == "field_divergence":
+            # Compute divergence of the flow field at particle positions
+            flow = build_field(t)
+            grad_x = np.gradient(flow, axis=1)
+            grad_y = np.gradient(flow, axis=0)
+            fi = np.clip(p[:, 0].astype(np.int32), 0, W - 1)
+            fj = np.clip(p[:, 1].astype(np.int32), 0, H - 1)
+            div = grad_x[fj, fi] + grad_y[fj, fi]
+            idx = (np.clip((div / (np.pi * 0.1) + 0.5), 0, 1) * (n_pal - 1)).astype(np.int32)
         else:  # random
             idx = (rng.integers(0, n_pal, n_p)).astype(np.int32) % n_pal
         return pal_arr[np.clip(idx, 0, n_pal - 1)]
@@ -1083,14 +1141,39 @@ def method_flowfield(out_dir: Path, seed: int, params=None):
     img = base_img.copy()
 
     for frame in range(frames):
+        # ── Per-frame parameter modulation ──
+        _t = t + (frame / max(1, frames)) * 4 * math.pi * anim_speed
+        speed = _anim_base_speed
+        t_val = _t + frame * 0.02  # default, may be overridden below
+        if _anim_speed_pulse:
+            speed = _anim_base_speed * (0.5 + 0.5 * math.sin(_t * 0.3))
+        elif _anim_field_morph:
+            t_val = _t * (1.0 + 0.5 * math.sin(_t * 0.2)) + frame * 0.02
+        elif _anim_vortex_orbit:
+            field_type = "vortex"
+            t_val = _t * 2.0 + frame * 0.02
+        elif _anim_field_cycle:
+            field_types = ["random", "perlin", "vortex", "radial", "sinusoidal", "spiral", "cross", "gabor", "cellular", "wave", "turbulence"]
+            idx = int(_t * 0.2) % len(field_types)
+            field_type = field_types[idx]
+        elif _anim_reseed_wave:
+            reseed = _anim_base_reseed * (0.5 + 0.5 * math.sin(_t * 0.4))
+        elif _anim_spiral_pulse:
+            field_type = "spiral"
+            field_freq = 2.0 + 4.0 * (0.5 + 0.5 * math.sin(_t * 0.3))
+        elif _anim_vortex_field_anim:
+            field_type = "vortex_field"
+        elif _anim_turbulence_surge:
+            field_type = "turbulence"
+            blur_sigma = int(_anim_base_blur * (0.3 + 0.7 * (0.5 + 0.5 * math.sin(_t * 0.2))))
+        elif _anim_maze_walk:
+            field_type = "maze"
+
         # ── Fade for trail modes ──
         if trail_mode == "fade":
             img = Image.blend(img, Image.new("RGB", (W, H), (0, 0, 0)), 0.1)
         elif trail_mode == "motion_blur":
             img = Image.blend(img, Image.new("RGB", (W, H), (0, 0, 0)), 0.55)
-
-        # ── Current time ──
-        t_val = t + frame * 0.02
 
         # ── Build flow field ──
         flow = build_field(t_val)
@@ -1130,7 +1213,34 @@ def method_flowfield(out_dir: Path, seed: int, params=None):
 
         # ── Draw trails ──
         drw = ImageDraw.Draw(img)
-        if trail_mode == "comet" and len(trail_buf) >= 2:
+        if trail_mode == "neon":
+            colors = get_particle_colors(pos, vel_mag)
+            for pi in range(n_p):
+                col = tuple(colors[pi])
+                glow_col = tuple(min(255, c + 100) for c in col)
+                px, py = int(pos[pi, 0]), int(pos[pi, 1])
+                # Glow pass
+                drw.ellipse((px - 4, py - 4, px + 4, py + 4), fill=tuple(c // 3 for c in glow_col))
+                # Core pass
+                drw.ellipse((px - 1, py - 1, px + 1, py + 1), fill=col)
+        elif trail_mode == "trail_art":
+            # Heavy fade + trail lines only
+            img = Image.blend(img, Image.new("RGB", (W, H), (0, 0, 0)), 0.08)
+            drw_trail = ImageDraw.Draw(img)
+            if len(trail_buf) >= 2:
+                colors = get_particle_colors(pos, vel_mag)
+                for pi in range(n_p):
+                    col = tuple(colors[pi])
+                    for t_idx in range(len(trail_buf) - 1):
+                        p = (t_idx + 1) / len(trail_buf)
+                        alpha = int(180 * p)
+                        w = max(1, int(psize * p * 1.5))
+                        cf = tuple(c * alpha // 255 for c in col)
+                        if any(c > 3 for c in cf):
+                            p1 = (int(trail_buf[t_idx][pi, 0]), int(trail_buf[t_idx][pi, 1]))
+                            p2 = (int(trail_buf[t_idx + 1][pi, 0]), int(trail_buf[t_idx + 1][pi, 1]))
+                            drw_trail.line([p1, p2], fill=cf, width=w)
+        elif trail_mode == "comet" and len(trail_buf) >= 2:
             colors = get_particle_colors(pos, vel_mag)
             for t_idx, trail_pos in enumerate(trail_buf):
                 p = (t_idx + 1) / len(trail_buf)
