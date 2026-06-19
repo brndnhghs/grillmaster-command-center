@@ -61,9 +61,9 @@ def _render_sandpile_preview(grid, colors, size, h, w):
              "alignment": {"description": "velocity matching force", "min": 0.0001, "max": 0.1, "default": 0.005},
              "species_mode": {"description": "multi-species mode", "choices": ["single", "dual", "predator_prey"], "default": "single"},
              "palette": {"description": "color palette name", "default": "cool"},
-             "color_mode": {"description": "boid coloring", "choices": ["species", "velocity", "position", "random"], "default": "species"},
+             "color_mode": {"description": "boid coloring", "choices": ["species", "velocity", "position", "random", "heading", "velocity_heat", "rainbow"], "default": "species"},
              "point_shape": {"description": "boid visual shape", "choices": ["dot", "triangle", "arrow", "glow", "diamond"], "default": "dot"},
-             "trail_mode": {"description": "trail rendering style", "choices": ["none", "fade", "motion_blur", "comet", "ribbon"], "default": "none"},
+             "trail_mode": {"description": "trail rendering style", "choices": ["none", "fade", "motion_blur", "comet", "ribbon", "trail_art", "neon"], "default": "none"},
              "size_min": {"description": "min boid size (px)", "min": 1, "max": 10, "default": 2},
              "size_max": {"description": "max boid size (px)", "min": 2, "max": 20, "default": 5},
              "obstacles": {"description": "number of circular obstacles", "min": 0, "max": 20, "default": 0},
@@ -71,8 +71,11 @@ def _render_sandpile_preview(grid, colors, size, h, w):
              "perch_mode": {"description": "perching behavior", "choices": ["none", "random", "timed"], "default": "none"},
              "food_sources": {"description": "number of food attraction points", "min": 0, "max": 10, "default": 0},
              "wind_strength": {"description": "external wind force for wind_gust mode", "min": 0.0, "max": 5.0, "default": 1.0},
+             "attractor_strength": {"description": "master attractor pull strength", "min": 0.0, "max": 5.0, "default": 1.5},
+             "attractor_x": {"description": "master attractor X (0-1 fraction)", "min": 0.0, "max": 1.0, "default": 0.5},
+             "attractor_y": {"description": "master attractor Y (0-1 fraction)", "min": 0.0, "max": 1.0, "default": 0.5},
              "time": {"description": "animation time in radians (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
-             "anim_mode": {"description": "animation mode", "choices": ["none", "speed_pulse", "cohesion_wave", "obstacle_dance", "predator_burst", "food_orbit", "sep_pulse", "align_wave", "obstacle_field", "wind_gust"], "default": "none"},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "speed_pulse", "cohesion_wave", "obstacle_dance", "predator_burst", "food_orbit", "sep_pulse", "align_wave", "obstacle_field", "wind_gust", "attractor_morph", "spiral_flock", "swarm_art"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
 def method_boids(out_dir: Path, seed: int, params=None):
@@ -144,6 +147,9 @@ def method_boids(out_dir: Path, seed: int, params=None):
     perch_mode = params.get("perch_mode", "none")
     n_food = int(params.get("food_sources", 0))
     wind_strength = float(params.get("wind_strength", 1.0))
+    attractor_strength = float(params.get("attractor_strength", 1.5))
+    attractor_x = float(params.get("attractor_x", 0.5)) * W
+    attractor_y = float(params.get("attractor_y", 0.5)) * H
 
     # ── Per-frame internal time tracking ──
     t = anim_time * anim_speed
@@ -157,6 +163,9 @@ def method_boids(out_dir: Path, seed: int, params=None):
     _anim_align_wave = anim_mode == "align_wave"
     _anim_obstacle_field = anim_mode == "obstacle_field"
     _anim_wind_gust = anim_mode == "wind_gust"
+    _anim_attractor_morph = anim_mode == "attractor_morph"
+    _anim_spiral_flock = anim_mode == "spiral_flock"
+    _anim_swarm_art = anim_mode == "swarm_art"
     _anim_base_max_speed = max_speed
     _anim_base_cohesion = cohesion_w
     _anim_base_sep_px = sep_px
@@ -265,6 +274,45 @@ def method_boids(out_dir: Path, seed: int, params=None):
         elif color_mode == "position":
             idx = int(b["x"] / W * (n_pal - 1))
             return pal[min(idx, n_pal - 1)]
+        elif color_mode == "heading":
+            # Map heading angle to full HSV wheel for maximum contrast
+            angle = math.atan2(b["vy"], b["vx"])
+            h = (angle + math.pi) / (2 * math.pi)  # 0-1
+            s_v = 0.9
+            v_v = 0.95
+            hi = int(h * 6)
+            f_h = h * 6 - hi
+            p = v_v * (1 - s_v)
+            q = v_v * (1 - f_h * s_v)
+            t = v_v * (1 - (1 - f_h) * s_v)
+            hi = hi % 6
+            vals = [(v_v, t, p), (q, v_v, p), (p, v_v, t), (p, q, v_v), (t, p, v_v), (v_v, p, q)][hi]
+            return (int(vals[0] * 255), int(vals[1] * 255), int(vals[2] * 255))
+        elif color_mode == "velocity_heat":
+            # High-contrast heat map: blue → cyan → yellow → red
+            sr = min(speed_ratio, 1.0)
+            if sr < 0.33:
+                t_h = sr / 0.33
+                return (int(20 * t_h), int(80 + 175 * t_h), int(200 - 120 * t_h))
+            elif sr < 0.66:
+                t_h = (sr - 0.33) / 0.33
+                return (int(20 + 230 * t_h), int(255), int(80 - 80 * t_h))
+            else:
+                t_h = (sr - 0.66) / 0.34
+                return (int(250), int(255 - 155 * t_h), int(0))
+        elif color_mode == "rainbow":
+            # Full spectrum based on position in flock + species
+            h = (b["x"] / W * 0.7 + b["y"] / H * 0.3 + b["species"] * 0.15) % 1.0
+            s_v = 0.85
+            v_v = 1.0
+            hi = int(h * 6)
+            f_h = h * 6 - hi
+            p = v_v * (1 - s_v)
+            q = v_v * (1 - f_h * s_v)
+            t = v_v * (1 - (1 - f_h) * s_v)
+            hi = hi % 6
+            vals = [(v_v, t, p), (q, v_v, p), (p, v_v, t), (p, q, v_v), (t, p, v_v), (v_v, p, q)][hi]
+            return (int(vals[0] * 255), int(vals[1] * 255), int(vals[2] * 255))
         else:  # random
             return pal[rng.randint(0, n_pal - 1)]
 
@@ -350,6 +398,29 @@ def method_boids(out_dir: Path, seed: int, params=None):
             gust = wind_strength * math.sin(_t * 0.5)
             for b in boids:
                 b["vx"] += gust * 0.02
+        elif _anim_attractor_morph:
+            # Attractor follows a Lissajous path — boids chase a moving point
+            attractor_x = W / 2 + 300 * math.cos(_t * 0.25)
+            attractor_y = H / 2 + 200 * math.sin(_t * 0.3)
+            attractor_strength = 1.5 + 1.0 * math.sin(_t * 0.15)
+        elif _anim_spiral_flock:
+            # Add rotational force to make boids spiral around center
+            spin_angle = _t * 0.5
+            for b in boids:
+                dx = b["x"] - W / 2
+                dy = b["y"] - H / 2
+                d = max(0.1, math.hypot(dx, dy))
+                # Tangential force (perpendicular to radial direction)
+                tx = -dy / d * 0.8
+                ty = dx / d * 0.8
+                # Radial force (pull toward center)
+                rx = -dx / d * 0.3
+                ry = -dy / d * 0.3
+                b["vx"] += (tx + rx) * 0.15
+                b["vy"] += (ty + ry) * 0.15
+        elif _anim_swarm_art:
+            # Minimum boids, heavy fade, no boid dots — just trails as art
+            pass  # Handled below in rendering
 
         # ── Per-frame obstacle updates ──
         if _anim_obstacle_dance or _anim_obstacle_field:
@@ -363,7 +434,9 @@ def method_boids(out_dir: Path, seed: int, params=None):
                     ob["r"] = 25 + 20 * (0.5 + 0.5 * math.sin(_t * 0.2 + oi))
 
         # ── Fade for trail modes ──
-        if trail_mode == "fade":
+        if _anim_swarm_art:
+            pass  # trail_art mode handles its own fade inside the trail drawing
+        elif trail_mode == "fade":
             img = Image.blend(img, Image.new("RGB", (W, H), (0, 0, 0)), 0.12)
         elif trail_mode == "motion_blur":
             img = Image.blend(img, Image.new("RGB", (W, H), (0, 0, 0)), 0.5)
@@ -493,6 +566,15 @@ def method_boids(out_dir: Path, seed: int, params=None):
                         b["vx"] += dx / d * f["strength"] * 0.03
                         b["vy"] += dy / d * f["strength"] * 0.03
 
+            # ── Master attractor ──
+            if attractor_strength > 0:
+                dx = attractor_x - b["x"]
+                dy = attractor_y - b["y"]
+                d = max(1.0, math.hypot(dx, dy))
+                if d > 5:
+                    b["vx"] += dx / d * attractor_strength * 0.05
+                    b["vy"] += dy / d * attractor_strength * 0.05
+
             # ── Speed limit ──
             speed = math.hypot(b["vx"], b["vy"])
             if speed > spd:
@@ -533,7 +615,76 @@ def method_boids(out_dir: Path, seed: int, params=None):
             drw.ellipse((fx - 2, fy - 2, fx + 2, fy + 2), fill=(255, 255, 150))
 
         # ── Draw trails ──
-        if trail_mode == "comet":
+        if trail_mode == "trail_art" or _anim_swarm_art:
+            # Invisible boids, only trails visible — light painting effect
+            min_fade = 0.02 if _anim_swarm_art else 0.06
+            img = Image.blend(img, Image.new("RGB", (W, H), (0, 0, 0)), min_fade)
+            drw_trail = ImageDraw.Draw(img)
+            for b in boids:
+                col = species_colors[b["species"] % len(species_colors)]
+                if color_mode == "heading":
+                    angle = math.atan2(b["vy"], b["vx"])
+                    h = (angle + math.pi) / (2 * math.pi)
+                    s_c, v_c = 1.0, 1.0
+                    hi = int(h * 6)
+                    f_h = h * 6 - hi
+                    p2 = v_c * (1 - s_c)
+                    q2 = v_c * (1 - f_h * s_c)
+                    t2 = v_c * (1 - (1 - f_h) * s_c)
+                    hi = hi % 6
+                    vals = [(v_c, t2, p2), (q2, v_c, p2), (p2, v_c, t2), (p2, q2, v_c), (t2, p2, v_c), (v_c, p2, q2)][hi]
+                    col = (int(vals[0] * 255), int(vals[1] * 255), int(vals[2] * 255))
+                b["trail"].append((b["x"], b["y"]))
+                if len(b["trail"]) > 40:
+                    b["trail"].pop(0)
+                if len(b["trail"]) >= 2:
+                    for i in range(len(b["trail"]) - 1):
+                        pct = i / max(1, len(b["trail"]))
+                        alpha = int(200 * pct)
+                        c_fade = tuple(c * alpha // 255 for c in col)
+                        if any(c > 3 for c in c_fade):
+                            w = max(1, int(b["size"] * pct * 1.5))
+                            drw_trail.line(
+                                [int(b["trail"][i][0]), int(b["trail"][i][1]),
+                                 int(b["trail"][i + 1][0]), int(b["trail"][i + 1][1])],
+                                fill=c_fade, width=w,
+                            )
+            # Skip drawing boid dots for swarm_art
+            if not _anim_swarm_art:
+                for b in boids:
+                    spd_r = math.hypot(b["vx"], b["vy"]) / max(0.01, speeds[b["species"] % len(speeds)])
+                    color = get_color(b, spd_r)
+                    draw_boid(drw, b["x"], b["y"], b["vx"], b["vy"], color, b["size"], point_shape)
+        elif trail_mode == "neon":
+            # Bright saturated trails with glow
+            drw_trail = ImageDraw.Draw(img)
+            for b in boids:
+                b["trail"].append((b["x"], b["y"]))
+                if len(b["trail"]) > 20:
+                    b["trail"].pop(0)
+                if len(b["trail"]) >= 2:
+                    col = get_color(b, 1.0)
+                    glow_col = tuple(min(255, c + 100) for c in col)
+                    for i in range(len(b["trail"]) - 1):
+                        pct = i / max(1, len(b["trail"]))
+                        alpha = int(255 * pct)
+                        # Glow pass (larger, dimmer)
+                        c_glow = tuple(c * alpha // 512 for c in glow_col)
+                        if any(c > 2 for c in c_glow):
+                            drw_trail.line(
+                                [int(b["trail"][i][0]), int(b["trail"][i][1]),
+                                 int(b["trail"][i + 1][0]), int(b["trail"][i + 1][1])],
+                                fill=c_glow, width=5,
+                            )
+                        # Core pass (smaller, brighter)
+                        c_core = tuple(c * alpha // 255 for c in col)
+                        if any(c > 5 for c in c_core):
+                            drw_trail.line(
+                                [int(b["trail"][i][0]), int(b["trail"][i][1]),
+                                 int(b["trail"][i + 1][0]), int(b["trail"][i + 1][1])],
+                                fill=c_core, width=2,
+                            )
+        elif trail_mode == "comet":
             for b in boids:
                 spd_r = math.hypot(b["vx"], b["vy"]) / max(0.01, speeds[b["species"] % len(speeds)])
                 col = get_color(b, spd_r)
