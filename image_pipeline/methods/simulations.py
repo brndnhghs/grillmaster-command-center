@@ -1300,7 +1300,7 @@ def method_flowfield(out_dir: Path, seed: int, params=None):
              "aniso_angle": {"description": "anisotropy direction (degrees)", "min": 0, "max": 360, "default": 0},
              "self_avoid": {"description": "min distance between clusters (px)", "min": 0, "max": 10, "default": 0},
              "time": {"description": "animation drive", "min": 0.0, "max": 6.28, "default": 0.0},
-             "anim_mode": {"description": "animation mode", "choices": ["none", "spawn_radius", "julia_drift", "aniso_rotate", "growth_pulse", "stickiness_wave", "bias_pulse"], "default": "none"},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "spawn_radius", "julia_drift", "aniso_rotate", "walk_pulse", "stickiness_wave", "bias_pulse"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
 def method_dla(out_dir: Path, seed: int, params=None):
@@ -1359,8 +1359,7 @@ def method_dla(out_dir: Path, seed: int, params=None):
     _base_aniso_angle = aniso_angle
     _base_aniso_strength = aniso_strength
     _base_self_avoid = self_avoid
-    _base_growth_mode = growth_mode
-    _growth_modes_list = ["classic", "ballistic", "cluster_cluster", "surface", "julia_field", "gradient_field"]
+    _base_max_steps = max_steps
 
     # ── Palette ──
     from ..core.utils import PALETTES
@@ -1428,7 +1427,7 @@ def method_dla(out_dir: Path, seed: int, params=None):
         aniso_angle = _base_aniso_angle
         aniso_strength = _base_aniso_strength
         self_avoid = _base_self_avoid
-        growth_mode = _base_growth_mode
+        max_steps = _base_max_steps
 
         if anim_mode == "spawn_radius":
             spawn_offset = int(_base_spawn_offset * (0.5 + 0.5 * math.sin(_t * 0.3)))
@@ -1436,10 +1435,9 @@ def method_dla(out_dir: Path, seed: int, params=None):
             pass  # c_re modulated in field rebuild below
         elif anim_mode == "aniso_rotate":
             aniso_angle = (_base_aniso_angle + _t * 20) % 360
-        elif anim_mode == "growth_pulse":
-            raw_idx = _t * 0.15
-            midx = int(raw_idx) % len(_growth_modes_list)
-            growth_mode = _growth_modes_list[midx]
+        elif anim_mode == "walk_pulse":
+            # Modulate max_steps: low = compact, high = dendritic
+            max_steps = int(_base_max_steps * (0.2 + 0.8 * (0.5 + 0.5 * math.sin(_t * 0.3))))
         elif anim_mode == "stickiness_wave":
             self_avoid = int(_base_self_avoid + 2.0 * (0.5 + 0.5 * math.sin(_t * 0.4)))
         elif anim_mode == "bias_pulse":
@@ -1470,7 +1468,7 @@ def method_dla(out_dir: Path, seed: int, params=None):
                     nzx = zx * zx - zy * zy + c_re
                     nzy = 2 * zx * zy + c_im
                     zx, zy = nzx, nzy
-                julia_field = np.clip(((np.abs(zx) + np.abs(zy)) * 10).astype(np.int32), 0, 10)
+                julia_field = np.clip(np.nan_to_num((np.abs(zx) + np.abs(zy)) * 10, nan=0.0).astype(np.int32), 0, 10)
 
         # ── Spawn position ──
         if growth_mode == "surface":
