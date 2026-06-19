@@ -803,18 +803,29 @@ def method_pixelsort(out_dir: Path, seed: int, params=None):
     noise_amp = float(params.get("noise_amp", 0.5))
     interval_jitter = int(params.get("interval_jitter", 0))
 
+    # ── Per-frame time + seed ──
+    _t = anim_time * anim_speed
+    if anim_mode == "none":
+        _t = 0.0
+    _frame_seed = seed + int(_t * 10000)
+    rng = np.random.default_rng(_frame_seed)
+    py_rng = random.Random(_frame_seed)
+
     # ── Animation ──
-    t = anim_time * anim_speed
+    _color_cycle_shift = 0.0
     if anim_mode == "threshold_sweep":
-        threshold = int(threshold * (0.5 + 0.5 * abs(math.sin(t * 0.3))))
+        # smooth sinusoid (no abs cusp) with stronger range for visible effect
+        threshold = int(10 + 240 * (0.5 + 0.5 * math.sin(_t * 0.5)))
         threshold = max(10, min(250, threshold))
     elif anim_mode == "axis_rotate":
         axes = ["horizontal", "vertical", "diagonal", "both"]
-        sort_axis = axes[int(t * 0.5) % len(axes)]
+        sort_axis = axes[int(_t * 0.5) % len(axes)]
     elif anim_mode == "pulse":
-        interval_length = max(2, int(interval_length * (0.5 + 0.5 * abs(math.sin(t * 0.4)))))
+        # expand range + round so integer quantization still visibly changes
+        pulse = 0.2 + 1.8 * (0.5 + 0.5 * math.sin(_t * 0.6))
+        interval_length = max(2, round(interval_length * pulse))
     elif anim_mode == "color_cycle":
-        pass  # Applied in apply_color_mode below
+        _color_cycle_shift = (_t * 0.2) % 1.0
     # else: none/drift — use params as-is
 
     # ── Palette ──
@@ -922,6 +933,13 @@ def method_pixelsort(out_dir: Path, seed: int, params=None):
     # ── Apply color mode to sorted result ──
     def apply_color_mode(arr):
         if color_mode == "source":
+            if anim_mode == "color_cycle":
+                # HSV-like RGB phase cycling over full image to make mode visibly animate
+                src = arr.astype(np.float32) / 255.0
+                r = np.clip(src[:, :, 0] * (0.6 + 0.4 * np.sin(2 * np.pi * (_color_cycle_shift + 0.00))), 0, 1)
+                g = np.clip(src[:, :, 1] * (0.6 + 0.4 * np.sin(2 * np.pi * (_color_cycle_shift + 0.33))), 0, 1)
+                b = np.clip(src[:, :, 2] * (0.6 + 0.4 * np.sin(2 * np.pi * (_color_cycle_shift + 0.66))), 0, 1)
+                return (np.stack([r, g, b], axis=-1) * 255).astype(np.uint8)
             return arr
         elif color_mode == "palette" and pal_arr is not None:
             gray = (arr[:, :, 0].astype(float) * 0.299 + arr[:, :, 1].astype(float) * 0.587 + arr[:, :, 2].astype(float) * 0.114).astype(np.uint8)
@@ -935,7 +953,7 @@ def method_pixelsort(out_dir: Path, seed: int, params=None):
             factor = (xx + yy) % 1.0
             return (arr.astype(float) * (0.5 + 0.5 * factor[:, :, np.newaxis])).astype(np.uint8)
         elif color_mode == "glitch_rgb":
-            shift = int(t * 10) % 20 if anim_mode != "none" else 5
+            shift = int(_t * 10) % 20 if anim_mode != "none" else 5
             arr2 = arr.copy()
             arr2[:, :, 0] = np.roll(arr[:, :, 0], shift, axis=1)
             arr2[:, :, 2] = np.roll(arr[:, :, 2], -shift, axis=1)
@@ -1086,7 +1104,7 @@ def method_pixelsort(out_dir: Path, seed: int, params=None):
 
     # ── Drift animation (applied before capture) ──
     if anim_mode == "drift":
-        shift = int(t * 20) % W
+        shift = int(_t * 20) % W
         result = np.roll(result, shift, axis=1)
 
     capture_frame("40", np.clip(result.astype(np.float32) / 255.0, 0, 1))
@@ -1404,7 +1422,7 @@ def method_oil_paint(out_dir: Path, seed: int, params=None):
         "vignette": {"description": "vignette strength (0=off)", "min": 0.0, "max": 1.0, "default": 0.0},
         "bloom": {"description": "bloom/glow strength (0=off)", "min": 0.0, "max": 1.0, "default": 0.0},
         "time": {"description": "animation time in radians (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
-        "anim_mode": {"description": "animation mode", "choices": ["none", "exposure_pulse", "tint_cycle", "bloom_pulse"], "default": "none"},
+        "anim_mode": {"description": "animation mode", "choices": ["none", "exposure_pulse", "tint_cycle", "bloom_pulse", "style_cycle", "gamma_sweep", "contrast_pulse", "vignette_pulse", "colormode_cycle", "source_cycle", "saturation_sweep", "noise_morph", "hdr_shock", "turbulence"], "default": "none"},
         "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
     },
 )
@@ -1435,7 +1453,7 @@ def method_hdr(out_dir: Path, seed: int, params=None):
             vignette: vignette strength (0=off)
             bloom: bloom/glow strength (0=off)
             time: animation time in radians (0-6.28)
-            anim_mode: animation mode (none/exposure_pulse/tint_cycle/bloom_pulse)
+            anim_mode: animation mode (none/exposure_pulse/tint_cycle/bloom_pulse/style_cycle/gamma_sweep/contrast_pulse/vignette_pulse/colormode_cycle/source_cycle/saturation_sweep/noise_morph/hdr_shock/turbulence)
             anim_speed: animation speed multiplier (0.1-5.0)
     """
     import cv2
@@ -1473,70 +1491,238 @@ def method_hdr(out_dir: Path, seed: int, params=None):
     # ── Animation ──
     t = anim_time * anim_speed
     if anim_mode == "exposure_pulse":
-        exposure = base_exposure * (0.3 + 0.7 * abs(math.sin(t * 0.3)))
+        exposure = base_exposure * (0.5 + 0.5 * math.sin(t * 0.3))
         tint_r, tint_g, tint_b = base_tint_r, base_tint_g, base_tint_b
         bloom = base_bloom
+        _use_animated_style = None
+        _use_animated_vignette = vignette
+        _use_animated_contrast = contrast
+        _use_animated_cmode = cmode
     elif anim_mode == "tint_cycle":
         exposure = base_exposure
-        tint_r = base_tint_r * (0.5 + 0.5 * abs(math.sin(t * 0.4)))
-        tint_g = base_tint_g * (0.5 + 0.5 * abs(math.sin(t * 0.5 + 1.0)))
-        tint_b = base_tint_b * (0.5 + 0.5 * abs(math.sin(t * 0.6 + 2.0)))
+        tint_r = base_tint_r * (0.5 + 0.5 * math.sin(t * 0.4))
+        tint_g = base_tint_g * (0.5 + 0.5 * math.sin(t * 0.5 + 1.0))
+        tint_b = base_tint_b * (0.5 + 0.5 * math.sin(t * 0.6 + 2.0))
         bloom = base_bloom
+        _use_animated_style = None
+        _use_animated_vignette = vignette
+        _use_animated_contrast = contrast
+        _use_animated_cmode = cmode
     elif anim_mode == "bloom_pulse":
         exposure = base_exposure
         tint_r, tint_g, tint_b = base_tint_r, base_tint_g, base_tint_b
-        bloom = base_bloom * (0.3 + 0.7 * abs(math.sin(t * 0.3)))
+        bloom = base_bloom * (0.5 + 0.5 * math.sin(t * 0.3))
+        _use_animated_style = None
+        _use_animated_vignette = vignette
+        _use_animated_contrast = contrast
+        _use_animated_cmode = cmode
+    elif anim_mode == "style_cycle":
+        exposure = base_exposure
+        tint_r, tint_g, tint_b = base_tint_r, base_tint_g, base_tint_b
+        bloom = base_bloom
+        styles = ["reinhard", "drago", "mantiuk", "bleach", "glow", "radiance", "duotone", "edge_glow"]
+        raw_idx = t * 0.2
+        _use_animated_style = styles[int(raw_idx) % len(styles)]
+        _use_animated_vignette = vignette
+        _use_animated_contrast = contrast
+        _use_animated_cmode = cmode
+    elif anim_mode == "gamma_sweep":
+        exposure = base_exposure
+        tint_r, tint_g, tint_b = base_tint_r, base_tint_g, base_tint_b
+        bloom = base_bloom
+        gamma = 1.0 + 3.0 * (0.5 + 0.5 * math.sin(t * 0.25))
+        _use_animated_style = style
+        _use_animated_vignette = vignette
+        _use_animated_contrast = contrast
+        _use_animated_cmode = cmode
+    elif anim_mode == "contrast_pulse":
+        exposure = base_exposure
+        tint_r, tint_g, tint_b = base_tint_r, base_tint_g, base_tint_b
+        bloom = base_bloom
+        _use_animated_style = style
+        _use_animated_vignette = vignette
+        _use_animated_contrast = 0.5 + 1.5 * (0.5 + 0.5 * math.sin(t * 0.3))
+        _use_animated_cmode = cmode
+    elif anim_mode == "vignette_pulse":
+        exposure = base_exposure
+        tint_r, tint_g, tint_b = base_tint_r, base_tint_g, base_tint_b
+        bloom = base_bloom
+        _use_animated_style = style
+        _use_animated_vignette = 0.5 + 0.5 * math.sin(t * 0.3)
+        _use_animated_contrast = contrast
+        _use_animated_cmode = cmode
+    elif anim_mode == "colormode_cycle":
+        exposure = base_exposure
+        tint_r, tint_g, tint_b = base_tint_r, base_tint_g, base_tint_b
+        bloom = base_bloom
+        _use_animated_style = style
+        _use_animated_vignette = vignette
+        _use_animated_contrast = contrast
+        colormodes = ["source", "palette", "heatmap", "fire", "ice", "dual_layer"]
+        raw_idx = t * 0.15
+        _use_animated_cmode = colormodes[int(raw_idx) % len(colormodes)]
+    elif anim_mode == "source_cycle":
+        exposure = base_exposure
+        tint_r, tint_g, tint_b = base_tint_r, base_tint_g, base_tint_b
+        bloom = base_bloom
+        _use_animated_style = style
+        _use_animated_vignette = vignette
+        _use_animated_contrast = contrast
+        _use_animated_cmode = cmode
+        sources = ["noise", "gradient", "palette", "rainbow", "procedural"]
+        raw_idx = t * 0.18
+        source = sources[int(raw_idx) % len(sources)]
+    elif anim_mode == "saturation_sweep":
+        exposure = base_exposure
+        tint_r, tint_g, tint_b = base_tint_r, base_tint_g, base_tint_b
+        bloom = base_bloom
+        _use_animated_style = style
+        _use_animated_vignette = vignette
+        _use_animated_contrast = contrast
+        _use_animated_cmode = cmode
+        saturation = 3.0 * (0.5 + 0.5 * math.sin(t * 0.3))
+    elif anim_mode == "noise_morph":
+        """Multi-layer wave morph: three octaves of time-shifted procedural
+        waves at different spatial frequencies blend together. Each layer
+        slides continuously in phase — no noise jump between frames.
+        Creates slow organic nebula/cloud evolution."""
+        exposure = base_exposure * (0.5 + 0.5 * math.sin(t * 0.15))
+        tint_r = base_tint_r * (0.5 + 0.5 * math.sin(t * 0.12))
+        tint_g = base_tint_g * (0.5 + 0.5 * math.sin(t * 0.18))
+        tint_b = base_tint_b * (0.5 + 0.5 * math.sin(t * 0.22))
+        bloom = base_bloom + 0.3 * (0.5 + 0.5 * math.sin(t * 0.4))
+        _use_animated_style = style
+        _use_animated_vignette = 0.3 * (0.5 + 0.5 * math.sin(t * 0.1))
+        _use_animated_contrast = 0.8 + 0.6 * (0.5 + 0.5 * math.sin(t * 0.2))
+        _use_animated_cmode = cmode
+        # Replace noise source with multi-layer procedural (smooth)
+        yy, xx = np.mgrid[:H, :W].astype(np.float32)
+        layer1 = np.sin(xx * 0.03 + t * 0.4) * np.cos(yy * 0.025 + t * 0.3)
+        layer2 = np.sin(xx * 0.08 + yy * 0.06 + t * 0.15) * np.cos(xx * 0.05 - yy * 0.07 + t * 0.2)
+        layer3 = np.sin(xx * 0.015 + yy * 0.02 + t * 0.5) * np.cos(yy * 0.01 - t * 0.35)
+        blend = 0.5 + 0.5 * math.sin(t * 0.08)
+        g = layer1 * (0.5 - blend * 0.3) + layer2 * 0.3 + layer3 * (0.2 + blend * 0.3)
+        src = np.stack([g, g * 0.6, 1 - g * 0.8], axis=-1).clip(0, 1).astype(np.float32)
+    elif anim_mode == "hdr_shock":
+        """Multi-param shockwave with smooth procedural source: 5-layer
+        wave interference at different frequencies. All HDR params
+        (exposure, gamma, bloom, contrast, vignette, tint, saturation)
+        oscillate simultaneously at coprime frequencies so they never
+        repeat the same combination. Source evolves smoothly."""
+        exposure = base_exposure * (0.2 + 0.8 * (0.5 + 0.5 * math.sin(t * 0.35)))
+        tint_r = base_tint_r * (0.2 + 0.8 * (0.5 + 0.5 * math.sin(t * 0.21)))
+        tint_g = base_tint_g * (0.2 + 0.8 * (0.5 + 0.5 * math.sin(t * 0.37)))
+        tint_b = base_tint_b * (0.2 + 0.8 * (0.5 + 0.5 * math.sin(t * 0.43)))
+        bloom = 0.3 + 0.7 * (0.5 + 0.5 * math.sin(t * 0.55))
+        gamma = 1.0 + 3.0 * (0.5 + 0.5 * math.sin(t * 0.19))
+        _use_animated_style = style
+        _use_animated_vignette = 0.6 * (0.5 + 0.5 * math.sin(t * 0.11))
+        _use_animated_contrast = 0.3 + 2.0 * (0.5 + 0.5 * math.sin(t * 0.27))
+        _use_animated_cmode = cmode
+        saturation = 0.3 + 2.5 * (0.5 + 0.5 * math.sin(t * 0.31))
+        # Replace noise with multi-frequency procedural (smooth evolution)
+        yy, xx = np.mgrid[:H, :W].astype(np.float32)
+        s = 0.5 + 0.5 * math.sin(t * 0.05)
+        f1, f2, f3, f4, f5 = 0.02 + s*0.03, 0.04 - s*0.02, 0.015 + s*0.025, 0.06 - s*0.03, 0.01 + s*0.04
+        l1 = np.sin(xx * f1 + yy * f1*0.7 + t * 0.5)
+        l2 = np.cos(xx * f2 - yy * f2*0.8 + t * 0.35)
+        l3 = np.sin(xx * f3 * 1.3 + t * 0.25) * np.cos(yy * f3 * 0.9 + t * 0.4)
+        l4 = np.sin((xx - W/2) * f4 + t * 0.45) * np.cos((yy - H/2) * f4 + t * 0.55)
+        l5 = np.sin(xx * f5 + yy * f5 + t * 0.15)
+        g = l1 * 0.2 + l2 * 0.2 + l3 * 0.25 + l4 * 0.2 + l5 * 0.15
+        g = np.clip(g * 0.5 + 0.5, 0, 1)
+        src = np.stack([g, g * 0.7, 1 - g * 0.6], axis=-1).clip(0, 1).astype(np.float32)
+    elif anim_mode == "turbulence":
+        """Warped wave turbulence: a base procedural wave is spatially
+        distorted by time-varying displacement fields, creating a churning
+        liquid-like texture. The displacement itself is smooth — no noise."""
+        exposure = base_exposure * (0.3 + 0.7 * (0.5 + 0.5 * math.sin(t * 0.25)))
+        tint_r = base_tint_r * (0.5 + 0.5 * math.sin(t * 0.3))
+        tint_g = base_tint_g * (0.5 + 0.5 * math.sin(t * 0.4))
+        tint_b = base_tint_b * (0.5 + 0.5 * math.sin(t * 0.5))
+        bloom = 0.4 + 0.6 * (0.5 + 0.5 * math.sin(t * 0.6))
+        _use_animated_style = style
+        _use_animated_vignette = 0.0
+        _use_animated_contrast = 1.5 + 1.0 * (0.5 + 0.5 * math.sin(t * 0.2))
+        _use_animated_cmode = cmode
+        gamma = 1.0 + 2.0 * (0.5 + 0.5 * math.sin(t * 0.15))
+        # Warped procedural: sample at displaced coordinates
+        yy, xx = np.mgrid[:H, :W].astype(np.float32)
+        dx = 20.0 * np.sin(yy * 0.02 + t * 0.6) + 15.0 * np.cos(xx * 0.025 + t * 0.4)
+        dy = 18.0 * np.cos(xx * 0.015 + t * 0.5) + 12.0 * np.sin(yy * 0.03 + t * 0.35)
+        wx = np.clip(xx + dx, 0, W-1)
+        wy = np.clip(yy + dy, 0, H-1)
+        wx_int = wx.astype(np.int32)
+        wy_int = wy.astype(np.int32)
+        base = np.sin(xx * 0.04 + yy * 0.03 + t * 0.2) * 0.5 + 0.5
+        warped = np.sin(wx_int.astype(float) * 0.04 + wy_int.astype(float) * 0.03 + t * 0.2) * 0.5 + 0.5
+        g = base * 0.4 + warped * 0.6
+        src = np.stack([g, g * 0.5, 1 - g * 0.7], axis=-1).clip(0, 1).astype(np.float32)
     else:
         exposure = base_exposure
         tint_r, tint_g, tint_b = base_tint_r, base_tint_g, base_tint_b
         bloom = base_bloom
+        _use_animated_style = None
+        _use_animated_vignette = vignette
+        _use_animated_contrast = contrast
+        _use_animated_cmode = cmode
+
+    # ── Resolve animated overrides ──
+    if _use_animated_style is not None:
+        style = _use_animated_style
+    _vignette = _use_animated_vignette
+    _contrast = _use_animated_contrast
+    _cmode = _use_animated_cmode
 
     # ── Generate source image ──
-    def _make_source():
-        if params.get("input_image"):
-            from ..core.utils import load_input
-            return load_input(params["input_image"])
-        elif source == "noise":
-            n = rng.standard_normal((H, W, 3)).astype(np.float32) * noise_amp + 0.5
-            n = cv2.GaussianBlur(n, (0, 0), sigmaX=blur_sigma, sigmaY=blur_sigma)
-            return norm(n)
-        elif source == "gradient":
-            yy, xx = np.mgrid[:H, :W].astype(np.float32)
-            r = np.sqrt((xx - W/2)**2 + (yy - H/2)**2)
-            g = norm(r)
-            return np.stack([g, g * 0.7, 1 - g], axis=-1).clip(0, 1)
-        elif source == "palette":
-            try:
-                pal = PALETTES.get(pal_name, list(PALETTES.values())[0])
-            except (IndexError, KeyError):
-                pal = [(80, 60, 40), (200, 180, 160)]
-            yy, xx = np.mgrid[:H, :W].astype(np.float32)
-            r = np.sqrt((xx - W/2)**2 + (yy - H/2)**2)
-            g = norm(r)
-            idx = (g * (len(pal) - 1)).astype(np.int32)
-            pal_arr = np.array(pal, dtype=np.float32) / 255.0
-            return pal_arr[idx]
-        elif source == "rainbow":
-            yy, xx = np.mgrid[:H, :W].astype(np.float32)
-            r = np.sqrt((xx - W/2)**2 + (yy - H/2)**2)
-            g = norm(r)
-            hue = g * 2 * math.pi
-            return np.stack([
-                np.sin(hue) * 0.5 + 0.5,
-                np.sin(hue + 2.094) * 0.5 + 0.5,
-                np.sin(hue + 4.189) * 0.5 + 0.5
-            ], axis=-1).astype(np.float32)
-        elif source == "procedural":
-            yy, xx = np.mgrid[:H, :W].astype(np.float32)
-            g = np.sin(xx * 0.03 + yy * 0.02 + t * 0.5) * \
-                np.cos(xx * 0.02 - yy * 0.03 + t * 0.3) * 0.5 + 0.5
-            return np.stack([g, g * 0.6, 1 - g * 0.8], axis=-1).astype(np.float32)
-        else:
-            n = rng.standard_normal((H, W, 3)).astype(np.float32) * noise_amp + 0.5
-            n = cv2.GaussianBlur(n, (0, 0), sigmaX=blur_sigma, sigmaY=blur_sigma)
-            return norm(n)
-
-    src = _make_source().astype(np.float32)
+    # Custom animation modes provide src directly; skip _make_source
+    if anim_mode in ("noise_morph", "hdr_shock", "turbulence"):
+        pass  # src already set in animation block above
+    else:
+        def _make_source():
+            if params.get("input_image"):
+                from ..core.utils import load_input
+                return load_input(params["input_image"])
+            elif source == "noise":
+                n = rng.standard_normal((H, W, 3)).astype(np.float32) * noise_amp + 0.5
+                n = cv2.GaussianBlur(n, (0, 0), sigmaX=blur_sigma, sigmaY=blur_sigma)
+                return norm(n)
+            elif source == "gradient":
+                yy, xx = np.mgrid[:H, :W].astype(np.float32)
+                r = np.sqrt((xx - W/2)**2 + (yy - H/2)**2)
+                g = norm(r)
+                return np.stack([g, g * 0.7, 1 - g], axis=-1).clip(0, 1)
+            elif source == "palette":
+                try:
+                    pal = PALETTES.get(pal_name, list(PALETTES.values())[0])
+                except (IndexError, KeyError):
+                    pal = [(80, 60, 40), (200, 180, 160)]
+                yy, xx = np.mgrid[:H, :W].astype(np.float32)
+                r = np.sqrt((xx - W/2)**2 + (yy - H/2)**2)
+                g = norm(r)
+                idx = (g * (len(pal) - 1)).astype(np.int32)
+                pal_arr = np.array(pal, dtype=np.float32) / 255.0
+                return pal_arr[idx]
+            elif source == "rainbow":
+                yy, xx = np.mgrid[:H, :W].astype(np.float32)
+                r = np.sqrt((xx - W/2)**2 + (yy - H/2)**2)
+                g = norm(r)
+                hue = g * 2 * math.pi
+                return np.stack([
+                    np.sin(hue) * 0.5 + 0.5,
+                    np.sin(hue + 2.094) * 0.5 + 0.5,
+                    np.sin(hue + 4.189) * 0.5 + 0.5
+                ], axis=-1).astype(np.float32)
+            elif source == "procedural":
+                yy, xx = np.mgrid[:H, :W].astype(np.float32)
+                g = np.sin(xx * 0.03 + yy * 0.02 + t * 0.5) * \
+                    np.cos(xx * 0.02 - yy * 0.03 + t * 0.3) * 0.5 + 0.5
+                return np.stack([g, g * 0.7, 1 - g * 0.8], axis=-1).astype(np.float32)
+            else:
+                n = rng.standard_normal((H, W, 3)).astype(np.float32) * noise_amp + 0.5
+                n = cv2.GaussianBlur(n, (0, 0), sigmaX=blur_sigma, sigmaY=blur_sigma)
+                return norm(n)
+        src = _make_source().astype(np.float32)
 
     # ── Apply HDR style ──
     hdr = src * exposure
@@ -1608,15 +1794,15 @@ def method_hdr(out_dir: Path, seed: int, params=None):
     ], axis=-1)
 
     # ── Contrast ──
-    if contrast != 1.0:
-        result = np.clip((result - 0.5) * contrast + 0.5, 0, 1)
+    if _contrast != 1.0:
+        result = np.clip((result - 0.5) * _contrast + 0.5, 0, 1)
 
     # ── Vignette ──
-    if vignette > 0:
+    if _vignette > 0:
         yy, xx = np.mgrid[:H, :W].astype(np.float32)
         cx, cy = W / 2.0, H / 2.0
         r = np.sqrt((xx - cx)**2 + (yy - cy)**2) / np.sqrt(cx**2 + cy**2)
-        vignette_mask = 1.0 - r * vignette
+        vignette_mask = 1.0 - r * _vignette
         vignette_mask = np.clip(vignette_mask, 0, 1)
         result = result * vignette_mask[:, :, np.newaxis]
 
@@ -1627,7 +1813,7 @@ def method_hdr(out_dir: Path, seed: int, params=None):
         result = np.clip(result + bloom_layer * bloom, 0, 1)
 
     # ── Color mode post-processing ──
-    if cmode == "palette":
+    if _cmode == "palette":
         try:
             pal = PALETTES.get(pal_name, list(PALETTES.values())[0])
         except (IndexError, KeyError):
@@ -1636,19 +1822,19 @@ def method_hdr(out_dir: Path, seed: int, params=None):
         idx = (norm(gray) * (len(pal) - 1)).astype(np.int32)
         pal_arr = np.array(pal, dtype=np.float32) / 255.0
         result = pal_arr[idx]
-    elif cmode == "heatmap" and _has_mpl:
+    elif _cmode == "heatmap" and _has_mpl:
         gray = np.mean(result, axis=-1)
         result = cm.inferno(norm(gray))[:, :, :3].astype(np.float32)
-    elif cmode == "spectral" and _has_mpl:
+    elif _cmode == "spectral" and _has_mpl:
         gray = np.mean(result, axis=-1)
         result = cm.nipy_spectral(norm(gray))[:, :, :3].astype(np.float32)
-    elif cmode == "fire":
+    elif _cmode == "fire":
         gray = norm(np.mean(result, axis=-1))
         result = np.stack([np.clip(gray * 1.5, 0, 1), gray * 0.6, gray * 0.2], axis=-1).astype(np.float32)
-    elif cmode == "ice":
+    elif _cmode == "ice":
         gray = norm(np.mean(result, axis=-1))
         result = np.stack([gray * 0.2, gray * 0.5, 0.5 + gray * 0.5], axis=-1).astype(np.float32)
-    elif cmode == "dual_layer" and _has_mpl:
+    elif _cmode == "dual_layer" and _has_mpl:
         gray = norm(np.mean(result, axis=-1))
         hi = gray > 0.5
         lo = gray <= 0.5
