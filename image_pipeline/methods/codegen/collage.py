@@ -15,14 +15,14 @@ from ...core.animation import capture_frame
 # --- 37 Collage ---
 
 @method(id="37", name="Collage", category="codegen",
-         tags=["composite", "tiles", "mosaic", "animation"],
+         tags=["composite", "tiles", "mosaic", "animation", "expanded"],
          params={
              "layout": {"description": "tile layout pattern", "choices": ["grid", "mosaic", "stack", "spiral"], "default": "grid"},
              "n_tiles": {"description": "number of sub-tiles", "min": 2, "max": 16, "default": 4},
              "blend_mode": {"description": "compositing blend mode", "choices": ["normal", "multiply", "screen", "overlay"], "default": "normal"},
              "gap": {"description": "gap between tiles (pixels)", "min": 0, "max": 20, "default": 2},
              "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
-             "anim_mode": {"description": "animation mode", "choices": ["none", "rotate", "drift", "morph"], "default": "none"},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "rotate", "drift", "morph", "palette_sweep", "pattern_cycle", "size_pulse", "blend_cycle", "gap_pulse", "layout_cycle", "n_tiles_sweep", "tile_phase"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
 def method_37_collage(out_dir: Path, seed: int, params=None):
@@ -30,8 +30,8 @@ def method_37_collage(out_dir: Path, seed: int, params=None):
 
     Generates sub-tiles with random geometric patterns (rects, circles,
     lines, dots, triangles) and arranges them in one of 4 layouts (grid,
-    mosaic, stack, spiral). Supports blend modes and animation via tile
-    rotation, position drift, or morph line shift.
+    mosaic, stack, spiral). Supports blend modes and 12 animation modes
+    that modulate tile content, layout, sizing, palette, and composition.
 
     Args:
         out_dir: Output directory for the generated image.
@@ -42,12 +42,12 @@ def method_37_collage(out_dir: Path, seed: int, params=None):
             blend_mode: compositing blend mode (normal/multiply/screen/overlay)
             gap: gap between tiles in pixels (0-20)
             time: animation time in radians (0-6.28)
-            anim_mode: animation mode (none/rotate/drift/morph)
+            anim_mode: animation mode
             anim_speed: animation speed multiplier (0.1-5.0)
     """
     if params is None:
         params = {}
-    t = float(params.get("time", 0.0))
+    at = float(params.get("time", 0.0))
     anim_mode = params.get("anim_mode", "none")
     anim_speed = float(params.get("anim_speed", 1.0))
     seed_all(seed)
@@ -57,26 +57,74 @@ def method_37_collage(out_dir: Path, seed: int, params=None):
     n_tiles = int(params.get("n_tiles", 4))
     blend_mode = params.get("blend_mode", "normal")
     gap = int(params.get("gap", 2))
-    n_tiles = max(2, min(n_tiles, 16))
 
-    # Apply animation
+    # ── Per-frame time and seed ──
+    _t = at * anim_speed
     if anim_mode == "none":
-        t = 0.0
-    else:
-        t = t * anim_speed
+        _t = 0.0
+
+    # ── Per-frame seed (so layout_cycle/blend_cycle re-generates tiles differently) ──
+    _frame_seed = seed + int(_t * 10000)
+
+    # ── Animation bases ──
+    _base_n_tiles = n_tiles
+    _base_gap = gap
+    _base_blend = blend_mode
+    _base_layout = layout
+    _modes_all = ["grid", "mosaic", "stack", "spiral"]
+    _blends_all = ["normal", "multiply", "screen", "overlay"]
+    _patterns_all = ["rects", "circles", "lines", "dots", "triangles"]
+
+    # ── Per-frame animation modulation ──
+    if anim_mode == "size_pulse":
+        n_tiles = max(2, int(_base_n_tiles * (0.4 + 0.6 * (0.5 + 0.5 * math.sin(_t * 0.3)))))
+    elif anim_mode == "gap_pulse":
+        gap = int(_base_gap + 10.0 * (0.5 + 0.5 * math.sin(_t * 0.35)))
+    elif anim_mode == "blend_cycle":
+        bidx = int(_t * 0.15) % len(_blends_all)
+        blend_mode = _blends_all[bidx]
+    elif anim_mode == "layout_cycle":
+        lidx = int(_t * 0.12) % len(_modes_all)
+        layout = _modes_all[lidx]
+    elif anim_mode == "n_tiles_sweep":
+        n_tiles = 2 + int(14.0 * (0.5 + 0.5 * math.sin(_t * 0.2)))
+    elif anim_mode == "tile_phase":
+        # Just pass through — phase affects _make_tile
+        pass
+    # else: none/rotate/drift/morph/palette_sweep/pattern_cycle — handled in _make_tile
+
+    n_tiles = max(2, min(16, n_tiles))
 
     def _make_tile(tw: int, th: int, tile_idx: int) -> Image.Image:
         tile = Image.new("RGB", (tw, th), (10, 10, 18))
         draw = ImageDraw.Draw(tile)
-        tile_rng = random.Random(tile_idx * 777 + seed)
-        ptype = tile_rng.choice(["rects", "circles", "lines", "dots", "triangles"])
+        tile_rng = random.Random(tile_idx * 777 + _frame_seed)
+
+        # ── Pattern type (with animation) ──
+        if anim_mode == "pattern_cycle":
+            pidx = int(_t * 0.15 + tile_idx * 1.1) % len(_patterns_all)
+            ptype = _patterns_all[pidx]
+        else:
+            ptype = tile_rng.choice(_patterns_all)
+
+        # ── Palette offset (for palette_sweep) ──
+        hue_offset = 0.0
+        if anim_mode == "palette_sweep":
+            hue_offset = _t * 0.1
+
+        # ── Size factor (for tile_phase) ──
+        size_factor = 1.0
+        if anim_mode == "tile_phase":
+            size_factor = 0.3 + 0.7 * (0.5 + 0.5 * math.sin(_t * 0.3 + tile_idx * 1.7))
+
         n = tile_rng.randint(10, 50)
         for _ in range(n):
             x = tile_rng.uniform(0, tw)
             y = tile_rng.uniform(0, th)
-            sz = tile_rng.uniform(5, min(tw, th) * 0.15)
-            hue = tile_rng.uniform(0, 1)
-            col = tuple(int(c * 255) for c in colorsys.hsv_to_rgb(hue, tile_rng.uniform(0.5, 1.0), tile_rng.uniform(0.7, 1.0)))
+            sz = tile_rng.uniform(5, min(tw, th) * 0.15) * size_factor
+            hue = (tile_rng.uniform(0, 1) + hue_offset) % 1.0
+            col = tuple(int(c * 255) for c in colorsys.hsv_to_rgb(
+                hue, tile_rng.uniform(0.5, 1.0), tile_rng.uniform(0.7, 1.0)))
             if ptype == "rects":
                 draw.rectangle([x, y, x + sz, y + sz], fill=col)
             elif ptype == "circles":
@@ -84,12 +132,25 @@ def method_37_collage(out_dir: Path, seed: int, params=None):
             elif ptype == "lines":
                 draw.line([(x, y), (x + sz, y + sz)], fill=col, width=max(1, int(sz / 4)))
             elif ptype == "dots":
-                draw.ellipse([x - 3, y - 3, x + 3, y + 3], fill=col)
+                r = max(1, int(sz * 0.15))
+                draw.ellipse([x - r, y - r, x + r, y + r], fill=col)
             elif ptype == "triangles":
                 draw.polygon([(x, y - sz / 2), (x - sz / 2, y + sz / 2), (x + sz / 2, y + sz / 2)], fill=col)
+
+        # ── Morph lines (improved) ──
         if anim_mode == "morph":
-            morph_shift = int(t * 20 * (tile_idx + 1)) % max(tw, th)
-            draw.line([(morph_shift % tw, 0), (morph_shift % tw, th)], fill=(255, 255, 255), width=1)
+            # 3 morph lines with alternating colors instead of single white line
+            for mi in range(3):
+                ms = (_t * 15 * (tile_idx + 1 + mi * 3)) % max(tw, th)
+                morph_hue = (_t * 0.05 + mi * 0.33) % 1.0
+                mc = tuple(int(c * 255) for c in colorsys.hsv_to_rgb(morph_hue, 0.8, 0.9))
+                draw.line([(int(ms) % tw, 0), (int(ms) % tw, th)], fill=mc, width=2 + mi)
+
+        # ── Tile phase rotation ──
+        if anim_mode == "tile_phase" and _t > 0:
+            rot = _t * 10 * (tile_idx + 1)
+            tile = tile.rotate(rot, expand=False, fillcolor=(10, 10, 18))
+
         return tile
 
     canvas = Image.new("RGB", (W, H), (10, 10, 18))
@@ -103,15 +164,13 @@ def method_37_collage(out_dir: Path, seed: int, params=None):
             gx = idx % cols
             gy = idx // cols
             tile = _make_tile(tw, th, idx)
-            if anim_mode == "rotate" and t > 0:
-                tile = tile.rotate(t * 20 * (idx + 1), expand=False, fillcolor=(10, 10, 18))
-            elif anim_mode == "drift":
-                pass  # No rotation, just position drift below
+            if anim_mode == "rotate" and _t > 0:
+                tile = tile.rotate(_t * 20 * (idx + 1), expand=False, fillcolor=(10, 10, 18))
             px = gap + gx * (tw + gap)
             py = gap + gy * (th + gap)
             if anim_mode == "drift":
-                px += int(20 * math.sin(t * 0.5 + idx * 1.3))
-                py += int(20 * math.cos(t * 0.7 + idx * 1.7))
+                px += int(20 * math.sin(_t * 0.5 + idx * 1.3))
+                py += int(20 * math.cos(_t * 0.7 + idx * 1.7))
             canvas.paste(tile, (px, py))
     elif layout == "mosaic":
         positions = []
@@ -137,8 +196,8 @@ def method_37_collage(out_dir: Path, seed: int, params=None):
             if tw < 10 or th < 10:
                 continue
             tile = _make_tile(tw, th, idx)
-            if anim_mode == "rotate" and t > 0:
-                tile = tile.rotate(t * 15 * (idx + 1), expand=False, fillcolor=(10, 10, 18))
+            if anim_mode == "rotate" and _t > 0:
+                tile = tile.rotate(_t * 15 * (idx + 1), expand=False, fillcolor=(10, 10, 18))
             canvas.paste(tile, (x0, y0))
     elif layout == "stack":
         base_tw = W - gap * 2
@@ -150,23 +209,23 @@ def method_37_collage(out_dir: Path, seed: int, params=None):
             th = max(20, int(base_th * scale))
             tile = _make_tile(tw, th, idx)
             if anim_mode == "rotate":
-                angle = t * 30 * (idx + 1) + idx * 15
+                angle = _t * 30 * (idx + 1) + idx * 15
                 tile = tile.rotate(angle, expand=True, fillcolor=(10, 10, 18))
-            ox = int(gap + (base_tw - tw) / 2 + math.sin(t * 0.5 + idx * 1.3) * 20)
-            oy = int(gap + (base_th - th) / 2 + math.cos(t * 0.7 + idx * 1.7) * 20)
+            ox = int(gap + (base_tw - tw) / 2 + math.sin(_t * 0.5 + idx * 1.3) * 20)
+            oy = int(gap + (base_th - th) / 2 + math.cos(_t * 0.7 + idx * 1.7) * 20)
             canvas.paste(tile, (ox, oy))
     elif layout == "spiral":
         cxs, cys = W / 2.0, H / 2.0
         for idx in range(n_tiles):
             frac = idx / max(1, n_tiles - 1)
-            angle = frac * 2 * math.pi * 2 + t * 0.5
+            angle = frac * 2 * math.pi * 2 + _t * 0.5
             radius = 50 + frac * min(W, H) * 0.4
             x = cxs + radius * math.cos(angle) - 75
             y = cys + radius * math.sin(angle) - 75
             tw = th = 150
             tile = _make_tile(tw, th, idx)
             if anim_mode == "rotate":
-                rot = t * 25 * (idx + 1) + idx * 20
+                rot = _t * 25 * (idx + 1) + idx * 20
                 tile = tile.rotate(rot, expand=False, fillcolor=(10, 10, 18))
             px = max(0, min(W - tw, int(x)))
             py = max(0, min(H - th, int(y)))
@@ -188,4 +247,3 @@ def method_37_collage(out_dir: Path, seed: int, params=None):
     arr = np.array(canvas).astype(np.float32) / 255.0
     capture_frame("37", arr)
     save(canvas, mn(37, f"collage-{layout}"), out_dir)
-
