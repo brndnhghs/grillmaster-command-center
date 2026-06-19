@@ -539,7 +539,8 @@ def method_img2txt(out_dir: Path, seed: int, params=None):
             "edge_len": {"description": "edge length factor", "min": 0.5, "max": 10.0, "default": 1.5},
             "dpi": {"description": "output DPI", "min": 36, "max": 300, "default": 72},
             "time": {"description": "animation time in radians (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
-            "anim_mode": {"description": "animation mode", "choices": ["none", "edge_morph", "color_cycle"], "default": "none"},
+            "anim_mode": {"description": "animation mode", "choices": ["none", "edge_morph", "color_cycle",
+                "layout_cycle", "node_drift", "font_pulse", "bg_cycle", "edge_len_morph"], "default": "none"},
             "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
         })
 def method_graphviz(out_dir: Path, seed: int, params=None):
@@ -547,8 +548,9 @@ def method_graphviz(out_dir: Path, seed: int, params=None):
 
     Creates a random graph with N nodes and random edges, renders it via
     the Graphviz `dot` CLI tool, and saves the result as a PNG. Falls back
-    to a dark placeholder if dot is unavailable. Animation modulates edge
-    density or cycles node colors.
+    to a dark placeholder if dot is unavailable. 8 animation modes modulate
+    edge density, node colors, layout engine, node count, font size, and
+    background color.
 
     Args:
         out_dir: Output directory for the generated image.
@@ -566,7 +568,7 @@ def method_graphviz(out_dir: Path, seed: int, params=None):
             edge_len: edge length factor (0.5-10)
             dpi: output DPI (36-300)
             time: animation time in radians (0-6.28)
-            anim_mode: animation mode (none/edge_morph/color_cycle)
+            anim_mode: animation mode (none/edge_morph/color_cycle/layout_cycle/node_drift/font_pulse/bg_cycle/edge_len_morph)
             anim_speed: animation speed multiplier (0.1-5.0)
     """
     if params is None:
@@ -584,22 +586,60 @@ def method_graphviz(out_dir: Path, seed: int, params=None):
     node_fill = params.get("node_fill", "#2a2a32")
     node_font_color = params.get("node_font_color", "#8a7a6a")
     node_border = params.get("node_border", "#4a4a5a")
-    node_font_size = int(params.get("node_font_size", 8))
+    base_font_size = int(params.get("node_font_size", 8))
     edge_color = params.get("edge_color", "#4a3a2a")
-    edge_len = float(params.get("edge_len", 1.5))
+    base_edge_len = float(params.get("edge_len", 1.5))
     dpi = int(params.get("dpi", 72))
 
-    # ── Animation ──
+    # ── Per-frame time + seed ──
     t = anim_time * anim_speed
+    if anim_mode == "none":
+        t = 0.0
+    _frame_seed = seed + int(t * 10000)
+    _frng = random.Random(_frame_seed)
+
+    # ── Animation modulation ──
+    edge_density = base_edge_density
+    hue_shift = 0.0
+    use_layout = layout
+    use_n_nodes = n_nodes
+    use_font_size = base_font_size
+    use_bg_color = bg_color
+    use_edge_len = base_edge_len
+    _layouts = ["neato", "dot", "fdp", "sfdp", "twopi", "circo"]
+
     if anim_mode == "edge_morph":
-        edge_density = max(1, int(base_edge_density * (0.5 + 0.5 * abs(math.sin(t * 0.3)))))
+        # Smooth sin (no cusp) + round() not int() so it hits base_edge_density at peak
+        frac = 0.3 + 0.7 * (0.5 + 0.5 * math.sin(t * 0.3))
+        edge_density = max(1, round(base_edge_density * frac))
     elif anim_mode == "color_cycle":
         edge_density = base_edge_density
-        # Cycle through hue for node colors
         hue_shift = (t * 0.1) % 1.0
-    else:
+    elif anim_mode == "layout_cycle":
         edge_density = base_edge_density
-        hue_shift = 0.0
+        idx = int(t * 0.2) % len(_layouts)
+        use_layout = _layouts[idx]
+    elif anim_mode == "node_drift":
+        edge_density = base_edge_density
+        # Oscillate node count between 50% and 100% of base
+        frac = 0.5 + 0.5 * math.sin(t * 0.15)
+        use_n_nodes = max(10, int(n_nodes * (0.5 + 0.5 * frac)))
+    elif anim_mode == "font_pulse":
+        edge_density = base_edge_density
+        # Pulse font size smoothly
+        use_font_size = max(4, round(base_font_size * (0.6 + 0.8 * (0.5 + 0.5 * math.sin(t * 0.3)))))
+    elif anim_mode == "bg_cycle":
+        edge_density = base_edge_density
+        # Background hue cycle (sin-based RGB)
+        hue = (t * 0.08) % 1.0
+        r_c = int(40 * (0.5 + 0.5 * math.sin(hue * 2 * math.pi)))
+        g_c = int(40 * (0.5 + 0.5 * math.sin(hue * 2 * math.pi + 2.094)))
+        b_c = int(40 * (0.5 + 0.5 * math.sin(hue * 2 * math.pi + 4.189)))
+        use_bg_color = f"#{r_c:02x}{g_c:02x}{b_c:02x}"
+    elif anim_mode == "edge_len_morph":
+        edge_density = base_edge_density
+        use_edge_len = base_edge_len * (0.5 + 1.0 * (0.5 + 0.5 * math.sin(t * 0.25)))
+        use_edge_len = max(0.5, min(10.0, use_edge_len))
 
     # ── Check for dot binary ──
     try:
@@ -613,25 +653,26 @@ def method_graphviz(out_dir: Path, seed: int, params=None):
     # ── Build DOT graph ──
     dot_lines = [
         "graph G {",
-        f"  layout={layout};",
-        f'  bgcolor="{bg_color}";',
-        f'  node [style=filled, fillcolor="{node_fill}", fontcolor="{node_font_color}", color="{node_border}", fontsize={node_font_size}];',
-        f'  edge [color="{edge_color}", len={edge_len}];',
+        f"  layout={use_layout};",
+        f'  bgcolor="{use_bg_color}";',
+        f'  node [style=filled, fillcolor="{node_fill}", fontcolor="{node_font_color}", color="{node_border}", fontsize={use_font_size}];',
+        f'  edge [color="{edge_color}", len={use_edge_len}];',
     ]
-    for i in range(n_nodes):
+    # Use _frng (per-frame seed) so node_drift and others get fresh layouts
+    for i in range(use_n_nodes):
         if anim_mode == "color_cycle":
-            hue = (i / n_nodes + hue_shift) % 1.0
+            hue = (i / max(1, use_n_nodes) + hue_shift) % 1.0
             r_c = int(255 * (0.5 + 0.5 * math.sin(hue * 2 * math.pi)))
             g_c = int(255 * (0.5 + 0.5 * math.sin(hue * 2 * math.pi + 2.094)))
             b_c = int(255 * (0.5 + 0.5 * math.sin(hue * 2 * math.pi + 4.189)))
         else:
-            r_c = rng.randint(20, 60)
-            g_c = rng.randint(20, 50)
-            b_c = rng.randint(30, 60)
+            r_c = _frng.randint(20, 60)
+            g_c = _frng.randint(20, 50)
+            b_c = _frng.randint(30, 60)
         dot_lines.append(f'  n{i} [fillcolor="#{r_c:02x}{g_c:02x}{b_c:02x}", label=""];')
-    for _ in range(n_nodes * edge_density):
-        a = rng.randint(0, n_nodes - 1)
-        b_node = rng.randint(0, n_nodes - 1)
+    for _ in range(use_n_nodes * edge_density):
+        a = _frng.randint(0, use_n_nodes - 1)
+        b_node = _frng.randint(0, use_n_nodes - 1)
         if a != b_node:
             dot_lines.append(f"  n{a} -- n{b_node};")
     dot_lines.append("}")
