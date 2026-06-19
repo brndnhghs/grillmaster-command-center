@@ -1300,7 +1300,7 @@ def method_flowfield(out_dir: Path, seed: int, params=None):
              "aniso_angle": {"description": "anisotropy direction (degrees)", "min": 0, "max": 360, "default": 0},
              "self_avoid": {"description": "min distance between clusters (px)", "min": 0, "max": 10, "default": 0},
              "time": {"description": "animation drive", "min": 0.0, "max": 6.28, "default": 0.0},
-             "anim_mode": {"description": "animation mode", "choices": ["none", "spawn_radius", "julia_drift", "aniso_rotate"], "default": "none"},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "spawn_radius", "julia_drift", "aniso_rotate", "growth_pulse", "stickiness_wave", "bias_pulse"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
 def method_dla(out_dir: Path, seed: int, params=None):
@@ -1353,15 +1353,14 @@ def method_dla(out_dir: Path, seed: int, params=None):
     aniso_angle = float(params.get("aniso_angle", 0))
     self_avoid = int(params.get("self_avoid", 0))
 
-    # ── Animation ──
+    # ── Animation setup (bases for per-frame modulation inside loop) ──
     t = anim_time * anim_speed
-    if anim_mode == "spawn_radius":
-        spawn_offset = int(spawn_offset * (0.5 + 0.5 * abs(math.sin(t * 0.3))))
-    elif anim_mode == "julia_drift":
-        pass  # Julia c_re modulated below
-    elif anim_mode == "aniso_rotate":
-        aniso_angle = (aniso_angle + t * 20) % 360
-    # else: none — use params as-is
+    _base_spawn_offset = spawn_offset
+    _base_aniso_angle = aniso_angle
+    _base_aniso_strength = aniso_strength
+    _base_self_avoid = self_avoid
+    _base_growth_mode = growth_mode
+    _growth_modes_list = ["classic", "ballistic", "cluster_cluster", "surface", "julia_field", "gradient_field"]
 
     # ── Palette ──
     from ..core.utils import PALETTES
@@ -1375,24 +1374,12 @@ def method_dla(out_dir: Path, seed: int, params=None):
     # ── Grid init ──
     grid = np.zeros((H, W), dtype=bool)
     age_grid = np.zeros((H, W), dtype=np.float32)
-    density_grid = np.zeros((H, W), dtype=np.int32)
 
     cx, cy = W // 2, H // 2
     grid[cy, cx] = True
     age_grid[cy, cx] = 0
-    density_grid[cy, cx] = 1
 
     dirs = [(0, 1), (1, 0), (0, -1), (-1, 0), (1, 1), (-1, -1), (1, -1), (-1, 1)]
-
-    # ── Anisotropy precompute ──
-    ang_rad = math.radians(aniso_angle)
-    aniso_bias = np.zeros((H, W), dtype=np.float32)
-    if aniso_strength > 0:
-        yy_ax, xx_ax = np.ogrid[:H, :W]
-        dx_a = xx_ax - cx
-        dy_a = yy_ax - cy
-        rot_angle = np.arctan2(dy_a, dx_a) - ang_rad
-        aniso_bias = 1.0 + aniso_strength * np.cos(rot_angle)  # range [1-s, 1+s]
 
     # ══════════════════════════════════════════════════════
     #  DLA GROWTH LOOP
@@ -1420,30 +1407,73 @@ def method_dla(out_dir: Path, seed: int, params=None):
                 age_grid[scy, scx] = 5
                 cluster_positions.append((scx, scy))
 
-    # ── Julia field ──
-    if growth_mode == "julia_field":
-        # Build a Julia set as field influence
-        c_re = -0.7 + t * 0.01
-        if anim_mode == "julia_drift":
-            c_re = -0.7 + 0.3 * math.sin(t * 0.2)
-        c_im = 0.270
-        yy_f, xx_f = np.ogrid[:H, :W]
-        zx = (xx_f - cx) / (W * 0.35)
-        zy = (yy_f - cy) / (H * 0.35)
-        julia_field = np.zeros((H, W), dtype=np.int32)
-        for _ in range(30):
-            nzx = zx * zx - zy * zy + c_re
-            nzy = 2 * zx * zy + c_im
-            zx, zy = nzx, nzy
-        julia_field = np.clip(((np.abs(zx) + np.abs(zy)) * 10).astype(np.int32), 0, 10)
-
     # ── Capture interval ──
     cap_interval = max(1, n_p // 60)
 
+    # ── Anisotropy defaults (rebuilt at capture points for animation) ──
+    ang_rad = math.radians(aniso_angle)
+    aniso_bias = np.ones((H, W), dtype=np.float32)
+    if aniso_strength > 0:
+        yy_ax, xx_ax = np.ogrid[:H, :W]
+        dx_a = xx_ax - cx
+        dy_a = yy_ax - cy
+        rot_angle = np.arctan2(dy_a, dx_a) - ang_rad
+        aniso_bias = 1.0 + aniso_strength * np.cos(rot_angle)
+
     for p_idx in range(n_p):
+        # ── Per-frame scalar modulation (O(1)) ──
+        _t = t + (p_idx / max(1, n_p)) * 4 * math.pi * anim_speed
+
+        spawn_offset = _base_spawn_offset
+        aniso_angle = _base_aniso_angle
+        aniso_strength = _base_aniso_strength
+        self_avoid = _base_self_avoid
+        growth_mode = _base_growth_mode
+
+        if anim_mode == "spawn_radius":
+            spawn_offset = int(_base_spawn_offset * (0.5 + 0.5 * math.sin(_t * 0.3)))
+        elif anim_mode == "julia_drift":
+            pass  # c_re modulated in field rebuild below
+        elif anim_mode == "aniso_rotate":
+            aniso_angle = (_base_aniso_angle + _t * 20) % 360
+        elif anim_mode == "growth_pulse":
+            raw_idx = _t * 0.15
+            midx = int(raw_idx) % len(_growth_modes_list)
+            growth_mode = _growth_modes_list[midx]
+        elif anim_mode == "stickiness_wave":
+            self_avoid = int(_base_self_avoid + 2.0 * (0.5 + 0.5 * math.sin(_t * 0.4)))
+        elif anim_mode == "bias_pulse":
+            aniso_strength = _base_aniso_strength * (0.3 + 0.7 * (0.5 + 0.5 * math.sin(_t * 0.35)))
+            aniso_angle = (_base_aniso_angle + _t * 30) % 360
+
+        # ── Rebuild expensive fields only at capture points (~60x) ──
+        if p_idx % cap_interval == 0:
+            ang_rad = math.radians(aniso_angle)
+            aniso_bias = np.ones((H, W), dtype=np.float32)
+            if aniso_strength > 0:
+                yy_ax, xx_ax = np.ogrid[:H, :W]
+                dx_a = xx_ax - cx
+                dy_a = yy_ax - cy
+                rot_angle = np.arctan2(dy_a, dx_a) - ang_rad
+                aniso_bias = 1.0 + aniso_strength * np.cos(rot_angle)
+
+            if growth_mode == "julia_field":
+                c_re = -0.7 + 0.01 * _t
+                if anim_mode == "julia_drift":
+                    c_re = -0.7 + 0.3 * math.sin(_t * 0.2)
+                c_im = 0.270
+                yy_f, xx_f = np.ogrid[:H, :W]
+                zx = (xx_f - cx) / (W * 0.35)
+                zy = (yy_f - cy) / (H * 0.35)
+                julia_field = np.zeros((H, W), dtype=np.int32)
+                for _ in range(30):
+                    nzx = zx * zx - zy * zy + c_re
+                    nzy = 2 * zx * zy + c_im
+                    zx, zy = nzx, nzy
+                julia_field = np.clip(((np.abs(zx) + np.abs(zy)) * 10).astype(np.int32), 0, 10)
+
         # ── Spawn position ──
         if growth_mode == "surface":
-            # Spawn from a random point on the current surface
             if cluster_positions:
                 sp_idx = py_rng.randint(0, len(cluster_positions) - 1)
                 spx, spy = cluster_positions[sp_idx]
@@ -1457,17 +1487,14 @@ def method_dla(out_dir: Path, seed: int, params=None):
                 px = cx + int(r_ * math.cos(angle))
                 py = cy + int(r_ * math.sin(angle))
         else:
-            # Uniform spawn on circle
             angle = py_rng.uniform(0, 2 * math.pi)
             r_ = max_radius + spawn_offset
             px = cx + int(r_ * math.cos(angle))
             py = cy + int(r_ * math.sin(angle))
-            # Anisotropy bias
             if aniso_strength > 0:
                 if px > 0 and px < W and py > 0 and py < H:
                     bias_val = aniso_bias[py, px]
                     if rng.random() > 0.5 + bias_val * 0.3:
-                        # Re-roll toward bias direction
                         angle = math.atan2(-math.sin(ang_rad), math.cos(ang_rad)) + py_rng.uniform(-0.5, 0.5)
                         px = cx + int(r_ * math.cos(angle))
                         py = cy + int(r_ * math.sin(angle))
@@ -1509,15 +1536,12 @@ def method_dla(out_dir: Path, seed: int, params=None):
                     grid[py, px] = True
 
                 age_grid[py, px] = p_idx
-                density_grid[py, px] = 1
                 cluster_positions.append((px, py))
 
                 # Update max radius
                 dist = math.hypot(px - cx, py - cy)
                 if dist > max_radius:
                     max_radius = dist
-                if dist > max_grid_radius:
-                    max_grid_radius = dist
 
                 break
 
