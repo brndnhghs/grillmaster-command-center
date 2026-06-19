@@ -75,7 +75,7 @@ def _render_sandpile_preview(grid, colors, size, h, w):
              "attractor_x": {"description": "master attractor X (0-1 fraction)", "min": 0.0, "max": 1.0, "default": 0.5},
              "attractor_y": {"description": "master attractor Y (0-1 fraction)", "min": 0.0, "max": 1.0, "default": 0.5},
              "time": {"description": "animation time in radians (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
-             "anim_mode": {"description": "animation mode", "choices": ["none", "speed_pulse", "cohesion_wave", "obstacle_dance", "predator_burst", "food_orbit", "sep_pulse", "align_wave", "obstacle_field", "wind_gust", "attractor_morph", "spiral_flock", "swarm_art"], "default": "none"},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "speed_pulse", "cohesion_wave", "obstacle_dance", "predator_burst", "food_orbit", "sep_pulse", "align_wave", "obstacle_field", "wind_gust", "attractor_morph", "spiral_flock", "swarm_art", "warp_sphere", "magnet_wave", "time_reversal", "boundary_morph", "vortex_shatter", "gravity_well", "predator_multi", "boid_merge"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
 def method_boids(out_dir: Path, seed: int, params=None):
@@ -166,6 +166,15 @@ def method_boids(out_dir: Path, seed: int, params=None):
     _anim_attractor_morph = anim_mode == "attractor_morph"
     _anim_spiral_flock = anim_mode == "spiral_flock"
     _anim_swarm_art = anim_mode == "swarm_art"
+    _anim_warp_sphere = anim_mode == "warp_sphere"
+    _anim_magnet_wave = anim_mode == "magnet_wave"
+    _anim_time_reversal = anim_mode == "time_reversal"
+    _anim_boundary_morph = anim_mode == "boundary_morph"
+    _anim_vortex_shatter = anim_mode == "vortex_shatter"
+    _anim_gravity_well = anim_mode == "gravity_well"
+    _anim_predator_multi = anim_mode == "predator_multi"
+    _anim_boid_merge = anim_mode == "boid_merge"
+    _anim_boundary_reflect = False
     _anim_base_max_speed = max_speed
     _anim_base_cohesion = cohesion_w
     _anim_base_sep_px = sep_px
@@ -421,6 +430,130 @@ def method_boids(out_dir: Path, seed: int, params=None):
         elif _anim_swarm_art:
             # Minimum boids, heavy fade, no boid dots — just trails as art
             pass  # Handled below in rendering
+        elif _anim_warp_sphere:
+            # Warp space around a moving point — boids compress on one side, stretch on the other
+            warp_cx = W/2 + 200 * math.cos(_t * 0.2)
+            warp_cy = H/2 + 150 * math.sin(_t * 0.25)
+            warp_r = 200 + 100 * math.sin(_t * 0.15)
+            for b in boids:
+                dx = b["x"] - warp_cx
+                dy = b["y"] - warp_cy
+                d = max(0.1, math.hypot(dx, dy))
+                # Radial distortion: compress inside warp radius, expand outside
+                warp_factor = 1.0 + 3.0 * math.exp(-(d * d) / (warp_r * warp_r * 0.5))
+                b["vx"] += (dx / d) * warp_factor * 0.3
+                b["vy"] += (dy / d) * warp_factor * 0.3
+                # Tangential lensing
+                b["vx"] += (-dy / d) * 0.5
+                b["vy"] += (dx / d) * 0.5
+        elif _anim_magnet_wave:
+            # Alternating magnetic polarity sweeps across the canvas
+            wave_x = W * (0.5 + 0.5 * math.sin(_t * 0.2))
+            wave_r = 150 + 80 * math.sin(_t * 0.3)
+            for b in boids:
+                dx = b["x"] - wave_x
+                dy = b["y"] - H/2
+                d = max(0.1, math.hypot(dx, dy))
+                # North pole on one side, south on the other
+                polarity = 1.0 if b["x"] < wave_x else -1.0
+                if d < wave_r:
+                    force = polarity * (1.0 - d / wave_r) * 2.0
+                    b["vx"] += (dy / d) * force * 0.5  # Perpendicular
+                    b["vy"] += (-dx / d) * force * 0.5
+        elif _anim_time_reversal:
+            # Every few frames, reverse all boid velocities briefly
+            phase = (int(_t * 10) % 12)
+            if phase < 3:  # ~25% of frames: reverse direction
+                for b in boids:
+                    b["vx"] *= -0.85
+                    b["vy"] *= -0.85
+            if phase == 0:  # Also scatter on first reversal frame
+                for b in boids:
+                    b["vx"] += (rng.random() - 0.5) * 3
+                    b["vy"] += (rng.random() - 0.5) * 3
+        elif _anim_boundary_morph:
+            # Boundaries morph between toroidal wrap and reflective walls
+            # On wrap frames: boids pass through edges
+            # On reflect frames: boids bounce back
+            _anim_boundary_reflect = (int(_t * 8) % 2 == 1)
+            if _anim_boundary_reflect:
+                for b in boids:
+                    if b["x"] < 10 or b["x"] > W - 10:
+                        b["vx"] *= -0.9
+                    if b["y"] < 10 or b["y"] > H - 10:
+                        b["vy"] *= -0.9
+        elif _anim_vortex_shatter:
+            # Multiple vortices that form, merge, and shatter the flock
+            n_vortices = 3 + int(2 * math.sin(_t * 0.15))
+            for vi in range(n_vortices):
+                vx = W/2 + 250 * math.cos(_t * 0.2 + vi * 2.1)
+                vy = H/2 + 200 * math.sin(_t * 0.25 + vi * 1.7)
+                v_strength = 1.0 + math.sin(_t * 0.3 + vi)
+                for b in boids:
+                    dx = b["x"] - vx
+                    dy = b["y"] - vy
+                    d = max(0.1, math.hypot(dx, dy))
+                    if d < 250:
+                        # Tangential: spin around vortex center
+                        b["vx"] += (-dy / d) * v_strength * 0.4
+                        b["vy"] += (dx / d) * v_strength * 0.4
+                        # Radial: weak pull toward vortex
+                        b["vx"] += (-dx / d) * v_strength * 0.1
+                        b["vy"] += (-dy / d) * v_strength * 0.1
+        elif _anim_gravity_well:
+            # Multiple gravity wells that appear and vanish — boids get trapped
+            n_wells = 4 + int(2 * math.sin(_t * 0.1))
+            for wi in range(n_wells):
+                wx = 100 + (W - 200) * (0.5 + 0.5 * math.sin(_t * 0.18 + wi * 1.3))
+                wy = 100 + (H - 200) * (0.5 + 0.5 * math.cos(_t * 0.22 + wi * 1.7))
+                w_mass = 1.0 + math.sin(_t * 0.25 + wi * 0.9)  # -1 to 1, becomes repulsive
+                for b in boids:
+                    dx = wx - b["x"]
+                    dy = wy - b["y"]
+                    d = max(1.0, math.hypot(dx, dy))
+                    if d < 300:
+                        # Inverse square: strong near center, weak far
+                        force = w_mass / (d * 0.1 + 1.0)
+                        b["vx"] += (dx / d) * force * 0.15
+                        b["vy"] += (dy / d) * force * 0.15
+        elif _anim_predator_multi:
+            # Multiple predator species with different hunting strategies
+            if species_mode == "predator_prey":
+                n_predators = 3 + int(2 * math.sin(_t * 0.12))
+                # Adjust predator speed based on time
+                speeds[1] = _anim_base_max_speed * 1.8 * (1.0 + 0.5 * math.sin(_t * 0.3))
+                # Second predator pack from different angle
+                for bi, b in enumerate(boids):
+                    if b["species"] == 1:
+                        # Stalk from behind prey clusters
+                        if bi % 3 == 0:
+                            b["vx"] *= 0.98  # Ambush: slow approach
+                        elif bi % 3 == 1:
+                            b["vx"] *= 1.05  # Flanker: fast outrun
+        elif _anim_boid_merge:
+            # Boids physically merge when close enough — count decreases over time
+            merge_dist = 15 + 10 * (0.5 + 0.5 * math.sin(_t * 0.2))
+            if frame % 5 == 0:
+                to_remove = set()
+                for i, b1 in enumerate(boids):
+                    if i in to_remove:
+                        continue
+                    for j in range(i + 1, len(boids)):
+                        if j in to_remove:
+                            continue
+                        b2 = boids[j]
+                        dx = b1["x"] - b2["x"]
+                        dy = b1["y"] - b2["y"]
+                        d = math.hypot(dx, dy)
+                        if d < merge_dist:
+                            # Merge: absorb the other boid's momentum
+                            b1["vx"] = (b1["vx"] + b2["vx"]) * 0.5
+                            b1["vy"] = (b1["vy"] + b2["vy"]) * 0.5
+                            b1["size"] = min(15, b1["size"] + b2["size"] * 0.5)
+                            to_remove.add(j)
+                            break
+                if to_remove:
+                    boids[:] = [b for i, b in enumerate(boids) if i not in to_remove]
 
         # ── Per-frame obstacle updates ──
         if _anim_obstacle_dance or _anim_obstacle_field:
@@ -584,14 +717,19 @@ def method_boids(out_dir: Path, seed: int, params=None):
             # ── Position update + toroidal wrap ──
             b["x"] += b["vx"]
             b["y"] += b["vy"]
-            if b["x"] < 0:
-                b["x"] += W
-            if b["x"] > W:
-                b["x"] -= W
-            if b["y"] < 0:
-                b["y"] += H
-            if b["y"] > H:
-                b["y"] -= H
+            if _anim_boundary_morph and _anim_boundary_reflect:
+                # Reflective mode: clamp inside bounds instead of wrapping
+                b["x"] = max(5, min(W - 5, b["x"]))
+                b["y"] = max(5, min(H - 5, b["y"]))
+            else:
+                if b["x"] < 0:
+                    b["x"] += W
+                if b["x"] > W:
+                    b["x"] -= W
+                if b["y"] < 0:
+                    b["y"] += H
+                if b["y"] > H:
+                    b["y"] -= H
 
         # ── Trail buffers ──
         if trail_mode in ("comet", "ribbon"):
