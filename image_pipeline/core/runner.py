@@ -3,12 +3,17 @@ Parallel/sequential runner with progress tracking, timing, and caching.
 """
 from __future__ import annotations
 import concurrent.futures
+import threading
 import time
 from pathlib import Path
 from typing import Callable, Optional
 
 from . import cache
 from .registry import MethodMeta, timed_run
+
+# Serialises the seed-then-use sequence so concurrent threads cannot race on
+# the global random/numpy RNG state that each method resets via seed_all().
+_rng_lock = threading.Lock()
 
 
 def run_sequential(
@@ -83,12 +88,13 @@ def run_parallel(
         if progress_cb:
             progress_cb(label, meta, 0, False)
 
-        start = time.time()
-        try:
-            meta.fn(out_dir, seed, params=params)
-        except TypeError:
-            meta.fn(out_dir, seed)
-        elapsed = time.time() - start
+        with _rng_lock:
+            start = time.time()
+            try:
+                meta.fn(out_dir, seed, params=params)
+            except TypeError:
+                meta.fn(out_dir, seed)
+            elapsed = time.time() - start
 
         out_path = out_dir / meta.filename()
         if out_path.exists():

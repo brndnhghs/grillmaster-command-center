@@ -133,7 +133,7 @@ def blend_two(a: np.ndarray, b: np.ndarray, mode: str) -> np.ndarray:
         return np.clip(2 * blend_two(a, b, "overlay") - 0.5, 0, 1)
 
     # ── Comparative ──
-    elif mode == "difference":
+    elif mode in ("difference", "dif"):
         return np.abs(a - b)
     elif mode == "exclusion":
         return 0.5 - 2 * (a - 0.5) * (b - 0.5)
@@ -223,7 +223,8 @@ def blend_two(a: np.ndarray, b: np.ndarray, mode: str) -> np.ndarray:
         v_val = b[..., :3] if b.shape[-1] >= 3 else b[..., None]
         v_val = v_val[:, :, 0] if v_val.ndim == 3 else v_val
         v_val = np.clip(v_val, 0, 1)
-        p = v_val * (1 - 1)  # saturation = 1
+        s_val = np.clip(b[:, :, 1] if b.ndim == 3 and b.shape[-1] >= 2 else np.ones_like(v_val), 0, 1)
+        p = v_val * (1 - s_val)
         q = v_val * (1 - f)
         t = v_val * (1 - (1 - f))
         out = np.zeros(a.shape, dtype=np.float32)

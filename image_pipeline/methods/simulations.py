@@ -1293,6 +1293,13 @@ def method_flowfield(out_dir: Path, seed: int, params=None):
              "spawn_offset": {"description": "spawn distance beyond radius", "min": 5, "max": 200, "default": 30},
              "max_steps": {"description": "max walk steps per particle", "min": 100, "max": 50000, "default": 5000},
              "growth_mode": {"description": "DLA growth style", "choices": ["classic", "ballistic", "cluster_cluster", "surface", "julia_field", "gradient_field"], "default": "classic"},
+             "walk_style": {"description": "particle walk algorithm", "choices": ["classic", "levy", "correlated", "vortex", "gravity", "bouncing"], "default": "classic"},
+             "spawn_style": {"description": "where particles enter", "choices": ["circle", "edge", "spiral", "gaussian"], "default": "circle"},
+             "stick_prob": {"description": "probability particle sticks on contact (0.1-1.0)", "min": 0.1, "max": 1.0, "default": 1.0},
+             "levy_alpha": {"description": "levy flight exponent (1=Cauchy, 2=Gaussian)", "min": 0.5, "max": 2.5, "default": 1.5},
+             "correlation": {"description": "walk direction persistence (0=Brownian, 1=straight)", "min": 0.0, "max": 1.0, "default": 0.0},
+             "vortex_strength": {"description": "orbital swirl force (0=none, 5=strong)", "min": 0.0, "max": 5.0, "default": 0.0},
+             "gravity_strength": {"description": "attraction toward center (0=none, 0.1=strong)", "min": 0.0, "max": 0.1, "default": 0.0},
              "palette": {"description": "color palette", "default": "cool"},
              "color_mode": {"description": "coloring by age/radius/density/radial", "choices": ["age", "radial", "density", "uniform"], "default": "age"},
              "bg_style": {"description": "background style", "choices": ["dark", "light", "gradient"], "default": "dark"},
@@ -1300,7 +1307,7 @@ def method_flowfield(out_dir: Path, seed: int, params=None):
              "aniso_angle": {"description": "anisotropy direction (degrees)", "min": 0, "max": 360, "default": 0},
              "self_avoid": {"description": "min distance between clusters (px)", "min": 0, "max": 10, "default": 0},
              "time": {"description": "animation drive", "min": 0.0, "max": 6.28, "default": 0.0},
-             "anim_mode": {"description": "animation mode", "choices": ["none", "spawn_radius", "julia_drift", "aniso_rotate", "walk_pulse", "stickiness_wave", "bias_pulse"], "default": "none"},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "spawn_radius", "julia_drift", "aniso_rotate", "walk_pulse", "stickiness_wave", "bias_pulse", "walk_cycle", "spawn_cycle", "levy_sweep", "vortex_sweep", "gravity_sweep", "bounce_mode", "correlation_sweep", "drift_path"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
 def method_dla(out_dir: Path, seed: int, params=None):
@@ -1352,6 +1359,13 @@ def method_dla(out_dir: Path, seed: int, params=None):
     aniso_strength = float(params.get("aniso_strength", 0.0))
     aniso_angle = float(params.get("aniso_angle", 0))
     self_avoid = int(params.get("self_avoid", 0))
+    walk_style = params.get("walk_style", "classic")
+    spawn_style = params.get("spawn_style", "circle")
+    stick_prob = float(params.get("stick_prob", 1.0))
+    levy_alpha = float(params.get("levy_alpha", 1.5))
+    correlation = float(params.get("correlation", 0.0))
+    vortex_strength = float(params.get("vortex_strength", 0.0))
+    gravity_strength = float(params.get("gravity_strength", 0.0))
 
     # ── Animation setup (bases for per-frame modulation inside loop) ──
     t = anim_time * anim_speed
@@ -1360,6 +1374,15 @@ def method_dla(out_dir: Path, seed: int, params=None):
     _base_aniso_strength = aniso_strength
     _base_self_avoid = self_avoid
     _base_max_steps = max_steps
+    _base_walk_style = walk_style
+    _base_spawn_style = spawn_style
+    _base_stick_prob = stick_prob
+    _base_levy_alpha = levy_alpha
+    _base_correlation = correlation
+    _base_vortex_strength = vortex_strength
+    _base_gravity_strength = gravity_strength
+    _walk_styles = ["classic", "levy", "correlated", "vortex", "gravity", "bouncing"]
+    _spawn_styles = ["circle", "edge", "spiral", "gaussian"]
 
     # ── Palette ──
     from ..core.utils import PALETTES
@@ -1423,26 +1446,63 @@ def method_dla(out_dir: Path, seed: int, params=None):
         # ── Per-frame scalar modulation (O(1)) ──
         _t = t + (p_idx / max(1, n_p)) * 4 * math.pi * anim_speed
 
+        # ── Drift origin (Lissajous path for drift_path mode) ──
+        _origin_x = cx
+        _origin_y = cy
+        if anim_mode == "drift_path":
+            _origin_x = cx + int(W * 0.3 * math.sin(_t * 0.3))
+            _origin_y = cy + int(H * 0.25 * math.cos(_t * 0.2))
+
         spawn_offset = _base_spawn_offset
         aniso_angle = _base_aniso_angle
         aniso_strength = _base_aniso_strength
         self_avoid = _base_self_avoid
         max_steps = _base_max_steps
+        walk_style = _base_walk_style
+        spawn_style = _base_spawn_style
+        stick_prob = _base_stick_prob
+        levy_alpha = _base_levy_alpha
+        correlation = _base_correlation
+        vortex_strength = _base_vortex_strength
+        gravity_strength = _base_gravity_strength
 
         if anim_mode == "spawn_radius":
             spawn_offset = int(_base_spawn_offset * (0.5 + 0.5 * math.sin(_t * 0.3)))
         elif anim_mode == "julia_drift":
-            pass  # c_re modulated in field rebuild below
+            pass
         elif anim_mode == "aniso_rotate":
             aniso_angle = (_base_aniso_angle + _t * 20) % 360
         elif anim_mode == "walk_pulse":
-            # Modulate max_steps: low = compact, high = dendritic
             max_steps = int(_base_max_steps * (0.2 + 0.8 * (0.5 + 0.5 * math.sin(_t * 0.3))))
         elif anim_mode == "stickiness_wave":
             self_avoid = int(_base_self_avoid + 2.0 * (0.5 + 0.5 * math.sin(_t * 0.4)))
         elif anim_mode == "bias_pulse":
             aniso_strength = _base_aniso_strength * (0.3 + 0.7 * (0.5 + 0.5 * math.sin(_t * 0.35)))
             aniso_angle = (_base_aniso_angle + _t * 30) % 360
+        elif anim_mode == "walk_cycle":
+            # Cycle through all 6 walk styles
+            widx = int(_t * 0.12) % len(_walk_styles)
+            walk_style = _walk_styles[widx]
+        elif anim_mode == "spawn_cycle":
+            # Cycle through all 4 spawn styles
+            sidx = int(_t * 0.12) % len(_spawn_styles)
+            spawn_style = _spawn_styles[sidx]
+        elif anim_mode == "levy_sweep":
+            levy_alpha = 0.8 + 1.4 * (0.5 + 0.5 * math.sin(_t * 0.25))
+            walk_style = "levy"
+        elif anim_mode == "vortex_sweep":
+            vortex_strength = 1.0 + 3.0 * (0.5 + 0.5 * math.sin(_t * 0.3))
+            walk_style = "vortex"
+        elif anim_mode == "gravity_sweep":
+            gravity_strength = 0.01 + 0.08 * (0.5 + 0.5 * math.sin(_t * 0.25))
+            walk_style = "gravity"
+        elif anim_mode == "bounce_mode":
+            stick_prob = 0.15 + 0.85 * (0.5 + 0.5 * math.sin(_t * 0.3))
+        elif anim_mode == "correlation_sweep":
+            correlation = 0.0 + 0.95 * (0.5 + 0.5 * math.sin(_t * 0.3))
+            walk_style = "correlated"
+        elif anim_mode == "drift_path":
+            pass  # cluster centroid drift handled in final render
 
         # ── Rebuild expensive fields only at capture points (~60x) ──
         if p_idx % cap_interval == 0:
@@ -1470,8 +1530,9 @@ def method_dla(out_dir: Path, seed: int, params=None):
                     zx, zy = nzx, nzy
                 julia_field = np.clip(np.nan_to_num((np.abs(zx) + np.abs(zy)) * 10, nan=0.0).astype(np.int32), 0, 10)
 
-        # ── Spawn position ──
+        # ── Spawn position (multi-style) ──
         if growth_mode == "surface":
+            # Surface spawn: from a cluster surface point
             if cluster_positions:
                 sp_idx = py_rng.randint(0, len(cluster_positions) - 1)
                 spx, spy = cluster_positions[sp_idx]
@@ -1482,20 +1543,45 @@ def method_dla(out_dir: Path, seed: int, params=None):
             else:
                 angle = py_rng.uniform(0, 2 * math.pi)
                 r_ = max_radius + spawn_offset
-                px = cx + int(r_ * math.cos(angle))
-                py = cy + int(r_ * math.sin(angle))
+                px = _origin_x + int(r_ * math.cos(angle))
+                py = _origin_y + int(r_ * math.sin(angle))
         else:
-            angle = py_rng.uniform(0, 2 * math.pi)
-            r_ = max_radius + spawn_offset
-            px = cx + int(r_ * math.cos(angle))
-            py = cy + int(r_ * math.sin(angle))
+            # Multi-style spawn
+            if spawn_style == "edge":
+                # Spawn from random edge of canvas
+                side = py_rng.randint(0, 4)
+                if side == 0:   px, py = py_rng.randint(0, W - 1), 0
+                elif side == 1: px, py = py_rng.randint(0, W - 1), H - 1
+                elif side == 2: px, py = 0, py_rng.randint(0, H - 1)
+                else:           px, py = W - 1, py_rng.randint(0, H - 1)
+            elif spawn_style == "spiral":
+                # Spiral spawn: angle depends on particle index
+                spiral_angle = _t * 0.5 + p_idx * 0.01
+                r_ = max_radius + spawn_offset * (1.0 + 0.3 * math.sin(spiral_angle))
+                px = _origin_x + int(r_ * math.cos(spiral_angle))
+                py = _origin_y + int(r_ * math.sin(spiral_angle))
+            elif spawn_style == "gaussian":
+                # Gaussian cloud around origin
+                gx = int(rng.normal(_origin_x, W * 0.2))
+                gy = int(rng.normal(_origin_y, H * 0.2))
+                px = max(0, min(W - 1, gx))
+                py = max(0, min(H - 1, gy))
+                # Override r_ to normal spawn + offset for aniso check below
+                r_ = max_radius + spawn_offset
+            else:
+                # circle — original uniform spawn
+                angle = py_rng.uniform(0, 2 * math.pi)
+                r_ = max_radius + spawn_offset
+                px = _origin_x + int(r_ * math.cos(angle))
+                py = _origin_y + int(r_ * math.sin(angle))
+
             if aniso_strength > 0:
                 if px > 0 and px < W and py > 0 and py < H:
                     bias_val = aniso_bias[py, px]
                     if rng.random() > 0.5 + bias_val * 0.3:
                         angle = math.atan2(-math.sin(ang_rad), math.cos(ang_rad)) + py_rng.uniform(-0.5, 0.5)
-                        px = cx + int(r_ * math.cos(angle))
-                        py = cy + int(r_ * math.sin(angle))
+                        px = _origin_x + int(r_ * math.cos(angle))
+                        py = _origin_y + int(r_ * math.sin(angle))
 
         px = max(0, min(W - 1, px))
         py = max(0, min(H - 1, py))
@@ -1503,11 +1589,88 @@ def method_dla(out_dir: Path, seed: int, params=None):
         if grid[py, px]:
             continue  # spawned inside cluster, skip
 
-        # ── Random walk ──
+        # ── Multi-style walk ──
+        _walk_dirs = [(0, 1), (1, 0), (0, -1), (-1, 0), (1, 1), (-1, -1), (1, -1), (-1, 1)]
         for step in range(max_steps):
-            d = py_rng.choice(dirs)
-            px = max(0, min(W - 1, px + d[0]))
-            py = max(0, min(H - 1, py + d[1]))
+            if walk_style == "levy":
+                # Lévy flight: power-law step distribution
+                step_len = int(math.pow(py_rng.random(), -1.0 / max(0.1, levy_alpha)))
+                step_len = min(step_len, max(W, H) // 4)
+                l_angle = py_rng.uniform(0, 2 * math.pi)
+                px = max(0, min(W - 1, px + int(step_len * math.cos(l_angle))))
+                py = max(0, min(H - 1, py + int(step_len * math.sin(l_angle))))
+
+            elif walk_style == "correlated":
+                # Persistent walk: direction has memory
+                if step == 0:
+                    _walk_px, _walk_py = 0, 0
+                    _walk_angle = py_rng.uniform(0, 2 * math.pi)
+                _walk_angle += py_rng.uniform(-1.0 + correlation, 1.0 - correlation)
+                _walk_px = int(2 * math.cos(_walk_angle))
+                _walk_py = int(2 * math.sin(_walk_angle))
+                px = max(0, min(W - 1, px + _walk_px))
+                py = max(0, min(H - 1, py + _walk_py))
+
+            elif walk_style == "vortex":
+                # Orbital walk: tangent to radius vector
+                dx = px - cx
+                dy = py - cy
+                dist = math.hypot(dx, dy)
+                if dist > 0:
+                    # Tangent vector (perpendicular to radial)
+                    tx = -dy / dist
+                    ty = dx / dist
+                    # Mix radial drift + vortex
+                    v = vortex_strength * 2.0
+                    px = max(0, min(W - 1, px + int(tx * v + py_rng.choice([-1, 1]))))
+                    py = max(0, min(H - 1, py + int(ty * v + py_rng.choice([-1, 1]))))
+                else:
+                    d = py_rng.choice(_walk_dirs)
+                    px = max(0, min(W - 1, px + d[0]))
+                    py = max(0, min(H - 1, py + d[1]))
+
+            elif walk_style == "gravity":
+                # Radial walk: drift toward center
+                dx = cx - px
+                dy = cy - py
+                gx = int(gravity_strength * 100 * (dx / max(abs(dx), 1)))
+                gy = int(gravity_strength * 100 * (dy / max(abs(dy), 1)))
+                gx = max(-W // 4, min(W // 4, gx))
+                gy = max(-H // 4, min(H // 4, gy))
+                d = py_rng.choice(_walk_dirs)
+                px = max(0, min(W - 1, px + d[0] + gx))
+                py = max(0, min(H - 1, py + d[1] + gy))
+
+            elif walk_style == "bouncing":
+                # Biased by terrain: bounce away from cluster
+                # If near cluster, recoil (prevents getting stuck)
+                if p_idx > 100:
+                    by0 = max(0, py - 5)
+                    by1 = min(H, py + 6)
+                    bx0 = max(0, px - 5)
+                    bx1 = min(W, px + 6)
+                    if grid[by0:by1, bx0:bx1].any():
+                        # Recoil outward from nearest cluster
+                        cnx = cny = 0
+                        count = 0
+                        for cy_ in range(by0, by1):
+                            for cx_ in range(bx0, bx1):
+                                if grid[cy_, cx_]:
+                                    cnx += px - cx_
+                                    cny += py - cy_
+                                    count += 1
+                        if count > 0:
+                            px = max(0, min(W - 1, px + cnx // count))
+                            py = max(0, min(H - 1, py + cny // count))
+                            continue
+                d = py_rng.choice(_walk_dirs)
+                px = max(0, min(W - 1, px + d[0]))
+                py = max(0, min(H - 1, py + d[1]))
+
+            else:  # classic — original random walk
+                d = py_rng.choice(_walk_dirs)
+                px = max(0, min(W - 1, px + d[0]))
+                py = max(0, min(H - 1, py + d[1]))
 
             # ── Check neighbors ──
             y0 = max(0, py - 1 - self_avoid)
@@ -1525,13 +1688,17 @@ def method_dla(out_dir: Path, seed: int, params=None):
                 elif growth_mode == "gradient_field":
                     # Stick probability proportional to distance from center
                     dist = math.hypot(px - cx, py - cy)
-                    stick_prob = min(1.0, dist / (max(H, W) * 0.3))
-                    if rng.random() < stick_prob:
+                    _gf_stick = min(1.0, dist / (max(H, W) * 0.3))
+                    if rng.random() < _gf_stick:
                         grid[py, px] = True
                     else:
                         continue
                 else:
-                    grid[py, px] = True
+                    # Probabilistic sticking
+                    if rng.random() < stick_prob:
+                        grid[py, px] = True
+                    else:
+                        continue
 
                 age_grid[py, px] = p_idx
                 cluster_positions.append((px, py))

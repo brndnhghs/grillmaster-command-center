@@ -213,22 +213,3 @@ def animate_method(
         # No natural frames and no time param — can't animate this method
         print(f"  ✗ {meta.label} has no natural animation; {meta.id} needs 'time' param or capture_frame() calls")
         return None
-
-
-def has_natural_frames(meta) -> bool:
-    """Check if a method likely has natural incremental frames."""
-    # Methods with loops that can be instrumented
-    from .registry import get_all
-    NATURAL_LOOP_METHODS = {
-        # Fractals — 33 = Fractal Explorer (was 07)
-        "33", "49", "50", "51", "52", "66", "69", "70", "71", "31", "72",
-        # Simulations
-        "34", "35", "36", "32", "53", "55", "79", "20",
-        # Filters
-        "17", "40", "57",
-        # Codegen
-        "18",
-        # Math
-        "62", "65", "78", "30",
-    }
-    return meta.id in NATURAL_LOOP_METHODS

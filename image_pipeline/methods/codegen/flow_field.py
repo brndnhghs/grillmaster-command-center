@@ -273,12 +273,16 @@ def method_16_flow_field(out_dir: Path, seed: int, params=None):
             colors[i, 1] = 0.5 + 0.5 * math.sin(color_hue / 360.0 * 2 * math.pi + hues[i] * 2 * math.pi + 2.094)
             colors[i, 2] = 0.5 + 0.5 * math.sin(color_hue / 360.0 * 2 * math.pi + hues[i] * 2 * math.pi + 4.189)
     elif color_mode == "rainbow":
+        hue_shift = color_hue / 360.0
+        colors = np.zeros((n_particles, 3), dtype=np.float32)
         for i in range(n_particles):
             h = i / max(1, n_particles) + hue_shift
             colors[i, 0] = 0.5 + 0.5 * math.sin(h * 2 * math.pi)
             colors[i, 1] = 0.5 + 0.5 * math.sin(h * 2 * math.pi + 2.094)
             colors[i, 2] = 0.5 + 0.5 * math.sin(h * 2 * math.pi + 4.189)
     elif color_mode == "heat":
+        hue_shift = color_hue / 360.0
+        colors = np.zeros((n_particles, 3), dtype=np.float32)
         for i in range(n_particles):
             h = i / max(1, n_particles) + hue_shift
             h = h - int(h)

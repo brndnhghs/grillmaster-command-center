@@ -47,12 +47,30 @@ def mn(i: int, label: str) -> str:
 FONT_SMALL = "/System/Library/Fonts/Menlo.ttc"
 FONT_LARGE = "/System/Library/Fonts/Helvetica.ttc"
 
+_FONT_SEARCH_PATHS = [
+    # macOS
+    "/System/Library/Fonts/Menlo.ttc",
+    "/System/Library/Fonts/Helvetica.ttc",
+    "/Library/Fonts/Arial.ttf",
+    # Linux (Debian/Ubuntu/Arch)
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
+    "/usr/share/fonts/truetype/ubuntu/UbuntuMono-R.ttf",
+    "/usr/share/fonts/TTF/DejaVuSansMono.ttf",
+    # Windows
+    "C:/Windows/Fonts/consola.ttf",
+    "C:/Windows/Fonts/arial.ttf",
+    "C:/Windows/Fonts/cour.ttf",
+]
+
 
 def get_font(size: int = 10, font_path: str = FONT_SMALL):
-    try:
-        return ImageFont.truetype(font_path, size)
-    except OSError:
-        return ImageFont.load_default()
+    for path in [font_path, *_FONT_SEARCH_PATHS]:
+        try:
+            return ImageFont.truetype(path, size)
+        except OSError:
+            continue
+    return ImageFont.load_default()
 
 
 def seed_all(s: int):
