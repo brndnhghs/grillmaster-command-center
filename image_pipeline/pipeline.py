@@ -279,7 +279,7 @@ def main():
             filter_spec = json.loads(args.filter) if args.filter.startswith("{") else args.filter
         except json.JSONDecodeError:
             filter_spec = args.filter
-        from image_pipeline.core.filters import apply_filter_batch
+        from image_pipeline.core.postprocess import apply_filter_batch
         filter_ids = [meta.id for meta, _, _ in results if meta]
         print(f"\n{'─'*60}")
         print(f"  Applying post-process filter: {filter_spec}")

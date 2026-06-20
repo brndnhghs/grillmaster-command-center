@@ -1,5 +1,5 @@
 """
-#18 — Cellular Automata (Game of Life)
+#58 — Cellular Automata (Variants)
 Conway's Game of Life and related cellular automata rules.
 Pure numpy — no external deps. Inherently animated.
 """
@@ -269,7 +269,7 @@ def _make_color_grid(grid, age_grid, rule, color_mode, t, hue_shift):
 
 # ─── The Method ───
 
-@method(id="18", name="Cellular Automata", category="simulations",
+@method(id="58", name="Cellular Automata (Variants)", category="simulations",
          tags=["cellular", "life", "animation", "expanded"],
          params={
              "rule": {"description": "cellular automaton rule",
@@ -296,7 +296,7 @@ def _make_color_grid(grid, age_grid, rule, color_mode, t, hue_shift):
                            "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.5},
          })
-def method_18_cellular(out_dir: Path, seed: int, params=None):
+def method_58_cellular(out_dir: Path, seed: int, params=None):
     """Run cellular automata simulations with 22 animation modes.
 
     Animates Conway's Game of Life and 6 variant rules. Each frame
@@ -473,5 +473,5 @@ def method_18_cellular(out_dir: Path, seed: int, params=None):
     img = np.clip(img, 0.0, 1.0)
 
     result_arr = img.copy()
-    capture_frame("18", result_arr)
-    save((img * 255).astype(np.uint8), mn(18, "cellular"), out_dir)
+    capture_frame("58", result_arr)
+    save((img * 255).astype(np.uint8), mn(58, "cellular"), out_dir)
