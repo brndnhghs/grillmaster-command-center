@@ -338,7 +338,7 @@ def method_truchet(out_dir: Path, seed: int, params=None):
     "mod_strength": {"description": "modulation strength", "min": 0.0, "max": 1.0, "default": 0.3},
     "palette": {"description": "color palette name (PALETTES keys)", "default": "vapor"},
     "rotation": {"description": "global rotation offset (radians)", "min": 0.0, "max": 6.2832, "default": 0.0},
-    "anim_mode": {"description": "animation mode: none, plane_rotate, freq_sweep, counter_rotate, multi_plane_freq, wave_count_sweep", "default": "none"},
+    "anim_mode": {"description": "animation mode: none, plane_rotate, freq_sweep, counter_rotate, multi_plane_freq, wave_count_sweep, lattice_cycle, wave_fn_cycle, mod_cycle, colormode_cycle, phase_drift", "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
     "time": {"description": "animation time (0.0-6.28 for drift)", "min": 0.0, "max": 6.28, "default": 0.0},
 })
@@ -379,13 +379,13 @@ def method_quasicrystal(out_dir: Path, seed: int, params=None):
 
     # ── Animation: operate on wave plane parameters ──
     effective_freq = freq
-    effective_rot = rot
+    max_waves = int(params.get("waves", 8))  # original count before reduction
     if anim_mode == "plane_rotate":
         # All wave plane angles rotate uniformly — the diffraction pattern spins
-        effective_rot = rot + t * 0.5 * anim_speed
+        pass  # applied per-wave in field builder via t_rot
     elif anim_mode == "freq_sweep":
         # Frequency sweeps up and down — interference fringes zoom in/out
-        effective_freq = freq * (0.3 + 0.7 * abs(math.sin(t * 0.3 * anim_speed)))
+        effective_freq = freq * (0.3 + 0.7 * (0.5 + 0.5 * math.sin(t * 0.3 * anim_speed)))
     elif anim_mode == "counter_rotate":
         # Half the waves rotate forward, half backward — shearing/interference motion
         pass  # applied per-wave in the field builder
@@ -394,7 +394,29 @@ def method_quasicrystal(out_dir: Path, seed: int, params=None):
         pass  # applied per-wave in the field builder
     elif anim_mode == "wave_count_sweep":
         # Number of wave planes sweeps up and down — complexity of the pattern changes
-        n_waves = max(2, int(n_waves * (0.3 + 0.7 * abs(math.sin(t * 0.2 * anim_speed)))))
+        n_waves = max(2, int(n_waves * (0.3 + 0.7 * (0.5 + 0.5 * math.sin(t * 0.2 * anim_speed)))))
+    elif anim_mode == "lattice_cycle":
+        # Cycle through all lattice symmetries
+        lattices = ["penrose", "octagonal", "dodecagonal", "decagonal", "tetragonal", "hexagon", "triangular", "quasi", "radial"]
+        lattice = lattices[int(t * 0.2 * anim_speed) % len(lattices)]
+        # Regenerate lattice data for current symmetry
+        base_thetas = _lattice_angles(max_waves, lattice)
+        base_thetas = [(a + rot) % (2 * math.pi) for a in base_thetas]
+    elif anim_mode == "wave_fn_cycle":
+        # Cycle through wave functions, each frame a new shape
+        wave_fns = ["sin", "triangle", "square", "sawtooth", "gabor", "gaussian", "pulse"]
+        wave_fn = wave_fns[int(t * 0.25 * anim_speed) % len(wave_fns)]
+    elif anim_mode == "mod_cycle":
+        # Cycle through spatial modulation patterns
+        mods = ["none", "radial", "gaussian", "spiral", "vortex"]
+        mod_type = mods[int(t * 0.18 * anim_speed) % len(mods)]
+    elif anim_mode == "colormode_cycle":
+        # Cycle through all color modes
+        colormodes = ["grayscale", "heatmap", "spectral", "fire", "ice", "plasma", "dual_layer", "palette"]
+        cmode = colormodes[int(t * 0.15 * anim_speed) % len(colormodes)]
+    elif anim_mode == "phase_drift":
+        # Each wave plane's phase drifts at different rates
+        pass  # applied per-wave via t_phase array in field builder
 
     # ── Generate wave-plane data (deterministic — pre-computed once) ──
     rng = np.random.default_rng(seed)
@@ -504,7 +526,7 @@ def method_quasicrystal(out_dir: Path, seed: int, params=None):
             # Even-indexed waves rotate forward, odd-indexed backward
             sign = 1.0 if i % 2 == 0 else -1.0
             # Speed varies by angle quadrant to create complex interference
-            speed = 0.3 + 0.5 * abs(math.sin(base_angle))
+            speed = 0.3 + 0.5 * (0.5 + 0.5 * math.sin(base_angle))
             t_rot_per[i] = sign * speed * t * anim_speed
         t_rot = t_rot_per
     elif anim_mode == "multi_plane_freq":
@@ -513,6 +535,14 @@ def method_quasicrystal(out_dir: Path, seed: int, params=None):
             offset = i * 0.7  # phase offset per wave
             osc = 0.5 + 0.5 * math.sin(t * 0.25 * anim_speed + offset)
             effective_freqs[i] = base_freqs[i] * (0.5 + osc)
+    elif anim_mode == "phase_drift":
+        # Each wave plane's phase drifts at different rates
+        n = n_waves
+        t_rot_per = np.empty(n, dtype=np.float32)
+        for i in range(n):
+            rate = 0.3 + 0.7 * (i / max(1, n))  # slower for early waves, faster for late
+            t_rot_per[i] = rate * t * anim_speed
+        t_rot = t_rot_per
 
     result = _build_field(base_thetas, base_phases, effective_freqs,
                           wave_fn, t_phase, t_rot, n_waves)
@@ -645,6 +675,8 @@ def method_moire(out_dir: Path, seed: int, params=None):
         _has_mpl = False
 
     # ── Animation: operate on layer parameters, scaled for 0→2π time range ──
+    if anim_mode == "none":
+        t = 0.0  # freeze phase/freq/wobble for static-gate compliance
     effective_pattern = pattern
     effective_operation = operation
     effective_rot = rot
