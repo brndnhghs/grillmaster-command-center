@@ -97,6 +97,10 @@ def method_ascii(out_dir: Path, seed: int, params=None):
     elif anim_mode == "dither_strength_sweep":
         # Sweep dither_strength 0→1 over the animation cycle
         dither_strength = 0.5 + 0.5 * math.sin(time_param * anim_speed)
+        # Force an effect that's always visible regardless of `effect` param
+        # When effect is "none", use it as base contrast modulation
+        if effective_effect == "none" or effective_effect == "dither":
+            pass  # applied inline below or in effects block
     elif anim_mode == "char_spacing_pulse":
         # Characters breathe horizontally — tight→loose→tight
         char_spacing = 0.3 + 1.7 * (0.5 + 0.5 * math.sin(time_param * anim_speed))
@@ -106,190 +110,6 @@ def method_ascii(out_dir: Path, seed: int, params=None):
         CHARS = raw_charset
     else:
         CHARS = BUILTIN_CHARSETS.get(preset, BUILTIN_CHARSETS["default"])
-
-    # ── Build image ──
-    if source == "perlin":
-        # Inline perlin noise — no external dependency
-        def _perlin(w, h, s):
-            rng = np.random.default_rng(s)
-            freq = 4
-            xx = np.tile(np.arange(w, dtype=np.float32), (h, 1)) / w * freq
-            yy = np.tile(np.arange(h, dtype=np.float32), (w, 1)).T / h * freq
-            gx = np.floor(xx).astype(int) & 255
-            gy = np.floor(yy).astype(int) & 255
-            fx = xx - np.floor(xx)
-            fy = yy - np.floor(yy)
-            fx = fx * fx * (3 - 2 * fx)
-            fy = fy * fy * (3 - 2 * fy)
-            perm = rng.permutation(512).astype(int)
-            n00 = perm[(perm[gx] + gy) & 255]
-            n10 = perm[(perm[gx + 1] + gy) & 255]
-            n01 = perm[(perm[gx] + gy + 1) & 255]
-            n11 = perm[(perm[gx + 1] + gy + 1) & 255]
-            return (n00 + (n10 - n00) * fx + (n01 - n00) * fy + (n11 + n00 - n10 - n01) * fx * fy).astype(np.float32) / 255.0
-        src = _perlin(W, H, seed)
-    elif source == "input_image":
-        src_path = params.get("input_path", "")
-        if src_path:
-            try:
-                src_pil = Image.open(src_path).convert("L").resize((W, H), Image.LANCZOS)
-                src = np.array(src_pil, dtype=np.float32) / 255.0
-            except Exception:
-                src = np.random.rand(H, W).astype(np.float32)
-        else:
-            src = np.random.rand(H, W).astype(np.float32)
-    elif source == "text_input":
-        txt = text_content or "Hello World"
-        font = get_font(80, FONT_LARGE)
-        pil = Image.new("L", (W, H), 255)
-        draw = ImageDraw.Draw(pil)
-        bbox = draw.textbbox((0, 0), txt, font=font)
-        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        draw.text(((W - tw) // 2, (H - th) // 2), txt, font=font, fill=0)
-        src = np.array(pil, dtype=np.float32) / 255.0
-    elif source == "emoji":
-        src = np.random.rand(H, W).astype(np.float32)
-    else:
-        src = np.random.rand(H, W).astype(np.float32)
-
-    # ── Effects ──
-    if effective_effect == "dither":
-        threshold = 0.5 + dither_strength * 0.3 + 0.1 * math.sin(time_param * 2 * anim_speed)
-        src = (src > threshold).astype(np.float32)
-    elif effective_effect == "glow":
-        glow = 1.0 + dither_strength * 0.5 + 0.2 * math.sin(time_param * 1.5 * anim_speed)
-        src = np.clip(src * glow, 0, 1)
-    elif effective_effect == "drift":
-        drift_x = (time_param * 10 * dither_strength * anim_speed) % W
-        yy, xx = np.mgrid[:H, :W].astype(np.float32)
-        coords = np.stack([yy, (xx - drift_x) % W], axis=0)
-        src = map_coordinates(src, coords, order=1, mode="wrap")
-    elif effective_effect == "scroll":
-        scroll_y = (time_param * 8 * dither_strength * anim_speed) % H
-        yy, xx = np.mgrid[:H, :W].astype(np.float32)
-        coords = np.stack([(yy - scroll_y) % H, xx], axis=0)
-        src = map_coordinates(src, coords, order=1, mode="wrap")
-    elif effective_effect == "wave":
-        wave_amp = 8 * dither_strength
-        yy, xx = np.mgrid[:H, :W].astype(np.float32)
-        wave_shift = wave_amp * np.sin(xx * 0.1 + time_param * 5 * anim_speed)
-        yy2 = np.clip(yy + wave_shift, 0, H - 1)
-        coords = np.stack([yy2, xx], axis=0)
-        src = map_coordinates(src, coords, order=1, mode="reflect")
-
-    # ── Quantize to characters ──
-    # (indices computed inline per-cell now)
-
-    # ── Render ──
-    font = get_font(font_size)
-    fw, fh = font.getbbox("A")[2], font.getbbox("A")[3]
-    fw = max(fw, 4)
-    fh = max(fh, 4)
-    step_x = int(fw * char_spacing)
-    step_y = fh
-    cols = W // step_x
-    rows = H // step_y
-
-    if output_format == "png":
-        out = Image.new("RGBA" if use_color else "L", (W, H), 255 if not invert else 0)
-        draw = ImageDraw.Draw(out)
-        bright_bg = 0 if invert else 255
-        bright_fg = 255 if invert else 0
-        for r in range(rows):
-            for c in range(cols):
-                x, y = c * step_x, r * step_y
-                sx = int(c * W / cols)
-                sy = int(r * H / rows)
-                ex = min(sx + W // cols, W)
-                ey = min(sy + H // rows, H)
-                patch = src[sy:ey, sx:ex]
-                if patch.size == 0:
-                    continue
-                avg = patch.mean()
-                ch_idx = min(int(avg * (len(CHARS) - 1)), len(CHARS) - 1)
-                ch = CHARS[ch_idx]
-                if use_color:
-                    color_val = int(avg * 255)
-                    draw.text((x, y), ch, font=font, fill=(color_val, color_val, color_val, 255))
-                else:
-                    draw.text((x, y), ch, font=font, fill=bright_fg)
-        arr = np.array(out, dtype=np.float32) / 255.0
-    elif output_format == "html":
-        html_lines = ["<html><body style='background:#000; font-family:monospace; font-size:{}px; line-height:1; white-space:pre'><pre>".format(font_size)]
-        for r in range(rows):
-            line = ""
-            for c in range(cols):
-                sx = int(c * W / cols)
-                sy = int(r * H / rows)
-                ex = min(sx + W // cols, W)
-                ey = min(sy + H // rows, H)
-                patch = src[sy:ey, sx:ex]
-                if patch.size == 0:
-                    continue
-                avg = patch.mean()
-                ch = CHARS[min(int(avg * (len(CHARS) - 1)), len(CHARS) - 1)]
-                line += ch
-            html_lines.append(line)
-        html_lines.append("</pre></body></html>")
-        html_content = "\n".join(html_lines)
-        html_path = out_dir / mn(1, "ASCII-Art").replace(".png", ".html")
-        with open(html_path, "w") as f:
-            f.write(html_content)
-        print(f"  ✓ {html_path.name}")
-        capture_frame("01", np.zeros((H, W), dtype=np.float32))
-        return
-    elif output_format == "svg":
-        svg_lines = ['<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}">'.format(W, H),
-                     '<rect width="100%" height="100%" fill="#{}"/>'.format("000" if invert else "fff"),
-                     '<text font-family="monospace" font-size="{}" fill="#{}">'.format(font_size, "fff" if invert else "000")]
-        for r in range(rows):
-            line = ""
-            for c in range(cols):
-                sx = int(c * W / cols)
-                sy = int(r * H / rows)
-                ex = min(sx + W // cols, W)
-                ey = min(sy + H // rows, H)
-                patch = src[sy:ey, sx:ex]
-                if patch.size == 0:
-                    continue
-                avg = patch.mean()
-                ch = CHARS[min(int(avg * (len(CHARS) - 1)), len(CHARS) - 1)]
-                line += ch
-            svg_lines.append('<tspan x="0" dy="{}">{}</tspan>'.format(step_y, line))
-        svg_lines.append("</text></svg>")
-        svg_content = "\n".join(svg_lines)
-        svg_path = out_dir / mn(1, "ASCII-Art").replace(".png", ".svg")
-        with open(svg_path, "w") as f:
-            f.write(svg_content)
-        print(f"  ✓ {svg_path.name}")
-        capture_frame("01", np.zeros((H, W), dtype=np.float32))
-        return
-    elif output_format == "ansi":
-        ansi_lines = []
-        for r in range(rows):
-            line = ""
-            for c in range(cols):
-                sx = int(c * W / cols)
-                sy = int(r * H / rows)
-                ex = min(sx + W // cols, W)
-                ey = min(sy + H // rows, H)
-                patch = src[sy:ey, sx:ex]
-                if patch.size == 0:
-                    continue
-                avg = patch.mean()
-                ch = CHARS[min(int(avg * (len(CHARS) - 1)), len(CHARS) - 1)]
-                line += ch
-            ansi_lines.append(line)
-        ansi_path = out_dir / mn(1, "ASCII-Art").replace(".png", ".txt")
-        with open(ansi_path, "w") as f:
-            f.write("\n".join(ansi_lines))
-        print(f"  ✓ {ansi_path.name}")
-        capture_frame("01", np.zeros((H, W), dtype=np.float32))
-        return
-
-    arr = np.clip(arr, 0, 1)
-    capture_frame("01", arr)
-    save(arr, mn(1, "ASCII-Art"), out_dir)
 
     # ── Build source image ──
     img_src = Image.new("RGB", (W, H), (10, 10, 18))
@@ -337,6 +157,11 @@ def method_ascii(out_dir: Path, seed: int, params=None):
     gray_arr = np.array(gray, dtype=np.float32) / 255.0
 
     # ── Effects ──
+    # dither_strength_sweep as standalone contrast modulation (works with any effect)
+    if effective_effect == "none" and anim_mode == "dither_strength_sweep":
+        # Direct contrast modulation — visible regardless of effect setting
+        contrast = 0.5 + dither_strength
+        gray_arr = np.clip((gray_arr - 0.5) * contrast + 0.5, 0, 1)
     if effective_effect == "edge_emphasis":
         gray = gray.filter(ImageFilter.FIND_EDGES)
         gray_arr = np.array(gray, dtype=np.float32) / 255.0
