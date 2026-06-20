@@ -101,3 +101,9 @@ FastAPI server + node-graph system is the well-built part: the `@method` registr
 **Left as-is (deliberate):** `gpu_shaders` #82 (still needs `moderngl` in `requirements.txt` to run — kept, not deleted); `runner.py` and `quality.py`/`annotator.py` remain CLI-only.
 
 **Note:** the working tree contained unrelated pre-existing uncommitted changes (e.g. to `server.py`, `fractals.py`, several `codegen/*`, and four already-deleted `tests/*`) that predate this cleanup. Review `git status` before committing so you stage only the intended changes. Recommended pre-commit smoke test in the project `.venv`: boot the FastAPI server, confirm the registry method count, and render methods **#18** and **#58** once.
+
+### Follow-up: Command Center (Streamlit) removed
+
+The Streamlit "Command Center" — **App 2** in the structure section above — was removed as a self-contained subsystem. It indexed repo-root media into SQLite and offered Search/Browse (filename text lists, no thumbnails) plus a Generate tab that merely duplicated the FastAPI server's far better generation UI. The dependency boundary was verified one-way: `image_pipeline/` imports nothing from this stack, so the server is unaffected.
+
+Removed: `app.py`, `core/` (`config.py`, `models.py`), `index/` (`build.py`, `query.py`, `schema.sql`), `pipeline_bridge/`, the orphaned `data/session.sqlite3`, and `streamlit` from `requirements.txt`. The repo is now a single app: `image_pipeline` (FastAPI server + node-graph UI) plus media and this doc. `scripts/tunnel.sh` is kept — it forwards the *server's* port 8766, not the Streamlit app. (Sections above that describe "two apps" are retained for historical context but now describe only one.)
