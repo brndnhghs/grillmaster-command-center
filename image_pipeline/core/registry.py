@@ -186,8 +186,9 @@ def timed_run(meta: MethodMeta, out_dir: Path, seed: int, params: dict | None = 
     start = time.time()
     try:
         meta.fn(out_dir, seed, params=params)
-    except TypeError:
-        # Method doesn't accept params kwarg
+    except TypeError as _e:
+        if "unexpected keyword argument" not in str(_e):
+            raise
         meta.fn(out_dir, seed)
     elapsed = time.time() - start
     return meta, elapsed

@@ -11,7 +11,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
 from ..core.registry import method
-from ..core.utils import save, norm, mn, seed_all, BLACK, W, H, PALETTES, quantize_to_palette, load_input
+from ..core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES, quantize_to_palette, load_input
 from ..core.animation import capture_frame
 
 try:

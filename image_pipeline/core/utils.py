@@ -79,7 +79,7 @@ def seed_all(s: int):
     np.random.seed(s)
 
 
-BLACK = (10, 10, 18)
+BG_DEFAULT = (128, 128, 128)
 W, H = 768, 512
 
 # ── Palettes for pixel art & posterize ────────────────────────────────
@@ -172,9 +172,15 @@ def quantize_to_palette(arr: np.ndarray, palette_name: str) -> np.ndarray:
     if arr.shape[2] == 4:
         arr = arr[:, :, :3]  # drop alpha
     flat = arr.reshape(-1, 3)
-    diffs = flat[:, None, :] - pal_arr[None, :, :]
-    dists = np.sum(diffs ** 2, axis=2)
-    nearest = np.argmin(dists, axis=1)
+    # Process in chunks to cap peak memory. Full-image broadcast over a large
+    # palette (e.g. NES 54-color) allocates ~(H*W * N * 3 * 4) bytes at once —
+    # ~250 MB for 768×512. Chunks of 8 192 pixels keep it under ~15 MB.
+    CHUNK = 8192
+    nearest = np.empty(len(flat), dtype=np.intp)
+    for i in range(0, len(flat), CHUNK):
+        chunk = flat[i : i + CHUNK]
+        diffs = chunk[:, None, :] - pal_arr[None, :, :]
+        nearest[i : i + CHUNK] = np.argmin(np.sum(diffs ** 2, axis=2), axis=1)
     return pal_arr[nearest].reshape(h, w, 3)
 
 

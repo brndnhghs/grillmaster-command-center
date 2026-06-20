@@ -10,7 +10,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, get_font, seed_all, BLACK, W, H
+from ...core.utils import save, norm, mn, get_font, seed_all, BG_DEFAULT, W, H
 from ...core.animation import capture_frame
 
 # ────────────────────────────────────────────────────────────────────────────

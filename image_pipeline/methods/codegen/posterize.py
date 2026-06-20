@@ -14,33 +14,37 @@ from ...core.animation import capture_frame
 # --- 39 Posterize ---
 
 @method(id="39", name="Posterize", category="codegen",
-         tags=["color", "quantize", "poster", "animation"],
+         tags=["color", "quantize", "poster", "animation", "expanded"],
          params={
              "n_colors": {"description": "number of output colors", "min": 2, "max": 32, "default": 8},
              "poster_method": {"description": "posterization method", "choices": ["uniform", "kmeans", "median_cut", "popularity"], "default": "uniform"},
              "dither": {"description": "apply Floyd-Steinberg dithering", "default": False},
              "source": {"description": "source image type", "choices": ["perlin", "gradient", "solid"], "default": "perlin"},
              "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
-             "anim_mode": {"description": "animation mode", "choices": ["none", "color_sweep", "source_morph"], "default": "none"},
+             "anim_mode": {"description": "animation mode", "choices": ["none", "n_sweep", "source_morph", "method_cycle",
+                 "dither_blend", "source_cycle", "palette_walk", "noise_seed",
+                 "quantize_jitter", "threshold_sweep", "poster_flash", "channel_mix",
+                 "palette_reorder"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
 def method_39_posterize(out_dir: Path, seed: int, params=None):
-    """Reduce color depth via posterization with animation support.
+    """Reduce color depth via posterization with expanded animation.
 
     Applies one of 4 posterization methods (uniform, kmeans, median_cut,
     popularity) to a generated source image (perlin noise, gradient, or
-    solid color). Animation sweeps the color count or morphs the source.
+    solid color). 13 animation modes modulate color count, posterization
+    method, source, dithering, palette, and channel quantization.
 
     Args:
         out_dir: Output directory for the generated image.
         seed: Random seed for deterministic output.
         params: Dict with keys:
             n_colors: number of output colors (2-32)
-            poster_method: posterization method (uniform/kmeans/median_cut/popularity)
+            poster_method: posterization method
             dither: apply Floyd-Steinberg dithering
             source: source image type (perlin/gradient/solid)
             time: animation time in radians (0-6.28)
-            anim_mode: animation mode (none/color_sweep/source_morph)
+            anim_mode: animation mode
             anim_speed: animation speed multiplier (0.1-5.0)
     """
     if params is None:
@@ -56,18 +60,67 @@ def method_39_posterize(out_dir: Path, seed: int, params=None):
     source = params.get("source", "perlin")
     base_n_colors = int(params.get("n_colors", 8))
 
-    # ── Animation ──
-    t = t * anim_speed
-    if anim_mode == "color_sweep":
-        sweep = (math.sin(t * 0.5) + 1.0) / 2.0
-        n_colors = max(2, min(32, int(2 + sweep * 30)))
-    elif anim_mode == "source_morph":
-        n_colors = base_n_colors
-        # Source morph handled below (t flows through source generation)
-    else:
-        n_colors = base_n_colors
+    # ── Fix bool("False") bug ──
+    if isinstance(dither_enabled, str):
+        dither_enabled = dither_enabled.lower() in ("true", "1", "yes")
+    dither_enabled = bool(dither_enabled)
 
-    if source == "perlin":
+    # ── Per-frame time + seed ──
+    _t = t * anim_speed
+    if anim_mode == "none":
+        _t = 0.0
+    _frame_seed = seed + int(_t * 10000)
+    _frng = np.random.default_rng(_frame_seed)
+
+    # ── Per-frame animation modulation ──
+    n_colors = base_n_colors
+    use_method = poster_method
+    use_source = source
+    use_dither = dither_enabled
+    _methods = ["uniform", "kmeans", "median_cut", "popularity"]
+    _sources = ["perlin", "gradient", "solid"]
+    _hue_offset = 0.0
+    _palette_reorder = False
+
+    if anim_mode == "n_sweep":
+        # Continuous n_colors float → smooth quantization
+        float_val = 2.0 + 30.0 * (0.5 + 0.5 * math.sin(_t * 0.3))
+        n_colors = max(2, min(32, int(float_val)))
+    elif anim_mode == "source_morph":
+        pass  # _t flows through source generation below
+    elif anim_mode == "method_cycle":
+        midx = int(_t * 0.12) % len(_methods)
+        use_method = _methods[midx]
+        # Regenerate source per frame for method_cycle diversity
+        seed_all(_frame_seed)
+        rng = np.random.default_rng(_frame_seed)
+    elif anim_mode == "dither_blend":
+        use_dither = (0.5 + 0.5 * math.sin(_t * 0.3)) > 0.5
+    elif anim_mode == "source_cycle":
+        sidx = int(_t * 0.12) % len(_sources)
+        use_source = _sources[sidx]
+        seed_all(_frame_seed)
+        rng = np.random.default_rng(_frame_seed)
+    elif anim_mode == "palette_walk":
+        _hue_offset = _t * 0.06
+    elif anim_mode == "noise_seed":
+        seed_all(_frame_seed)
+        rng = np.random.default_rng(_frame_seed)
+    elif anim_mode == "quantize_jitter":
+        # Each channel independently oscillates n_colors
+        pass  # handled in uniform posterization below
+    elif anim_mode == "threshold_sweep":
+        n_colors = 2
+    elif anim_mode == "poster_flash":
+        val = 0.5 + 0.5 * math.sin(_t * 1.0)
+        n_colors = 2 + int(30 * val)
+    elif anim_mode == "channel_mix":
+        pass  # handled in uniform posterization below
+    elif anim_mode == "palette_reorder":
+        _palette_reorder = True
+
+    # ── Generate source image ──
+    if use_source == "perlin":
         smooth = np.zeros((H, W), dtype=np.float32)
         for o in range(3):
             freq = 2 ** o
@@ -77,49 +130,146 @@ def method_39_posterize(out_dir: Path, seed: int, params=None):
             up = np.array(Image.fromarray(small).resize((W, H), Image.Resampling.BILINEAR), dtype=np.float32)
             smooth += up / (o + 1)
         src = (smooth - smooth.min()) / (smooth.max() - smooth.min() + 1e-8)
+        # Inject _t into perlin via time-based shift
+        shift = int(_t * 30) % W
+        src = np.roll(src, shift, axis=1)
         src_rgb = np.stack([src, src * 0.8 + 0.2 * (1 - src), src * 0.6 + 0.4 * (1 - src)], axis=2)
-    elif source == "gradient":
+    elif use_source == "gradient":
         yy, xx = np.mgrid[:H, :W].astype(np.float32)
         r = np.sqrt((xx - W / 2) ** 2 + (yy - H / 2) ** 2)
         r = r / r.max()
         a = np.arctan2(yy - H / 2, xx - W / 2) / (2 * math.pi)
         src_rgb = np.stack([
-            (np.sin(r * 3 + t * 0.3) * 0.5 + 0.5),
-            (np.cos(r * 2 + a * 2 + t * 0.2) * 0.5 + 0.5),
-            (np.sin(a * 3 + t * 0.4) * 0.5 + 0.5),
+            (np.sin(r * 3 + _t * 0.3) * 0.5 + 0.5),
+            (np.cos(r * 2 + a * 2 + _t * 0.2) * 0.5 + 0.5),
+            (np.sin(a * 3 + _t * 0.4) * 0.5 + 0.5),
         ], axis=2)
-    else:
-        hue = (t * 0.05) % 1.0
+    else:  # solid
+        hue = (_t * 0.05 + _hue_offset) % 1.0
         r, g, b = colorsys.hsv_to_rgb(hue, 0.5, 0.8)
         src_rgb = np.full((H, W, 3), [r, g, b], dtype=np.float32)
 
+    # ── Palette walk: shift colors of source ──
+    if _hue_offset > 0:
+        src_hsv = src_rgb.copy()
+        for y_ in range(H):
+            for x_ in range(W):
+                r_, g_, b_ = src_rgb[y_, x_]
+                h_, s_, v_ = colorsys.rgb_to_hsv(r_, g_, b_)
+                h_ = (h_ + _hue_offset) % 1.0
+                nr, ng, nb = colorsys.hsv_to_rgb(h_, s_, v_)
+                src_hsv[y_, x_] = [nr, ng, nb]
+        src_rgb = src_hsv
+
     src_rgb = src_rgb.clip(0, 1)
 
-    if poster_method == "uniform":
-        q = n_colors - 1
-        if dither_enabled:
+    # ── Apply posterization ──
+    if use_method == "uniform":
+        if use_dither:
             h, w = src_rgb.shape[:2]
             out = src_rgb.copy()
-            step = 1.0 / q if q > 0 else 1.0
-            for y in range(h):
-                for x in range(w):
-                    old = out[y, x].copy()
-                    new = np.round(old / step) * step
-                    new = new.clip(0, 1)
-                    out[y, x] = new
-                    err = old - new
-                    if x + 1 < w:
-                        out[y, x + 1] += err * (7 / 16)
-                    if y + 1 < h:
-                        if x > 0:
-                            out[y + 1, x - 1] += err * (3 / 16)
-                        out[y + 1, x] += err * (5 / 16)
+
+            # Channel-mix quantization: each channel gets different n_colors
+            nc_r = n_colors
+            nc_g = n_colors
+            nc_b = n_colors
+            if anim_mode == "quantize_jitter":
+                nc_r = max(2, int(n_colors * (0.4 + 0.6 * (0.5 + 0.5 * math.sin(_t * 0.3 + 0.0)))))
+                nc_g = max(2, int(n_colors * (0.4 + 0.6 * (0.5 + 0.5 * math.sin(_t * 0.3 + 2.0)))))
+                nc_b = max(2, int(n_colors * (0.4 + 0.6 * (0.5 + 0.5 * math.sin(_t * 0.3 + 4.0)))))
+                step_r = 1.0 / (nc_r - 1) if nc_r > 1 else 1.0
+                step_g = 1.0 / (nc_g - 1) if nc_g > 1 else 1.0
+                step_b = 1.0 / (nc_b - 1) if nc_b > 1 else 1.0
+            elif anim_mode == "channel_mix":
+                cm_frac = 0.5 + 0.5 * math.sin(_t * 0.25)
+                nc_r = max(2, int(2 + 30 * cm_frac))
+                nc_g = max(2, int(2 + 30 * (0.3 + 0.7 * (1 - cm_frac))))
+                nc_b = max(2, int(2 + 30 * (0.5 * (0.5 + 0.5 * math.sin(_t * 0.25 - 1.0)))))
+                step_r = 1.0 / (nc_r - 1) if nc_r > 1 else 1.0
+                step_g = 1.0 / (nc_g - 1) if nc_g > 1 else 1.0
+                step_b = 1.0 / (nc_b - 1) if nc_b > 1 else 1.0
+            else:
+                step_r = step_g = step_b = 1.0 / n_colors
+
+            if anim_mode in ("quantize_jitter", "channel_mix"):
+                for y in range(h):
+                    for x in range(w):
+                        old = out[y, x].copy()
+                        new = np.array([
+                            round(old[0] / step_r) * step_r,
+                            round(old[1] / step_g) * step_g,
+                            round(old[2] / step_b) * step_b,
+                        ]).clip(0, 1)
+                        out[y, x] = new
+                        err = old - new
                         if x + 1 < w:
-                            out[y + 1, x + 1] += err * (1 / 16)
+                            out[y, x + 1] += err * (7 / 16)
+                        if y + 1 < h:
+                            if x > 0:
+                                out[y + 1, x - 1] += err * (3 / 16)
+                            out[y + 1, x] += err * (5 / 16)
+                            if x + 1 < w:
+                                out[y + 1, x + 1] += err * (1 / 16)
+            else:
+                step = 1.0 / n_colors
+                for y in range(h):
+                    for x in range(w):
+                        old = out[y, x].copy()
+                        new = np.round(old / step) * step
+                        new = new.clip(0, 1)
+                        out[y, x] = new
+                        err = old - new
+                        if x + 1 < w:
+                            out[y, x + 1] += err * (7 / 16)
+                        if y + 1 < h:
+                            if x > 0:
+                                out[y + 1, x - 1] += err * (3 / 16)
+                            out[y + 1, x] += err * (5 / 16)
+                            if x + 1 < w:
+                                out[y + 1, x + 1] += err * (1 / 16)
             src_rgb = out.clip(0, 1)
         else:
-            src_rgb = np.round(src_rgb * q) / q
-    elif poster_method == "kmeans":
+            if _palette_reorder:
+                # Swap palette indices cyclically
+                shift = int(_t * 4) % n_colors
+                q = n_colors - 1
+                # Map each pixel to its quantized bin, then rotate
+                idx = (src_rgb * q).round().astype(np.int32).clip(0, q)
+                idx = (idx + shift) % n_colors
+                src_rgb = (idx.astype(np.float32) / q).clip(0, 1)
+            elif anim_mode in ("quantize_jitter", "channel_mix"):
+                h, w = src_rgb.shape[:2]
+                out = src_rgb.copy()
+                if anim_mode == "quantize_jitter":
+                    nc_r = max(2, int(n_colors * (0.4 + 0.6 * (0.5 + 0.5 * math.sin(_t * 0.3 + 0.0)))))
+                    nc_g = max(2, int(n_colors * (0.4 + 0.6 * (0.5 + 0.5 * math.sin(_t * 0.3 + 2.0)))))
+                    nc_b = max(2, int(n_colors * (0.4 + 0.6 * (0.5 + 0.5 * math.sin(_t * 0.3 + 4.0)))))
+                    q_r = nc_r - 1
+                    q_g = nc_g - 1
+                    q_b = nc_b - 1
+                else:  # channel_mix
+                    cm_frac = 0.5 + 0.5 * math.sin(_t * 0.25)
+                    nc_r = max(2, int(2 + 30 * cm_frac))
+                    nc_g = max(2, int(2 + 30 * (0.3 + 0.7 * (1 - cm_frac))))
+                    nc_b = max(2, int(2 + 30 * (0.5 * (0.5 + 0.5 * math.sin(_t * 0.25 - 1.0)))))
+                    q_r = nc_r - 1
+                    q_g = nc_g - 1
+                    q_b = nc_b - 1
+                src_rgb = np.stack([
+                    (np.round(src_rgb[:,:,0] * max(1, q_r)) / max(1, q_r)).clip(0, 1),
+                    (np.round(src_rgb[:,:,1] * max(1, q_g)) / max(1, q_g)).clip(0, 1),
+                    (np.round(src_rgb[:,:,2] * max(1, q_b)) / max(1, q_b)).clip(0, 1),
+                ], axis=2)
+            elif anim_mode == "threshold_sweep":
+                gray = src_rgb.mean(axis=2)
+                thresh = 0.2 + 0.6 * (0.5 + 0.5 * math.sin(_t * 0.3))
+                bw = (gray > thresh).astype(np.float32)
+                src_rgb = np.stack([bw, bw, bw], axis=2)
+            else:
+                q = max(1, n_colors - 1)
+                src_rgb = np.round(src_rgb * q) / q
+
+    elif use_method == "kmeans":
         flat = src_rgb.reshape(-1, 3)
         n_samples = min(5000, flat.shape[0])
         try:
@@ -144,7 +294,8 @@ def method_39_posterize(out_dir: Path, seed: int, params=None):
         dists_all = np.sqrt(((flat[:, None, :] - centroids[None, :, :]) ** 2).sum(axis=2))
         labels_all = np.argmin(dists_all, axis=1)
         src_rgb = centroids[labels_all].reshape(H, W, 3)
-    elif poster_method == "median_cut":
+
+    elif use_method == "median_cut":
         def _median_cut(pixels, depth):
             n = pixels.shape[0]
             if n == 0:
@@ -177,7 +328,8 @@ def method_39_posterize(out_dir: Path, seed: int, params=None):
         dists = np.sqrt(((flat_f32[:, None, :] - pal_f32[None, :, :]) ** 2).sum(axis=2))
         labels = np.argmin(dists, axis=1)
         src_rgb = pal_f32[labels].reshape(H, W, 3)
-    elif poster_method == "popularity":
+
+    elif use_method == "popularity":
         bins = max(4, int((n_colors * 2) ** (1/3)))
         flat = (src_rgb.reshape(-1, 3) * (bins - 1)).round().astype(np.int32).clip(0, bins - 1)
         hash_codes = flat[:, 0] * bins * bins + flat[:, 1] * bins + flat[:, 2]
@@ -197,5 +349,4 @@ def method_39_posterize(out_dir: Path, seed: int, params=None):
     img = Image.fromarray((src_rgb * 255).astype(np.uint8))
     arr = np.array(img, dtype=np.float32) / 255.0
     capture_frame("39", arr)
-    save(img, mn(39, f"posterize-{poster_method}"), out_dir)
-
+    save(img, mn(39, f"posterize-{use_method}"), out_dir)

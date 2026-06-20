@@ -10,7 +10,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from ..core.registry import method
-from ..core.utils import save, norm, mn, seed_all, BLACK, W, H, PALETTES
+from ..core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES
 from ..core.animation import capture_frame
 
 # ── Optional libraries ──
@@ -1567,12 +1567,19 @@ def method_julia_set(out_dir: Path, seed: int, params=None):
     variation = str(params.get("variation", "classic"))
     color_mode = str(params.get("color_mode", "sine"))
     pal_name = str(params.get("palette_name", "vapor"))
-    smooth = bool(params.get("smooth", True))
+    smooth_raw = params.get("smooth", True)
+    if isinstance(smooth_raw, str):
+        smooth_raw = smooth_raw.lower() in ("true", "1", "yes")
+    smooth = bool(smooth_raw)
     interior_color = str(params.get("interior_color", "black"))
     anim_mode = str(params.get("anim_mode", "none"))
     anim_speed = float(params.get("anim_speed", 1.0))
     antialias = int(params.get("antialias", 1))
     t = float(params.get("time", 0.0))
+
+    # Freeze t when anim_mode is "none" so color modes don't shift
+    if anim_mode == "none":
+        t = 0.0
 
     # ── Resolve palette ──
     use_pal = None
@@ -1596,7 +1603,7 @@ def method_julia_set(out_dir: Path, seed: int, params=None):
     elif anim_mode == "zoom":
         zt = float(params.get("anim_zoom_speed", 0.5))
         cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
-        factor = 1.0 - 0.35 * min(1.0, t * zt * anim_speed)
+        factor = 1.0 - 0.35 * (0.5 + 0.5 * math.sin(t * zt * anim_speed))
         hw, hh = (x1 - x0) / 2 * factor, (y1 - y0) / 2 * factor
         x0, x1, y0, y1 = cx - hw, cx + hw, cy - hh, cy + hh
 
@@ -1817,6 +1824,7 @@ def method_julia_set(out_dir: Path, seed: int, params=None):
 
     capture_frame("66", np.clip(result, 0, 1))
     save(np.clip(result, 0, 1), mn(66, "Julia Set"), out_dir)
+    return np.clip(result, 0, 1)
 
 
 @method(id="69", name="Lyapunov Fractal", category="fractals", tags=["classic", "expanded", "animation"],

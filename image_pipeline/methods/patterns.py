@@ -370,6 +370,11 @@ def method_quasicrystal(out_dir: Path, seed: int, params=None):
     anim_mode = params.get("anim_mode", "none")
     anim_speed = float(params.get("anim_speed", 1.0))
 
+    # Freeze time when no animation mode is active
+    if anim_mode == "none":
+        t = 0.0
+        anim_speed = 0.0
+
     # ── Matplotlib colormap import (with fallback) ──
     try:
         from matplotlib import cm
@@ -377,52 +382,8 @@ def method_quasicrystal(out_dir: Path, seed: int, params=None):
     except ImportError:
         _has_mpl = False
 
-    # ── Animation: operate on wave plane parameters ──
-    effective_freq = freq
-    max_waves = int(params.get("waves", 8))  # original count before reduction
-    if anim_mode == "plane_rotate":
-        # All wave plane angles rotate uniformly — the diffraction pattern spins
-        pass  # applied per-wave in field builder via t_rot
-    elif anim_mode == "freq_sweep":
-        # Frequency sweeps up and down — interference fringes zoom in/out
-        effective_freq = freq * (0.3 + 0.7 * (0.5 + 0.5 * math.sin(t * 0.3 * anim_speed)))
-    elif anim_mode == "counter_rotate":
-        # Half the waves rotate forward, half backward — shearing/interference motion
-        pass  # applied per-wave in the field builder
-    elif anim_mode == "multi_plane_freq":
-        # Each wave plane's frequency oscillates out of phase — ripples cross at different rates
-        pass  # applied per-wave in the field builder
-    elif anim_mode == "wave_count_sweep":
-        # Number of wave planes sweeps up and down — complexity of the pattern changes
-        n_waves = max(2, int(n_waves * (0.3 + 0.7 * (0.5 + 0.5 * math.sin(t * 0.2 * anim_speed)))))
-    elif anim_mode == "lattice_cycle":
-        # Cycle through all lattice symmetries
-        lattices = ["penrose", "octagonal", "dodecagonal", "decagonal", "tetragonal", "hexagon", "triangular", "quasi", "radial"]
-        lattice = lattices[int(t * 0.2 * anim_speed) % len(lattices)]
-        # Regenerate lattice data for current symmetry
-        base_thetas = _lattice_angles(max_waves, lattice)
-        base_thetas = [(a + rot) % (2 * math.pi) for a in base_thetas]
-    elif anim_mode == "wave_fn_cycle":
-        # Cycle through wave functions, each frame a new shape
-        wave_fns = ["sin", "triangle", "square", "sawtooth", "gabor", "gaussian", "pulse"]
-        wave_fn = wave_fns[int(t * 0.25 * anim_speed) % len(wave_fns)]
-    elif anim_mode == "mod_cycle":
-        # Cycle through spatial modulation patterns
-        mods = ["none", "radial", "gaussian", "spiral", "vortex"]
-        mod_type = mods[int(t * 0.18 * anim_speed) % len(mods)]
-    elif anim_mode == "colormode_cycle":
-        # Cycle through all color modes
-        colormodes = ["grayscale", "heatmap", "spectral", "fire", "ice", "plasma", "dual_layer", "palette"]
-        cmode = colormodes[int(t * 0.15 * anim_speed) % len(colormodes)]
-    elif anim_mode == "phase_drift":
-        # Each wave plane's phase drifts at different rates
-        pass  # applied per-wave via t_phase array in field builder
-
-    # ── Generate wave-plane data (deterministic — pre-computed once) ──
+    # ── Pre-compute wave-plane data (before animation block so _lattice_angles is available) ──
     rng = np.random.default_rng(seed)
-    max_waves = n_waves  # n_waves may shrink due to wave_count_sweep, generate enough
-    if anim_mode == "wave_count_sweep":
-        max_waves = int(params.get("waves", 8))  # original value before potential reduction
 
     def _lattice_angles(n, sym):
         angles = []
@@ -460,6 +421,46 @@ def method_quasicrystal(out_dir: Path, seed: int, params=None):
         else:
             angles = [rng.uniform(0, 2 * math.pi) for _ in range(n)]
         return angles[:n]
+
+    # ── Animation: operate on wave plane parameters ──
+    effective_freq = freq
+    max_waves = int(params.get("waves", 8))  # original count before reduction
+    if anim_mode == "plane_rotate":
+        # All wave plane angles rotate uniformly — the diffraction pattern spins
+        pass  # applied per-wave in field builder via t_rot
+    elif anim_mode == "freq_sweep":
+        # Frequency sweeps up and down — interference fringes zoom in/out
+        effective_freq = freq * (0.3 + 0.7 * (0.5 + 0.5 * math.sin(t * 0.3 * anim_speed)))
+    elif anim_mode == "counter_rotate":
+        # Half the waves rotate forward, half backward — shearing/interference motion
+        pass  # applied per-wave in the field builder
+    elif anim_mode == "multi_plane_freq":
+        # Each wave plane's frequency oscillates out of phase — ripples cross at different rates
+        pass  # applied per-wave in the field builder
+    elif anim_mode == "wave_count_sweep":
+        # Number of wave planes sweeps up and down — complexity of the pattern changes
+        n_waves = max(2, int(n_waves * (0.3 + 0.7 * (0.5 + 0.5 * math.sin(t * 0.2 * anim_speed)))))
+    elif anim_mode == "lattice_cycle":
+        # Cycle through all lattice symmetries
+        lattices = ["penrose", "octagonal", "dodecagonal", "decagonal", "tetragonal", "hexagon", "triangular", "quasi", "radial"]
+        lattice = lattices[int(t * 0.2 * anim_speed) % len(lattices)]
+    elif anim_mode == "wave_fn_cycle":
+        # Cycle through wave functions, each frame a new shape
+        wave_fns = ["sin", "triangle", "square", "sawtooth", "gabor", "gaussian", "pulse"]
+        wave_fn = wave_fns[int(t * 0.25 * anim_speed) % len(wave_fns)]
+    elif anim_mode == "mod_cycle":
+        # Cycle through spatial modulation patterns
+        mods = ["none", "radial", "gaussian", "spiral", "vortex"]
+        mod_type = mods[int(t * 0.18 * anim_speed) % len(mods)]
+    elif anim_mode == "colormode_cycle":
+        # Cycle through all color modes
+        colormodes = ["grayscale", "heatmap", "spectral", "fire", "ice", "plasma", "dual_layer", "palette"]
+        cmode = colormodes[int(t * 0.15 * anim_speed) % len(colormodes)]
+    elif anim_mode == "phase_drift":
+        # Each wave plane's phase drifts at different rates
+        pass  # applied per-wave via t_phase array in field builder
+
+    # ── Generate wave-plane data ──
 
     base_thetas = _lattice_angles(max_waves, lattice)
     base_thetas = [(a + rot) % (2 * math.pi) for a in base_thetas]
@@ -613,6 +614,7 @@ def method_quasicrystal(out_dir: Path, seed: int, params=None):
     rgb = np.clip(rgb, 0, 1).astype(np.float32)
     capture_frame("02", rgb)
     save(rgb, mn(2, "quasicrystal"), out_dir)
+    return rgb
 
 
 @method(id="03", name="Moiré", category="patterns",

@@ -10,7 +10,7 @@ import numpy as np
 from PIL import Image
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, BLACK, W, H
+from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H
 from ...core.animation import capture_frame
 
 # --- 77 False Color IR ---

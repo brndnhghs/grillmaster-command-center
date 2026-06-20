@@ -9,7 +9,7 @@ from PIL import Image
 
 from ...core.registry import method
 from ...core.animation import capture_frame
-from ...core.utils import W, H, BLACK, seed_all, save, mn
+from ...core.utils import W, H, BG_DEFAULT, seed_all, save, mn
 
 
 # ── Conway's Game of Life rules ────────────────────────────────────────
@@ -200,7 +200,7 @@ def method_cellular(out_dir: Path, seed: int, params=None):
 
     # ── Render grid to image ──
     def _render(grid: np.ndarray) -> Image.Image:
-        img = Image.new("RGB", (W, H), BLACK)
+        img = Image.new("RGB", (W, H), BG_DEFAULT)
         live_mask = grid == 1
         if not live_mask.any():
             return img

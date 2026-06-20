@@ -10,7 +10,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from ..core.registry import method
-from ..core.utils import save, norm, mn, seed_all, BLACK, W, H, PALETTES, load_input
+from ..core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES, load_input
 from ..core.animation import capture_frame
 
 
@@ -125,7 +125,7 @@ def method_boids(out_dir: Path, seed: int, params=None):
         img_arr = load_input(params["input_image"])
         base_img = Image.fromarray((img_arr * 255).astype(np.uint8))
     else:
-        base_img = Image.new("RGB", (W, H), BLACK)
+        base_img = Image.new("RGB", (W, H), BG_DEFAULT)
 
     # ── Params ──
     n_boids = int(params.get("boids", 80))
@@ -4565,3 +4565,597 @@ def method_particles(out_dir: Path, seed: int, params=None):
             capture_frame("20", np.array(img, dtype=np.float32) / 255.0)
 
     save(img, mn(20, "Particle System"), out_dir)
+# ── Langton's Ant (ID 83) ──────────────────────────────────────────────────────
+
+# Extended palettes missing from PALETTES
+_LANGTON_EXTRA_PALETTES = {
+    "neon": [(15, 5, 30), (255, 0, 100), (0, 255, 200), (255, 255, 0),
+             (255, 100, 255), (0, 200, 255), (255, 50, 50), (100, 255, 100)],
+    "pastel": [(255, 210, 220), (210, 230, 255), (210, 255, 220), (255, 240, 200),
+               (240, 210, 255), (200, 255, 240), (255, 220, 180), (230, 200, 255)],
+    "ocean": [(5, 20, 40), (10, 60, 100), (20, 100, 160), (40, 150, 200),
+              (80, 190, 230), (130, 220, 245), (180, 240, 255), (220, 250, 255)],
+    "forest": [(10, 25, 10), (20, 50, 15), (30, 80, 25), (50, 110, 35),
+               (70, 140, 45), (100, 170, 60), (140, 200, 80), (180, 230, 110)],
+    "fire": [(20, 5, 0), (60, 10, 0), (120, 30, 0), (180, 60, 0),
+             (220, 110, 0), (255, 160, 20), (255, 210, 80), (255, 250, 180)],
+    "ice": [(10, 15, 30), (20, 40, 70), (30, 70, 120), (50, 110, 180),
+            (80, 155, 220), (130, 200, 245), (190, 230, 255), (230, 245, 255)],
+}
+
+
+def _render_langton_frame(grid, visited, age_grid, pal_arr, bg_color,
+                          color_mode, render_style, n_colors):
+    """Render a single frame of the Langton's Ant simulation.
+
+    Returns float32 (H, W, 3) array in [0, 1].
+    """
+    h, w = grid.shape
+    bg = bg_color.astype(np.float32) / 255.0
+    pal_f = pal_arr.astype(np.float32) / 255.0  # (N, 3)
+    result = np.zeros((h, w, 3), dtype=np.float32)
+
+    # Build source image based on color_mode
+    if color_mode == "state":
+        # Each cell state maps to palette index
+        idx = grid.astype(np.int32)
+        idx = np.clip(idx, 0, len(pal_f) - 1)
+        for c in range(3):
+            result[:, :, c] = pal_f[idx, c]
+
+    elif color_mode == "age":
+        # Age-based coloring: older = brighter/warmer
+        age_norm = np.clip(age_grid.astype(np.float32) / 100.0, 0.0, 1.0)
+        result[:, :, 0] = 0.2 + age_norm * 0.8
+        result[:, :, 1] = 0.2 + (1.0 - age_norm) * 0.6
+        result[:, :, 2] = 0.3 + age_norm * 0.4
+
+    elif color_mode == "trail":
+        # Only visited cells get state color, rest = bg
+        idx = grid.astype(np.int32)
+        idx = np.clip(idx, 0, len(pal_f) - 1)
+        for c in range(3):
+            result[:, :, c] = pal_f[idx, c]
+        # Apply visited mask
+        mask = ~visited
+        result[mask] = bg
+
+    elif color_mode == "gradient":
+        # Position-based gradient overlaid with state
+        yy, xx = np.meshgrid(np.linspace(0, 1, h), np.linspace(0, 1, w), indexing='ij')
+        result[:, :, 0] = xx * 0.8 + 0.1
+        result[:, :, 1] = yy * 0.8 + 0.1
+        result[:, :, 2] = (1.0 - xx * 0.5 - yy * 0.3)
+
+    elif color_mode == "rainbow":
+        yy, xx = np.meshgrid(np.linspace(0, 1, h), np.linspace(0, 1, w), indexing='ij')
+        hue = (xx * 2.0 + yy + grid.astype(np.float32) / max(n_colors, 1)) % 1.0
+        result[:, :, 0] = 0.5 + 0.5 * np.sin(hue * np.pi * 6.0)
+        result[:, :, 1] = 0.5 + 0.5 * np.sin((hue + 0.33) * np.pi * 6.0)
+        result[:, :, 2] = 0.5 + 0.5 * np.sin((hue + 0.67) * np.pi * 6.0)
+
+    elif color_mode == "palette":
+        # Quantize state to palette with some dither
+        idx = grid.astype(np.int32)
+        idx = np.clip(idx, 0, len(pal_f) - 1)
+        for c in range(3):
+            result[:, :, c] = pal_f[idx, c]
+        # Smooth quantization
+        result = norm(result)
+
+    # Apply render_style
+    if render_style == "filled":
+        # Already filled above, just apply bg to unvisited
+        if color_mode in ("gradient", "rainbow"):
+            pass  # already full
+        elif color_mode == "trail":
+            pass  # already masked above
+        else:
+            # For state/age/palette, apply bg to unvisited
+            if color_mode in ("state", "age", "palette"):
+                result[~visited] = bg
+
+    elif render_style == "trails":
+        # Only show visited cells, unvisited = background
+        result[~visited] = bg
+
+    elif render_style == "glow":
+        # Gaussian blur on visited areas
+        import cv2
+        # Build a binary mask of visited cells
+        glow_mask = visited.astype(np.float32)
+        blurred = cv2.GaussianBlur(glow_mask, (0, 0), sigmaX=3.0, sigmaY=3.0)
+        blurred = np.clip(blurred, 0, 1)
+        # Composite: base image * blur + bg * (1 - blur)
+        result[visited] = result[visited]  # keep colors where visited
+        result[~visited] = bg
+        # Apply glow overlay
+        glow = np.stack([blurred * 0.3 + bg[0] * 0.7,
+                         blurred * 0.15 + bg[1] * 0.85,
+                         blurred * 0.05 + bg[2] * 0.95], axis=-1)
+        result = result * 0.5 + glow * 0.5
+
+    elif render_style == "edge":
+        # Edge detection via difference between adjacent cells
+        import cv2
+        gray = np.mean(result, axis=2) if color_mode not in ("gradient", "rainbow") else result[:, :, 0]
+        edges = cv2.Laplacian(gray.astype(np.float32), cv2.CV_32F)
+        edges = np.abs(edges)
+        edges = np.clip(edges / (edges.max() + 1e-8), 0, 1)
+        # Highlight edges over background
+        for c in range(3):
+            result[:, :, c] = bg[c] * (1.0 - edges * 0.8) + edges * 0.8
+
+    return np.clip(result, 0, 1)
+
+
+@method(id="83", name="Langton's Ant", category="simulations",
+         tags=["agents", "turmite", "emergent", "animation", "expanded"],
+         timeout=120,
+         params={
+             "rule": {"description": "Turn rule string (L/R per state)", "choices": ["RL","LR","RLR","LLRR","RLLR","LRRL","LLLRRR","LRRRRRLLR","LLRRRLRLRLLR","RRLLLRLLLRRR","LRLR","RLLRLLRR","LLR","RRL","LLRRLR","RRLLR","LRR","RLL"], "default": "RL"},
+             "ant_count": {"description": "Number of ants", "min": 1, "max": 20, "default": 1},
+             "ant_spread": {"description": "Initial ant placement", "choices": ["center","spread","random","ring","line"], "default": "center"},
+             "steps": {"description": "Simulation steps", "min": 10000, "max": 500000, "default": 200000},
+             "color_mode": {"description": "Coloring method", "choices": ["state","age","trail","gradient","rainbow","palette"], "default": "state"},
+             "palette": {"description": "Color palette", "choices": ["vapor","cool","warm","neon","pastel","ocean","forest","fire","ice","pico8","cga","nes","amber","green","gameboy","grayscale"], "default": "vapor"},
+             "background": {"description": "Background color", "choices": ["black","white","random"], "default": "black"},
+             "render_style": {"description": "Visual rendering style", "choices": ["filled","trails","glow","edge"], "default": "filled"},
+             "time": {"description": "Animation time in radians (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
+             "anim_mode": {"description": "Animation mode", "choices": ["none","unfold","rule_morph","ant_swarm","color_cycle","grid_morph"], "default": "none"},
+             "anim_speed": {"description": "Animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
+         })
+def method_langtons_ant(out_dir: Path, seed: int, params=None):
+    """Langton's Ant — 2D Turing-machine cellular automaton.
+
+    A virtual ant (or multiple ants) moves on a 2D grid of colored cells.
+    Each cell has a state (0..n_colors-1). When the ant lands on a cell of
+    state k, it turns according to the rule string at index k (L=left, R=right),
+    flips the cell to (k+1) % n_colors, then moves forward.
+
+    Classic RL rule: on white (state 0) → turn right / flip to black (state 1),
+    on black (state 1) → turn left / flip to white (state 0).
+
+    Over ~10K steps, chaotic behavior gives way to emergent highway structures.
+    """
+    if params is None:
+        params = {}
+
+    # ── Extract params ──
+    rule_str = str(params.get("rule", "RL"))
+    ant_count = int(params.get("ant_count", 1))
+    ant_spread = str(params.get("ant_spread", "center"))
+    steps = int(params.get("steps", 200000))
+    color_mode = str(params.get("color_mode", "state"))
+    palette_name = str(params.get("palette", "vapor"))
+    bg = str(params.get("background", "black"))
+    render_style = str(params.get("render_style", "filled"))
+    anim_mode = str(params.get("anim_mode", "none"))
+    anim_speed = float(params.get("anim_speed", 1.0))
+    _t = float(params.get("time", 0.0)) * anim_speed
+
+    n_colors = len(rule_str)
+    if n_colors < 2:
+        rule_str = "RL"
+        n_colors = 2
+
+    # ── Seed ──
+    seed_all(seed)
+    rng = np.random.RandomState(seed)
+    if anim_mode != "none":
+        seed_all(seed + int(_t * 10000))
+        rng = np.random.RandomState(seed + int(_t * 10000))
+
+    # ── Palette ──
+    pal = PALETTES.get(palette_name)
+    if pal is None:
+        pal = _LANGTON_EXTRA_PALETTES.get(palette_name, PALETTES.get("vapor", [(0, 0, 0), (255, 255, 255)]))
+    pal_arr = np.array(pal, dtype=np.uint8)
+
+    # Extend palette if needed (cycle colors to match n_colors)
+    if len(pal_arr) < n_colors:
+        repeats = (n_colors // len(pal_arr)) + 1
+        pal_arr = np.tile(pal_arr, (repeats, 1))[:n_colors]
+
+    # ── Background ──
+    if bg == "black":
+        bg_color = np.array([10, 10, 18], dtype=np.uint8)
+    elif bg == "white":
+        bg_color = np.array([240, 240, 235], dtype=np.uint8)
+    else:
+        bg_color = np.array([rng.randint(0, 50), rng.randint(0, 50), rng.randint(0, 50)], dtype=np.uint8)
+
+    # ── Grid ──
+    grid = np.zeros((H, W), dtype=np.uint8)
+    visited = np.zeros((H, W), dtype=bool)
+    age_grid = np.ones((H, W), dtype=np.int32) * 999999  # large = never visited
+
+    # ── Animation: grid_morph initial condition ──
+    if anim_mode == "grid_morph":
+        morph_t = (_t / 6.28) % 1.0
+        if morph_t > 0.05:
+            fill_frac = np.clip((morph_t - 0.05) / 0.9, 0, 1)
+            rand_init = rng.randint(0, n_colors, (H, W), dtype=np.uint8)
+            mask = rng.random((H, W)) < fill_frac
+            grid[mask] = rand_init[mask]
+            visited[mask] = True
+
+    # ── Init ants ──
+    cx, cy = W // 2, H // 2
+
+    def _clamp(x, y):
+        return max(0, min(W - 1, x)), max(0, min(H - 1, y))
+
+    if ant_spread == "center":
+        positions = [(cx, cy)] * ant_count
+    elif ant_spread == "spread":
+        spread = min(W, H) // max(1, ant_count)
+        positions = []
+        for i in range(ant_count):
+            ox = cx + rng.randint(-spread, spread)
+            oy = cy + rng.randint(-spread, spread)
+            positions.append(_clamp(ox, oy))
+    elif ant_spread == "random":
+        positions = [(rng.randint(0, W - 1), rng.randint(0, H - 1)) for _ in range(ant_count)]
+    elif ant_spread == "ring":
+        radius = min(W, H) // 4
+        positions = []
+        for i in range(ant_count):
+            angle = 2.0 * math.pi * i / max(1, ant_count)
+            ox = int(cx + radius * math.cos(angle))
+            oy = int(cy + radius * math.sin(angle))
+            positions.append(_clamp(ox, oy))
+    elif ant_spread == "line":
+        positions = []
+        for i in range(ant_count):
+            ox = cx + (i - ant_count // 2) * 8
+            positions.append(_clamp(ox, cy))
+
+    ants = []
+    for i in range(ant_count):
+        x, y = positions[i]
+        d = rng.randint(0, 4)
+        ants.append({"x": x, "y": y, "dir": d})
+        visited[y, x] = True
+        age_grid[y, x] = 0
+
+    # Direction vectors: 0=up, 1=right, 2=down, 3=left
+    DX = np.array([0, 1, 0, -1], dtype=np.int32)
+    DY = np.array([-1, 0, 1, 0], dtype=np.int32)
+
+    # For rule_morph: cycle through rules
+    _MORPH_RULES = ["RL", "LR", "RLR", "LLRR", "RLLR", "LRRL", "LLLRRR"]
+    if anim_mode == "rule_morph":
+        # Select rule based on time, cycling through 3 rules
+        t_norm = (_t / 6.28) % 1.0
+        rule_idx = int(t_norm * len(_MORPH_RULES)) % len(_MORPH_RULES)
+        rule_str = _MORPH_RULES[rule_idx]
+        n_colors = len(rule_str)
+
+    # ── Hue shift for color_cycle ──
+    hue_shift = 0.0
+    if anim_mode == "color_cycle":
+        hue_shift = (_t / 6.28) % 1.0
+
+    # ── Capture interval ──
+    cap_interval = max(steps // 80, 1)
+
+    # ── Pre-compute shifted palette for color_cycle ──
+    use_pal_arr = pal_arr
+    if anim_mode == "color_cycle":
+        # Cycle: shift palette entries and blend for smooth transitions
+        pal_f = pal_arr.astype(np.float32) / 255.0
+        n_p = len(pal_f)
+        shift_t = ((_t / 6.28) * n_p) % n_p
+        shift_idx = int(shift_t)
+        shift_frac = shift_t - shift_idx
+        shifted = np.zeros_like(pal_f)
+        shifted[:-1] = (1 - shift_frac) * pal_f[:-1] + shift_frac * pal_f[1:]
+        shifted[-1] = (1 - shift_frac) * pal_f[-1] + shift_frac * pal_f[0]
+        # Full-palette roll for each completed cycle
+        roll_amount = int(shift_t) // 1
+        shifted = np.roll(shifted, -roll_amount, axis=0)
+        use_pal_arr = (shifted * 255).astype(np.uint8)
+
+    # ── Simulation loop (numpy-batched) ──
+    # Precompute turn lookup: for each state (0..n_colors-1), +1 or -1
+    turn_lookup = np.ones(n_colors, dtype=np.int32)  # default R = +1
+    for i, ch in enumerate(rule_str):
+        turn_lookup[i] = 1 if ch == 'R' else -1
+
+    # Convert ant list to numpy arrays for batch operations
+    N = len(ants)
+    ant_ys = np.array([a["y"] for a in ants], dtype=np.int32)
+    ant_xs = np.array([a["x"] for a in ants], dtype=np.int32)
+    ant_dirs = np.array([a["dir"] for a in ants], dtype=np.int32)
+
+    for s in range(steps):
+        # ── Unfold: stop early based on progress ──
+        if anim_mode == "unfold":
+            progress = min(1.0, 0.5 + 0.5 * math.sin(_t * 0.5))
+            step_limit = int(steps * progress)
+            if s >= step_limit:
+                break
+
+        # ── Rule morph: update rule mid-sim ──
+        if anim_mode == "rule_morph":
+            t_norm = (_t / 6.28) % 1.0
+            new_rule_idx = int(t_norm * len(_MORPH_RULES)) % len(_MORPH_RULES)
+            new_rule = _MORPH_RULES[new_rule_idx]
+            if new_rule != rule_str:
+                rule_str = new_rule
+                n_colors = len(rule_str)
+                turn_lookup = np.ones(n_colors, dtype=np.int32)
+                for i, ch in enumerate(rule_str):
+                    turn_lookup[i] = 1 if ch == 'R' else -1
+                grid[:] = grid % max(n_colors, 1)
+
+        # ── Ant swarm: vary active ant count ──
+        if anim_mode == "ant_swarm":
+            current_count = max(1, int(1 + (ant_count - 1) * (0.5 + 0.5 * math.sin(_t * 2.0))))
+            active_n = min(current_count, N)
+        else:
+            active_n = N
+
+        # ── Batch step for active ants ──
+        if active_n > 0:
+            ys, xs, dirs = ant_ys[:active_n], ant_xs[:active_n], ant_dirs[:active_n]
+
+            # Read cell states (flat indexing for speed)
+            states = grid[ys, xs].astype(np.int32)
+
+            # Turn based on rule
+            turns = turn_lookup[np.clip(states, 0, n_colors - 1)]
+            dirs = (dirs + turns) % 4
+
+            # Flip cell states
+            new_states = ((states + 1) % n_colors).astype(np.uint8)
+            grid[ys, xs] = new_states
+            visited[ys, xs] = True
+            age_grid[ys, xs] = 0
+
+            # Move forward with wrap
+            ant_xs[:active_n] = (xs + DX[dirs]) % W
+            ant_ys[:active_n] = (ys + DY[dirs]) % H
+            ant_dirs[:active_n] = dirs
+
+            visited[ant_ys[:active_n], ant_xs[:active_n]] = True
+            age_grid[ant_ys[:active_n], ant_xs[:active_n]] = 0
+
+        # Increment age for all visited cells
+        age_grid[visited] += 1
+
+        # ── Capture frame ──
+        if s % cap_interval == 0 or s == steps - 1:
+            frame = _render_langton_frame(
+                grid, visited, age_grid, use_pal_arr, bg_color,
+                color_mode, render_style, n_colors
+            )
+            capture_frame("83", frame)
+
+    # ── Final render ──
+    img = _render_langton_frame(
+        grid, visited, age_grid, use_pal_arr, bg_color,
+        color_mode, render_style, n_colors
+    )
+
+    capture_frame("83", img)
+    save(np.clip(img, 0, 1), mn(83, "Langtons Ant"), out_dir)
+    return img
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Method 84 — Quantum Wave Interference (2D Schrödinger PDE)
+# ═══════════════════════════════════════════════════════════════════════
+
+def _plasma_cmap(v):
+    """Plasma-like: dark blue→purple→magenta→orange→yellow."""
+    v = np.clip(v, 0.0, 1.0)
+    r, g, b = np.zeros_like(v), np.zeros_like(v), np.zeros_like(v)
+    m = v <= 0.25; t = v[m] / 0.25
+    r[m]=0.04+t*0.28; g[m]=0.00+t*0.02; b[m]=0.28+t*0.38
+    m = (v>0.25)&(v<=0.50); t = (v[m]-0.25)/0.25
+    r[m]=0.32+t*0.35; g[m]=0.02+t*0.02; b[m]=0.66+t*0.18
+    m = (v>0.50)&(v<=0.75); t = (v[m]-0.50)/0.25
+    r[m]=0.67+t*0.30; g[m]=0.04+t*0.33; b[m]=0.84-t*0.69
+    m = v>0.75; t = (v[m]-0.75)/0.25
+    r[m]=0.97+t*0.03; g[m]=0.37+t*0.60; b[m]=0.15-t*0.15
+    return np.clip(np.stack([r, g, b], axis=-1), 0.0, 1.0)
+
+
+def _phase_cmap(phase):
+    """Cyclic hue for complex phase."""
+    h = (phase / (2*math.pi)) % 1.0
+    r, g, b = np.zeros_like(h), np.zeros_like(h), np.zeros_like(h)
+    h6 = h * 6.0; s = np.floor(h6).astype(int); f = h6 - s
+    for idx, (ri, gi, bi) in enumerate([
+        (1.0, None, 0.0), (None, 1.0, 0.0), (0.0, 1.0, None),
+        (0.0, None, 1.0), (None, 0.0, 1.0), (1.0, 0.0, None)]):
+        mask = s == idx
+        r[mask] = ri if ri is not None else 1.0 - f[mask]
+        g[mask] = gi if gi is not None else f[mask] if idx in (1, 5) else (1.0-f[mask] if idx in (2, 4) else f[mask])
+        b[mask] = bi if bi is not None else f[mask] if idx in (2, 3) else (1.0-f[mask] if idx in (0, 5) else f[mask])
+    return np.stack([r, g, b], axis=-1)
+
+
+def _gauss_packet(X, Y, x0, y0, sigma, kx0=0.0, ky0=0.0):
+    psi = np.exp(-((X-x0)**2 + (Y-y0)**2) / (4*sigma**2))
+    psi = psi * np.exp(1j*(kx0*X + ky0*Y))
+    return psi
+
+
+def _normalize(psi, dx, dy):
+    norm = np.sqrt(np.sum(np.abs(psi)**2) * dx * dy)
+    return psi / norm if norm > 0 else psi
+
+
+def _upscale(arr, target_h, target_w):
+    """Bilinear upsample — pure numpy."""
+    h, w = arr.shape[:2]
+    if h == target_h and w == target_w:
+        return arr
+    yr = np.linspace(0, h-1, target_h)
+    xr = np.linspace(0, w-1, target_w)
+    y0 = np.floor(yr).astype(np.int32); y1 = np.minimum(y0+1, h-1)
+    x0 = np.floor(xr).astype(np.int32); x1 = np.minimum(x0+1, w-1)
+    fy, fx = yr-y0, xr-x0
+    if arr.ndim == 2:
+        return ((1-fy)[:,None]*((1-fx)*arr[y0][:,x0]+fx*arr[y0][:,x1])
+                + fy[:,None]*((1-fx)*arr[y1][:,x0]+fx*arr[y1][:,x1]))
+    out = np.zeros((target_h, target_w, arr.shape[2]), dtype=arr.dtype)
+    for c in range(arr.shape[2]):
+        out[:,:,c] = ((1-fy)[:,None]*((1-fx)*arr[y0][:,x0,c]+fx*arr[y0][:,x1,c])
+                       + fy[:,None]*((1-fx)*arr[y1][:,x0,c]+fx*arr[y1][:,x1,c]))
+    return out
+
+
+@method(
+    id="84",
+    name="Quantum Wave Interference",
+    category="simulations",
+    tags=["pde", "schrodinger", "quantum", "animation", "expanded"],
+    timeout=300,
+    params={
+        "mode": {"description": "simulation mode",
+                  "choices": ["free", "double_slit", "harmonic", "collision"],
+                  "default": "double_slit"},
+        "cmap": {"description": "colormap",
+                  "choices": ["plasma", "phase"], "default": "plasma"},
+        "gamma": {"description": "density gamma (contrast)", "min": 0.2, "max": 1.5, "default": 0.7},
+        "scale": {"description": "internal res scale (lower=faster)", "min": 0.25, "max": 1.0, "default": 0.5},
+        "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
+        "anim_mode": {"description": "animation mode",
+                       "choices": ["none", "evolve", "mode_cycle", "param_sweep"],
+                       "default": "evolve"},
+        "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
+    },
+)
+def method_quantum_interference(out_dir: Path, seed: int, params=None):
+    """2D Schrödinger wave packet via split-operator FFT method.
+
+    Visualizes |ψ(x,y,t)|² probability density as glowing interference
+    patterns. Four modes: free drift, double-slit diffraction, harmonic
+    oscillator, and colliding wave packets.
+
+    Args:
+        out_dir: Output directory
+        seed: Random seed
+        params: Optional parameter overrides dict
+    """
+    from numpy.fft import fft2, ifft2, fftfreq
+
+    # ── Params ──
+    if params is None:
+        params = {}
+    t = float(params.get("time", 0.0))
+    anim_mode = str(params.get("anim_mode", "evolve"))
+    anim_speed = float(params.get("anim_speed", 1.0))
+    mode = str(params.get("mode", "double_slit"))
+    cmap = str(params.get("cmap", "plasma"))
+    gamma = float(params.get("gamma", 0.7))
+    scale = float(params.get("scale", 0.5))
+
+    seed_all(seed)
+    _t = t * anim_speed
+
+    if anim_mode != "none":
+        seed_all(seed + int(_t * 10000))
+
+    # ── Internal resolution ──
+    Nx = max(int(W * scale) // 2 * 2, 64)
+    Ny = max(int(H * scale) // 2 * 2, 64)
+    aspect = W / H
+    Ly = 15.0
+    Lx = Ly * aspect
+    dx, dy = Lx / Nx, Ly / Ny
+
+    x = np.linspace(-Lx/2, Lx/2, Nx, endpoint=False)
+    y = np.linspace(-Ly/2, Ly/2, Ny, endpoint=False)
+    X, Y = np.meshgrid(x, y)
+
+    kx = 2*math.pi * fftfreq(Nx, d=dx)
+    ky = 2*math.pi * fftfreq(Ny, d=dy)
+    KX, KY = np.meshgrid(kx, ky)
+    K2 = KX**2 + KY**2
+
+    # Modulate params for param_sweep mode
+    if anim_mode == "param_sweep":
+        scale = 0.3 + 0.3 * (0.5 + 0.5 * math.sin(_t * 0.5))
+        gamma = 0.5 + 0.5 * (0.5 + 0.5 * math.sin(_t * 0.7))
+    elif anim_mode == "mode_cycle":
+        modes = ["free", "double_slit", "harmonic", "collision"]
+        mode = modes[int(_t * 0.5) % len(modes)]
+
+    sim_time = _t * 2.0
+    hbar, mass = 1.0, 1.0
+
+    # ── Init ──
+    if mode == "free":
+        sigma = 0.8; k0x, k0y = 3.0, 1.5; x0, y0 = -3.0 + 0.5*math.sin(_t*0.3), 0.5*math.cos(_t*0.2)
+        V = np.zeros((Ny, Nx), dtype=np.float64)
+        psi = _gauss_packet(X, Y, x0, y0, sigma, k0x, k0y)
+        psi = _normalize(psi, dx, dy)
+        dt = 0.08
+    elif mode == "double_slit":
+        sigma = 0.7; k0x = 4.0; x0 = -4.0
+        bh = 50.0; sw = 0.6; ss = 3.0
+        V = np.zeros((Ny, Nx), dtype=np.float64)
+        barrier = np.abs(X) < 0.3
+        slit1 = np.abs(Y - ss/2) < sw/2
+        slit2 = np.abs(Y + ss/2) < sw/2
+        V[barrier & ~(slit1 | slit2)] = bh
+        psi = _gauss_packet(X, Y, x0, 0.0, sigma, k0x, 0.0)
+        psi = _normalize(psi, dx, dy)
+        dt = 0.04
+    elif mode == "harmonic":
+        sigma = 0.8; omega = 1.5
+        x0 = -2.0 * math.cos(_t * 0.2)
+        V = 0.5 * mass * omega**2 * (X**2 + Y**2)
+        psi = _gauss_packet(X, Y, x0, 0.0, sigma, 0.0, 0.0)
+        psi = _normalize(psi, dx, dy)
+        dt = 0.03
+    elif mode == "collision":
+        s1, s2 = 0.6, 0.6
+        k1, k2 = 3.0, -3.0
+        x1 = -3.0 + 0.3*math.sin(_t*0.2)
+        x2 = 3.0 - 0.3*math.sin(_t*0.2)
+        V = np.zeros((Ny, Nx), dtype=np.float64)
+        psi1 = _gauss_packet(X, Y, x1, 0.0, s1, k1, 0.0)
+        psi2 = _gauss_packet(X, Y, x2, 0.0, s2, k2, 0.0)
+        psi = _normalize(psi1 + psi2, dx, dy)
+        dt = 0.05
+    else:
+        psi = np.zeros((Ny, Nx), dtype=np.complex128)
+        V = np.zeros((Ny, Nx), dtype=np.float64)
+
+    # ── Evolve ──
+    n_steps = max(1, int(sim_time / dt))
+    if n_steps > 0 and np.any(psi != 0):
+        dt_actual = sim_time / n_steps
+        V_op = np.exp(-0.5j * V * dt_actual / hbar)
+        K_op = np.exp(-0.5j * hbar * K2 * dt_actual / mass)
+        for _ in range(n_steps):
+            psi = psi * V_op
+            psi = ifft2(fft2(psi) * K_op)
+            psi = psi * V_op
+
+    # ── Render ──
+    if np.all(psi == 0):
+        img = np.full((H, W, 3), 40, dtype=np.uint8)
+    else:
+        if cmap == "phase":
+            density = np.abs(psi) / (np.max(np.abs(psi)) + 1e-10)
+            density = density ** gamma
+            rgb = _phase_cmap(np.angle(psi)) * density[:, :, np.newaxis]
+        else:
+            density = np.abs(psi)**2
+            display = (np.sqrt(density) / (np.max(np.sqrt(density)) + 1e-10)) ** gamma
+            rgb = _plasma_cmap(display)
+
+        if Ny != H or Nx != W:
+            rgb = _upscale(rgb, H, W)
+        img = (np.clip(rgb, 0.0, 1.0) * 255).astype(np.uint8)
+
+    capture_frame("84", img)
+    save(img, mn(84, "Quantum Wave"), out_dir)
+    return img
