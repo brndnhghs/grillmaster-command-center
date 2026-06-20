@@ -64,6 +64,11 @@ def method_ascii(out_dir: Path, seed: int, params=None):
     anim_speed = float(params.get("anim_speed", 0.25))
     seed_all(seed)
 
+    # Freeze time when no animation mode is active
+    if anim_mode == "none":
+        time_param = 0.0
+        anim_speed = 0.0
+
     # ── Parse params ──
     preset = params.get("preset", "default")
     raw_charset = params.get("charset", "")
@@ -72,7 +77,13 @@ def method_ascii(out_dir: Path, seed: int, params=None):
     font_size = int(params.get("font_size", 10))
     char_spacing = float(params.get("char_spacing", 1.0))
     invert = params.get("invert", False)
+    if isinstance(invert, str):
+        invert = invert.lower() in ("true", "1", "yes")
+    invert = bool(invert)
     use_color = params.get("color", False)
+    if isinstance(use_color, str):
+        use_color = use_color.lower() in ("true", "1", "yes")
+    use_color = bool(use_color)
     source = params.get("source", "perlin")
     text_content = params.get("text_content", "Hello World")
     output_format = params.get("output_format", "png")
@@ -354,4 +365,6 @@ def method_ascii(out_dir: Path, seed: int, params=None):
     else:
         capture_frame("01", np.array(out_img).astype(np.float32) / 255.0)
         save(out_img, mn(1, "ASCII-Art"), out_dir)
+
+    return np.array(out_img).astype(np.float32) / 255.0
 

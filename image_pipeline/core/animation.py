@@ -14,6 +14,7 @@ from __future__ import annotations
 import math
 import subprocess
 import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Callable, Generator, Optional
@@ -87,13 +88,36 @@ def frames_to_mp4(
 
 # ── Frame-capture wrapper ──────────────────────────────────────────
 
+# Thread-local job context lets concurrent server requests each get their own
+# frame stream without touching the module-level globals.
+_thread_local = threading.local()
 
+
+class JobCancelled(BaseException):
+    """Raised inside a generation thread to abort it cleanly."""
+
+
+def set_job_context(on_frame=None, cancel_event=None):
+    """Install per-thread context used by capture_frame() in the server path."""
+    _thread_local.on_frame = on_frame
+    _thread_local.cancel_event = cancel_event
+    _thread_local.slots = {}
+
+
+def clear_job_context():
+    """Remove per-thread context after a job finishes."""
+    _thread_local.on_frame = None
+    _thread_local.cancel_event = None
+    _thread_local.slots = {}
+
+
+# Module-level state kept for CLI / single-threaded use only.
 _METHOD_FRAME_SLOTS: dict[str, list[np.ndarray]] = {}
 _FRAME_CAPTURE_ENABLED = False
 
 
 def enable_frame_capture(method_id: str):
-    """Signal that a method should capture its incremental frames."""
+    """Signal that a method should capture its incremental frames (CLI path)."""
     global _FRAME_CAPTURE_ENABLED
     _FRAME_CAPTURE_ENABLED = True
     _METHOD_FRAME_SLOTS[method_id] = []
@@ -101,14 +125,32 @@ def enable_frame_capture(method_id: str):
 
 def capture_frame(method_id: str, arr: np.ndarray):
     """Called by instrumented methods to submit an intermediate frame."""
+    cancel_event = getattr(_thread_local, "cancel_event", None)
+    if cancel_event is not None:
+        # Server path: thread-local context is active.
+        if cancel_event.is_set():
+            raise JobCancelled("Cancelled")
+        getattr(_thread_local, "slots", {}).setdefault(method_id, []).append(arr.copy())
+        on_frame = getattr(_thread_local, "on_frame", None)
+        if on_frame is not None:
+            try:
+                on_frame(arr)
+            except JobCancelled:
+                raise
+            except Exception:
+                pass
+        return
+    # CLI path: module-level globals.
     if _FRAME_CAPTURE_ENABLED and method_id in _METHOD_FRAME_SLOTS:
         _METHOD_FRAME_SLOTS[method_id].append(arr.copy())
 
 
 def get_frames(method_id: str) -> list[np.ndarray]:
     """Retrieve captured frames and clear slot."""
-    frames = _METHOD_FRAME_SLOTS.pop(method_id, [])
-    return frames
+    slots = getattr(_thread_local, "slots", None)
+    if slots is not None:
+        return slots.pop(method_id, [])
+    return _METHOD_FRAME_SLOTS.pop(method_id, [])
 
 
 def disable_frame_capture():
@@ -157,10 +199,20 @@ def animate_method(
     n_frames = int(fps * duration)
 
     # ── Time-based animation (natural parameter interpolation) ──
-    # If user_params explicitly contains "time", animate through time by
-    # calling the method once per frame with evolving time values.
-    # Otherwise, try natural frames first (capture_frame inside the method).
-    if user_params and "time" in user_params:
+    # Trigger per-frame iteration when "time" is in params OR when anim_mode
+    # is active (so methods with anim_mode don't need explicit "time").
+    should_animate = False
+    if user_params:
+        if "time" in user_params:
+            should_animate = True
+        elif user_params.get("anim_mode", "none") != "none":
+            should_animate = True
+            # Ensure "time" is seeded so the method receives it each frame
+            if "time" not in user_params:
+                user_params = dict(user_params)
+                user_params["time"] = 0.0
+
+    if should_animate:
         import tempfile, shutil
         from pathlib import Path as PPath
         tmp = PPath(tempfile.mkdtemp())
@@ -172,7 +224,9 @@ def animate_method(
                 p["time"] = t_val
                 try:
                     meta.fn(tmp, seed, params=p)
-                except TypeError:
+                except TypeError as _e:
+                    if "unexpected keyword argument" not in str(_e):
+                        raise
                     meta.fn(tmp, seed)
                 # Find the PNG the method just wrote
                 pngs = sorted(tmp.glob("*.png"))
@@ -191,7 +245,9 @@ def animate_method(
     # Run method with capture enabled
     try:
         meta.fn(out_dir, seed, params=user_params)
-    except TypeError:
+    except TypeError as _e:
+        if "unexpected keyword argument" not in str(_e):
+            raise
         meta.fn(out_dir, seed)
 
     frames = get_frames(method_id)
