@@ -1,2 +1,25 @@
-Pillow>=10.0
-PyYAML>=6.0
+# Requirements for the image_pipeline FastAPI server + node-graph UI.
+# Core versions pinned to the known-good project .venv (regenerated 2026-06-20).
+
+# ── Core (required to run the server and the built-in methods) ──
+fastapi==0.137.2
+uvicorn==0.47.0
+numpy==2.4.6
+scipy==1.17.1
+opencv-python==4.13.0.92
+Pillow==12.2.0
+pydantic==2.13.4
+PyYAML==6.0.3
+pyngrok==8.1.2          # localhost tunneling (server.py / scripts/tunnel.sh)
+
+# ── Optional (uncomment to enable specific methods) ──
+# Each of these is imported lazily inside the method that uses it, so the server
+# and every other method run fine without them; only the listed method fails
+# until the package is installed.
+# matplotlib       # colormaps used by various pattern / fractal / filter methods
+# scikit-image     # resize step in some fractal methods
+# pyfiglet         # ASCII-art / typography methods (cli_tools)
+# qrcode           # method #09 QR Code
+# moderngl         # method #82 GPU Shaders
+# torch            # method #21 Stable Diffusion 1.5 (ml_models; pulls ~2GB+)
+# diffusers        # method #21 Stable Diffusion 1.5 (ml_models)
