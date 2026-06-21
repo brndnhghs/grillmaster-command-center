@@ -983,8 +983,357 @@ def _render_color_field(colors, palette_type, n_colors, phase_offset=0.0, seed_v
     return img
 
 
+
+
+def _render_paint_deck(colors, palette_type, n_colors, phase_offset=0.0, seed_val=42, **kwargs):
+    """Stacked paint chips with realistic drop shadows — professional paint fan deck aesthetic."""
+    n = len(colors)
+    img = Image.new("RGB", (W, H), (28, 28, 32))
+    draw = ImageDraw.Draw(img)
+
+    chip_w, chip_h = 140, 72
+    start_x = W * 0.08
+    start_y = H * 0.08
+    stagger = 24
+    overlap = 8
+
+    for i, (r, g, b) in enumerate(colors):
+        x = int(start_x + (i % 3) * stagger + phase_offset * 20)
+        y = int(start_y + i * (chip_h - overlap) + phase_offset * 15)
+        draw.rounded_rectangle(
+            [x + 4, y + 4, x + chip_w + 4, y + chip_h + 4],
+            radius=6, fill=(14, 14, 18, 180))
+        draw.rounded_rectangle([x, y, x + chip_w, y + chip_h],
+                               radius=6, fill=(r, g, b), outline=(min(r+30,255), min(g+30,255), min(b+30,255)), width=1)
+        hex_text = _hex_str(r, g, b)
+        txt_contrast = (255, 255, 255) if (r*0.299 + g*0.587 + b*0.114) < 128 else (30, 30, 30)
+        _draw_label(draw, hex_text, x + 10, y + chip_h - 22, 11, txt_contrast)
+        _draw_label(draw, str(i + 1).zfill(2), x + chip_w - 30, y + 8, 10, txt_contrast)
+
+    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  Paint Deck",
+                16, H - 28, 14, (180, 180, 190))
+    return img
+
+
+def _render_editorial_spread(colors, palette_type, n_colors, phase_offset=0.0, **kwargs):
+    """Magazine editorial layout — large serif numbers, generous white space."""
+    n = len(colors)
+    bg = (248, 246, 240)
+    img = Image.new("RGB", (W, H), bg)
+    draw = ImageDraw.Draw(img)
+    margin = 44
+    usable_w = W - 2 * margin
+    usable_h = H - 2 * margin
+    cols = min(4, n)
+    rows = max(1, (n + cols - 1) // cols)
+    cell_w = usable_w / cols
+    cell_h = usable_h / rows
+
+    for i, (r, g, b) in enumerate(colors):
+        ci = i % cols
+        ri = i // rows
+        cx = margin + ci * cell_w
+        cy = margin + ri * cell_h
+        block_w = min(90, cell_w * 0.6)
+        block_h = min(60, cell_h * 0.35)
+        bx = int(cx + (cell_w - block_w) / 2)
+        by = int(cy + 20)
+        draw.rectangle([bx, by, bx + int(block_w), by + int(block_h)], fill=(r, g, b))
+        font = get_font(28)
+        draw.text((int(bx + block_w + 12), by - 4), str(i + 1).zfill(2), fill=(60, 55, 50), font=font)
+        _draw_label(draw, _hex_str(r, g, b), bx, by + int(block_h) + 6, 10, (100, 95, 90))
+        draw.line([(bx, by + int(block_h) + 22), (bx + int(block_w), by + int(block_h) + 22)],
+                  fill=(200, 195, 185), width=1)
+
+    font = get_font(16)
+    draw.text((margin, 14), palette_type.replace("-", " ").title(), fill=(60, 55, 50), font=font)
+    draw.text((margin, 34), f"{n_colors}-color palette", fill=(140, 135, 125), font=get_font(11))
+    return img
+
+
+def _render_watercolor_wash(colors, palette_type, n_colors, phase_offset=0.0, seed_val=42, **kwargs):
+    """Soft bleeding watercolor edges on textured paper."""
+    n = len(colors)
+    rng = random.Random(seed_val + 99)
+    paper = np.random.normal(245, 4, (H, W, 3)).clip(230, 255).astype(np.float32)
+    grain = np.random.normal(0, 2, (H, W, 3)).astype(np.float32)
+    paper = np.clip(paper + grain, 230, 255)
+    canvas = np.zeros((H, W, 3), dtype=np.float32)
+    yy, xx = np.ogrid[:H, :W]
+
+    for i, (r, g, b) in enumerate(colors):
+        cx = W * 0.1 + W * 0.8 * ((i + phase_offset * 0.5) % 1.0) + 20 * np.sin(i * 2.7)
+        cy = H * 0.1 + H * 0.8 * ((i * 0.618 + phase_offset * 0.3) % 1.0)
+        rx = 70 + 40 * np.sin(i * 1.3 + phase_offset)
+        ry = 40 + 25 * np.cos(i * 0.9 + phase_offset + 1)
+        dx = (xx - cx) / rx
+        dy = (yy - cy) / ry
+        dist = dx**2 + dy**2
+        weight = np.exp(-dist * 1.5) * 0.85
+        weight = np.clip(weight, 0, 1)
+        canvas[:, :, 0] += (r / 255.0) * weight
+        canvas[:, :, 1] += (g / 255.0) * weight
+        canvas[:, :, 2] += (b / 255.0) * weight
+
+    result = paper / 255.0 * 0.3 + np.clip(canvas, 0, 1) * 0.7
+    result = np.clip(result, 0, 1)
+    img = Image.fromarray((result * 255).astype(np.uint8))
+    draw = ImageDraw.Draw(img)
+    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  Watercolor", 16, H - 26, 13, (80, 75, 70))
+    for i, (r, g, b) in enumerate(colors):
+        cx_l = int(W * 0.1 + W * 0.8 * ((i + phase_offset * 0.5) % 1.0) + 20 * np.sin(i * 2.7))
+        cy_l = int(H * 0.1 + H * 0.8 * ((i * 0.618 + phase_offset * 0.3) % 1.0) + 70)
+        _draw_label(draw, _hex_str(r, g, b), cx_l - 24, cy_l, 9, (60, 55, 50))
+    return img
+
+
+def _render_museum_labels(colors, palette_type, n_colors, phase_offset=0.0, **kwargs):
+    """Gallery wall presentation — Rothko-study aesthetic with curator labels."""
+    n = len(colors)
+    img = Image.new("RGB", (W, H), (242, 240, 235))
+    draw = ImageDraw.Draw(img)
+    margin = 48
+    usable_w = W - 2 * margin
+    cols = min(5, n)
+    rows = max(1, (n + cols - 1) // cols)
+    cell_w = usable_w / cols
+    cell_h = (H - 2 * margin) / rows
+
+    for i, (r, g, b) in enumerate(colors):
+        ci = i % cols
+        ri = i // rows
+        cx = margin + ci * cell_w
+        cy = margin + ri * cell_h
+        sq = min(70, cell_w * 0.5, cell_h * 0.5)
+        bx = int(cx + (cell_w - sq) / 2)
+        by = int(cy + (cell_h - sq) / 2 - 8)
+        draw.rectangle([bx - 1, by - 1, bx + int(sq) + 1, by + int(sq) + 1], fill=(220, 218, 212))
+        draw.rectangle([bx, by, bx + int(sq), by + int(sq)], fill=(r, g, b))
+        label_y = by + int(sq) + 10
+        _draw_label(draw, f"{palette_type.replace('-',' ').title()} #{i+1}", bx, label_y, 10, (60, 55, 50))
+        _draw_label(draw, _hex_str(r, g, b), bx, label_y + 14, 9, (140, 135, 125))
+        h, s, v = colorsys.rgb_to_hsv(r/255, g/255, b/255)
+        _draw_label(draw, f"HSL {int(h*360)}°, {int(s*100)}%, {int(v*100)}%", bx, label_y + 26, 8, (160, 155, 145))
+
+    font = get_font(14)
+    draw.text((margin, 14), palette_type.replace("-", " ").title(), fill=(40, 38, 35), font=font)
+    draw.text((margin, 32), f"Color Study · {n_colors} specimens", fill=(140, 135, 125), font=get_font(10))
+    return img
+
+
+def _render_jewel_box(colors, palette_type, n_colors, phase_offset=0.0, seed_val=42, **kwargs):
+    """Precious gemstone presentation — colors in rounded wells on dark velvet."""
+    n = len(colors)
+    rng = random.Random(seed_val + 200)
+    bg_arr = np.random.normal(18, 3, (H, W, 3)).clip(10, 28).astype(np.uint8)
+    img = Image.fromarray(bg_arr)
+    draw = ImageDraw.Draw(img)
+    margin = 30
+    cols = min(5, n)
+    rows = max(1, (n + cols - 1) // cols)
+    cell_w = (W - 2 * margin) / cols
+    cell_h = (H - 2 * margin - 40) / rows
+    well_r = min(32, cell_w * 0.35, cell_h * 0.38)
+
+    for i, (r, g, b) in enumerate(colors):
+        ci = i % cols
+        ri = i // rows
+        cx = int(margin + ci * cell_w + cell_w / 2)
+        cy = int(margin + 20 + ri * cell_h + cell_h / 2)
+        draw.ellipse([cx - well_r - 4, cy - well_r - 4, cx + well_r + 4, cy + well_r + 4], fill=(8, 8, 12))
+        draw.ellipse([cx - well_r - 2, cy - well_r - 2, cx + well_r + 2, cy + well_r + 2], fill=None, outline=(180, 170, 140), width=2)
+        draw.ellipse([cx - well_r, cy - well_r, cx + well_r, cy + well_r], fill=None, outline=(140, 130, 100), width=1)
+        draw.ellipse([cx - well_r + 2, cy - well_r + 2, cx + well_r - 2, cy + well_r - 2], fill=(r, g, b))
+        hl_x = cx - well_r * 0.3
+        hl_y = cy - well_r * 0.35
+        hl_r = well_r * 0.25
+        draw.ellipse([hl_x - hl_r, hl_y - hl_r, hl_x + hl_r, hl_y + hl_r], fill=(min(r+80,255), min(g+80,255), min(b+80,255)))
+        _draw_label(draw, f"#{i+1}", cx - 14, cy + well_r + 8, 10, (180, 175, 165))
+        _draw_label(draw, _hex_str(r,g,b), cx - 28, cy + well_r + 22, 9, (120, 115, 105))
+
+    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  Jewel Box", 20, H - 22, 13, (200, 195, 180))
+    return img
+
+
+def _render_letterpress_series(colors, palette_type, n_colors, phase_offset=0.0, seed_val=42, **kwargs):
+    """Premium letterpress stationery — cards with deboss borders, organic placement."""
+    n = len(colors)
+    bg = (245, 242, 235)
+    img = Image.new("RGB", (W, H), bg)
+    draw = ImageDraw.Draw(img)
+    rng = random.Random(seed_val + 500)
+    card_w, card_h = 110, 80
+
+    for i, (r, g, b) in enumerate(colors):
+        angle = rng.uniform(-6, 6) + phase_offset * 2
+        cx = W * 0.1 + W * 0.8 * ((i * 0.618 + phase_offset * 0.15) % 1.0)
+        cy = H * 0.1 + H * 0.7 * ((i * 0.382 + phase_offset * 0.12) % 1.0)
+        card = Image.new("RGBA", (card_w + 20, card_h + 20), (0, 0, 0, 0))
+        card_draw = ImageDraw.Draw(card)
+        pad = 10
+        card_draw.rectangle([pad + 2, pad + 2, pad + card_w + 2, pad + card_h + 2], fill=(200, 195, 185, 120))
+        card_draw.rectangle([pad, pad, pad + card_w, pad + card_h], fill=(r, g, b), outline=(160, 155, 145), width=1)
+        card_draw.rectangle([pad + 4, pad + 4, pad + card_w - 4, pad + card_h - 4], fill=None, outline=(min(r+40,255), min(g+40,255), min(b+40,255), 100), width=1)
+        txt_c = (255, 255, 255) if (r*0.299 + g*0.587 + b*0.114) < 128 else (40, 38, 35)
+        card_draw.text((pad + 8, pad + card_h - 20), _hex_str(r, g, b), fill=txt_c, font=get_font(10))
+        rotated = card.rotate(angle, expand=True, resample=Image.BICUBIC)
+        px = int(cx - rotated.width / 2)
+        py = int(cy - rotated.height / 2)
+        img.paste(rotated, (px, py), rotated)
+
+    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  Letterpress", 20, H - 26, 13, (100, 95, 85))
+    return img
+
+
+def _render_iro_washi(colors, palette_type, n_colors, phase_offset=0.0, seed_val=42, **kwargs):
+    """Japanese washi paper aesthetic — color blocks with poetic labels."""
+    n = len(colors)
+    rng = random.Random(seed_val + 777)
+    bg_arr = np.random.normal(248, 3, (H, W, 3)).clip(240, 253).astype(np.float32)
+    for x in range(0, W, 4):
+        bg_arr[:, x, :] += rng.uniform(-2, 2)
+    bg_arr = np.clip(bg_arr, 238, 254).astype(np.uint8)
+    img = Image.fromarray(bg_arr)
+    draw = ImageDraw.Draw(img)
+    block_w = min(90, (W - 80) / n)
+    block_h = H * 0.55
+    start_x = (W - (n * block_w + (n - 1) * 4)) / 2
+    start_y = H * 0.15
+
+    for i, (r, g, b) in enumerate(colors):
+        x = int(start_x + i * (block_w + 4))
+        y = int(start_y + phase_offset * 8)
+        draw.rectangle([x, y, x + int(block_w), y + int(block_h)], fill=(r, g, b))
+        draw.line([(x + int(block_w), y), (x + int(block_w), y + int(block_h))], fill=(max(r-20, 0), max(g-20, 0), max(b-20, 0)), width=1)
+        _draw_label(draw, f"色 #{i+1}", x + 4, y + int(block_h) + 8, 10, (60, 55, 50))
+        _draw_label(draw, _hex_str(r,g,b), x + 4, y + int(block_h) + 22, 9, (140, 130, 120))
+
+    font = get_font(13)
+    draw.text((20, 10), palette_type.replace("-", " ").title(), fill=(40, 38, 35), font=font)
+    draw.text((20, 26), f"{n_colors} iro", fill=(140, 135, 125), font=get_font(10))
+    draw.line([(20, 42), (W - 20, 42)], fill=(200, 195, 185), width=1)
+    return img
+
+
+def _render_fabric_swatches(colors, palette_type, n_colors, phase_offset=0.0, seed_val=42, **kwargs):
+    """Textile/fashion mood board — fabric swatches with weave texture."""
+    n = len(colors)
+    bg = (250, 248, 244)
+    img = Image.new("RGB", (W, H), bg)
+    draw = ImageDraw.Draw(img)
+    margin = 36
+    cols = min(5, n)
+    rows = max(1, (n + cols - 1) // cols)
+    cell_w = (W - 2 * margin) / cols
+    cell_h = (H - 2 * margin - 50) / rows
+
+    for i, (r, g, b) in enumerate(colors):
+        ci = i % cols
+        ri = i // rows
+        cx = margin + ci * cell_w
+        cy = margin + ri * cell_h
+        swatch_w = cell_w * 0.75
+        swatch_h = cell_h * 0.55
+        sx = int(cx + (cell_w - swatch_w) / 2)
+        sy = int(cy + 12)
+        swatch_arr = np.full((int(swatch_h), int(swatch_w), 3), [r, g, b], dtype=np.float32)
+        for wy in range(0, int(swatch_h), 4):
+            swatch_arr[wy, :, :] *= 0.92
+        for wx in range(0, int(swatch_w), 6):
+            swatch_arr[:, wx, :] *= 0.94
+        noise = np.random.normal(0, 4, swatch_arr.shape)
+        swatch_arr = np.clip(swatch_arr + noise, 0, 255).astype(np.uint8)
+        swatch = Image.fromarray(swatch_arr)
+        img.paste(swatch, (sx, sy))
+        _draw_label(draw, f"Nº {i+1}", sx, sy + int(swatch_h) + 6, 10, (80, 75, 70))
+        _draw_label(draw, _hex_str(r,g,b), sx, sy + int(swatch_h) + 20, 9, (150, 145, 135))
+        pin_x = sx + int(swatch_w) // 2
+        draw.ellipse([pin_x - 3, sy - 1, pin_x + 3, sy + 5], fill=(180, 175, 165), outline=(140, 135, 125), width=1)
+
+    font = get_font(14)
+    draw.text((margin, 6), f"COLLECTION: {palette_type.replace('-',' ').upper()}", fill=(40, 38, 35), font=font)
+    draw.text((margin, 24), f"Seasonal Color Story · {n_colors} swatches", fill=(140, 135, 125), font=get_font(10))
+    return img
+
+
+def _render_specimen_cards(colors, palette_type, n_colors, phase_offset=0.0, seed_val=42, **kwargs):
+    """Herbarium-style botanical specimen plates — scientific color documentation."""
+    n = len(colors)
+    bg = (245, 243, 238)
+    img = Image.new("RGB", (W, H), bg)
+    draw = ImageDraw.Draw(img)
+    margin = 24
+    card_w = (W - margin * 2) / max(1, n)
+    card_h = H - margin * 2
+
+    for i, (r, g, b) in enumerate(colors):
+        x = int(margin + i * card_w + phase_offset * 8)
+        y = margin
+        draw.rectangle([x, y, x + int(card_w) - 4, y + int(card_h)], fill=(250, 248, 244), outline=(180, 175, 165), width=1)
+        spec_w = card_w * 0.65
+        spec_h = card_h * 0.25
+        sx = int(x + (card_w - spec_w) / 2)
+        sy = int(y + card_h * 0.15)
+        draw.rectangle([sx, sy, sx + int(spec_w), sy + int(spec_h)], fill=(r, g, b))
+        label_y = sy + int(spec_h) + 12
+        _draw_label(draw, f"Color #{i+1}", sx, label_y, 10, (40, 38, 35))
+        _draw_label(draw, _hex_str(r, g, b), sx, label_y + 14, 9, (100, 95, 85))
+        h, s, v = colorsys.rgb_to_hsv(r/255, g/255, b/255)
+        _draw_label(draw, f"H: {int(h*360)}°", sx, label_y + 28, 8, (140, 135, 125))
+        _draw_label(draw, f"S: {int(s*100)}%", sx, label_y + 40, 8, (140, 135, 125))
+        _draw_label(draw, f"V: {int(v*100)}%", sx, label_y + 52, 8, (140, 135, 125))
+        _draw_label(draw, f"SPEC-{i+1:03d}", int(x + card_w/2 - 28), y + 10, 9, (120, 115, 105))
+
+    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  Color Specimens", 16, H - 20, 12, (100, 95, 85))
+    return img
+
+
+def _render_stained_glass(colors, palette_type, n_colors, phase_offset=0.0, seed_val=42, **kwargs):
+    """Stained glass window — colors as luminous glass panes with lead lines."""
+    n = len(colors)
+    img = Image.new("RGB", (W, H), (8, 8, 14))
+    draw = ImageDraw.Draw(img)
+    margin = 40
+    usable_w = W - 2 * margin
+    usable_h = H - 2 * margin
+    cols = min(4, n)
+    rows = max(1, (n + cols - 1) // cols)
+    pane_w = usable_w / cols
+    pane_h = usable_h / rows
+    inner = 6
+
+    for i, (r, g, b) in enumerate(colors):
+        ci = i % cols
+        ri = i // rows
+        px = margin + ci * pane_w
+        py = margin + ri * pane_h
+        glass = (min(r + 40, 255), min(g + 40, 255), min(b + 40, 255))
+        draw.rectangle([int(px + inner), int(py + inner), int(px + pane_w - inner), int(py + pane_h - inner)], fill=(r, g, b))
+        hl_x1 = int(px + inner + 4)
+        hl_y1 = int(py + inner + 4)
+        hl_w = int(pane_w - inner * 2) * 0.4
+        hl_h = int(pane_h - inner * 2) * 0.3
+        draw.rectangle([hl_x1, hl_y1, hl_x1 + int(hl_w), hl_y1 + int(hl_h)], fill=glass)
+
+    lead = (22, 22, 26)
+    for ci in range(cols + 1):
+        x = int(margin + ci * pane_w)
+        draw.line([(x, margin), (x, margin + int(usable_h))], fill=lead, width=4)
+    for ri in range(rows + 1):
+        y = int(margin + ri * pane_h)
+        draw.line([(margin, y), (margin + int(usable_w), y)], fill=lead, width=4)
+
+    for i, (r, g, b) in enumerate(colors):
+        label_x = int(margin + (i % cols) * pane_w + pane_w/2 - 25)
+        _draw_label(draw, _hex_str(r,g,b), label_x, H - 16, 8, (160, 155, 145))
+
+    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  Stained Glass", 16, 10, 13, (180, 175, 165))
+    return img
+
+
 # Dispatch table for display modes
 _DISPLAY_RENDERERS = {
+    # v4 modes (1-10)
     "harmony_wheel": _render_harmony_wheel,
     "aurora_blend": _render_aurora_blend,
     "radial_mesh": _render_radial_mesh,
@@ -995,6 +1344,17 @@ _DISPLAY_RENDERERS = {
     "interpolation_ribbon": _render_interpolation_ribbon,
     "gradient_mesh": _render_gradient_mesh,
     "color_field": _render_color_field,
+    # Art director modes (11-20)
+    "paint_deck": _render_paint_deck,
+    "editorial_spread": _render_editorial_spread,
+    "watercolor_wash": _render_watercolor_wash,
+    "museum_labels": _render_museum_labels,
+    "jewel_box": _render_jewel_box,
+    "letterpress_series": _render_letterpress_series,
+    "iro_washi": _render_iro_washi,
+    "fabric_swatches": _render_fabric_swatches,
+    "specimen_cards": _render_specimen_cards,
+    "stained_glass": _render_stained_glass,
 }
 
 _DISPLAY_CHOICES = sorted(_DISPLAY_RENDERERS.keys())
