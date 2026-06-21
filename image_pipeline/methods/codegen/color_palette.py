@@ -806,6 +806,11 @@ def method_10_color_palette(out_dir: Path, seed: int, params=None):
     elif anim_mode == "value_pulse":
         effective_val = val * (0.3 + 0.7 * (0.5 + 0.5 * math.sin(t * 1.3 * anim_speed)))
 
+    # gradient_sweep modulates phase_offset, which is only consumed by
+    # the gradient layout — force it so the modulation actually lands.
+    if anim_mode == "gradient_sweep":
+        layout = "gradient"
+
     # ── Generate palette(s) and render ──
 
     if anim_mode == "palette_morph":
@@ -831,3 +836,4 @@ def method_10_color_palette(out_dir: Path, seed: int, params=None):
     result_arr = np.array(img).astype(np.float32) / 255.0
     capture_frame("10", result_arr)
     save(img, mn(10, "color-palette"), out_dir)
+    return result_arr
