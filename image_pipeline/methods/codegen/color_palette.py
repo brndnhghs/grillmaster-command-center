@@ -6,10 +6,10 @@ import random
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 from ...core.registry import method
-from ...core.utils import save, mn, seed_all, get_font, W, H
+from ...core.utils import save, mn, seed_all, get_font, W, H, apply_palette
 from ...core.animation import capture_frame
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -661,6 +661,346 @@ def _render_palette_layout(colors: list, layout: str, palette_type: str,
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# VISUAL DISPLAY RENDERERS — rich palette presentation (v4)
+# ════════════════════════════════════════════════════════════════════════════
+
+def _draw_label(draw, text: str, x: int, y: int, size: int = 16, fill=(220,220,220)):
+    """Draw a text label with the best available font."""
+    font = get_font(size)
+    draw.text((x, y), text, fill=fill, font=font)
+
+
+def _hex_str(r: int, g: int, b: int) -> str:
+    """Return #RRGGBB hex string."""
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _render_harmony_wheel(colors, palette_type, n_colors, rot_offset=0.0, hue_off=0.0, **kwargs):
+    """Proper color wheel with harmonic arcs and labels."""
+    n = len(colors)
+    img = Image.new("RGB", (W, H), (12, 12, 20))
+    draw = ImageDraw.Draw(img)
+    cx, cy = W / 2, H / 2
+    radius = min(W, H) * 0.36
+    inner = radius * 0.35
+
+    # Wheel background ring
+    for angle in range(360):
+        rad = math.radians(angle + rot_offset)
+        h = (angle / 360.0 + hue_off / 360.0) % 1.0
+        r, g, b = _hsv_to_rgb(h, 0.75, 0.65)
+        x1 = cx + inner * math.cos(rad)
+        y1 = cy + inner * math.sin(rad)
+        x2 = cx + radius * math.cos(rad)
+        y2 = cy + radius * math.sin(rad)
+        draw.line([(x1, y1), (x2, y2)], fill=(r, g, b), width=2)
+
+    # Palette color arcs around the wheel
+    for i, (r, g, b) in enumerate(colors):
+        start = (i / n) * 360.0 + rot_offset
+        end = ((i + 1) / n) * 360.0 + rot_offset
+        for a in range(int(start), int(end), 2):
+            rad = math.radians(a)
+            x1 = cx + (radius + 6) * math.cos(rad)
+            y1 = cy + (radius + 6) * math.sin(rad)
+            x2 = cx + (radius + 22) * math.cos(rad)
+            y2 = cy + (radius + 22) * math.sin(rad)
+            draw.line([(x1, y1), (x2, y2)], fill=(r, g, b), width=3)
+
+    # Center circle
+    draw.ellipse([cx - inner, cy - inner, cx + inner, cy + inner],
+                 fill=(12, 12, 20), outline=(60, 60, 70), width=1)
+    _draw_label(draw, palette_type.replace("-", " ").title(), int(cx - 60), int(cy - 10), 14)
+    _draw_label(draw, f"{n_colors} colors", int(cx - 45), int(cy + 10), 12, (150,150,160))
+
+    # Hex labels around wheel
+    for i, (r, g, b) in enumerate(colors):
+        angle = ((i + 0.5) / n) * 2 * math.pi + math.radians(rot_offset)
+        lx = cx + (radius + 40) * math.cos(angle) - 22
+        ly = cy + (radius + 40) * math.sin(angle) - 7
+        _draw_label(draw, _hex_str(r, g, b), int(lx), int(ly), 9, (180, 180, 190))
+
+    return img
+
+
+def _render_aurora_blend(colors, palette_type, n_colors, phase_offset=0.0, **kwargs):
+    """Luminous overlapping color blobs — Aurora borealis aesthetic."""
+    n_blobs = min(len(colors) * 2, 20)
+    canvas = np.zeros((H, W, 3), dtype=np.float32)
+
+    for bi in range(n_blobs):
+        ci = bi % len(colors)
+        r, g, b = colors[ci]
+        sweep = (bi / n_blobs + phase_offset * 0.3) % 1.0
+        cx = W * 0.2 + W * 0.6 * sweep
+        cy = H * 0.25 + H * 0.5 * math.sin(sweep * math.pi * 2 + bi * 0.7)
+        rx = 80 + 120 * (1.0 - abs(sweep - 0.5) * 2)
+        ry = 40 + 60 * math.sin(bi * 1.3 + phase_offset * 2)
+        yy, xx = np.ogrid[:H, :W]
+        dist = ((xx - cx) / rx) ** 2 + ((yy - cy) / ry) ** 2
+        mask = np.exp(-dist * 3.0).clip(0, 1)
+        glow = mask[:, :, None] * np.array([r / 255.0, g / 255.0, b / 255.0])
+        canvas = canvas + glow * 0.65
+
+    canvas = np.clip(canvas * 1.15, 0, 1)
+    img = Image.fromarray((canvas * 255).astype(np.uint8))
+    draw = ImageDraw.Draw(img)
+    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  {n_colors} colors  ·  Aurora",
+                10, 10, 14, (240, 240, 245))
+    return img
+
+
+def _render_radial_mesh(colors, palette_type, n_colors, phase_offset=0.0, hue_off=0.0, **kwargs):
+    """Multi-stop radial gradient with palette colors spaced around center."""
+    n = len(colors)
+    canvas = np.zeros((H, W, 3), dtype=np.float32)
+    cx, cy = W / 2, H / 2
+    max_r = math.sqrt(cx**2 + cy**2)
+    yy, xx = np.ogrid[:H, :W]
+    dist = np.sqrt((xx - cx)**2 + (yy - cy)**2) / max_r
+    angle = (np.arctan2(yy - cy, xx - cx) + math.pi + math.radians(hue_off + phase_offset * 360)) % (2 * math.pi)
+    angle_frac = angle / (2 * math.pi)
+
+    for i in range(n):
+        r, g, b = colors[i]
+        a0 = i / n
+        a1 = (i + 1) / n
+        weight = np.clip(1.0 - np.abs(angle_frac - (a0 + a1) / 2) * n * 1.5, 0, 1)
+        weight = weight * (1.0 - dist * 0.6)
+        canvas[:, :, 0] += (r / 255.0) * weight
+        canvas[:, :, 1] += (g / 255.0) * weight
+        canvas[:, :, 2] += (b / 255.0) * weight
+
+    canvas = np.clip(canvas, 0, 1)
+    img = Image.fromarray((canvas * 255).astype(np.uint8))
+    draw = ImageDraw.Draw(img)
+    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  Radial Mesh", 10, 10, 14, (240, 240, 245))
+    return img
+
+
+def _render_concentric_rings(colors, palette_type, n_colors, phase_offset=0.0, **kwargs):
+    """Concentric rings radiating from center — thickness proportional to position."""
+    n = len(colors)
+    img = Image.new("RGB", (W, H), (12, 12, 20))
+    draw = ImageDraw.Draw(img)
+    cx, cy = W / 2, H / 2
+    max_r = min(W, H) * 0.42
+    ring_w = max_r / n
+
+    for i, (r, g, b) in enumerate(colors):
+        inner = max_r * (i / n) + phase_offset * ring_w * 0.5
+        outer = inner + ring_w
+        draw.ellipse([cx - outer, cy - outer, cx + outer, cy + outer],
+                     fill=None, outline=(r, g, b), width=int(ring_w * 0.85))
+        angle = math.radians(15 + phase_offset * 30)
+        lx = cx + (inner + ring_w/2) * math.cos(angle) + 6
+        ly = cy + (inner + ring_w/2) * math.sin(angle) - 5
+        _draw_label(draw, _hex_str(r, g, b), int(lx), int(ly), 9, (180, 180, 190))
+
+    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  {n_colors} colors",
+                10, 10, 14, (220, 220, 230))
+    return img
+
+
+def _render_weighted_scatter(colors, palette_type, n_colors, phase_offset=0.0, seed_val=42, **kwargs):
+    """Weighted random scatter — dominant colors appear more frequently."""
+    n = len(colors)
+    img = Image.new("RGB", (W, H), (14, 14, 22))
+    draw = ImageDraw.Draw(img)
+    rng = random.Random(seed_val)
+    weights = [1.0 - i / (n + 1) * 0.7 for i in range(n)]
+    total_w = sum(weights)
+    probs = [w / total_w for w in weights]
+
+    for i in range(n):
+        r, g, b = colors[i]
+        cx = W * 0.15 + W * 0.7 * (i / max(1, n - 1))
+        cy = H * 0.3 + H * 0.4 * math.sin(i * 2.1 + phase_offset * math.pi * 2)
+        for sz in [200, 140, 80]:
+            draw.ellipse([cx - sz, cy - sz, cx + sz, cy + sz],
+                         fill=(int(r * 0.3), int(g * 0.3), int(b * 0.3)))
+
+    for _ in range(120):
+        ci = rng.choices(range(n), weights=probs, k=1)[0]
+        r, g, b = colors[ci]
+        x = rng.randint(20, W - 20)
+        y = rng.randint(20, H - 20)
+        sz = rng.randint(8, 30)
+        shape = rng.randint(0, 3)
+        if shape == 0:
+            draw.ellipse([x - sz, y - sz, x + sz, y + sz], fill=(r, g, b))
+        elif shape == 1:
+            draw.rectangle([x - sz, y - sz, x + sz, y + sz], fill=(r, g, b))
+        else:
+            draw.regular_polygon((x, y, sz), 3, rotation=rng.randint(0, 360), fill=(r, g, b))
+
+    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  {n_colors} colors  ·  Weighted",
+                10, 10, 14, (230, 230, 240))
+    return img
+
+
+def _render_neon_glow_strips(colors, palette_type, n_colors, phase_offset=0.0, **kwargs):
+    """Thin luminous strips with glow — neon tube / light art aesthetic."""
+    n = len(colors)
+    canvas = np.zeros((H, W, 3), dtype=np.float32)
+    strip_h = H / n
+
+    for i, (r, g, b) in enumerate(colors):
+        yc = int((i + 0.5 + phase_offset * 0.5) * strip_h)
+        for dy in range(-6, 7):
+            cy = yc + dy
+            if 0 <= cy < H:
+                alpha = math.exp(-(dy ** 2) / 6.0) * 0.9
+                canvas[cy, :, 0] += (r / 255.0) * alpha
+                canvas[cy, :, 1] += (g / 255.0) * alpha
+                canvas[cy, :, 2] += (b / 255.0) * alpha
+
+    canvas = np.clip(canvas * 1.1, 0, 1)
+    img = Image.fromarray((canvas * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(radius=2))
+    draw = ImageDraw.Draw(img)
+
+    for i, (r, g, b) in enumerate(colors):
+        yc = int((i + 0.5 + phase_offset * 0.5) * strip_h)
+        if 0 <= yc < H:
+            _draw_label(draw, _hex_str(r, g, b), W - 80, yc - 5, 10, (220, 220, 230))
+
+    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  {n_colors} colors  ·  Neon",
+                10, 10, 14, (240, 240, 245))
+    return img
+
+
+def _render_color_frequency(colors, palette_type, n_colors, phase_offset=0.0, **kwargs):
+    """Frequency visualization — palette colors as sine wave amplitudes."""
+    n = len(colors)
+    img = Image.new("RGB", (W, H), (10, 10, 18))
+    draw = ImageDraw.Draw(img)
+
+    for i, (r, g, b) in enumerate(colors):
+        amp = 60 - i * (40 / max(1, n))
+        freq = 1.5 + i * 0.6
+        points = []
+        for x in range(W):
+            frac = x / W
+            y = H / 2 + amp * math.sin(frac * math.pi * 2 * freq + phase_offset * math.pi * 2 + i * 0.5)
+            points.append((x, int(y)))
+        for t in range(-2, 3):
+            draw.line([(p[0], p[1] + t) for p in points],
+                      fill=(min(r + 20, 255), min(g + 20, 255), min(b + 20, 255)), width=1)
+
+    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  {n_colors} colors  ·  Frequency",
+                10, 10, 14, (220, 220, 230))
+    for i, (r, g, b) in enumerate(colors):
+        _draw_label(draw, f"C{i+1} {_hex_str(r,g,b)}", 10, H - 20 - i * 18, 9, (r, g, b))
+
+    return img
+
+
+def _render_interpolation_ribbon(colors, palette_type, n_colors, phase_offset=0.0, **kwargs):
+    """Smooth 2D ribbon sweeping through all palette colors."""
+    n = len(colors)
+    canvas = np.zeros((H, W, 3), dtype=np.float32)
+    yy, xx = np.ogrid[:H, :W]
+
+    for i in range(n):
+        r, g, b = colors[i]
+        ribbon_y = H * 0.3 + H * 0.4 * (i / max(1, n - 1))
+        dy = yy - ribbon_y
+        wave = 30 * np.sin(i * 1.8 + xx / W * np.pi * 3 + phase_offset * np.pi * 2)
+        sigma = 18 + 10 * np.sin(float(i + phase_offset * 2))
+        weight = np.exp(-((dy - wave) ** 2) / (2 * sigma ** 2))
+        canvas[:, :, 0] += (r / 255.0) * weight
+        canvas[:, :, 1] += (g / 255.0) * weight
+        canvas[:, :, 2] += (b / 255.0) * weight
+
+    canvas = np.clip(canvas, 0, 1)
+    img = Image.fromarray((canvas * 255).astype(np.uint8))
+    draw = ImageDraw.Draw(img)
+    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  Interpolation Ribbon",
+                10, 10, 14, (230, 230, 240))
+    return img
+
+
+def _render_gradient_mesh(colors, palette_type, n_colors, phase_offset=0.0, hue_off=0.0, **kwargs):
+    """Multi-control-point mesh gradient — palette colors at nodes with smooth interpolation."""
+    n = len(colors)
+    canvas = np.zeros((H, W, 3), dtype=np.float32)
+    yy, xx = np.ogrid[:H, :W]
+    cols = min(4, n)
+    rows = max(1, (n + cols - 1) // cols)
+
+    for i, (r, g, b) in enumerate(colors):
+        ci = i % cols
+        ri = i // cols
+        cx = W * (0.1 + 0.8 * ci / max(1, cols - 1)) if cols > 1 else W / 2
+        cy = H * (0.1 + 0.8 * ri / max(1, rows - 1)) if rows > 1 else H / 2
+        cx += 40 * math.sin(i * 2.3 + phase_offset * math.pi * 2)
+        cy += 30 * math.cos(i * 1.7 + phase_offset * math.pi * 2 + 1)
+        sigma_x = 80 + 60 * math.sin(i * 1.4 + hue_off * 0.01)
+        sigma_y = 80 + 60 * math.cos(i * 1.9 + hue_off * 0.01)
+        dx = (xx - cx) / sigma_x
+        dy = (yy - cy) / sigma_y
+        weight = np.exp(-(dx**2 + dy**2) * 2.0)
+        canvas[:, :, 0] += (r / 255.0) * weight
+        canvas[:, :, 1] += (g / 255.0) * weight
+        canvas[:, :, 2] += (b / 255.0) * weight
+
+    canvas = np.clip(canvas, 0, 1)
+    img = Image.fromarray((canvas * 255).astype(np.uint8))
+    draw = ImageDraw.Draw(img)
+    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  {n_colors} colors  ·  Mesh",
+                10, 10, 14, (230, 230, 240))
+    return img
+
+
+def _render_color_field(colors, palette_type, n_colors, phase_offset=0.0, seed_val=42, **kwargs):
+    """Voronoi-like color field — palette colors as soft cell fills with blending."""
+    n = len(colors)
+    rng = random.Random(seed_val)
+    px = [rng.randint(30, W - 30) for _ in range(n * 3)]
+    py = [rng.randint(30, H - 30) for _ in range(n * 3)]
+    cell_colors = [colors[i % n] for i in range(n * 3)]
+    canvas = np.zeros((H, W, 3), dtype=np.float32)
+    yy, xx = np.ogrid[:H, :W]
+
+    for ci in range(len(px)):
+        r, g, b = cell_colors[ci]
+        cx = px[ci] + 15 * math.sin(ci * 0.7 + phase_offset * math.pi * 2)
+        cy = py[ci] + 15 * math.cos(ci * 0.9 + phase_offset * math.pi * 2 + 1)
+        dist = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2) + 0.5
+        weight = 1.0 / (1.0 + dist * 0.8)
+        canvas[:, :, 0] += (r / 255.0) * weight
+        canvas[:, :, 1] += (g / 255.0) * weight
+        canvas[:, :, 2] += (b / 255.0) * weight
+
+    max_val = canvas.max()
+    if max_val > 0:
+        canvas = canvas / max_val * 0.9
+    canvas = np.clip(canvas, 0, 1)
+    img = Image.fromarray((canvas * 255).astype(np.uint8))
+    draw = ImageDraw.Draw(img)
+    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  {n_colors} colors  ·  Color Field",
+                10, 10, 14, (240, 240, 245))
+    return img
+
+
+# Dispatch table for display modes
+_DISPLAY_RENDERERS = {
+    "harmony_wheel": _render_harmony_wheel,
+    "aurora_blend": _render_aurora_blend,
+    "radial_mesh": _render_radial_mesh,
+    "concentric_rings": _render_concentric_rings,
+    "weighted_scatter": _render_weighted_scatter,
+    "neon_glow_strips": _render_neon_glow_strips,
+    "color_frequency": _render_color_frequency,
+    "interpolation_ribbon": _render_interpolation_ribbon,
+    "gradient_mesh": _render_gradient_mesh,
+    "color_field": _render_color_field,
+}
+
+_DISPLAY_CHOICES = sorted(_DISPLAY_RENDERERS.keys())
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # METHOD
 # ════════════════════════════════════════════════════════════════════════════
 
@@ -677,9 +1017,14 @@ def _render_palette_layout(colors: list, layout: str, palette_type: str,
             "default": 8,
         },
         "layout": {
-            "description": "palette display layout",
+            "description": "palette display layout (legacy — use display_mode for v4 renderers)",
             "choices": ["wheel", "gradient", "vertical", "horizontal", "grid", "overlay"],
             "default": "vertical",
+        },
+        "display_mode": {
+            "description": "visual presentation mode (v4 rich renderers)",
+            "choices": _DISPLAY_CHOICES,
+            "default": "harmony_wheel",
         },
         "palette_type": {
             "description": "palette generation method (30 types)",
@@ -715,6 +1060,10 @@ def _render_palette_layout(colors: list, layout: str, palette_type: str,
             "max": 2.0,
             "default": 0.25,
         },
+        "palette": {
+            "description": "PALETTES name to remap output colors (none = generated colors)",
+            "default": "none",
+        },
     },
 )
 def method_10_color_palette(out_dir: Path, seed: int, params=None):
@@ -733,6 +1082,7 @@ def method_10_color_palette(out_dir: Path, seed: int, params=None):
     layout = params.get("layout", "vertical")
     palette_type = params.get("palette_type", "golden-ratio")
     anim_mode = params.get("anim_mode", "none")
+    display_mode = params.get("display_mode", "harmony_wheel")
     sat_override = float(params.get("saturation", -1.0))
     val_override = float(params.get("value", -1.0))
 
@@ -812,6 +1162,7 @@ def method_10_color_palette(out_dir: Path, seed: int, params=None):
         layout = "gradient"
 
     # ── Generate palette(s) and render ──
+    render_display = display_mode in _DISPLAY_RENDERERS
 
     if anim_mode == "palette_morph":
         # Render both palette types and blend
@@ -819,21 +1170,37 @@ def method_10_color_palette(out_dir: Path, seed: int, params=None):
         gen_b = _PALETTE_GENERATORS.get(palette_morph_type_b, _golden_ratio_palette)
         colors_a = gen_a(n_colors, seed, hue_off=0.0, sat=sat, val=val)
         colors_b = gen_b(n_colors, seed, hue_off=0.0, sat=sat, val=val)
-        img_a = _render_palette_layout(colors_a, layout, palette_morph_type_a,
-                                       n_colors, phase_offset=0.0, rot_offset=0.0)
-        img_b = _render_palette_layout(colors_b, layout, palette_morph_type_b,
-                                       n_colors, phase_offset=0.0, rot_offset=0.0)
+
+        if render_display:
+            img_a = _DISPLAY_RENDERERS[display_mode](colors_a, palette_morph_type_a, n_colors,
+                                                     phase_offset=0.0, hue_off=0.0,
+                                                     rot_offset=0.0)
+            img_b = _DISPLAY_RENDERERS[display_mode](colors_b, palette_morph_type_b, n_colors,
+                                                     phase_offset=0.0, hue_off=0.0,
+                                                     rot_offset=0.0)
+        else:
+            img_a = _render_palette_layout(colors_a, layout, palette_morph_type_a,
+                                           n_colors, phase_offset=0.0, rot_offset=0.0)
+            img_b = _render_palette_layout(colors_b, layout, palette_morph_type_b,
+                                           n_colors, phase_offset=0.0, rot_offset=0.0)
         img = Image.blend(img_a, img_b, palette_morph_fade)
     else:
         gen_fn = _PALETTE_GENERATORS.get(palette_type, _golden_ratio_palette)
         colors = gen_fn(n_colors, seed, hue_off=effective_hue_offset,
                         sat=effective_sat, val=effective_val)
-        img = _render_palette_layout(colors, layout, palette_type, n_colors,
-                                     phase_offset=effective_phase_offset,
-                                     rot_offset=effective_rot_offset)
+        if render_display:
+            img = _DISPLAY_RENDERERS[display_mode](colors, palette_type, n_colors,
+                                                   phase_offset=effective_phase_offset,
+                                                   hue_off=effective_hue_offset,
+                                                   rot_offset=effective_rot_offset)
+        else:
+            img = _render_palette_layout(colors, layout, palette_type, n_colors,
+                                         phase_offset=effective_phase_offset,
+                                         rot_offset=effective_rot_offset)
 
     # ── Convert to numpy array, capture frame, save ──
     result_arr = np.array(img).astype(np.float32) / 255.0
+    result_arr = apply_palette(result_arr, params.get("palette", "none"))
     capture_frame("10", result_arr)
-    save(img, mn(10, "color-palette"), out_dir)
+    save(result_arr, mn(10, "color-palette"), out_dir)
     return result_arr
