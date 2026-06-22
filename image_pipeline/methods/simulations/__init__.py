@@ -72,6 +72,10 @@ from . import roessler_array
 from . import fractional_rd
 from . import faraday_waves
 from . import spectral_tapestry
+from . import coupled_map_lattice
 from . import dynamic_fracture
-from . import granular_segregation
-from . import sand_dune_migration
+from . import oscillon_resonance
+from . import buckling_lattice
+from . import ocean_spectral
+from . import pm_anisotropic_rd
+from . import gpe_vortex
