@@ -1,5 +1,5 @@
 """
-#145 — Sand Dune Migration / Bedform Evolution
+#146 — Sand Dune Migration / Bedform Evolution
 
 Procedural dune/ripple simulation via wave superposition.
 Ripples nucleate, grow, and migrate with continuous motion under
@@ -119,7 +119,7 @@ def _make_colormap() -> np.ndarray:
 
 
 @method(
-    id="145",
+    id="146",
     name="Sand Dune Migration",
     category="simulations",
     tags=["animation", "sediment", "dunes", "landscape",
@@ -364,8 +364,8 @@ def method_dunes(out_dir: Path, seed: int, params=None):
 
         canvas = canvas.resize((fw, fh), Image.BILINEAR)
         canvas_np = np.array(canvas, dtype=np.uint8)
-        save(canvas_np, mn(145, "Sand Dune Migration"), out_dir)
-        capture_frame("145", canvas_np)
+        save(canvas_np, mn(146, "Sand Dune Migration"), out_dir)
+        capture_frame("146", canvas_np)
 
         if frame % 60 == 0:
             print(f"  {frame}/{n_frames} h_range=[{h.min():.3f},{h.max():.3f}] "
