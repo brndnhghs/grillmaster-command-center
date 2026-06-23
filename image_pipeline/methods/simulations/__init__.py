@@ -79,3 +79,4 @@ from . import buckling_lattice
 from . import ocean_spectral
 from . import pm_anisotropic_rd
 from . import gpe_vortex
+from . import ferrofluid
