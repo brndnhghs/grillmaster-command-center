@@ -1,0 +1,3588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Image Pipeline</title>
+<style>
+  /* ── Tab bar ─────────────────────────────────────── */
+  #tab-bar {
+    display: flex; background: #0a0c11; border-bottom: 1px solid var(--border);
+    flex-shrink: 0; z-index: 20;
+  }
+  .tab-btn {
+    padding: 10px 20px; border: none; background: none; color: var(--muted);
+    font-size: 13px; font-weight: 600; cursor: pointer; letter-spacing: 0.04em;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+    transition: color 0.12s, border-color 0.12s;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  #tab-methods, #tab-graph { display: flex; flex: 1; overflow: hidden; }
+  #tab-methods { display: none; }
+
+  /* wrap everything in a column */
+  #shell { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+</style>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg0:    #0d0f14;
+    --bg1:    #13161e;
+    --bg2:    #1a1e28;
+    --bg3:    #222738;
+    --border: #2e3348;
+    --accent: #6c8ef5;
+    --accent2: #a78bfa;
+    --success: #34d399;
+    --warn:   #fbbf24;
+    --err:    #f87171;
+    --text:   #e2e8f0;
+    --muted:  #64748b;
+    --tag-bg: #1e2640;
+    --tag-fg: #818cf8;
+  }
+
+  html, body { height: 100%; background: var(--bg0); color: var(--text); font-family: system-ui, -apple-system, sans-serif; font-size: 14px; }
+
+  /* ── Layout ─────────────────────────────── */
+  #app { display: flex; height: 100vh; overflow: hidden; }
+
+  /* Drag dividers */
+  .divider {
+    flex-shrink: 0; width: 4px; background: var(--border);
+    cursor: col-resize; position: relative; z-index: 10;
+    transition: background 0.12s;
+  }
+  .divider::after {
+    content: ''; position: absolute; inset: 0 -4px;
+  }
+  .divider:hover, .divider.dragging { background: var(--accent); }
+
+  /* Sidebar */
+  #sidebar {
+    min-width: 150px;
+    background: var(--bg1);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  #sidebar-header { padding: 14px 14px 8px; border-bottom: 1px solid var(--border); }
+  #sidebar-header h1 { font-size: 13px; font-weight: 700; color: var(--accent); letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 8px; }
+  #search { width: 100%; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 6px 10px; font-size: 13px; outline: none; }
+  #search:focus { border-color: var(--accent); }
+  #method-list { flex: 1; overflow-y: auto; padding: 8px 0; }
+  .category-header { padding: 8px 14px 4px; font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; cursor: pointer; display: flex; align-items: center; gap: 6px; min-height: 32px; user-select: none; }
+  .category-header:hover { color: var(--text); }
+  .cat-chevron { font-size: 9px; flex-shrink: 0; transition: transform 0.15s; line-height: 1; }
+  .method-item {
+    padding: 8px 14px; cursor: pointer; border-left: 2px solid transparent;
+    transition: background 0.1s;
+  }
+  .method-item:hover { background: var(--bg2); }
+  .method-item.active { background: var(--bg3); border-left-color: var(--accent); }
+  .method-item .mid { font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .method-item .mname { font-size: 13px; font-weight: 500; }
+  .method-item .tags { margin-top: 3px; display: flex; flex-wrap: wrap; gap: 3px; }
+  .tag { font-size: 10px; background: var(--tag-bg); color: var(--tag-fg); border-radius: 4px; padding: 1px 5px; }
+
+  /* Center panel */
+  #center {
+    flex: 1; min-width: 250px; background: var(--bg1);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  #center-header { padding: 14px 18px; border-bottom: 1px solid var(--border); }
+  #center-header h2 { font-size: 16px; font-weight: 600; }
+  #center-header .meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  #params-scroll { flex: 1; overflow-y: auto; padding: 14px 18px; }
+  #params-empty { color: var(--muted); padding: 40px 18px; text-align: center; font-size: 13px; }
+
+  /* Param rows */
+  .param-row { margin-bottom: 14px; }
+  .param-row.overridden { opacity: 0.4; }
+  .param-row.overridden .param-ctrl { pointer-events: none; }
+  .param-row.overridden .param-name::after { content: ' ⊕'; color: var(--accent); font-weight: 400; font-size: 10px; }
+  .param-label { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+  .param-name { font-size: 12px; font-weight: 600; color: var(--text); }
+  .param-desc { font-size: 11px; color: var(--muted); max-width: 200px; text-align: right; }
+  .param-input { width: 100%; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 6px 10px; font-size: 13px; outline: none; }
+  .param-input:focus { border-color: var(--accent); }
+  select.param-input { cursor: pointer; }
+  .param-range-wrap { display: flex; gap: 8px; align-items: center; }
+  .param-range-wrap input[type=range] { flex: 1; accent-color: var(--accent); }
+  .param-range-val { font-size: 12px; color: var(--muted); min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; }
+  .checkbox-row { display: flex; align-items: center; gap: 8px; }
+  .checkbox-row input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; }
+  .section-divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+  .section-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; }
+
+  #btn-row { display: flex; gap: 8px; margin: 10px 18px 18px; }
+  #generate-btn {
+    flex: 1; padding: 10px; background: var(--accent); color: #fff;
+    border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  #generate-btn:hover { opacity: 0.88; }
+  #generate-btn:disabled { opacity: 0.45; cursor: default; }
+  #stop-btn {
+    display: none; padding: 10px 18px; background: #7f1d1d; color: var(--err);
+    border: 1px solid #b91c1c; border-radius: 8px; font-size: 14px; font-weight: 600;
+    cursor: pointer; transition: background 0.15s; white-space: nowrap;
+  }
+  #stop-btn:hover { background: #991b1b; }
+  #auto-btn {
+    padding: 10px 14px; background: var(--bg3); color: var(--muted);
+    border: 1px solid var(--border); border-radius: 8px; font-size: 13px;
+    font-weight: 600; cursor: pointer; white-space: nowrap;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  #auto-btn.active { background: #0f2a1a; color: var(--success); border-color: var(--success); }
+  #auto-btn:hover:not(.active) { background: var(--bg2); }
+
+  /* Right panel */
+  #output-panel {
+    min-width: 200px; background: var(--bg1);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  #output-header { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  #output-header h2 { font-size: 16px; font-weight: 600; }
+  #output-body { flex: 1; overflow-y: auto; padding: 14px 18px; display: flex; flex-direction: column; gap: 14px; }
+
+  /* Progress log */
+  #progress-section { background: var(--bg2); border-radius: 8px; border: 1px solid var(--border); }
+  #progress-header { padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; }
+  #progress-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  #elapsed-timer { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  #log { max-height: 160px; overflow-y: auto; padding: 0 12px 10px; font-size: 12px; font-family: 'Menlo', 'Consolas', monospace; }
+  .log-line { padding: 1px 0; color: #94a3b8; line-height: 1.5; }
+  .log-line.ok { color: var(--success); }
+  .log-line.err { color: var(--err); }
+
+  /* Status badge */
+  #status-badge {
+    display: inline-block; font-size: 11px; font-weight: 600;
+    padding: 2px 8px; border-radius: 20px; margin-left: 8px;
+  }
+  .badge-idle { background: var(--bg3); color: var(--muted); }
+  .badge-running { background: #1d4ed8; color: #bfdbfe; }
+  .badge-done { background: #064e3b; color: var(--success); }
+  .badge-error { background: #7f1d1d; color: var(--err); }
+
+  /* Media viewer — fixed height prevents layout shift between frames */
+  #viewer { border-radius: 8px; overflow: hidden; background: var(--bg0); border: 1px solid var(--border); display: none; height: 300px; }
+  #viewer img, #viewer video { width: 100%; height: 100%; display: block; object-fit: contain; }
+  #download-btn {
+    display: none; padding: 8px 14px; background: var(--bg3); color: var(--accent);
+    border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-weight: 600;
+    cursor: pointer; text-decoration: none; text-align: center;
+  }
+  #download-btn:hover { background: var(--bg2); }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border); }
+
+  /* Hamburger — hidden on desktop */
+  #sidebar-toggle {
+    display: none; align-items: center; justify-content: center;
+    background: none; border: none; color: var(--text); font-size: 20px;
+    cursor: pointer; padding: 4px 8px; border-radius: 6px; flex-shrink: 0;
+    min-width: 40px; min-height: 40px;
+  }
+  #sidebar-toggle:hover { background: var(--bg3); }
+
+  /* Mobile sticky top bar / fixed bottom bar — hidden on desktop */
+  #mobile-top-bar, #mobile-bottom-bar { display: none; }
+
+  /* ── Mobile layout ───────────────────────────── */
+  @media (max-width: 768px) {
+    /* Stack columns vertically; app scrolls as one page */
+    #app { flex-direction: column; height: auto; min-height: 100dvh; overflow-y: auto; }
+
+    /* Sticky preview + generate bar at top of the scroll container */
+    #mobile-top-bar {
+      display: flex;
+      flex-direction: column;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: var(--bg1);
+      border-bottom: 1px solid var(--border);
+    }
+    /* Viewer inside the sticky bar: full-bleed, no border radius */
+    #mobile-top-bar #viewer {
+      border-radius: 0;
+      border-left: none;
+      border-right: none;
+      border-top: none;
+    }
+    /* Fixed generate bar pinned to screen bottom */
+    #mobile-bottom-bar {
+      display: block;
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      z-index: 20;
+      background: var(--bg1);
+      border-top: 1px solid var(--border);
+    }
+    #mobile-bottom-bar #btn-row { margin: 10px 14px 12px; }
+    /* Pad scroller so last content clears the fixed bar */
+    #app { padding-bottom: 76px; }
+
+    /* Kill drag dividers */
+    .divider { display: none !important; }
+
+    /* Sidebar: full width, method list collapses under the header */
+    #sidebar { width: 100% !important; flex: none; overflow: visible; border-bottom: 1px solid var(--border); }
+    #sidebar-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; }
+    #sidebar-header h1 { flex: 1; margin-bottom: 0; font-size: 14px; }
+    #sidebar-toggle { display: flex; }
+    #search { width: 100%; min-height: 44px; padding: 10px 12px; font-size: 15px; margin-top: 4px; }
+    #method-list { max-height: 0; overflow: hidden; transition: max-height 0.28s ease; }
+    #sidebar.sidebar-open #method-list { max-height: 70vh; overflow-y: auto; }
+
+    /* Method items: taller tap targets */
+    .method-item { min-height: 48px; display: flex; flex-direction: column; justify-content: center; padding: 10px 16px; }
+    .category-header { min-height: 44px; padding: 0 16px; }
+
+    /* Center and output: full width, natural height */
+    #center, #output-panel { width: 100% !important; flex: none; min-width: 0; overflow: visible; }
+    #params-scroll { overflow: visible; flex: none; }
+    #output-body { overflow: visible; }
+
+    /* Inputs and buttons: full-width, larger tap targets */
+    .param-input, select.param-input { min-height: 44px; padding: 10px 12px; font-size: 15px; }
+    .checkbox-row input[type=checkbox] { width: 20px; height: 20px; }
+    #btn-row { margin: 12px 14px 16px; }
+    #generate-btn, #stop-btn, #auto-btn { min-height: 48px; font-size: 15px; }
+    #download-btn { min-height: 44px; display: flex; align-items: center; justify-content: center; font-size: 15px; }
+
+    /* Viewer fills screen width, fixed 40vh height on mobile */
+    #viewer { width: 100%; height: 40vh; border-radius: 0; border-left: none; border-right: none; }
+    #viewer img, #viewer video { width: 100%; height: 100%; }
+  }
+</style>
+</head>
+<body>
+<div id="shell">
+<div id="tab-bar" style="display:none">
+  <button class="tab-btn" data-tab="methods" style="display:none">Methods</button>
+  <button class="tab-btn active" data-tab="graph">Node Graph</button>
+</div>
+
+<!-- ── Methods tab (existing UI) ──────────────────────────── -->
+<div id="tab-methods">
+<div id="app">
+
+  <!-- ── Mobile sticky preview + generate bar (populated by JS on mobile) ── -->
+  <div id="mobile-top-bar"></div>
+  <div id="mobile-bottom-bar"></div>
+
+  <!-- ── Left sidebar ────────────────────────────────────────────── -->
+  <nav id="sidebar">
+    <div id="sidebar-header">
+      <h1>Image Pipeline</h1>
+      <button id="sidebar-toggle" aria-label="Toggle method list">☰</button>
+      <input id="search" type="search" placeholder="Search methods…" autocomplete="off">
+    </div>
+    <div id="method-list"><p style="padding:16px 14px;color:var(--muted);font-size:13px;">Loading…</p></div>
+  </nav>
+
+  <div class="divider" id="divider-left"></div>
+
+  <!-- ── Center: param editor ───────────────────────────────────── -->
+  <main id="center">
+    <div id="center-header">
+      <h2 id="method-title">Select a method</h2>
+      <div class="meta" id="method-meta"></div>
+    </div>
+    <div id="params-scroll">
+      <div id="params-empty">← Choose a method from the sidebar</div>
+      <div id="params-form" style="display:none"></div>
+    </div>
+    <div id="btn-row">
+      <button id="auto-btn">Auto</button>
+      <button id="generate-btn" disabled>Generate</button>
+      <button id="stop-btn">Stop</button>
+    </div>
+  </main>
+
+  <div class="divider" id="divider-right"></div>
+
+  <!-- ── Right: output viewer ───────────────────────────────────── -->
+  <aside id="output-panel">
+    <div id="output-header">
+      <h2>Output <span id="status-badge" class="badge-idle">idle</span></h2>
+    </div>
+    <div id="output-body">
+      <div id="progress-section">
+        <div id="progress-header">
+          <span id="progress-title">Progress</span>
+          <span id="elapsed-timer">–</span>
+        </div>
+        <div id="log"></div>
+      </div>
+      <div id="viewer">
+        <img id="result-img" src="" alt="" style="display:none">
+        <video id="result-video" controls autoplay loop muted style="display:none"></video>
+      </div>
+      <a id="download-btn" href="#" download>Download</a>
+    </div>
+  </aside>
+
+</div>
+</div><!-- end #tab-methods -->
+
+<!-- ── Node Graph tab ─────────────────────────────────────── -->
+<div id="tab-graph">
+
+<style>
+  /* ── Graph tab shell ──────────────────────────────────── */
+  #tab-graph { overflow: hidden; flex-direction: column; }
+
+  #graph-shell {
+    display: flex; flex: 1; width: 100%; overflow: hidden;
+    background: var(--bg0); min-height: 0;
+  }
+
+  /* ── Left sidebar ─────────────────────────────────────── */
+  #graph-sidebar {
+    width: 220px; flex-shrink: 0; background: var(--bg1);
+    border-right: 1px solid var(--border); display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  #graph-sidebar-header {
+    padding: 10px 12px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    font-size: 11px; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.06em; flex-shrink: 0;
+  }
+  #graph-palette-close {
+    display: none; border: none; background: none; color: var(--muted);
+    font-size: 18px; cursor: pointer; padding: 2px 4px; line-height: 1;
+  }
+  #graph-palette-close:hover { color: var(--text); }
+  #graph-method-list { flex: 1; overflow-y: auto; padding: 6px 0; }
+  .gmethod-item {
+    padding: 7px 12px; cursor: grab; border-left: 2px solid transparent;
+    transition: background 0.1s; font-size: 12px;
+  }
+  .gmethod-item:hover { background: var(--bg2); border-left-color: var(--accent); }
+  .gmethod-item .gmid { font-size: 10px; color: var(--muted); }
+  .gmethod-item .gmname { font-weight: 500; }
+  .gcat-header {
+    padding: 8px 12px 3px; font-size: 10px; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.07em;
+    cursor: pointer; display: flex; align-items: center; gap: 5px; user-select: none;
+  }
+  .gcat-header:hover { color: var(--text); }
+  .gcat-chevron { font-size: 9px; flex-shrink: 0; transition: transform 0.15s; line-height: 1; }
+
+  /* ── Canvas column ────────────────────────────────────── */
+  #graph-canvas-col {
+    display: flex; flex-direction: column; flex: 1; overflow: hidden;
+    transition: padding-bottom 0.25s ease;
+  }
+
+  /* Mobile top bar / bottom bar — hidden on desktop */
+  #graph-mobile-topbar {
+    display: none; align-items: center; gap: 6px; padding: 7px 10px;
+    border-bottom: 1px solid var(--border); background: var(--bg1); flex-shrink: 0;
+  }
+  #graph-mobile-bottom-bar { display: none; }
+  #graph-palette-btn {
+    padding: 8px 12px; background: var(--bg3); color: var(--text);
+    border: 1px solid var(--border); border-radius: 7px; font-size: 13px;
+    font-weight: 700; cursor: pointer; white-space: nowrap; flex-shrink: 0;
+  }
+  #graph-palette-btn:hover { background: var(--bg2); }
+
+  /* Canvas */
+  #graph-canvas-wrap {
+    flex: 1; position: relative; overflow: hidden; background: var(--bg0); min-height: 0;
+  }
+  #graph-canvas-wrap svg#graph-svg {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    pointer-events: none; overflow: visible;
+  }
+  #graph-nodes { position: absolute; inset: 0; }
+  #graph-canvas-wrap::before {
+    content: ''; position: absolute; inset: 0;
+    background-image: radial-gradient(circle, #2e3348 1px, transparent 1px);
+    background-size: 24px 24px; pointer-events: none;
+  }
+
+  /* ── Nodes ────────────────────────────────────────────── */
+  .gnode {
+    position: absolute; min-width: 160px; background: var(--bg2);
+    border: 1px solid var(--border); border-radius: 8px; user-select: none;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4); transition: border-color 0.1s;
+    touch-action: none;
+  }
+  .gnode:hover, .gnode.selected { border-color: var(--accent); }
+  .gnode-header {
+    padding: 7px 10px 6px; border-bottom: 1px solid var(--border);
+    cursor: move; border-radius: 8px 8px 0 0; background: var(--bg3);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .gnode-title { font-size: 11px; font-weight: 700; color: var(--text); }
+  .gnode-delete, .gnode-render {
+    font-size: 13px; color: var(--muted); cursor: pointer; padding: 0 4px;
+    border: none; background: none; line-height: 1; min-width: 24px; min-height: 24px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .gnode-delete:hover { color: var(--err); }
+  .gnode-render:hover { color: var(--success); }
+  .gnode-render.active { color: var(--success); }
+  .gnode.render-target { border-color: var(--success) !important; }
+  .gnode-deprecated { border-color: #f59e0b !important; }
+  .gnode-deprecated .gnode-title::after { content: ' ⚠ dep'; color: #f59e0b; font-size: 9px; font-weight: 400; }
+  .node-error { border: 2px solid #e53935 !important; box-shadow: 0 0 8px rgba(229,57,53,0.4); }
+  .node-error .gnode-header::after { content: ' ⚠'; color: #e53935; font-size: 12px; }
+  .gnode-top-ports {
+    display: flex; justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+  }
+  .gnode-top-ports .gnode-port-row { flex: 1; }
+  .gnode-ports { padding: 6px 0; }
+  .gnode-port-row {
+    display: flex; align-items: center; padding: 3px 0; position: relative;
+    min-height: 28px;
+  }
+  .gnode-port-row.input { padding-left: 0; }
+  .gnode-port-row.output { justify-content: flex-end; padding-right: 0; }
+  .gnode-port-row.paired { justify-content: space-between; }
+  .gnode-port-row.paired .gport[data-dir="input"]  { left:  -6px; }
+  .gnode-port-row.paired .gport[data-dir="output"] { right: -6px; }
+  .gport {
+    width: 12px; height: 12px; border-radius: 50%; border: 2px solid #0d0f14;
+    cursor: crosshair; flex-shrink: 0; position: absolute; transition: transform 0.1s;
+    touch-action: none;
+  }
+  .gport:hover { transform: scale(1.4); }
+  .gnode-port-row.input .gport  { left: -6px; }
+  .gnode-port-row.output .gport { right: -6px; }
+  .gport-label { font-size: 10px; color: var(--muted); padding: 0 14px; }
+
+  .pt-image     { background: #4a9eff; }
+  .pt-field     { background: #51cf66; }
+  .pt-particles { background: #ff922b; }
+  .pt-scalar    { background: #aaa; }
+  .pt-mask      { background: #e8e8e8; border: 2px solid #333; box-sizing: border-box; }
+  .pt-any       { background: #888; }
+
+  /* ── Edges ────────────────────────────────────────────── */
+  .gedge { fill: none; stroke: #4a9eff88; stroke-width: 2; pointer-events: stroke; cursor: pointer; }
+  .gedge:hover { stroke: #4a9eff; stroke-width: 3; }
+  .gedge.feedback { stroke-dasharray: 6 4; stroke: #ff922b88; }
+  .gedge.feedback:hover { stroke: #ff922b; }
+  .gedge-pending { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 4 3; pointer-events: none; }
+
+  /* ── Bottom toolbar ───────────────────────────────────── */
+  #graph-toolbar {
+    padding: 8px 14px; border-top: 1px solid var(--border); display: flex;
+    gap: 8px; align-items: center; background: var(--bg1); flex-shrink: 0;
+  }
+  #graph-run-btn {
+    padding: 8px 18px; background: var(--accent); color: #fff;
+    border: none; border-radius: 7px; font-size: 13px; font-weight: 700;
+    cursor: pointer; transition: opacity 0.15s;
+  }
+  #graph-run-btn:hover { opacity: 0.85; }
+  #graph-run-btn:disabled { opacity: 0.4; cursor: default; }
+  #graph-clear-btn {
+    padding: 8px 14px; background: var(--bg3); color: var(--muted);
+    border: 1px solid var(--border); border-radius: 7px; font-size: 13px; cursor: pointer;
+  }
+  #graph-clear-btn:hover { color: var(--text); }
+  #graph-frames-wrap { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  #graph-frames { width: 60px; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 5px 8px; font-size: 12px; }
+  #graph-status { font-size: 12px; color: var(--muted); margin-left: 4px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #graph-layout-btn, #graph-layout-btn-desk {
+    padding: 6px 12px; background: var(--bg3); color: var(--muted);
+    border: 1px solid var(--border); border-radius: 7px; font-size: 12px; cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  #graph-layout-btn:hover, #graph-layout-btn-desk:hover { color: var(--text); }
+  #graph-layout-btn.active, #graph-layout-btn-desk.active {
+    background: #1a3d1a; color: var(--success); border-color: var(--success);
+  }
+  .g-autobtn {
+    padding: 6px 10px; background: var(--bg3); color: var(--muted);
+    border: 1px solid var(--border); border-radius: 7px; font-size: 11px; cursor: pointer;
+    white-space: nowrap; transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .g-autobtn:hover { color: var(--text); }
+  .g-autobtn.active { background: #1a3d1a; color: var(--success); border-color: var(--success); }
+
+  /* ── Preview panel ────────────────────────────────────── */
+  #graph-preview-panel {
+    display: none; flex-direction: column; background: var(--bg0);
+    border-top: 1px solid var(--border); flex-shrink: 0;
+    max-height: 340px; overflow: hidden;
+  }
+  #graph-preview-panel.pv-visible { display: flex; }
+
+  /* Handle — desktop: hidden; mobile: shown */
+  #graph-preview-handle {
+    display: none; align-items: center; gap: 8px;
+    padding: 0 12px; height: 44px; flex-shrink: 0;
+    background: var(--bg1); border-bottom: 1px solid var(--border);
+    cursor: pointer;
+  }
+  #graph-preview-latest {
+    height: 36px; width: 54px; object-fit: cover; border-radius: 4px;
+    border: 1px solid var(--border); flex-shrink: 0;
+  }
+  #graph-preview-label { font-size: 11px; color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #graph-preview-toggle {
+    border: none; background: none; color: var(--accent); font-size: 13px;
+    font-weight: 700; cursor: pointer; padding: 4px 6px; white-space: nowrap;
+  }
+
+  /* Main live preview area — sole display area for graph renders */
+  #graph-main-preview {
+    display: none; align-items: center; justify-content: center;
+    background: #000; flex-shrink: 0; overflow: hidden;
+  }
+  #graph-main-preview.active { display: flex; height: 240px; }
+  #graph-main-preview img, #graph-main-preview video {
+    max-width: 100%; max-height: 240px; width: auto; height: 100%;
+    object-fit: contain; cursor: pointer; display: block;
+  }
+
+  #graph-output-strip {
+    display: flex; gap: 8px; padding: 8px 14px; overflow-x: auto; overflow-y: hidden;
+    flex-shrink: 0; align-items: flex-start; flex-wrap: nowrap;
+  }
+  .goutput-item { flex-shrink: 0; }
+  .goutput-thumb {
+    border-radius: 6px; border: 1px solid var(--border); height: 120px; max-width: 180px;
+    object-fit: contain; background: #000; display: block; cursor: pointer;
+  }
+  .goutput-thumb:hover { border-color: var(--accent); }
+  .goutput-label { font-size: 9px; color: var(--muted); text-align: center; margin-top: 3px; }
+
+  /* ── Right params panel ───────────────────────────────── */
+  #graph-params-panel {
+    width: 260px; flex-shrink: 0; background: var(--bg1);
+    border-left: 1px solid var(--border); display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  #graph-params-handle {
+    display: none; align-items: center; justify-content: center;
+    padding: 10px 14px 6px; flex-shrink: 0; position: relative;
+  }
+  #gph-drag-bar {
+    width: 36px; height: 4px; background: var(--border); border-radius: 2px;
+  }
+  #graph-params-close {
+    position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+    border: none; background: none; color: var(--muted); font-size: 18px;
+    cursor: pointer; padding: 4px 6px; line-height: 1;
+  }
+  #graph-params-close:hover { color: var(--text); }
+  #graph-params-header {
+    padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 12px; font-weight: 700;
+    flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  }
+  #nd-toggle-btn {
+    border: none; background: none; cursor: pointer; font-size: 15px;
+    padding: 2px 5px; line-height: 1; border-radius: 5px; flex-shrink: 0;
+    opacity: 0.55; transition: opacity 0.15s, background 0.15s;
+  }
+  #nd-toggle-btn:hover { opacity: 1; background: var(--bg3); }
+  #nd-toggle-btn.nd-active { opacity: 1; background: var(--bg3); }
+  #graph-params-scroll { flex: 1; overflow-y: auto; padding: 10px 14px; min-height: 0; }
+  #graph-params-empty { color: var(--muted); font-size: 12px; padding: 20px 0; }
+
+  /* ── NODE DOCTOR panel ──────────────────────────────────── */
+  #nd-panel {
+    display: none; flex-direction: column; border-top: 2px solid var(--accent2);
+    background: var(--bg0); flex-shrink: 0; height: 310px;
+  }
+  #nd-panel.nd-open { display: flex; }
+  #nd-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 11px; background: var(--bg2); border-bottom: 1px solid var(--border);
+    font-size: 10px; font-weight: 800; letter-spacing: 0.12em; color: var(--accent2);
+    text-transform: uppercase; flex-shrink: 0;
+  }
+  #nd-close-btn {
+    border: none; background: none; color: var(--muted); cursor: pointer;
+    font-size: 14px; padding: 2px 4px; line-height: 1;
+  }
+  #nd-close-btn:hover { color: var(--text); }
+  #nd-messages {
+    flex: 1; overflow-y: auto; padding: 8px 10px;
+    display: flex; flex-direction: column; gap: 6px; min-height: 0;
+  }
+  .nd-msg {
+    font-size: 11.5px; line-height: 1.5; padding: 6px 9px; border-radius: 7px;
+    max-width: 94%; white-space: pre-wrap; word-break: break-word;
+  }
+  .nd-msg.nd-user {
+    background: var(--bg3); color: var(--text); align-self: flex-end;
+    border-bottom-right-radius: 2px;
+  }
+  .nd-msg.nd-bot {
+    background: var(--bg2); color: var(--text); align-self: flex-start;
+    border-bottom-left-radius: 2px; border-left: 2px solid var(--accent2);
+  }
+  .nd-msg.nd-thinking { color: var(--muted); font-style: italic; }
+  #nd-apply-row {
+    padding: 5px 10px; display: none; gap: 6px; flex-shrink: 0;
+    border-top: 1px solid var(--border); background: var(--bg1); align-items: center;
+  }
+  #nd-apply-row.nd-show { display: flex; }
+  #nd-apply-btn {
+    flex: 1; padding: 5px 8px; background: var(--accent); color: #fff;
+    border: none; border-radius: 5px; font-size: 11px; font-weight: 700;
+    cursor: pointer; transition: opacity 0.15s;
+  }
+  #nd-apply-btn:hover { opacity: 0.85; }
+  #nd-apply-btn:disabled { opacity: 0.35; cursor: default; }
+  #nd-undo-btn {
+    padding: 5px 10px; background: var(--bg3); color: var(--warn);
+    border: 1px solid var(--warn); border-radius: 5px; font-size: 11px; font-weight: 700;
+    cursor: pointer; display: none; transition: opacity 0.15s;
+  }
+  #nd-undo-btn.nd-show { display: block; }
+  #nd-undo-btn:hover { opacity: 0.8; }
+  #nd-undo-btn:disabled { opacity: 0.35; cursor: default; }
+  #nd-input-row {
+    display: flex; gap: 6px; padding: 6px 10px; flex-shrink: 0;
+    border-top: 1px solid var(--border); background: var(--bg1);
+  }
+  #nd-input {
+    flex: 1; background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); font-size: 11.5px; padding: 5px 8px;
+    resize: none; outline: none; font-family: inherit; line-height: 1.4;
+  }
+  #nd-input:focus { border-color: var(--accent2); }
+  #nd-send-btn {
+    padding: 0 11px; background: var(--accent2); color: #fff; border: none;
+    border-radius: 6px; font-size: 16px; cursor: pointer; transition: opacity 0.15s;
+    align-self: flex-end; height: 32px;
+  }
+  #nd-send-btn:hover { opacity: 0.85; }
+  #nd-send-btn:disabled { opacity: 0.35; cursor: default; }
+
+  /* ── Context menu ─────────────────────────────────────── */
+  #graph-ctx-menu {
+    position: fixed; background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 7px; z-index: 1000; min-width: 140px; display: none;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5); overflow: hidden;
+  }
+  .ctx-item { padding: 8px 14px; font-size: 12px; cursor: pointer; color: var(--text); }
+  .ctx-item:hover { background: var(--bg3); }
+  .ctx-item.danger { color: var(--err); }
+
+  /* ── Wire inspector tooltip ─────────────────────────── */
+  #wire-tooltip {
+    position: fixed; display: none; z-index: 1100; pointer-events: none;
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 10px; font-size: 11px; color: var(--text); white-space: pre;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.45); line-height: 1.7;
+  }
+  /* ── Node tooltip (description / error message) ──── */
+  #node-tooltip {
+    position: fixed; display: none; z-index: 1100; pointer-events: none;
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 10px; font-size: 11px; color: var(--text); white-space: pre-wrap;
+    max-width: 280px; box-shadow: 0 4px 16px rgba(0,0,0,0.45); line-height: 1.6;
+  }
+
+  /* ── Fullscreen overlay ───────────────────────────────── */
+  #graph-img-fullscreen {
+    position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,0.92);
+    display: none; align-items: center; justify-content: center; cursor: zoom-out;
+  }
+  #graph-img-fullscreen.visible { display: flex; }
+  #graph-img-fullscreen img { max-width: 95vw; max-height: 92vh; border-radius: 8px; }
+
+  /* ── Backdrop for overlay panels ──────────────────────── */
+  #graph-backdrop {
+    position: fixed; inset: 0; z-index: 190;
+    background: rgba(0,0,0,0.55); display: none;
+  }
+  #graph-backdrop.visible { display: block; }
+
+  /* ════════════════════════════════════════════════════════
+     MOBILE OVERRIDES  ≤ 768px
+     ════════════════════════════════════════════════════════ */
+  @media (max-width: 768px) {
+    /* Sidebar: fixed overlay sliding in from left */
+    #graph-sidebar {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 280px;
+      z-index: 200; transform: translateX(-100%);
+      transition: transform 0.25s ease;
+      box-shadow: 4px 0 24px rgba(0,0,0,0.7);
+    }
+    #graph-sidebar.gsidebar-open { transform: translateX(0); }
+    #graph-palette-close { display: flex; }
+
+    /* Show mobile top bar; hide desktop toolbar */
+    #graph-mobile-topbar { display: flex; }
+    #graph-toolbar { display: none; }
+
+    /* Mobile topbar: frames/layout/status only (Run+Clear move to bottom bar) */
+    #graph-mobile-topbar #graph-frames-wrap { font-size: 11px; }
+    #graph-mobile-topbar #graph-frames { width: 46px; min-height: 40px; }
+    #graph-mobile-topbar #graph-status { font-size: 11px; max-width: 80px; }
+
+    /* Fixed run bar at screen bottom */
+    #graph-mobile-bottom-bar {
+      display: flex; align-items: center; gap: 8px; padding: 10px 14px 12px;
+      position: fixed; bottom: 0; left: 0; right: 0;
+      z-index: 20; background: var(--bg1); border-top: 1px solid var(--border);
+    }
+    #graph-mobile-bottom-bar #graph-run-btn  { flex: 1; min-height: 44px; font-size: 14px; }
+    #graph-mobile-bottom-bar #graph-clear-btn { min-height: 44px; font-size: 14px; padding: 8px 14px; }
+
+    /* Preview panel: static inside canvas col when mob-top class is applied via JS */
+    #graph-preview-panel.mob-top {
+      position: static !important;
+      flex-shrink: 0;
+      display: flex !important;
+      height: 35vh !important;
+      max-height: 35vh;
+      border-top: none;
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* Canvas col: bottom padding for fixed run bar */
+    #graph-canvas-col { padding-bottom: 60px; }
+
+    /* Params panel: bottom sheet */
+    #graph-params-panel {
+      position: fixed; left: 0; right: 0; bottom: 0; width: 100% !important;
+      height: 56vh; z-index: 195; border-left: none;
+      border-top: 1px solid var(--border); border-radius: 14px 14px 0 0;
+      transform: translateY(110%); transition: transform 0.28s ease;
+    }
+    #graph-params-panel.gparams-open { transform: translateY(0); }
+    #graph-params-handle { display: flex; }
+
+    /* Nodes: slightly larger tap targets */
+    .gnode { min-width: 80px; }
+    .gnode-header { min-height: 40px; padding: 9px 10px; }
+    .gnode-delete { font-size: 15px; }
+    .gport { width: 18px; height: 18px; }
+    .gnode-port-row.input  .gport { left:  -9px; }
+    .gnode-port-row.output .gport { right: -9px; }
+    .gnode-port-row.paired .gport[data-dir="input"]  { left:  -9px; }
+    .gnode-port-row.paired .gport[data-dir="output"] { right: -9px; }
+
+    /* Preview panel: fixed at bottom, collapsed/expanded */
+    #graph-preview-panel {
+      position: fixed; bottom: 0; left: 0; right: 0; max-height: none;
+      z-index: 100; transition: height 0.25s ease; flex-direction: column;
+    }
+    #graph-preview-panel.pv-visible.pv-collapsed { display: flex; height: 44px; }
+    #graph-preview-panel.pv-visible.pv-expanded  { display: flex; height: 280px; }
+    #graph-preview-handle { display: flex; }
+
+    /* Strip: horizontal scroll on mobile */
+    #graph-output-strip {
+      flex-wrap: nowrap; overflow-x: auto; padding: 8px 12px;
+    }
+    .goutput-thumb { height: 80px; }
+
+    /* Main preview on mobile: shorter */
+    #graph-main-preview.active { height: 130px; }
+    #graph-main-preview img, #graph-main-preview video { max-height: 130px; }
+
+    /* Shift canvas bottom when preview is showing (stacks on 60px base) */
+    #graph-canvas-col.has-preview-collapsed { padding-bottom: calc(44px + 60px); }
+    #graph-canvas-col.has-preview-expanded  { padding-bottom: calc(280px + 60px); }
+  }
+
+  /* ── Node Picker (Houdini-style popup) ───────────────────── */
+  #node-picker {
+    position: fixed; z-index: 2000;
+    width: 280px; max-height: 420px;
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 10px; box-shadow: 0 8px 32px rgba(0,0,0,0.65);
+    display: none; flex-direction: column; overflow: hidden;
+  }
+  .np-search-wrap {
+    padding: 10px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .np-search-wrap input {
+    width: 100%; background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); padding: 7px 10px;
+    font-size: 13px; outline: none;
+  }
+  .np-search-wrap input:focus { border-color: var(--accent); }
+  #node-picker-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+  .np-cat {
+    padding: 6px 12px 2px; font-size: 10px; font-weight: 700;
+    color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em;
+  }
+  .np-item {
+    padding: 7px 12px; cursor: pointer; display: flex;
+    flex-direction: column; gap: 2px; font-size: 12px;
+    border-left: 2px solid transparent; user-select: none;
+  }
+  .np-item:hover, .np-item.np-hl {
+    background: var(--bg3); border-left-color: var(--accent);
+  }
+  .np-item-row { display: flex; align-items: baseline; gap: 6px; }
+  .np-mid  { font-size: 10px; color: var(--muted); flex-shrink: 0; }
+  .np-name { font-weight: 500; }
+  .np-desc { font-size: 10px; color: var(--muted); line-height: 1.4; }
+  .np-depr-tag { font-size: 10px; color: #f59e0b; font-weight: 400; }
+  .np-deprecated { opacity: 0.65; }
+
+  /* Mobile add-node button */
+  #np-add-btn {
+    min-height: 44px; min-width: 44px; padding: 0;
+    background: var(--bg3); color: var(--accent);
+    border: 1px solid var(--border); border-radius: 7px;
+    font-size: 22px; line-height: 1; font-weight: 700; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  #np-add-btn:hover { background: var(--bg2); border-color: var(--accent); }
+
+  /* ── Graph save / load ────────────────────────────────────── */
+  .g-savebtn, .g-loadbtn {
+    padding: 6px 11px; background: var(--bg3); color: var(--muted);
+    border: 1px solid var(--border); border-radius: 7px; font-size: 12px;
+    cursor: pointer; white-space: nowrap; transition: color 0.12s;
+  }
+  .g-savebtn:hover, .g-loadbtn:hover { color: var(--text); }
+
+  #graph-load-modal {
+    position: fixed; z-index: 2000; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 10px; min-width: 280px; max-width: 400px; width: 90%;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.65);
+    display: none; flex-direction: column; overflow: hidden;
+  }
+  #graph-load-modal.visible { display: flex; }
+  .glm-header {
+    padding: 12px 14px; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 13px; font-weight: 700;
+  }
+  .glm-close { border: none; background: none; color: var(--muted); font-size: 18px; cursor: pointer; padding: 2px 4px; }
+  .glm-close:hover { color: var(--text); }
+  .glm-list { max-height: 320px; overflow-y: auto; padding: 6px 0; }
+  .glm-item { padding: 10px 14px; cursor: pointer; border-left: 2px solid transparent; }
+  .glm-item:hover { background: var(--bg3); border-left-color: var(--accent); }
+  .glm-name { font-size: 13px; font-weight: 600; }
+  .glm-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .glm-empty { padding: 20px 14px; color: var(--muted); font-size: 13px; text-align: center; }
+  #graph-toast {
+    position: fixed; bottom: 76px; left: 50%; transform: translateX(-50%);
+    padding: 8px 16px; border-radius: 7px; font-size: 13px; font-weight: 600;
+    z-index: 3000; display: none; white-space: nowrap; pointer-events: none;
+  }
+</style>
+
+<div id="graph-shell">
+
+  <!-- Left sidebar: method palette -->
+  <div id="graph-sidebar">
+    <div id="graph-sidebar-header">
+      <span>Drag to canvas</span>
+      <button id="graph-palette-close" aria-label="Close palette">✕</button>
+    </div>
+    <div id="graph-method-list"><p style="padding:12px;color:var(--muted);font-size:12px">Loading…</p></div>
+  </div>
+
+  <!-- Canvas column -->
+  <div id="graph-canvas-col">
+
+    <!-- Mobile-only top bar -->
+    <div id="graph-mobile-topbar">
+      <button id="graph-palette-btn">☰</button>
+      <button id="graph-run-btn">▶ Run</button>
+      <button id="graph-clear-btn">Clear</button>
+      <div id="graph-frames-wrap">
+        <span>Fr:</span><input id="graph-frames" type="number" min="1" max="120" value="1">
+      </div>
+      <button id="graph-layout-btn">⊛</button>
+      <button id="graph-save-btn" class="g-savebtn">💾</button>
+      <button id="graph-load-btn" class="g-loadbtn">📂</button>
+      <button id="graph-auto-btn" class="g-autobtn" title="Auto-generate on param change">⏺ Auto</button>
+      <span id="graph-status"></span>
+    </div>
+
+    <!-- Canvas -->
+    <div id="graph-canvas-wrap">
+      <div id="graph-nodes"></div>
+      <svg id="graph-svg"><g id="graph-edges"></g><path id="pending-edge" class="gedge-pending" style="display:none"/></svg>
+    </div>
+
+    <!-- Desktop toolbar (hidden on mobile) -->
+    <div id="graph-toolbar">
+      <button id="graph-run-btn-desk">▶ Run Graph</button>
+      <button id="graph-clear-btn-desk">Clear</button>
+      <div id="graph-frames-wrap-desk">
+        Frames: <input id="graph-frames-desk" type="number" min="1" max="120" value="1">
+      </div>
+      <button id="graph-layout-btn-desk">⊛ Auto-layout</button>
+      <button id="graph-save-btn-desk" class="g-savebtn">💾 Save</button>
+      <button id="graph-load-btn-desk" class="g-loadbtn">📂 Load</button>
+      <button id="graph-auto-btn-desk" class="g-autobtn" title="Auto-generate on param change">⏺ Auto</button>
+      <span id="graph-status-desk"></span>
+    </div>
+
+  </div><!-- end #graph-canvas-col -->
+
+  <!-- Right: params for selected node -->
+  <div id="graph-params-panel">
+    <div id="graph-params-handle">
+      <div id="gph-drag-bar"></div>
+      <button id="graph-params-close">✕</button>
+    </div>
+    <div id="graph-params-header">
+      <span id="gph-title">Node Parameters</span>
+      <button id="nd-toggle-btn" title="Open Node Doctor" style="display:none">🩺</button>
+    </div>
+    <div id="graph-params-scroll">
+      <div id="graph-params-empty">Select a node to edit its parameters.</div>
+      <div id="graph-params-form" style="display:none"></div>
+    </div>
+    <!-- NODE DOCTOR chat panel -->
+    <div id="nd-panel">
+      <div id="nd-header">
+        <span>⚕ NODE DOCTOR</span>
+        <button id="nd-close-btn" title="Close">✕</button>
+      </div>
+      <div id="nd-messages"></div>
+      <div id="nd-apply-row">
+        <button id="nd-apply-btn">Apply changes</button>
+        <button id="nd-undo-btn">↩ Undo</button>
+      </div>
+      <div id="nd-input-row">
+        <textarea id="nd-input" placeholder="Describe the issue or what you want to change…" rows="2"></textarea>
+        <button id="nd-send-btn" title="Send">↑</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- end #graph-shell -->
+
+<!-- Preview panel (below shell on desktop, fixed-bottom on mobile) -->
+<div id="graph-preview-panel">
+  <div id="graph-preview-handle">
+    <img id="graph-preview-latest" style="display:none">
+    <span id="graph-preview-label">Output</span>
+    <button id="graph-preview-toggle">▲ expand</button>
+  </div>
+  <div id="graph-main-preview"></div>
+  <div id="graph-output-strip"></div>
+</div>
+
+<!-- Fullscreen image/video overlay -->
+<div id="graph-img-fullscreen">
+  <img id="graph-fs-img" src="" alt="">
+  <video id="graph-fs-video" autoplay loop muted playsinline style="display:none;max-width:95vw;max-height:92vh;border-radius:8px;"></video>
+</div>
+
+<!-- Backdrop for overlay panels -->
+<div id="graph-backdrop"></div>
+
+<!-- Wire inspector tooltip -->
+<div id="wire-tooltip"></div>
+<!-- Node description / error tooltip -->
+<div id="node-tooltip"></div>
+
+<!-- Context menu -->
+<div id="graph-ctx-menu">
+  <div class="ctx-item" id="ctx-feedback">Toggle feedback</div>
+  <div class="ctx-item danger" id="ctx-del-edge">Delete edge</div>
+  <div class="ctx-item danger" id="ctx-del-node">Delete node</div>
+</div>
+
+<div id="graph-mobile-bottom-bar"><button id="np-add-btn" title="Add node" aria-label="Add node">+</button></div>
+
+<!-- ── Graph load modal ──────────────────────────────────── -->
+<div id="graph-load-modal">
+  <div class="glm-header">
+    Load saved graph
+    <button class="glm-close" id="graph-load-close">✕</button>
+  </div>
+  <div class="glm-list" id="graph-load-list"></div>
+</div>
+
+<!-- ── Toast notification ────────────────────────────────── -->
+<div id="graph-toast"></div>
+
+</div><!-- end #tab-graph -->
+</div><!-- end #shell -->
+
+<script>
+// ── Utils / helpers ────────────────────────────────────────────────
+function isMobile() { return window.matchMedia('(max-width: 768px)').matches; }
+function getCatState() {
+  try { return JSON.parse(localStorage.getItem('cat-state') || '{}'); }
+  catch { return {}; }
+}
+function saveCatState(s) { localStorage.setItem('cat-state', JSON.stringify(s)); }
+
+// ── State ──────────────────────────────────────────────────────────
+let allMethods = [];
+let selectedMethod = null;
+let currentJobId = null;
+let timerInterval = null;
+let jobStartTime = null;
+
+// ── DOM refs ───────────────────────────────────────────────────────
+const methodList    = document.getElementById('method-list');
+const searchInput   = document.getElementById('search');
+const methodTitle   = document.getElementById('method-title');
+const methodMeta    = document.getElementById('method-meta');
+const paramsEmpty   = document.getElementById('params-empty');
+const paramsForm    = document.getElementById('params-form');
+const generateBtn   = document.getElementById('generate-btn');
+const stopBtn       = document.getElementById('stop-btn');
+const autoBtn       = document.getElementById('auto-btn');
+const statusBadge   = document.getElementById('status-badge');
+const log           = document.getElementById('log');
+const elapsedTimer  = document.getElementById('elapsed-timer');
+const viewer        = document.getElementById('viewer');
+const resultImg     = document.getElementById('result-img');
+const resultVideo   = document.getElementById('result-video');
+const downloadBtn   = document.getElementById('download-btn');
+
+// ── Mobile sidebar toggle ──────────────────────────────────────────
+const sidebarEl = document.getElementById('sidebar');
+document.getElementById('sidebar-toggle').addEventListener('click', () => {
+  sidebarEl.classList.toggle('sidebar-open');
+});
+// Auto-open method list when search is focused on mobile
+document.getElementById('search').addEventListener('focus', () => {
+  if (isMobile()) sidebarEl.classList.add('sidebar-open');
+});
+
+// ── Mobile sticky top bar: move viewer + btn-row into it on mobile ──
+const mobileTopBar    = document.getElementById('mobile-top-bar');
+const mobileBottomBar = document.getElementById('mobile-bottom-bar');
+const outputBody      = document.getElementById('output-body');
+const centerMain      = document.getElementById('center');
+const btnRow          = document.getElementById('btn-row');
+// Anchors for restoring to original positions
+const viewerAnchor    = downloadBtn;   // viewer lives just before download-btn in output-body
+function setMobileLayout(mob) {
+  if (mob) {
+    mobileTopBar.appendChild(viewer);
+    mobileBottomBar.appendChild(btnRow);
+  } else {
+    outputBody.insertBefore(viewer, viewerAnchor);
+    centerMain.appendChild(btnRow);
+  }
+}
+const mqMobile = window.matchMedia('(max-width: 768px)');
+setMobileLayout(mqMobile.matches);
+mqMobile.addEventListener('change', e => setMobileLayout(e.matches));
+
+// ── Fetch methods ──────────────────────────────────────────────────
+async function loadMethods() {
+  try {
+    const [res, palRes] = await Promise.all([
+      fetch('/api/methods'),
+      fetch('/api/palettes'),
+    ]);
+    allMethods = await res.json();
+    gPalettes  = await palRes.json();
+    renderMethodList(allMethods);
+  } catch (e) {
+    methodList.innerHTML = `<p style="padding:16px 14px;color:var(--err)">Failed to load methods: ${e.message}</p>`;
+  }
+}
+
+function renderMethodList(methods, isSearch = false) {
+  if (!methods.length) {
+    methodList.innerHTML = '<p style="padding:16px 14px;color:var(--muted)">No methods found.</p>';
+    return;
+  }
+
+  // Group by category
+  const groups = {};
+  for (const m of methods) {
+    (groups[m.category] = groups[m.category] || []).push(m);
+  }
+
+  const catState = getCatState();
+  const mobile = isMobile();
+
+  let html = '';
+  for (const [cat, items] of Object.entries(groups).sort()) {
+    // Search always expands; otherwise use stored state; default: all expanded
+    const isOpen = isSearch ? true : (catState[cat] !== undefined ? catState[cat] : true);
+    html += `<div class="category-group">
+      <div class="category-header" data-cat="${escHtml(cat)}">
+        <span class="cat-chevron">${isOpen ? '▼' : '▶'}</span>${escHtml(cat)}
+      </div>
+      <div class="category-items"${isOpen ? '' : ' style="display:none"'}>`;
+    for (const m of items) {
+      const tagHtml = m.tags.map(t => `<span class="tag">${escHtml(t)}</span>`).join('');
+      html += `<div class="method-item" data-id="${escHtml(m.id)}">
+        <div style="display:flex;gap:6px;align-items:baseline">
+          <span class="mid">#${escHtml(m.id)}</span>
+          <span class="mname">${escHtml(m.name)}</span>
+        </div>
+        <div class="tags">${tagHtml}</div>
+      </div>`;
+    }
+    html += `</div></div>`;
+  }
+  methodList.innerHTML = html;
+
+  // Method click handlers — auto-close sidebar on mobile after picking a method
+  methodList.querySelectorAll('.method-item').forEach(el => {
+    el.addEventListener('click', () => {
+      selectMethod(el.dataset.id);
+      if (isMobile()) sidebarEl.classList.remove('sidebar-open');
+    });
+  });
+
+  // Category toggle handlers
+  methodList.querySelectorAll('.category-header').forEach(el => {
+    el.addEventListener('click', () => {
+      const cat = el.dataset.cat;
+      const itemsEl = el.nextElementSibling;
+      const chevronEl = el.querySelector('.cat-chevron');
+      const nowOpen = itemsEl.style.display === 'none';
+      itemsEl.style.display = nowOpen ? '' : 'none';
+      chevronEl.textContent = nowOpen ? '▼' : '▶';
+      const state = getCatState();
+      state[cat] = nowOpen;
+      saveCatState(state);
+    });
+  });
+}
+
+// ── Search filter ──────────────────────────────────────────────────
+searchInput.addEventListener('input', () => {
+  const q = searchInput.value.trim().toLowerCase();
+  if (!q) { renderMethodList(allMethods); return; }
+  const filtered = allMethods.filter(m =>
+    m.name.toLowerCase().includes(q) ||
+    m.category.toLowerCase().includes(q) ||
+    m.tags.some(t => t.toLowerCase().includes(q)) ||
+    m.id.includes(q)
+  );
+  renderMethodList(filtered, true);
+  // Re-highlight active
+  if (selectedMethod) {
+    const active = methodList.querySelector(`[data-id="${selectedMethod.id}"]`);
+    if (active) active.classList.add('active');
+  }
+});
+
+// ── Method selection ───────────────────────────────────────────────
+function selectMethod(id) {
+  selectedMethod = allMethods.find(m => m.id === id);
+  if (!selectedMethod) return;
+
+  // Highlight
+  methodList.querySelectorAll('.method-item').forEach(el => el.classList.remove('active'));
+  const active = methodList.querySelector(`[data-id="${id}"]`);
+  if (active) active.classList.add('active');
+
+  methodTitle.textContent = `#${selectedMethod.id} ${selectedMethod.name}`;
+  methodMeta.textContent = `${selectedMethod.category}  ·  ${selectedMethod.tags.join(', ')}`;
+
+  renderParams(selectedMethod);
+  generateBtn.disabled = false;
+}
+
+// ── Param rendering ────────────────────────────────────────────────
+function renderParams(method) {
+  paramsEmpty.style.display = 'none';
+  paramsForm.style.display = '';
+
+  let html = '';
+
+  // Seed
+  html += paramNumber('seed', 'Seed', 'Random seed', 42, null, null, 1);
+
+  // Method-specific params
+  const paramEntries = Object.entries(method.params || {});
+  if (paramEntries.length) {
+    html += `<hr class="section-divider"><p class="section-label">Parameters</p>`;
+    for (const [key, spec] of paramEntries) {
+      html += renderParamField(key, spec);
+    }
+  }
+
+  // Animate toggle
+  html += `<hr class="section-divider"><p class="section-label">Animation</p>`;
+  html += `<div class="param-row">
+    <div class="checkbox-row">
+      <input type="checkbox" id="p_animate" class="param-ctrl">
+      <label for="p_animate" style="font-size:13px;cursor:pointer">Animate</label>
+    </div>
+  </div>`;
+  html += `<div id="anim-extra" style="display:none">
+    ${paramNumber('fps', 'FPS', 'Frames per second', 24, 1, 60, 1)}
+    ${paramNumber('duration', 'Duration (s)', 'Animation length in seconds', 3, 1, 30, 0.5)}
+  </div>`;
+
+  paramsForm.innerHTML = html;
+
+  // Toggle animate extras
+  document.getElementById('p_animate').addEventListener('change', e => {
+    document.getElementById('anim-extra').style.display = e.target.checked ? '' : 'none';
+  });
+
+  // Wire up range sliders
+  paramsForm.querySelectorAll('input[type=range]').forEach(range => {
+    const valEl = paramsForm.querySelector(`#val_${range.id.replace('p_', '')}`);
+    if (valEl) {
+      range.addEventListener('input', () => {
+        valEl.textContent = formatVal(range.value);
+      });
+    }
+  });
+
+  // Wire auto-generate on any param change (excluding animate checkbox)
+  paramsForm.querySelectorAll('.param-ctrl').forEach(el => {
+    if (el.id === 'p_animate') return;
+    el.addEventListener('input', scheduleAutoGenerate);
+    el.addEventListener('change', scheduleAutoGenerate);
+  });
+}
+
+function _isPaletteParam(key, spec) {
+  if (spec.choices && spec.choices.length) return false;
+  if (['palette', 'palette_name', 'colormap', 'color_palette'].includes(key)) return true;
+  return /\bPALETTES\s+name\b/.test(spec.description || '');
+}
+
+function renderParamField(key, spec) {
+  const def = spec.default;
+  const desc = spec.description || '';
+  const hint = spec.hint || '';
+
+  // Shared select renderer — defaults to current value; falls back to first option
+  function makeSelect(optList) {
+    const defStr = String(def ?? '');
+    const hasMatch = optList.some(c => String(c) === defStr);
+    const optHtml = optList.map((c, i) =>
+      `<option value="${escHtml(c)}" ${(hasMatch ? String(c) === defStr : i === 0) ? 'selected' : ''}>${escHtml(c)}</option>`
+    ).join('');
+    return `<div class="param-row">
+      <div class="param-label">
+        <span class="param-name">${escHtml(key)}</span>
+        <span class="param-desc">${escHtml(desc)}</span>
+      </div>
+      <select class="param-input param-ctrl" id="p_${escHtml(key)}">${optHtml}</select>
+    </div>`;
+  }
+
+  // 0. Palette selector — any param named palette/palette_name/colormap/color_palette,
+  //    or whose description contains the word "palette"
+  if (gPalettes.length && _isPaletteParam(key, spec)) {
+    const defStr = String(def ?? '');
+    const opts = (defStr && !gPalettes.includes(defStr)) ? [defStr, ...gPalettes] : gPalettes;
+    return makeSelect(opts);
+  }
+
+  // 1. Explicit choices array on the spec
+  if (spec.choices && spec.choices.length) return makeSelect(spec.choices);
+
+  // 2. Boolean
+  if (typeof def === 'boolean') {
+    return `<div class="param-row">
+      <div class="param-label">
+        <span class="param-name">${escHtml(key)}</span>
+        <span class="param-desc">${escHtml(desc)}</span>
+      </div>
+      <div class="checkbox-row">
+        <input type="checkbox" class="param-ctrl" id="p_${escHtml(key)}" ${def ? 'checked' : ''}>
+        <label for="p_${escHtml(key)}" style="font-size:13px;cursor:pointer">${def ? 'Enabled' : 'Disabled'}</label>
+      </div>
+    </div>`;
+  }
+
+  // 3. Number — range slider or bare number input
+  if (typeof def === 'number') {
+    const isFloat = !Number.isInteger(def) || (spec.min !== undefined && !Number.isInteger(spec.min));
+    return paramNumber(key, key, desc, def, spec.min, spec.max, isFloat ? 0.01 : 1);
+  }
+
+  // 4. Detect option list from description/hint text (backend injects choices for most;
+  //    these patterns catch any stragglers not yet enriched server-side)
+  const searchText = desc + ' ' + hint;
+  // 4a. Parenthesized list: (word/word...) or (word, word...) — require ≥3 items
+  const parenMatch = searchText.match(/\((\w[\w-]*(?:[,\/]\s*\w[\w-]*){2,})\)/);
+  if (parenMatch) {
+    return makeSelect(parenMatch[1].split(/[,\/]/).map(s => s.trim()).filter(Boolean));
+  }
+  // 4b. Bare slash run: word/word/word (no surrounding parens required)
+  const slashMatch = searchText.match(/(\w[\w-]*(?:\/\w[\w-]*)+)/);
+  if (slashMatch) {
+    return makeSelect(slashMatch[1].split('/'));
+  }
+  // 4c. Colon + comma list: 'label: a, b, c' — require ≥3 items
+  const colonMatch = searchText.match(/:\s*([\w-]+(?:,\s*[\w-]+){2,})\s*$/);
+  if (colonMatch) {
+    return makeSelect(colonMatch[1].split(',').map(s => s.trim()).filter(Boolean));
+  }
+
+  // 5. String fallback — free text
+  return `<div class="param-row">
+    <div class="param-label">
+      <span class="param-name">${escHtml(key)}</span>
+      <span class="param-desc">${escHtml(desc)}</span>
+    </div>
+    <input type="text" class="param-input param-ctrl" id="p_${escHtml(key)}" value="${escHtml(String(def ?? ''))}">
+  </div>`;
+}
+
+function paramNumber(key, label, desc, defVal, minVal, maxVal, step) {
+  const hasRange = minVal !== null && minVal !== undefined && maxVal !== null && maxVal !== undefined;
+  if (hasRange) {
+    return `<div class="param-row">
+      <div class="param-label">
+        <span class="param-name">${escHtml(label)}</span>
+        <span class="param-desc">${escHtml(desc)}</span>
+      </div>
+      <div class="param-range-wrap">
+        <input type="range" class="param-ctrl" id="p_${escHtml(key)}"
+               min="${minVal}" max="${maxVal}" step="${step}" value="${defVal}">
+        <span class="param-range-val" id="val_${escHtml(key)}">${formatVal(defVal)}</span>
+      </div>
+    </div>`;
+  }
+  return `<div class="param-row">
+    <div class="param-label">
+      <span class="param-name">${escHtml(label)}</span>
+      <span class="param-desc">${escHtml(desc)}</span>
+    </div>
+    <input type="number" class="param-input param-ctrl" id="p_${escHtml(key)}"
+           step="${step}" value="${defVal}">
+  </div>`;
+}
+
+// ── Collect form values ────────────────────────────────────────────
+function collectParams() {
+  const result = {};
+  if (!selectedMethod) return result;
+  for (const [key, spec] of Object.entries(selectedMethod.params || {})) {
+    const el = document.getElementById(`p_${key}`);
+    if (!el) continue;
+    result[key] = coerce(el, spec);
+  }
+  return result;
+}
+
+function coerce(el, spec) {
+  const def = spec ? spec.default : null;
+  if (el.type === 'checkbox') return el.checked;
+  if (el.type === 'range' || el.type === 'number') {
+    const v = parseFloat(el.value);
+    if (Number.isInteger(def) && !el.step?.includes('.')) return Math.round(v);
+    return v;
+  }
+  return el.value;
+}
+
+// ── Auto-generate ──────────────────────────────────────────────────
+let autoMode = false;
+let autoTimer = null;
+
+autoBtn.addEventListener('click', () => {
+  autoMode = !autoMode;
+  autoBtn.classList.toggle('active', autoMode);
+});
+
+function scheduleAutoGenerate() {
+  if (!autoMode || generateBtn.disabled) return;
+  const animEl = document.getElementById('p_animate');
+  if (animEl && animEl.checked) return;
+  clearTimeout(autoTimer);
+  autoTimer = setTimeout(() => {
+    if (!autoMode || generateBtn.disabled) return;
+    const animEl2 = document.getElementById('p_animate');
+    if (animEl2 && animEl2.checked) return;
+    generateBtn.click();
+  }, 600);
+}
+
+// ── Running state ──────────────────────────────────────────────────
+function setRunning(running) {
+  generateBtn.style.display = running ? 'none' : '';
+  stopBtn.style.display     = running ? ''     : 'none';
+  generateBtn.disabled = running;
+}
+
+// ── Generate ───────────────────────────────────────────────────────
+generateBtn.addEventListener('click', async () => {
+  if (!selectedMethod) return;
+
+  const seedEl = document.getElementById('p_seed');
+  const animEl = document.getElementById('p_animate');
+  const fpsEl  = document.getElementById('p_fps');
+  const durEl  = document.getElementById('p_duration');
+
+  const body = {
+    method_id: selectedMethod.id,
+    seed: seedEl ? parseInt(seedEl.value, 10) || 42 : 42,
+    params: collectParams(),
+    animate: animEl ? animEl.checked : false,
+    fps:  fpsEl  ? parseInt(fpsEl.value, 10) || 24 : 24,
+    duration: durEl ? parseFloat(durEl.value) || 3 : 3,
+  };
+
+  // Reset UI
+  clearLog();
+  setStatus('running');
+  setRunning(true);
+  viewer.style.display = 'none';
+  resultImg.style.display = 'none';
+  resultVideo.style.display = 'none';
+  downloadBtn.style.display = 'none';
+  startTimer();
+
+  try {
+    const res = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const { job_id } = await res.json();
+    currentJobId = job_id;
+    listenSSE(job_id);
+  } catch (e) {
+    appendLog(`Error: ${e.message}`, 'err');
+    setStatus('error');
+    setRunning(false);
+    stopTimer();
+  }
+});
+
+// ── Stop / cancel ──────────────────────────────────────────────────
+stopBtn.addEventListener('click', async () => {
+  if (!currentJobId) return;
+  stopBtn.disabled = true;
+  stopBtn.textContent = 'Stopping…';
+  await fetch(`/api/jobs/${currentJobId}`, { method: 'DELETE' }).catch(() => {});
+  // SSE will receive event: error / "Cancelled" and finish cleanup
+});
+
+// ── SSE listener ───────────────────────────────────────────────────
+function listenSSE(jobId) {
+  const es = new EventSource(`/api/jobs/${jobId}/stream`);
+
+  es.addEventListener('progress', e => {
+    const { message, elapsed } = JSON.parse(e.data);
+    const cls = message.startsWith('  ✓') ? 'ok' : message.startsWith('  ✗') ? 'err' : '';
+    appendLog(message, cls);
+    elapsedTimer.textContent = `${elapsed}s`;
+  });
+
+  es.addEventListener('frame', e => {
+    // Decode into an offscreen image first; swap visible src only when ready
+    // to prevent blank flash between frames.
+    const tmp = new Image();
+    tmp.onload = () => {
+      viewer.style.display = 'block';
+      resultImg.style.display = '';
+      resultVideo.style.display = 'none';
+      resultImg.src = tmp.src;
+    };
+    tmp.src = 'data:image/jpeg;base64,' + e.data;
+  });
+
+  es.addEventListener('done', e => {
+    const { output_path, type } = JSON.parse(e.data);
+    es.close();
+    stopTimer();
+    setStatus('done');
+    setRunning(false);
+    stopBtn.disabled = false;
+    stopBtn.textContent = 'Stop';
+    showResult(jobId, output_path, type);
+    appendLog('Done.', 'ok');
+  });
+
+  es.addEventListener('error', e => {
+    es.close();
+    stopTimer();
+    setRunning(false);
+    stopBtn.disabled = false;
+    stopBtn.textContent = 'Stop';
+    try {
+      const { message } = JSON.parse(e.data);
+      const wasCancelled = message === 'Cancelled';
+      setStatus(wasCancelled ? 'idle' : 'error');
+      appendLog(wasCancelled ? 'Cancelled.' : `Error: ${message}`,
+                wasCancelled ? ''           : 'err');
+    } catch {
+      setStatus('error');
+      appendLog('Connection error or job failed.', 'err');
+    }
+  });
+}
+
+// ── Result display ─────────────────────────────────────────────────
+function showResult(jobId, outputPath, type) {
+  const url = `/api/jobs/${jobId}/result`;
+  viewer.style.display = 'block';
+  downloadBtn.style.display = 'block';
+  downloadBtn.href = url;
+  downloadBtn.download = outputPath.split('/').pop();
+
+  if (type === 'video') {
+    resultVideo.src = url;
+    resultVideo.style.display = '';
+    resultImg.style.display = 'none';
+  } else {
+    // Decode offscreen; keep previous frame visible until final image is ready.
+    const tmp = new Image();
+    tmp.onload = () => {
+      resultImg.src = tmp.src;
+      resultImg.style.display = '';
+      resultVideo.style.display = 'none';
+    };
+    tmp.src = url + '?t=' + Date.now();
+  }
+}
+
+// ── Timer ──────────────────────────────────────────────────────────
+function startTimer() {
+  jobStartTime = Date.now();
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    elapsedTimer.textContent = `${((Date.now() - jobStartTime) / 1000).toFixed(1)}s`;
+  }, 200);
+}
+function stopTimer() { clearInterval(timerInterval); }
+
+// ── Log helpers ────────────────────────────────────────────────────
+function appendLog(msg, cls = '') {
+  const line = document.createElement('div');
+  line.className = 'log-line' + (cls ? ' ' + cls : '');
+  line.textContent = msg;
+  log.appendChild(line);
+  log.scrollTop = log.scrollHeight;
+}
+function clearLog() { log.innerHTML = ''; elapsedTimer.textContent = '–'; }
+
+// ── Status badge ───────────────────────────────────────────────────
+function setStatus(state) {
+  statusBadge.className = 'badge-' + state;
+  statusBadge.textContent = state;
+}
+
+// ── Utils ──────────────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function formatVal(v) {
+  const n = parseFloat(v);
+  return Number.isInteger(n) ? String(n) : n.toFixed(2);
+}
+
+// ── Resizable panes ────────────────────────────────────────────────
+const sidebar      = document.getElementById('sidebar');
+const outputPanel  = document.getElementById('output-panel');
+const dividerLeft  = document.getElementById('divider-left');
+const dividerRight = document.getElementById('divider-right');
+
+const PANE_DEFAULTS = { sidebar: 260, output: 420 };
+const PANE_MIN      = { sidebar: 150, output: 200 };
+const PANE_MAX      = { sidebar: 600, output: 700 };
+
+function loadPaneWidths() {
+  try { return JSON.parse(localStorage.getItem('pane-widths') || '{}'); }
+  catch { return {}; }
+}
+
+function savePaneWidths() {
+  localStorage.setItem('pane-widths', JSON.stringify({
+    sidebar: parseInt(sidebar.style.width, 10),
+    output:  parseInt(outputPanel.style.width, 10),
+  }));
+}
+
+function applyPaneWidths(saved) {
+  sidebar.style.width     = (saved.sidebar || PANE_DEFAULTS.sidebar) + 'px';
+  outputPanel.style.width = (saved.output  || PANE_DEFAULTS.output)  + 'px';
+}
+
+if (!isMobile()) applyPaneWidths(loadPaneWidths());
+
+function attachDivider(divider, getWidth, setWidth, min, max) {
+  divider.addEventListener('mousedown', e => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = getWidth();
+    divider.classList.add('dragging');
+    document.body.style.cursor      = 'col-resize';
+    document.body.style.userSelect  = 'none';
+
+    function onMove(e) {
+      const w = Math.max(min, Math.min(max, startW + (e.clientX - startX)));
+      setWidth(w);
+    }
+    function onUp() {
+      divider.classList.remove('dragging');
+      document.body.style.cursor     = '';
+      document.body.style.userSelect = '';
+      savePaneWidths();
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup',   onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup',   onUp);
+  });
+}
+
+attachDivider(
+  dividerLeft,
+  () => parseInt(sidebar.style.width, 10),
+  w  => sidebar.style.width = w + 'px',
+  PANE_MIN.sidebar, PANE_MAX.sidebar
+);
+attachDivider(
+  dividerRight,
+  () => parseInt(outputPanel.style.width, 10),
+  w  => outputPanel.style.width = w + 'px',
+  PANE_MIN.output, PANE_MAX.output
+);
+
+// ── Init ───────────────────────────────────────────────────────────
+loadMethods();
+
+// ════════════════════════════════════════════════════════════════
+// NODE GRAPH
+// ════════════════════════════════════════════════════════════════
+
+// ── Tab switching ──────────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const tab = btn.dataset.tab;
+    document.getElementById('tab-methods').style.display = tab === 'methods' ? 'flex' : 'none';
+    document.getElementById('tab-graph').style.display   = tab === 'graph'   ? 'flex' : 'none';
+    if (tab === 'graph') gLoadMethodPalette();
+  });
+});
+
+// ── Graph state ────────────────────────────────────────────────
+let gNodeDefs       = {};
+let gNodes          = [];
+let gEdges          = [];
+let gSelectedNode   = null;
+let gSelectedEdge   = null;
+let gEdgeCounter    = 0;
+let gPaletteLoaded  = false;
+let gPalettes       = [];  // palette key list from /api/palettes
+let gPendingEdge    = null;
+let gPanX = 0, gPanY = 0;
+let gCanvasScale = 1.0;
+let gPanTouch = null, gPinchState = null, gMousePan = null;
+let gAutoGen = false;
+let gAutoGenJobId = null;
+let gAutoGenAbort = null;  // AbortController for cancelling in-flight auto-gen
+// nodeId → Set<portName> of input ports that currently have an incoming wire
+let gConnectedPorts = new Map();
+
+function getEventPos(e) {
+  if (e.touches && e.touches.length) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  if (e.changedTouches && e.changedTouches.length) return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+  return { x: e.clientX, y: e.clientY };
+}
+function gApplyPan() {
+  gNodesEl.style.transform = `translate(${gPanX}px,${gPanY}px) scale(${gCanvasScale})`;
+  gNodesEl.style.transformOrigin = '0 0';
+}
+
+// Short display labels for port names
+function gPortLabel(name) {
+  const m = { image_in: 'img', image: 'img', luminance: 'lum', field: 'fld', particles: 'ptcl' };
+  return m[name] || name;
+}
+
+// Wire compatibility: IMAGE←FIELD is allowed; otherwise types must match
+function gPortsCompatible(srcDot, dstDot) {
+  if (!srcDot || !dstDot) return true;
+  const st = srcDot.dataset.ptype, dt = dstDot.dataset.ptype;
+  if (st === 'any' || dt === 'any') return true;
+  if (st === dt) return true;
+  if (st === 'field' && dt === 'image') return true;
+  return false;
+}
+
+// Rebuild gConnectedPorts from current gEdges
+function gUpdateConnectedPorts() {
+  gConnectedPorts.clear();
+  for (const edge of gEdges) {
+    if (!gConnectedPorts.has(edge.dst_node)) gConnectedPorts.set(edge.dst_node, new Set());
+    gConnectedPorts.get(edge.dst_node).add(edge.dst_port);
+  }
+}
+
+// Grey-out / re-enable param inputs whose ports have active wires
+function gRefreshParamOverrides(nodeId) {
+  const node = gNodes.find(n => n.id === nodeId);
+  if (!node) return;
+  const def = gNodeDefs[node.method_id];
+  if (!def) return;
+  const wired = gConnectedPorts.get(nodeId) || new Set();
+  const paramPorts = new Set(def.param_ports || []);
+  gParamsForm.querySelectorAll('.param-row').forEach(row => {
+    const ctrl = row.querySelector('.param-ctrl');
+    if (!ctrl) return;
+    const key = ctrl.id.replace('p_', '');
+    if (!paramPorts.has(key)) return;
+    const isWired = wired.has(key);
+    ctrl.disabled = isWired;
+    row.classList.toggle('overridden', isWired);
+  });
+}
+
+// ── DOM refs ───────────────────────────────────────────────────
+const gNodesEl      = document.getElementById('graph-nodes');
+const gEdgesEl      = document.getElementById('graph-edges');
+const gPendingEl    = document.getElementById('pending-edge');
+const gCtxMenu      = document.getElementById('graph-ctx-menu');
+const gWireTooltip  = document.getElementById('wire-tooltip');
+const gNodeTooltip  = document.getElementById('node-tooltip');
+let   gLastGraphJobId = null;
+
+// ── Node header tooltip (description / error) ──────────────────
+gNodesEl.addEventListener('mouseover', e => {
+  const header = e.target.closest('.gnode-header');
+  const nodeEl = header?.closest('.gnode');
+  if (!nodeEl) { gNodeTooltip.style.display = 'none'; return; }
+  let text = null;
+  if (nodeEl.classList.contains('node-error') && nodeEl.dataset.errorMsg) {
+    text = nodeEl.dataset.errorMsg.split('\n').slice(0, 3).join('\n');
+  } else {
+    const nodeId = nodeEl.id.replace('gnode-', '');
+    const node = gNodes.find(n => n.id === nodeId);
+    const def = node && gNodeDefs[node.method_id];
+    if (def?.description) text = def.description;
+  }
+  if (text) {
+    gNodeTooltip.textContent = text;
+    gNodeTooltip.style.left = (e.clientX + 14) + 'px';
+    gNodeTooltip.style.top  = (e.clientY - 8)  + 'px';
+    gNodeTooltip.style.display = '';
+  } else {
+    gNodeTooltip.style.display = 'none';
+  }
+});
+gNodesEl.addEventListener('mousemove', e => {
+  if (gNodeTooltip.style.display !== 'none') {
+    gNodeTooltip.style.left = (e.clientX + 14) + 'px';
+    gNodeTooltip.style.top  = (e.clientY - 8)  + 'px';
+  }
+});
+gNodesEl.addEventListener('mouseleave', () => { gNodeTooltip.style.display = 'none'; });
+const gCanvasWrap   = document.getElementById('graph-canvas-wrap');
+const gCanvasCol    = document.getElementById('graph-canvas-col');
+const gOutputStrip  = document.getElementById('graph-output-strip');
+const gParamsForm   = document.getElementById('graph-params-form');
+const gParamsEmpty  = document.getElementById('graph-params-empty');
+const gParamsPanel  = document.getElementById('graph-params-panel');
+const gParamsHdr    = document.getElementById('graph-params-header');
+const gPreviewPanel = document.getElementById('graph-preview-panel');
+const gPreviewLatest= document.getElementById('graph-preview-latest');
+const gPreviewLabel = document.getElementById('graph-preview-label');
+const gPreviewToggle= document.getElementById('graph-preview-toggle');
+const gBackdrop     = document.getElementById('graph-backdrop');
+const gFsOverlay    = document.getElementById('graph-img-fullscreen');
+const gFsImg        = document.getElementById('graph-fs-img');
+const gFsVideo      = document.getElementById('graph-fs-video');
+const gMainPreview  = document.getElementById('graph-main-preview');
+const gGraphSidebar = document.getElementById('graph-sidebar');
+
+// Mobile + desktop control pairs
+const gRunBtn       = document.getElementById('graph-run-btn');
+const gRunBtnDesk   = document.getElementById('graph-run-btn-desk');
+const gClearBtn     = document.getElementById('graph-clear-btn');
+const gClearBtnDesk = document.getElementById('graph-clear-btn-desk');
+const gFramesEl     = document.getElementById('graph-frames');
+const gFramesDeskEl = document.getElementById('graph-frames-desk');
+const gStatusEl     = document.getElementById('graph-status');
+const gStatusDeskEl = document.getElementById('graph-status-desk');
+const gPaletteBtn         = document.getElementById('graph-palette-btn');
+const gPaletteClose       = document.getElementById('graph-palette-close');
+const gParamsClose        = document.getElementById('graph-params-close');
+const gGraphMobileBottomBar = document.getElementById('graph-mobile-bottom-bar');
+
+// ── Shared helpers ─────────────────────────────────────────────
+function gGetFrames() {
+  return parseInt((isMobile() ? gFramesEl : gFramesDeskEl).value, 10) || 1;
+}
+function gSetStatus(msg) {
+  gStatusEl.textContent = msg;
+  gStatusDeskEl.textContent = msg;
+}
+function gSetRunDisabled(v) {
+  gRunBtn.disabled = v;
+  gRunBtnDesk.disabled = v;
+}
+
+// ── Palette overlay (mobile) ───────────────────────────────────
+function gOpenPalette() {
+  gGraphSidebar.classList.add('gsidebar-open');
+  gBackdrop.classList.add('visible');
+  if (!gPaletteLoaded) gLoadMethodPalette();
+}
+function gClosePalette() {
+  gGraphSidebar.classList.remove('gsidebar-open');
+  if (!gParamsPanel.classList.contains('gparams-open')) gBackdrop.classList.remove('visible');
+}
+gPaletteBtn.addEventListener('click', gOpenPalette);
+gPaletteClose.addEventListener('click', gClosePalette);
+
+// ── Params bottom sheet (mobile) ───────────────────────────────
+function gParamsSheetOpen() {
+  gParamsPanel.classList.add('gparams-open');
+  gBackdrop.classList.add('visible');
+}
+function gParamsSheetClose() {
+  gParamsPanel.classList.remove('gparams-open');
+  if (!gGraphSidebar.classList.contains('gsidebar-open')) gBackdrop.classList.remove('visible');
+}
+gParamsClose.addEventListener('click', () => {
+  gParamsSheetClose();
+  gShowNodeParams(null);
+  gSelectedNode = null;
+  gNodesEl.querySelectorAll('.gnode').forEach(el => el.classList.remove('selected'));
+});
+
+// Backdrop: close whichever overlay is open
+gBackdrop.addEventListener('click', () => {
+  gClosePalette();
+  gParamsSheetClose();
+});
+
+// ── Preview panel ──────────────────────────────────────────────
+let gPreviewExpanded = false;
+try { gPreviewExpanded = localStorage.getItem('graph-preview-expanded') === 'true'; } catch {}
+
+// Single live-preview img that gets its src swapped in-place each frame
+let gLivePreviewImg = null;
+
+function gGraphFrameUpdate(b64) {
+  if (!gLivePreviewImg) {
+    gMainPreview.innerHTML = '';
+    gLivePreviewImg = document.createElement('img');
+    gLivePreviewImg.addEventListener('click', () => {
+      gFsVideo.style.display = 'none';
+      gFsImg.src = gLivePreviewImg.src; gFsImg.style.display = '';
+      gFsOverlay.classList.add('visible');
+    });
+    gMainPreview.appendChild(gLivePreviewImg);
+    gMainPreview.classList.add('active');
+    gPreviewShow();
+  }
+  const src = 'data:image/jpeg;base64,' + b64;
+  gLivePreviewImg.src = src;
+  gPreviewLatest.src = src; gPreviewLatest.style.display = '';
+}
+
+function gGraphDoneSwap(type, relPath) {
+  if (type === 'video' && relPath) {
+    const url = '/output/' + relPath;
+    const vid = document.createElement('video');
+    vid.autoplay = true; vid.loop = true; vid.muted = true; vid.playsInline = true;
+    vid.src = url;
+    vid.addEventListener('click', () => {
+      gFsVideo.src = url; gFsVideo.style.display = ''; gFsVideo.load(); gFsVideo.play().catch(() => {});
+      gFsImg.style.display = 'none'; gFsOverlay.classList.add('visible');
+    });
+    if (gLivePreviewImg && gLivePreviewImg.parentNode === gMainPreview) {
+      gMainPreview.replaceChild(vid, gLivePreviewImg);
+    } else {
+      gMainPreview.innerHTML = '';
+      gMainPreview.appendChild(vid);
+      gMainPreview.classList.add('active');
+      gPreviewShow();
+    }
+    gLivePreviewImg = null;
+    vid.load(); vid.play().catch(() => {});
+    gPreviewLatest.style.display = 'none'; gPreviewLabel.textContent = 'Video';
+  } else if (type === 'image' && relPath && gLivePreviewImg) {
+    // Update to final full-res PNG
+    gLivePreviewImg.src = '/output/' + relPath;
+    gLivePreviewImg.addEventListener('click', () => {
+      gFsVideo.style.display = 'none';
+      gFsImg.src = gLivePreviewImg.src; gFsImg.style.display = '';
+      gFsOverlay.classList.add('visible');
+    }, { once: true });
+  }
+}
+
+function gPreviewShow() {
+  gPreviewPanel.classList.add('pv-visible');
+  if (isMobile()) {
+    gPreviewPanel.classList.toggle('pv-expanded',  gPreviewExpanded);
+    gPreviewPanel.classList.toggle('pv-collapsed', !gPreviewExpanded);
+    gPreviewToggle.textContent = gPreviewExpanded ? '▼ collapse' : '▲ expand';
+    gUpdateCanvasPad();
+  }
+}
+function gPreviewHide() {
+  gPreviewPanel.classList.remove('pv-visible', 'pv-expanded', 'pv-collapsed');
+  gCanvasCol.classList.remove('has-preview-expanded', 'has-preview-collapsed');
+}
+function gUpdateCanvasPad() {
+  if (!isMobile()) return;
+  if (gPreviewPanel.classList.contains('mob-top')) {
+    gCanvasCol.classList.remove('has-preview-expanded', 'has-preview-collapsed');
+    return;
+  }
+  gCanvasCol.classList.toggle('has-preview-expanded',  gPreviewExpanded);
+  gCanvasCol.classList.toggle('has-preview-collapsed', !gPreviewExpanded);
+}
+
+// ── Mobile graph layout: preview top, run bar bottom ──────────────────
+function setGraphMobileLayout(mob) {
+  if (mob) {
+    gCanvasCol.insertBefore(gPreviewPanel, gCanvasWrap);
+    gPreviewPanel.classList.add('mob-top');
+    gGraphMobileBottomBar.append(gRunBtn, gClearBtn);
+  } else {
+    document.getElementById('graph-shell').after(gPreviewPanel);
+    gPreviewPanel.classList.remove('mob-top');
+    const paletteBtn = document.getElementById('graph-palette-btn');
+    paletteBtn.after(gRunBtn, gClearBtn);
+  }
+  gUpdateCanvasPad();
+}
+const mqMobileGraph = window.matchMedia('(max-width: 768px)');
+setGraphMobileLayout(mqMobileGraph.matches);
+mqMobileGraph.addEventListener('change', e => setGraphMobileLayout(e.matches));
+
+document.getElementById('graph-preview-handle').addEventListener('click', () => {
+  gPreviewExpanded = !gPreviewExpanded;
+  try { localStorage.setItem('graph-preview-expanded', gPreviewExpanded); } catch {}
+  gPreviewPanel.classList.toggle('pv-expanded',  gPreviewExpanded);
+  gPreviewPanel.classList.toggle('pv-collapsed', !gPreviewExpanded);
+  gPreviewToggle.textContent = gPreviewExpanded ? '▼ collapse' : '▲ expand';
+  gUpdateCanvasPad();
+});
+gPreviewToggle.addEventListener('click', e => e.stopPropagation());
+
+// ── Fullscreen ─────────────────────────────────────────────────
+gFsOverlay.addEventListener('click', () => {
+  gFsOverlay.classList.remove('visible');
+  gFsVideo.pause(); gFsVideo.src = '';
+});
+
+// ── Load port types ────────────────────────────────────────────
+async function gLoadPortTypes() {
+  const res = await fetch('/api/port-types');
+  window.gPortTypes = await res.json();
+}
+
+// ── Load method palette ────────────────────────────────────────
+async function gLoadMethodPalette() {
+  if (gPaletteLoaded) return;
+  gPaletteLoaded = true;
+  try {
+    const res = await fetch('/api/node-defs');
+    gNodeDefs = await res.json();
+    gRenderPalette();
+  } catch(e) {
+    document.getElementById('graph-method-list').innerHTML =
+      `<p style="padding:12px;color:var(--err);font-size:12px">Failed: ${e.message}</p>`;
+  }
+}
+
+function gRenderPalette() {
+  const groups = {};
+  for (const [mid, def] of Object.entries(gNodeDefs)) {
+    (groups[def.category || 'other'] = groups[def.category || 'other'] || []).push(def);
+  }
+  // Load saved collapse state (separate key from left sidebar)
+  let gPalState = {};
+  try { gPalState = JSON.parse(localStorage.getItem('graph-palette-state') || '{}'); } catch {}
+  let html = '';
+  for (const [cat, items] of Object.entries(groups).sort()) {
+    const isOpen = gPalState[cat] !== undefined ? gPalState[cat] : true;
+    html += `<div class="gcat-group">
+      <div class="gcat-header" data-cat="${escHtml(cat)}">
+        <span class="gcat-chevron">${isOpen ? '▼' : '▶'}</span>${escHtml(cat)}
+      </div>
+      <div class="gcat-items"${isOpen ? '' : ' style="display:none"'}>`;
+    for (const def of items) {
+      html += `<div class="gmethod-item" data-mid="${escHtml(def.method_id)}" draggable="true">
+        <div class="gmid">#${escHtml(def.method_id)}</div>
+        <div class="gmname">${escHtml(def.name)}</div>
+      </div>`;
+    }
+    html += `</div></div>`;
+  }
+  const listEl = document.getElementById('graph-method-list');
+  listEl.innerHTML = html;
+
+  // Category toggle handlers
+  listEl.querySelectorAll('.gcat-header').forEach(el => {
+    el.addEventListener('click', () => {
+      const cat = el.dataset.cat;
+      const itemsEl = el.nextElementSibling;
+      const chevronEl = el.querySelector('.gcat-chevron');
+      const nowOpen = itemsEl.style.display === 'none';
+      itemsEl.style.display = nowOpen ? '' : 'none';
+      chevronEl.textContent = nowOpen ? '▼' : '▶';
+      gPalState[cat] = nowOpen;
+      try { localStorage.setItem('graph-palette-state', JSON.stringify(gPalState)); } catch {}
+    });
+  });
+
+  listEl.querySelectorAll('.gmethod-item').forEach(el => {
+    // Desktop: drag
+    el.addEventListener('dragstart', e => e.dataTransfer.setData('method_id', el.dataset.mid));
+    // Mobile: tap → add near center (offset by current pan)
+    el.addEventListener('click', () => {
+      if (!isMobile()) return;
+      const rect = gCanvasWrap.getBoundingClientRect();
+      gAddNode(el.dataset.mid,
+        (rect.width  / 2 - gPanX) / gCanvasScale - 80 + (Math.random() * 60 - 30),
+        (rect.height / 2 - gPanY) / gCanvasScale - 40 + (Math.random() * 60 - 30));
+      gClosePalette();
+    });
+  });
+}
+
+// ── Canvas drop ────────────────────────────────────────────────
+gCanvasWrap.addEventListener('dragover', e => e.preventDefault());
+gCanvasWrap.addEventListener('drop', e => {
+  e.preventDefault();
+  const mid = e.dataTransfer.getData('method_id');
+  if (!mid || !gNodeDefs[mid]) return;
+  const rect = gCanvasWrap.getBoundingClientRect();
+  gAddNode(mid, (e.clientX - rect.left - gPanX) / gCanvasScale - 80,
+               (e.clientY - rect.top  - gPanY) / gCanvasScale - 40);
+});
+
+// ── Canvas touch: 1-finger pan + 2-finger pinch-to-zoom ───────────────
+gCanvasWrap.addEventListener('touchstart', e => {
+  if (e.target.closest('.gnode') || e.target.classList.contains('gport')) return;
+  e.preventDefault();
+  if (e.touches.length === 2) {
+    gPanTouch = null;
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const rect = gCanvasWrap.getBoundingClientRect();
+    gPinchState = {
+      dist0:  Math.hypot(dx, dy) || 1,
+      scale0: gCanvasScale,
+      pan0x:  gPanX, pan0y: gPanY,
+      midX:   (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left,
+      midY:   (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top,
+    };
+  } else if (e.touches.length === 1) {
+    gPinchState = null;
+    gPanTouch = { sx: e.touches[0].clientX - gPanX, sy: e.touches[0].clientY - gPanY };
+  }
+}, { passive: false });
+gCanvasWrap.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (e.touches.length === 2 && gPinchState) {
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const newScale = Math.min(3.0, Math.max(0.2,
+      gPinchState.scale0 * Math.hypot(dx, dy) / gPinchState.dist0));
+    const mx = gPinchState.midX, my = gPinchState.midY;
+    gCanvasScale = newScale;
+    gPanX = mx - (mx - gPinchState.pan0x) * newScale / gPinchState.scale0;
+    gPanY = my - (my - gPinchState.pan0y) * newScale / gPinchState.scale0;
+    gApplyPan(); gRedrawEdges();
+  } else if (e.touches.length === 1 && gPanTouch) {
+    gPanX = e.touches[0].clientX - gPanTouch.sx;
+    gPanY = e.touches[0].clientY - gPanTouch.sy;
+    gApplyPan(); gRedrawEdges();
+  }
+}, { passive: false });
+gCanvasWrap.addEventListener('touchend', () => {
+  if (gPanTouch)   { gPanTouch   = null; gSave(); }
+  if (gPinchState) { gPinchState = null; gSave(); }
+});
+gCanvasWrap.addEventListener('touchcancel', () => { gPanTouch = null; gPinchState = null; });
+
+// ── Desktop: drag-to-pan + scroll-to-zoom ─────────────────────────────
+gCanvasWrap.addEventListener('mousedown', e => {
+  if (e.target.closest('.gnode') || e.target.classList.contains('gport')) return;
+  if (e.button !== 0 || gPendingEdge) return;
+  e.preventDefault();
+  gMousePan = { sx: e.clientX - gPanX, sy: e.clientY - gPanY };
+});
+document.addEventListener('mousemove', e => {
+  if (!gMousePan) return;
+  gPanX = e.clientX - gMousePan.sx;
+  gPanY = e.clientY - gMousePan.sy;
+  gApplyPan(); gRedrawEdges();
+});
+document.addEventListener('mouseup', () => {
+  if (gMousePan) { gMousePan = null; gSave(); }
+});
+gCanvasWrap.addEventListener('wheel', e => {
+  e.preventDefault();
+  const rect = gCanvasWrap.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const newScale = Math.min(3.0, Math.max(0.2, gCanvasScale * (e.deltaY < 0 ? 1.1 : 0.9)));
+  gPanX = mx - (mx - gPanX) * newScale / gCanvasScale;
+  gPanY = my - (my - gPanY) * newScale / gCanvasScale;
+  gCanvasScale = newScale;
+  gApplyPan(); gRedrawEdges();
+}, { passive: false });
+
+// ── Add a node ─────────────────────────────────────────────────
+function gAddNode(method_id, x, y) {
+  const def = gNodeDefs[method_id];
+  if (!def) return;
+  const id = 'n' + Date.now().toString(36);
+  const node = { id, method_id, params: gDefaultParams(def), x, y, dirty: true };
+  gNodes.push(node);
+  gRenderNode(node);
+  gPushApart(node);
+  gPhysicsKick();
+  gSave();
+  return node;
+}
+function gDefaultParams(def) {
+  const p = {};
+  for (const [k, s] of Object.entries(def.params || {})) p[k] = s.default ?? null;
+  return p;
+}
+
+// ── Render a node div ──────────────────────────────────────────
+function gRenderNode(node) {
+  const def = gNodeDefs[node.method_id];
+  if (!def) return;
+
+  const el = document.createElement('div');
+  el.className = 'gnode';
+  el.id = 'gnode-' + node.id;
+  el.style.left = node.x + 'px';
+  el.style.top  = node.y + 'px';
+
+  if (node.render) el.classList.add('render-target');
+  if (def.deprecated) el.classList.add('gnode-deprecated');
+
+  const header = document.createElement('div');
+  header.className = 'gnode-header';
+  header.innerHTML = `<button class="gnode-delete" title="Delete">✕</button>
+    <span class="gnode-title">${escHtml(def.name)}</span>
+    <button class="gnode-render${node.render ? ' active' : ''}" title="Set as render target">◎</button>`;
+  el.appendChild(header);
+
+  // ── Top ports: IMAGE input (left) + IMAGE output (right) ──────
+  const topPortsEl = document.createElement('div');
+  topPortsEl.className = 'gnode-top-ports';
+  function _mkPort(name, type, dir) {
+    const dot = document.createElement('div');
+    dot.className = `gport pt-${type}`;
+    Object.assign(dot.dataset, { nid: node.id, port: name, dir, ptype: type });
+    return dot;
+  }
+  function _mkLabel(name) {
+    const lbl = document.createElement('span');
+    lbl.className = 'gport-label'; lbl.textContent = gPortLabel(name);
+    return lbl;
+  }
+  // Left: image input
+  { const row = document.createElement('div');
+    row.className = 'gnode-port-row input';
+    const imgIn = Object.entries(def.inputs || {}).find(([,t]) => t === 'image');
+    if (imgIn) { row.appendChild(_mkPort(imgIn[0], imgIn[1], 'input')); row.appendChild(_mkLabel(imgIn[0])); }
+    topPortsEl.appendChild(row); }
+  // Right: image output
+  { const row = document.createElement('div');
+    row.className = 'gnode-port-row output';
+    const imgOut = Object.entries(def.outputs || {}).find(([,t]) => t === 'image');
+    if (imgOut) { row.appendChild(_mkLabel(imgOut[0])); row.appendChild(_mkPort(imgOut[0], imgOut[1], 'output')); }
+    topPortsEl.appendChild(row); }
+  if (topPortsEl.querySelector('.gport')) el.appendChild(topPortsEl);
+
+  // ── Bottom ports: non-IMAGE inputs + non-IMAGE outputs ─────────
+  // Rule 1 — passthrough: if an output's name is a prefix of an input name AND
+  //   types match, they share a row (input left, output right).
+  // Rule 2 — native: outputs with no matching input stack at the bottom.
+  // 'luminance' is always native regardless of type matches.
+  const portsEl = document.createElement('div');
+  portsEl.className = 'gnode-ports';
+
+  // Exclude only the primary image input (shown at top) from the bottom section.
+  // Extra image inputs (e.g. image_a, image_b on Image Blend) stay here so they get DOM ports.
+  const primaryImgIn = Object.entries(def.inputs || {}).find(([,t]) => t === 'image');
+  const nonImgIn  = Object.entries(def.inputs  || {}).filter(([name, t]) =>
+    t !== 'image' || (primaryImgIn && name !== primaryImgIn[0])
+  );
+  const nonImgOut = Object.entries(def.outputs || {}).filter(([,t]) => t !== 'image');
+
+  // Build pairing: outName → inName (first input whose name starts with outName, same type)
+  const pairedOut  = new Map();   // outName -> inName
+  const usedInPort = new Set();
+  for (const [outName, outType] of nonImgOut) {
+    if (outName === 'luminance') continue;
+    for (const [inName, inType] of nonImgIn) {
+      if (!usedInPort.has(inName) && inType === outType && inName.startsWith(outName)) {
+        pairedOut.set(outName, inName);
+        usedInPort.add(inName);
+        break;
+      }
+    }
+  }
+  const inToOut = new Map([...pairedOut.entries()].map(([o, i]) => [i, o]));
+
+  // Render input rows — paired (both dots) or standalone (left dot only)
+  for (const [name, type] of nonImgIn) {
+    const row = document.createElement('div');
+    const outName = inToOut.get(name);
+    if (outName) {
+      const outType = (def.outputs || {})[outName];
+      row.className = 'gnode-port-row paired';
+      row.appendChild(_mkPort(name, type, 'input'));
+      row.appendChild(_mkLabel(name));
+      row.appendChild(_mkLabel(outName));
+      row.appendChild(_mkPort(outName, outType, 'output'));
+    } else {
+      row.className = 'gnode-port-row input';
+      row.appendChild(_mkPort(name, type, 'input'));
+      row.appendChild(_mkLabel(name));
+    }
+    portsEl.appendChild(row);
+  }
+
+  // Render native outputs (no matching input) — right-side only, stacked below
+  for (const [name, type] of nonImgOut) {
+    if (pairedOut.has(name)) continue;
+    const row = document.createElement('div');
+    row.className = 'gnode-port-row output';
+    row.appendChild(_mkLabel(name));
+    row.appendChild(_mkPort(name, type, 'output'));
+    portsEl.appendChild(row);
+  }
+
+  if (portsEl.children.length) el.appendChild(portsEl);
+  gNodesEl.appendChild(el);
+
+  header.querySelector('.gnode-delete').addEventListener('click', e => {
+    e.stopPropagation(); gDeleteNode(node.id);
+  });
+  header.querySelector('.gnode-render').addEventListener('click', e => {
+    e.stopPropagation();
+    const wasActive = !!node.render;
+    // Mutually exclusive — clear all, then toggle this one
+    gNodes.forEach(n => { n.render = false; });
+    document.querySelectorAll('.gnode-render').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.gnode.render-target').forEach(n => n.classList.remove('render-target'));
+    node.render = !wasActive;
+    if (node.render) {
+      e.currentTarget.classList.add('active');
+      el.classList.add('render-target');
+    }
+    gSave();
+  });
+  // Tap-to-select: only open params on short tap, not after a drag
+  const _isBtn = t => t.classList.contains('gport') || t.classList.contains('gnode-delete') || t.classList.contains('gnode-render');
+  let _tapStart = null;
+  el.addEventListener('mousedown', e => {
+    if (_isBtn(e.target)) return;
+    _tapStart = { x: e.clientX, y: e.clientY, t: Date.now() };
+  });
+  el.addEventListener('mouseup', e => {
+    if (!_tapStart) return;
+    const dx = Math.abs(e.clientX - _tapStart.x), dy = Math.abs(e.clientY - _tapStart.y);
+    const dt = Date.now() - _tapStart.t;
+    _tapStart = null;
+    if (_isBtn(e.target)) return;
+    if (dx < 8 && dy < 8 && dt < 300) gSelectNode(node.id);
+  });
+  el.addEventListener('touchstart', e => {
+    if (_isBtn(e.target)) return;
+    const t = e.touches[0];
+    _tapStart = { x: t.clientX, y: t.clientY, t: Date.now() };
+  }, { passive: true });
+  el.addEventListener('touchend', e => {
+    if (!_tapStart) return;
+    const t = e.changedTouches[0];
+    const dx = Math.abs(t.clientX - _tapStart.x), dy = Math.abs(t.clientY - _tapStart.y);
+    const dt = Date.now() - _tapStart.t;
+    _tapStart = null;
+    if (_isBtn(e.target)) return;
+    if (dx < 8 && dy < 8 && dt < 300) gSelectNode(node.id);
+  });
+  gAttachNodeDrag(el, node);
+  el.querySelectorAll('.gport').forEach(dot => {
+    function portWireStart(e) {
+      e.stopPropagation(); e.preventDefault();
+      if (dot.dataset.dir === 'output') {
+        const pos = gPortPos(dot);
+        gPendingEdge = { src_node: node.id, src_port: dot.dataset.port, x0: pos.x, y0: pos.y };
+        gPendingEl.style.display = '';
+        gUpdatePendingEdge(pos.x, pos.y);
+      }
+    }
+    dot.addEventListener('mousedown', portWireStart);
+    dot.addEventListener('mouseup', e => {
+      // Mouse: mouseup fires on the element under the cursor, so this correctly
+      // identifies the destination input port by closing over `dot` and `node`.
+      e.stopPropagation();
+      if (gPendingEdge && dot.dataset.dir === 'input')
+        gAddEdge(gPendingEdge.src_node, gPendingEdge.src_port, node.id, dot.dataset.port);
+      gPendingEdge = null; gPendingEl.style.display = 'none';
+    });
+    dot.addEventListener('touchstart', portWireStart, { passive: false });
+    // touchend is intentionally NOT on individual dots:
+    // touchend always fires on the origin element (the output port where touch started),
+    // not where the finger lands. The document-level touchend uses elementFromPoint instead.
+  });
+}
+
+// ── Port position ──────────────────────────────────────────────
+function gPortPos(dotEl) {
+  const cr = gCanvasWrap.getBoundingClientRect();
+  const dr = dotEl.getBoundingClientRect();
+  return { x: dr.left + dr.width/2 - cr.left, y: dr.top + dr.height/2 - cr.top };
+}
+function gUpdatePendingEdge(x1, y1) {
+  if (!gPendingEdge) return;
+  const { x0, y0 } = gPendingEdge;
+  const dx = Math.abs(x1 - x0) / 2 + 80;
+  gPendingEl.setAttribute('d', `M${x0},${y0} C${x0+dx},${y0} ${x1-dx},${y1} ${x1},${y1}`);
+}
+document.addEventListener('mousemove', e => {
+  if (!gPendingEdge) return;
+  const r = gCanvasWrap.getBoundingClientRect();
+  gUpdatePendingEdge(e.clientX - r.left, e.clientY - r.top);
+});
+document.addEventListener('mouseup', () => {
+  if (gPendingEdge) { gPendingEdge = null; gPendingEl.style.display = 'none'; }
+});
+document.addEventListener('touchmove', e => {
+  if (!gPendingEdge) return;
+  e.preventDefault();
+  const t = e.touches[0];
+  const r = gCanvasWrap.getBoundingClientRect();
+  gUpdatePendingEdge(t.clientX - r.left, t.clientY - r.top);
+}, { passive: false });
+document.addEventListener('touchend', e => {
+  if (!gPendingEdge) return;
+  const t = e.changedTouches[0];
+  // Direct hit first (elementFromPoint may return a child; walk up to be safe)
+  let hit = document.elementFromPoint(t.clientX, t.clientY)?.closest('.gport');
+  // Touch snap: if no direct hit, find nearest input port within 30px
+  if (!hit || hit.dataset.dir !== 'input') {
+    const TOUCH_SNAP_PX = 30;
+    let best = null, bestDist = TOUCH_SNAP_PX;
+    document.querySelectorAll('.gport[data-dir="input"]').forEach(p => {
+      const rc = p.getBoundingClientRect();
+      const cx = rc.left + rc.width / 2, cy = rc.top + rc.height / 2;
+      const d = Math.hypot(t.clientX - cx, t.clientY - cy);
+      if (d < bestDist) { bestDist = d; best = p; }
+    });
+    hit = best;
+  }
+  if (hit && hit.dataset.dir === 'input')
+    gAddEdge(gPendingEdge.src_node, gPendingEdge.src_port, hit.dataset.nid, hit.dataset.port);
+  gPendingEdge = null; gPendingEl.style.display = 'none';
+});
+document.addEventListener('touchcancel', () => {
+  if (gPendingEdge) { gPendingEdge = null; gPendingEl.style.display = 'none'; }
+});
+
+// ── Node drag ──────────────────────────────────────────────────
+function gAttachNodeDrag(el, node) {
+  const header = el.querySelector('.gnode-header');
+  function startDrag(e) {
+    if (e.target.classList.contains('gnode-delete') || e.target.classList.contains('gnode-render')) return;
+    e.preventDefault();
+    node._pinned = true; node._vx = 0; node._vy = 0;
+    const pos  = getEventPos(e);
+    const rect0 = gCanvasWrap.getBoundingClientRect();
+    const ox = (pos.x - rect0.left - gPanX) / gCanvasScale - node.x;
+    const oy = (pos.y - rect0.top  - gPanY) / gCanvasScale - node.y;
+    function onMove(e) {
+      const p = getEventPos(e);
+      const r = gCanvasWrap.getBoundingClientRect();
+      node.x = (p.x - r.left - gPanX) / gCanvasScale - ox;
+      node.y = (p.y - r.top  - gPanY) / gCanvasScale - oy;
+      el.style.left = node.x + 'px'; el.style.top = node.y + 'px';
+      gRedrawEdges();
+    }
+    function onEnd() {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onEnd);
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onEnd);
+      document.removeEventListener('touchcancel', onEnd);
+      node._pinned = false;
+      gSave();
+      gPhysicsKick();
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onEnd);
+    document.addEventListener('touchmove', onMove, { passive: false });
+    document.addEventListener('touchend', onEnd);
+    document.addEventListener('touchcancel', onEnd);
+  }
+  header.addEventListener('mousedown', startDrag);
+  header.addEventListener('touchstart', startDrag, { passive: false });
+}
+
+// ── Push-apart & Physics ────────────────────────────────────────
+const PHYSICS = {
+  k_r: 40000, k_s_push: 0, k_s_pull: 0, rest: 250, damping: 0.80, k_c: 0.001,
+  k_lane: 0.06, k_dir: 0.5, lane_width: 280, margin: 80, dt: 1.0,
+};
+let gPhysicsActive = false;
+let gPhysicsRafId  = null;
+let gDepths        = null;   // cached topological depths, invalidated on graph change
+
+function _nodeBox(n) {
+  const el = document.getElementById('gnode-' + n.id);
+  return { w: el ? el.offsetWidth : 160, h: el ? el.offsetHeight : 120 };
+}
+
+// BFS longest-path (Kahn's topological sort) from source nodes (no incoming non-feedback edges).
+function gComputeDepths() {
+  const inDeg = new Map(gNodes.map(n => [n.id, 0]));
+  const adj   = new Map(gNodes.map(n => [n.id, []]));
+  for (const e of gEdges) {
+    if (e.feedback) continue;
+    inDeg.set(e.dst_node, (inDeg.get(e.dst_node) || 0) + 1);
+    if (adj.has(e.src_node)) adj.get(e.src_node).push(e.dst_node);
+  }
+  const depths = new Map(gNodes.map(n => [n.id, 0]));
+  const queue  = gNodes.filter(n => (inDeg.get(n.id) || 0) === 0).map(n => n.id);
+  let i = 0;
+  while (i < queue.length) {
+    const id = queue[i++];
+    for (const nid of (adj.get(id) || [])) {
+      depths.set(nid, Math.max(depths.get(nid) || 0, (depths.get(id) || 0) + 1));
+      inDeg.set(nid, (inDeg.get(nid) || 0) - 1);
+      if ((inDeg.get(nid) || 0) === 0) queue.push(nid);
+    }
+  }
+  // Render-target node is placed one lane past the deepest node
+  let maxDepth = 0;
+  for (const d of depths.values()) maxDepth = Math.max(maxDepth, d);
+  const renderNode = gNodes.find(n => n.render);
+  if (renderNode) depths.set(renderNode.id, maxDepth + 1);
+  return depths;
+}
+
+function gPushApart(newNode, padding = 20) {
+  const { w: nw, h: nh } = _nodeBox(newNode);
+  for (const n of gNodes) {
+    if (n.id === newNode.id) continue;
+    const { w, h } = _nodeBox(n);
+    const ox = Math.min(newNode.x + nw, n.x + w) - Math.max(newNode.x, n.x);
+    const oy = Math.min(newNode.y + nh, n.y + h) - Math.max(newNode.y, n.y);
+    if (ox <= 0 || oy <= 0) continue;
+    const cx = (n.x + w / 2) - (newNode.x + nw / 2);
+    const cy = (n.y + h / 2) - (newNode.y + nh / 2);
+    const dist = Math.hypot(cx, cy) || 1;
+    const push = Math.min(ox, oy) + padding;
+    n.x += (cx / dist) * push;
+    n.y += (cy / dist) * push;
+    const el = document.getElementById('gnode-' + n.id);
+    if (el) { el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; }
+  }
+  if (gNodes.length > 1) gRedrawEdges();
+}
+
+function gPhysicsKick() {
+  gDepths = null;  // invalidate depth cache on every graph change
+  if (!gPhysicsActive || gPhysicsRafId) return;
+  gPhysicsRafId = requestAnimationFrame(gPhysicsTick);
+}
+
+function gPhysicsTick() {
+  gPhysicsRafId = null;
+  if (!gPhysicsActive || gNodes.length < 2) return;
+
+  // Recompute depths once per simulation burst
+  if (!gDepths) gDepths = gComputeDepths();
+
+  const rect = gCanvasWrap.getBoundingClientRect();
+  const ccx  = (rect.width  / 2 - gPanX) / gCanvasScale;
+  const ccy  = (rect.height / 2 - gPanY) / gCanvasScale;
+
+  // ── Pass 1: edge direction bias (per-edge, accumulate into force map) ──
+  const fxBias = new Map(gNodes.map(n => [n.id, 0]));
+  for (const edge of gEdges) {
+    if (edge.feedback) continue;
+    const src = gNodes.find(n => n.id === edge.src_node);
+    const dst = gNodes.find(n => n.id === edge.dst_node);
+    if (!src || !dst) continue;
+    // Push src leftward and dst rightward; flip sign if dst is already left of src
+    const edgeDirX = PHYSICS.k_dir * (dst.x < src.x ? -1 : 1);
+    fxBias.set(src.id, (fxBias.get(src.id) || 0) - edgeDirX);
+    fxBias.set(dst.id, (fxBias.get(dst.id) || 0) + edgeDirX);
+  }
+
+  // ── Pass 2: per-node forces ──
+  for (const n of gNodes) {
+    if (n._vx === undefined) { n._vx = 0; n._vy = 0; }
+    if (n._pinned || n.render) { n._vx = 0; n._vy = 0; continue; }
+    const { w, h } = _nodeBox(n);
+    const ncx    = n.x + w / 2, ncy = n.y + h / 2;
+    const nDepth = gDepths.get(n.id) ?? 0;
+    let fx = fxBias.get(n.id) || 0;
+    let fy = 0;
+
+    // Node-node repulsion — 2.5× stronger between same-lane nodes (vertical spread)
+    for (const m of gNodes) {
+      if (m.id === n.id) continue;
+      const { w: mw, h: mh } = _nodeBox(m);
+      const dx = ncx - (m.x + mw / 2), dy = ncy - (m.y + mh / 2);
+      const d  = Math.hypot(dx, dy) || 0.1;
+      const ux = dx / d, uy = dy / d;
+
+      // Soft repulsion — 1/d² with minimum-distance clamp to prevent singularity oscillation.
+      const effD = Math.max(d, (w + mw) / 6);
+      const sameLane = (gDepths.get(m.id) ?? -1) === nDepth;
+      const f = PHYSICS.k_r * (sameLane ? 2.5 : 1.0) / (effD * effD);
+      fx += ux * f; fy += uy * f;
+    }
+
+    // Edge spring attraction (radial, bidirectional)
+    for (const edge of gEdges) {
+      let other = null;
+      if      (edge.src_node === n.id) other = gNodes.find(m => m.id === edge.dst_node);
+      else if (edge.dst_node === n.id) other = gNodes.find(m => m.id === edge.src_node);
+      if (!other) continue;
+      const { w: ow, h: oh } = _nodeBox(other);
+      const dx = (other.x + ow / 2) - ncx, dy = (other.y + oh / 2) - ncy;
+      const d  = Math.hypot(dx, dy) || 1;
+      const overlap = d - PHYSICS.rest;
+      const f = overlap < 0 ? PHYSICS.k_s_push * overlap : PHYSICS.k_s_pull * overlap;
+      fx += (dx / d) * f; fy += (dy / d) * f;
+    }
+
+    // Lane force — pull node's left edge toward its target x lane (horizontal only)
+    const targetX = nDepth * PHYSICS.lane_width + PHYSICS.margin;
+    fx += PHYSICS.k_lane * (targetX - n.x);
+
+    // Weak vertical centering (don't apply horizontal — lane force owns that axis)
+    fy += PHYSICS.k_c * (ccy - ncy);
+
+    // Integrate
+    n._vx = (n._vx + fx * PHYSICS.dt) * PHYSICS.damping;
+    n._vy = (n._vy + fy * PHYSICS.dt) * PHYSICS.damping;
+    n.x  += n._vx * PHYSICS.dt;
+    n.y  += n._vy * PHYSICS.dt;
+    const el = document.getElementById('gnode-' + n.id);
+    if (el) { el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; }
+  }
+
+  // ── Pass 3: hard overlap resolution (post-integration) ──
+  // Directly separate any pair whose bounding boxes actually intersect.
+  // Applied as position correction, not force — no oscillation.
+  for (let iter = 0; iter < 3; iter++) {
+    let anyOverlap = false;
+    for (const n of gNodes) {
+      if (n._pinned || n.render) continue;
+      const { w: nw, h: nh } = _nodeBox(n);
+      const ncx = n.x + nw / 2, ncy = n.y + nh / 2;
+      for (const m of gNodes) {
+        if (m.id === n.id) continue;
+        const { w: mw, h: mh } = _nodeBox(m);
+        const dx = ncx - (m.x + mw / 2), dy = ncy - (m.y + mh / 2);
+        const gapX = Math.abs(dx) - (nw + mw) / 2;
+        const gapY = Math.abs(dy) - (nh + mh) / 2;
+        if (gapX >= 0 || gapY >= 0) continue;
+        anyOverlap = true;
+        // Push apart along the axis with the least overlap
+        if (gapX < gapY) {
+          const sign = dx > 0 ? 1 : -1;
+          n.x += sign * (-gapX + 2);
+          m.x -= sign * (-gapX + 2);
+        } else {
+          const sign = dy > 0 ? 1 : -1;
+          n.y += sign * (-gapY + 2);
+          m.y -= sign * (-gapY + 2);
+        }
+      }
+    }
+    if (!anyOverlap) break;
+  }
+  // Re-render positions after hard resolution
+  for (const n of gNodes) {
+    const el = document.getElementById('gnode-' + n.id);
+    if (el) { el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; }
+  }
+
+  gRedrawEdges();
+  let maxV = 0;
+  for (const n of gNodes) maxV = Math.max(maxV, Math.hypot(n._vx || 0, n._vy || 0));
+  if (maxV > 0.5) gPhysicsRafId = requestAnimationFrame(gPhysicsTick);
+  else gSave();
+}
+
+function gPhysicsToggle() {
+  gPhysicsActive = !gPhysicsActive;
+  document.getElementById('graph-layout-btn')?.classList.toggle('active', gPhysicsActive);
+  document.getElementById('graph-layout-btn-desk')?.classList.toggle('active', gPhysicsActive);
+  if (gPhysicsActive) {
+    gNodes.forEach(n => { n._vx = 0; n._vy = 0; });
+    gPhysicsKick();
+  } else {
+    if (gPhysicsRafId) { cancelAnimationFrame(gPhysicsRafId); gPhysicsRafId = null; }
+    gSave();
+  }
+}
+
+// ── Edges ──────────────────────────────────────────────────────
+function gAddEdge(src_node, src_port, dst_node, dst_port) {
+  if (src_node === dst_node) return;
+  const srcDot = gNodesEl.querySelector(`.gport[data-nid="${src_node}"][data-port="${src_port}"][data-dir="output"]`);
+  const dstDot = gNodesEl.querySelector(`.gport[data-nid="${dst_node}"][data-port="${dst_port}"][data-dir="input"]`);
+  if (!gPortsCompatible(srcDot, dstDot)) return;
+  if (gEdges.find(e => e.src_node===src_node && e.src_port===src_port && e.dst_node===dst_node && e.dst_port===dst_port)) return;
+
+  // Auto-spawn a merge node when a second wire lands on an occupied input port
+  const conflict = gEdges.find(e => e.dst_node===dst_node && e.dst_port===dst_port);
+  if (conflict) {
+    const ptype = (srcDot?.dataset?.ptype || dstDot?.dataset?.ptype || '').toUpperCase();
+    const mergeMap = {
+      IMAGE:     { method: '137', out_port: 'image',     in_a: 'image_a',     in_b: 'image_b'     },
+      SCALAR:    { method: '138', out_port: 'value',     in_a: 'value_a',     in_b: 'value_b'     },
+      FIELD:     { method: '139', out_port: 'field',     in_a: 'field_a',     in_b: 'field_b'     },
+      PARTICLES: { method: '140', out_port: 'particles', in_a: 'particles_a', in_b: 'particles_b' },
+    };
+    const spec = mergeMap[ptype];
+    if (!spec) { gSetStatus(`Cannot merge ${ptype || 'unknown'} wires`); return; }
+    const nodeA = gNodes.find(n => n.id === conflict.src_node);
+    const nodeB = gNodes.find(n => n.id === src_node);
+    const mx = ((nodeA?.x || 0) + (nodeB?.x || 0)) / 2 + 140;
+    const my = ((nodeA?.y || 0) + (nodeB?.y || 0)) / 2;
+    const mergeNode = gAddNode(spec.method, mx, my);
+    if (!mergeNode) { gSetStatus('Merge method not found — restart server'); return; }
+    gEdges = gEdges.filter(e => e.id !== conflict.id);
+    gEdges.push({ id: 'e'+(++gEdgeCounter), src_node: conflict.src_node, src_port: conflict.src_port, dst_node: mergeNode.id, dst_port: spec.in_a,     feedback: false });
+    gEdges.push({ id: 'e'+(++gEdgeCounter), src_node,                    src_port,                    dst_node: mergeNode.id, dst_port: spec.in_b,     feedback: false });
+    gEdges.push({ id: 'e'+(++gEdgeCounter), src_node: mergeNode.id,      src_port: spec.out_port,     dst_node,               dst_port,                feedback: false });
+    gUpdateConnectedPorts();
+    if (gSelectedNode === dst_node) gRefreshParamOverrides(dst_node);
+    gRedrawEdges(); gSave(); gPhysicsKick();
+    return;
+  }
+
+  gEdges.push({ id: 'e'+(++gEdgeCounter), src_node, src_port, dst_node, dst_port, feedback: false });
+  gUpdateConnectedPorts();
+  if (gSelectedNode === dst_node) gRefreshParamOverrides(dst_node);
+  gRedrawEdges(); gSave(); gPhysicsKick();
+}
+function gDeleteEdge(id) {
+  const edge = gEdges.find(e => e.id === id);
+  gEdges = gEdges.filter(e => e.id !== id);
+  gUpdateConnectedPorts();
+  if (edge && gSelectedNode === edge.dst_node) gRefreshParamOverrides(edge.dst_node);
+  gRedrawEdges(); gSave(); gPhysicsKick();
+}
+function gDeleteNode(id) {
+  gNodes = gNodes.filter(n => n.id !== id);
+  gEdges = gEdges.filter(e => e.src_node !== id && e.dst_node !== id);
+  const el = document.getElementById('gnode-' + id);
+  if (el) el.remove();
+  if (gSelectedNode === id) {
+    gSelectedNode = null; gShowNodeParams(null);
+    if (isMobile()) gParamsSheetClose();
+  }
+  gUpdateConnectedPorts();
+  gRedrawEdges(); gSave(); gPhysicsKick();
+}
+
+function gRedrawEdges() {
+  gEdgesEl.innerHTML = '';
+  for (const edge of gEdges) {
+    const s = gNodesEl.querySelector(`.gport[data-nid="${edge.src_node}"][data-port="${edge.src_port}"][data-dir="output"]`);
+    const d = gNodesEl.querySelector(`.gport[data-nid="${edge.dst_node}"][data-port="${edge.dst_port}"][data-dir="input"]`);
+    if (!s || !d) continue;
+    const p0 = gPortPos(s), p1 = gPortPos(d);
+    const dx = Math.abs(p1.x - p0.x) / 2 + 80;
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', `M${p0.x},${p0.y} L${p1.x},${p1.y}`);
+    path.setAttribute('class', 'gedge' + (edge.feedback ? ' feedback' : ''));
+    path.dataset.eid = edge.id;
+    path.addEventListener('contextmenu', ev => { ev.preventDefault(); gShowEdgeCtx(edge.id, ev.clientX, ev.clientY); });
+    path.addEventListener('mouseenter', async ev => {
+      if (!gLastGraphJobId) return;
+      try {
+        const r = await fetch(`/api/graph/wire-payload/${gLastGraphJobId}/${edge.src_node}`);
+        const d = await r.json();
+        const lines = Object.entries(d.payload || {}).map(([k,v]) => `${k}  ${v}`).join('\n');
+        gWireTooltip.textContent = lines || '(no payload)';
+        gWireTooltip.style.left = (ev.clientX + 14) + 'px';
+        gWireTooltip.style.top  = (ev.clientY - 8)  + 'px';
+        gWireTooltip.style.display = '';
+      } catch {}
+    });
+    path.addEventListener('mouseleave', () => { gWireTooltip.style.display = 'none'; });
+    gEdgesEl.appendChild(path);
+  }
+}
+
+// ── Select node ────────────────────────────────────────────────
+function gSelectNode(id) {
+  gNodesEl.querySelectorAll('.gnode').forEach(el => el.classList.remove('selected'));
+  const el = document.getElementById('gnode-' + id);
+  if (el) el.classList.add('selected');
+  gSelectedNode = id;
+  const node = gNodes.find(n => n.id === id);
+  gShowNodeParams(node);
+  if (isMobile()) gParamsSheetOpen();
+}
+
+function gShowNodeParams(node) {
+  if (!node) {
+    gParamsEmpty.style.display = ''; gParamsForm.style.display = 'none';
+    if (gParamsHdr) gParamsHdr.textContent = 'Node Parameters';
+    return;
+  }
+  const def = gNodeDefs[node.method_id];
+  if (gParamsHdr) gParamsHdr.textContent = def ? def.name : 'Parameters';
+  gParamsEmpty.style.display = 'none'; gParamsForm.style.display = '';
+  const entries = Object.entries(def.params || {});
+  gParamsForm.innerHTML = entries.length
+    ? entries.map(([k,s]) => renderParamField(k, s)).join('')
+    : '<p style="font-size:12px;color:var(--muted)">No parameters.</p>';
+
+  for (const [key, spec] of entries) {
+    const el = document.getElementById(`p_${key}`);
+    if (!el) continue;
+    const val = node.params[key] ?? spec.default;
+    if (el.type === 'checkbox') el.checked = !!val; else el.value = val ?? '';
+    const v = gParamsForm.querySelector(`#val_${key}`);
+    if (v) v.textContent = formatVal(el.value);
+  }
+  gParamsForm.querySelectorAll('input[type=range]').forEach(r => {
+    const key = r.id.replace('p_',''), v = gParamsForm.querySelector(`#val_${key}`);
+    r.addEventListener('input', () => { if (v) v.textContent = formatVal(r.value); gUpdateNodeParam(node.id, key, parseFloat(r.value)); gDoAutoGen(); });
+  });
+  gParamsForm.querySelectorAll('input,select').forEach(el => {
+    const key = el.id.replace('p_','');
+    el.addEventListener('change', () => {
+      const val = el.type==='checkbox' ? el.checked : (el.type==='range'||el.type==='number') ? parseFloat(el.value) : el.value;
+      gUpdateNodeParam(node.id, key, val);
+      gDoAutoGen();
+    });
+  });
+  gRefreshParamOverrides(node.id);
+}
+function gUpdateNodeParam(nodeId, key, val) {
+  const n = gNodes.find(n => n.id===nodeId); if (n) { n.params[key]=val; n.dirty=true; gSave(); }
+}
+
+// ── Context menus ──────────────────────────────────────────────
+let gCtxTarget = null;
+function gShowEdgeCtx(eid, x, y) {
+  gSelectedEdge = eid; gCtxTarget = 'edge';
+  document.getElementById('ctx-del-node').style.display = 'none';
+  document.getElementById('ctx-del-edge').style.display = '';
+  document.getElementById('ctx-feedback').style.display = '';
+  const edge = gEdges.find(e => e.id===eid);
+  document.getElementById('ctx-feedback').textContent = edge?.feedback ? 'Remove feedback' : 'Mark as feedback';
+  gCtxMenu.style.cssText = `left:${x}px;top:${y}px;display:`;
+}
+document.getElementById('ctx-feedback').addEventListener('click', () => {
+  const e = gEdges.find(e => e.id===gSelectedEdge);
+  if (e) { e.feedback=!e.feedback; gRedrawEdges(); gSave(); }
+  gCtxMenu.style.display='none';
+});
+document.getElementById('ctx-del-edge').addEventListener('click', () => { if (gSelectedEdge) gDeleteEdge(gSelectedEdge); gCtxMenu.style.display='none'; });
+document.getElementById('ctx-del-node').addEventListener('click', () => { if (gSelectedNode) gDeleteNode(gSelectedNode); gCtxMenu.style.display='none'; });
+gNodesEl.addEventListener('contextmenu', e => {
+  const nodeEl = e.target.closest('.gnode');
+  if (!nodeEl) return;
+  e.preventDefault();
+  gSelectNode(nodeEl.id.replace('gnode-',''));
+  document.getElementById('ctx-del-node').style.display = '';
+  document.getElementById('ctx-del-edge').style.display = 'none';
+  document.getElementById('ctx-feedback').style.display = 'none';
+  gCtxMenu.style.left=e.clientX+'px'; gCtxMenu.style.top=e.clientY+'px'; gCtxMenu.style.display='';
+});
+document.addEventListener('click', () => { gCtxMenu.style.display='none'; });
+
+// ── Run ────────────────────────────────────────────────────────
+async function gDoRun() {
+  if (!gNodes.length) { gSetStatus('No nodes.'); return; }
+  // Clear any previous node error states
+  document.querySelectorAll('.node-error').forEach(el => {
+    el.classList.remove('node-error');
+    delete el.dataset.errorMsg;
+  });
+  const srcSet = new Set(gEdges.filter(e => !e.feedback).map(e => e.src_node));
+  const hasRenderFlag = gNodes.some(n => n.render);
+  if (!hasRenderFlag && !gNodes.some(n => !srcSet.has(n.id))) {
+    gSetStatus('No output node — set a render flag (◎) or leave a node with no outgoing connections'); return;
+  }
+  gSetRunDisabled(true);
+  gSetStatus('Running…');
+  const body = {
+    nodes: gNodes.map(n=>({id:n.id,method_id:n.method_id,params:n.params,x:n.x,y:n.y,render:!!n.render,dirty:n.dirty!==false})),
+    edges: gEdges.map(e=>({src_node:e.src_node,src_port:e.src_port,dst_node:e.dst_node,dst_port:e.dst_port,feedback:e.feedback})),
+    seed: 42, frames: gGetFrames(),
+  };
+  try {
+    const res = await fetch('/api/graph/execute', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+    gListenGraphSSE((await res.json()).job_id);
+  } catch(e) { gSetStatus('Error: '+e.message); gSetRunDisabled(false); }
+}
+gRunBtn.addEventListener('click', gDoRun);
+gRunBtnDesk.addEventListener('click', gDoRun);
+
+// ── Auto-generate toggle ─────────────────────────────────────
+const gAutoBtn = document.getElementById('graph-auto-btn');
+const gAutoBtnDesk = document.getElementById('graph-auto-btn-desk');
+function gToggleAutoGen() {
+  gAutoGen = !gAutoGen;
+  gAutoBtn.classList.toggle('active', gAutoGen);
+  gAutoBtnDesk.classList.toggle('active', gAutoGen);
+  gAutoBtn.textContent = gAutoGen ? '⏹ Auto' : '⏺ Auto';
+  gAutoBtnDesk.textContent = gAutoGen ? '⏹ Auto' : '⏺ Auto';
+  try { localStorage.setItem('graph-auto-gen', gAutoGen ? '1' : '0'); } catch {}
+}
+// Restore saved state
+try { if (localStorage.getItem('graph-auto-gen') === '1') gToggleAutoGen(); } catch {}
+gAutoBtn.addEventListener('click', gToggleAutoGen);
+gAutoBtnDesk.addEventListener('click', gToggleAutoGen);
+
+// ── Auto-generate: fire-and-cancel ───────────────────────────
+let _autoGenTimer = null;
+function gDoAutoGen() {
+  if (!gAutoGen) return;
+  if (!gNodes.length) return;
+  // Cancel any in-flight auto-gen
+  if (gAutoGenAbort) { gAutoGenAbort.abort(); gAutoGenAbort = null; }
+  clearTimeout(_autoGenTimer);
+  // Debounce: wait 80ms after last param change before firing
+  _autoGenTimer = setTimeout(() => {
+    gAutoGenAbort = new AbortController();
+    const body = {
+      nodes: gNodes.map(n=>({id:n.id,method_id:n.method_id,params:n.params,x:n.x,y:n.y,render:!!n.render,dirty:true})),
+      edges: gEdges.map(e=>({src_node:e.src_node,src_port:e.src_port,dst_node:e.dst_node,dst_port:e.dst_port,feedback:e.feedback})),
+      seed: 42, frames: 1,
+    };
+    fetch('/api/graph/execute', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body), signal: gAutoGenAbort.signal,
+    }).then(r => r.json()).then(({job_id}) => {
+      if (!job_id) return;
+      gAutoGenJobId = job_id;
+      gListenGraphSSE(job_id);
+    }).catch(e => {
+      if (e.name !== 'AbortError') gSetStatus('Auto-gen: ' + e.message);
+    });
+  }, 80);
+}
+
+function gListenGraphSSE(job_id) {
+  gLivePreviewImg = null;
+  gLastGraphJobId = job_id;
+  const es = new EventSource(`/api/graph/jobs/${job_id}/stream`);
+  es.addEventListener('progress', e => gSetStatus(JSON.parse(e.data).message));
+  es.addEventListener('graph_frame', e => {
+    const { data } = JSON.parse(e.data);
+    gGraphFrameUpdate(data);
+  });
+  es.addEventListener('node-error', e => {
+    const { nodeId, error } = JSON.parse(e.data);
+    const el = document.getElementById('gnode-' + nodeId);
+    if (el) { el.classList.add('node-error'); el.dataset.errorMsg = error; }
+  });
+  es.addEventListener('done', e => {
+    es.close();
+    const d = JSON.parse(e.data);
+    gNodes.forEach(n => { n.dirty = false; });  // mark all clean after successful run
+    gSetStatus(`Done — ${d.frames || 1} frame(s)`);
+    gSetRunDisabled(false);
+    gGraphDoneSwap(d.type, d.rel_path);
+  });
+  es.addEventListener('error', e => {
+    es.close();
+    try { gSetStatus('Error: '+JSON.parse(e.data).message); } catch { gSetStatus('Connection error.'); }
+    gSetRunDisabled(false);
+  });
+}
+
+// ── Clear ──────────────────────────────────────────────────────
+function gDoClear() {
+  gNodes=[]; gEdges=[]; gSelectedNode=null; gSelectedEdge=null;
+  gPanX=0; gPanY=0; gApplyPan();
+  gNodesEl.innerHTML=''; gEdgesEl.innerHTML=''; gOutputStrip.innerHTML='';
+  gLivePreviewImg = null; gMainPreview.innerHTML=''; gMainPreview.classList.remove('active');
+  gPreviewHide(); gShowNodeParams(null);
+  if (isMobile()) gParamsSheetClose();
+  gSetStatus(''); gSave();
+}
+gClearBtn.addEventListener('click', gDoClear);
+gClearBtnDesk.addEventListener('click', gDoClear);
+document.getElementById('graph-layout-btn')?.addEventListener('click', gPhysicsToggle);
+document.getElementById('graph-layout-btn-desk')?.addEventListener('click', gPhysicsToggle);
+
+// ── Persistence ────────────────────────────────────────────────
+function gSave() {
+  localStorage.setItem('pipeline-graph', JSON.stringify({nodes:gNodes,edges:gEdges,panX:gPanX,panY:gPanY,scale:gCanvasScale}));
+  gAutoSave();
+}
+function gLoad() {
+  try {
+    const s = JSON.parse(localStorage.getItem('pipeline-graph')||'null');
+    if (!s) return;
+    gNodes = s.nodes || [];
+    // Migrate: old image input port was named "image"; now it's "image_in"
+    gEdges = (s.edges || []).map(e =>
+      e.dst_port === 'image' ? { ...e, dst_port: 'image_in' } : e
+    );
+    gEdgeCounter = gEdges.length;
+    gPanX = s.panX || 0; gPanY = s.panY || 0;
+    gCanvasScale = s.scale || 1.0;
+  } catch { gNodes=[]; gEdges=[]; }
+}
+async function gRestoreGraph() {
+  if (!gNodes.length && !gEdges.length) return;
+  if (!Object.keys(gNodeDefs).length) {
+    gNodeDefs = await fetch('/api/node-defs').then(r=>r.json());
+    gRenderPalette(); gPaletteLoaded=true;
+  }
+  gApplyPan();
+  gNodes.forEach(gRenderNode);
+  gUpdateConnectedPorts();
+  gRedrawEdges();
+}
+
+gLoad();
+setTimeout(gRestoreGraph, 100);
+
+// ── Restore-session banner ─────────────────────────────────────
+setTimeout(() => {
+  try {
+    const saved = localStorage.getItem('gm-autosave');
+    if (!saved) return;
+    const data = JSON.parse(saved);
+    if (!data.nodes || !data.nodes.length) return;
+    const banner = document.createElement('div');
+    banner.id = 'restore-banner';
+    banner.innerHTML =
+      `<span>Restore last session? (${data.nodes.length} node${data.nodes.length !== 1 ? 's' : ''})</span>` +
+      `<button onclick="gLoadGraph(JSON.parse(localStorage.getItem('gm-autosave')));this.parentElement.remove()">Restore</button>` +
+      `<button onclick="this.parentElement.remove()">Dismiss</button>`;
+    banner.style.cssText = 'position:fixed;top:8px;left:50%;transform:translateX(-50%);' +
+      'background:#2a2a2a;border:1px solid #444;padding:8px 14px;border-radius:6px;' +
+      'z-index:9999;display:flex;gap:8px;align-items:center;font-size:13px;';
+    banner.querySelector('button').style.cssText =
+      'padding:4px 10px;background:var(--accent);color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:12px;';
+    banner.querySelectorAll('button')[1].style.cssText =
+      'padding:4px 10px;background:var(--bg3);color:var(--muted);border:1px solid var(--border);border-radius:5px;cursor:pointer;font-size:12px;';
+    document.body.appendChild(banner);
+  } catch(e) {}
+}, 200);
+
+// ── Serialize graph to plain object ───────────────────────────
+function gSerializeGraph() {
+  return {
+    version: 1,
+    nodes: gNodes.map(n => ({
+      id:        n.id,
+      method_id: n.method_id,
+      params:    n.params || {},
+      x:         Math.round(n.x),
+      y:         Math.round(n.y),
+      render:    !!n.render,
+    })),
+    edges: gEdges.map(e => ({
+      src_node: e.src_node,
+      src_port: e.src_port,
+      dst_node: e.dst_node,
+      dst_port: e.dst_port,
+      feedback: !!e.feedback,
+    })),
+  };
+}
+
+// ── Load a serialized graph onto the canvas ────────────────────
+async function gLoadGraph(data) {
+  // Clear canvas (without triggering gSave loop)
+  gNodes = []; gEdges = []; gSelectedNode = null; gSelectedEdge = null;
+  gPanX = 0; gPanY = 0; gApplyPan();
+  gNodesEl.innerHTML = ''; gEdgesEl.innerHTML = ''; gOutputStrip.innerHTML = '';
+  gLivePreviewImg = null; gMainPreview.innerHTML = ''; gMainPreview.classList.remove('active');
+  gPreviewHide(); gShowNodeParams(null);
+  if (isMobile()) gParamsSheetClose();
+  gSetStatus('');
+
+  // Ensure node defs are ready
+  if (!Object.keys(gNodeDefs).length) {
+    gNodeDefs = await fetch('/api/node-defs').then(r => r.json());
+    gRenderPalette(); gPaletteLoaded = true;
+  }
+
+  // Rebuild nodes with their saved IDs
+  for (const n of (data.nodes || [])) {
+    const def = gNodeDefs[n.method_id];
+    if (!def) continue;
+    const node = {
+      id: n.id, method_id: n.method_id,
+      params: n.params || gDefaultParams(def),
+      x: n.x, y: n.y, render: !!n.render, dirty: true,
+    };
+    gNodes.push(node);
+    gRenderNode(node);
+  }
+
+  // Rebuild edges
+  gEdgeCounter = 0;
+  for (const e of (data.edges || [])) {
+    gEdges.push({
+      id: 'e' + (++gEdgeCounter),
+      src_node: e.src_node, src_port: e.src_port,
+      dst_node: e.dst_node, dst_port: e.dst_port,
+      feedback: !!e.feedback,
+    });
+  }
+
+  gUpdateConnectedPorts();
+  gRedrawEdges();
+  gSave();
+}
+
+// ── Auto-save debounce ─────────────────────────────────────────
+let _autoSaveTimer = null;
+function gAutoSave() {
+  clearTimeout(_autoSaveTimer);
+  _autoSaveTimer = setTimeout(() => {
+    try { localStorage.setItem('gm-autosave', JSON.stringify(gSerializeGraph())); } catch(e) {}
+  }, 2000);
+}
+
+// ── Save graph to server ───────────────────────────────────────
+async function gGraphSaveToServer() {
+  const name = prompt('Save graph as:', 'my-graph');
+  if (name === null) return;
+  const graph = gSerializeGraph();
+  try {
+    const r = await fetch('/api/graph/save', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ name: name.trim() || 'untitled', graph }),
+    });
+    const d = await r.json();
+    if (d.ok) gShowToast(`Saved "${d.name}"`);
+    else gShowToast('Save failed', true);
+  } catch(e) { gShowToast('Save failed: ' + e.message, true); }
+}
+
+// ── Load graph list from server ────────────────────────────────
+async function gGraphLoadFromServer() {
+  let graphs;
+  try { graphs = await fetch('/api/graph/saved').then(r => r.json()); }
+  catch(e) { gShowToast('Could not reach server', true); return; }
+
+  const list = document.getElementById('graph-load-list');
+  if (!graphs.length) {
+    list.innerHTML = '<div class="glm-empty">No saved graphs yet.</div>';
+  } else {
+    list.innerHTML = graphs.map(g =>
+      `<div class="glm-item" data-gname="${escHtml(g.name)}">` +
+      `<div class="glm-name">${escHtml(g.name)}</div>` +
+      `<div class="glm-meta">${escHtml((g.saved_at || '').replace('T',' ').slice(0,16))}</div>` +
+      `</div>`
+    ).join('');
+    list.querySelectorAll('.glm-item').forEach(el => {
+      el.addEventListener('click', async () => {
+        document.getElementById('graph-load-modal').classList.remove('visible');
+        try {
+          const data = await fetch(`/api/graph/saved/${encodeURIComponent(el.dataset.gname)}`).then(r => r.json());
+          await gLoadGraph(data);
+          gShowToast(`Loaded "${el.dataset.gname}"`);
+        } catch(e) { gShowToast('Load failed: ' + e.message, true); }
+      });
+    });
+  }
+  document.getElementById('graph-load-modal').classList.add('visible');
+}
+
+// ── Toast helper ───────────────────────────────────────────────
+function gShowToast(msg, isErr = false) {
+  const t = document.getElementById('graph-toast');
+  t.textContent = msg;
+  t.style.background   = isErr ? '#2e1a1a' : '#1a2e1a';
+  t.style.border       = `1px solid ${isErr ? 'var(--err)' : 'var(--success)'}`;
+  t.style.color        = isErr ? 'var(--err)' : 'var(--success)';
+  t.style.display      = '';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => { t.style.display = 'none'; }, 2500);
+}
+
+// ── Wire save/load buttons ─────────────────────────────────────
+document.getElementById('graph-save-btn')?.addEventListener('click', gGraphSaveToServer);
+document.getElementById('graph-save-btn-desk')?.addEventListener('click', gGraphSaveToServer);
+document.getElementById('graph-load-btn')?.addEventListener('click', gGraphLoadFromServer);
+document.getElementById('graph-load-btn-desk')?.addEventListener('click', gGraphLoadFromServer);
+document.getElementById('graph-load-close')?.addEventListener('click', () => {
+  document.getElementById('graph-load-modal').classList.remove('visible');
+});
+
+// ═══════════════════════════════════════════════════════════════
+// NODE PICKER  (Houdini-style Tab / right-click menu)
+// ═══════════════════════════════════════════════════════════════
+
+// ── Create picker DOM (runs synchronously, body already in DOM) ─
+(function() {
+  const el = document.createElement('div');
+  el.id = 'node-picker';
+  el.innerHTML =
+    '<div class="np-search-wrap"><input type="text" id="node-picker-input" placeholder="Search nodes…" autocomplete="off" spellcheck="false"></div>' +
+    '<div id="node-picker-list"></div>';
+  document.body.appendChild(el);
+})();
+
+// ── State ──────────────────────────────────────────────────────
+let npVisible   = false;
+let npItems     = [];    // flat {def, cat} rows (no category separators)
+let npHighlight = 0;
+let npSpawnPos  = null;  // {canvasX, canvasY}
+
+// ── Usage memory ───────────────────────────────────────────────
+function npGetUsage() {
+  try { return JSON.parse(localStorage.getItem('np-usage') || '{}'); } catch { return {}; }
+}
+function npBumpUsage(id) {
+  const m = npGetUsage();
+  m[id] = (m[id] || 0) + 1;
+  try { localStorage.setItem('np-usage', JSON.stringify(m)); } catch {}
+}
+
+// ── Relevance score ────────────────────────────────────────────
+function npScore(def, q) {
+  if (!q) return 0;
+  const name = def.name.toLowerCase();
+  const cat  = (def.category || '').toLowerCase();
+  if (name === q)          return 100;
+  if (name.startsWith(q)) return 80;
+  if (name.includes(q))   return 60;
+  if (cat.includes(q))    return 40;
+  return -1;
+}
+
+// ── Build display rows ─────────────────────────────────────────
+function npBuildRows(query) {
+  const usage = npGetUsage();
+  const q     = query.trim().toLowerCase();
+  const all   = Object.values(gNodeDefs);
+
+  if (!q) {
+    // Grouped by category; within each group usage-desc then name-asc
+    const groups = {};
+    for (const def of all) {
+      const cat = def.category || 'other';
+      (groups[cat] = groups[cat] || []).push(def);
+    }
+    const rows = [];
+    for (const [cat, defs] of Object.entries(groups).sort()) {
+      defs.sort((a, b) =>
+        ((usage[b.method_id]||0) - (usage[a.method_id]||0)) ||
+        a.name.localeCompare(b.name)
+      );
+      rows.push({ isCat: true, cat });
+      for (const def of defs) rows.push({ isCat: false, def, cat });
+    }
+    return rows;
+  }
+
+  // Filtered: score → usage → name
+  const scored = [];
+  for (const def of all) {
+    const s = npScore(def, q);
+    if (s < 0) continue;
+    scored.push({ def, cat: def.category || 'other', score: s, use: usage[def.method_id] || 0 });
+  }
+  scored.sort((a, b) =>
+    (b.score - a.score) || (b.use - a.use) || a.def.name.localeCompare(b.def.name)
+  );
+  return scored.map(s => ({ isCat: false, def: s.def, cat: s.cat }));
+}
+
+// ── Render list ────────────────────────────────────────────────
+function npRender(query) {
+  const listEl = document.getElementById('node-picker-list');
+  const rows   = npBuildRows(query);
+  npItems      = rows.filter(r => !r.isCat);
+  npHighlight  = 0;
+
+  if (!npItems.length) {
+    listEl.innerHTML = '<p style="padding:12px;font-size:12px;color:var(--muted)">No matches.</p>';
+    return;
+  }
+
+  let html = '';
+  for (const row of rows) {
+    if (row.isCat) {
+      html += `<div class="np-cat">${escHtml(row.cat)}</div>`;
+    } else {
+      const def = row.def;
+      const deprCls = def.deprecated ? ' np-deprecated' : '';
+      const deprTag = def.deprecated ? ` <span class="np-depr-tag">(deprecated)</span>` : '';
+      const rawDesc = def.description || '';
+      const descText = rawDesc.length > 70 ? rawDesc.slice(0, 70) + '…' : rawDesc;
+      const descHtml = descText ? `<span class="np-desc">${escHtml(descText)}</span>` : '';
+      html += `<div class="np-item${deprCls}" data-mid="${escHtml(def.method_id)}">` +
+              `<div class="np-item-row"><span class="np-mid">#${escHtml(def.method_id)}</span>` +
+              `<span class="np-name">${escHtml(def.name)}${deprTag}</span></div>` +
+              descHtml + `</div>`;
+    }
+  }
+  listEl.innerHTML = html;
+
+  listEl.querySelectorAll('.np-item').forEach((el, i) => {
+    el.addEventListener('mouseenter', () => { npHighlight = i; npMarkHighlight(); });
+    el.addEventListener('click', () => npCommit(i));
+  });
+  npMarkHighlight();
+}
+
+function npMarkHighlight() {
+  const els = document.getElementById('node-picker-list').querySelectorAll('.np-item');
+  els.forEach((el, i) => el.classList.toggle('np-hl', i === npHighlight));
+  if (els[npHighlight]) els[npHighlight].scrollIntoView({ block: 'nearest' });
+}
+
+// ── Open ───────────────────────────────────────────────────────
+function npOpen(screenX, screenY, canvasX, canvasY) {
+  if (!Object.keys(gNodeDefs).length) return; // palette not ready yet
+
+  npSpawnPos = { canvasX, canvasY };
+  npVisible  = true;
+
+  const picker = document.getElementById('node-picker');
+  const input  = document.getElementById('node-picker-input');
+  input.value  = '';
+  picker.style.display = 'flex';
+  npRender('');
+
+  // Clamp to viewport after one layout tick
+  requestAnimationFrame(() => {
+    const pw = picker.offsetWidth,  ph = picker.offsetHeight;
+    const vw = window.innerWidth,   vh = window.innerHeight;
+    let l = screenX, t = screenY;
+    if (l + pw > vw - 8) l = vw - pw - 8;
+    if (t + ph > vh - 8) t = vh - ph - 8;
+    if (l < 8) l = 8;
+    if (t < 8) t = 8;
+    picker.style.left = l + 'px';
+    picker.style.top  = t + 'px';
+    input.focus();
+  });
+}
+
+// ── Close ──────────────────────────────────────────────────────
+function npClose() {
+  npVisible = false;
+  document.getElementById('node-picker').style.display = 'none';
+  npSpawnPos = null;
+}
+
+// ── Commit (spawn node) ────────────────────────────────────────
+function npCommit(idx) {
+  if (idx < 0 || idx >= npItems.length || !npSpawnPos) return;
+  const { def } = npItems[idx];
+  npBumpUsage(def.method_id);
+  gAddNode(def.method_id, npSpawnPos.canvasX, npSpawnPos.canvasY);
+  npClose();
+}
+
+// ── Screen → canvas coords ─────────────────────────────────────
+function npScreenToCanvas(sx, sy) {
+  const rect = gCanvasWrap.getBoundingClientRect();
+  return {
+    canvasX: (sx - rect.left - gPanX) / gCanvasScale - 80,
+    canvasY: (sy - rect.top  - gPanY) / gCanvasScale - 40,
+  };
+}
+
+// ── Input: type to filter ──────────────────────────────────────
+document.getElementById('node-picker-input').addEventListener('input', e => {
+  npRender(e.target.value);
+});
+
+// ── Input: keyboard navigation ────────────────────────────────
+document.getElementById('node-picker-input').addEventListener('keydown', e => {
+  if (e.key === 'Escape')    { e.preventDefault(); npClose(); return; }
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    npHighlight = Math.min(npHighlight + 1, npItems.length - 1);
+    npMarkHighlight(); return;
+  }
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    npHighlight = Math.max(npHighlight - 1, 0);
+    npMarkHighlight(); return;
+  }
+  if (e.key === 'Enter') { e.preventDefault(); npCommit(npHighlight); return; }
+});
+
+// ── Right-click on empty canvas → open picker ─────────────────
+gCanvasWrap.addEventListener('contextmenu', e => {
+  // Let node context menu handle right-clicks on nodes/ports
+  if (e.target.closest('.gnode') || e.target.classList.contains('gport')) return;
+  e.preventDefault();
+  const pos = npScreenToCanvas(e.clientX, e.clientY);
+  npOpen(e.clientX, e.clientY, pos.canvasX, pos.canvasY);
+});
+
+// ── Tab key → open picker (global, graph view only) ───────────
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Tab') return;
+  // If picker is open, just eat the Tab so focus doesn't wander
+  if (npVisible) { e.preventDefault(); return; }
+  // Don't steal Tab inside text inputs / selects (e.g. param panel)
+  const tag = e.target.tagName;
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  e.preventDefault();
+  const rect = gCanvasWrap.getBoundingClientRect();
+  const cx = rect.left + rect.width  / 2;
+  const cy = rect.top  + rect.height / 2;
+  const pos = npScreenToCanvas(cx, cy);
+  npOpen(cx, cy, pos.canvasX, pos.canvasY);
+});
+
+// ── Click outside → close (capture so it runs first) ─────────
+document.addEventListener('click', e => {
+  if (!npVisible) return;
+  if (!document.getElementById('node-picker').contains(e.target)) npClose();
+}, true);
+
+// ── Mobile + button ────────────────────────────────────────────
+document.getElementById('np-add-btn').addEventListener('click', () => {
+  const rect = gCanvasWrap.getBoundingClientRect();
+  const cx = rect.left + rect.width  / 2;
+  const cy = rect.top  + rect.height / 2;
+  const pos = npScreenToCanvas(cx, cy);
+  npOpen(cx, cy, pos.canvasX, pos.canvasY);
+});
+
+// ── Hot-reload: listen for server-push node-def changes ───────
+function gConnectEvents() {
+    const es = new EventSource('/api/events');
+    es.addEventListener('node-defs-updated', async () => {
+        console.log('[hot-reload] node defs updated, refreshing...');
+        await gLoadMethodPalette();
+        if (typeof gLoadPortTypes === 'function') await gLoadPortTypes();
+        gShowToast('Methods updated');
+    });
+    es.onerror = () => {
+        es.close();
+        setTimeout(gConnectEvents, 3000);
+    };
+}
+gConnectEvents();
+
+// ── Load palette now (graph is the default view) ──────────────
+gLoadMethodPalette();
+gLoadPortTypes();
+
+// ── NODE DOCTOR ────────────────────────────────────────────────
+(function() {
+  let ndMessages     = [];
+  let ndPendingCode  = null;
+  let ndBackupId     = null;
+  let ndBusy         = false;
+
+  const ndPanel      = document.getElementById('nd-panel');
+  const ndToggleBtn  = document.getElementById('nd-toggle-btn');
+  const ndCloseBtn   = document.getElementById('nd-close-btn');
+  const ndMsgsEl     = document.getElementById('nd-messages');
+  const ndInput      = document.getElementById('nd-input');
+  const ndSendBtn    = document.getElementById('nd-send-btn');
+  const ndApplyRow   = document.getElementById('nd-apply-row');
+  const ndApplyBtn   = document.getElementById('nd-apply-btn');
+  const ndUndoBtn    = document.getElementById('nd-undo-btn');
+
+  function ndIsOpen() { return ndPanel.classList.contains('nd-open'); }
+
+  function ndOpenPanel() {
+    ndPanel.classList.add('nd-open');
+    ndToggleBtn.classList.add('nd-active');
+    ndInput.focus();
+  }
+  function ndClosePanel() {
+    ndPanel.classList.remove('nd-open');
+    ndToggleBtn.classList.remove('nd-active');
+  }
+
+  ndToggleBtn.addEventListener('click', () => ndIsOpen() ? ndClosePanel() : ndOpenPanel());
+  ndCloseBtn.addEventListener('click', ndClosePanel);
+
+  function ndAppend(role, text) {
+    const el = document.createElement('div');
+    el.className = `nd-msg nd-${role}`;
+    el.textContent = text;
+    ndMsgsEl.appendChild(el);
+    ndMsgsEl.scrollTop = ndMsgsEl.scrollHeight;
+    return el;
+  }
+
+  function ndExtractCode(text) {
+    const m = text.match(/```python\s*([\s\S]*?)```/);
+    return m ? m[1].trim() : null;
+  }
+
+  async function ndSend() {
+    if (ndBusy) return;
+    const text = ndInput.value.trim();
+    if (!text) return;
+
+    const node = gNodes.find(n => n.id === gSelectedNode);
+    if (!node) return;
+    const def = gNodeDefs[node.method_id];
+
+    ndInput.value = '';
+    ndBusy = true;
+    ndSendBtn.disabled = true;
+
+    ndMessages.push({ role: 'user', content: text });
+    ndAppend('user', text);
+
+    const thinkEl = ndAppend('bot', '⋯');
+    thinkEl.classList.add('nd-thinking');
+
+    let botText = '';
+    try {
+      const resp = await fetch('/api/node-doctor/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          method_id:   node.method_id,
+          node_def:    def || {},
+          node_params: node.params || {},
+          messages:    ndMessages.slice(),
+        }),
+      });
+
+      if (!resp.ok) throw new Error(`Server error ${resp.status}`);
+
+      const reader = resp.body.getReader();
+      const dec    = new TextDecoder();
+      thinkEl.textContent = '';
+      thinkEl.classList.remove('nd-thinking');
+
+      let buf = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const d = JSON.parse(line.slice(6));
+            if (d.done) break;
+            if (d.text) {
+              botText += d.text;
+              thinkEl.textContent = botText;
+              ndMsgsEl.scrollTop = ndMsgsEl.scrollHeight;
+            }
+          } catch { /* partial JSON */ }
+        }
+      }
+    } catch (err) {
+      thinkEl.classList.remove('nd-thinking');
+      thinkEl.textContent = '⚠ ' + err.message;
+    }
+
+    ndMessages.push({ role: 'assistant', content: botText });
+
+    const code = ndExtractCode(botText);
+    if (code) {
+      ndPendingCode = code;
+      ndApplyRow.classList.add('nd-show');
+      ndApplyBtn.disabled = false;
+      ndUndoBtn.classList.remove('nd-show');
+    }
+
+    ndBusy = false;
+    ndSendBtn.disabled = false;
+  }
+
+  ndSendBtn.addEventListener('click', ndSend);
+  ndInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ndSend(); }
+  });
+
+  ndApplyBtn.addEventListener('click', async () => {
+    if (!ndPendingCode || ndBusy) return;
+    const node = gNodes.find(n => n.id === gSelectedNode);
+    if (!node) return;
+    ndApplyBtn.disabled = true;
+    try {
+      const r = await fetch('/api/node-doctor/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ method_id: node.method_id, source: ndPendingCode }),
+      });
+      const data = await r.json();
+      if (data.ok) {
+        ndBackupId = data.backup_id;
+        ndUndoBtn.classList.add('nd-show');
+        ndUndoBtn.disabled = false;
+        ndAppend('bot', '✓ Applied — hot-reloading…');
+      } else {
+        ndAppend('bot', '⚠ Apply failed: ' + (data.error || 'unknown'));
+        ndApplyBtn.disabled = false;
+      }
+    } catch (err) {
+      ndAppend('bot', '⚠ ' + err.message);
+      ndApplyBtn.disabled = false;
+    }
+  });
+
+  ndUndoBtn.addEventListener('click', async () => {
+    if (!ndBackupId) return;
+    ndUndoBtn.disabled = true;
+    try {
+      const r = await fetch(`/api/node-doctor/undo/${ndBackupId}`, { method: 'POST' });
+      const data = await r.json();
+      if (data.ok) {
+        ndBackupId = null;
+        ndUndoBtn.classList.remove('nd-show');
+        ndApplyBtn.disabled = false;
+        ndAppend('bot', '↩ Reverted to previous version.');
+      } else {
+        ndAppend('bot', '⚠ Undo failed: ' + (data.error || 'unknown'));
+        ndUndoBtn.disabled = false;
+      }
+    } catch (err) {
+      ndAppend('bot', '⚠ ' + err.message);
+      ndUndoBtn.disabled = false;
+    }
+  });
+
+  // Wire into node selection — show/hide the toggle button and reset state
+  const _origGSelectNode = gSelectNode;
+  gSelectNode = function(id) {
+    _origGSelectNode(id);
+    const node = gNodes.find(n => n.id === id);
+    if (node) {
+      ndToggleBtn.style.display = '';
+    } else {
+      ndToggleBtn.style.display = 'none';
+      ndClosePanel();
+    }
+    // Reset conversation when switching nodes
+    ndMessages    = [];
+    ndPendingCode = null;
+    ndMsgsEl.innerHTML = '';
+    ndApplyRow.classList.remove('nd-show');
+    ndUndoBtn.classList.remove('nd-show');
+  };
+})();
+</script>
+
+</body>
+</html>
