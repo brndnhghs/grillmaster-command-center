@@ -2209,9 +2209,15 @@ function tlClipAtFrame(timelineFrame) {
   return { seqName: clip.seqName, localFrame: timelineFrame - clip.startFrame };
 }
 
+function tlClearPreview() {
+  if (gLivePreviewImg) {
+    gLivePreviewImg.style.opacity = '0';
+  }
+}
+
 function tlLoadFrame(timelineFrame) {
   const hit = tlClipAtFrame(timelineFrame);
-  if (!hit) return;
+  if (!hit) { tlClearPreview(); return; }
   const { seqName, localFrame } = hit;
   fetch(`/api/sequences/${encodeURIComponent(seqName)}/${localFrame}`)
     .then(r => {
@@ -2235,6 +2241,8 @@ function tlLoadFrame(timelineFrame) {
       if (gLivePreviewImg._tlUrl) URL.revokeObjectURL(gLivePreviewImg._tlUrl);
       gLivePreviewImg._tlUrl = url;
       gLivePreviewImg.src = url;
+      gLivePreviewImg.style.display = '';
+      gLivePreviewImg.style.opacity = '1';
     })
     .catch(() => {
       if (!gLivePreviewImg) {
@@ -4151,101 +4159,110 @@ function renderTimelineRuler() {
         tlSelectClip(clip.id);
       });
 
-      // Drag: short press = horizontal reposition, long press = lane reorder
+      // Drag: horizontal always, vertical lane switch activates when cursor leaves origin lane
       let dragStartX = 0, dragOrigStart = 0;
-      let longPressTimer = null, longPressed = false;
       bar.addEventListener('mousedown', (e) => {
         if (e.button !== 0) return;
         e.stopPropagation();
-        longPressed = false;
         const origLane = clip.lane;
         let targetLane = origLane;
+        let laneMode = false;   // true once cursor has left the origin lane
         let inCancel = false;
         let ghostEl = null, cancelEl = null;
-
-        longPressTimer = setTimeout(() => {
-          longPressed = true;
-          bar.style.opacity = '0.75';
-          bar.style.cursor = 'grabbing';
-          bar.style.boxShadow = '0 6px 24px rgba(0,0,0,0.55)';
-          bar.style.zIndex = '50';
-
-          // Ghost: dashed outline showing target lane
-          ghostEl = document.createElement('div');
-          ghostEl.style.cssText = `position:absolute;left:0;top:${origLane * laneHeight}px;
-            width:100%;height:${laneHeight}px;border:1.5px dashed rgba(108,142,245,0.55);
-            border-radius:4px;pointer-events:none;z-index:4;
-            transition:top 0.12s ease;background:rgba(108,142,245,0.07);`;
-          lanes.appendChild(ghostEl);
-
-          // Cancel zone: strip above the lane area (inside the ruler header slot)
-          cancelEl = document.createElement('div');
-          cancelEl.style.cssText = `position:absolute;top:-26px;left:0;right:0;height:24px;
-            background:rgba(239,68,68,0.08);border:1px dashed rgba(239,68,68,0.3);
-            border-radius:4px;display:flex;align-items:center;justify-content:center;
-            font-size:10px;color:rgba(239,68,68,0.55);pointer-events:none;z-index:20;
-            transition:background 0.12s,color 0.12s;`;
-          cancelEl.textContent = '↑ drag here to cancel';
-          lanes.appendChild(cancelEl);
-        }, 400);
 
         dragStartX = e.clientX;
         dragOrigStart = clip.startFrame;
         tlDragClip = { clip, lane: li, startX: e.clientX };
 
         const onMove = (me) => {
-          if (!longPressed) {
-            // Horizontal reposition
-            const dx = me.clientX - dragStartX;
-            const frameDelta = Math.round(dx / 12);
-            clip.startFrame = Math.max(0, dragOrigStart + frameDelta);
-            clip.endFrame = clip.startFrame + (clip._origEnd - clip._origStart);
-            renderTimelineRuler();
-            return;
-          }
+          const dx = me.clientX - dragStartX;
+          const frameDelta = Math.round(dx / 12);
+          const newStart = Math.max(0, dragOrigStart + frameDelta);
+          const clipLen = clip._origEnd - clip._origStart;
+          // Move bar horizontally via transform (no re-render)
+          bar.style.left = (newStart - start) * 12 + 'px';
 
           const lanesRect = lanes.getBoundingClientRect();
           const relY = me.clientY - lanesRect.top;
+          const rawLane = Math.max(0, Math.round(relY / laneHeight));
+          const hoveredLane = tlNearestFreeLane(rawLane, clip.id);
 
-          // Cancel zone: cursor above the lanes area
+          // Activate lane mode the first time cursor enters a different lane
+          if (!laneMode && hoveredLane !== origLane) {
+            laneMode = true;
+            bar.style.opacity = '0.75';
+            bar.style.cursor = 'grabbing';
+            bar.style.boxShadow = '0 6px 24px rgba(0,0,0,0.55)';
+            bar.style.zIndex = '50';
+
+            ghostEl = document.createElement('div');
+            ghostEl.style.cssText = `position:absolute;
+              left:${barX}px;top:${hoveredLane * laneHeight + 4}px;
+              width:${barW}px;height:${laneHeight - 8}px;
+              border:1.5px dashed rgba(108,142,245,0.7);border-radius:4px;
+              pointer-events:none;z-index:4;
+              transition:top 0.1s ease;background:rgba(108,142,245,0.15);`;
+            lanes.appendChild(ghostEl);
+
+            cancelEl = document.createElement('div');
+            cancelEl.style.cssText = `position:absolute;top:-26px;left:0;right:0;height:24px;
+              background:rgba(239,68,68,0.08);border:1px dashed rgba(239,68,68,0.3);
+              border-radius:4px;display:flex;align-items:center;justify-content:center;
+              font-size:10px;color:rgba(239,68,68,0.55);pointer-events:none;z-index:20;
+              transition:background 0.12s,color 0.12s;`;
+            cancelEl.textContent = '↑ drag here to cancel';
+            lanes.appendChild(cancelEl);
+          }
+
+          if (!laneMode) {
+            // Preview frame under playhead as clip moves horizontally
+            const playheadFrame = parseInt(tlFrame.value) || 0;
+            const tempStart = newStart;
+            const tempEnd = newStart + clipLen;
+            if (playheadFrame >= tempStart && playheadFrame <= tempEnd) {
+              tlLoadFrame(playheadFrame);
+            } else {
+              tlClearPreview();
+            }
+            return;
+          }
+
+          // Cancel zone: cursor above lanes area
           const nowCancel = relY < 0;
           if (nowCancel !== inCancel) {
             inCancel = nowCancel;
             bar.style.opacity = inCancel ? '0.3' : '0.75';
             bar.style.filter = inCancel ? 'grayscale(0.8)' : '';
             if (cancelEl) {
-              cancelEl.style.background = inCancel
-                ? 'rgba(239,68,68,0.28)' : 'rgba(239,68,68,0.08)';
-              cancelEl.style.color = inCancel
-                ? '#ef4444' : 'rgba(239,68,68,0.55)';
+              cancelEl.style.background = inCancel ? 'rgba(239,68,68,0.28)' : 'rgba(239,68,68,0.08)';
+              cancelEl.style.color = inCancel ? '#ef4444' : 'rgba(239,68,68,0.55)';
             }
           }
 
           if (!inCancel) {
-            const rawLane = Math.max(0, Math.round(relY / laneHeight));
-            const newLane = tlNearestFreeLane(rawLane, clip.id);
-            if (newLane !== targetLane) {
-              targetLane = newLane;
-              if (ghostEl) ghostEl.style.top = (newLane * laneHeight) + 'px';
+            if (hoveredLane !== targetLane) targetLane = hoveredLane;
+            if (ghostEl) {
+              const gx = Math.max(0, newStart - start) * 12;
+              const gw = Math.max(4, (clipLen + 1) * 12);
+              ghostEl.style.top = (targetLane * laneHeight + 4) + 'px';
+              ghostEl.style.left = gx + 'px';
+              ghostEl.style.width = gw + 'px';
             }
-            // Animate bar following cursor vertically
-            bar.style.transform = `translateY(${(targetLane - origLane) * laneHeight}px)`;
+            bar.style.top = (targetLane * laneHeight + 4) + 'px';
           } else {
-            bar.style.transform = `translateY(${(me.clientY - lanesRect.top - laneHeight / 2)}px)`;
+            bar.style.top = Math.max(0, relY - laneHeight / 2) + 'px';
           }
         };
 
         const onUp = () => {
-          clearTimeout(longPressTimer);
           if (ghostEl) { ghostEl.remove(); ghostEl = null; }
           if (cancelEl) { cancelEl.remove(); cancelEl = null; }
-
-          if (longPressed) {
-            bar.style.cssText = bar.style.cssText; // reset inline tweaks via re-render
-            clip.lane = inCancel ? origLane : tlNearestFreeLane(targetLane, clip.id);
-            renderTimelineRuler();
-          }
-
+          const dx = (parseInt(bar.style.left) || barX) - barX;
+          const frameDelta = Math.round(dx / 12);
+          clip.startFrame = Math.max(0, dragOrigStart + frameDelta);
+          clip.endFrame = clip.startFrame + (clip._origEnd - clip._origStart);
+          clip.lane = (laneMode && !inCancel) ? targetLane : origLane;
+          renderTimelineRuler();
           document.removeEventListener('mousemove', onMove);
           document.removeEventListener('mouseup', onUp);
           tlDragClip = null;
@@ -4516,6 +4533,7 @@ tlNext.addEventListener('click', () => {
 })();
 
 let _tlFrameAbort = null;
+let _tlPlayGen = 0;
 tlPlay.addEventListener('click', () => {
   tlPlaying = !tlPlaying;
   tlPlay.textContent = tlPlaying ? '⏸' : '▶';
@@ -4530,15 +4548,23 @@ tlPlay.addEventListener('click', () => {
       tlFrame.value = next;
       updatePlayhead();
       const hit = tlClipAtFrame(next);
-      if (hit && gLivePreviewImg) {
-        fetch(`/api/sequences/${encodeURIComponent(hit.seqName)}/${hit.localFrame}`)
+      if (!hit) { tlClearPreview(); }
+      else if (gLivePreviewImg) {
+        // Cancel any in-flight fetch from a previous tick
+        if (_tlFrameAbort) { _tlFrameAbort.abort(); }
+        _tlFrameAbort = new AbortController();
+        const gen = ++_tlPlayGen;
+        const ctrl = _tlFrameAbort;
+        fetch(`/api/sequences/${encodeURIComponent(hit.seqName)}/${hit.localFrame}`, { signal: ctrl.signal })
           .then(r => r.ok ? r.blob() : null)
           .then(blob => {
-            if (!blob) return;
+            // Discard if a newer fetch has already resolved
+            if (gen !== _tlPlayGen || !blob) return;
             const url = URL.createObjectURL(blob);
             if (gLivePreviewImg._tlUrl) URL.revokeObjectURL(gLivePreviewImg._tlUrl);
             gLivePreviewImg._tlUrl = url;
             gLivePreviewImg.src = url;
+            gLivePreviewImg.style.opacity = '1';
           })
           .catch(() => {});
       }
@@ -4546,6 +4572,7 @@ tlPlay.addEventListener('click', () => {
   } else {
     clearInterval(tlPlayTimer);
     tlPlayTimer = null;
+    if (_tlFrameAbort) { _tlFrameAbort.abort(); _tlFrameAbort = null; }
   }
 });
 
