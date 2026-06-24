@@ -921,14 +921,22 @@
     font-size: 12px; flex-shrink: 0;
   }
 
+  /* ── Timeline ruler resize handle ────────────────────────── */
+  #timeline-resize-handle {
+    height: 5px; flex-shrink: 0; background: #1e1e1e;
+    border-top: 1px solid #333; cursor: ns-resize;
+    transition: background 0.12s;
+  }
+  #timeline-resize-handle:hover, #timeline-resize-handle.dragging { background: var(--accent); }
+
   /* ── Timeline ruler with lanes ────────────────────────────── */
   #timeline-ruler-wrap {
-    position: relative; flex-shrink: 0; overflow-x: auto; overflow-y: hidden;
+    position: relative; flex-shrink: 1; overflow-x: auto; overflow-y: auto;
     background: #111; border-top: 1px solid #333; user-select: none;
-    min-height: 0;
+    height: auto; min-height: 66px; max-height: 200px;
   }
   #timeline-ruler {
-    position: relative; height: 100%; min-width: 100%;
+    position: relative; min-height: 100%; min-width: 100%;
   }
   #tl-ruler-header {
     position: sticky; top: 0; z-index: 5;
@@ -947,6 +955,8 @@
   }
   .tl-ruler-tick.major .tl-tick-line { background: #333; }
   .tl-ruler-tick .tl-tick-line.full { height: 100%; }
+
+  #tl-lanes { position: relative; }
 
   .tl-lane {
     display: flex; height: 20px; align-items: center;
@@ -986,6 +996,11 @@
   .tl-playhead {
     position: absolute; top: 0; width: 2px; height: 100%;
     background: #ff6b6b; z-index: 10; pointer-events: none;
+    cursor: ew-resize;
+  }
+  .tl-playhead::after {
+    content: ''; position: absolute; top: 0; left: -10px;
+    width: 22px; height: 100%; pointer-events: all;
   }
   .tl-playhead::before {
     content: ''; position: absolute; top: 0; left: -5px;
@@ -1075,6 +1090,7 @@
   .anim-input:focus { border-color: var(--accent); }
 
   @media (max-width: 768px) {
+    #timeline-ruler-wrap { min-height: 54px; max-height: 120px; }
     #timeline-panel {
       overflow-x: auto; flex-wrap: nowrap;
       padding-bottom: 8px;
@@ -1135,7 +1151,8 @@
     </div>
 
     <!-- ── Timeline ruler with lanes ──────────────────────── -->
-    <div id="timeline-ruler-wrap" style="height:200px;overflow-y:auto">
+    <div id="timeline-resize-handle"></div>
+    <div id="timeline-ruler-wrap">
       <div id="timeline-ruler">
         <div id="tl-ruler-header"></div>
         <div id="tl-lanes"></div>
@@ -1805,7 +1822,17 @@ function showResult(jobId, outputPath, type) {
   }
 }
 
-// ── Timer ──────────────────────────────────────────────────────────
+// ── Keyboard shortcuts ─────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.code === 'Space') {
+    e.preventDefault();
+    if (resultVideo.style.display !== 'none' && resultVideo.src) {
+      if (resultVideo.paused) resultVideo.play();
+      else resultVideo.pause();
+    }
+  }
+});
 function startTimer() {
   jobStartTime = Date.now();
   clearInterval(timerInterval);
@@ -2171,10 +2198,22 @@ function gGraphDoneSwap(type, relPath, seqName) {
   }
 }
 
-function tlLoadFrame(frame) {
-  const name = tlName.value.trim();
-  if (!name) return;
-  fetch(`/api/sequences/${encodeURIComponent(name)}/${frame}`)
+// Return {seqName, localFrame} for whichever clip covers `timelineFrame`,
+// or null if no clip is there. Lowest lane wins when clips overlap.
+function tlClipAtFrame(timelineFrame) {
+  const candidates = tlClips
+    .filter(c => timelineFrame >= c.startFrame && timelineFrame <= c.endFrame)
+    .sort((a, b) => a.lane - b.lane);
+  if (!candidates.length) return null;
+  const clip = candidates[0];
+  return { seqName: clip.seqName, localFrame: timelineFrame - clip.startFrame };
+}
+
+function tlLoadFrame(timelineFrame) {
+  const hit = tlClipAtFrame(timelineFrame);
+  if (!hit) return;
+  const { seqName, localFrame } = hit;
+  fetch(`/api/sequences/${encodeURIComponent(seqName)}/${localFrame}`)
     .then(r => {
       if (!r.ok) throw new Error('Frame not found');
       return r.blob();
@@ -4112,54 +4151,107 @@ function renderTimelineRuler() {
         tlSelectClip(clip.id);
       });
 
-      // Drag to reposition horizontally (normal drag)
+      // Drag: short press = horizontal reposition, long press = lane reorder
       let dragStartX = 0, dragOrigStart = 0;
       let longPressTimer = null, longPressed = false;
       bar.addEventListener('mousedown', (e) => {
         if (e.button !== 0) return;
         e.stopPropagation();
         longPressed = false;
+        const origLane = clip.lane;
+        let targetLane = origLane;
+        let inCancel = false;
+        let ghostEl = null, cancelEl = null;
+
         longPressTimer = setTimeout(() => {
           longPressed = true;
-          bar.style.opacity = '0.6';
+          bar.style.opacity = '0.75';
           bar.style.cursor = 'grabbing';
+          bar.style.boxShadow = '0 6px 24px rgba(0,0,0,0.55)';
+          bar.style.zIndex = '50';
+
+          // Ghost: dashed outline showing target lane
+          ghostEl = document.createElement('div');
+          ghostEl.style.cssText = `position:absolute;left:0;top:${origLane * laneHeight}px;
+            width:100%;height:${laneHeight}px;border:1.5px dashed rgba(108,142,245,0.55);
+            border-radius:4px;pointer-events:none;z-index:4;
+            transition:top 0.12s ease;background:rgba(108,142,245,0.07);`;
+          lanes.appendChild(ghostEl);
+
+          // Cancel zone: strip above the lane area (inside the ruler header slot)
+          cancelEl = document.createElement('div');
+          cancelEl.style.cssText = `position:absolute;top:-26px;left:0;right:0;height:24px;
+            background:rgba(239,68,68,0.08);border:1px dashed rgba(239,68,68,0.3);
+            border-radius:4px;display:flex;align-items:center;justify-content:center;
+            font-size:10px;color:rgba(239,68,68,0.55);pointer-events:none;z-index:20;
+            transition:background 0.12s,color 0.12s;`;
+          cancelEl.textContent = '↑ drag here to cancel';
+          lanes.appendChild(cancelEl);
         }, 400);
+
         dragStartX = e.clientX;
         dragOrigStart = clip.startFrame;
         tlDragClip = { clip, lane: li, startX: e.clientX };
+
         const onMove = (me) => {
-          if (longPressed) {
-            // Vertical drag — reorder lane
-            const laneDivs = lanes.querySelectorAll('.tl-clip-lane');
-            if (laneDivs.length) {
-              const rulerRect = lanes.getBoundingClientRect();
-              const relY = me.clientY - rulerRect.top;
-              const newLane = Math.max(0, Math.min(maxLane, Math.round(relY / laneHeight)));
-              if (newLane !== clip.lane) {
-                clip.lane = newLane;
-                renderTimelineRuler();
-              }
-            }
-          } else {
-            // Horizontal drag — reposition in time
+          if (!longPressed) {
+            // Horizontal reposition
             const dx = me.clientX - dragStartX;
             const frameDelta = Math.round(dx / 12);
             clip.startFrame = Math.max(0, dragOrigStart + frameDelta);
             clip.endFrame = clip.startFrame + (clip._origEnd - clip._origStart);
             renderTimelineRuler();
+            return;
+          }
+
+          const lanesRect = lanes.getBoundingClientRect();
+          const relY = me.clientY - lanesRect.top;
+
+          // Cancel zone: cursor above the lanes area
+          const nowCancel = relY < 0;
+          if (nowCancel !== inCancel) {
+            inCancel = nowCancel;
+            bar.style.opacity = inCancel ? '0.3' : '0.75';
+            bar.style.filter = inCancel ? 'grayscale(0.8)' : '';
+            if (cancelEl) {
+              cancelEl.style.background = inCancel
+                ? 'rgba(239,68,68,0.28)' : 'rgba(239,68,68,0.08)';
+              cancelEl.style.color = inCancel
+                ? '#ef4444' : 'rgba(239,68,68,0.55)';
+            }
+          }
+
+          if (!inCancel) {
+            const rawLane = Math.max(0, Math.round(relY / laneHeight));
+            const newLane = tlNearestFreeLane(rawLane, clip.id);
+            if (newLane !== targetLane) {
+              targetLane = newLane;
+              if (ghostEl) ghostEl.style.top = (newLane * laneHeight) + 'px';
+            }
+            // Animate bar following cursor vertically
+            bar.style.transform = `translateY(${(targetLane - origLane) * laneHeight}px)`;
+          } else {
+            bar.style.transform = `translateY(${(me.clientY - lanesRect.top - laneHeight / 2)}px)`;
           }
         };
+
         const onUp = () => {
           clearTimeout(longPressTimer);
+          if (ghostEl) { ghostEl.remove(); ghostEl = null; }
+          if (cancelEl) { cancelEl.remove(); cancelEl = null; }
+
           if (longPressed) {
-            bar.style.opacity = '1';
-            bar.style.cursor = 'grab';
+            bar.style.cssText = bar.style.cssText; // reset inline tweaks via re-render
+            clip.lane = inCancel ? origLane : tlNearestFreeLane(targetLane, clip.id);
+            renderTimelineRuler();
           }
+
           document.removeEventListener('mousemove', onMove);
           document.removeEventListener('mouseup', onUp);
           tlDragClip = null;
           tlSaveClips();
         };
+
         document.addEventListener('mousemove', onMove);
         document.addEventListener('mouseup', onUp);
       });
@@ -4223,6 +4315,26 @@ function renderClipKeyframeLanes(clip, start, total, pixelWidth, lanesContainer)
   });
 }
 
+// Return the lowest lane index not occupied by any clip other than excludeId.
+function tlNextFreeLane(excludeId = null) {
+  const occupied = new Set(tlClips.filter(c => c.id !== excludeId).map(c => c.lane));
+  let lane = 0;
+  while (occupied.has(lane)) lane++;
+  return lane;
+}
+function tlLaneOccupied(lane, excludeId = null) {
+  return tlClips.some(c => c.id !== excludeId && c.lane === lane);
+}
+// Nearest free lane to `desired`, searching outward from it.
+function tlNearestFreeLane(desired, excludeId = null) {
+  if (!tlLaneOccupied(desired, excludeId)) return desired;
+  for (let d = 1; d < 100; d++) {
+    if (!tlLaneOccupied(desired + d, excludeId)) return desired + d;
+    if (desired - d >= 0 && !tlLaneOccupied(desired - d, excludeId)) return desired - d;
+  }
+  return tlNextFreeLane(excludeId);
+}
+
 function tlSelectClip(clipId) {
   tlClips.forEach(c => { c._selected = (c.id === clipId); });
   renderTimelineRuler();
@@ -4230,7 +4342,7 @@ function tlSelectClip(clipId) {
 
 function tlAddClip(name, seqName, startFrame, endFrame, nodeId, paramKeyframes) {
   const id = 'clip_' + (++tlClipIdCounter);
-  const lane = tlClips.length; // new lane for each clip
+  const lane = tlNextFreeLane();
   const colors = ['#4a6cf7', '#f59e0b', '#34d399', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
   const color = colors[tlClips.length % colors.length];
   const clip = {
@@ -4271,11 +4383,8 @@ function updatePlayhead() {
   const playhead = document.getElementById('tl-playhead');
   if (!playhead) return;
   const start = parseInt(document.getElementById('tl-start')?.value) || 0;
-  const end   = parseInt(document.getElementById('tl-end')?.value) || 47;
-  const total = Math.max(1, end - start + 1);
   const frame = parseInt(document.getElementById('tl-frame')?.value) || 0;
-  const pct = ((frame - start) / (total - 1)) * 100;
-  playhead.style.left = Math.max(0, Math.min(100, pct)) + '%';
+  playhead.style.left = Math.max(0, (frame - start) * 12) + 'px';
 }
 
 // Re-render timeline ruler when frame range changes
@@ -4306,30 +4415,21 @@ tlNext.addEventListener('click', () => {
   tlFrame.dispatchEvent(new Event('input'));
 });
 
-// ── Playhead drag on timeline ruler ────────────────────────────
+// ── Playhead drag on timeline ruler header ──────────────────────
 (function() {
-  const ruler = document.getElementById('timeline-ruler');
-  if (!ruler) return;
+  const wrap = document.getElementById('timeline-ruler-wrap');
+  if (!wrap) return;
   let dragging = false;
   function frameFromEvent(e) {
+    const ruler = document.getElementById('timeline-ruler');
     const rect = ruler.getBoundingClientRect();
-    const x = ('touches' in e ? e.touches[0].clientX : e.clientX) - rect.left;
-    const pct = Math.max(0, Math.min(1, x / rect.width));
+    const x = ('touches' in e ? e.touches[0].clientX : e.clientX) - rect.left + wrap.scrollLeft;
     const start = parseInt(tlStart.value) || 0;
     const end   = parseInt(tlEnd.value)   || 47;
-    const total = Math.max(1, end - start + 1);
-    return Math.round(start + pct * (total - 1));
-  }
-  function isNearPlayhead(e) {
-    const playhead = document.getElementById('tl-playhead');
-    if (!playhead) return false;
-    const rulerRect = ruler.getBoundingClientRect();
-    const phLeft = rulerRect.left + (parseFloat(playhead.style.left) || 0) / 100 * rulerRect.width;
-    const cx = ('touches' in e ? e.touches[0].clientX : e.clientX);
-    return Math.abs(cx - phLeft) < 50;
+    return Math.max(start, Math.min(end, start + Math.round(x / 12)));
   }
   function onStart(e) {
-    if (!isNearPlayhead(e)) return;
+    if (!e.target.closest('#tl-ruler-header') && !e.target.closest('#tl-playhead')) return;
     dragging = true;
     tlStopPlay();
     const f = frameFromEvent(e);
@@ -4346,10 +4446,10 @@ tlNext.addEventListener('click', () => {
     tlLoadFrame(f);
   }
   function onEnd() { dragging = false; }
-  ruler.addEventListener('mousedown', onStart);
+  wrap.addEventListener('mousedown', onStart);
   document.addEventListener('mousemove', onMove);
   document.addEventListener('mouseup', onEnd);
-  ruler.addEventListener('touchstart', onStart, { passive: false });
+  wrap.addEventListener('touchstart', onStart, { passive: false });
   document.addEventListener('touchmove', onMove, { passive: false });
   document.addEventListener('touchend', onEnd);
 })();
@@ -4386,6 +4486,35 @@ tlNext.addEventListener('click', () => {
     gUpdateFrameCount();
   }, { passive: false });
 })();
+
+// ── Timeline resize handle ────────────────────────────────────
+(function() {
+  const handle = document.getElementById('timeline-resize-handle');
+  const wrap   = document.getElementById('timeline-ruler-wrap');
+  if (!handle || !wrap) return;
+  let dragging = false, startY = 0, startH = 0;
+  function onStart(e) {
+    dragging = true;
+    startY = e.touches ? e.touches[0].clientY : e.clientY;
+    startH = wrap.getBoundingClientRect().height;
+    handle.classList.add('dragging');
+    e.preventDefault();
+  }
+  function onMove(e) {
+    if (!dragging) return;
+    const y = e.touches ? e.touches[0].clientY : e.clientY;
+    const newH = Math.max(44, Math.min(500, startH - (y - startY)));
+    wrap.style.height = newH + 'px';
+  }
+  function onEnd() { dragging = false; handle.classList.remove('dragging'); }
+  handle.addEventListener('mousedown', onStart);
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onEnd);
+  handle.addEventListener('touchstart', onStart, { passive: false });
+  document.addEventListener('touchmove', onMove, { passive: false });
+  document.addEventListener('touchend', onEnd);
+})();
+
 let _tlFrameAbort = null;
 tlPlay.addEventListener('click', () => {
   tlPlaying = !tlPlaying;
@@ -4400,9 +4529,9 @@ tlPlay.addEventListener('click', () => {
       const next = cur >= end ? st : cur + 1;
       tlFrame.value = next;
       updatePlayhead();
-      const name = tlName.value.trim();
-      if (name && gLivePreviewImg) {
-        fetch(`/api/sequences/${encodeURIComponent(name)}/${next}`)
+      const hit = tlClipAtFrame(next);
+      if (hit && gLivePreviewImg) {
+        fetch(`/api/sequences/${encodeURIComponent(hit.seqName)}/${hit.localFrame}`)
           .then(r => r.ok ? r.blob() : null)
           .then(blob => {
             if (!blob) return;
@@ -4622,6 +4751,7 @@ function gDoClear() {
   gLivePreviewImg = null; gMainPreview.innerHTML=''; gMainPreview.classList.remove('active');
   gPreviewHide(); gShowNodeParams(null);
   if (isMobile()) gParamsSheetClose();
+  tlClips = []; localStorage.removeItem('tl-clips'); renderTimelineRuler();
   gSetStatus(''); gSave();
 }
 gClearBtn.addEventListener('click', gDoClear);
