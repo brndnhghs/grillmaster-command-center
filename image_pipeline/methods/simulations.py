@@ -74,7 +74,6 @@ def _render_sandpile_preview(grid, colors, size, h, w):
              "attractor_strength": {"description": "master attractor pull strength", "min": 0.0, "max": 5.0, "default": 1.5},
              "attractor_x": {"description": "master attractor X (0-1 fraction)", "min": 0.0, "max": 1.0, "default": 0.5},
              "attractor_y": {"description": "master attractor Y (0-1 fraction)", "min": 0.0, "max": 1.0, "default": 0.5},
-             "time": {"description": "animation time in radians (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
              "anim_mode": {"description": "animation mode", "choices": ["none", "speed_pulse", "cohesion_wave", "obstacle_dance", "predator_burst", "food_orbit", "sep_pulse", "align_wave", "obstacle_field", "wind_gust", "attractor_morph", "spiral_flock", "swarm_art", "warp_sphere", "magnet_wave", "time_reversal", "boundary_morph", "vortex_shatter", "gravity_well", "predator_multi", "boid_merge"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
@@ -877,7 +876,6 @@ def method_boids(out_dir: Path, seed: int, params=None):
              "particle_size": {"description": "particle point size", "min": 1, "max": 6, "default": 1},
              "reseed": {"description": "fraction of particles to reseed per frame", "min": 0.0, "max": 0.5, "default": 0.01},
              "field_freq": {"description": "field spatial frequency multiplier", "min": 0.5, "max": 10.0, "default": 2.0},
-             "time": {"description": "animation time (drives field morph)", "min": 0.0, "max": 6.28, "default": 0.0},
              "anim_mode": {"description": "animation mode", "choices": ["none", "speed_pulse", "field_morph", "vortex_orbit", "field_cycle", "reseed_wave", "spiral_pulse", "vortex_field_anim", "turbulence_surge", "maze_walk"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
@@ -1306,7 +1304,6 @@ def method_flowfield(out_dir: Path, seed: int, params=None):
              "aniso_strength": {"description": "anisotropic growth bias 0=none, 1=strong", "min": 0.0, "max": 1.0, "default": 0.0},
              "aniso_angle": {"description": "anisotropy direction (degrees)", "min": 0, "max": 360, "default": 0},
              "self_avoid": {"description": "min distance between clusters (px)", "min": 0, "max": 10, "default": 0},
-             "time": {"description": "animation drive", "min": 0.0, "max": 6.28, "default": 0.0},
              "anim_mode": {"description": "animation mode", "choices": ["none", "spawn_radius", "julia_drift", "aniso_rotate", "walk_pulse", "stickiness_wave", "bias_pulse", "walk_cycle", "spawn_cycle", "levy_sweep", "vortex_sweep", "gravity_sweep", "bounce_mode", "correlation_sweep", "drift_path"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
@@ -1804,7 +1801,6 @@ def method_dla(out_dir: Path, seed: int, params=None):
              "inject_strength": {"description": "injection strength multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
              "particle_count": {"description": "number of trail particles (0=none)", "min": 0, "max": 200, "default": 0},
              "particle_speed": {"description": "particle movement speed", "min": 0.1, "max": 5.0, "default": 1.0},
-             "time": {"description": "animation time param (0-2π)", "min": 0.0, "max": 6.28, "default": 0.0},
              "anim_mode": {"description": "animation mode", "choices": ["none", "f_sweep", "k_sweep", "fk_orbit", "preset_cycle", "color_morph", "diffusion_wave", "injection_orbit", "style_map_sweep", "bias_rotate", "seed_morph", "particle_trails"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
@@ -2458,7 +2454,6 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
              "color_speed": {"description": "color animation speed", "min": 0.0, "max": 5.0, "default": 1.0},
              "ball_speed": {"description": "ball movement speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
              "trail_frames": {"description": "number of ghost trail frames (0=none)", "min": 0, "max": 20, "default": 0},
-             "time": {"description": "animation time in radians", "min": 0.0, "max": 6.28, "default": 0.0},
              "anim_mode": {"description": "animation mode", "choices": ["none", "animate"], "default": "animate"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
@@ -3322,7 +3317,6 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
              "extended_range": {"description": "extended topple range (cells)", "min": 1, "max": 5, "default": 2},
              "anim_mode": {"description": "animation mode", "choices": ["none", "topple_wave", "topple_spark"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
-             "time": {"description": "animation time in radians", "min": 0.0, "max": 6.28, "default": 0.0},
          })
 def method_sandpile(out_dir: Path, seed: int, params=None):
     """Render Sandpile — cellular automaton simulation of sand grain toppling.
@@ -3594,7 +3588,6 @@ def method_sandpile(out_dir: Path, seed: int, params=None):
     "background": {"description": "background: dark, light, transparent, gradient, radial", "default": "dark"},
     "anim_mode": {"description": "animation: none, reveal, stroke, sparkle, pulse", "default": "none"},
     "anim_speed": {"description": "animation speed", "min": 0.1, "max": 3.0, "default": 1.0},
-    "time": {"description": "animation time (0-2pi)", "min": 0.0, "max": 6.28, "default": 0.0},
     "drift_x": {"description": "horizontal drift per step", "min": -0.5, "max": 0.5, "default": 0.0},
     "drift_y": {"description": "vertical drift per step", "min": -0.5, "max": 0.5, "default": 0.0},
     "attractor_x": {"description": "attractor point x (center-relative)", "min": -1.0, "max": 1.0, "default": 0.0},
@@ -4036,7 +4029,6 @@ def method_random_walk(out_dir: Path, seed: int, params=None):
              "life_decay": {"description": "life lost per frame", "min": 0.1, "max": 10, "default": 1},
              "brightness_mult": {"description": "life-to-brightness multiplier", "min": 0.5, "max": 10, "default": 6},
              "capture_interval": {"description": "capture every N frames", "min": 1, "max": 50, "default": 10},
-             "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
              "anim_mode": {"description": "animation mode", "choices": ["none", "emitter_dance", "wind_cycle", "turbulence_pulse", "spiral_spawn", "ring_burst", "dual_emitter", "edge_wave", "scatter_radius", "speed_surge", "vortex_spin", "gravity_swing", "color_morph"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},
          })
@@ -4701,7 +4693,6 @@ def _render_langton_frame(grid, visited, age_grid, pal_arr, bg_color,
              "palette": {"description": "Color palette", "choices": ["vapor","cool","warm","neon","pastel","ocean","forest","fire","ice","pico8","cga","nes","amber","green","gameboy","grayscale"], "default": "vapor"},
              "background": {"description": "Background color", "choices": ["black","white","random"], "default": "black"},
              "render_style": {"description": "Visual rendering style", "choices": ["filled","trails","glow","edge"], "default": "filled"},
-             "time": {"description": "Animation time in radians (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
              "anim_mode": {"description": "Animation mode", "choices": ["none","unfold","rule_morph","ant_swarm","color_cycle","grid_morph"], "default": "none"},
              "anim_speed": {"description": "Animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
@@ -5023,7 +5014,6 @@ def _upscale(arr, target_h, target_w):
                   "choices": ["plasma", "phase"], "default": "plasma"},
         "gamma": {"description": "density gamma (contrast)", "min": 0.2, "max": 1.5, "default": 0.7},
         "scale": {"description": "internal res scale (lower=faster)", "min": 0.25, "max": 1.0, "default": 0.5},
-        "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
         "anim_mode": {"description": "animation mode",
                        "choices": ["none", "evolve", "mode_cycle", "param_sweep"],
                        "default": "evolve"},

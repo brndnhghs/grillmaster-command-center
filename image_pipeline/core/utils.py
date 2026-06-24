@@ -10,6 +10,45 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
 
 
+def write_scalars(node_dir: Path, **kwargs: float) -> None:
+    """Write named scalar outputs to the node graph sidecar (scalars.json).
+
+    Called by methods to expose per-frame scalars (e.g. sync order r, wave amplitude).
+    Values are merged into flat_outputs[node_id] by GraphExecutor and become
+    wirable SCALAR output ports when the method declares them in outputs=.
+    """
+    import json
+    (node_dir / "scalars.json").write_text(json.dumps({k: float(v) for k, v in kwargs.items()}))
+
+
+def write_field(node_dir: Path, arr: np.ndarray) -> None:
+    """Write a 2D float32 field array to the node graph sidecar (field.npy).
+
+    GraphExecutor reads this into flat_outputs[node_id]["field"], making it
+    available to downstream FIELD wires without the image-fallback.
+    """
+    np.save(str(node_dir / "field.npy"), arr.astype(np.float32))
+
+
+def write_particles(node_dir: Path, arr: np.ndarray) -> None:
+    """Write an (N, 4) float32 particles array [x, y, vx, vy] to the sidecar (particles.npy).
+
+    GraphExecutor reads this into flat_outputs[node_id]["particles"].
+    Shape convention: rows are particles, columns are [x, y, vx, vy].
+    """
+    np.save(str(node_dir / "particles.npy"), arr.astype(np.float32))
+
+
+def write_mask(node_dir: Path, arr: np.ndarray) -> None:
+    """Write a H×W float32 mask [0,1] for the node graph sidecar protocol.
+
+    GraphExecutor reads this into flat_outputs[node_id]["mask"], making it
+    available to downstream MASK wires.
+    """
+    arr = np.clip(arr, 0.0, 1.0).astype(np.float32)
+    np.save(str(node_dir / "mask.npy"), arr)
+
+
 def save(arr: np.ndarray | Image.Image, name: str, out_dir: Path):
     """Save array (float32 [0,1] or uint8) or PIL Image to out_dir/name."""
     if isinstance(arr, np.ndarray):
@@ -182,6 +221,25 @@ def quantize_to_palette(arr: np.ndarray, palette_name: str) -> np.ndarray:
         diffs = chunk[:, None, :] - pal_arr[None, :, :]
         nearest[i : i + CHUNK] = np.argmin(np.sum(diffs ** 2, axis=2), axis=1)
     return pal_arr[nearest].reshape(h, w, 3)
+
+
+def apply_palette(arr: np.ndarray, palette_name: str) -> np.ndarray:
+    """Map image luminance through named palette via linear interpolation.
+    Returns arr unchanged when palette_name is 'none', empty, or not found.
+    """
+    if not palette_name or palette_name == "none":
+        return arr
+    pal = PALETTES.get(palette_name)
+    if not pal or len(pal) < 2:
+        return arr
+    pal_f = np.array(pal, dtype=np.float32) / 255.0
+    lum = (0.299 * arr[:, :, 0] + 0.587 * arr[:, :, 1] + 0.114 * arr[:, :, 2]).clip(0, 1)
+    N = len(pal_f)
+    idx_f = lum * (N - 1)
+    idx0 = np.floor(idx_f).astype(np.int32).clip(0, N - 2)
+    idx1 = idx0 + 1
+    frac = (idx_f - idx0)[:, :, None]
+    return (pal_f[idx0] + frac * (pal_f[idx1] - pal_f[idx0])).clip(0, 1)
 
 
 # Bayer 4x4 ordered dither matrix

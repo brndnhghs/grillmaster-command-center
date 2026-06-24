@@ -72,7 +72,6 @@ def _next_angle_from_field(x, y, field, cx, cy):
                             "default": "gradient"},
              "color_hue": {"description": "base hue (0-360)", "min": 0, "max": 360, "default": 200},
              "line_width": {"description": "trail line width", "min": 1, "max": 5, "default": 1},
-             "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
              "anim_mode": {"description": "animation mode",
                            "choices": ["none", "field_rotate", "field_freq", "particle_speed",
                                        "trail_fade", "color_cycle", "wind", "attractor",

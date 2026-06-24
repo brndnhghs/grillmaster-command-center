@@ -22,7 +22,8 @@ from typing import Callable, Generator, Optional
 import numpy as np
 from PIL import Image
 
-from .utils import W, H
+from .utils import mn, W, H
+from .timeline import make_timeline
 
 # ── ffmpeg encoding ────────────────────────────────────────────────
 
@@ -198,19 +199,17 @@ def animate_method(
     method_id = meta.id
     n_frames = int(fps * duration)
 
-    # ── Time-based animation (natural parameter interpolation) ──
-    # Trigger per-frame iteration when "time" is in params OR when anim_mode
-    # is active (so methods with anim_mode don't need explicit "time").
+    # ── Time-based animation ──
+    # Trigger per-frame iteration when _timeline is present in params
+    # OR when anim_mode is active (Architecture B methods).
+    # Architecture A methods use their internal loop + capture_frame
+    # and are collected via enable_frame_capture below.
     should_animate = False
-    if user_params:
-        if "time" in user_params:
+    if user_params is not None:
+        if "_timeline" in user_params:
             should_animate = True
         elif user_params.get("anim_mode", "none") != "none":
             should_animate = True
-            # Ensure "time" is seeded so the method receives it each frame
-            if "time" not in user_params:
-                user_params = dict(user_params)
-                user_params["time"] = 0.0
 
     if should_animate:
         import tempfile, shutil
@@ -220,8 +219,14 @@ def animate_method(
         try:
             for i in range(n_frames):
                 t_val = (i / max(1, n_frames - 1)) * 2 * math.pi
+                tl = make_timeline(
+                    global_frame=i,
+                    total_frames=n_frames,
+                    fps=fps,
+                )
                 p = dict(user_params) if user_params else {}
                 p["time"] = t_val
+                p["_timeline"] = tl
                 try:
                     meta.fn(tmp, seed, params=p)
                 except TypeError as _e:

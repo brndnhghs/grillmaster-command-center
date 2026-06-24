@@ -5,7 +5,8 @@
       "name": "image-pipeline-server",
       "runtimeExecutable": ".venv/bin/python",
       "runtimeArgs": ["-m", "image_pipeline.server"],
-      "port": 7860
+      "port": 7860,
+      "autoPort": false
     }
   ]
 }

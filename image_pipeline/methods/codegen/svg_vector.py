@@ -20,7 +20,6 @@ from ...core.animation import capture_frame
              "pattern": {"description": "SVG pattern type", "choices": ["grid", "circles", "stars", "waves", "mandala"], "default": "grid"},
              "stroke_width": {"description": "stroke width", "min": 1, "max": 10, "default": 2},
              "fill": {"description": "fill shapes with color", "default": True},
-             "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
              "anim_mode": {"description": "animation mode", "choices": ["none", "animate"], "default": "animate"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })

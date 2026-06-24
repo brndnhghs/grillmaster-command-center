@@ -20,7 +20,6 @@ from ...core.animation import capture_frame
              "color_mode": {"description": "coloring method", "choices": ["random", "gradient", "distance", "cell_id"], "default": "random"},
              "line_width": {"description": "cell border width (pixels)", "min": 0, "max": 5, "default": 1},
              "jitter": {"description": "animation jitter amount", "min": 0, "max": 100, "default": 0},
-             "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
              "anim_mode": {"description": "animation mode", "choices": ["none", "cell_drift", "color_cycle", "wave_distort"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })

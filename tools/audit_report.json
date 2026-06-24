@@ -1,0 +1,4056 @@
+[
+  {
+    "id": "01",
+    "name": "ASCII Art",
+    "file": "codegen/ascii_art.py",
+    "category": "codegen",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "02",
+    "name": "Quasicrystal",
+    "file": "patterns/quasicrystal.py",
+    "category": "patterns",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "03",
+    "name": "Moiré",
+    "file": "patterns/moire.py",
+    "category": "patterns",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "04",
+    "name": "Worley Noise",
+    "file": "patterns/worley_noise.py",
+    "category": "patterns",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "PARTICLES?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "05",
+    "name": "Procedural Noise",
+    "file": "patterns/noise.py",
+    "category": "patterns",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FIELD?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "06",
+    "name": "Wallpaper Group",
+    "file": "patterns/wallpaper.py",
+    "category": "patterns",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "07",
+    "name": "Truchet Tiles",
+    "file": "patterns/truchet.py",
+    "category": "patterns",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "08",
+    "name": "Phyllotaxis",
+    "file": "patterns/phyllotaxis.py",
+    "category": "patterns",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FIELD?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "09",
+    "name": "QR Code",
+    "file": "codegen/qr_code.py",
+    "category": "codegen",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "10",
+    "name": "Color Palette",
+    "file": "codegen/color_palette.py",
+    "category": "codegen",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "11",
+    "name": "Gradient",
+    "file": "codegen/gradient.py",
+    "category": "codegen",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "12",
+    "name": "Kaleidoscope",
+    "file": "codegen/kaleidoscope.py",
+    "category": "codegen",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "13",
+    "name": "Dithering",
+    "file": "filters/dither.py",
+    "category": "filters",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "14",
+    "name": "Geometric Abstraction",
+    "file": "codegen/geometric_abstraction.py",
+    "category": "codegen",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "particles"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "PARTICLES",
+      "FIELD?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "15",
+    "name": "Typography",
+    "file": "codegen/typography.py",
+    "category": "codegen",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "particles"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "PARTICLES",
+      "FIELD?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "16",
+    "name": "Flow Field",
+    "file": "codegen/flow_field.py",
+    "category": "codegen",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD",
+      "PARTICLES?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "17",
+    "name": "Glitch Art",
+    "file": "filters/glitch.py",
+    "category": "filters",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "PARTICLES?",
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "18",
+    "name": "Cellular Automata",
+    "file": "codegen/simulations.py",
+    "category": "codegen",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "19",
+    "name": "L-System",
+    "file": "fractals/lsystem.py",
+    "category": "fractals",
+    "class": "fractal",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "20",
+    "name": "Particle System",
+    "file": "simulations/particles.py",
+    "category": "simulations",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "particles"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "PARTICLES",
+      "FIELD?",
+      "FILTER"
+    ],
+    "missing_outputs": [
+      "FIELD?"
+    ],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [
+      "field-like vars: trail — may warrant field output"
+    ],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "21",
+    "name": "SD1.5 (diffusers)",
+    "file": "ml_models.py",
+    "category": "ml_models",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "22",
+    "name": "ffmpeg Frame",
+    "file": "cli_tools.nd-bak-728734db.py",
+    "category": "cli_tools",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": true,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "22",
+    "name": "ffmpeg Frame",
+    "file": "cli_tools.py",
+    "category": "cli_tools",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": true,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "23",
+    "name": "ImageMagick",
+    "file": "cli_tools.nd-bak-728734db.py",
+    "category": "cli_tools",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": true,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "23",
+    "name": "ImageMagick",
+    "file": "cli_tools.py",
+    "category": "cli_tools",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "SCALAR"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": true,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "24",
+    "name": "pyfiglet",
+    "file": "cli_tools.nd-bak-728734db.py",
+    "category": "cli_tools",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "24",
+    "name": "pyfiglet",
+    "file": "cli_tools.py",
+    "category": "cli_tools",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "25",
+    "name": "boxes",
+    "file": "cli_tools.nd-bak-728734db.py",
+    "category": "cli_tools",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "25",
+    "name": "boxes",
+    "file": "cli_tools.py",
+    "category": "cli_tools",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "26",
+    "name": "cowsay",
+    "file": "cli_tools.nd-bak-728734db.py",
+    "category": "cli_tools",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "26",
+    "name": "cowsay",
+    "file": "cli_tools.py",
+    "category": "cli_tools",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "27",
+    "name": "qrencode",
+    "file": "cli_tools.nd-bak-728734db.py",
+    "category": "cli_tools",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "27",
+    "name": "qrencode",
+    "file": "cli_tools.py",
+    "category": "cli_tools",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "28",
+    "name": "ComfyUI",
+    "file": "ml_models.py",
+    "category": "ml_models",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": true,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "29",
+    "name": "Voronoi Tiles",
+    "file": "codegen/voronoi_tiles.py",
+    "category": "codegen",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "30",
+    "name": "SVG Vector",
+    "file": "codegen/svg_vector.py",
+    "category": "codegen",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "31",
+    "name": "Plasma Fractal",
+    "file": "fractals/plasma.py",
+    "category": "fractals",
+    "class": "fractal",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "32",
+    "name": "Reaction Diffusion",
+    "file": "simulations/reaction_diffusion.py",
+    "category": "simulations",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD",
+      "PARTICLES?",
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "33",
+    "name": "Fractal Explorer",
+    "file": "fractals/fractal.py",
+    "category": "fractals",
+    "class": "fractal",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "34",
+    "name": "Boids Flocking",
+    "file": "simulations/boids.py",
+    "category": "simulations",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "spread",
+      "particles"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "PARTICLES",
+      "SCALAR",
+      "FIELD?",
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "35",
+    "name": "Flow Field",
+    "file": "simulations/flowfield.py",
+    "category": "simulations",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD",
+      "PARTICLES?",
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "36",
+    "name": "DLA",
+    "file": "simulations/dla.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD",
+      "PARTICLES?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "37",
+    "name": "Collage",
+    "file": "codegen/collage.py",
+    "category": "codegen",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "particles"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "PARTICLES"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "38",
+    "name": "Dataviz",
+    "file": "math_art/dataviz.py",
+    "category": "math_art",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "39",
+    "name": "Posterize",
+    "file": "codegen/posterize.py",
+    "category": "codegen",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "40",
+    "name": "Pixel Sort",
+    "file": "filters/pixelsort.py",
+    "category": "filters",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "41",
+    "name": "Oil Paint",
+    "file": "filters/oil_paint.py",
+    "category": "filters",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "42",
+    "name": "Fake HDR",
+    "file": "filters/hdr.py",
+    "category": "filters",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "43",
+    "name": "Density Heatmap",
+    "file": "math_art/density_heatmap.py",
+    "category": "math_art",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "44",
+    "name": "img2txt",
+    "file": "cli_tools.nd-bak-728734db.py",
+    "category": "cli_tools",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "PARTICLES?",
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "44",
+    "name": "img2txt",
+    "file": "cli_tools.py",
+    "category": "cli_tools",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "PARTICLES?",
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "45",
+    "name": "Graphviz",
+    "file": "cli_tools.nd-bak-728734db.py",
+    "category": "cli_tools",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "45",
+    "name": "Graphviz",
+    "file": "cli_tools.py",
+    "category": "cli_tools",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "46",
+    "name": "ImageMagick Plasma",
+    "file": "cli_tools.nd-bak-728734db.py",
+    "category": "cli_tools",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "46",
+    "name": "ImageMagick Plasma",
+    "file": "cli_tools.py",
+    "category": "cli_tools",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "47",
+    "name": "Chafa",
+    "file": "cli_tools.nd-bak-728734db.py",
+    "category": "cli_tools",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "47",
+    "name": "Chafa",
+    "file": "cli_tools.py",
+    "category": "cli_tools",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "48",
+    "name": "FFT Art",
+    "file": "math_art/fft_art.py",
+    "category": "math_art",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "49",
+    "name": "Buddhabrot",
+    "file": "fractals/buddhabrot.py",
+    "category": "fractals",
+    "class": "fractal",
+    "current_outputs": [
+      "image",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD",
+      "PARTICLES?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "50",
+    "name": "Barnsley Fern",
+    "file": "fractals/barnsley_fern.py",
+    "category": "fractals",
+    "class": "fractal",
+    "current_outputs": [
+      "image",
+      "field",
+      "particles"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "PARTICLES",
+      "FIELD"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "51",
+    "name": "Burning Ship",
+    "file": "fractals/burning_ship.py",
+    "category": "fractals",
+    "class": "fractal",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "52",
+    "name": "Newton Fractal",
+    "file": "fractals/newton_fractal.py",
+    "category": "fractals",
+    "class": "fractal",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "53",
+    "name": "Metaballs",
+    "file": "simulations/metaballs.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD",
+      "PARTICLES?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "54",
+    "name": "Ulam Spiral",
+    "file": "math_art/ulam_spiral.py",
+    "category": "math_art",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD",
+      "PARTICLES?",
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "55",
+    "name": "Sandpile",
+    "file": "simulations/sandpile.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "field",
+      "particles"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "PARTICLES",
+      "FIELD"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "56",
+    "name": "Maze",
+    "file": "math_art/maze.py",
+    "category": "math_art",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "57",
+    "name": "Slit Scan",
+    "file": "filters/slitscan.py",
+    "category": "filters",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FIELD?",
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "58",
+    "name": "Cellular Automata (Variants)",
+    "file": "simulations_cellular.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "59",
+    "name": "Data Bending",
+    "file": "filters/data_bending.py",
+    "category": "filters",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "PARTICLES?",
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "62",
+    "name": "Chaotic Map",
+    "file": "math_art/chaotic_map.py",
+    "category": "math_art",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "63",
+    "name": "Cross Stitch",
+    "file": "filters/cross_stitch.py",
+    "category": "filters",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "64",
+    "name": "Edge Halftone",
+    "file": "filters/edge_halftone.py",
+    "category": "filters",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "65",
+    "name": "Waveform",
+    "file": "math_art/waveform.py",
+    "category": "math_art",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "66",
+    "name": "Julia Set",
+    "file": "fractals/julia_set.py",
+    "category": "fractals",
+    "class": "fractal",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "PARTICLES?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "67",
+    "name": "Sierpinski Carpet",
+    "file": "fractals/sierpinski.py",
+    "category": "fractals",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD",
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "69",
+    "name": "Lyapunov Fractal",
+    "file": "fractals/lyapunov.py",
+    "category": "fractals",
+    "class": "fractal",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "70",
+    "name": "Fractal Flame",
+    "file": "fractals/fractal_flame.py",
+    "category": "fractals",
+    "class": "fractal",
+    "current_outputs": [
+      "image",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "71",
+    "name": "Chaos Game",
+    "file": "fractals/chaos_game.py",
+    "category": "fractals",
+    "class": "fractal",
+    "current_outputs": [
+      "image",
+      "field",
+      "particles"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "PARTICLES",
+      "FIELD"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "72",
+    "name": "Pythagorean Tree",
+    "file": "fractals/pythagorean_tree.py",
+    "category": "fractals",
+    "class": "fractal",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "73",
+    "name": "Low Poly",
+    "file": "math_art/lowpoly.py",
+    "category": "math_art",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FIELD?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "74",
+    "name": "Swirl Displacement",
+    "file": "filters/swirl.py",
+    "category": "filters",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "76",
+    "name": "Binary Counter",
+    "file": "math_art/binary_counter.py",
+    "category": "math_art",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "77",
+    "name": "False Color IR",
+    "file": "codegen/false_color_ir.py",
+    "category": "codegen",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "78",
+    "name": "Circle Packing",
+    "file": "math_art/circle_packing.py",
+    "category": "math_art",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "79",
+    "name": "Random Walk",
+    "file": "simulations/random_walk.py",
+    "category": "simulations",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "particles"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "PARTICLES",
+      "FIELD?",
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "80",
+    "name": "Pixel Mosaic",
+    "file": "filters/pixel_mosaic.py",
+    "category": "filters",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "81",
+    "name": "Fourier Circles",
+    "file": "math_art/fourier_circles.py",
+    "category": "math_art",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "PARTICLES?",
+      "FIELD?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "82",
+    "name": "GPU Procedural Shaders",
+    "file": "gpu_shaders.py",
+    "category": "ml_models",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "83",
+    "name": "Langton's Ant",
+    "file": "simulations/langtons_ant.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "particles",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "PARTICLES",
+      "FIELD"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "84",
+    "name": "Quantum Wave Interference",
+    "file": "simulations/quantum_interference.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "85",
+    "name": "Strange Attractors (Chaos Density)",
+    "file": "math_art/strange_attractors.py",
+    "category": "math_art",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "86",
+    "name": "Physarum Slime Mold",
+    "file": "simulations/physarum.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "field",
+      "particles"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "PARTICLES",
+      "FIELD"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "87",
+    "name": "Cyclic CA",
+    "file": "simulations/cyclic_ca.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "88",
+    "name": "Particle Life",
+    "file": "simulations/particle_life.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "particles"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "PARTICLES"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "89",
+    "name": "Kuramoto Sync",
+    "file": "simulations/kuramoto.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "r"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "SCALAR",
+      "PARTICLES?",
+      "FIELD?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "90",
+    "name": "Lenia",
+    "file": "simulations/lenia.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "91",
+    "name": "BZ Oregonator",
+    "file": "simulations/bz_oregonator.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "92",
+    "name": "Lattice Gas",
+    "file": "simulations/lattice_gas.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "PARTICLES?",
+      "FIELD?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "93",
+    "name": "Ising Model",
+    "file": "simulations/ising.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "magnetization",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD",
+      "SCALAR"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "94",
+    "name": "Stadium Billiards",
+    "file": "simulations/stadium_billiards.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD",
+      "PARTICLES?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "95",
+    "name": "Coupled Logistic",
+    "file": "simulations/coupled_logistic.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FIELD?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "96",
+    "name": "Forest Fire",
+    "file": "simulations/forest_fire.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "97",
+    "name": "Lloyd's Algorithm",
+    "file": "simulations/lloyds_algorithm.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "PARTICLES?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "98",
+    "name": "Smoothed Particle Hydrodynamics",
+    "file": "simulations/sph.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FIELD?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "99",
+    "name": "Active Nematic Liquid Crystals",
+    "file": "simulations/active_nematic.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "100",
+    "name": "Wave Equation",
+    "file": "simulations/wave_equation.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "amplitude",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD",
+      "SCALAR",
+      "PARTICLES?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "101",
+    "name": "Viscous Fingering",
+    "file": "simulations/viscous_fingering.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "102",
+    "name": "Swarmalators",
+    "file": "simulations/swarmalators.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "particles"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "PARTICLES"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "103",
+    "name": "Chaotic Pendulums",
+    "file": "simulations/chaotic_pendulums.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD",
+      "PARTICLES?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "104",
+    "name": "Spherical Harmonics",
+    "file": "math_art/spherical_harmonics.py",
+    "category": "math_art",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FIELD?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "105",
+    "name": "Morph Grid",
+    "file": "patterns/rotating_snakes.py",
+    "category": "patterns",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FIELD?",
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "106",
+    "name": "Dielectric Breakdown",
+    "file": "simulations/dielectric_breakdown.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "107",
+    "name": "Magnetic Pendulum",
+    "file": "simulations/magnetic_pendulum.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD",
+      "PARTICLES?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "108",
+    "name": "4D Hypercube",
+    "file": "math_art/polytope_4d.py",
+    "category": "math_art",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "PARTICLES?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "109",
+    "name": "Rayleigh-Taylor Instability",
+    "file": "simulations/rayleigh_taylor.py",
+    "category": "simulations",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "110",
+    "name": "Sheared Rayleigh-Taylor",
+    "file": "simulations/sheared_rayleigh_taylor.py",
+    "category": "simulations",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "111",
+    "name": "Multi-Layer RT",
+    "file": "simulations/multilayer_rt.py",
+    "category": "simulations",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "112",
+    "name": "Kelvin-Helmholtz Instability",
+    "file": "simulations/kelvin_helmholtz.py",
+    "category": "simulations",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD",
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "113",
+    "name": "N-Body Gravity",
+    "file": "simulations/nbody_gravity.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "114",
+    "name": "Spring-Mass Network",
+    "file": "simulations/spring_mass_network.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "PARTICLES?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "116",
+    "name": "Point Vortex Dynamics",
+    "file": "simulations/point_vortex.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "117",
+    "name": "Refractive Caustics",
+    "file": "simulations/refractive_caustics.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FIELD?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "118",
+    "name": "Lotka-Volterra RD",
+    "file": "simulations/lotka_volterra.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "119",
+    "name": "LV Turing Regime",
+    "file": "simulations/lv_turing.py",
+    "category": "simulations",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD",
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "120",
+    "name": "LV 3-Species Food Web",
+    "file": "simulations/lv_3species.py",
+    "category": "simulations",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD",
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "121",
+    "name": "LV Anisotropic Diffusion",
+    "file": "simulations/lv_anisotropic.py",
+    "category": "simulations",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD",
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "122",
+    "name": "Dendritic Solidification",
+    "file": "simulations/dendritic_solidification.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "123",
+    "name": "Animated LIC Flow",
+    "file": "simulations/lic_flow.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "124",
+    "name": "Nonlinear Schrödinger Equation",
+    "file": "simulations/nlse.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "125",
+    "name": "Chladni Eigenmode Morphing",
+    "file": "simulations/chladni.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "126",
+    "name": "Complex Ginzburg-Landau",
+    "file": "simulations/complex_ginzburg_landau.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FIELD?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "127",
+    "name": "Kuramoto-Sivashinsky",
+    "file": "simulations/kuramoto_sivashinsky.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "128",
+    "name": "Swift-Hohenberg Pattern Formation",
+    "file": "simulations/active_brownian.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "129",
+    "name": "Cellular Potts Model",
+    "file": "simulations/cellular_potts.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "130",
+    "name": "Particle Painter",
+    "file": "simulations/particle_painter.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "PARTICLES?",
+      "FIELD?"
+    ],
+    "missing_outputs": [
+      "FIELD?"
+    ],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [
+      "field-like vars: density, density — may warrant field output"
+    ],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "131",
+    "name": "Burridge-Knopoff Earthquakes",
+    "file": "simulations/burridge_knopoff.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "132",
+    "name": "Shallow Water Waves",
+    "file": "simulations/shallow_water.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "PARTICLES?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "133",
+    "name": "FitzHugh-Nagumo Excitable Media",
+    "file": "simulations/fitzhugh_nagumo.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "134",
+    "name": "Nonlocal Aggregation (Chemotaxis)",
+    "file": "simulations/chemotaxis.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FIELD?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "135",
+    "name": "KPZ Surface Growth / Erosion",
+    "file": "simulations/kpz_surface_growth.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "136",
+    "name": "Elastic Coiling Instability",
+    "file": "simulations/elastic_coiling.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD",
+      "PARTICLES?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "137",
+    "name": "Image Blend",
+    "file": "compositing/blend.py",
+    "category": "compositing",
+    "class": "composite",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "138",
+    "name": "Scalar Math",
+    "file": "compositing/math_merge.py",
+    "category": "compositing",
+    "class": "composite",
+    "current_outputs": [
+      "value"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "SCALAR"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "139",
+    "name": "Field Combine",
+    "file": "compositing/field_combine.py",
+    "category": "compositing",
+    "class": "composite",
+    "current_outputs": [
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "140",
+    "name": "Particle Merge",
+    "file": "compositing/particle_merge.py",
+    "category": "compositing",
+    "class": "composite",
+    "current_outputs": [
+      "particles"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "PARTICLES"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "141",
+    "name": "Apply Mask",
+    "file": "compositing/apply_mask.py",
+    "category": "compositing",
+    "class": "composite",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "mask"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "MASK",
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "142",
+    "name": "Coupled Map Lattice",
+    "file": "simulations/coupled_map_lattice.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FIELD?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "143",
+    "name": "Bacterial Colony (v2)",
+    "file": "simulations/bacterial_colony_v2.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "144",
+    "name": "Faraday Wave Patterns",
+    "file": "simulations/faraday_waves.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FIELD?"
+    ],
+    "missing_outputs": [
+      "FIELD?"
+    ],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [
+      "field-like vars: v, v — may warrant field output"
+    ],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "145",
+    "name": "Dynamic Fracture Network",
+    "file": "simulations/dynamic_fracture.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FIELD?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "146",
+    "name": "AC + PM Diffusion",
+    "file": "simulations/cahn_hilliard.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "147",
+    "name": "Viscoelastic Buckling Lattice",
+    "file": "simulations/buckling_lattice.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "PARTICLES?",
+      "FIELD?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "148",
+    "name": "GPE Quantum Vortex Turbulence",
+    "file": "simulations/gpe_vortex.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FIELD?"
+    ],
+    "missing_outputs": [
+      "FIELD?"
+    ],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [
+      "field-like vars: psi, psi — may warrant field output"
+    ],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "149",
+    "name": "Ferrofluid Rosensweig Instability",
+    "file": "simulations/ferrofluid.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "150",
+    "name": "FPU Chain Lattice",
+    "file": "simulations/chua_lattice.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FIELD?"
+    ],
+    "missing_outputs": [
+      "FIELD?"
+    ],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [
+      "field-like vars: u, v, u, v — may warrant field output"
+    ],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "151",
+    "name": "4D Polytope",
+    "file": "simulations/tesseract.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "152",
+    "name": "Magnetic Reconnection",
+    "file": "simulations/magnetic_reconnection.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "PARTICLES?",
+      "FIELD?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "153",
+    "name": "Spatial Prisoner's Dilemma",
+    "file": "simulations/spatial_pd.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "154",
+    "name": "Continuous Spatial PD (Replicator Dynamics)",
+    "file": "simulations/spd_replicator.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FIELD?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "155",
+    "name": "Gray-Scott Reaction-Diffusion",
+    "file": "simulations/gray_scott.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "156",
+    "name": "Hydraulic Erosion / River Network",
+    "file": "simulations/hydraulic_erosion.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "field",
+      "max_erosion",
+      "total_sediment",
+      "drainage_density"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD",
+      "SCALAR"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "157",
+    "name": "Swift-Hohenberg Pattern Formation",
+    "file": "simulations/rayleigh_benard.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "158",
+    "name": "Darcy-Bénard Porous Convection",
+    "file": "simulations/darcy_benard.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FIELD?"
+    ],
+    "missing_outputs": [
+      "FIELD?"
+    ],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [
+      "field-like vars: psi — may warrant field output"
+    ],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "159",
+    "name": "Phase Separation + Darcy Advection",
+    "file": "simulations/ac_darcy.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FIELD?"
+    ],
+    "missing_outputs": [
+      "FIELD?"
+    ],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [
+      "field-like vars: psi — may warrant field output"
+    ],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "160",
+    "name": "Bacterial Colony Morphogenesis",
+    "file": "simulations/bacterial_colony.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "161",
+    "name": "Spectral Tapestry",
+    "file": "simulations/spectral_tapestry.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FIELD?"
+    ],
+    "missing_outputs": [
+      "FIELD?"
+    ],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [
+      "field-like vars: u, u — may warrant field output"
+    ],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "162",
+    "name": "Rössler Oscillator Array",
+    "file": "simulations/roessler_array.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "163",
+    "name": "Fractional Laplacian Reaction-Diffusion",
+    "file": "simulations/fractional_rd.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FIELD?"
+    ],
+    "missing_outputs": [
+      "FIELD?"
+    ],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [
+      "field-like vars: U, V, U, V — may warrant field output"
+    ],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "164",
+    "name": "Moiré Patterns",
+    "file": "simulations/brusselator.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "165",
+    "name": "Sand Dune Migration",
+    "file": "simulations/sand_dune_migration.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "166",
+    "name": "Parametric Oscillator Lattice",
+    "file": "simulations/oscillon_resonance.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "SCALAR",
+      "FIELD?"
+    ],
+    "missing_outputs": [
+      "SCALAR:damping",
+      "SCALAR:epsilon",
+      "SCALAR:peak_amplitude",
+      "SCALAR:resonance_energy",
+      "FIELD?"
+    ],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [
+      "write_scalars(damping=…) called but 'damping' not in outputs=",
+      "write_scalars(epsilon=…) called but 'epsilon' not in outputs=",
+      "write_scalars(peak_amplitude=…) called but 'peak_amplitude' not in outputs=",
+      "write_scalars(resonance_energy=…) called but 'resonance_energy' not in outputs=",
+      "field-like vars: u, v, u, v — may warrant field output"
+    ],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "167",
+    "name": "Spectral Ocean Synthesis",
+    "file": "simulations/ocean_spectral.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "SCALAR"
+    ],
+    "missing_outputs": [
+      "SCALAR:peak_freq",
+      "SCALAR:phillips_alpha",
+      "SCALAR:significant_height",
+      "SCALAR:wind_speed"
+    ],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [
+      "write_scalars(peak_freq=…) called but 'peak_freq' not in outputs=",
+      "write_scalars(phillips_alpha=…) called but 'phillips_alpha' not in outputs=",
+      "write_scalars(significant_height=…) called but 'significant_height' not in outputs=",
+      "write_scalars(wind_speed=…) called but 'wind_speed' not in outputs="
+    ],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "168",
+    "name": "PM Anisotropic RD",
+    "file": "simulations/pm_anisotropic_rd.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "169",
+    "name": "Turing Morphogenesis",
+    "file": "simulations/turing_morphogenesis.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FIELD?"
+    ],
+    "missing_outputs": [
+      "FIELD?"
+    ],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [
+      "field-like vars: u, v, u, v — may warrant field output"
+    ],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "170",
+    "name": "Phase Field Crystal",
+    "file": "simulations/pfc.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "FIELD?"
+    ],
+    "missing_outputs": [
+      "FIELD?"
+    ],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [
+      "field-like vars: psi, psi — may warrant field output"
+    ],
+    "audit_warnings": [
+      "no description set"
+    ]
+  }
+]

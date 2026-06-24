@@ -31,7 +31,6 @@ from ...core.animation import capture_frame
              "bg_color": {"description": "background color hex or name", "default": "#0a0a12"},
              "alignment": {"description": "text alignment", "choices": ["left", "center", "right"], "default": "center"},
              "spacing": {"description": "line spacing multiplier", "min": 0.5, "max": 3.0, "default": 1.2},
-             "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
              "anim_mode": {"description": "animation mode",
                            "choices": ["none", "typewriter", "scrolling", "fade_in", "bounce", "wave", "glitch",
                                        "font_size_pulse", "spacing_morph", "color_cycle",

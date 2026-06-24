@@ -413,7 +413,6 @@ def method_qrencode(out_dir: Path, seed: int, params=None):
             "charset": {"description": "fallback ASCII ramp characters", "default": "@%#*+=-:. "},
             "subsample": {"description": "fallback pixel subsample step", "min": 1, "max": 16, "default": 4},
             "font_size": {"description": "PIL font size for rendering", "min": 6, "max": 48, "default": 10},
-            "time": {"description": "animation time in radians (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
             "anim_mode": {"description": "animation mode", "choices": ["none", "circle_morph", "char_cycle"], "default": "none"},
             "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
         })
@@ -538,7 +537,6 @@ def method_img2txt(out_dir: Path, seed: int, params=None):
             "edge_color": {"description": "edge line hex color", "default": "#4a3a2a"},
             "edge_len": {"description": "edge length factor", "min": 0.5, "max": 10.0, "default": 1.5},
             "dpi": {"description": "output DPI", "min": 36, "max": 300, "default": 72},
-            "time": {"description": "animation time in radians (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
             "anim_mode": {"description": "animation mode", "choices": ["none", "edge_morph", "color_cycle",
                 "layout_cycle", "node_drift", "font_pulse", "bg_cycle", "edge_len_morph"], "default": "none"},
             "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
@@ -709,7 +707,6 @@ def method_graphviz(out_dir: Path, seed: int, params=None):
             "oil_paint": {"description": "oil paint effect radius", "min": 0, "max": 20, "default": 3},
             "blur": {"description": "Gaussian blur radius", "default": "0x1"},
             "min_bytes": {"description": "minimum output file size to accept", "min": 100, "max": 100000, "default": 1000},
-            "time": {"description": "animation time in radians", "min": 0, "max": 6.28, "default": 0.0},
             "anim_mode": {"description": "animation mode", "choices": ["none", "plasma_pulse", "blur_cycle", "tile_cycle", "seed_morph", "oil_shock"], "default": "none"},
             "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
         })
@@ -833,7 +830,6 @@ def method_gmic_plasma(out_dir: Path, seed: int, params=None):
             "chafa_size": {"description": "chafa --size argument", "default": "80x40"},
             "chafa_colors": {"description": "chafa -c color count", "default": 256},
             "font_size": {"description": "PIL font size for rendering", "min": 6, "max": 48, "default": 10},
-            "time": {"description": "animation time in radians", "min": 0, "max": 6.28, "default": 0.0},
             "anim_mode": {"description": "animation mode", "choices": ["none", "shape_morph", "color_cycle"], "default": "none"},
             "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
         })

@@ -42,12 +42,6 @@ from ...core.animation import capture_frame
             "max": 360,
             "default": 0,
         },
-        "time": {
-            "description": "animation time (0-6.28)",
-            "min": 0.0,
-            "max": 6.28,
-            "default": 0.0,
-        },
         "anim_mode": {
             "description": "kaleidoscope animation mode",
             "choices": ["none", "rotation", "wobble", "pulse_zoom", "wedge_dance", "petal_breathe", "color_wash"],

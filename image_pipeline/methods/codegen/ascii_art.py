@@ -52,7 +52,6 @@ BUILTIN_CHARSETS = {
              "effect": {"description": "visual effect", "choices": ["none", "dither", "edge_emphasis", "glow", "color_bleed", "drift", "scroll", "char_morph", "wave"], "default": "none"},
              "dither_strength": {"description": "dither/effect strength", "min": 0.0, "max": 1.0, "default": 0.5},
              "input_path": {"description": "path to input image (for input_image source)", "default": ""},
-             "time": {"description": "animation time for drift/scroll/char_morph/wave effects", "min": 0.0, "max": 6.28, "default": 0.0},
              "anim_mode": {"description": "animation mode", "choices": ["none", "charset_morph", "font_pulse", "dither_strength_sweep", "char_spacing_pulse"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.0, "max": 2.0, "default": 0.25},
          })

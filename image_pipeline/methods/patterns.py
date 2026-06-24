@@ -35,7 +35,6 @@ def _render_wave_preview(result, h, w, r2=2.0):
     "bg_color": {"description": "background color (dark/light/transparent/gradient)", "default": "dark"},
     "anim_mode": {"description": "animation mode: none, size_wave, gap_pulse, arc_rotation, color_osc, arc_stretch, weave_pulse", "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},
-    "time": {"description": "animation time (0.0-6.28 for phase shift)", "min": 0.0, "max": 6.28, "default": 0.0},
 })
 def method_truchet(out_dir: Path, seed: int, params=None):
     """Render Truchet tiling patterns with multiple tile types and color modes.
@@ -340,7 +339,6 @@ def method_truchet(out_dir: Path, seed: int, params=None):
     "rotation": {"description": "global rotation offset (radians)", "min": 0.0, "max": 6.2832, "default": 0.0},
     "anim_mode": {"description": "animation mode: none, plane_rotate, freq_sweep, counter_rotate, multi_plane_freq, wave_count_sweep, lattice_cycle, wave_fn_cycle, mod_cycle, colormode_cycle, phase_drift", "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
-    "time": {"description": "animation time (0.0-6.28 for drift)", "min": 0.0, "max": 6.28, "default": 0.0},
 })
 def method_quasicrystal(out_dir: Path, seed: int, params=None):
     """Render quasicrystal diffraction patterns via wave-plane superposition.
@@ -634,7 +632,6 @@ def method_quasicrystal(out_dir: Path, seed: int, params=None):
     "wobble": {"description": "wobble distortion of grid lines", "min": 0.0, "max": 3.0, "default": 0.0},
     "anim_mode": {"description": "animation mode: none, layer_rotate, op_morph, pattern_morph", "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},
-    "time": {"description": "animation time (0.0-6.28 for phase drift)", "min": 0.0, "max": 6.28, "default": 0.0},
 })
 def method_moire(out_dir: Path, seed: int, params=None):
     """Render Moiré interference patterns by overlaying transformed grids.
@@ -958,7 +955,6 @@ def method_moire(out_dir: Path, seed: int, params=None):
     "cell_border": {"description": "cell edge highlight width (0=off)", "min": 0, "max": 20, "default": 0},
     "anim_mode": {"description": "animation mode: none, point_drift, feature_sweep, gain_sweep", "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.5},
-    "time": {"description": "animation time for point drift", "min": 0.0, "max": 6.28, "default": 0.0},
 })
 def method_worley_noise(out_dir: Path, seed: int, params=None):
     """Render Worley (Voronoi cell) noise with GPU-free vectorized KD-tree.
@@ -1188,7 +1184,6 @@ def method_worley_noise(out_dir: Path, seed: int, params=None):
     "star_rays": {"description": "star polygon rays (for star/islamic motifs)", "min": 4, "max": 16, "default": 8},
     "anim_mode": {"description": "animation mode: none, rotation_wave, scale_spiral, color_drift, position_wave, mosaic_shuffle, breathe_wave, vortex_spin, color_wave, deform, echo, glow, orbit", "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},
-    "time": {"description": "animation time (drives ripple wave + rotation)", "min": 0.0, "max": 6.28, "default": 0.0},
 })
 def method_wallpaper(out_dir: Path, seed: int, params=None):
     """
@@ -1772,7 +1767,6 @@ def method_wallpaper(out_dir: Path, seed: int, params=None):
     "petal_angle": {"description": "rotate each petal toward center (degrees)", "min": 0, "max": 90, "default": 0},
     "anim_mode": {"description": "animation mode: none, rotation, shape_morph, size_sweep, petal_spin, angle_drift, radius_breathe", "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},
-    "time": {"description": "animation time (drives rotation + seed)", "min": 0.0, "max": 6.28, "default": 0.0},
 })
 def method_phyllotaxis(out_dir: Path, seed: int, params=None):
     """
@@ -1985,7 +1979,6 @@ def method_phyllotaxis(out_dir: Path, seed: int, params=None):
     "octaves": {"description": "number of octaves", "min": 1, "max": 12, "default": 4},
     "lacunarity": {"description": "frequency multiplier per octave", "min": 1.0, "max": 4.0, "default": 2.0},
     "gain": {"description": "amplitude multiplier per octave", "min": 0.1, "max": 1.0, "default": 0.5},
-    "time": {"description": "animation time/phase (0..2pi for smooth evolution)", "min": 0.0, "max": 6.28, "default": 0.0},
     "anim_mode": {"description": "animation mode: none, type_morph", "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},
     "cell_points": {"description": "Voronoi cell count (nx*ny, for cell noise)", "min": 20, "max": 500, "default": 96},

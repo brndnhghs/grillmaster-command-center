@@ -27,6 +27,12 @@ class MethodMeta:
         timeout: int = 120,
         params: dict[str, dict] | None = None,
         fn: Callable | None = None,
+        inputs: dict[str, str] | None = None,
+        outputs: dict[str, str] | None = None,
+        description: str = "",
+        version: int = 1,
+        deprecated: bool = False,
+        module: str = "",
     ):
         self.id = id
         self.name = name
@@ -35,6 +41,17 @@ class MethodMeta:
         self.timeout = timeout
         self.params = params or {}
         self.fn = fn
+        self.module = module
+        # Explicitly declared extra inputs (port_name → PortType string).
+        # None means no extras beyond what _make_node_def() auto-generates from params.
+        self.inputs: dict[str, str] | None = inputs
+        # Declared var outputs: port_name → PortType string.
+        # Default covers image + luminance; methods extend this in later phases
+        # by passing outputs= to the @method decorator.
+        self.outputs: dict[str, str] = outputs or {"image": "IMAGE", "luminance": "SCALAR"}
+        self.description: str = description
+        self.version: int = version
+        self.deprecated: bool = deprecated
 
     @property
     def label(self) -> str:
@@ -69,6 +86,11 @@ def method(
     tags: list[str] | None = None,
     timeout: int = 120,
     params: dict[str, dict] | None = None,
+    inputs: dict[str, str] | None = None,
+    outputs: dict[str, str] | None = None,
+    description: str = "",
+    version: int = 1,
+    deprecated: bool = False,
 ):
     """Decorator: register a generation method."""
 
@@ -81,6 +103,12 @@ def method(
             timeout=timeout,
             params=params or {},
             fn=fn,
+            inputs=inputs,
+            outputs=outputs,
+            description=description,
+            version=version,
+            deprecated=deprecated,
+            module=fn.__module__,
         )
         _registry[id] = meta
         _categories.setdefault(category, []).append(id)
@@ -96,6 +124,33 @@ def method(
 
 def get_meta(id: str) -> MethodMeta | None:
     return _registry.get(id)
+
+
+def unregister(method_id: str) -> None:
+    """Remove a method from the registry. Used by hot-reload."""
+    meta = _registry.pop(method_id, None)
+    if meta is None:
+        return
+    # Clean up category index
+    cat_list = _categories.get(meta.category, [])
+    if method_id in cat_list:
+        cat_list.remove(method_id)
+    # Clean up group/tag index
+    for tag in meta.tags:
+        grp_list = _groups.get(tag, [])
+        if method_id in grp_list:
+            grp_list.remove(method_id)
+
+
+def get_ids_by_module(module_name: str) -> list[str]:
+    """Return all method IDs registered from the given module name."""
+    return [mid for mid, meta in _registry.items() if getattr(meta, 'module', None) == module_name]
+
+
+def get_id_by_module(module_name: str) -> str | None:
+    """Return the first method ID registered from the given module name, or None."""
+    ids = get_ids_by_module(module_name)
+    return ids[0] if ids else None
 
 
 def get_all() -> dict[str, MethodMeta]:

@@ -30,12 +30,6 @@ from ...core.animation import capture_frame
             "choices": ["solid", "striped", "noise", "sparkle", "harmonic"],
             "default": "solid",
         },
-        "time": {
-            "description": "animation time (0-6.28)",
-            "min": 0.0,
-            "max": 6.28,
-            "default": 0.0,
-        },
         "anim_mode": {
             "description": "gradient animation mode",
             "choices": ["none", "center_orbit", "direction_morph", "color_sweep", "style_morph", "type_morph"],

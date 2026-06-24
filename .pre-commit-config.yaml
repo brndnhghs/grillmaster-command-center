@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: audit-methods
+        name: Grillmaster method audit
+        entry: uv run python tools/audit_methods.py --fail-on-violations
+        language: system
+        pass_filenames: false
+        files: ^image_pipeline/methods/

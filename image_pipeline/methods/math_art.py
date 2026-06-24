@@ -35,7 +35,6 @@ except ImportError:
              "density_sigma": {"description": "density heatmap blur sigma", "min": 2, "max": 30, "default": 8},
              "prime_size": {"description": "prime dot size (px at render)", "min": 1, "max": 5, "default": 1},
              "composite_alpha": {"description": "composite dot visibility (0=invisible)", "min": 0.0, "max": 1.0, "default": 0.0},
-             "time": {"description": "animation time (spiral rotation offset)", "min": 0.0, "max": 6.28, "default": 0.0},
              "anim_mode": {"description": "animation mode", "choices": ["none", "color_cycle", "archimedean_rotate"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
@@ -495,7 +494,6 @@ def method_ulam_spiral(out_dir: Path, seed: int, params=None):
              "growing_bias": {"description": "growing_tree bias: 0=random, 1=newest, -1=oldest", "min": -1.0, "max": 1.0, "default": 0.0, "step": 0.1},
              "color_saturation": {"description": "color intensity", "min": 0.3, "max": 1.5, "default": 0.9, "step": 0.1},
              "rings": {"description": "polar/circular ring count (0=auto)", "min": 0, "max": 60, "default": 0},
-             "time": {"description": "animation time (drives color shift)", "min": 0.0, "max": 6.28, "default": 0.0},
              "anim_mode": {"description": "animation mode", "choices": ["none", "color_cycle"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
@@ -825,8 +823,9 @@ def method_maze(out_dir: Path, seed: int, params=None):
                  "noise_amplitude":{"description":"noise","min":0.0,"max":20.0,"default":0.0},
                  "adaptive_detail":{"description":"adaptive","choices":["no","yes"],"default":"no"},
                  "anim_mode":{"description":"animation mode","choices":["none","point_drift","color_cycle","noise_pulse"],"default":"none"},
-                 "anim_speed":{"description":"animation speed multiplier","min":0.0,"max":5.0,"default":1.0},
-                 "time":{"description":"time","min":0.0,"max":6.28,"default":0.0}})
+                 "anim_speed": {"description": "animation speed multiplier", "min": 0.0, "max": 5.0, "default": 1.0},
+             },
+)
 def method_lowpoly(out_dir: Path, seed: int, params=None):
     """Low Poly — triangulated mesh art with multiple point distributions, mesh types, and styles.
 
@@ -1135,8 +1134,9 @@ def method_lowpoly(out_dir: Path, seed: int, params=None):
                  "led_radius":{"description":"LED","min":1,"max":6,"default":3},
                  "scanline_speed":{"description":"scan speed","min":0.0,"max":5.0,"default":1.0},
                  "anim_mode":{"description":"animation mode","choices":["none","data_cycle","glitch_pulse","scanline_drift","color_cycle"],"default":"none"},
-                 "anim_speed":{"description":"animation speed multiplier","min":0.0,"max":5.0,"default":1.0},
-                 "time":{"description":"animation time (0-2pi)","min":0.0,"max":6.28,"default":0.0}})
+                 "anim_speed": {"description": "animation speed multiplier", "min": 0.0, "max": 5.0, "default": 1.0},
+             },
+)
 def method_binary_counter(out_dir: Path, seed: int, params=None):
     """Binary Counter — data visualization as binary bit rows with multiple layouts, styles, and glitch effects.
 
@@ -1388,8 +1388,9 @@ def method_binary_counter(out_dir: Path, seed: int, params=None):
                 "halftone_density":{"description":"halftone","min":0.1,"max":1.0,"default":0.5},
                 "relaxation_iters":{"description":"relaxation","min":1,"max":20,"default":5},
                 "anim_mode":{"description":"animation mode","choices":["none","radius_pulse","position_drift","color_cycle"],"default":"none"},
-                "anim_speed":{"description":"animation speed multiplier","min":0.0,"max":5.0,"default":1.0},
-                "time":{"description":"animation time (0-2pi)","min":0.0,"max":6.28,"default":0.0}})
+                "anim_speed": {"description": "animation speed multiplier", "min": 0.0, "max": 5.0, "default": 1.0},
+            },
+)
 def method_circle_packing(out_dir: Path, seed: int, params=None):
     """Circle Packing — pack circles on a canvas using various strategies, styles, and animation.
 
@@ -1633,7 +1634,6 @@ def method_circle_packing(out_dir: Path, seed: int, params=None):
                  "lorenz_sigma":{"description":"sigma","min":1,"max":20,"default":10},"lorenz_rho":{"description":"rho","min":1,"max":50,"default":28},
                  "lorenz_beta":{"description":"beta","min":0.5,"max":5.0,"default":2.667},
                  "lorenz_projection":{"description":"projection","choices":["xy","xz","yz","rotating"],"default":"xy"},
-                 "time":{"description":"animation time in radians","min":0.0,"max":6.28,"default":0.0},
                  "anim_mode":{"description":"animation mode","choices":["none","param_sweep","projection_rotate"],"default":"none"},
                  "anim_speed":{"description":"animation speed multiplier","min":0.1,"max":5.0,"default":1.0}})
 def method_chaotic_map(out_dir: Path, seed: int, params=None):
@@ -2004,7 +2004,6 @@ def method_chaotic_map(out_dir: Path, seed: int, params=None):
         "line_width": {"description": "line width in pixels", "min": 1, "max": 10, "default": 2},
         "fill_alpha": {"description": "fill alpha (0-1)", "min": 0.0, "max": 1.0, "default": 0.3},
         "num_bars": {"description": "number of bars (equalizer layout)", "min": 5, "max": 200, "default": 50},
-        "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
         "anim_mode": {"description": "animation mode", "choices": ["none", "freq_sweep", "phase_drift", "modulation_cycle", "layout_morph"], "default": "none"},
         "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
     },
@@ -2230,7 +2229,6 @@ def method_waveform(out_dir: Path, seed: int, params=None):
                  "kernel_type":{"description":"conv kernel","choices":["gaussian","sobel","laplacian","emboss","sharpen"],"default":"gaussian"},
                  "kernel_size":{"description":"kernel size","min":3,"max":31,"default":7},
                  "polar_radial_freq":{"description":"polar radial freq","min":1,"max":20,"default":4},"polar_angular_freq":{"description":"polar angular freq","min":1,"max":20,"default":6},
-                 "time":{"description":"animation time in radians","min":0.0,"max":6.28,"default":0.0},
                  "anim_mode":{"description":"animation mode","choices":["none","filter_rotate","source_drift","gabor_sweep"],"default":"none"},
                  "anim_speed":{"description":"animation speed multiplier","min":0.1,"max":5.0,"default":1.0}})
 def method_fft_art(out_dir: Path, seed: int, params=None):
@@ -2443,7 +2441,6 @@ def method_fft_art(out_dir: Path, seed: int, params=None):
                  "colormap_shift":{"description":"cmap shift","min":0.0,"max":1.0,"default":0.0},
                  "adaptive_sigma":{"description":"adaptive sigma","choices":["no","yes"],"default":"no"},
                  "point_speed":{"description":"point drift speed","min":0.0,"max":5.0,"default":0.0},
-                 "time":{"description":"animation time in radians (0-6.28)","min":0.0,"max":6.28,"default":0.0},
                  "anim_mode":{"description":"animation mode","choices":["none","spiral_drift","point_drift"],"default":"none"},
                  "anim_speed":{"description":"animation speed multiplier","min":0.1,"max":5.0,"default":1.0}})
 def method_density_heatmap(out_dir: Path, seed: int, params=None):
@@ -2664,7 +2661,6 @@ def method_density_heatmap(out_dir: Path, seed: int, params=None):
     "scale": {"description": "epicycle scale factor", "min": 0.1, "max": 2.0, "default": 1.0},
     "offset_x": {"description": "x offset (center-relative)", "min": -0.5, "max": 0.5, "default": 0.0},
     "offset_y": {"description": "y offset (center-relative)", "min": -0.5, "max": 0.5, "default": 0.0},
-    "time": {"description": "animation time — drives epicycle rotation angle", "min": 0.0, "max": 6.28, "default": 0.0},
 })
 def method_fourier_circles(out_dir: Path, seed: int, params=None):
     """Fourier Circles — epicycle-based Fourier series visualization with multiple shapes and animation.
@@ -2955,7 +2951,6 @@ def method_fourier_circles(out_dir: Path, seed: int, params=None):
                  "color": {"description": "color hex (or use palette)", "default": "#3366FF"},
                  "palette": {"description": "named palette (overrides color)", "default": ""},
                  "title": {"description": "chart title", "default": "Data Viz"},
-                 "time": {"description": "animation time in radians (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
                  "anim_mode": {"description": "animation mode", "choices": ["none", "data_shuffle", "bar_rise", "pie_spin",
                      "chart_cycle", "data_morph", "wave_sweep", "color_cycle", "progressive_reveal",
                      "scatter_drift", "line_wiggle", "highlight_pulse", "segment_pop", "bin_sweep"], "default": "none"},
@@ -3278,10 +3273,6 @@ _ATTRACTOR_PRESETS = {
         "bloom": {
             "description": "post-process glow radius (0=off)",
             "min": 0.0, "max": 8.0, "default": 2.0,
-        },
-        "time": {
-            "description": "animation time (0-6.28)",
-            "min": 0.0, "max": 6.28, "default": 0.0,
         },
         "anim_mode": {
             "description": "animation mode",

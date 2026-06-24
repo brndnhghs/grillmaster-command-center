@@ -14,7 +14,6 @@ from ...core.animation import capture_frame
 @method(id="09", name="QR Code", category="codegen",
          tags=["qr", "code", "fast", "animation", "expanded"],
          params={
-    "time": {"description": "animation phase (0 to 2pi)", "min": 0.0, "max": 6.28, "default": 0.0},
     "content": {"description": "text content to encode as QR", "default": "HELLO"},
     "anim_mode": {"description": "QR animation mode", "choices": ["none", "rotate_pulse", "mask_morph", "color_sweep"], "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.0, "max": 2.0, "default": 0.25},

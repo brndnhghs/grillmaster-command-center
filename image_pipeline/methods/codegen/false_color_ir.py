@@ -23,7 +23,6 @@ from ...core.animation import capture_frame
              "source": {"description": "source image type", "choices": ["perlin", "gradient"], "default": "perlin"},
              "anim_mode": {"description": "animation mode", "choices": ["none", "channel_drift", "strength_pulse", "color_cycle"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.0, "max": 5.0, "default": 1.0},
-             "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
          })
 def method_77_false_color_ir(out_dir: Path, seed: int, params=None):
     """Simulate infrared false-color photography with multiple mapping schemes and animation.

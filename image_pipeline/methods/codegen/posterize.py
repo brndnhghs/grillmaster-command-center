@@ -20,7 +20,6 @@ from ...core.animation import capture_frame
              "poster_method": {"description": "posterization method", "choices": ["uniform", "kmeans", "median_cut", "popularity"], "default": "uniform"},
              "dither": {"description": "apply Floyd-Steinberg dithering", "default": False},
              "source": {"description": "source image type", "choices": ["perlin", "gradient", "solid"], "default": "perlin"},
-             "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
              "anim_mode": {"description": "animation mode", "choices": ["none", "n_sweep", "source_morph", "method_cycle",
                  "dither_blend", "source_cycle", "palette_walk", "noise_seed",
                  "quantize_jitter", "threshold_sweep", "poster_flash", "channel_mix",

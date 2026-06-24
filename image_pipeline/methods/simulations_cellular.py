@@ -284,7 +284,6 @@ def _make_color_grid(grid, age_grid, rule, color_mode, t, hue_shift):
                             "choices": ["mono", "heat", "rainbow", "gradient", "lime"],
                             "default": "mono"},
              "speed": {"description": "generations per frame (animation tick multiplier)", "min": 0.5, "max": 8.0, "default": 1.0},
-             "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
              "anim_mode": {"description": "animation mode",
                            "choices": ["none", "simulate", "rule_cycle", "density_pulse",
                                        "color_cycle", "speed_pulse", "pop_explosion",

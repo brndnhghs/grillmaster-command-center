@@ -32,7 +32,6 @@ SHADER_NAMES = sorted([k for k, v in SHADERS.items() if v["type"] == "procedural
         "p2": {"description": "generic float param 2", "min": 0.0, "max": 1.0, "default": 0.5},
         "p3": {"description": "generic float param 3", "min": 0.0, "max": 1.0, "default": 0.5},
         "p4": {"description": "generic float param 4", "min": 0.0, "max": 1.0, "default": 0.5},
-        "time": {"description": "animation time offset", "min": 0.0, "max": 6.28, "default": 0.0},
         "anim_mode": {"description": "animation mode", "choices": ["none", "animate"], "default": "none"},
         "anim_speed": {"description": "animation speed multiplier", "min": 0.0, "max": 5.0, "default": 1.0},
     },

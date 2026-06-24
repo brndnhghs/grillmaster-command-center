@@ -1,0 +1,211 @@
+{
+  "main": {
+    "id": "ca68e6741152f8c7",
+    "type": "split",
+    "children": [
+      {
+        "id": "46378a158e7da059",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "904313cdd1a4a72f",
+            "type": "leaf",
+            "state": {
+              "type": "graph",
+              "state": {},
+              "icon": "lucide-git-fork",
+              "title": "Graph view"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "2798ffa5dc218203",
+    "type": "split",
+    "children": [
+      {
+        "id": "c2b5b9fa9ec27b22",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "8e65350242fcb621",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "93d8b9078f994d0f",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "b28fa820d3389457",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "b4af792c456562e7",
+    "type": "split",
+    "children": [
+      {
+        "id": "2f8f03f588291f6d",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "08906fb334d59a28",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks"
+            }
+          },
+          {
+            "id": "5a5e85499572e38f",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links"
+            }
+          },
+          {
+            "id": "05b571c69f9981a0",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "c8d154b1ebf50215",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "fe5ed7708aa57aff",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "8e65350242fcb621",
+  "lastOpenFiles": [
+    "methods/simulations/__pycache__/active_brownian.cpython-312.pyc",
+    "methods/simulations/active_brownian.py",
+    "methods/simulations/__pycache__/chladni.cpython-312.pyc",
+    "methods/simulations/references/new-method-id-tracker.md",
+    "methods/simulations/chladni.py",
+    "methods/simulations/references/method-126-spd-replicator.md",
+    "methods/simulations/references",
+    "methods/simulations/__pycache__/spd_replicator.cpython-312.pyc",
+    "methods/simulations/spd_replicator.py",
+    "methods/simulations/__pycache__/spatial_pd.cpython-312.pyc",
+    "methods/simulations/spatial_pd.py",
+    "output/graph-20922bf6/graph-output.png",
+    "output/graph-20922bf6/nmqodpkn6/11-gradient.png",
+    "output/graph-20922bf6/nmqodpkn6",
+    "output/graph-20922bf6",
+    "output/graph-d9cb1cd3/nmqodppot/_input.png",
+    "output/graph-d9cb1cd3/nmqodppot/15-typography-text.png",
+    "output/graph-d9cb1cd3/nmqodpkn6/11-gradient.png",
+    "output/graph-d9cb1cd3/graph-output.png",
+    "output/graph-71612fa2/nmqodppot/_input.png",
+    "output/graph-71612fa2/nmqodppot/15-typography-text.png",
+    "output/graph-71612fa2/nmqodpkn6/11-gradient.png",
+    "output/graph-71612fa2/graph-output.png",
+    "references/method-123-lic-flow.md",
+    "references/method-107-magnetic-pendulum.md",
+    "references/method-104-spherical-harmonics.md",
+    "references/method-103-chaotic-pendulums.md",
+    "references/method-101-viscous-fingering.md",
+    "references/method-98-smoothed-particle-hydrodynamics.md"
+  ]
+}

@@ -54,7 +54,6 @@ def _render_flame_preview(density, colors, h, w):
     "trap_y": {"description": "orbital trap point Y (0=off)", "min": -2.0, "max": 2.0, "default": 0.0},
     "trap_strength": {"description": "orbital trap blend strength (0=off)", "min": 0.0, "max": 1.0, "default": 0.0},
     "color_shift": {"description": "hue rotation for default coloring", "min": 0.0, "max": 6.28, "default": 0.0},
-    "time": {"description": "animation time in radians (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
     "anim_mode": {"description": "animation mode", "choices": ["none", "julia_morph", "julia_surface", "julia_spiral", "mandelbrot_flythrough", "burning_orbit", "julia_burning_hybrid", "julia_zoom", "multi_formula_blend", "colormap_morph", "trap_morph"], "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
 })
@@ -382,7 +381,6 @@ def method_fractal(out_dir: Path, seed: int, params=None):
     "blur_sigma": {"description": "post-render gaussian blur sigma (0=off)", "min": 0.0, "max": 5.0, "default": 0.0},
     "gamma": {"description": "density gamma correction", "min": 0.1, "max": 3.0, "default": 1.0},
     "contrast": {"description": "density contrast boost", "min": 0.5, "max": 3.0, "default": 1.5},
-    "time": {"description": "animation time in radians", "min": 0.0, "max": 6.28, "default": 0.0},
 })
 def method_buddhabrot(out_dir: Path, seed: int, params=None):
     """Render a Buddhabrot fractal — orbits of escaped Mandelbrot points.
@@ -657,7 +655,6 @@ def method_buddhabrot(out_dir: Path, seed: int, params=None):
              "x_range": {"description": "fern x viewport as xmin,xmax", "default": "-4,4"},
              "y_range": {"description": "fern y viewport as ymin,ymax", "default": "-2,10"},
              "custom_ifs": {"description": "custom IFS as JSON: [[p,a,b,c,d,e,f],...]", "default": ""},
-             "time": {"description": "animation time in radians", "min": 0.0, "max": 6.28, "default": 0.0},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })
 def method_barnsley_fern(out_dir: Path, seed: int, params=None):
@@ -913,7 +910,6 @@ def method_barnsley_fern(out_dir: Path, seed: int, params=None):
     "anim_zoom_target": {"description": "zoom target as x,y or auto", "default": "auto"},
     "anim_zoom_speed": {"description": "zoom speed factor", "min": 0.1, "max": 2.0, "default": 0.5},
     "antialias": {"description": "supersample factor (2=2x2)", "min": 1, "max": 3, "default": 1},
-    "time": {"description": "animation time in radians", "min": 0.0, "max": 6.28, "default": 0.0},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
 })
 def method_burning_ship(out_dir: Path, seed: int, params=None):
@@ -1215,7 +1211,6 @@ def method_burning_ship(out_dir: Path, seed: int, params=None):
     "animation_mode": {"description": "animation: none, zoom, color_cycle, param_morph, float", "default": "none"},
     "anim_zoom_speed": {"description": "zoom speed factor", "min": 0.1, "max": 2.0, "default": 0.5},
     "anim_float_amplitude": {"description": "float amplitude for viewpoint drift", "min": 0.01, "max": 1.0, "default": 0.1},
-    "time": {"description": "animation time in radians", "min": 0.0, "max": 6.28, "default": 0.0},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
 })
 def method_newton_fractal(out_dir: Path, seed: int, params=None):
@@ -1492,7 +1487,6 @@ def method_newton_fractal(out_dir: Path, seed: int, params=None):
     "palette_name": {"description": "palette name (retro palettes)", "default": "vapor"},
     "smooth": {"description": "use smooth fractional iteration counting", "default": True},
     "interior_color": {"description": "interior coloring: black, iteration_cycle, palette_gradient, atlas", "default": "black"},
-    "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
     "anim_mode": {"description": "animation mode", "choices": ["none", "morph", "zoom", "color_cycle", "param_morph", "flame"], "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
     "anim_morph_target": {"description": "morph target constant as real,imag or preset name", "default": "-0.4,0.6"},
@@ -1840,7 +1834,6 @@ def method_julia_set(out_dir: Path, seed: int, params=None):
     "r2_min": {"description": "optional second axis r_min (if not set, uses r_min/r_max)", "default": None},
     "r2_max": {"description": "optional second axis r_max", "default": None},
     "stable_color": {"description": "color for stable (negative exponent) regions: dark, green, blue, auto", "default": "dark"},
-    "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
     "anim_mode": {"description": "animation mode", "choices": ["none", "param_sweep", "color_cycle", "morph"], "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
     "epsilon": {"description": "log epsilon to prevent log(0)", "min": 1e-15, "max": 1e-5, "default": 1e-10},
@@ -2437,7 +2430,6 @@ def _render_trail(density, age_arr):
     "color_jitter": {"description": "random color drift amplitude", "min": 0.001, "max": 0.1, "default": 0.01},
     "anim_mode": {"description": "animation mode", "choices": ["none", "transform_morph", "param_sweep", "growth_reveal", "color_cycle"], "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.0, "max": 5.0, "default": 1.0},
-    "time": {"description": "animation time (0-2pi)", "min": 0.0, "max": 6.28, "default": 0.0},
 })
 def method_fractal_flame(out_dir: Path, seed: int, params=None):
     """Fractal Flame — IFS-based flame renderer with multiple variations, color modes, and animation.
@@ -2645,7 +2637,6 @@ def method_fractal_flame(out_dir: Path, seed: int, params=None):
     "render_style": {"description": "rendering style", "choices": ["density", "trail", "scatter", "connected", "glow", "stippled"], "default": "density"},
     "anim_mode": {"description": "animation mode", "choices": ["none", "growth", "vertex_cycle", "color_cycle", "param_morph"], "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.0, "max": 5.0, "default": 1.0},
-    "time": {"description": "animation time (0-2pi)", "min": 0.0, "max": 6.28, "default": 0.0},
     "multi_chaos": {"description": "comma-separated preset names for multi-chaos blend (empty=off)", "default": ""},
     "density_increment": {"description": "accumulation per hit", "min": 0.0001, "max": 0.01, "default": 0.002},
     "color_r": {"description": "R channel multiplier (classic mode)", "min": 0.0, "max": 5.0, "default": 1.8},
@@ -2898,7 +2889,6 @@ def method_chaos_game(out_dir: Path, seed: int, params=None):
         "water_level": {"description": "water fill height (0=none, 1=full)", "min": 0.0, "max": 1.0, "default": 0.0},
         "light_angle": {"description": "sunlight angle in degrees for shaded mode", "min": 0, "max": 360, "default": 45},
         "erosion": {"description": "thermal erosion intensity (0=none)", "min": 0, "max": 1, "default": 0},
-        "time": {"description": "animation time param (0-2π)", "min": 0.0, "max": 6.28, "default": 0.0},
         "anim_mode": {"description": "animation mode", "choices": ["none", "roughness_wave", "erosion_wave", "height_warp", "water_tide", "palette_morph", "light_orbit", "terrain_morph"], "default": "none"},
         "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
     },
@@ -3263,7 +3253,6 @@ def method_plasma(out_dir: Path, seed: int, params=None):
     "color_mode": {"description": "coloring: sine, palette, heatmap, fire, ice, spectral, per_level, depth_gradient, neon, rainbow, input_blend", "default": "sine"},
     "palette_name": {"description": "palette name (retro palettes)", "default": "vapor"},
     "fill_style": {"description": "fill style: standard, inverted, outline, glow, dotted, checkerboard, concentric, radial_fade", "default": "standard"},
-    "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
     "anim_mode": {"description": "animation mode", "choices": ["none", "zoom", "rotate", "pulse", "depth_morph", "color_cycle", "breath"], "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
     "anim_target_depth": {"description": "target depth for depth_morph animation", "min": 2, "max": 7, "default": 6},
@@ -3777,7 +3766,6 @@ def method_sierpinski(out_dir: Path, seed: int, params=None):
     "wind": {"description": "wind sway amount", "min": 0.0, "max": 1.0, "default": 0.0},
     "anim_mode": {"description": "animation: none, grow, sway, wind, color_cycle, pulse, breath", "default": "none"},
     "anim_speed": {"description": "animation speed", "min": 0.1, "max": 3.0, "default": 1.0},
-    "time": {"description": "animation time (0-2pi)", "min": 0.0, "max": 6.28, "default": 0.0},
     "min_branch_length": {"description": "minimum branch length to continue", "min": 1, "max": 20, "default": 3},
 })
 def method_pythagorean_tree(out_dir: Path, seed: int, params=None):
@@ -4126,7 +4114,6 @@ def method_pythagorean_tree(out_dir: Path, seed: int, params=None):
         "taper": {"description": "line width taper (0=uniform, 1=max taper)", "min": 0.0, "max": 1.0, "default": 0.5},
         "leaves": {"description": "draw leaf nodes at endpoints", "default": True},
         "branch_angle": {"description": "additional branch angle variation in degrees", "min": 0, "max": 30, "default": 0},
-        "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
         "anim_mode": {"description": "animation mode", "choices": ["none", "wind_sway", "growth", "color_cycle", "palette_morph", "branching_depth", "angle_sweep", "asymmetry", "gravity_droop", "branch_prune", "twist"], "default": "none"},
         "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},
     },

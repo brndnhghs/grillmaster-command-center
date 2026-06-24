@@ -1403,12 +1403,6 @@ _DISPLAY_CHOICES = sorted(_DISPLAY_RENDERERS.keys())
             "max": 1.0,
             "default": -1.0,
         },
-        "time": {
-            "description": "animation time (0-6.28)",
-            "min": 0.0,
-            "max": 6.28,
-            "default": 0.0,
-        },
         "anim_mode": {
             "description": "palette animation mode",
             "choices": ["none", "wheel_spin", "gradient_sweep", "hue_rotate", "palette_morph", "saturation_pulse", "value_pulse"],

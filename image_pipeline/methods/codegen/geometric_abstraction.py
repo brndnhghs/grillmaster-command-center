@@ -27,7 +27,6 @@ from ...core.animation import capture_frame
              "n_shapes": {"description": "number of shapes", "min": 10, "max": 200, "default": 50},
              "rotation": {"description": "global rotation offset (degrees)", "min": 0.0, "max": 360.0, "default": 0.0},
              "translucent": {"description": "use translucent fills (RGBA)", "default": True},
-             "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
              "anim_mode": {"description": "animation mode", "choices": ["none", "rotation", "rotation_wave", "size_sweep", "position_wave", "color_drift", "shape_morph", "layout_spin", "alpha_pulse", "jitter", "stretch", "orbit", "gravity", "twist", "ripple", "bounce", "vortex", "pendulum", "magnet", "bloom", "melt", "spark", "wave", "spin", "repel", "swirl", "cascade", "morph_sequence", "color_wave", "shear", "fracture", "glow", "wobble", "breathe", "lens", "trail"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 2.0, "default": 0.25},
          })

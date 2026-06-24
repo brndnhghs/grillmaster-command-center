@@ -440,6 +440,36 @@
   .gnode-deprecated .gnode-title::after { content: ' ⚠ dep'; color: #f59e0b; font-size: 9px; font-weight: 400; }
   .node-error { border: 2px solid #e53935 !important; box-shadow: 0 0 8px rgba(229,57,53,0.4); }
   .node-error .gnode-header::after { content: ' ⚠'; color: #e53935; font-size: 12px; }
+  /* ── Group nodes ──────────────────────────────────────── */
+  .gnode.gnode-group { border-color: var(--accent2); border-radius: 12px; min-width: 140px; }
+  .gnode.gnode-group:hover, .gnode.gnode-group.selected { border-color: var(--accent2); box-shadow: 0 0 0 2px rgba(167,139,250,0.35); }
+  .gnode-group .gnode-header { background: rgba(167,139,250,0.12); border-bottom-color: var(--accent2); border-radius: 12px 12px 0 0; }
+  .gnode-group-icon { color: var(--accent2); margin-right: 3px; font-size: 13px; }
+  .gnode.selected-multi { box-shadow: 0 0 0 2px var(--accent2) !important; }
+  /* ── Group expand modal ───────────────────────────────── */
+  #group-expand-modal {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.75); z-index: 1000;
+    align-items: center; justify-content: center;
+  }
+  #group-expand-modal.open { display: flex; }
+  #group-modal-box {
+    background: var(--bg1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px 24px;
+    width: min(90vw, 480px); max-height: 75vh;
+    overflow-y: auto; display: flex; flex-direction: column; gap: 10px;
+  }
+  #group-modal-title { font-size: 15px; font-weight: 700; color: var(--accent2); }
+  #group-modal-subtitle { font-size: 11px; color: var(--muted); }
+  .gm-inner-item { padding: 6px 10px; background: var(--bg2); border-radius: 6px; font-size: 12px; color: var(--text); }
+  #group-modal-nodes { display: flex; flex-direction: column; gap: 4px; }
+  #group-modal-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+  .gm-btn { padding: 7px 14px; border-radius: 7px; border: 1px solid var(--border); font-size: 13px; font-weight: 600; cursor: pointer; }
+  .gm-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .gm-btn.danger  { background: #7f1d1d; color: var(--err); border-color: #b91c1c; }
+  .gm-btn.muted   { background: var(--bg3); color: var(--muted); }
+  .gm-btn:hover.primary { opacity: 0.88; }
+  .gm-btn:hover.muted   { background: var(--bg2); }
   .gnode-top-ports {
     display: flex; justify-content: space-between;
     border-bottom: 1px solid var(--border);
@@ -586,6 +616,7 @@
   #graph-params-header {
     padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 12px; font-weight: 700;
     flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    position: relative; z-index: 11; background: var(--bg1);
   }
   #nd-toggle-btn {
     border: none; background: none; cursor: pointer; font-size: 15px;
@@ -600,7 +631,7 @@
   /* ── NODE DOCTOR panel ──────────────────────────────────── */
   #nd-panel {
     display: none; flex-direction: column; border-top: 2px solid var(--accent2);
-    background: var(--bg0); flex-shrink: 0; height: 310px;
+    background: var(--bg0); flex: 1; min-height: 0;
   }
   #nd-panel.nd-open { display: flex; }
   #nd-header {
@@ -881,6 +912,177 @@
     padding: 8px 16px; border-radius: 7px; font-size: 13px; font-weight: 600;
     z-index: 3000; display: none; white-space: nowrap; pointer-events: none;
   }
+
+  /* ── Timeline panel ───────────────────────────────────────── */
+  #timeline-panel {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 12px; background: #1a1a1a;
+    border-top: 1px solid #333; flex-wrap: wrap;
+    font-size: 12px; flex-shrink: 0;
+  }
+
+  /* ── Timeline ruler with lanes ────────────────────────────── */
+  #timeline-ruler-wrap {
+    position: relative; flex-shrink: 0; overflow-x: auto; overflow-y: hidden;
+    background: #111; border-top: 1px solid #333; user-select: none;
+    min-height: 0;
+  }
+  #timeline-ruler {
+    position: relative; height: 100%; min-width: 100%;
+  }
+  #tl-ruler-header {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; height: 22px; background: #181818;
+    border-bottom: 1px solid #2a2a2a;
+  }
+  .tl-ruler-tick {
+    flex-shrink: 0; text-align: center; font-size: 9px; color: #555;
+    border-left: 1px solid #222; line-height: 22px;
+    position: relative;
+  }
+  .tl-ruler-tick.major { border-left-color: #444; color: #777; }
+  .tl-ruler-tick .tl-tick-label { font-size: 8px; }
+  .tl-ruler-tick .tl-tick-line {
+    position: absolute; top: 22px; width: 1px; background: #222;
+  }
+  .tl-ruler-tick.major .tl-tick-line { background: #333; }
+  .tl-ruler-tick .tl-tick-line.full { height: 100%; }
+
+  .tl-lane {
+    display: flex; height: 20px; align-items: center;
+    border-bottom: 1px solid #1a1a1a; position: relative;
+  }
+  .tl-lane:hover { background: rgba(108,142,245,0.04); }
+  .tl-lane-label {
+    position: sticky; left: 0; z-index: 3;
+    width: 100px; flex-shrink: 0; font-size: 10px; color: #666;
+    padding: 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    background: #111; border-right: 1px solid #222;
+  }
+  .tl-lane-track {
+    flex: 1; position: relative; height: 100%; min-width: 0;
+  }
+  .tl-kf-diamond {
+    position: absolute; top: 50%; transform: translate(-50%, -50%) rotate(45deg);
+    width: 10px; height: 10px; background: var(--accent);
+    border: 1px solid #4a6fcf; cursor: pointer; z-index: 2;
+    transition: background 0.1s, transform 0.1s;
+  }
+  .tl-kf-diamond:hover {
+    background: #8aacff; transform: translate(-50%, -50%) rotate(45deg) scale(1.3);
+  }
+  .tl-kf-diamond.selected {
+    background: #fff; border-color: #fff;
+    box-shadow: 0 0 6px rgba(255,255,255,0.5);
+  }
+  .tl-kf-diamond.ease-in { background: #f59e0b; border-color: #d97706; }
+  .tl-kf-diamond.ease-out { background: #34d399; border-color: #059669; }
+  .tl-kf-diamond.ease-in-out { background: var(--accent); border-color: #4a6fcf; }
+  .tl-kf-diamond.step { background: #f87171; border-color: #dc2626; }
+  .tl-kf-diamond.bounce { background: #a78bfa; border-color: #7c3aed; }
+  .tl-kf-diamond.elastic { background: #f472b6; border-color: #db2777; }
+  .tl-kf-diamond.cubic-bezier { background: #2dd4bf; border-color: #0d9488; }
+
+  .tl-playhead {
+    position: absolute; top: 0; width: 2px; height: 100%;
+    background: #ff6b6b; z-index: 10; pointer-events: none;
+  }
+  .tl-playhead::before {
+    content: ''; position: absolute; top: 0; left: -5px;
+    width: 0; height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 6px solid #ff6b6b;
+  }
+
+  .tl-empty-lane {
+    display: flex; height: 20px; align-items: center; justify-content: center;
+    border-bottom: 1px solid #1a1a1a; color: #333; font-size: 10px;
+  }
+  .tl-group { display: flex; align-items: center; gap: 4px; }
+  #tl-progress { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 120px; }
+  #tl-progress-bar-wrap { flex: 1; height: 4px; background: #333; border-radius: 2px; min-width: 60px; }
+  #tl-progress-bar { height: 4px; background: #4a9eff; border-radius: 2px; width: 0%; transition: width 0.2s; }
+  #timeline-panel label { color: #888; margin-right: 2px; }
+  #timeline-panel input[type=number], #timeline-panel input[type=text] {
+    background: #2a2a2a; border: 1px solid #444; color: #eee;
+    padding: 2px 4px; border-radius: 3px;
+  }
+  #tl-render-seq {
+    background: #1a3a5c; border: 1px solid #4a9eff; color: #4a9eff;
+    padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;
+  }
+  #tl-render-seq:hover:not(:disabled) { background: #4a9eff; color: #000; }
+  #tl-render-seq:disabled { opacity: 0.45; cursor: default; }
+  #tl-cancel {
+    background: none; border: 1px solid #666; color: #aaa;
+    padding: 2px 7px; border-radius: 3px; cursor: pointer; font-size: 11px;
+  }
+  #tl-cancel:hover { border-color: var(--err); color: var(--err); }
+  #timeline-panel button:not(#tl-render-seq):not(#tl-cancel) {
+    background: #2a2a2a; border: 1px solid #444; color: #ccc;
+    padding: 2px 7px; border-radius: 3px; cursor: pointer; font-size: 11px;
+  }
+  #timeline-panel button:not(#tl-render-seq):not(#tl-cancel):hover { background: #3a3a3a; }
+
+  #tl-encode-area {
+    display: none; align-items: center; gap: 6px; flex-shrink: 0;
+  }
+  #tl-encode-mp4 {
+    background: #1a2e1a; border: 1px solid #34d399; color: #34d399;
+    padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;
+    white-space: nowrap;
+  }
+  #tl-encode-mp4:hover:not(:disabled) { background: #34d399; color: #000; }
+  #tl-encode-mp4:disabled { opacity: 0.45; cursor: default; }
+  #tl-encode-gif {
+    background: #2a2a2a; border: 1px solid #666; color: #aaa;
+    padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px;
+  }
+  #tl-encode-gif:hover:not(:disabled) { background: #3a3a3a; color: #ccc; }
+  #tl-encode-gif:disabled { opacity: 0.45; cursor: default; }
+  #tl-encode-status { font-size: 11px; color: var(--muted); }
+  #tl-encode-status a { color: var(--accent); }
+
+  /* ── Per-param animation controls ────────────────────────────── */
+  .anim-toggle {
+    font-size: 10px; padding: 1px 5px; background: var(--bg3);
+    color: var(--muted); border: 1px solid var(--border); border-radius: 3px;
+    cursor: pointer; margin-left: 6px; line-height: 1.4; flex-shrink: 0;
+  }
+  .anim-toggle:hover { color: var(--text); }
+  .anim-toggle.anim-on { background: var(--bg2); color: var(--accent); border-color: var(--accent); }
+  .expr-btn {
+    font-size: 11px; padding: 1px 5px; background: var(--bg3);
+    color: var(--muted); border: 1px solid var(--border); border-radius: 3px;
+    cursor: pointer; margin-left: 6px; line-height: 1.4; flex-shrink: 0;
+  }
+  .expr-btn:hover { color: var(--text); }
+  .expr-btn.expr-on { background: var(--bg2); color: var(--accent); border-color: var(--accent); }
+  .expr-input { font-style: italic; color: var(--accent) !important; }
+  .anim-row {
+    display: none; align-items: center; gap: 5px; margin-top: 5px;
+    padding: 5px 8px; background: var(--bg0); border-radius: 5px;
+    border: 1px solid var(--border); font-size: 11px; color: var(--muted);
+    flex-wrap: wrap;
+  }
+  .anim-row.anim-visible { display: flex; }
+  .anim-input {
+    width: 62px; background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 4px; color: var(--text); padding: 3px 6px; font-size: 11px;
+    outline: none;
+  }
+  .anim-input:focus { border-color: var(--accent); }
+
+  @media (max-width: 768px) {
+    #timeline-panel {
+      overflow-x: auto; flex-wrap: nowrap;
+      padding-bottom: 8px;
+    }
+    .tl-group { flex-shrink: 0; }
+    #tl-name-group { flex-shrink: 0; }
+    #tl-encode-area { flex-shrink: 0; }
+  }
 </style>
 
 <div id="graph-shell">
@@ -903,7 +1105,7 @@
       <button id="graph-run-btn">▶ Run</button>
       <button id="graph-clear-btn">Clear</button>
       <div id="graph-frames-wrap">
-        <span>Fr:</span><input id="graph-frames" type="number" min="1" max="120" value="1">
+        <span id="graph-frame-count-mobile">48 frames</span>
       </div>
       <button id="graph-layout-btn">⊛</button>
       <button id="graph-save-btn" class="g-savebtn">💾</button>
@@ -923,13 +1125,52 @@
       <button id="graph-run-btn-desk">▶ Run Graph</button>
       <button id="graph-clear-btn-desk">Clear</button>
       <div id="graph-frames-wrap-desk">
-        Frames: <input id="graph-frames-desk" type="number" min="1" max="120" value="1">
+        <span id="graph-frame-count">48 frames</span>
       </div>
       <button id="graph-layout-btn-desk">⊛ Auto-layout</button>
       <button id="graph-save-btn-desk" class="g-savebtn">💾 Save</button>
       <button id="graph-load-btn-desk" class="g-loadbtn">📂 Load</button>
       <button id="graph-auto-btn-desk" class="g-autobtn" title="Auto-generate on param change">⏺ Auto</button>
       <span id="graph-status-desk"></span>
+    </div>
+
+    <!-- ── Timeline ruler with lanes ──────────────────────── -->
+    <div id="timeline-ruler-wrap" style="height:200px;overflow-y:auto">
+      <div id="timeline-ruler">
+        <div id="tl-ruler-header"></div>
+        <div id="tl-lanes"></div>
+        <div class="tl-playhead" id="tl-playhead" style="left:0%"></div>
+      </div>
+    </div>
+
+    <!-- ── Timeline panel ──────────────────────────────────── -->
+    <div id="timeline-panel">
+      <div class="tl-group">
+        <label>Frame</label>
+        <input id="tl-frame" type="number" value="0" min="0" step="1" style="width:54px">
+        <button id="tl-prev" title="Previous frame">◀</button>
+        <button id="tl-play" title="Play / Pause">▶</button>
+        <button id="tl-next" title="Next frame">▶▶</button>
+      </div>
+      <div class="tl-group">
+        <label>Start</label><input id="tl-start" type="number" value="0" min="0" style="width:48px">
+        <label>End</label><input id="tl-end" type="number" value="47" min="1" style="width:48px">
+        <label>FPS</label><input id="tl-fps" type="number" value="24" min="1" max="60" style="width:40px">
+      </div>
+      <div id="tl-name-group" class="tl-group">
+        <label>Name</label><input id="tl-name" type="text" placeholder="my-sequence" style="width:110px">
+      </div>
+      <button id="tl-render-seq">🎬 Render Sequence</button>
+      <div id="tl-progress" style="display:none">
+        <div id="tl-progress-bar-wrap"><div id="tl-progress-bar"></div></div>
+        <span id="tl-progress-label">0 / 0</span>
+        <button id="tl-cancel" title="Cancel">✕</button>
+      </div>
+      <div id="tl-encode-area">
+        <button id="tl-encode-mp4">🎞 Encode MP4</button>
+        <button id="tl-encode-gif">GIF</button>
+        <span id="tl-encode-status"></span>
+      </div>
     </div>
 
   </div><!-- end #graph-canvas-col -->
@@ -942,7 +1183,7 @@
     </div>
     <div id="graph-params-header">
       <span id="gph-title">Node Parameters</span>
-      <button id="nd-toggle-btn" title="Open Node Doctor" style="display:none">🩺</button>
+      <button id="nd-toggle-btn" title="Open Node Doctor">🩺</button>
     </div>
     <div id="graph-params-scroll">
       <div id="graph-params-empty">Select a node to edit its parameters.</div>
@@ -998,6 +1239,22 @@
   <div class="ctx-item" id="ctx-feedback">Toggle feedback</div>
   <div class="ctx-item danger" id="ctx-del-edge">Delete edge</div>
   <div class="ctx-item danger" id="ctx-del-node">Delete node</div>
+  <div class="ctx-item" id="ctx-group-sel" style="display:none">⊞ Group selection</div>
+  <div class="ctx-item" id="ctx-ungroup" style="display:none">⊟ Ungroup</div>
+</div>
+
+<!-- Group expand modal -->
+<div id="group-expand-modal">
+  <div id="group-modal-box">
+    <div id="group-modal-title">Group</div>
+    <div id="group-modal-subtitle"></div>
+    <div id="group-modal-nodes"></div>
+    <div id="group-modal-actions">
+      <button class="gm-btn primary" id="gm-save-preset-btn">Save as preset</button>
+      <button class="gm-btn danger" id="gm-ungroup-btn">Ungroup</button>
+      <button class="gm-btn muted" id="gm-close-btn">Close</button>
+    </div>
+  </div>
 </div>
 
 <div id="graph-mobile-bottom-bar"><button id="np-add-btn" title="Add node" aria-label="Add node">+</button></div>
@@ -1678,6 +1935,7 @@ let gNodes          = [];
 let gEdges          = [];
 let gSelectedNode   = null;
 let gSelectedEdge   = null;
+let gSelectedNodes  = new Set();  // multi-select set
 let gEdgeCounter    = 0;
 let gPaletteLoaded  = false;
 let gPalettes       = [];  // palette key list from /api/palettes
@@ -1690,6 +1948,11 @@ let gAutoGenJobId = null;
 let gAutoGenAbort = null;  // AbortController for cancelling in-flight auto-gen
 // nodeId → Set<portName> of input ports that currently have an incoming wire
 let gConnectedPorts = new Map();
+
+// ── Timeline clips (layered video compositor) ──────────────────
+let tlClips = [];  // {id, name, seqName, startFrame, endFrame, lane, color, nodeId, paramKeyframes}
+let tlClipIdCounter = 0;
+let tlDragClip = null;  // {clip, lane, startX}
 
 function getEventPos(e) {
   if (e.touches && e.touches.length) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -1790,7 +2053,7 @@ const gOutputStrip  = document.getElementById('graph-output-strip');
 const gParamsForm   = document.getElementById('graph-params-form');
 const gParamsEmpty  = document.getElementById('graph-params-empty');
 const gParamsPanel  = document.getElementById('graph-params-panel');
-const gParamsHdr    = document.getElementById('graph-params-header');
+const gParamsHdr    = document.getElementById('gph-title');
 const gPreviewPanel = document.getElementById('graph-preview-panel');
 const gPreviewLatest= document.getElementById('graph-preview-latest');
 const gPreviewLabel = document.getElementById('graph-preview-label');
@@ -1807,8 +2070,6 @@ const gRunBtn       = document.getElementById('graph-run-btn');
 const gRunBtnDesk   = document.getElementById('graph-run-btn-desk');
 const gClearBtn     = document.getElementById('graph-clear-btn');
 const gClearBtnDesk = document.getElementById('graph-clear-btn-desk');
-const gFramesEl     = document.getElementById('graph-frames');
-const gFramesDeskEl = document.getElementById('graph-frames-desk');
 const gStatusEl     = document.getElementById('graph-status');
 const gStatusDeskEl = document.getElementById('graph-status-desk');
 const gPaletteBtn         = document.getElementById('graph-palette-btn');
@@ -1818,7 +2079,13 @@ const gGraphMobileBottomBar = document.getElementById('graph-mobile-bottom-bar')
 
 // ── Shared helpers ─────────────────────────────────────────────
 function gGetFrames() {
-  return parseInt((isMobile() ? gFramesEl : gFramesDeskEl).value, 10) || 1;
+  const start = parseInt(document.getElementById('tl-start')?.value) || 0;
+  const end   = parseInt(document.getElementById('tl-end')?.value)   || 47;
+  return Math.max(1, end - start + 1);
+}
+function gUpdateFrameCount() {
+  const el = document.getElementById('graph-frame-count');
+  if (el) el.textContent = gGetFrames() + ' frames';
 }
 function gSetStatus(msg) {
   gStatusEl.textContent = msg;
@@ -1872,53 +2139,71 @@ try { gPreviewExpanded = localStorage.getItem('graph-preview-expanded') === 'tru
 let gLivePreviewImg = null;
 
 function gGraphFrameUpdate(b64) {
-  if (!gLivePreviewImg) {
-    gMainPreview.innerHTML = '';
-    gLivePreviewImg = document.createElement('img');
-    gLivePreviewImg.addEventListener('click', () => {
-      gFsVideo.style.display = 'none';
-      gFsImg.src = gLivePreviewImg.src; gFsImg.style.display = '';
-      gFsOverlay.classList.add('visible');
-    });
-    gMainPreview.appendChild(gLivePreviewImg);
-    gMainPreview.classList.add('active');
-    gPreviewShow();
-  }
+  // Don't touch the main preview during rendering — timeline handles all display.
+  // Just update the small preview-latest thumbnail.
   const src = 'data:image/jpeg;base64,' + b64;
-  gLivePreviewImg.src = src;
   gPreviewLatest.src = src; gPreviewLatest.style.display = '';
 }
 
-function gGraphDoneSwap(type, relPath) {
-  if (type === 'video' && relPath) {
-    const url = '/output/' + relPath;
-    const vid = document.createElement('video');
-    vid.autoplay = true; vid.loop = true; vid.muted = true; vid.playsInline = true;
-    vid.src = url;
-    vid.addEventListener('click', () => {
-      gFsVideo.src = url; gFsVideo.style.display = ''; gFsVideo.load(); gFsVideo.play().catch(() => {});
-      gFsImg.style.display = 'none'; gFsOverlay.classList.add('visible');
-    });
-    if (gLivePreviewImg && gLivePreviewImg.parentNode === gMainPreview) {
-      gMainPreview.replaceChild(vid, gLivePreviewImg);
-    } else {
-      gMainPreview.innerHTML = '';
-      gMainPreview.appendChild(vid);
-      gMainPreview.classList.add('active');
-      gPreviewShow();
+function gGraphDoneSwap(type, relPath, seqName) {
+  gPreviewLatest.style.display = 'none';
+  gPreviewLabel.textContent = 'Timeline';
+
+  if (seqName) {
+    tlName.value = seqName;
+    // Create a clip on the timeline
+    const start = parseInt(tlStart.value) || 0;
+    const end   = parseInt(tlEnd.value)   || 47;
+    // Collect paramKeyframes from all nodes
+    const allPkf = {};
+    for (const node of gNodes) {
+      if (node.paramKeyframes) {
+        for (const [k, v] of Object.entries(node.paramKeyframes)) {
+          if (!allPkf[k]) allPkf[k] = [];
+          allPkf[k].push(...v);
+        }
+      }
     }
-    gLivePreviewImg = null;
-    vid.load(); vid.play().catch(() => {});
-    gPreviewLatest.style.display = 'none'; gPreviewLabel.textContent = 'Video';
-  } else if (type === 'image' && relPath && gLivePreviewImg) {
-    // Update to final full-res PNG
-    gLivePreviewImg.src = '/output/' + relPath;
-    gLivePreviewImg.addEventListener('click', () => {
-      gFsVideo.style.display = 'none';
-      gFsImg.src = gLivePreviewImg.src; gFsImg.style.display = '';
-      gFsOverlay.classList.add('visible');
-    }, { once: true });
+    const clip = tlAddClip(seqName, seqName, start, end, null, allPkf);
+    tlSelectClip(clip.id);
+    // Load frame 0
+    tlLoadFrame(parseInt(tlStart.value) || 0);
   }
+}
+
+function tlLoadFrame(frame) {
+  const name = tlName.value.trim();
+  if (!name) return;
+  fetch(`/api/sequences/${encodeURIComponent(name)}/${frame}`)
+    .then(r => {
+      if (!r.ok) throw new Error('Frame not found');
+      return r.blob();
+    })
+    .then(blob => {
+      const url = URL.createObjectURL(blob);
+      if (!gLivePreviewImg) {
+        gMainPreview.innerHTML = '';
+        gLivePreviewImg = document.createElement('img');
+        gLivePreviewImg.addEventListener('click', () => {
+          gFsVideo.style.display = 'none';
+          gFsImg.src = gLivePreviewImg.src; gFsImg.style.display = '';
+          gFsOverlay.classList.add('visible');
+        });
+        gMainPreview.appendChild(gLivePreviewImg);
+        gMainPreview.classList.add('active');
+        gPreviewShow();
+      }
+      if (gLivePreviewImg._tlUrl) URL.revokeObjectURL(gLivePreviewImg._tlUrl);
+      gLivePreviewImg._tlUrl = url;
+      gLivePreviewImg.src = url;
+    })
+    .catch(() => {
+      if (!gLivePreviewImg) {
+        gMainPreview.innerHTML = '<div style="padding:20px;color:var(--muted);font-size:12px;text-align:center;">No frame rendered yet</div>';
+        gMainPreview.classList.add('active');
+        gPreviewShow();
+      }
+    });
 }
 
 function gPreviewShow() {
@@ -1999,15 +2284,26 @@ async function gLoadMethodPalette() {
 }
 
 function gRenderPalette() {
-  const groups = {};
+  const methodGroups = {};
   for (const [mid, def] of Object.entries(gNodeDefs)) {
-    (groups[def.category || 'other'] = groups[def.category || 'other'] || []).push(def);
+    (methodGroups[def.category || 'other'] = methodGroups[def.category || 'other'] || []).push(def);
   }
-  // Load saved collapse state (separate key from left sidebar)
   let gPalState = {};
   try { gPalState = JSON.parse(localStorage.getItem('graph-palette-state') || '{}'); } catch {}
   let html = '';
-  for (const [cat, items] of Object.entries(groups).sort()) {
+
+  // Group presets section at top
+  const presets = window._gGroupPresets || [];
+  if (presets.length) {
+    const isOpen = gPalState['__groups__'] !== undefined ? gPalState['__groups__'] : true;
+    html += `<div class="gcat-group"><div class="gcat-header" data-cat="__groups__"><span class="gcat-chevron">${isOpen?'▼':'▶'}</span>⊞ Groups</div><div class="gcat-items"${isOpen?'':' style="display:none"'}>`;
+    for (const g of presets) {
+      html += `<div class="gmethod-item ggroup-preset-item" data-gname="${escHtml(g.name)}" draggable="true"><div class="gmname">⊞ ${escHtml(g.name)}</div></div>`;
+    }
+    html += `</div></div>`;
+  }
+
+  for (const [cat, items] of Object.entries(methodGroups).sort()) {
     const isOpen = gPalState[cat] !== undefined ? gPalState[cat] : true;
     html += `<div class="gcat-group">
       <div class="gcat-header" data-cat="${escHtml(cat)}">
@@ -2025,7 +2321,6 @@ function gRenderPalette() {
   const listEl = document.getElementById('graph-method-list');
   listEl.innerHTML = html;
 
-  // Category toggle handlers
   listEl.querySelectorAll('.gcat-header').forEach(el => {
     el.addEventListener('click', () => {
       const cat = el.dataset.cat;
@@ -2039,10 +2334,8 @@ function gRenderPalette() {
     });
   });
 
-  listEl.querySelectorAll('.gmethod-item').forEach(el => {
-    // Desktop: drag
+  listEl.querySelectorAll('.gmethod-item:not(.ggroup-preset-item)').forEach(el => {
     el.addEventListener('dragstart', e => e.dataTransfer.setData('method_id', el.dataset.mid));
-    // Mobile: tap → add near center (offset by current pan)
     el.addEventListener('click', () => {
       if (!isMobile()) return;
       const rect = gCanvasWrap.getBoundingClientRect();
@@ -2052,17 +2345,38 @@ function gRenderPalette() {
       gClosePalette();
     });
   });
+
+  listEl.querySelectorAll('.ggroup-preset-item').forEach(el => {
+    el.addEventListener('dragstart', e => e.dataTransfer.setData('group_name', el.dataset.gname));
+    el.addEventListener('click', async () => {
+      const rect = gCanvasWrap.getBoundingClientRect();
+      const x = (rect.width / 2 - gPanX) / gCanvasScale - 80;
+      const y = (rect.height / 2 - gPanY) / gCanvasScale - 40;
+      try {
+        const d = await fetch(`/api/groups/${encodeURIComponent(el.dataset.gname)}`).then(r => r.json());
+        gAddGroupNode(d, x, y);
+        if (isMobile()) gClosePalette();
+      } catch(err) { gShowToast('Error: '+err.message, true); }
+    });
+  });
 }
 
 // ── Canvas drop ────────────────────────────────────────────────
 gCanvasWrap.addEventListener('dragover', e => e.preventDefault());
-gCanvasWrap.addEventListener('drop', e => {
+gCanvasWrap.addEventListener('drop', async e => {
   e.preventDefault();
-  const mid = e.dataTransfer.getData('method_id');
-  if (!mid || !gNodeDefs[mid]) return;
   const rect = gCanvasWrap.getBoundingClientRect();
-  gAddNode(mid, (e.clientX - rect.left - gPanX) / gCanvasScale - 80,
-               (e.clientY - rect.top  - gPanY) / gCanvasScale - 40);
+  const cx = (e.clientX - rect.left - gPanX) / gCanvasScale - 80;
+  const cy = (e.clientY - rect.top  - gPanY) / gCanvasScale - 40;
+  const mid = e.dataTransfer.getData('method_id');
+  if (mid && gNodeDefs[mid]) { gAddNode(mid, cx, cy); return; }
+  const gname = e.dataTransfer.getData('group_name');
+  if (gname) {
+    try {
+      const d = await fetch(`/api/groups/${encodeURIComponent(gname)}`).then(r => r.json());
+      gAddGroupNode(d, cx, cy);
+    } catch(err) { gShowToast('Error: '+err.message, true); }
+  }
 });
 
 // ── Canvas touch: 1-finger pan + 2-finger pinch-to-zoom ───────────────
@@ -2149,6 +2463,326 @@ function gAddNode(method_id, x, y) {
   gPhysicsKick();
   gSave();
   return node;
+}
+
+// ── Dispatch render by node type ───────────────────────────────
+function gRenderAnyNode(node) {
+  if (node.type === 'group') gRenderGroupNode(node);
+  else gRenderNode(node);
+}
+
+// ── Render a group node div ────────────────────────────────────
+function gRenderGroupNode(node) {
+  const el = document.createElement('div');
+  el.className = 'gnode gnode-group';
+  el.id = 'gnode-' + node.id;
+  el.style.left = node.x + 'px';
+  el.style.top  = node.y + 'px';
+  if (node.render) el.classList.add('render-target');
+
+  const header = document.createElement('div');
+  header.className = 'gnode-header';
+  header.innerHTML = `<button class="gnode-delete" title="Delete">✕</button>
+    <span class="gnode-group-icon">⊞</span>
+    <span class="gnode-title">${escHtml(node.name || 'Group')}</span>
+    <button class="gnode-render${node.render ? ' active' : ''}" title="Set as render target">◎</button>`;
+  el.appendChild(header);
+
+  function _mkPort(name, type, dir) {
+    const dot = document.createElement('div');
+    dot.className = `gport pt-${type}`;
+    Object.assign(dot.dataset, { nid: node.id, port: name, dir, ptype: type });
+    return dot;
+  }
+  function _mkLabel(name) {
+    const lbl = document.createElement('span');
+    lbl.className = 'gport-label'; lbl.textContent = name;
+    return lbl;
+  }
+
+  // Top row: primary image input (left) + image output (right)
+  const imgIns  = (node.exposed_inputs  || []).filter(e => (e.port_type || 'image') === 'image');
+  const imgOuts = (node.exposed_outputs || []).filter(e => (e.port_type || 'image') === 'image');
+  const topPortsEl = document.createElement('div');
+  topPortsEl.className = 'gnode-top-ports';
+  { const row = document.createElement('div'); row.className = 'gnode-port-row input';
+    if (imgIns[0]) { row.appendChild(_mkPort(imgIns[0].port, 'image', 'input')); row.appendChild(_mkLabel(imgIns[0].port)); }
+    topPortsEl.appendChild(row); }
+  { const row = document.createElement('div'); row.className = 'gnode-port-row output';
+    if (imgOuts[0]) { row.appendChild(_mkLabel(imgOuts[0].port)); row.appendChild(_mkPort(imgOuts[0].port, 'image', 'output')); }
+    topPortsEl.appendChild(row); }
+  if (topPortsEl.querySelector('.gport')) el.appendChild(topPortsEl);
+
+  // Bottom: non-image ports
+  const portsEl = document.createElement('div');
+  portsEl.className = 'gnode-ports';
+  for (const ei of (node.exposed_inputs || [])) {
+    if ((ei.port_type || 'image') === 'image') continue;
+    const row = document.createElement('div'); row.className = 'gnode-port-row input';
+    row.appendChild(_mkPort(ei.port, ei.port_type || 'scalar', 'input'));
+    row.appendChild(_mkLabel(ei.port));
+    portsEl.appendChild(row);
+  }
+  for (const eo of (node.exposed_outputs || [])) {
+    if ((eo.port_type || 'image') === 'image') continue;
+    const row = document.createElement('div'); row.className = 'gnode-port-row output';
+    row.appendChild(_mkLabel(eo.port));
+    row.appendChild(_mkPort(eo.port, eo.port_type || 'scalar', 'output'));
+    portsEl.appendChild(row);
+  }
+  if (portsEl.children.length) el.appendChild(portsEl);
+  gNodesEl.appendChild(el);
+
+  header.querySelector('.gnode-delete').addEventListener('click', e => {
+    e.stopPropagation(); gDeleteNode(node.id);
+  });
+  header.querySelector('.gnode-render').addEventListener('click', e => {
+    e.stopPropagation();
+    const wasActive = !!node.render;
+    gNodes.forEach(n => { n.render = false; });
+    document.querySelectorAll('.gnode-render').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.gnode.render-target').forEach(n => n.classList.remove('render-target'));
+    node.render = !wasActive;
+    if (node.render) { e.currentTarget.classList.add('active'); el.classList.add('render-target'); }
+    gSave();
+  });
+
+  let _tapStart = null;
+  el.addEventListener('mousedown', e => {
+    if (e.target.classList.contains('gnode-delete') || e.target.classList.contains('gnode-render')) return;
+    _tapStart = { x: e.clientX, y: e.clientY, t: Date.now() };
+  });
+  el.addEventListener('mouseup', e => {
+    if (!_tapStart) return;
+    const dx = Math.abs(e.clientX - _tapStart.x), dy = Math.abs(e.clientY - _tapStart.y);
+    const dt = Date.now() - _tapStart.t;
+    _tapStart = null;
+    if (e.target.classList.contains('gnode-delete') || e.target.classList.contains('gnode-render')) return;
+    if (dx < 8 && dy < 8 && dt < 300) {
+      if (e.shiftKey) gToggleMultiSelect(node.id);
+      else { gClearMultiSelect(); gSelectNode(node.id); }
+    }
+  });
+  el.addEventListener('dblclick', e => { e.stopPropagation(); gOpenGroupModal(node); });
+  el.addEventListener('touchstart', e => {
+    const t = e.touches[0];
+    _tapStart = { x: t.clientX, y: t.clientY, t: Date.now() };
+  }, { passive: true });
+  el.addEventListener('touchend', e => {
+    if (!_tapStart) return;
+    const t = e.changedTouches[0];
+    const dx = Math.abs(t.clientX - _tapStart.x), dy = Math.abs(t.clientY - _tapStart.y);
+    const dt = Date.now() - _tapStart.t;
+    _tapStart = null;
+    if (e.target.classList.contains('gnode-delete') || e.target.classList.contains('gnode-render')) return;
+    if (dx < 8 && dy < 8 && dt < 300) gSelectNode(node.id);
+  });
+
+  gAttachNodeDrag(el, node);
+  el.querySelectorAll('.gport').forEach(dot => {
+    function portWireStart(e) {
+      e.stopPropagation(); e.preventDefault();
+      if (dot.dataset.dir === 'output') {
+        const pos = gPortPos(dot);
+        gPendingEdge = { src_node: node.id, src_port: dot.dataset.port, x0: pos.x, y0: pos.y };
+        gPendingEl.style.display = '';
+        gUpdatePendingEdge(pos.x, pos.y);
+      }
+    }
+    dot.addEventListener('mousedown', portWireStart);
+    dot.addEventListener('mouseup', e => {
+      e.stopPropagation();
+      if (gPendingEdge && dot.dataset.dir === 'input')
+        gAddEdge(gPendingEdge.src_node, gPendingEdge.src_port, node.id, dot.dataset.port);
+      gPendingEdge = null; gPendingEl.style.display = 'none';
+    });
+    dot.addEventListener('touchstart', portWireStart, { passive: false });
+  });
+}
+
+// ── Multi-select helpers ───────────────────────────────────────
+function gToggleMultiSelect(id) {
+  const el = document.getElementById('gnode-' + id);
+  if (gSelectedNodes.has(id)) {
+    gSelectedNodes.delete(id);
+    if (el) el.classList.remove('selected-multi');
+  } else {
+    gSelectedNodes.add(id);
+    if (el) el.classList.add('selected-multi');
+  }
+}
+function gClearMultiSelect() {
+  gSelectedNodes.clear();
+  gNodesEl.querySelectorAll('.gnode.selected-multi').forEach(el => el.classList.remove('selected-multi'));
+}
+
+// ── Group selected nodes ───────────────────────────────────────
+function gGroupSelectedNodes() {
+  const selSet = gSelectedNodes.size > 1 ? new Set(gSelectedNodes) : (gSelectedNode ? new Set([gSelectedNode]) : new Set());
+  if (selSet.size < 2) { gShowToast('Shift+click 2+ nodes to multi-select, then right-click → Group', true); return; }
+
+  const name = prompt('Group name:', 'Group');
+  if (name === null) return;
+
+  const innerNodes = gNodes.filter(n => selSet.has(n.id));
+  const cx = Math.round(innerNodes.reduce((s, n) => s + n.x, 0) / innerNodes.length);
+  const cy = Math.round(innerNodes.reduce((s, n) => s + n.y, 0) / innerNodes.length);
+
+  const innerEdges = [], boundaryIn = [], boundaryOut = [];
+  for (const e of gEdges) {
+    const si = selSet.has(e.src_node), di = selSet.has(e.dst_node);
+    if (si && di) innerEdges.push(e);
+    else if (!si && di) boundaryIn.push(e);
+    else if (si && !di) boundaryOut.push(e);
+  }
+
+  // Infer port types from node defs
+  function portType(nodeId, portName, dir) {
+    const n = gNodes.find(x => x.id === nodeId);
+    if (!n || n.type === 'group') return 'image';
+    const def = gNodeDefs[n.method_id];
+    if (!def) return 'image';
+    const src = dir === 'output' ? def.outputs : def.inputs;
+    return (src || {})[portName] || 'image';
+  }
+  const exposed_inputs  = boundaryIn.map(e => ({ port: e.dst_port, port_type: portType(e.dst_node, e.dst_port, 'input'),  inner_node: e.dst_node, inner_param: e.dst_port }));
+  const exposed_outputs = boundaryOut.map(e => ({ port: e.src_port, port_type: portType(e.src_node, e.src_port, 'output'), inner_node: e.src_node }));
+
+  const groupId = 'group_' + Date.now().toString(36);
+  const groupNode = {
+    id: groupId, type: 'group', name: name || 'Group',
+    subgraph: {
+      nodes: innerNodes.map(n => ({
+        id: n.id, method_id: n.method_id, type: n.type, name: n.name,
+        subgraph: n.subgraph, exposed_inputs: n.exposed_inputs, exposed_outputs: n.exposed_outputs,
+        params: { ...(n.params || {}) }, animParams: { ...(n.animParams || {}) },
+        x: Math.round(n.x - cx), y: Math.round(n.y - cy), render: false, dirty: true,
+      })),
+      edges: innerEdges.map(e => ({ src_node: e.src_node, src_port: e.src_port, dst_node: e.dst_node, dst_port: e.dst_port, feedback: !!e.feedback })),
+    },
+    exposed_inputs, exposed_outputs,
+    x: cx, y: cy, dirty: true, render: false,
+  };
+
+  // Remove inner node DOM + data
+  for (const n of innerNodes) { const el = document.getElementById('gnode-'+n.id); if (el) el.remove(); }
+  gNodes = gNodes.filter(n => !selSet.has(n.id));
+  gEdges = gEdges.filter(e => !(selSet.has(e.src_node) || selSet.has(e.dst_node)));
+
+  // Add group + reconnect boundary wires
+  gNodes.push(groupNode);
+  for (const e of boundaryIn)  gEdges.push({ id: 'e'+(++gEdgeCounter), src_node: e.src_node, src_port: e.src_port, dst_node: groupId, dst_port: e.dst_port, feedback: false });
+  for (const e of boundaryOut) gEdges.push({ id: 'e'+(++gEdgeCounter), src_node: groupId, src_port: e.src_port, dst_node: e.dst_node, dst_port: e.dst_port, feedback: false });
+
+  gClearMultiSelect();
+  gRenderGroupNode(groupNode);
+  gUpdateConnectedPorts(); gRedrawEdges(); gSave();
+  gShowToast(`Grouped ${innerNodes.length} nodes as "${groupNode.name}"`);
+}
+
+// ── Ungroup: expand a group node back onto the canvas ─────────
+function gUngroup(groupId) {
+  const groupNode = gNodes.find(n => n.id === groupId);
+  if (!groupNode || groupNode.type !== 'group') return;
+
+  const innerNodes   = (groupNode.subgraph?.nodes || []);
+  const innerEdges   = (groupNode.subgraph?.edges || []);
+  const expInputs    = groupNode.exposed_inputs  || [];
+  const expOutputs   = groupNode.exposed_outputs || [];
+  const outerIn      = gEdges.filter(e => e.dst_node === groupId);
+  const outerOut     = gEdges.filter(e => e.src_node === groupId);
+
+  gNodes = gNodes.filter(n => n.id !== groupId);
+  gEdges = gEdges.filter(e => e.src_node !== groupId && e.dst_node !== groupId);
+  const groupEl = document.getElementById('gnode-'+groupId);
+  if (groupEl) groupEl.remove();
+
+  const worldNodes = innerNodes.map(n => ({ ...n, x: (n.x||0) + groupNode.x, y: (n.y||0) + groupNode.y, dirty: true }));
+  for (const n of worldNodes) gNodes.push(n);
+  for (const e of innerEdges) gEdges.push({ id: 'e'+(++gEdgeCounter), src_node: e.src_node, src_port: e.src_port, dst_node: e.dst_node, dst_port: e.dst_port, feedback: !!e.feedback });
+
+  // Re-attach boundary wires through exposed port mapping
+  for (const outerEdge of outerIn) {
+    const expIn = expInputs.find(ei => ei.port === outerEdge.dst_port);
+    if (expIn) gEdges.push({ id: 'e'+(++gEdgeCounter), src_node: outerEdge.src_node, src_port: outerEdge.src_port, dst_node: expIn.inner_node, dst_port: expIn.inner_param || expIn.port, feedback: false });
+  }
+  for (const outerEdge of outerOut) {
+    const expOut = expOutputs.find(eo => eo.port === outerEdge.src_port);
+    if (expOut) gEdges.push({ id: 'e'+(++gEdgeCounter), src_node: expOut.inner_node, src_port: expOut.port, dst_node: outerEdge.dst_node, dst_port: outerEdge.dst_port, feedback: false });
+  }
+
+  for (const n of worldNodes) gRenderAnyNode(n);
+  gUpdateConnectedPorts(); gRedrawEdges(); gSave();
+  gShowToast('Ungrouped');
+}
+
+// ── Group expand modal ─────────────────────────────────────────
+function gOpenGroupModal(node) {
+  const modal    = document.getElementById('group-expand-modal');
+  const titleEl  = document.getElementById('group-modal-title');
+  const subEl    = document.getElementById('group-modal-subtitle');
+  const nodesEl  = document.getElementById('group-modal-nodes');
+  const innerCount = (node.subgraph?.nodes || []).length;
+  titleEl.textContent = node.name || 'Group';
+  subEl.textContent   = `${innerCount} node${innerCount===1?'':'s'} · ${(node.exposed_inputs||[]).length} in · ${(node.exposed_outputs||[]).length} out`;
+  nodesEl.innerHTML   = (node.subgraph?.nodes || []).map(n => {
+    const def = gNodeDefs[n.method_id];
+    const label = n.type === 'group' ? `⊞ ${n.name || 'Group'}` : (def?.name || n.method_id || '?');
+    return `<div class="gm-inner-item">${escHtml(label)}</div>`;
+  }).join('');
+  document.getElementById('gm-ungroup-btn').onclick = () => { modal.classList.remove('open'); gUngroup(node.id); };
+  document.getElementById('gm-save-preset-btn').onclick = async () => {
+    const pname = prompt('Save group preset as:', node.name || 'group');
+    if (!pname) return;
+    try {
+      const r = await fetch('/api/groups/save', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: pname, subgraph: node.subgraph, exposed_inputs: node.exposed_inputs, exposed_outputs: node.exposed_outputs }) });
+      const d = await r.json();
+      if (d.ok) { gShowToast(`Saved preset "${d.name}"`); gLoadGroupPresets(); }
+      else gShowToast('Save failed', true);
+    } catch(e) { gShowToast('Error: '+e.message, true); }
+  };
+  document.getElementById('gm-close-btn').onclick = () => modal.classList.remove('open');
+  modal.classList.add('open');
+}
+document.getElementById('group-expand-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('group-expand-modal'))
+    document.getElementById('group-expand-modal').classList.remove('open');
+});
+
+// ── Add a group node from a preset definition ─────────────────
+function gAddGroupNode(groupDef, x, y) {
+  const id = 'group_' + Date.now().toString(36);
+  const node = { id, type: 'group', name: groupDef.name, subgraph: groupDef.subgraph || {nodes:[],edges:[]}, exposed_inputs: groupDef.exposed_inputs || [], exposed_outputs: groupDef.exposed_outputs || [], x, y, dirty: true, render: false };
+  gNodes.push(node);
+  gRenderGroupNode(node);
+  gPushApart(node);
+  gPhysicsKick();
+  gSave();
+  return node;
+}
+
+// ── Load saved group presets ───────────────────────────────────
+async function gLoadGroupPresets() {
+  try {
+    window._gGroupPresets = await fetch('/api/groups').then(r => r.json());
+    gRenderPalette();
+  } catch {}
+}
+
+// ── Serialize one node for API call ───────────────────────────
+function gSerializeNodeForApi(n, frame) {
+  if (n.type === 'group') {
+    return { id: n.id, type: 'group', name: n.name, subgraph: n.subgraph, exposed_inputs: n.exposed_inputs || [], exposed_outputs: n.exposed_outputs || [], x: n.x, y: n.y, render: !!n.render, dirty: n.dirty !== false };
+  }
+  const params = frame !== undefined ? gGetAnimatedParams(n, frame) : n.params;
+  return {
+    id: n.id, method_id: n.method_id, params,
+    x: n.x, y: n.y, render: !!n.render, dirty: n.dirty !== false,
+    start_frame: n.start_frame || 0, end_frame: n.end_frame || 0,
+    keyframes: n.keyframes || [],
+    paramKeyframes: n.paramKeyframes || {},
+    prebake: n.prebake || 0,
+  };
 }
 function gDefaultParams(def) {
   const p = {};
@@ -2298,7 +2932,10 @@ function gRenderNode(node) {
     const dt = Date.now() - _tapStart.t;
     _tapStart = null;
     if (_isBtn(e.target)) return;
-    if (dx < 8 && dy < 8 && dt < 300) gSelectNode(node.id);
+    if (dx < 8 && dy < 8 && dt < 300) {
+      if (e.shiftKey) gToggleMultiSelect(node.id);
+      else { gClearMultiSelect(); gSelectNode(node.id); }
+    }
   });
   el.addEventListener('touchstart', e => {
     if (_isBtn(e.target)) return;
@@ -2744,6 +3381,16 @@ function gShowNodeParams(node) {
     if (gParamsHdr) gParamsHdr.textContent = 'Node Parameters';
     return;
   }
+  // Group node: show info panel instead of param form
+  if (node.type === 'group') {
+    if (gParamsHdr) gParamsHdr.textContent = node.name || 'Group';
+    gParamsEmpty.style.display = 'none'; gParamsForm.style.display = '';
+    const innerCount = (node.subgraph?.nodes || []).length;
+    gParamsForm.innerHTML = `<p style="font-size:12px;color:var(--muted);margin-bottom:12px">⊞ Group node<br>${innerCount} inner node${innerCount===1?'':'s'} · Double-click to expand</p>
+      <button id="group-params-open-btn" style="width:100%;padding:8px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;color:var(--text);cursor:pointer;font-size:13px;font-weight:600;">⊞ Open Group</button>`;
+    document.getElementById('group-params-open-btn')?.addEventListener('click', () => gOpenGroupModal(node));
+    return;
+  }
   const def = gNodeDefs[node.method_id];
   if (gParamsHdr) gParamsHdr.textContent = def ? def.name : 'Parameters';
   gParamsEmpty.style.display = 'none'; gParamsForm.style.display = '';
@@ -2752,6 +3399,7 @@ function gShowNodeParams(node) {
     ? entries.map(([k,s]) => renderParamField(k, s)).join('')
     : '<p style="font-size:12px;color:var(--muted)">No parameters.</p>';
 
+  if (!node.animParams) node.animParams = {};
   for (const [key, spec] of entries) {
     const el = document.getElementById(`p_${key}`);
     if (!el) continue;
@@ -2759,12 +3407,91 @@ function gShowNodeParams(node) {
     if (el.type === 'checkbox') el.checked = !!val; else el.value = val ?? '';
     const v = gParamsForm.querySelector(`#val_${key}`);
     if (v) v.textContent = formatVal(el.value);
+
+    // Expr + anim toggles for numeric params
+    if (el.type === 'number' || el.type === 'range') {
+      const paramRow = el.closest('.param-row');
+      if (paramRow) {
+        gSetupExprToggle(key, spec, node, el);
+
+        const animBtn = document.createElement('button');
+        animBtn.className = 'anim-toggle' + (node.animParams[key] ? ' anim-on' : '');
+        animBtn.title = 'Animate this param';
+        animBtn.textContent = '~';
+
+        const kfBtn = document.createElement('button');
+        kfBtn.className = 'kf-toggle';
+        kfBtn.title = 'Add keyframe for this param at current frame';
+        kfBtn.textContent = '🔑';
+        kfBtn.style.cssText = 'font-size:10px;padding:1px 4px;background:var(--bg3);border:1px solid var(--border);border-radius:3px;color:var(--text);cursor:pointer;margin-left:2px;';
+        kfBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const frame = parseInt(document.getElementById('tl-frame')?.value) || 0;
+          if (!node.paramKeyframes) node.paramKeyframes = {};
+          if (!node.paramKeyframes[key]) node.paramKeyframes[key] = [];
+          // Check if keyframe already exists at this frame for this param
+          if (node.paramKeyframes[key].some(kf => kf.frame === frame)) {
+            gShowToast('Keyframe already exists at frame ' + frame + ' for ' + key, true);
+            return;
+          }
+          const curVal = parseFloat(el.value) || 0;
+          node.paramKeyframes[key].push({ frame, value: curVal, easing: 'ease-in-out', handle_in: null, handle_out: null });
+          node.paramKeyframes[key].sort((a, b) => a.frame - b.frame);
+          gSave();
+          renderPerParamKeyframes(node, entries);
+          renderTimelineRuler();
+          gShowToast('Keyframe added: ' + key + ' @ F' + frame + ' = ' + curVal.toFixed(2));
+        });
+
+        const animRow = document.createElement('div');
+        animRow.className = 'anim-row' + (node.animParams[key] ? ' anim-visible' : '');
+
+        const curAnim = node.animParams[key];
+        const curVal = parseFloat(el.value) || 0;
+        animRow.innerHTML =
+          `<span>from</span>` +
+          `<input type="number" step="any" class="anim-input anim-from-${key}" value="${curAnim ? curAnim.from : curVal}">` +
+          `<span>→ to</span>` +
+          `<input type="number" step="any" class="anim-input anim-to-${key}" value="${curAnim ? curAnim.to : curVal + 1}">`;
+
+        animBtn.addEventListener('click', () => {
+          if (node.animParams[key]) {
+            delete node.animParams[key];
+            animRow.classList.remove('anim-visible');
+            animBtn.classList.remove('anim-on');
+          } else {
+            const fv = parseFloat(el.value) || 0;
+            node.animParams[key] = { enabled: true, from: fv, to: fv + 1 };
+            animRow.querySelector(`.anim-from-${key}`).value = node.animParams[key].from;
+            animRow.querySelector(`.anim-to-${key}`).value   = node.animParams[key].to;
+            animRow.classList.add('anim-visible');
+            animBtn.classList.add('anim-on');
+          }
+          gSave();
+        });
+
+        animRow.querySelector(`.anim-from-${key}`).addEventListener('input', function() {
+          if (!node.animParams[key]) node.animParams[key] = { enabled: true, from: 0, to: 1 };
+          node.animParams[key].from = parseFloat(this.value) || 0;
+          gSave();
+        });
+        animRow.querySelector(`.anim-to-${key}`).addEventListener('input', function() {
+          if (!node.animParams[key]) node.animParams[key] = { enabled: true, from: 0, to: 1 };
+          node.animParams[key].to = parseFloat(this.value) || 0;
+          gSave();
+        });
+
+        paramRow.appendChild(animBtn);
+        paramRow.appendChild(kfBtn);
+        paramRow.insertAdjacentElement('afterend', animRow);
+      }
+    }
   }
   gParamsForm.querySelectorAll('input[type=range]').forEach(r => {
     const key = r.id.replace('p_',''), v = gParamsForm.querySelector(`#val_${key}`);
     r.addEventListener('input', () => { if (v) v.textContent = formatVal(r.value); gUpdateNodeParam(node.id, key, parseFloat(r.value)); gDoAutoGen(); });
   });
-  gParamsForm.querySelectorAll('input,select').forEach(el => {
+  gParamsForm.querySelectorAll('input.param-ctrl,select.param-ctrl').forEach(el => {
     const key = el.id.replace('p_','');
     el.addEventListener('change', () => {
       const val = el.type==='checkbox' ? el.checked : (el.type==='range'||el.type==='number') ? parseFloat(el.value) : el.value;
@@ -2773,6 +3500,245 @@ function gShowNodeParams(node) {
     });
   });
   gRefreshParamOverrides(node.id);
+
+  // ── Per-node timing offset spinners ────────────────────────────
+  const timingSection = document.createElement('div');
+  timingSection.style.cssText = 'margin-top:12px;border-top:1px solid var(--border);padding-top:10px;';
+  timingSection.innerHTML = `
+    <div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:6px;">⏱ Timing Offset</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <label style="font-size:10px;color:var(--muted);">Start</label>
+      <input id="node-start-frame" type="number" min="0" value="${node.start_frame || 0}" style="width:48px;background:var(--bg2);border:1px solid var(--border);border-radius:3px;color:var(--text);padding:2px 4px;font-size:10px;">
+      <label style="font-size:10px;color:var(--muted);">End</label>
+      <input id="node-end-frame" type="number" min="0" value="${node.end_frame || 0}" style="width:48px;background:var(--bg2);border:1px solid var(--border);border-radius:3px;color:var(--text);padding:2px 4px;font-size:10px;">
+      <span style="font-size:9px;color:var(--muted);">(0 = use global)</span>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">
+      <label style="font-size:10px;color:var(--muted);">Prebake</label>
+      <input id="node-prebake" type="number" min="0" max="300" value="${node.prebake || 0}" style="width:48px;background:var(--bg2);border:1px solid var(--border);border-radius:3px;color:var(--text);padding:2px 4px;font-size:10px;">
+      <span style="font-size:9px;color:var(--muted);">frames (run sim ahead before first output frame)</span>
+    </div>
+  `;
+  gParamsForm.appendChild(timingSection);
+
+  document.getElementById('node-start-frame')?.addEventListener('change', function() {
+    node.start_frame = parseInt(this.value) || 0;
+    gSave();
+  });
+  document.getElementById('node-end-frame')?.addEventListener('change', function() {
+    node.end_frame = parseInt(this.value) || 0;
+    gSave();
+  });
+  document.getElementById('node-prebake')?.addEventListener('change', function() {
+    node.prebake = parseInt(this.value) || 0;
+    gSave();
+  });
+
+  // ── Per-param keyframe section ──────────────────────────────
+  const kfSection = document.createElement('div');
+  kfSection.style.cssText = 'margin-top:16px;border-top:1px solid var(--border);padding-top:12px;';
+  kfSection.innerHTML = `
+    <div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:8px;">
+      <span>🎬 Per-Param Keyframes</span>
+    </div>
+    <div id="kf-params-list"></div>
+    <div id="kf-editor" style="display:none;margin-top:8px;padding:8px;background:var(--bg0);border-radius:6px;border:1px solid var(--border);font-size:11px;">
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;flex-wrap:wrap;">
+        <label>Param</label>
+        <span id="kf-edit-param-name" style="font-weight:600;color:var(--accent);font-size:11px;"></span>
+        <label>Frame</label>
+        <input id="kf-edit-frame" type="number" min="0" style="width:50px;background:var(--bg2);border:1px solid var(--border);border-radius:3px;color:var(--text);padding:2px 4px;">
+        <label>Value</label>
+        <input id="kf-edit-value" type="number" step="any" style="width:60px;background:var(--bg2);border:1px solid var(--border);border-radius:3px;color:var(--text);padding:2px 4px;">
+        <label>Easing</label>
+        <select id="kf-edit-easing" style="background:var(--bg2);border:1px solid var(--border);border-radius:3px;color:var(--text);padding:2px 4px;font-size:10px;">
+          <option value="linear">Linear</option>
+          <option value="ease">Ease</option>
+          <option value="ease-in">Ease In</option>
+          <option value="ease-out">Ease Out</option>
+          <option value="ease-in-out" selected>Ease In Out</option>
+          <option value="step">Step</option>
+          <option value="bounce">Bounce</option>
+          <option value="elastic">Elastic</option>
+          <option value="cubic-bezier">Cubic Bézier</option>
+        </select>
+        <button id="kf-edit-save" style="font-size:10px;padding:2px 8px;background:var(--accent);border:none;border-radius:3px;color:#fff;cursor:pointer;">Save</button>
+        <button id="kf-edit-delete" style="font-size:10px;padding:2px 8px;background:#7f1d1d;border:none;border-radius:3px;color:var(--err);cursor:pointer;">Delete</button>
+      </div>
+      <!-- Bézier handle editor (shown when easing is "cubic-bezier") -->
+      <div id="kf-bezier-editor" style="display:none;margin-bottom:6px;padding:6px;background:var(--bg2);border-radius:4px;">
+        <div style="font-size:10px;color:var(--muted);margin-bottom:4px;">Bézier control points:</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <label style="font-size:10px;color:var(--muted);">P1</label>
+          <input id="kf-bezier-p1x" type="number" min="0" max="1" step="0.05" value="0.42" style="width:44px;background:var(--bg3);border:1px solid var(--border);border-radius:3px;color:var(--text);padding:1px 3px;font-size:10px;">
+          <input id="kf-bezier-p1y" type="number" min="0" max="1" step="0.05" value="0.0" style="width:44px;background:var(--bg3);border:1px solid var(--border);border-radius:3px;color:var(--text);padding:1px 3px;font-size:10px;">
+          <label style="font-size:10px;color:var(--muted);">P2</label>
+          <input id="kf-bezier-p2x" type="number" min="0" max="1" step="0.05" value="0.58" style="width:44px;background:var(--bg3);border:1px solid var(--border);border-radius:3px;color:var(--text);padding:1px 3px;font-size:10px;">
+          <input id="kf-bezier-p2y" type="number" min="0" max="1" step="0.05" value="1.0" style="width:44px;background:var(--bg3);border:1px solid var(--border);border-radius:3px;color:var(--text);padding:1px 3px;font-size:10px;">
+          <canvas id="kf-bezier-preview" width="60" height="60" style="border:1px solid var(--border);border-radius:3px;background:#111;cursor:pointer;"></canvas>
+        </div>
+      </div>
+    </div>
+  `;
+  gParamsForm.appendChild(kfSection);
+
+  // ── Build per-param keyframe controls ──────────────────────
+  if (!node.paramKeyframes) node.paramKeyframes = {};
+  renderPerParamKeyframes(node, entries);
+
+  // ── Wire up keyframe editor save/delete ─────────────────────
+  document.getElementById('kf-edit-save')?.addEventListener('click', () => {
+    const pname = document.getElementById('kf-edit-param-name').dataset.pname;
+    const idx = parseInt(document.getElementById('kf-edit-param-name').dataset.idx);
+    if (!pname || isNaN(idx)) return;
+    const kfs = node.paramKeyframes[pname] || [];
+    if (idx < 0 || idx >= kfs.length) return;
+    const kf = kfs[idx];
+    kf.frame = parseInt(document.getElementById('kf-edit-frame').value) || 0;
+    kf.value = parseFloat(document.getElementById('kf-edit-value').value) || 0;
+    kf.easing = document.getElementById('kf-edit-easing').value;
+    if (kf.easing === 'cubic-bezier') {
+      kf.handle_in = [parseFloat(p1x.value) || 0.42, parseFloat(p1y.value) || 0.0];
+      kf.handle_out = [parseFloat(p2x.value) || 0.58, parseFloat(p2y.value) || 1.0];
+    } else {
+      kf.handle_in = null;
+      kf.handle_out = null;
+    }
+    kfs.sort((a, b) => a.frame - b.frame);
+    gSave();
+    renderPerParamKeyframes(node, entries);
+    renderTimelineRuler();
+  });
+  document.getElementById('kf-edit-delete')?.addEventListener('click', () => {
+    const pname = document.getElementById('kf-edit-param-name').dataset.pname;
+    const idx = parseInt(document.getElementById('kf-edit-param-name').dataset.idx);
+    if (!pname || isNaN(idx)) return;
+    const kfs = node.paramKeyframes[pname] || [];
+    if (idx < 0 || idx >= kfs.length) return;
+    kfs.splice(idx, 1);
+    if (kfs.length === 0) delete node.paramKeyframes[pname];
+    gSave();
+    renderPerParamKeyframes(node, entries);
+    renderTimelineRuler();
+    document.getElementById('kf-editor').style.display = 'none';
+  });
+}
+
+function renderPerParamKeyframes(node, entries) {
+  const list = document.getElementById('kf-params-list');
+  if (!list) return;
+  const pkf = node.paramKeyframes || {};
+  const hasAny = Object.values(pkf).some(kfs => kfs && kfs.length > 0);
+  if (!hasAny) {
+    list.innerHTML = '<div style="font-size:11px;color:var(--muted);padding:4px 0;">Click the 🔑 button next to any param to add a keyframe at the current frame.</div>';
+    return;
+  }
+  let html = '';
+  for (const [key, spec] of entries) {
+    const kfs = pkf[key] || [];
+    if (kfs.length === 0) continue;
+    html += `<div style="margin-bottom:6px;padding:4px 6px;background:var(--bg2);border-radius:4px;border-left:2px solid var(--accent);">
+      <div style="font-size:10px;font-weight:600;color:var(--accent);margin-bottom:3px;">${key}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:3px;">`;
+    kfs.forEach((kf, i) => {
+      const val = typeof kf.value === 'number' ? kf.value.toFixed(2) : kf.value;
+      html += `<div class="kf-chip" data-pname="${key}" data-idx="${i}" style="display:inline-flex;align-items:center;gap:3px;padding:2px 5px;background:var(--bg3);border-radius:3px;font-size:10px;cursor:pointer;border:1px solid var(--border);">
+        <span style="font-weight:600;">F${kf.frame}</span>
+        <span style="color:var(--muted);">=${val}</span>
+        <span style="color:var(--muted);font-size:8px;">${kf.easing || 'linear'}</span>
+      </div>`;
+    });
+    html += `</div></div>`;
+  }
+  list.innerHTML = html;
+  list.querySelectorAll('.kf-chip').forEach(el => {
+    el.addEventListener('click', () => {
+      const pname = el.dataset.pname;
+      const idx = parseInt(el.dataset.idx);
+      const kf = (node.paramKeyframes[pname] || [])[idx];
+      if (!kf) return;
+      openPerParamKfEditor(node, pname, idx, kf);
+    });
+  });
+}
+
+function openPerParamKfEditor(node, pname, idx, kf) {
+  const editor = document.getElementById('kf-editor');
+  if (!editor) return;
+  editor.style.display = 'block';
+  const nameEl = document.getElementById('kf-edit-param-name');
+  nameEl.textContent = pname;
+  nameEl.dataset.pname = pname;
+  nameEl.dataset.idx = idx;
+  document.getElementById('kf-edit-frame').value = kf.frame;
+  document.getElementById('kf-edit-value').value = kf.value;
+  document.getElementById('kf-edit-easing').value = kf.easing || 'ease-in-out';
+
+  // ── Bézier handle editor ──────────────────────────────────────
+  const bezierDiv = document.getElementById('kf-bezier-editor');
+  const easingSelect = document.getElementById('kf-edit-easing');
+  const p1x = document.getElementById('kf-bezier-p1x');
+  const p1y = document.getElementById('kf-bezier-p1y');
+  const p2x = document.getElementById('kf-bezier-p2x');
+  const p2y = document.getElementById('kf-bezier-p2y');
+  const canvas = document.getElementById('kf-bezier-preview');
+
+  function showHideBezier() {
+    bezierDiv.style.display = easingSelect.value === 'cubic-bezier' ? 'block' : 'none';
+  }
+  showHideBezier();
+  easingSelect.onchange = showHideBezier;
+
+  if (kf.handle_in) { p1x.value = kf.handle_in[0]; p1y.value = kf.handle_in[1]; }
+  else { p1x.value = 0.42; p1y.value = 0.0; }
+  if (kf.handle_out) { p2x.value = kf.handle_out[0]; p2y.value = kf.handle_out[1]; }
+  else { p2x.value = 0.58; p2y.value = 1.0; }
+
+  function drawBezierPreview() {
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    ctx.strokeStyle = '#333'; ctx.lineWidth = 0.5;
+    for (let i = 0; i <= 4; i++) {
+      const p = i * w / 4;
+      ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, h); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(w, p); ctx.stroke();
+    }
+    const cx1 = parseFloat(p1x.value) || 0.42;
+    const cy1 = 1.0 - (parseFloat(p1y.value) || 0.0);
+    const cx2 = parseFloat(p2x.value) || 0.58;
+    const cy2 = 1.0 - (parseFloat(p2y.value) || 1.0);
+    ctx.strokeStyle = '#6c8ef5'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, h);
+    for (let t = 0; t <= 1; t += 0.02) {
+      const mt = 1 - t;
+      const x = 3*mt*mt*t*cx1 + 3*mt*t*t*cx2 + t*t*t;
+      const y = 3*mt*mt*t*cy1 + 3*mt*t*t*cy2 + t*t*t;
+      ctx.lineTo(x * w, y * h);
+    }
+    ctx.stroke();
+    ctx.fillStyle = '#f59e0b';
+    ctx.beginPath(); ctx.arc(cx1 * w, cy1 * h, 4, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#34d399';
+    ctx.beginPath(); ctx.arc(cx2 * w, cy2 * h, 4, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#555'; ctx.lineWidth = 1; ctx.setLineDash([2,2]);
+    ctx.beginPath(); ctx.moveTo(0, h); ctx.lineTo(cx1 * w, cy1 * h); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(w, 0); ctx.lineTo(cx2 * w, cy2 * h); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  drawBezierPreview();
+  [p1x, p1y, p2x, p2y].forEach(el => el.addEventListener('input', drawBezierPreview));
+  canvas.addEventListener('click', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = 1.0 - (e.clientY - rect.top) / rect.height;
+    const d1 = Math.hypot(x - parseFloat(p1x.value), y - parseFloat(p1y.value));
+    const d2 = Math.hypot(x - parseFloat(p2x.value), y - parseFloat(p2y.value));
+    if (d1 < d2) { p1x.value = Math.round(x*100)/100; p1y.value = Math.round(y*100)/100; }
+    else { p2x.value = Math.round(x*100)/100; p2y.value = Math.round(y*100)/100; }
+    drawBezierPreview();
+  });
 }
 function gUpdateNodeParam(nodeId, key, val) {
   const n = gNodes.find(n => n.id===nodeId); if (n) { n.params[key]=val; n.dirty=true; gSave(); }
@@ -2800,13 +3766,142 @@ gNodesEl.addEventListener('contextmenu', e => {
   const nodeEl = e.target.closest('.gnode');
   if (!nodeEl) return;
   e.preventDefault();
-  gSelectNode(nodeEl.id.replace('gnode-',''));
+  const nodeId = nodeEl.id.replace('gnode-', '');
+  gSelectNode(nodeId);
+  const node = gNodes.find(n => n.id === nodeId);
+  const isGroup = node?.type === 'group';
+  const hasMultiSel = gSelectedNodes.size > 1;
   document.getElementById('ctx-del-node').style.display = '';
   document.getElementById('ctx-del-edge').style.display = 'none';
   document.getElementById('ctx-feedback').style.display = 'none';
+  document.getElementById('ctx-group-sel').style.display = hasMultiSel ? '' : 'none';
+  document.getElementById('ctx-ungroup').style.display = isGroup ? '' : 'none';
   gCtxMenu.style.left=e.clientX+'px'; gCtxMenu.style.top=e.clientY+'px'; gCtxMenu.style.display='';
 });
+document.getElementById('ctx-group-sel').addEventListener('click', () => { gCtxMenu.style.display='none'; gGroupSelectedNodes(); });
+document.getElementById('ctx-ungroup').addEventListener('click', () => { gCtxMenu.style.display='none'; if (gSelectedNode) gUngroup(gSelectedNode); });
 document.addEventListener('click', () => { gCtxMenu.style.display='none'; });
+
+// ── Client-side expression evaluator (preview only) ───────────
+function _evalExprClient(expr, frame, seed) {
+  const t = frame / 100;
+  try {
+    const fn = new Function(
+      'frame','seed','t','sin','cos','tan','pi','e','abs','floor','ceil',
+      'round','sqrt','log','pow','min','max','noise',
+      `return (${expr})`
+    );
+    const result = fn(
+      frame, seed, t,
+      Math.sin, Math.cos, Math.tan, Math.PI, Math.E, Math.abs,
+      Math.floor, Math.ceil, Math.round, Math.sqrt, Math.log, Math.pow,
+      Math.min, Math.max,
+      x => Math.sin(x * 127.1 + 311.7) * 0.5 + 0.5
+    );
+    return typeof result === 'number' && isFinite(result) ? result : null;
+  } catch(e) {
+    return null;
+  }
+}
+
+// ── Per-param expression toggle ────────────────────────────────
+function gSetupExprToggle(key, spec, node, el) {
+  const paramRow = el.closest('.param-row');
+  if (!paramRow) return;
+
+  const rangeWrap = el.type === 'range' ? el.closest('.param-range-wrap') : null;
+  const targetEl  = rangeWrap || el;
+
+  const exprInput = document.createElement('input');
+  exprInput.type  = 'text';
+  exprInput.className = 'param-input expr-input';
+  exprInput.placeholder = 'sin(frame * 0.1)';
+  exprInput.style.display = 'none';
+
+  const exprBtn = document.createElement('button');
+  exprBtn.className = 'expr-btn';
+  exprBtn.title = 'Expression mode — variables: frame, seed, t; functions: sin, cos, pi, sqrt, …';
+  exprBtn.textContent = 'ƒ';
+
+  targetEl.insertAdjacentElement('afterend', exprInput);
+
+  const isExprMode = typeof node.params[key] === 'string' && node.params[key] !== '';
+
+  function activateExpr(formula) {
+    exprInput.value = String(formula);
+    targetEl.style.display = 'none';
+    exprInput.style.display = '';
+    exprBtn.classList.add('expr-on');
+    node.params[key] = exprInput.value;
+    node.dirty = true;
+    _updateExprPreview();
+  }
+
+  function deactivateExpr() {
+    const fv = parseFloat(exprInput.value);
+    const newVal = isNaN(fv) ? (spec.default ?? 0) : fv;
+    el.value = newVal;
+    if (rangeWrap) {
+      const vs = rangeWrap.querySelector(`#val_${key}`);
+      if (vs) vs.textContent = formatVal(newVal);
+    }
+    exprInput.style.display = 'none';
+    targetEl.style.display = '';
+    exprBtn.classList.remove('expr-on');
+    node.params[key] = newVal;
+    node.dirty = true;
+    gSave();
+  }
+
+  function _updateExprPreview() {
+    const frame = parseInt(document.getElementById('tl-frame')?.value) || 0;
+    const result = _evalExprClient(exprInput.value, frame, 42);
+    exprInput.title = result !== null
+      ? `≈ ${result.toFixed(4)} at frame ${frame}`
+      : 'invalid expression';
+  }
+
+  if (isExprMode) {
+    activateExpr(node.params[key]);
+  }
+
+  exprBtn.addEventListener('click', () => {
+    if (exprBtn.classList.contains('expr-on')) {
+      deactivateExpr();
+    } else {
+      activateExpr(String(el.value ?? spec.default ?? 0));
+    }
+    gSave();
+  });
+
+  exprInput.addEventListener('input', () => {
+    node.params[key] = exprInput.value;
+    node.dirty = true;
+    _updateExprPreview();
+    gSave();
+    gDoAutoGen();
+  });
+
+  exprInput.addEventListener('blur', _updateExprPreview);
+
+  paramRow.appendChild(exprBtn);
+}
+
+// ── Per-param linear animation ─────────────────────────────────
+function gGetAnimatedParams(node, frame) {
+  const start = parseInt(document.getElementById('tl-start').value) || 0;
+  const end   = parseInt(document.getElementById('tl-end').value)   || 47;
+  const t     = end > start ? (frame - start) / (end - start) : 0;
+  const params = { ...node.params };
+  if (node.animParams) {
+    for (const [key, anim] of Object.entries(node.animParams)) {
+      if (anim.enabled) {
+        params[key] = anim.from + (anim.to - anim.from) * t;
+      }
+    }
+  }
+  return params;
+}
 
 // ── Run ────────────────────────────────────────────────────────
 async function gDoRun() {
@@ -2823,10 +3918,14 @@ async function gDoRun() {
   }
   gSetRunDisabled(true);
   gSetStatus('Running…');
+  const tlStartVal = parseInt(document.getElementById('tl-start').value) || 0;
+  const tlEndVal   = parseInt(document.getElementById('tl-end').value)   || 47;
+  const totalFrames = Math.max(1, tlEndVal - tlStartVal + 1);
   const body = {
-    nodes: gNodes.map(n=>({id:n.id,method_id:n.method_id,params:n.params,x:n.x,y:n.y,render:!!n.render,dirty:n.dirty!==false})),
+    nodes: gNodes.map(n => gSerializeNodeForApi(n, tlStartVal)),
     edges: gEdges.map(e=>({src_node:e.src_node,src_port:e.src_port,dst_node:e.dst_node,dst_port:e.dst_port,feedback:e.feedback})),
-    seed: 42, frames: gGetFrames(),
+    seed: 42, frames: totalFrames,
+    frame: tlStartVal,
   };
   try {
     const res = await fetch('/api/graph/execute', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
@@ -2864,7 +3963,7 @@ function gDoAutoGen() {
   _autoGenTimer = setTimeout(() => {
     gAutoGenAbort = new AbortController();
     const body = {
-      nodes: gNodes.map(n=>({id:n.id,method_id:n.method_id,params:n.params,x:n.x,y:n.y,render:!!n.render,dirty:true})),
+      nodes: gNodes.map(n => gSerializeNodeForApi(n)),
       edges: gEdges.map(e=>({src_node:e.src_node,src_port:e.src_port,dst_node:e.dst_node,dst_port:e.dst_port,feedback:e.feedback})),
       seed: 42, frames: 1,
     };
@@ -2901,7 +4000,11 @@ function gListenGraphSSE(job_id) {
     gNodes.forEach(n => { n.dirty = false; });  // mark all clean after successful run
     gSetStatus(`Done — ${d.frames || 1} frame(s)`);
     gSetRunDisabled(false);
-    gGraphDoneSwap(d.type, d.rel_path);
+    // Set timeline name so scrubber can browse frames
+    if (d.seq_name) {
+      tlName.value = d.seq_name;
+    }
+    gGraphDoneSwap(d.type, d.rel_path, d.seq_name);
   });
   es.addEventListener('error', e => {
     es.close();
@@ -2910,9 +4013,610 @@ function gListenGraphSSE(job_id) {
   });
 }
 
+// ════════════════════════════════════════════════════════════════
+// TIMELINE UI
+// ════════════════════════════════════════════════════════════════
+
+// ── DOM refs ────────────────────────────────────────────────────
+const tlFrame         = document.getElementById('tl-frame');
+const tlStart         = document.getElementById('tl-start');
+const tlEnd           = document.getElementById('tl-end');
+const tlFps           = document.getElementById('tl-fps');
+const tlName          = document.getElementById('tl-name');
+const tlRenderBtn     = document.getElementById('tl-render-seq');
+const tlProgressDiv   = document.getElementById('tl-progress');
+const tlProgressBar   = document.getElementById('tl-progress-bar');
+const tlProgressLabel = document.getElementById('tl-progress-label');
+const tlCancel        = document.getElementById('tl-cancel');
+const tlPrev          = document.getElementById('tl-prev');
+const tlPlay          = document.getElementById('tl-play');
+const tlNext          = document.getElementById('tl-next');
+
+let tlSeqAbort  = null;
+let tlPlaying   = false;
+let tlPlayTimer = null;
+
+// ── Timeline ruler rendering ─────────────────────────────────────
+function renderTimelineRuler() {
+  const header = document.getElementById('tl-ruler-header');
+  const lanes  = document.getElementById('tl-lanes');
+  if (!header || !lanes) return;
+
+  const start = parseInt(document.getElementById('tl-start')?.value) || 0;
+  const end   = parseInt(document.getElementById('tl-end')?.value) || 47;
+  const total = Math.max(1, end - start + 1);
+  const pixelWidth = total * 12; // 12px per frame
+
+  // ── Ruler header (frame ticks) ──
+  header.innerHTML = '';
+  header.style.width = pixelWidth + 'px';
+  for (let f = start; f <= end; f++) {
+    const tick = document.createElement('div');
+    tick.className = 'tl-ruler-tick' + (f % 10 === 0 ? ' major' : '');
+    tick.style.width = '12px';
+    if (f % 10 === 0) {
+      tick.innerHTML = `<span class="tl-tick-label">${f}</span>`;
+    }
+    const line = document.createElement('div');
+    line.className = 'tl-tick-line' + (f % 10 === 0 ? ' full' : '');
+    line.style.left = '0';
+    line.style.height = '100%';
+    tick.appendChild(line);
+    header.appendChild(tick);
+  }
+
+  // ── Clip lanes ──
+  lanes.innerHTML = '';
+  lanes.style.width = pixelWidth + 'px';
+
+  if (tlClips.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'tl-empty-lane';
+    empty.style.width = pixelWidth + 'px';
+    empty.textContent = 'Run the graph to create a clip on the timeline';
+    lanes.appendChild(empty);
+    return;
+  }
+
+  // Determine max lane index
+  const maxLane = Math.max(...tlClips.map(c => c.lane), 0);
+  const laneHeight = 40; // px per lane
+
+  // Set lanes container height
+  lanes.style.height = ((maxLane + 1) * laneHeight) + 'px';
+
+  for (let li = 0; li <= maxLane; li++) {
+    const laneDiv = document.createElement('div');
+    laneDiv.className = 'tl-clip-lane';
+    laneDiv.style.cssText = `position:absolute;top:${li * laneHeight}px;left:0;width:${pixelWidth}px;height:${laneHeight}px;border-bottom:1px solid var(--border);`;
+
+    const clipsInLane = tlClips.filter(c => c.lane === li);
+    for (const clip of clipsInLane) {
+      const relStart = Math.max(0, clip.startFrame - start);
+      const relEnd = Math.min(total, clip.endFrame - start + 1);
+      const barX = relStart * 12;
+      const barW = Math.max(4, (relEnd - relStart) * 12);
+
+      const bar = document.createElement('div');
+      bar.className = 'tl-clip-bar';
+      bar.style.cssText = `position:absolute;top:4px;left:${barX}px;width:${barW}px;height:${laneHeight - 8}px;background:${clip.color || '#4a6cf7'};border-radius:4px;cursor:grab;display:flex;align-items:center;padding:0 6px;font-size:10px;color:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;z-index:5;`;
+      bar.textContent = clip.name;
+      bar.title = `${clip.name} (F${clip.startFrame}-F${clip.endFrame})`;
+      bar.dataset.clipId = clip.id;
+
+      // Click to select clip and show its keyframe lanes
+      bar.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('.tl-clip-bar.selected').forEach(el => el.classList.remove('selected'));
+        bar.classList.add('selected');
+        tlSelectClip(clip.id);
+      });
+
+      // Drag to reposition horizontally (normal drag)
+      let dragStartX = 0, dragOrigStart = 0;
+      let longPressTimer = null, longPressed = false;
+      bar.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        e.stopPropagation();
+        longPressed = false;
+        longPressTimer = setTimeout(() => {
+          longPressed = true;
+          bar.style.opacity = '0.6';
+          bar.style.cursor = 'grabbing';
+        }, 400);
+        dragStartX = e.clientX;
+        dragOrigStart = clip.startFrame;
+        tlDragClip = { clip, lane: li, startX: e.clientX };
+        const onMove = (me) => {
+          if (longPressed) {
+            // Vertical drag — reorder lane
+            const laneDivs = lanes.querySelectorAll('.tl-clip-lane');
+            if (laneDivs.length) {
+              const rulerRect = lanes.getBoundingClientRect();
+              const relY = me.clientY - rulerRect.top;
+              const newLane = Math.max(0, Math.min(maxLane, Math.round(relY / laneHeight)));
+              if (newLane !== clip.lane) {
+                clip.lane = newLane;
+                renderTimelineRuler();
+              }
+            }
+          } else {
+            // Horizontal drag — reposition in time
+            const dx = me.clientX - dragStartX;
+            const frameDelta = Math.round(dx / 12);
+            clip.startFrame = Math.max(0, dragOrigStart + frameDelta);
+            clip.endFrame = clip.startFrame + (clip._origEnd - clip._origStart);
+            renderTimelineRuler();
+          }
+        };
+        const onUp = () => {
+          clearTimeout(longPressTimer);
+          if (longPressed) {
+            bar.style.opacity = '1';
+            bar.style.cursor = 'grab';
+          }
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+          tlDragClip = null;
+          tlSaveClips();
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+
+      laneDiv.appendChild(bar);
+    }
+
+    lanes.appendChild(laneDiv);
+  }
+
+  // ── Per-clip keyframe lanes (shown below clip bars for selected clip) ──
+  const selectedClip = tlClips.find(c => c._selected);
+  if (selectedClip) {
+    renderClipKeyframeLanes(selectedClip, start, total, pixelWidth, lanes);
+  }
+
+  // Update playhead position
+  updatePlayhead();
+}
+
+function renderClipKeyframeLanes(clip, start, total, pixelWidth, lanesContainer) {
+  const pkf = clip.paramKeyframes || {};
+  const paramNames = Object.keys(pkf);
+  if (paramNames.length === 0) return;
+
+  const baseY = (clip.lane + 1) * 40; // below the clip lane
+  paramNames.forEach((pname, pi) => {
+    const kfs = pkf[pname] || [];
+    if (kfs.length === 0) return;
+
+    const laneDiv = document.createElement('div');
+    laneDiv.className = 'tl-kf-lane';
+    laneDiv.style.cssText = `position:absolute;top:${baseY + pi * 20}px;left:0;width:${pixelWidth}px;height:20px;border-bottom:1px dashed var(--border);opacity:0.7;`;
+
+    const label = document.createElement('div');
+    label.style.cssText = `position:absolute;left:2px;top:1px;font-size:8px;color:var(--muted);white-space:nowrap;`;
+    label.textContent = pname;
+    laneDiv.appendChild(label);
+
+    const sorted = [...kfs].sort((a, b) => a.frame - b.frame);
+    for (const kf of sorted) {
+      const relFrame = kf.frame - start;
+      if (relFrame < 0 || relFrame > total) continue;
+      const x = relFrame * 12 + 6;
+      const diamond = document.createElement('div');
+      diamond.className = 'tl-kf-diamond ' + (kf.easing || 'linear');
+      diamond.style.cssText = `position:absolute;top:4px;left:${x}px;width:8px;height:8px;border-radius:50%;background:${clip.color || '#4a6cf7'};border:1px solid #fff;cursor:pointer;z-index:6;`;
+      const val = typeof kf.value === 'number' ? kf.value.toFixed(2) : kf.value;
+      diamond.title = `${pname} @ F${kf.frame} = ${val} (${kf.easing || 'linear'})`;
+      diamond.dataset.clipId = clip.id;
+      diamond.dataset.pname = pname;
+      diamond.dataset.frame = kf.frame;
+      diamond.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.getElementById('tl-frame').value = kf.frame;
+        document.getElementById('tl-frame').dispatchEvent(new Event('input'));
+      });
+      laneDiv.appendChild(diamond);
+    }
+    lanesContainer.appendChild(laneDiv);
+  });
+}
+
+function tlSelectClip(clipId) {
+  tlClips.forEach(c => { c._selected = (c.id === clipId); });
+  renderTimelineRuler();
+}
+
+function tlAddClip(name, seqName, startFrame, endFrame, nodeId, paramKeyframes) {
+  const id = 'clip_' + (++tlClipIdCounter);
+  const lane = tlClips.length; // new lane for each clip
+  const colors = ['#4a6cf7', '#f59e0b', '#34d399', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
+  const color = colors[tlClips.length % colors.length];
+  const clip = {
+    id, name, seqName, startFrame, endFrame, lane, color,
+    nodeId, paramKeyframes: JSON.parse(JSON.stringify(paramKeyframes || {})),
+    _origStart: startFrame, _origEnd: endFrame,
+  };
+  tlClips.push(clip);
+  tlSaveClips();
+  renderTimelineRuler();
+  return clip;
+}
+
+function tlSaveClips() {
+  try {
+    localStorage.setItem('tl-clips', JSON.stringify(tlClips.map(c => {
+      const { _selected, _origStart, _origEnd, ...rest } = c;
+      return rest;
+    })));
+  } catch {}
+}
+
+function tlLoadClips() {
+  try {
+    const data = localStorage.getItem('tl-clips');
+    if (data) {
+      tlClips = JSON.parse(data).map(c => ({
+        ...c,
+        _origStart: c.startFrame,
+        _origEnd: c.endFrame,
+      }));
+      tlClipIdCounter = Math.max(...tlClips.map(c => parseInt(c.id.replace('clip_', '')) || 0), 0);
+    }
+  } catch {}
+}
+
+function updatePlayhead() {
+  const playhead = document.getElementById('tl-playhead');
+  if (!playhead) return;
+  const start = parseInt(document.getElementById('tl-start')?.value) || 0;
+  const end   = parseInt(document.getElementById('tl-end')?.value) || 47;
+  const total = Math.max(1, end - start + 1);
+  const frame = parseInt(document.getElementById('tl-frame')?.value) || 0;
+  const pct = ((frame - start) / (total - 1)) * 100;
+  playhead.style.left = Math.max(0, Math.min(100, pct)) + '%';
+}
+
+// Re-render timeline ruler when frame range changes
+document.getElementById('tl-start')?.addEventListener('input', () => { renderTimelineRuler(); gUpdateFrameCount(); });
+document.getElementById('tl-end')?.addEventListener('input', () => { renderTimelineRuler(); gUpdateFrameCount(); });
+document.getElementById('tl-fps')?.addEventListener('input', renderTimelineRuler);
+
+// Update playhead on frame change
+document.getElementById('tl-frame')?.addEventListener('input', updatePlayhead);
+
+// ── Frame navigation ────────────────────────────────────────────
+function tlStopPlay() {
+  if (tlPlaying) {
+    tlPlaying = false;
+    tlPlay.textContent = '▶';
+    clearInterval(tlPlayTimer);
+    tlPlayTimer = null;
+  }
+}
+tlPrev.addEventListener('click', () => {
+  tlStopPlay();
+  tlFrame.value = Math.max(0, (parseInt(tlFrame.value) || 0) - 1);
+  tlFrame.dispatchEvent(new Event('input'));
+});
+tlNext.addEventListener('click', () => {
+  tlStopPlay();
+  tlFrame.value = (parseInt(tlFrame.value) || 0) + 1;
+  tlFrame.dispatchEvent(new Event('input'));
+});
+
+// ── Playhead drag on timeline ruler ────────────────────────────
+(function() {
+  const ruler = document.getElementById('timeline-ruler');
+  if (!ruler) return;
+  let dragging = false;
+  function frameFromEvent(e) {
+    const rect = ruler.getBoundingClientRect();
+    const x = ('touches' in e ? e.touches[0].clientX : e.clientX) - rect.left;
+    const pct = Math.max(0, Math.min(1, x / rect.width));
+    const start = parseInt(tlStart.value) || 0;
+    const end   = parseInt(tlEnd.value)   || 47;
+    const total = Math.max(1, end - start + 1);
+    return Math.round(start + pct * (total - 1));
+  }
+  function isNearPlayhead(e) {
+    const playhead = document.getElementById('tl-playhead');
+    if (!playhead) return false;
+    const rulerRect = ruler.getBoundingClientRect();
+    const phLeft = rulerRect.left + (parseFloat(playhead.style.left) || 0) / 100 * rulerRect.width;
+    const cx = ('touches' in e ? e.touches[0].clientX : e.clientX);
+    return Math.abs(cx - phLeft) < 50;
+  }
+  function onStart(e) {
+    if (!isNearPlayhead(e)) return;
+    dragging = true;
+    tlStopPlay();
+    const f = frameFromEvent(e);
+    tlFrame.value = f;
+    updatePlayhead();
+    tlLoadFrame(f);
+  }
+  function onMove(e) {
+    if (!dragging) return;
+    e.preventDefault();
+    const f = frameFromEvent(e);
+    tlFrame.value = f;
+    updatePlayhead();
+    tlLoadFrame(f);
+  }
+  function onEnd() { dragging = false; }
+  ruler.addEventListener('mousedown', onStart);
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onEnd);
+  ruler.addEventListener('touchstart', onStart, { passive: false });
+  document.addEventListener('touchmove', onMove, { passive: false });
+  document.addEventListener('touchend', onEnd);
+})();
+
+// ── Pinch zoom on timeline ────────────────────────────────────
+(function() {
+  const wrap = document.getElementById('timeline-ruler-wrap');
+  if (!wrap) return;
+  let lastDist = 0;
+  wrap.addEventListener('touchstart', e => {
+    if (e.touches.length === 2) {
+      lastDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+    }
+  }, { passive: true });
+  wrap.addEventListener('touchmove', e => {
+    if (e.touches.length !== 2) return;
+    e.preventDefault();
+    const dist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    const scale = dist / lastDist;
+    lastDist = dist;
+    const current = parseInt(tlEnd.value) - parseInt(tlStart.value) + 1;
+    const newTotal = Math.max(4, Math.min(200, Math.round(current / scale)));
+    const mid = (parseInt(tlStart.value) + parseInt(tlEnd.value)) / 2;
+    const half = Math.round(newTotal / 2);
+    tlStart.value = Math.max(0, Math.round(mid - half));
+    tlEnd.value = tlStart.value + newTotal - 1;
+    renderTimelineRuler();
+    gUpdateFrameCount();
+  }, { passive: false });
+})();
+let _tlFrameAbort = null;
+tlPlay.addEventListener('click', () => {
+  tlPlaying = !tlPlaying;
+  tlPlay.textContent = tlPlaying ? '⏸' : '▶';
+  if (tlPlaying) {
+    const fps   = Math.max(1, parseInt(tlFps.value) || 24);
+    const delay = Math.round(1000 / fps);
+    tlPlayTimer = setInterval(() => {
+      const end  = parseInt(tlEnd.value)   || 47;
+      const st   = parseInt(tlStart.value) || 0;
+      const cur  = parseInt(tlFrame.value) || 0;
+      const next = cur >= end ? st : cur + 1;
+      tlFrame.value = next;
+      updatePlayhead();
+      const name = tlName.value.trim();
+      if (name && gLivePreviewImg) {
+        fetch(`/api/sequences/${encodeURIComponent(name)}/${next}`)
+          .then(r => r.ok ? r.blob() : null)
+          .then(blob => {
+            if (!blob) return;
+            const url = URL.createObjectURL(blob);
+            if (gLivePreviewImg._tlUrl) URL.revokeObjectURL(gLivePreviewImg._tlUrl);
+            gLivePreviewImg._tlUrl = url;
+            gLivePreviewImg.src = url;
+          })
+          .catch(() => {});
+      }
+    }, delay);
+  } else {
+    clearInterval(tlPlayTimer);
+    tlPlayTimer = null;
+  }
+});
+
+// ── Frame scrubbing: preview rendered sequence frames ───────────
+tlFrame.addEventListener('input', () => {
+  const frame = parseInt(tlFrame.value);
+  if (isNaN(frame)) return;
+  tlLoadFrame(frame);
+  // Backfill keyframe values into node params for the active clip
+  const activeClip = tlClips.find(c => c._selected);
+  if (activeClip && activeClip.paramKeyframes) {
+    for (const [pname, kfs] of Object.entries(activeClip.paramKeyframes)) {
+      if (!kfs || kfs.length === 0) continue;
+      const sorted = [...kfs].sort((a, b) => a.frame - b.frame);
+      // Find the interpolated value at this frame
+      let val = null;
+      if (frame <= sorted[0].frame) {
+        val = sorted[0].value;
+      } else if (frame >= sorted[sorted.length - 1].frame) {
+        val = sorted[sorted.length - 1].value;
+      } else {
+        for (let i = 0; i < sorted.length - 1; i++) {
+          if (sorted[i].frame <= frame && frame < sorted[i + 1].frame) {
+            const window = sorted[i + 1].frame - sorted[i].frame;
+            if (window <= 0) { val = sorted[i + 1].value; break; }
+            const t = (frame - sorted[i].frame) / window;
+            const a = sorted[i].value, b = sorted[i + 1].value;
+            if (typeof a === 'number' && typeof b === 'number') {
+              val = a + (b - a) * t;
+            } else {
+              val = t < 0.5 ? a : b;
+            }
+            break;
+          }
+        }
+      }
+      if (val !== null) {
+        // Backfill into the node's params
+        for (const node of gNodes) {
+          if (node.params && pname in node.params) {
+            node.params[pname] = val;
+            // Update the UI slider if the node is selected
+            const el = document.getElementById(`p_${pname}`);
+            if (el) {
+              el.value = val;
+              const v = document.querySelector(`#val_${pname}`);
+              if (v) v.textContent = formatVal(val);
+            }
+          }
+        }
+      }
+    }
+  }
+});
+
+// ── Render Sequence ─────────────────────────────────────────────
+tlRenderBtn.addEventListener('click', tlDoRenderSequence);
+
+tlCancel.addEventListener('click', () => {
+  if (tlSeqAbort) { tlSeqAbort.abort(); tlSeqAbort = null; }
+});
+
+async function tlDoRenderSequence() {
+  const start = parseInt(tlStart.value) || 0;
+  const end   = parseInt(tlEnd.value)   || 47;
+  const fps   = parseInt(tlFps.value)   || 24;
+  const name  = tlName.value.trim()     || 'sequence';
+
+  if (end <= start) { gShowToast('End must be greater than Start', true); return; }
+
+  const total = end - start + 1;
+  tlRenderBtn.disabled        = true;
+  tlProgressDiv.style.display = 'flex';
+  tlProgressBar.style.width   = '0%';
+  tlProgressLabel.textContent = `0 / ${total}`;
+
+  tlSeqAbort = new AbortController();
+
+  const body = {
+    graph: {
+      nodes: gNodes.map(n => ({
+        id: n.id, method_id: n.method_id, params: n.params,
+        animParams: n.animParams || {},
+        x: n.x, y: n.y, render: !!n.render, dirty: n.dirty !== false,
+        start_frame: n.start_frame || 0, end_frame: n.end_frame || 0,
+        keyframes: n.keyframes || [],
+        paramKeyframes: n.paramKeyframes || {},
+        prebake: n.prebake || 0,
+      })),
+      edges: gEdges.map(e => ({
+        src_node: e.src_node, src_port: e.src_port,
+        dst_node: e.dst_node, dst_port: e.dst_port, feedback: e.feedback,
+      })),
+      seed: 42,
+    },
+    start_frame: start,
+    end_frame:   end,
+    fps,
+    output_name: name,
+  };
+
+  try {
+    const res = await fetch('/api/graph/render-sequence', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+      signal:  tlSeqAbort.signal,
+    });
+    if (!res.ok || !res.body) throw new Error(`Server error ${res.status}`);
+
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const parts = buf.split('\n');
+      buf = parts.pop(); // hold incomplete line
+
+      let evType = '', evData = '';
+      for (const line of parts) {
+        if (line.startsWith('event:')) {
+          evType = line.slice(6).trim();
+        } else if (line.startsWith('data:')) {
+          evData = line.slice(5).trim();
+        } else if (line === '' && evType) {
+          tlHandleSeqEvent(evType, evData, start, total);
+          evType = ''; evData = '';
+        }
+      }
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') gShowToast('Sequence error: ' + e.message, true);
+  } finally {
+    tlRenderBtn.disabled        = false;
+    tlProgressDiv.style.display = 'none';
+    tlSeqAbort = null;
+  }
+}
+
+function tlHandleSeqEvent(type, data, startFrame, total) {
+  try {
+    if (type === 'frame-done') {
+      const d    = JSON.parse(data);
+      const done = ((d.frame ?? startFrame) - startFrame) + 1;
+      tlProgressBar.style.width   = (done / total * 100) + '%';
+      tlProgressLabel.textContent = `${done} / ${total}`;
+      if (d.data) gGraphFrameUpdate(d.data);  // inline JPEG preview
+    } else if (type === 'frame-error') {
+      const d = JSON.parse(data);
+      gShowToast(`Frame ${d.frame} failed: ${d.error}`, true);
+    } else if (type === 'sequence-done') {
+      const d = JSON.parse(data);
+      tlRenderBtn.disabled        = false;
+      tlProgressDiv.style.display = 'none';
+      gShowToast(`🎬 Sequence complete — ${d.count ?? total} frames`, false);
+    }
+  } catch {}
+}
+
+// ── Encode buttons ─────────────────────────────────────────────
+async function tlDoEncode(format) {
+  const name = tlName.value.trim() || 'sequence';
+  const fps  = parseInt(tlFps.value) || 24;
+  const btnId = format === 'mp4' ? 'tl-encode-mp4' : 'tl-encode-gif';
+  const btn = document.getElementById(btnId);
+  const status = document.getElementById('tl-encode-status');
+  const origText = btn.textContent;
+  btn.textContent = '⏳ Encoding…';
+  btn.disabled = true;
+  if (status) status.innerHTML = '';
+  try {
+    const res = await fetch(`/api/sequences/${encodeURIComponent(name)}/encode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fps, format }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      btn.textContent = origText;
+      if (status) status.innerHTML = `<a href="${data.path}" download="${name}.${format}">⬇ Download ${format.toUpperCase()}</a>`;
+    } else {
+      gShowToast('Encode failed: ' + (data.error || 'unknown error'), true);
+      btn.textContent = origText;
+    }
+  } catch (e) {
+    gShowToast('Encode error: ' + e.message, true);
+    btn.textContent = origText;
+  } finally {
+    btn.disabled = false;
+  }
+}
+document.getElementById('tl-encode-mp4')?.addEventListener('click', () => tlDoEncode('mp4'));
+document.getElementById('tl-encode-gif')?.addEventListener('click', () => tlDoEncode('gif'));
+
 // ── Clear ──────────────────────────────────────────────────────
 function gDoClear() {
-  gNodes=[]; gEdges=[]; gSelectedNode=null; gSelectedEdge=null;
+  gNodes=[]; gEdges=[]; gSelectedNode=null; gSelectedEdge=null; gSelectedNodes.clear();
   gPanX=0; gPanY=0; gApplyPan();
   gNodesEl.innerHTML=''; gEdgesEl.innerHTML=''; gOutputStrip.innerHTML='';
   gLivePreviewImg = null; gMainPreview.innerHTML=''; gMainPreview.classList.remove('active');
@@ -2951,7 +4655,7 @@ async function gRestoreGraph() {
     gRenderPalette(); gPaletteLoaded=true;
   }
   gApplyPan();
-  gNodes.forEach(gRenderNode);
+  gNodes.forEach(gRenderAnyNode);
   gUpdateConnectedPorts();
   gRedrawEdges();
 }
@@ -2987,14 +4691,25 @@ setTimeout(() => {
 function gSerializeGraph() {
   return {
     version: 1,
-    nodes: gNodes.map(n => ({
-      id:        n.id,
-      method_id: n.method_id,
-      params:    n.params || {},
-      x:         Math.round(n.x),
-      y:         Math.round(n.y),
-      render:    !!n.render,
-    })),
+    nodes: gNodes.map(n => {
+      if (n.type === 'group') return {
+        id: n.id, type: 'group', name: n.name,
+        subgraph: n.subgraph,
+        exposed_inputs:  n.exposed_inputs  || [],
+        exposed_outputs: n.exposed_outputs || [],
+        x: Math.round(n.x), y: Math.round(n.y),
+        render: !!n.render,
+      };
+      return {
+        id:         n.id,
+        method_id:  n.method_id,
+        params:     n.params || {},
+        animParams: n.animParams || {},
+        x:          Math.round(n.x),
+        y:          Math.round(n.y),
+        render:     !!n.render,
+      };
+    }),
     edges: gEdges.map(e => ({
       src_node: e.src_node,
       src_port: e.src_port,
@@ -3009,6 +4724,7 @@ function gSerializeGraph() {
 async function gLoadGraph(data) {
   // Clear canvas (without triggering gSave loop)
   gNodes = []; gEdges = []; gSelectedNode = null; gSelectedEdge = null;
+  gSelectedNodes.clear();
   gPanX = 0; gPanY = 0; gApplyPan();
   gNodesEl.innerHTML = ''; gEdgesEl.innerHTML = ''; gOutputStrip.innerHTML = '';
   gLivePreviewImg = null; gMainPreview.innerHTML = ''; gMainPreview.classList.remove('active');
@@ -3024,15 +4740,17 @@ async function gLoadGraph(data) {
 
   // Rebuild nodes with their saved IDs
   for (const n of (data.nodes || [])) {
-    const def = gNodeDefs[n.method_id];
-    if (!def) continue;
-    const node = {
-      id: n.id, method_id: n.method_id,
-      params: n.params || gDefaultParams(def),
-      x: n.x, y: n.y, render: !!n.render, dirty: true,
-    };
-    gNodes.push(node);
-    gRenderNode(node);
+    if (n.type === 'group') {
+      const node = { id: n.id, type: 'group', name: n.name || 'Group', subgraph: n.subgraph || {nodes:[],edges:[]}, exposed_inputs: n.exposed_inputs || [], exposed_outputs: n.exposed_outputs || [], x: n.x, y: n.y, render: !!n.render, dirty: true };
+      gNodes.push(node);
+      gRenderGroupNode(node);
+    } else {
+      const def = gNodeDefs[n.method_id];
+      if (!def) continue;
+      const node = { id: n.id, method_id: n.method_id, params: n.params || gDefaultParams(def), animParams: n.animParams || {}, x: n.x, y: n.y, render: !!n.render, dirty: true };
+      gNodes.push(node);
+      gRenderNode(node);
+    }
   }
 
   // Rebuild edges
@@ -3385,6 +5103,7 @@ gConnectEvents();
 // ── Load palette now (graph is the default view) ──────────────
 gLoadMethodPalette();
 gLoadPortTypes();
+gLoadGroupPresets();
 
 // ── NODE DOCTOR ────────────────────────────────────────────────
 (function() {
@@ -3582,6 +5301,10 @@ gLoadPortTypes();
     ndUndoBtn.classList.remove('nd-show');
   };
 })();
+
+// ── Load saved clips on init ──────────────────────────────────
+tlLoadClips();
+renderTimelineRuler();
 </script>
 
 </body>

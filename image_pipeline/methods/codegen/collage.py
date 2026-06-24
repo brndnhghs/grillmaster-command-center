@@ -21,7 +21,6 @@ from ...core.animation import capture_frame
              "n_tiles": {"description": "number of sub-tiles", "min": 2, "max": 16, "default": 4},
              "blend_mode": {"description": "compositing blend mode", "choices": ["normal", "multiply", "screen", "overlay"], "default": "normal"},
              "gap": {"description": "gap between tiles (pixels)", "min": 0, "max": 20, "default": 2},
-             "time": {"description": "animation time (0-6.28)", "min": 0.0, "max": 6.28, "default": 0.0},
              "anim_mode": {"description": "animation mode", "choices": ["none", "rotate", "drift", "morph", "palette_sweep", "pattern_cycle", "size_pulse", "blend_cycle", "gap_pulse", "layout_cycle", "n_tiles_sweep", "tile_phase"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
          })

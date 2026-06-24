@@ -8,6 +8,7 @@ import json
 import queue
 import re
 import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -29,7 +30,7 @@ from pydantic import BaseModel
 
 # Auto-register all methods before the registry is queried
 from image_pipeline.core import registry
-from image_pipeline.core.registry import unregister as _unregister_method, get_id_by_module
+from image_pipeline.core.registry import unregister as _unregister_method, get_ids_by_module
 from image_pipeline.core.animation import JobCancelled
 from image_pipeline.core.graph import GraphExecutor, GraphError
 from image_pipeline.core.port_types import all_port_types
@@ -45,6 +46,16 @@ _GRAPH_SESSION_DIR.mkdir(parents=True, exist_ok=True)
 # Saved named graphs
 SAVED_GRAPHS_DIR = OUTPUT_ROOT / "saved-graphs"
 SAVED_GRAPHS_DIR.mkdir(exist_ok=True)
+
+# Saved group node presets
+SAVED_GROUPS_DIR = OUTPUT_ROOT / "saved-groups"
+SAVED_GROUPS_DIR.mkdir(exist_ok=True)
+
+SEQUENCES_DIR = OUTPUT_ROOT / "sequences"
+SEQUENCES_DIR.mkdir(parents=True, exist_ok=True)
+
+# In-memory keyframe store (per-node keyframe lists, replace semantics)
+_keyframe_store: dict[str, list[dict]] = {}
 
 UI_DIR = Path(__file__).resolve().parent.parent / "ui"
 
@@ -71,8 +82,7 @@ def _hot_reload_path(filepath: str):
         module_name = "image_pipeline." + str(rel.with_suffix('')).replace('/', '.').replace('\\', '.')
     except ValueError:
         return
-    old_id = get_id_by_module(module_name)
-    if old_id is not None:
+    for old_id in get_ids_by_module(module_name):
         _unregister_method(old_id)
     if module_name in sys.modules:
         try:
@@ -489,7 +499,10 @@ async def sse_events():
                 msg = await q.get()
                 yield msg
         finally:
-            _sse_clients.remove(q)
+            try:
+                _sse_clients.remove(q)
+            except ValueError:
+                pass
 
     return StreamingResponse(
         generator(),
@@ -621,11 +634,62 @@ def delete_saved_graph(name: str):
     return {"ok": True}
 
 
+# ── Group node preset endpoints ───────────────────────────────────────
+
+
+@app.post("/api/groups/save")
+async def save_group(payload: dict):
+    name = payload.get("name", "untitled").strip() or "untitled"
+    name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+    group_data = {
+        "name": name,
+        "subgraph": payload.get("subgraph", {}),
+        "exposed_inputs": payload.get("exposed_inputs", []),
+        "exposed_outputs": payload.get("exposed_outputs", []),
+        "saved_at": datetime.utcnow().isoformat(),
+    }
+    path = SAVED_GROUPS_DIR / f"{name}.json"
+    path.write_text(json.dumps(group_data, indent=2))
+    return {"ok": True, "name": name}
+
+
+@app.get("/api/groups")
+def list_groups():
+    groups = []
+    for f in sorted(SAVED_GROUPS_DIR.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
+        try:
+            data = json.loads(f.read_text())
+            groups.append({"name": data.get("name", f.stem), "saved_at": data.get("saved_at", "")})
+        except Exception:
+            pass
+    return groups
+
+
+@app.get("/api/groups/{name}")
+def get_group(name: str):
+    name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+    path = SAVED_GROUPS_DIR / f"{name}.json"
+    if not path.exists():
+        from fastapi import HTTPException
+        raise HTTPException(404, f"Group '{name}' not found")
+    return json.loads(path.read_text())
+
+
+@app.delete("/api/groups/{name}")
+def delete_group(name: str):
+    name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+    path = SAVED_GROUPS_DIR / f"{name}.json"
+    if path.exists():
+        path.unlink()
+    return {"ok": True}
+
+
 class GraphRequest(BaseModel):
     nodes: list[dict[str, Any]] = []
     edges: list[dict[str, Any]] = []
     seed: int = 42
     frames: int = 1
+    frame: int = 0
 
 
 @app.post("/api/graph/execute")
@@ -648,14 +712,14 @@ def execute_graph(req: GraphRequest):
 
     thread = threading.Thread(
         target=_run_graph_job,
-        args=(job_id, req.nodes, req.edges, req.seed, req.frames, out_dir),
+        args=(job_id, req.nodes, req.edges, req.seed, req.frames, req.frame, out_dir),
         daemon=True,
     )
     thread.start()
     return {"job_id": job_id}
 
 
-def _run_graph_job(job_id, nodes, edges, seed, frames, out_dir):
+def _run_graph_job(job_id, nodes, edges, seed, frames, start_frame, out_dir):
     job = _jobs[job_id]
     q = job["q"]
     cancel_event: threading.Event = job["cancel_event"]
@@ -673,12 +737,22 @@ def _run_graph_job(job_id, nodes, edges, seed, frames, out_dir):
 
         n_frames = max(1, frames)
         all_errors: dict[str, str] = {}
-        for frame in range(n_frames):
+
+        # ── Determine timeline sequence name ──────────────────────────
+        # Use the timeline name from the graph, or auto-generate one.
+        tl_node = next((n for n in nodes if n.get("method_id") == "__timeline__"), None)
+        seq_name = (tl_node.get("params") or {}).get("name", "") if tl_node else ""
+        if not seq_name:
+            seq_name = f"run-{job_id}"
+        seq_dir = SEQUENCES_DIR / seq_name
+        seq_dir.mkdir(parents=True, exist_ok=True)
+
+        for frame in range(start_frame, start_frame + n_frames):
             if cancel_event.is_set():
                 q.put(("error", "Cancelled"))
                 return
 
-            print(f"  Frame {frame + 1}/{n_frames}")
+            print(f"  Frame {frame - start_frame + 1}/{n_frames}")
             try:
                 flat_outputs, terminal_id, frame_errors = executor.execute(
                     nodes, edges, seed, frame=frame, frames=n_frames
@@ -708,19 +782,27 @@ def _run_graph_job(job_id, nodes, edges, seed, frames, out_dir):
                 payload = json.dumps({"frame": frame, "node_id": terminal_id, "data": encoded})
                 q.put(("graph_frame", payload))
 
+                # ── Save individual frame to sequence directory ──
+                from PIL import Image as _PILS
+                import numpy as np
+                png_path = seq_dir / f"frame_{frame:04d}.png"
+                _PILS.fromarray(
+                    (arr.clip(0, 1) * 255).astype(np.uint8)
+                ).save(str(png_path))
+
         # Assemble output file
         if not terminal_frames:
             q.put(("error", "No output produced — terminal node generated no image"))
             return
 
         if n_frames > 1:
-            mp4_path = out_dir / "graph-output.mp4"
+            mp4_path = seq_dir / "output.mp4"
             result = frames_to_mp4(iter(terminal_frames), mp4_path, fps=24)
             if result:
                 rel_path = result.relative_to(OUTPUT_ROOT).as_posix()
                 job["output_path"] = str(result)
                 job["type"] = "video"
-                q.put(("done", {"rel_path": rel_path, "type": "video", "frames": len(terminal_frames), "errors": all_errors}))
+                q.put(("done", {"rel_path": rel_path, "type": "video", "frames": len(terminal_frames), "errors": all_errors, "seq_name": seq_name}))
             else:
                 q.put(("error", "MP4 assembly failed"))
         else:
@@ -728,12 +810,12 @@ def _run_graph_job(job_id, nodes, edges, seed, frames, out_dir):
             import numpy as np
             arr = terminal_frames[0]
             arr_u8 = (arr.clip(0, 1) * 255).astype(np.uint8) if arr.dtype != np.uint8 else arr
-            png_path = out_dir / "graph-output.png"
+            png_path = seq_dir / "frame_0000.png"
             Image.fromarray(arr_u8).save(str(png_path))
             rel_path = png_path.relative_to(OUTPUT_ROOT).as_posix()
             job["output_path"] = str(png_path)
             job["type"] = "image"
-            q.put(("done", {"rel_path": rel_path, "type": "image", "frames": 1, "errors": all_errors}))
+            q.put(("done", {"rel_path": rel_path, "type": "image", "frames": 1, "errors": all_errors, "seq_name": seq_name}))
 
     except Exception as exc:
         q.put(("error", str(exc)))
@@ -790,6 +872,243 @@ def stream_graph_job(job_id: str):
                                       "X-Accel-Buffering": "no"})
 
 
+# ── Sequence render endpoints ─────────────────────────────────────────
+
+
+def _interpolate_params(node_params: dict, anim_params: dict, frame: int, start_frame: int, end_frame: int) -> dict:
+    """Linearly interpolate animated params across the frame range."""
+    if not anim_params or end_frame <= start_frame:
+        return node_params
+    t = (frame - start_frame) / (end_frame - start_frame)
+    result = dict(node_params)
+    for key, anim in anim_params.items():
+        if anim.get("enabled"):
+            result[key] = anim["from"] + (anim["to"] - anim["from"]) * t
+    return result
+
+
+class SequenceRequest(BaseModel):
+    graph: dict[str, Any]
+    start_frame: int = 0
+    end_frame: int = 47
+    fps: int = 24
+    output_name: str = "sequence"
+
+
+@app.post("/api/graph/render-sequence")
+async def render_sequence(req: SequenceRequest):
+    """SSE stream that renders a frame range and saves PNGs to sequences/<name>/."""
+    output_name = re.sub(r'[^a-zA-Z0-9_-]', '_', req.output_name) or "sequence"
+    seq_dir = SEQUENCES_DIR / output_name
+    seq_dir.mkdir(parents=True, exist_ok=True)
+    work_dir = seq_dir / "_work"
+    work_dir.mkdir(exist_ok=True)
+
+    nodes = req.graph.get("nodes", [])
+    edges = req.graph.get("edges", [])
+    seed = req.graph.get("seed", 42)
+    start_frame = req.start_frame
+    end_frame = req.end_frame
+    total_frames = end_frame - start_frame + 1
+
+    event_queue: asyncio.Queue = asyncio.Queue()
+    loop = asyncio.get_event_loop()
+
+    def _seq_worker():
+        executor = GraphExecutor(work_dir, fps=req.fps)
+        n_frames = end_frame - start_frame + 1
+
+        # Extract per-node animParams (stripped from GraphNode schema)
+        node_anim_params = {n["id"]: n.get("animParams", {}) for n in nodes}
+
+        for frame in range(start_frame, end_frame + 1):
+            # Build frame-specific node list with interpolated params
+            frame_nodes = []
+            for n in nodes:
+                nid = n["id"]
+                anim = node_anim_params.get(nid) or {}
+                has_active_anim = any(v.get("enabled") for v in anim.values())
+                if has_active_anim:
+                    frame_params = _interpolate_params(n.get("params", {}), anim, frame, start_frame, end_frame)
+                    frame_nodes.append({**n, "params": frame_params, "dirty": True})
+                else:
+                    frame_nodes.append(n)
+
+            try:
+                flat_outputs, terminal_id, frame_errors = executor.execute(
+                    frame_nodes, edges, seed, frame=frame, frames=n_frames
+                )
+                render_id = next((n["id"] for n in nodes if n.get("render")), None)
+                if render_id and render_id in flat_outputs:
+                    terminal_id = render_id
+
+                arr = (flat_outputs.get(terminal_id) or {}).get("image") if terminal_id else None
+                frame_path = ""
+                if arr is not None:
+                    from PIL import Image as _PILS
+                    import numpy as np
+                    png_path = seq_dir / f"frame_{frame:04d}.png"
+                    _PILS.fromarray(
+                        (arr.clip(0, 1) * 255).astype(np.uint8)
+                    ).save(str(png_path))
+                    frame_path = str(png_path)
+
+                payload = json.dumps({"frame": frame, "total": total_frames, "path": frame_path})
+                asyncio.run_coroutine_threadsafe(
+                    event_queue.put(f"event: frame-done\ndata: {payload}\n\n"), loop
+                )
+            except Exception as exc:
+                err_payload = json.dumps({"frame": frame, "error": str(exc)})
+                asyncio.run_coroutine_threadsafe(
+                    event_queue.put(f"event: frame-error\ndata: {err_payload}\n\n"), loop
+                )
+
+        done_payload = json.dumps({
+            "name": output_name,
+            "frames": total_frames,
+            "dir": str(seq_dir),
+        })
+        asyncio.run_coroutine_threadsafe(
+            event_queue.put(f"event: sequence-done\ndata: {done_payload}\n\n"), loop
+        )
+        asyncio.run_coroutine_threadsafe(event_queue.put(None), loop)
+
+    threading.Thread(target=_seq_worker, daemon=True).start()
+
+    async def _seq_generator():
+        while True:
+            msg = await event_queue.get()
+            if msg is None:
+                break
+            yield msg
+
+    return StreamingResponse(
+        _seq_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/api/sequences")
+def list_sequences():
+    result = []
+    for seq_dir in sorted(SEQUENCES_DIR.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+        if not seq_dir.is_dir() or seq_dir.name.startswith("_"):
+            continue
+        frames = sorted(seq_dir.glob("frame_*.png"))
+        result.append({
+            "name": seq_dir.name,
+            "frame_count": len(frames),
+            "created_at": datetime.fromtimestamp(seq_dir.stat().st_mtime).isoformat(),
+        })
+    return result
+
+
+@app.get("/api/sequences/{name}/{frame}")
+def get_sequence_frame(name: str, frame: int):
+    name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+    png_path = SEQUENCES_DIR / name / f"frame_{frame:04d}.png"
+    if not png_path.exists():
+        from fastapi import HTTPException
+        raise HTTPException(404, f"Frame {frame} not found in sequence '{name}'")
+    return FileResponse(
+        str(png_path),
+        media_type="image/png",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
+@app.delete("/api/sequences/{name}")
+def delete_sequence(name: str):
+    name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+    seq_dir = SEQUENCES_DIR / name
+    if seq_dir.exists():
+        shutil.rmtree(str(seq_dir))
+    return {"ok": True}
+
+
+class EncodeRequest(BaseModel):
+    fps: int = 24
+    format: str = "mp4"
+
+
+@app.post("/api/sequences/{name}/encode")
+def encode_sequence(name: str, req: EncodeRequest):
+    """Encode a rendered sequence of PNGs to mp4 or gif using ffmpeg."""
+    if not shutil.which("ffmpeg"):
+        return {"ok": False, "error": "ffmpeg not found"}
+
+    name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+    seq_dir = SEQUENCES_DIR / name
+    if not seq_dir.exists():
+        return {"ok": False, "error": f"Sequence '{name}' not found"}
+
+    frames = sorted(seq_dir.glob("frame_*.png"), key=lambda p: p.name)
+    if not frames:
+        return {"ok": False, "error": "No frames found in sequence"}
+
+    fmt = req.format.lower()
+    if fmt not in ("mp4", "gif"):
+        return {"ok": False, "error": f"Unsupported format '{fmt}' — use mp4 or gif"}
+
+    out_file = seq_dir / f"output.{fmt}"
+    input_pattern = str(seq_dir / "frame_%04d.png")
+
+    if fmt == "mp4":
+        cmd = [
+            "ffmpeg", "-framerate", str(req.fps),
+            "-i", input_pattern,
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-y", str(out_file),
+        ]
+        result = subprocess.run(cmd, capture_output=True)
+        if result.returncode != 0:
+            return {"ok": False, "error": result.stderr.decode(errors="replace")[:500]}
+    else:
+        # GIF: 2-pass (palette + encode)
+        palette_path = seq_dir / "_palette.png"
+        cmd1 = [
+            "ffmpeg", "-framerate", str(req.fps),
+            "-i", input_pattern,
+            "-vf", "palettegen",
+            "-y", str(palette_path),
+        ]
+        r1 = subprocess.run(cmd1, capture_output=True)
+        if r1.returncode != 0:
+            return {"ok": False, "error": r1.stderr.decode(errors="replace")[:500]}
+        cmd2 = [
+            "ffmpeg", "-framerate", str(req.fps),
+            "-i", input_pattern,
+            "-i", str(palette_path),
+            "-filter_complex", "[0:v][1:v]paletteuse",
+            "-y", str(out_file),
+        ]
+        result = subprocess.run(cmd2, capture_output=True)
+        if result.returncode != 0:
+            return {"ok": False, "error": result.stderr.decode(errors="replace")[:500]}
+
+    return {"ok": True, "path": f"/api/sequences/{name}/video.{fmt}"}
+
+
+@app.get("/api/sequences/{name}/video.{ext}")
+def get_sequence_video(name: str, ext: str):
+    """Serve an encoded video file for a sequence."""
+    name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+    if ext not in ("mp4", "gif"):
+        from fastapi import HTTPException
+        raise HTTPException(400, "Unsupported format — use mp4 or gif")
+    video_path = SEQUENCES_DIR / name / f"output.{ext}"
+    if not video_path.exists():
+        from fastapi import HTTPException
+        raise HTTPException(404, f"Video not found for sequence '{name}' — encode first")
+    media_type = "video/mp4" if ext == "mp4" else "image/gif"
+    return FileResponse(str(video_path), media_type=media_type, filename=f"{name}.{ext}")
+
+
 # ── NODE DOCTOR endpoints ─────────────────────────────────────────────
 
 _nd_backups: dict[str, tuple[str, str]] = {}  # backup_id → (orig_path, backup_path)
@@ -835,9 +1154,12 @@ def nd_get_source(method_id: str):
     return {"source": path.read_text(), "path": str(path)}
 
 
+_ND_RUNNER   = Path(__file__).resolve().parent / "nd_runner.py"
+_HERMES_PY   = Path.home() / ".hermes" / "hermes-agent" / "venv" / "bin" / "python"
+
+
 @app.post("/api/node-doctor/chat")
 async def nd_chat(payload: dict):
-    import anthropic as _anthropic
     method_id   = payload.get("method_id", "")
     node_def    = payload.get("node_def", {})
     node_params = payload.get("node_params", {})
@@ -863,18 +1185,45 @@ current_param_values: {json.dumps(node_params)}
 ```
 """
 
-    client = _anthropic.AsyncAnthropic()
+    stdin_bytes = json.dumps({"system_prompt": system, "messages": messages}).encode()
 
     async def generate():
-        async with client.messages.stream(
-            model="claude-sonnet-4-6",
-            max_tokens=8192,
-            system=system,
-            messages=messages,
-        ) as stream:
-            async for text in stream.text_stream:
-                yield f"data: {json.dumps({'text': text})}\n\n"
-        yield "data: {\"done\": true}\n\n"
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                str(_HERMES_PY), str(_ND_RUNNER),
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(input=stdin_bytes), timeout=120
+            )
+        except asyncio.TimeoutError:
+            yield f"data: {json.dumps({'text': '⚠ NODE DOCTOR timed out'})}\n\n"
+            return
+        except Exception as exc:
+            yield f"data: {json.dumps({'text': f'⚠ subprocess error: {exc}'})}\n\n"
+            return
+
+        if proc.returncode != 0 and not stdout.strip():
+            err = stderr.decode()[:500] if stderr else "no output"
+            yield f"data: {json.dumps({'text': f'⚠ runner failed: {err}'})}\n\n"
+            return
+
+        for raw in stdout.decode().splitlines():
+            line = raw.strip()
+            if not line:
+                continue
+            try:
+                d = json.loads(line)
+                if "text" in d:
+                    yield f"data: {json.dumps({'text': d['text']})}\n\n"
+                elif "error" in d:
+                    yield f"data: {json.dumps({'text': '⚠ ' + d['error']})}\n\n"
+                elif d.get("done"):
+                    yield f"data: {json.dumps({'done': True})}\n\n"
+            except Exception:
+                pass
 
     return StreamingResponse(
         generate(), media_type="text/event-stream",
@@ -912,6 +1261,38 @@ async def nd_undo(backup_id: str):
     shutil.copy2(backup_path, orig_path)
     Path(backup_path).unlink(missing_ok=True)
     return {"ok": True}
+
+
+# ── Keyframe API endpoints ────────────────────────────────────────────
+
+
+class KeyframeRequest(BaseModel):
+    node_id: str
+    keyframes: list[dict] = []
+
+
+@app.post("/api/graph/keyframes")
+def set_keyframes(req: KeyframeRequest):
+    """Store keyframes for a node. The frontend sends the full keyframe list
+    for a node on every edit (replace semantics)."""
+    # Keyframes are stored per-node in a simple in-memory dict.
+    # In a full implementation these would be persisted with the graph.
+    _keyframe_store[req.node_id] = req.keyframes
+    return {"ok": True, "count": len(req.keyframes)}
+
+
+@app.get("/api/graph/keyframes/{node_id}")
+def get_keyframes(node_id: str):
+    """Retrieve keyframes for a node."""
+    kfs = _keyframe_store.get(node_id, [])
+    return {"node_id": node_id, "keyframes": kfs}
+
+
+@app.get("/api/easing-presets")
+def get_easing_presets():
+    """Return available easing presets for the UI."""
+    from image_pipeline.core.easing import EASING_PRESETS
+    return {"presets": [{"id": p[0], "name": p[1], "description": p[2]} for p in EASING_PRESETS]}
 
 
 # ── Entry point ───────────────────────────────────────────────────────

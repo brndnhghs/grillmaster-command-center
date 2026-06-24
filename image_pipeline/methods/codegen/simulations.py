@@ -105,10 +105,6 @@ _COLORMAPS = {
                         "blinker", "toad", "beacon", "pulsar", "pentadecathlon"],
             "default": "random",
         },
-        "time": {
-            "description": "animation time (0-6.28)",
-            "min": 0.0, "max": 6.28, "default": 0.0,
-        },
         "anim_mode": {
             "description": "animation mode",
             "choices": ["simulate", "f2l", "rule_cycle", "density_sweep", "size_morph",
