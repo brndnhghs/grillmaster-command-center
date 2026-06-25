@@ -1,0 +1,16 @@
+"""Auto-import all chord node modules. Each module registers its nodes into the registry."""
+from . import (
+    tonic,
+    function,
+    cadence,
+    modulation,
+    rest,
+    pedal,
+    tension_shaper,
+    substitution,
+    voice_leader,
+    bass,
+    arpeggiator,
+    rhythm,
+    color,
+)

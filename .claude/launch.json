@@ -7,6 +7,13 @@
       "runtimeArgs": ["-m", "image_pipeline.server"],
       "port": 7860,
       "autoPort": false
+    },
+    {
+      "name": "chord-bot-server",
+      "runtimeExecutable": "/opt/homebrew/bin/python3",
+      "runtimeArgs": ["-m", "chord_bot.server"],
+      "port": 7861,
+      "autoPort": false
     }
   ]
 }

@@ -21,6 +21,6 @@ watchdog>=4.0.0         # file-system watcher for method hot-reload
 # scikit-image     # resize step in some fractal methods
 # pyfiglet         # ASCII-art / typography methods (cli_tools)
 # qrcode           # method #09 QR Code
-# moderngl         # method #82 GPU Shaders
+moderngl          # method #82 GPU Shaders
 # torch            # method #21 Stable Diffusion 1.5 (ml_models; pulls ~2GB+)
 # diffusers        # method #21 Stable Diffusion 1.5 (ml_models)

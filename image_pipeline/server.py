@@ -34,6 +34,10 @@ from image_pipeline.core.registry import unregister as _unregister_method, get_i
 from image_pipeline.core.animation import JobCancelled
 from image_pipeline.core.graph import GraphExecutor, GraphError
 from image_pipeline.core.port_types import all_port_types
+from image_pipeline.core import cache as _cache
+from image_pipeline.core.quality import check as _quality_check
+from image_pipeline.core.postprocess import apply_filter as _apply_filter
+from image_pipeline.core.annotator import annotate_image as _annotate_image
 import image_pipeline.methods  # noqa: F401
 
 OUTPUT_ROOT = Path(__file__).resolve().parent / "output"
@@ -133,6 +137,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Image Pipeline", lifespan=lifespan)
 app.mount("/output", StaticFiles(directory=str(OUTPUT_ROOT)), name="output")
+
+# ── Chord Bot sub-application (served at /chordbot/) ─────────────────
+from chord_bot.server import app as _chord_app  # noqa: E402
+app.mount("/chordbot", _chord_app)
 
 # ── Thread-safe stdout/stderr proxy ──────────────────────────────────
 # Each job thread installs its own writer via the proxy instead of replacing
@@ -266,6 +274,8 @@ class GenerateRequest(BaseModel):
     animate: bool = False
     fps: int = 24
     duration: float = 3.0
+    filter: str | None = None  # postprocess filter spec, e.g. "oil" or '{"effect":"bloom"}'
+    demo: bool = False          # overlay param annotations on output image
 
 
 @app.post("/api/generate")
@@ -289,7 +299,8 @@ def generate(req: GenerateRequest):
     thread = threading.Thread(
         target=_run_job,
         args=(job_id, req.method_id, req.seed, req.params or None,
-              req.animate, req.fps, req.duration, out_dir),
+              req.animate, req.fps, req.duration, out_dir,
+              req.filter, req.demo),
         daemon=True,
     )
     thread.start()
@@ -351,7 +362,7 @@ def _encode_frame(arr) -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
-def _run_job(job_id, method_id, seed, params, animate, fps, duration, out_dir):
+def _run_job(job_id, method_id, seed, params, animate, fps, duration, out_dir, filter_spec=None, demo=False):
     job = _jobs[job_id]
     q = job["q"]
     cancel_event: threading.Event = job["cancel_event"]
@@ -408,25 +419,55 @@ def _run_job(job_id, method_id, seed, params, animate, fps, duration, out_dir):
                 q.put(("error", "Animation failed — method has no natural animation frames"))
 
         else:
-            try:
-                meta.fn(out_dir, seed, params=params)
-            except TypeError as _e:
-                if "unexpected keyword argument" not in str(_e):
-                    raise
-                meta.fn(out_dir, seed)
-
-            if cancel_event.is_set():
-                q.put(("error", "Cancelled"))
-                return
-
-            pngs = sorted(out_dir.glob("*.png"))
-            if pngs:
-                out_path = pngs[-1]
-                job["output_path"] = str(out_path)
-                job["type"] = "image"
-                q.put(("done", {"output_path": str(out_path), "type": "image"}))
+            # ── Cache check ──
+            cached_path = _cache.exists(method_id, seed, out_dir, params)
+            if cached_path and not cancel_event.is_set():
+                q.put(("progress", "⊛ cache hit"))
+                out_path = out_dir / cached_path.name
+                shutil.copy2(str(cached_path), str(out_path))
             else:
-                q.put(("error", "No PNG output produced"))
+                try:
+                    meta.fn(out_dir, seed, params=params)
+                except TypeError as _e:
+                    if "unexpected keyword argument" not in str(_e):
+                        raise
+                    meta.fn(out_dir, seed)
+
+                if cancel_event.is_set():
+                    q.put(("error", "Cancelled"))
+                    return
+
+                pngs = sorted(out_dir.glob("*.png"))
+                if not pngs:
+                    q.put(("error", "No PNG output produced"))
+                    return
+
+                out_path = pngs[-1]
+                # ── Cache store ──
+                _cache.store(method_id, seed, out_path, params)
+
+            # ── Quality check ──
+            report = _quality_check(out_path)
+            if not report.passed:
+                q.put(("progress", f"⚠ quality: {'; '.join(report.issues)}"))
+
+            # ── Post-process filter ──
+            if filter_spec:
+                try:
+                    _apply_filter(out_path, filter_spec)
+                except Exception as _fe:
+                    q.put(("progress", f"⚠ filter: {_fe}"))
+
+            # ── Demo annotation ──
+            if demo:
+                try:
+                    _annotate_image(method_id, out_path)
+                except Exception as _ae:
+                    q.put(("progress", f"⚠ demo: {_ae}"))
+
+            job["output_path"] = str(out_path)
+            job["type"] = "image"
+            q.put(("done", {"output_path": str(out_path), "type": "image"}))
 
     except Exception as exc:
         q.put(("error", str(exc)))

@@ -350,8 +350,18 @@
   #graph-sidebar {
     width: 220px; flex-shrink: 0; background: var(--bg1);
     border-right: 1px solid var(--border); display: flex; flex-direction: column;
-    overflow: hidden;
+    overflow: hidden; transition: width 0.18s ease;
   }
+  #graph-sidebar.gsidebar-collapsed { width: 0; border-right: none; }
+  #graph-sidebar.gsidebar-collapsed * { display: none; }
+  #graph-sidebar-toggle-float {
+    position: absolute; top: 8px; left: 0;
+    z-index: 30; background: var(--bg2); border: 1px solid var(--border);
+    border-left: none; border-radius: 0 6px 6px 0;
+    padding: 6px 6px; cursor: pointer; color: var(--muted); font-size: 13px;
+    line-height: 1; display: none; transition: color 0.1s, background 0.1s;
+  }
+  #graph-sidebar-toggle-float:hover { color: var(--text); background: var(--bg3); }
   #graph-sidebar-header {
     padding: 10px 12px; border-bottom: 1px solid var(--border);
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -382,7 +392,7 @@
   /* ── Canvas column ────────────────────────────────────── */
   #graph-canvas-col {
     display: flex; flex-direction: column; flex: 1; overflow: hidden;
-    transition: padding-bottom 0.25s ease;
+    transition: padding-bottom 0.25s ease; position: relative;
   }
 
   /* Mobile top bar / bottom bar — hidden on desktop */
@@ -407,10 +417,9 @@
     pointer-events: none; overflow: visible;
   }
   #graph-nodes { position: absolute; inset: 0; }
-  #graph-canvas-wrap::before {
-    content: ''; position: absolute; inset: 0;
+  #graph-canvas-wrap {
     background-image: radial-gradient(circle, #2e3348 1px, transparent 1px);
-    background-size: 24px 24px; pointer-events: none;
+    background-size: 24px 24px;
   }
 
   /* ── Nodes ────────────────────────────────────────────── */
@@ -1099,6 +1108,22 @@
     #tl-name-group { flex-shrink: 0; }
     #tl-encode-area { flex-shrink: 0; }
   }
+  .tl-trim-handle { opacity: 0; transition: opacity 0.1s; }
+  .tl-clip-bar:hover .tl-trim-handle { opacity: 1; }
+  #tl-ctx-menu {
+    position: fixed; z-index: 9999; background: var(--bg2);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 0; min-width: 130px; box-shadow: 0 6px 20px rgba(0,0,0,0.45);
+    display: none;
+  }
+  #tl-ctx-menu button {
+    display: block; width: 100%; text-align: left;
+    padding: 7px 14px; background: none; border: none;
+    color: var(--text); font-size: 12px; cursor: pointer;
+  }
+  #tl-ctx-menu button:hover { background: var(--bg3); }
+  #tl-ctx-menu button.danger { color: #ef4444; }
+  #tl-ctx-menu button.danger:hover { background: rgba(239,68,68,0.12); }
 </style>
 
 <div id="graph-shell">
@@ -1106,7 +1131,8 @@
   <!-- Left sidebar: method palette -->
   <div id="graph-sidebar">
     <div id="graph-sidebar-header">
-      <span>Drag to canvas</span>
+      <span id="graph-sidebar-label">Drag to canvas</span>
+      <button id="graph-sidebar-collapse" aria-label="Expand palette" style="border:none;background:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 4px;line-height:1;flex-shrink:0;">›</button>
       <button id="graph-palette-close" aria-label="Close palette">✕</button>
     </div>
     <div id="graph-method-list"><p style="padding:12px;color:var(--muted);font-size:12px">Loading…</p></div>
@@ -1114,6 +1140,7 @@
 
   <!-- Canvas column -->
   <div id="graph-canvas-col">
+    <button id="graph-sidebar-toggle-float" title="Show palette">☰</button>
 
     <!-- Mobile-only top bar -->
     <div id="graph-mobile-topbar">
@@ -1986,9 +2013,13 @@ function getEventPos(e) {
   if (e.changedTouches && e.changedTouches.length) return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
   return { x: e.clientX, y: e.clientY };
 }
+const GRID = 24; // px — matches background dot spacing
 function gApplyPan() {
   gNodesEl.style.transform = `translate(${gPanX}px,${gPanY}px) scale(${gCanvasScale})`;
   gNodesEl.style.transformOrigin = '0 0';
+  const gs = GRID * gCanvasScale;
+  gCanvasWrap.style.backgroundSize = `${gs}px ${gs}px`;
+  gCanvasWrap.style.backgroundPosition = `${gPanX % gs}px ${gPanY % gs}px`;
 }
 
 // Short display labels for port names
@@ -2136,6 +2167,21 @@ function gClosePalette() {
 gPaletteBtn.addEventListener('click', gOpenPalette);
 gPaletteClose.addEventListener('click', gClosePalette);
 
+const gSidebarCollapseBtn = document.getElementById('graph-sidebar-collapse');
+const gSidebarFloatBtn = document.getElementById('graph-sidebar-toggle-float');
+
+function gSetSidebarCollapsed(collapsed) {
+  gGraphSidebar.classList.toggle('gsidebar-collapsed', collapsed);
+  gSidebarCollapseBtn.textContent = collapsed ? '›' : '‹';
+  gSidebarCollapseBtn.title = collapsed ? 'Expand palette' : 'Collapse palette';
+  gSidebarFloatBtn.style.display = collapsed ? 'block' : 'none';
+}
+
+gSidebarCollapseBtn.addEventListener('click', () => gSetSidebarCollapsed(!gGraphSidebar.classList.contains('gsidebar-collapsed')));
+gSidebarFloatBtn.addEventListener('click', () => gSetSidebarCollapsed(false));
+
+gSetSidebarCollapsed(true);
+
 // ── Params bottom sheet (mobile) ───────────────────────────────
 function gParamsSheetOpen() {
   gParamsPanel.classList.add('gparams-open');
@@ -2206,7 +2252,11 @@ function tlClipAtFrame(timelineFrame) {
     .sort((a, b) => a.lane - b.lane);
   if (!candidates.length) return null;
   const clip = candidates[0];
-  return { seqName: clip.seqName, localFrame: timelineFrame - clip.startFrame };
+  const srcLen = clip.srcLength || (clip.endFrame - clip.startFrame + 1);
+  const trimIn = clip.trimIn || 0;
+  const raw = (timelineFrame - clip.startFrame) + trimIn;
+  const localFrame = ((raw % srcLen) + srcLen) % srcLen;
+  return { seqName: clip.seqName, localFrame };
 }
 
 function tlClearPreview() {
@@ -2626,24 +2676,91 @@ function gRenderGroupNode(node) {
   });
 
   gAttachNodeDrag(el, node);
-  el.querySelectorAll('.gport').forEach(dot => {
-    function portWireStart(e) {
-      e.stopPropagation(); e.preventDefault();
-      if (dot.dataset.dir === 'output') {
-        const pos = gPortPos(dot);
-        gPendingEdge = { src_node: node.id, src_port: dot.dataset.port, x0: pos.x, y0: pos.y };
-        gPendingEl.style.display = '';
-        gUpdatePendingEdge(pos.x, pos.y);
-      }
+
+  // Helpers: find best matching port dot, preferring type match
+  function _nearestPort(dir, ptype) {
+    const dots = [...el.querySelectorAll(`.gport[data-dir="${dir}"]`)];
+    if (!dots.length) return null;
+    if (ptype) {
+      const typed = dots.find(d => d.dataset.ptype === ptype.toLowerCase());
+      if (typed) return typed;
     }
-    dot.addEventListener('mousedown', portWireStart);
-    dot.addEventListener('mouseup', e => {
-      e.stopPropagation();
-      if (gPendingEdge && dot.dataset.dir === 'input')
-        gAddEdge(gPendingEdge.src_node, gPendingEdge.src_port, node.id, dot.dataset.port);
-      gPendingEdge = null; gPendingEl.style.display = 'none';
+    return dots[0];
+  }
+
+  function _startWireFrom(dot, e) {
+    const pos = gPortPos(dot);
+    gPendingEdge = { src_node: node.id, src_port: dot.dataset.port, x0: pos.x, y0: pos.y };
+    gPendingEl.style.display = '';
+    const r = gCanvasWrap.getBoundingClientRect();
+    gUpdatePendingEdge(e.clientX - r.left, e.clientY - r.top);
+  }
+
+  function _acceptWireAt(dot, e) {
+    e.stopPropagation();
+    if (!gPendingEdge) return;
+    if (gPendingEdge.reverse && dot.dataset.dir === 'output')
+      gAddEdge(node.id, dot.dataset.port, gPendingEdge.dst_node, gPendingEdge.dst_port);
+    else if (!gPendingEdge.reverse && dot.dataset.dir === 'input')
+      gAddEdge(gPendingEdge.src_node, gPendingEdge.src_port, node.id, dot.dataset.port);
+    gPendingEdge = null; gPendingEl.style.display = 'none';
+  }
+
+  // Port-row hit areas (entire row, not just the dot)
+  el.querySelectorAll('.gnode-port-row').forEach(row => {
+    const dir = row.classList.contains('output') ? 'output' : 'input';
+    const dot = row.querySelector('.gport');
+    if (!dot) return;
+    row.style.cursor = dir === 'output' ? 'crosshair' : 'cell';
+    row.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      if (e.target.closest('.gport')) return; // dot handles itself
+      e.stopPropagation(); e.preventDefault();
+      if (dir === 'output') _startWireFrom(dot, e);
     });
-    dot.addEventListener('touchstart', portWireStart, { passive: false });
+    row.addEventListener('mouseup', e => {
+      if (e.target.closest('.gport')) return;
+      _acceptWireAt(dot, e);
+    });
+  });
+
+  // Large zone on node body: left half = accept input, right half = start output
+  el.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    if (e.target.closest('.gnode-port-row, .gnode-header, .gport')) return;
+    const nr = el.getBoundingClientRect();
+    const isRight = (e.clientX - nr.left) > nr.width / 2;
+    if (!isRight) return; // left half — let node drag handle it
+    const ptype = gPendingEdge?.ptype;
+    const dot = _nearestPort('output', ptype);
+    if (!dot) return;
+    e.stopPropagation(); e.preventDefault();
+    _startWireFrom(dot, e);
+  });
+  el.addEventListener('mouseup', e => {
+    if (!gPendingEdge) return;
+    if (e.target.closest('.gnode-port-row, .gport')) return;
+    const nr = el.getBoundingClientRect();
+    const isLeft = (e.clientX - nr.left) <= nr.width / 2;
+    if (!isLeft) return;
+    const ptype = gPendingEdge?.src_ptype;
+    const dot = _nearestPort('input', ptype);
+    if (!dot) return;
+    _acceptWireAt(dot, e);
+  });
+
+  // Dot-level listeners (still work for precision)
+  el.querySelectorAll('.gport').forEach(dot => {
+    dot.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      e.stopPropagation(); e.preventDefault();
+      if (dot.dataset.dir === 'output') _startWireFrom(dot, e);
+    });
+    dot.addEventListener('mouseup', e => _acceptWireAt(dot, e));
+    dot.addEventListener('touchstart', e => {
+      e.stopPropagation(); e.preventDefault();
+      if (dot.dataset.dir === 'output') _startWireFrom(dot, e.touches[0]);
+    }, { passive: false });
   });
 }
 
@@ -2999,29 +3116,75 @@ function gRenderNode(node) {
     if (dx < 8 && dy < 8 && dt < 300) gSelectNode(node.id);
   });
   gAttachNodeDrag(el, node);
-  el.querySelectorAll('.gport').forEach(dot => {
-    function portWireStart(e) {
+
+  function _nearestPort2(dir, ptype) {
+    const dots = [...el.querySelectorAll(`.gport[data-dir="${dir}"]`)];
+    if (!dots.length) return null;
+    if (ptype) { const t = dots.find(d => d.dataset.ptype === ptype.toLowerCase()); if (t) return t; }
+    return dots[0];
+  }
+  function _startWireFrom2(dot, e) {
+    const pos = gPortPos(dot);
+    gPendingEdge = { src_node: node.id, src_port: dot.dataset.port, x0: pos.x, y0: pos.y };
+    gPendingEl.style.display = '';
+    const r = gCanvasWrap.getBoundingClientRect();
+    gUpdatePendingEdge(e.clientX - r.left, e.clientY - r.top);
+  }
+  function _acceptWireAt2(dot, e) {
+    e.stopPropagation();
+    if (!gPendingEdge) return;
+    if (gPendingEdge.reverse && dot.dataset.dir === 'output')
+      gAddEdge(node.id, dot.dataset.port, gPendingEdge.dst_node, gPendingEdge.dst_port);
+    else if (!gPendingEdge.reverse && dot.dataset.dir === 'input')
+      gAddEdge(gPendingEdge.src_node, gPendingEdge.src_port, node.id, dot.dataset.port);
+    gPendingEdge = null; gPendingEl.style.display = 'none';
+  }
+
+  el.querySelectorAll('.gnode-port-row').forEach(row => {
+    const dir = row.classList.contains('output') ? 'output' : 'input';
+    const dot = row.querySelector('.gport');
+    if (!dot) return;
+    row.style.cursor = dir === 'output' ? 'crosshair' : 'cell';
+    row.addEventListener('mousedown', e => {
+      if (e.button !== 0 || e.target.closest('.gport')) return;
       e.stopPropagation(); e.preventDefault();
-      if (dot.dataset.dir === 'output') {
-        const pos = gPortPos(dot);
-        gPendingEdge = { src_node: node.id, src_port: dot.dataset.port, x0: pos.x, y0: pos.y };
-        gPendingEl.style.display = '';
-        gUpdatePendingEdge(pos.x, pos.y);
-      }
-    }
-    dot.addEventListener('mousedown', portWireStart);
-    dot.addEventListener('mouseup', e => {
-      // Mouse: mouseup fires on the element under the cursor, so this correctly
-      // identifies the destination input port by closing over `dot` and `node`.
-      e.stopPropagation();
-      if (gPendingEdge && dot.dataset.dir === 'input')
-        gAddEdge(gPendingEdge.src_node, gPendingEdge.src_port, node.id, dot.dataset.port);
-      gPendingEdge = null; gPendingEl.style.display = 'none';
+      if (dir === 'output') _startWireFrom2(dot, e);
     });
-    dot.addEventListener('touchstart', portWireStart, { passive: false });
-    // touchend is intentionally NOT on individual dots:
-    // touchend always fires on the origin element (the output port where touch started),
-    // not where the finger lands. The document-level touchend uses elementFromPoint instead.
+    row.addEventListener('mouseup', e => {
+      if (e.target.closest('.gport')) return;
+      _acceptWireAt2(dot, e);
+    });
+  });
+
+  el.addEventListener('mousedown', e => {
+    if (e.button !== 0 || e.target.closest('.gnode-port-row, .gnode-header, .gport')) return;
+    const nr = el.getBoundingClientRect();
+    if ((e.clientX - nr.left) <= nr.width / 2) return;
+    const dot = _nearestPort2('output');
+    if (!dot) return;
+    e.stopPropagation(); e.preventDefault();
+    _startWireFrom2(dot, e);
+  });
+  el.addEventListener('mouseup', e => {
+    if (!gPendingEdge || e.target.closest('.gnode-port-row, .gport')) return;
+    const nr = el.getBoundingClientRect();
+    if ((e.clientX - nr.left) > nr.width / 2) return;
+    const dot = _nearestPort2('input');
+    if (!dot) return;
+    _acceptWireAt2(dot, e);
+  });
+
+  el.querySelectorAll('.gport').forEach(dot => {
+    dot.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      e.stopPropagation(); e.preventDefault();
+      if (dot.dataset.dir === 'output') _startWireFrom2(dot, e);
+    });
+    dot.addEventListener('mouseup', e => _acceptWireAt2(dot, e));
+    dot.addEventListener('touchstart', e => {
+      e.stopPropagation(); e.preventDefault();
+      if (dot.dataset.dir === 'output') _startWireFrom2(dot, e.touches[0]);
+    }, { passive: false });
   });
 }
 
@@ -3034,8 +3197,7 @@ function gPortPos(dotEl) {
 function gUpdatePendingEdge(x1, y1) {
   if (!gPendingEdge) return;
   const { x0, y0 } = gPendingEdge;
-  const dx = Math.abs(x1 - x0) / 2 + 80;
-  gPendingEl.setAttribute('d', `M${x0},${y0} C${x0+dx},${y0} ${x1-dx},${y1} ${x1},${y1}`);
+  gPendingEl.setAttribute('d', `M${x0},${y0} L${x1},${y1}`);
 }
 document.addEventListener('mousemove', e => {
   if (!gPendingEdge) return;
@@ -3118,7 +3280,7 @@ function gAttachNodeDrag(el, node) {
 
 // ── Push-apart & Physics ────────────────────────────────────────
 const PHYSICS = {
-  k_r: 40000, k_s_push: 0, k_s_pull: 0, rest: 250, damping: 0.80, k_c: 0.001,
+  k_r: 40000, k_s_push: 0, k_s_pull: 0, rest: 125, damping: 0.80, k_c: 0.001,
   k_lane: 0.06, k_dir: 0.5, lane_width: 280, margin: 80, dt: 1.0,
 };
 let gPhysicsActive = false;
@@ -3184,6 +3346,27 @@ function gPhysicsKick() {
   gPhysicsRafId = requestAnimationFrame(gPhysicsTick);
 }
 
+function gPhysicsBurst(ticks = 80) {
+  // Run physics for a fixed number of ticks regardless of gPhysicsActive.
+  // Used when combine nodes are auto-spawned so they settle immediately.
+  gDepths = null;
+  const wasActive = gPhysicsActive;
+  gPhysicsActive = true;
+  let t = 0;
+  function tick() {
+    gPhysicsTick();
+    if (++t < ticks && gPhysicsRafId === null) {
+      gPhysicsRafId = requestAnimationFrame(tick);
+    } else if (t >= ticks) {
+      if (!wasActive) {
+        gPhysicsActive = false;
+        gPhysicsRafId = null;
+      }
+    }
+  }
+  if (!gPhysicsRafId) gPhysicsRafId = requestAnimationFrame(tick);
+}
+
 function gPhysicsTick() {
   gPhysicsRafId = null;
   if (!gPhysicsActive || gNodes.length < 2) return;
@@ -3228,9 +3411,8 @@ function gPhysicsTick() {
 
       // Soft repulsion — 1/d² with minimum-distance clamp to prevent singularity oscillation.
       const effD = Math.max(d, (w + mw) / 6);
-      const sameLane = (gDepths.get(m.id) ?? -1) === nDepth;
-      const f = PHYSICS.k_r * (sameLane ? 2.5 : 1.0) / (effD * effD);
-      fx += ux * f; fy += uy * f;
+      const f = PHYSICS.k_r / (effD * effD);
+      fx += ux * f; fy += uy * f * 0.15;
     }
 
     // Edge spring attraction (radial, bidirectional)
@@ -3254,7 +3436,7 @@ function gPhysicsTick() {
     // Weak vertical centering (don't apply horizontal — lane force owns that axis)
     fy += PHYSICS.k_c * (ccy - ncy);
 
-    // Integrate
+    // Integrate — dampen vertical force to reduce excessive up/down drift
     n._vx = (n._vx + fx * PHYSICS.dt) * PHYSICS.damping;
     n._vy = (n._vy + fy * PHYSICS.dt) * PHYSICS.damping;
     n.x  += n._vx * PHYSICS.dt;
@@ -3303,8 +3485,19 @@ function gPhysicsTick() {
   gRedrawEdges();
   let maxV = 0;
   for (const n of gNodes) maxV = Math.max(maxV, Math.hypot(n._vx || 0, n._vy || 0));
-  if (maxV > 0.5) gPhysicsRafId = requestAnimationFrame(gPhysicsTick);
-  else gSave();
+  if (maxV > 0.5) {
+    gPhysicsRafId = requestAnimationFrame(gPhysicsTick);
+  } else {
+    // Snap to grid when settled
+    for (const n of gNodes) {
+      n.x = Math.round(n.x / GRID) * GRID;
+      n.y = Math.round(n.y / GRID) * GRID;
+      const el = document.getElementById('gnode-' + n.id);
+      if (el) { el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; }
+    }
+    gRedrawEdges();
+    gSave();
+  }
 }
 
 function gPhysicsToggle() {
@@ -3352,7 +3545,7 @@ function gAddEdge(src_node, src_port, dst_node, dst_port) {
     gEdges.push({ id: 'e'+(++gEdgeCounter), src_node: mergeNode.id,      src_port: spec.out_port,     dst_node,               dst_port,                feedback: false });
     gUpdateConnectedPorts();
     if (gSelectedNode === dst_node) gRefreshParamOverrides(dst_node);
-    gRedrawEdges(); gSave(); gPhysicsKick();
+    gRedrawEdges(); gSave(); gPhysicsBurst();
     return;
   }
 
@@ -3394,6 +3587,25 @@ function gRedrawEdges() {
     path.setAttribute('class', 'gedge' + (edge.feedback ? ' feedback' : ''));
     path.dataset.eid = edge.id;
     path.addEventListener('contextmenu', ev => { ev.preventDefault(); gShowEdgeCtx(edge.id, ev.clientX, ev.clientY); });
+    path.addEventListener('mousedown', ev => {
+      if (ev.button !== 0) return;
+      ev.stopPropagation(); ev.preventDefault();
+      const r = gCanvasWrap.getBoundingClientRect();
+      const mx = ev.clientX - r.left, my = ev.clientY - r.top;
+      // Pick the closer end to detach
+      const d0 = Math.hypot(mx - p0.x, my - p0.y);
+      const d1 = Math.hypot(mx - p1.x, my - p1.y);
+      gDeleteEdge(edge.id);
+      if (d0 < d1) {
+        // Detach from src — keep dst fixed, drag from dst back to a new src
+        gPendingEdge = { dst_node: edge.dst_node, dst_port: edge.dst_port, x0: p1.x, y0: p1.y, reverse: true };
+      } else {
+        // Detach from dst — keep src fixed, drag from src to a new dst
+        gPendingEdge = { src_node: edge.src_node, src_port: edge.src_port, x0: p0.x, y0: p0.y };
+      }
+      gPendingEl.style.display = '';
+      gUpdatePendingEdge(mx, my);
+    });
     path.addEventListener('mouseenter', async ev => {
       if (!gLastGraphJobId) return;
       try {
@@ -4146,16 +4358,92 @@ function renderTimelineRuler() {
 
       const bar = document.createElement('div');
       bar.className = 'tl-clip-bar';
-      bar.style.cssText = `position:absolute;top:4px;left:${barX}px;width:${barW}px;height:${laneHeight - 8}px;background:${clip.color || '#4a6cf7'};border-radius:4px;cursor:grab;display:flex;align-items:center;padding:0 6px;font-size:10px;color:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;z-index:5;`;
+      bar.style.cssText = `position:absolute;top:4px;left:${barX}px;width:${barW}px;height:${laneHeight - 8}px;background:${clip.color || '#4a6cf7'};border-radius:4px;cursor:grab;display:flex;align-items:center;padding:0 14px;font-size:10px;color:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;z-index:5;`;
       bar.textContent = clip.name;
       bar.title = `${clip.name} (F${clip.startFrame}-F${clip.endFrame})`;
       bar.dataset.clipId = clip.id;
 
+      // Trim handles
+      const handleStyle = `position:absolute;top:0;width:10px;height:100%;cursor:ew-resize;z-index:10;display:flex;align-items:center;justify-content:center;`;
+      const trimL = document.createElement('div');
+      trimL.className = 'tl-trim-handle';
+      trimL.style.cssText = handleStyle + 'left:0;border-radius:4px 0 0 4px;background:rgba(0,0,0,0.25);';
+      trimL.innerHTML = `<svg width="3" height="12" viewBox="0 0 3 12"><rect x="0" y="0" width="1" height="12" fill="rgba(255,255,255,0.6)"/><rect x="2" y="0" width="1" height="12" fill="rgba(255,255,255,0.6)"/></svg>`;
+      const trimR = document.createElement('div');
+      trimR.className = 'tl-trim-handle';
+      trimR.style.cssText = handleStyle + 'right:0;border-radius:0 4px 4px 0;background:rgba(0,0,0,0.25);';
+      trimR.innerHTML = `<svg width="3" height="12" viewBox="0 0 3 12"><rect x="0" y="0" width="1" height="12" fill="rgba(255,255,255,0.6)"/><rect x="2" y="0" width="1" height="12" fill="rgba(255,255,255,0.6)"/></svg>`;
+      bar.appendChild(trimL);
+      bar.appendChild(trimR);
+
+      // Loop zone overlay — shows looped sections with a stripe pattern
+      const srcLen = clip.srcLength || (clip.endFrame - clip.startFrame + 1);
+      const trimIn = clip.trimIn || 0;
+      const originalFramesLeft = srcLen - trimIn; // frames until first loop boundary
+      const firstLoopPx = originalFramesLeft * 12; // px from bar left edge
+      if (firstLoopPx < barW) {
+        // Draw repeating loop zone stripes past the original content boundary
+        const loopZone = document.createElement('div');
+        loopZone.style.cssText = `position:absolute;top:0;left:${firstLoopPx}px;right:0;bottom:0;
+          background:repeating-linear-gradient(135deg,
+            rgba(0,0,0,0) 0px, rgba(0,0,0,0) 6px,
+            rgba(0,0,0,0.22) 6px, rgba(0,0,0,0.22) 8px);
+          border-left:1.5px solid rgba(255,255,255,0.35);
+          border-radius:0 4px 4px 0;pointer-events:none;z-index:2;`;
+        bar.appendChild(loopZone);
+      }
+      // If trimIn > 0, mark the front-trimmed zone (loop content at start)
+      if (trimIn > 0) {
+        // Already handled by localFrame mod — no visual needed beyond the trim itself
+      }
+
+      const addTrimListener = (handle, side) => {
+        handle.addEventListener('mousedown', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          const startX = e.clientX;
+          const origStart = clip.startFrame;
+          const origEnd = clip.endFrame;
+          const origTrimIn = clip.trimIn || 0;
+          document.body.style.cursor = 'ew-resize';
+
+          const onMove = (me) => {
+            const delta = Math.round((me.clientX - startX) / 12);
+            if (side === 'L') {
+              // Left trim: move start AND shift trimIn to maintain source alignment
+              const newStart = Math.max(0, Math.min(origStart + delta, origEnd - 1));
+              clip.startFrame = newStart;
+              clip.trimIn = origTrimIn + (newStart - origStart);
+            } else {
+              // Right trim/extend: only move endFrame (looping handled by modulo)
+              clip.endFrame = Math.max(origStart + 1, origEnd + delta);
+            }
+            bar.style.left = Math.max(0, (clip.startFrame - start) * 12) + 'px';
+            bar.style.width = Math.max(4, (clip.endFrame - clip.startFrame + 1) * 12) + 'px';
+            bar.title = `${clip.name} (F${clip.startFrame}-F${clip.endFrame})`;
+            tlLoadFrame(parseInt(tlFrame.value) || 0);
+          };
+
+          const onUp = () => {
+            document.body.style.cursor = '';
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            clip._origStart = clip.startFrame;
+            clip._origEnd = clip.endFrame;
+            renderTimelineRuler();
+            tlSaveClips();
+          };
+
+          document.addEventListener('mousemove', onMove);
+          document.addEventListener('mouseup', onUp);
+        });
+      };
+      addTrimListener(trimL, 'L');
+      addTrimListener(trimR, 'R');
+
       // Click to select clip and show its keyframe lanes
       bar.addEventListener('click', (e) => {
         e.stopPropagation();
-        document.querySelectorAll('.tl-clip-bar.selected').forEach(el => el.classList.remove('selected'));
-        bar.classList.add('selected');
         tlSelectClip(clip.id);
       });
 
@@ -4164,6 +4452,7 @@ function renderTimelineRuler() {
       bar.addEventListener('mousedown', (e) => {
         if (e.button !== 0) return;
         e.stopPropagation();
+        tlClips.forEach(c => { c._selected = (c.id === clip.id); });
         const origLane = clip.lane;
         let targetLane = origLane;
         let laneMode = false;   // true once cursor has left the origin lane
@@ -4184,7 +4473,7 @@ function renderTimelineRuler() {
 
           const lanesRect = lanes.getBoundingClientRect();
           const relY = me.clientY - lanesRect.top;
-          const rawLane = Math.max(0, Math.round(relY / laneHeight));
+          const rawLane = Math.max(0, Math.floor(relY / laneHeight));
           const hoveredLane = tlNearestFreeLane(rawLane, clip.id);
 
           // Activate lane mode the first time cursor enters a different lane
@@ -4259,8 +4548,9 @@ function renderTimelineRuler() {
           if (cancelEl) { cancelEl.remove(); cancelEl = null; }
           const dx = (parseInt(bar.style.left) || barX) - barX;
           const frameDelta = Math.round(dx / 12);
+          const trimmedDuration = clip.endFrame - clip.startFrame;
           clip.startFrame = Math.max(0, dragOrigStart + frameDelta);
-          clip.endFrame = clip.startFrame + (clip._origEnd - clip._origStart);
+          clip.endFrame = clip.startFrame + trimmedDuration;
           clip.lane = (laneMode && !inCancel) ? targetLane : origLane;
           renderTimelineRuler();
           document.removeEventListener('mousemove', onMove);
@@ -4357,6 +4647,31 @@ function tlSelectClip(clipId) {
   renderTimelineRuler();
 }
 
+function tlDeleteClip(clipId) {
+  tlClips = tlClips.filter(c => c.id !== clipId);
+  tlSaveClips();
+  renderTimelineRuler();
+}
+
+// Delete key removes selected clip
+document.addEventListener('keydown', (e) => {
+  const tag = document.activeElement?.tagName;
+  const isInput = tag === 'INPUT' || tag === 'TEXTAREA';
+
+  if (e.key === ' ' && !isInput) {
+    e.preventDefault();
+    tlPlay.click();
+    return;
+  }
+
+  if ((e.key === 'Delete' || e.key === 'Backspace') && !isInput) {
+    const sel = tlClips.find(c => c._selected);
+    if (!sel) return;
+    e.preventDefault();
+    tlDeleteClip(sel.id);
+  }
+});
+
 function tlAddClip(name, seqName, startFrame, endFrame, nodeId, paramKeyframes) {
   const id = 'clip_' + (++tlClipIdCounter);
   const lane = tlNextFreeLane();
@@ -4365,6 +4680,8 @@ function tlAddClip(name, seqName, startFrame, endFrame, nodeId, paramKeyframes) 
   const clip = {
     id, name, seqName, startFrame, endFrame, lane, color,
     nodeId, paramKeyframes: JSON.parse(JSON.stringify(paramKeyframes || {})),
+    srcLength: endFrame - startFrame + 1,
+    trimIn: 0,
     _origStart: startFrame, _origEnd: endFrame,
   };
   tlClips.push(clip);
@@ -4387,6 +4704,8 @@ function tlLoadClips() {
     const data = localStorage.getItem('tl-clips');
     if (data) {
       tlClips = JSON.parse(data).map(c => ({
+        srcLength: c.endFrame - c.startFrame + 1,
+        trimIn: 0,
         ...c,
         _origStart: c.startFrame,
         _origEnd: c.endFrame,
@@ -4547,27 +4866,7 @@ tlPlay.addEventListener('click', () => {
       const next = cur >= end ? st : cur + 1;
       tlFrame.value = next;
       updatePlayhead();
-      const hit = tlClipAtFrame(next);
-      if (!hit) { tlClearPreview(); }
-      else if (gLivePreviewImg) {
-        // Cancel any in-flight fetch from a previous tick
-        if (_tlFrameAbort) { _tlFrameAbort.abort(); }
-        _tlFrameAbort = new AbortController();
-        const gen = ++_tlPlayGen;
-        const ctrl = _tlFrameAbort;
-        fetch(`/api/sequences/${encodeURIComponent(hit.seqName)}/${hit.localFrame}`, { signal: ctrl.signal })
-          .then(r => r.ok ? r.blob() : null)
-          .then(blob => {
-            // Discard if a newer fetch has already resolved
-            if (gen !== _tlPlayGen || !blob) return;
-            const url = URL.createObjectURL(blob);
-            if (gLivePreviewImg._tlUrl) URL.revokeObjectURL(gLivePreviewImg._tlUrl);
-            gLivePreviewImg._tlUrl = url;
-            gLivePreviewImg.src = url;
-            gLivePreviewImg.style.opacity = '1';
-          })
-          .catch(() => {});
-      }
+      tlLoadFrame(next);
     }, delay);
   } else {
     clearInterval(tlPlayTimer);
@@ -5464,5 +5763,43 @@ tlLoadClips();
 renderTimelineRuler();
 </script>
 
+<div id="tl-ctx-menu">
+  <button id="tl-ctx-delete" class="danger">Delete clip</button>
+</div>
+
+<script>
+(function() {
+  const menu = document.getElementById('tl-ctx-menu');
+  const menuDelete = document.getElementById('tl-ctx-delete');
+  let ctxClipId = null;
+
+  function showCtxMenu(x, y, clipId) {
+    ctxClipId = clipId;
+    menu.style.display = 'block';
+    const mw = menu.offsetWidth, mh = menu.offsetHeight;
+    menu.style.left = Math.min(x, window.innerWidth - mw - 4) + 'px';
+    menu.style.top  = Math.min(y, window.innerHeight - mh - 4) + 'px';
+  }
+
+  function hideCtxMenu() { menu.style.display = 'none'; ctxClipId = null; }
+
+  document.addEventListener('click', hideCtxMenu);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideCtxMenu(); });
+
+  menuDelete.addEventListener('click', () => {
+    if (ctxClipId) tlDeleteClip(ctxClipId);
+    hideCtxMenu();
+  });
+
+  // Delegate contextmenu on clip bars
+  document.addEventListener('contextmenu', (e) => {
+    const bar = e.target.closest('.tl-clip-bar');
+    if (!bar) return;
+    e.preventDefault();
+    tlSelectClip(bar.dataset.clipId);
+    showCtxMenu(e.clientX, e.clientY, bar.dataset.clipId);
+  });
+})();
+</script>
 </body>
 </html>
