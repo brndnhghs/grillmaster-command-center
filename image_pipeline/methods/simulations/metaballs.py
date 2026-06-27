@@ -44,6 +44,7 @@ def _render_sandpile_preview(grid, colors, size, h, w):
     return result
 
 @method(id="53", name="Metaballs", category="simulations", tags=["organic", "blob", "animation", "expanded"],
+         inputs={"image_in": "IMAGE"},
          params={
              "balls": {"description": "metaball count", "min": 3, "max": 80, "default": 20},
              "radius_min": {"description": "minimum metaball radius", "min": 5, "max": 80, "default": 30},
@@ -801,7 +802,18 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
             return np.stack([r, g, b], axis=-1)
 
         # ── Background rendering ────────────────────────────────────────
+        # If an upstream image is wired in, use it as the background
+        _wired_bg = None
+        wired_input_path = params.get("input_image", "")
+        if wired_input_path:
+            try:
+                _wired_bg = load_input(wired_input_path, W, H)
+            except (FileNotFoundError, OSError):
+                pass
+
         def _render_bg():
+            if _wired_bg is not None:
+                return _wired_bg.copy()
             if bg_style == "light":
                 return np.ones((H, W, 3), dtype=np.float32) * 0.9
             elif bg_style == "gradient":

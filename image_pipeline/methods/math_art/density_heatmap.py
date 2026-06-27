@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, get_font, BG_DEFAULT, W, H, write_field
+from ...core.utils import save, norm, mn, seed_all, get_font, BG_DEFAULT, W, H, write_field, load_input
 from ...core.animation import capture_frame
 
 try:
@@ -17,6 +17,7 @@ except ImportError:
     _has_cv2 = False
 
 @method(id="43", name="Density Heatmap", category="math_art", tags=["density","fast", "expanded"],
+        inputs={"image_in": "IMAGE"},
         outputs={"image": "IMAGE", "field": "FIELD"},
          params={"points":{"description":"point count","min":1000,"max":20000,"default":5000},
                  "sigma":{"description":"blur sigma","min":5,"max":100,"default":30},
@@ -110,6 +111,21 @@ def method_density_heatmap(out_dir: Path, seed: int, params=None):
 
     # ── Generate points ──
     pts = []
+
+    # If an upstream image is wired in, use it as the density source
+    wired_input_path = params.get("input_image", "")
+    if wired_input_path:
+        try:
+            img_arr = load_input(wired_input_path, W, H)
+            # Use luminance as density
+            density = 0.299 * img_arr[:, :, 0] + 0.587 * img_arr[:, :, 1] + 0.114 * img_arr[:, :, 2]
+            density = norm(density)
+            write_field(out_dir, density)
+            # Skip point generation — render directly from density
+            src = "__wired__"
+        except (FileNotFoundError, OSError):
+            pass
+
     if src == "gaussian_cluster":
         cx, cy = W / 2, H / 2
         pts = rng.standard_normal((n_pts, 2)) * np.array([sigma, sigma]) + np.array([cx, cy])
@@ -150,10 +166,11 @@ def method_density_heatmap(out_dir: Path, seed: int, params=None):
 
     # ── Density ──
     density = np.zeros((H, W), dtype=np.float32)
-    for x, y in pts:
-        ix, iy = int(x), int(y)
-        if 0 <= ix < W and 0 <= iy < H:
-            density[iy, ix] += 1
+    if src != "__wired__":
+        for x, y in pts:
+            ix, iy = int(x), int(y)
+            if 0 <= ix < W and 0 <= iy < H:
+                density[iy, ix] += 1
     if kernel_type == "gaussian":
         density = cv2.GaussianBlur(density, (0, 0), sigmaX=sigma, sigmaY=sigma)
     elif kernel_type == "exponential":

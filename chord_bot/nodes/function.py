@@ -16,6 +16,7 @@ from ..types import (
     build_chord_name,
     compute_voices,
     compute_bass,
+    degree_to_numeral,
     SCALE_INTERVALS,
     QUALITY_INTERVALS,
 )
@@ -334,4 +335,6 @@ def node_function(state: HarmonicState, params: dict) -> HarmonicState:
         velocity=velocity,
         bass_note=bass,
         arp_pattern=state.arp_pattern,
+        numeral=degree_to_numeral(best_degree, quality),
+        degree=best_degree,
     )

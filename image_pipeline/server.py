@@ -1336,6 +1336,119 @@ def get_easing_presets():
     return {"presets": [{"id": p[0], "name": p[1], "description": p[2]} for p in EASING_PRESETS]}
 
 
+# ── Node Tester API endpoints ──────────────────────────────────────────
+
+
+_TEST_OUT_DIR = OUTPUT_ROOT / "node-tests"
+_TEST_OUT_DIR.mkdir(parents=True, exist_ok=True)
+_test_in_progress = False
+_test_cancelled = False
+
+
+@app.post("/api/node-tester/run")
+async def nt_run(payload: dict):
+    """Run tests on all (or specified) methods. Returns SSE stream of progress + final report."""
+    global _test_in_progress, _test_cancelled
+    if _test_in_progress:
+        return {"error": "Test run already in progress"}
+
+    method_ids = payload.get("method_ids")  # None = all
+    include_edge = payload.get("include_edge_cases", True)
+
+    from image_pipeline.core.node_tester import run_all_tests
+
+    async def generate():
+        global _test_in_progress, _test_cancelled
+        _test_in_progress = True
+        _test_cancelled = False
+
+        def progress(mid, name, status, param_set):
+            if _test_cancelled:
+                raise RuntimeError("Cancelled")
+            # Schedule SSE push onto the event loop
+            msg = json.dumps({"method_id": mid, "method_name": name, "status": status, "param_set": param_set})
+            asyncio.run_coroutine_threadsafe(
+                _broadcast_sse("test-progress", msg), _event_loop
+            )
+
+        try:
+            report = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: run_all_tests(
+                    _TEST_OUT_DIR,
+                    method_ids=method_ids,
+                    include_edge_cases=include_edge,
+                    progress_callback=progress,
+                ),
+            )
+            # Save report to disk
+            (_TEST_OUT_DIR / "last_report.json").write_text(json.dumps(report.to_dict()))
+            yield f"data: {json.dumps({'done': True, 'report': report.to_dict()})}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'done': True, 'error': str(exc)[:500]})}\n\n"
+        finally:
+            _test_in_progress = False
+            _test_cancelled = False
+
+    return StreamingResponse(
+        generate(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.post("/api/node-tester/cancel")
+def nt_cancel():
+    """Cancel a running test suite."""
+    global _test_cancelled
+    _test_cancelled = True
+    return {"ok": True}
+
+
+@app.get("/api/node-tester/status")
+def nt_status():
+    """Check if a test run is in progress."""
+    return {"in_progress": _test_in_progress}
+
+
+@app.get("/api/node-tester/report")
+def nt_get_report():
+    """Return the most recent test report."""
+    report_path = _TEST_OUT_DIR / "last_report.json"
+    if not report_path.exists():
+        return {"report": None}
+    return {"report": json.loads(report_path.read_text())}
+
+
+@app.post("/api/node-tester/batch-apply")
+async def nt_batch_apply(payload: dict):
+    """Apply Node Doctor fixes to multiple failing methods at once.
+
+    Payload: {fixes: [{method_id, source, backup_id?}]}
+    Returns: {applied: int, failed: [{method_id, error}]}
+    """
+    fixes = payload.get("fixes", [])
+    from image_pipeline.core.node_tester import batch_apply_fixes
+    result = await asyncio.get_event_loop().run_in_executor(
+        None, lambda: batch_apply_fixes(fixes, _TEST_OUT_DIR)
+    )
+    # Broadcast hot-reload for each applied fix
+    if result["applied"] > 0:
+        await _broadcast_sse("node-defs-updated")
+    return result
+
+
+# ── Test Node report endpoint ────────────────────────────────────────────
+
+
+@app.get("/api/test-node/report/{node_id}")
+def tn_get_report(node_id: str):
+    """Read the test_report.json from a Test Node's output directory."""
+    report_path = _GRAPH_SESSION_DIR / node_id / "test_report.json"
+    if not report_path.exists():
+        return {"report": None}
+    return {"report": json.loads(report_path.read_text())}
+
+
 # ── Entry point ───────────────────────────────────────────────────────
 
 

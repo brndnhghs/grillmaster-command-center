@@ -17,6 +17,7 @@ except ImportError:
     _has_cv2 = False
 
 @method(id="73", name="Low Poly", category="math_art", tags=["triangulation", "fast", "expanded"],
+         inputs={"image_in": "IMAGE"},
          params={"points":{"description":"triangulation points","min":50,"max":500,"default":200},
                  "jitter":{"description":"jitter","min":2,"max":30,"default":10},
                  "point_distribution":{"description":"placement","choices":["uniform","grid_jitter","fibonacci","edge_weighted","perlin_weighted","input_edges","multi_res","poisson_disc","spiral","concentric","gaussian_clusters","wave","lattice"],"default":"uniform"},
@@ -82,8 +83,18 @@ def method_lowpoly(out_dir: Path, seed: int, params=None):
     grad_blend = float(params.get("gradient_blend", 0.5))
     noise_amp = float(params.get("noise_amplitude", 0.0))
     adaptive = params.get("adaptive_detail", "no")
-    from ...core.utils import PALETTES, quantize_to_palette
+    from ...core.utils import PALETTES, quantize_to_palette, load_input
     pal = PALETTES.get(pal_name, [])
+
+    # If an upstream image is wired in, use it as the background
+    wired_input_path = params.get("input_image", "")
+    if wired_input_path:
+        try:
+            img_arr = load_input(wired_input_path, W, H)
+            img = img_arr.copy()
+            bg_style = "__wired__"
+        except (FileNotFoundError, OSError):
+            pass
 
     # Animation: modulate noise amplitude
     if anim_mode == "noise_pulse":
@@ -231,7 +242,9 @@ def method_lowpoly(out_dir: Path, seed: int, params=None):
     from scipy.spatial import Delaunay, Voronoi
     tri = Delaunay(pts)
     img = np.zeros((H, W, 3), dtype=np.float32)
-    if bg_style == "dark":
+    if bg_style == "__wired__":
+        pass  # img already set from wired input above
+    elif bg_style == "dark":
         img[:, :, :] = 0.05
     elif bg_style == "light":
         img[:, :, :] = 0.95

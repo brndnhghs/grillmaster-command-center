@@ -1,0 +1,82 @@
+{
+  "inputs": {
+    "image_in": {
+      "connected": true,
+      "shape": [
+        512,
+        768,
+        3
+      ],
+      "dtype": "float32",
+      "mean": 0.5575,
+      "min": 0.0,
+      "max": 1.0,
+      "std": 0.1692
+    },
+    "scalar_in": {
+      "connected": false
+    },
+    "field_in": {
+      "connected": false
+    },
+    "particles_in": {
+      "connected": true,
+      "shape": [
+        1966,
+        4
+      ],
+      "dtype": "float32",
+      "count": 1966
+    },
+    "mask_in": {
+      "connected": true,
+      "shape": [
+        512,
+        768
+      ],
+      "dtype": "float32",
+      "mean": 0.6425,
+      "min": 0.0,
+      "max": 1.0
+    }
+  },
+  "outputs": {
+    "image": {
+      "pattern": "color_bars",
+      "shape": [
+        512,
+        768,
+        3
+      ],
+      "mean": 0.5
+    },
+    "field": {
+      "pattern": "sine_gradient",
+      "shape": [
+        512,
+        768
+      ],
+      "mean": 0.0,
+      "min": -1.0,
+      "max": 1.0
+    },
+    "particles": {
+      "count": 100,
+      "shape": [
+        100,
+        4
+      ],
+      "dtype": "float32"
+    },
+    "mask": {
+      "pattern": "circle",
+      "shape": [
+        512,
+        768
+      ],
+      "mean": 0.2328
+    },
+    "test_scalar": 1.0,
+    "test_scalar_b": 0.5594937801361084
+  }
+}

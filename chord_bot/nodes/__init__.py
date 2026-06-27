@@ -2,6 +2,7 @@
 from . import (
     tonic,
     function,
+    phrase,
     cadence,
     modulation,
     rest,

@@ -3,7 +3,6 @@ Code-gen method — auto-split from codegen.py
 """
 from __future__ import annotations
 import math
-import random
 import html as html_mod
 from pathlib import Path
 
@@ -11,9 +10,9 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 from ...core.registry import method
-from ...core.utils import save, mn, seed_all, save, get_font, W, H
+from ...core.utils import save, mn, seed_all, get_font, W, H, write_scalars
 from ...core.animation import capture_frame
-from ...core.utils import ordered_dither, FONT_LARGE, load_input
+from ...core.utils import ordered_dither, load_input
 from scipy.ndimage import map_coordinates
 
 BUILTIN_CHARSETS = {
@@ -41,7 +40,7 @@ BUILTIN_CHARSETS = {
              "sw": {"description": "width divisor (smaller = coarser)", "min": 2, "max": 128, "default": 32},
              "sh": {"description": "height divisor (smaller = coarser)", "min": 2, "max": 128, "default": 48},
              "font_size": {"description": "render font size", "min": 6, "max": 20, "default": 10},
-            "char_spacing": {"description": "horizontal spacing multiplier (<1 = tighter)", "min": 0.3, "max": 2.0, "default": 1.0},
+             "char_spacing": {"description": "horizontal spacing multiplier (<1 = tighter)", "min": 0.3, "max": 2.0, "default": 1.0},
              "invert": {"description": "white-on-dark instead of dark-on-white", "default": False},
              "color": {"description": "preserve source image colors on each char", "default": False},
              "source": {"description": "image source", "choices": ["perlin", "input_image", "text_input", "emoji"], "default": "perlin"},
@@ -55,7 +54,7 @@ BUILTIN_CHARSETS = {
              "anim_mode": {"description": "animation mode", "choices": ["none", "charset_morph", "font_pulse", "dither_strength_sweep", "char_spacing_pulse"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.0, "max": 2.0, "default": 0.25},
          })
-def method_ascii(out_dir: Path, seed: int, params=None):
+def method_ascii(out_dir: Path, seed: int, params=None, image_in=None):
     if params is None:
         params = {}
     time_param = float(params.get("time", 0.0))
@@ -125,7 +124,16 @@ def method_ascii(out_dir: Path, seed: int, params=None):
     img_src = Image.new("RGB", (W, H), (10, 10, 18))
     draw_src = ImageDraw.Draw(img_src)
 
-    if source == "perlin":
+    # If an upstream image is wired in, ALWAYS use it — override the source param
+    wired_input_path = params.get("input_image", "")
+    if wired_input_path:
+        try:
+            img_src_arr = load_input(wired_input_path, W, H)
+            img_src = Image.fromarray((img_src_arr * 255).astype(np.uint8), "RGB")
+        except (FileNotFoundError, OSError):
+            pass  # fall through to source-based generation below
+
+    if source == "perlin" and not wired_input_path:
         # Generate simple perlin-like noise
         yy, xx = np.mgrid[:H, :W].astype(np.float32)
         cx, cy = W / 2.0, H / 2.0
@@ -137,15 +145,28 @@ def method_ascii(out_dir: Path, seed: int, params=None):
         val = val * 0.7 + 0.3 * np.sin(xx * 0.02 + yy * 0.015)
         img_src_arr = (val * 255).astype(np.uint8)
         img_src = Image.fromarray(np.stack([img_src_arr] * 3, axis=-1), "RGB")
-    elif source == "input_image":
-        try:
-            img_src_arr = load_input(str(out_dir / "input.png"), W, H)
-            img_src = Image.fromarray((img_src_arr * 255).astype(np.uint8), "RGB")
-        except (FileNotFoundError, OSError):
-            # Fallback: gradient
-            for y in range(H):
-                col = (int(50 + 100 * y / H), int(30 + 50 * y / H), int(80 + 120 * y / H))
-                draw_src.line([(0, y), (W, y)], fill=col)
+    elif source == "input_image" and not wired_input_path:
+        # Use the pipeline's image_in input if available, else fallback to file
+        # image_in is passed as a keyword argument from the pipeline
+        if image_in is not None:
+            # image_in is float32 HxWx3 in [0,1]
+            img_src_arr = (np.clip(image_in, 0, 1) * 255).astype(np.uint8)
+            img_src = Image.fromarray(img_src_arr, "RGB")
+        else:
+            # Fallback: try params (legacy) or file
+            fallback = params.get("image_in")
+            if fallback is not None:
+                img_src_arr = (np.clip(fallback, 0, 1) * 255).astype(np.uint8)
+                img_src = Image.fromarray(img_src_arr, "RGB")
+            else:
+                try:
+                    img_src_arr = load_input(str(out_dir / "input.png"), W, H)
+                    img_src = Image.fromarray((img_src_arr * 255).astype(np.uint8), "RGB")
+                except (FileNotFoundError, OSError):
+                    # Fallback: gradient
+                    for y in range(H):
+                        col = (int(50 + 100 * y / H), int(30 + 50 * y / H), int(80 + 120 * y / H))
+                        draw_src.line([(0, y), (W, y)], fill=col)
     elif source == "text_input":
         font = get_font(48)
         lines = text_content.split("\n")
@@ -225,7 +246,7 @@ def method_ascii(out_dir: Path, seed: int, params=None):
     cols = max(1, W // step_x)
     rows = max(1, H // step_y)
 
-    def _render_ascii(gray_src, charset, fs, invert_flag, use_color_flag, img_src_ref):
+    def _render_ascii(gray_src, charset, fs, invert_flag, use_color_flag, img_src_ref, spacing):
         """Render ASCII from grayscale source. Returns PIL Image."""
         f = get_font(fs)
         try:
@@ -235,7 +256,7 @@ def method_ascii(out_dir: Path, seed: int, params=None):
             fw2, fh2 = f.getsize("A")
         fw2 = max(fw2, 4)
         fh2 = max(fh2, 4)
-        sx2 = int(fw2 * char_spacing)
+        sx2 = int(fw2 * spacing)
         sy2 = fh2
         c2 = max(1, W // sx2)
         r2 = max(1, H // sy2)
@@ -276,15 +297,19 @@ def method_ascii(out_dir: Path, seed: int, params=None):
     # ── Cross-fade rendering ──
     if anim_mode == "charset_morph" and morph_fade > 0.0:
         charset_b = BUILTIN_CHARSETS.get(_morph_charset_b, BUILTIN_CHARSETS["default"])
-        img_a = _render_ascii(gray_arr, CHARS, font_size, invert, use_color, img_src)
-        img_b = _render_ascii(gray_arr, charset_b, font_size, invert, use_color, img_src)
+        img_a = _render_ascii(gray_arr, CHARS, font_size, invert, use_color, img_src, char_spacing)
+        img_b = _render_ascii(gray_arr, charset_b, font_size, invert, use_color, img_src, char_spacing)
         out_img = Image.blend(img_a, img_b, morph_fade)
     else:
-        out_img = _render_ascii(gray_arr, CHARS, font_size, invert, use_color, img_src)
+        out_img = _render_ascii(gray_arr, CHARS, font_size, invert, use_color, img_src, char_spacing)
 
     # ── Output ──
+    # Always save PNG and capture frame
+    save(out_img, mn(1, "ASCII-Art"), out_dir)
+    capture_frame("01", np.array(out_img).astype(np.float32) / 255.0)
+
+    # Additional output formats
     if output_format == "html":
-        import html as html_mod
         html_lines = []
         html_lines.append("<!DOCTYPE html><html><head><style>body{background:#0a0a12;font-family:monospace;font-size:{}px;line-height:1;white-space:pre;color:#dcdcc8;}</style></head><body><pre>".format(font_size))
         for r in range(rows):
@@ -308,8 +333,6 @@ def method_ascii(out_dir: Path, seed: int, params=None):
         with open(html_path, "w") as f:
             f.write("\n".join(html_lines))
         print(f"  ✓ {html_path.name}")
-        capture_frame("01", np.array(out_img).astype(np.float32) / 255.0)
-        save(out_img, mn(1, "ASCII-Art"), out_dir)
     elif output_format == "svg":
         svg_lines = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" style="background:#0a0a12">']
         svg_lines.append(f'<text font-family="monospace" font-size="{font_size}" fill="#dcdcc8">')
@@ -335,8 +358,6 @@ def method_ascii(out_dir: Path, seed: int, params=None):
         with open(svg_path, "w") as f:
             f.write(svg_content)
         print(f"  ✓ {svg_path.name}")
-        capture_frame("01", np.array(out_img).astype(np.float32) / 255.0)
-        save(out_img, mn(1, "ASCII-Art"), out_dir)
     elif output_format == "ansi":
         ansi_lines = []
         for r in range(rows):
@@ -359,11 +380,10 @@ def method_ascii(out_dir: Path, seed: int, params=None):
         with open(ansi_path, "w") as f:
             f.write("\n".join(ansi_lines))
         print(f"  ✓ {ansi_path.name}")
-        capture_frame("01", np.array(out_img).astype(np.float32) / 255.0)
-        save(out_img, mn(1, "ASCII-Art"), out_dir)
-    else:
-        capture_frame("01", np.array(out_img).astype(np.float32) / 255.0)
-        save(out_img, mn(1, "ASCII-Art"), out_dir)
 
-    return np.array(out_img).astype(np.float32) / 255.0
+    # ── Luminance scalar output ──
+    out_arr = np.array(out_img).astype(np.float32) / 255.0
+    luminance = float(np.mean(out_arr))
+    write_scalars(out_dir, luminance=luminance)
 
+    return out_arr

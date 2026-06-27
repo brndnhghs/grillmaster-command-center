@@ -9,6 +9,7 @@ from ..types import (
     build_chord_name,
     compute_voices,
     compute_bass,
+    degree_to_numeral,
     SCALE_INTERVALS,
 )
 
@@ -64,6 +65,8 @@ def node_tonic(state: HarmonicState, params: dict) -> HarmonicState:
         velocity=velocity,
         bass_note=bass,
         arp_pattern=None,
+        numeral=degree_to_numeral(0, quality),
+        degree=0,
     )
 
 

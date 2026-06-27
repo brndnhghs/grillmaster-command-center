@@ -479,6 +479,33 @@
   .gm-btn.muted   { background: var(--bg3); color: var(--muted); }
   .gm-btn:hover.primary { opacity: 0.88; }
   .gm-btn:hover.muted   { background: var(--bg2); }
+  /* ── Node error modal ─────────────────────────────── */
+  #node-error-modal {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.75); z-index: 1000;
+    align-items: center; justify-content: center;
+  }
+  #node-error-modal.open { display: flex; }
+  #nem-box {
+    background: var(--bg1); border: 1px solid #e53935;
+    border-radius: 12px; padding: 20px 24px;
+    width: min(90vw, 600px); max-height: 75vh;
+    overflow-y: auto; display: flex; flex-direction: column; gap: 12px;
+  }
+  #nem-title { font-size: 15px; font-weight: 700; color: var(--err); display: flex; align-items: center; gap: 8px; }
+  #nem-node-name { font-size: 12px; color: var(--muted); }
+  #nem-error-text {
+    background: #1a1a1a; border: 1px solid #333; border-radius: 8px;
+    padding: 12px 14px; font-family: 'Menlo', 'Consolas', monospace;
+    font-size: 12px; color: #f87171; white-space: pre-wrap; word-break: break-word;
+    line-height: 1.6; max-height: 40vh; overflow-y: auto;
+  }
+  #nem-close-btn {
+    align-self: flex-end; padding: 8px 18px; background: var(--bg3);
+    color: var(--text); border: 1px solid var(--border); border-radius: 7px;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  #nem-close-btn:hover { background: var(--bg2); }
   .gnode-top-ports {
     display: flex; justify-content: space-between;
     border-bottom: 1px solid var(--border);
@@ -671,6 +698,20 @@
     border-bottom-left-radius: 2px; border-left: 2px solid var(--accent2);
   }
   .nd-msg.nd-thinking { color: var(--muted); font-style: italic; }
+  /* ── Node Doctor spinner ──────────────────────────── */
+  .nd-spinner {
+    display: inline-block; width: 14px; height: 14px;
+    border: 2px solid var(--accent2); border-top-color: transparent;
+    border-radius: 50%; animation: nd-spin 0.7s linear infinite;
+    vertical-align: middle; margin-right: 4px;
+  }
+  @keyframes nd-spin { to { transform: rotate(360deg); } }
+  /* ── Blinking cursor during streaming ───────────────── */
+  .nd-stream-cursor::after {
+    content: '▌'; animation: nd-blink 0.8s step-end infinite;
+    color: var(--accent2); margin-left: 1px;
+  }
+  @keyframes nd-blink { 50% { opacity: 0; } }
   #nd-apply-row {
     padding: 5px 10px; display: none; gap: 6px; flex-shrink: 0;
     border-top: 1px solid var(--border); background: var(--bg1); align-items: center;
@@ -921,6 +962,61 @@
     padding: 8px 16px; border-radius: 7px; font-size: 13px; font-weight: 600;
     z-index: 3000; display: none; white-space: nowrap; pointer-events: none;
   }
+
+  /* ── Node Tester panel ──────────────────────────────────── */
+  #nt-panel {
+    display: none; flex-direction: column; background: var(--bg0);
+    border-top: 2px solid var(--accent); flex-shrink: 0;
+    max-height: 340px; overflow: hidden;
+  }
+  #nt-panel.nt-open { display: flex; }
+  #nt-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 12px; background: var(--bg2);
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
+    font-size: 11px; font-weight: 700; color: var(--accent);
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  #nt-summary { font-size: 10px; color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; flex: 1; }
+  #nt-close-btn { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 2px 4px; }
+  #nt-close-btn:hover { color: var(--text); }
+  #nt-body { flex: 1; overflow-y: auto; padding: 8px 12px; min-height: 0; }
+  #nt-progress { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); padding: 8px 0; }
+  #nt-results { display: flex; flex-direction: column; gap: 3px; }
+  .nt-method-row {
+    display: flex; align-items: center; gap: 8px; padding: 4px 8px;
+    border-radius: 5px; font-size: 11px; cursor: pointer;
+    transition: background 0.1s;
+  }
+  .nt-method-row:hover { background: var(--bg2); }
+  .nt-method-row .nt-status { font-size: 12px; flex-shrink: 0; }
+  .nt-method-row .nt-mid { color: var(--muted); font-size: 10px; min-width: 28px; }
+  .nt-method-row .nt-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nt-method-row .nt-detail { font-size: 10px; color: var(--muted); }
+  .nt-method-row.nt-pass { border-left: 2px solid var(--success); }
+  .nt-method-row.nt-fail { border-left: 2px solid var(--err); }
+  .nt-method-row.nt-running { border-left: 2px solid var(--accent); }
+  .nt-method-row.nt-pass .nt-status { color: var(--success); }
+  .nt-method-row.nt-fail .nt-status { color: var(--err); }
+  .nt-method-row.nt-running .nt-status { color: var(--accent); }
+  .nt-test-detail {
+    display: none; padding: 6px 8px 6px 28px; font-size: 10px;
+    color: var(--muted); line-height: 1.5;
+  }
+  .nt-test-detail.nt-open { display: block; }
+  .nt-test-detail .nt-param-set { color: var(--text); font-weight: 600; }
+  .nt-test-detail .nt-error-text {
+    background: #1a1a1a; border: 1px solid #333; border-radius: 5px;
+    padding: 6px 8px; margin-top: 4px; font-family: 'Menlo', 'Consolas', monospace;
+    font-size: 10px; color: #f87171; white-space: pre-wrap; word-break: break-word;
+    max-height: 120px; overflow-y: auto;
+  }
+  #nt-footer {
+    display: flex; gap: 6px; padding: 6px 12px;
+    border-top: 1px solid var(--border); background: var(--bg1); flex-shrink: 0;
+    align-items: center;
+  }
+  #nt-footer .gm-btn { font-size: 11px; padding: 5px 12px; }
 
   /* ── Timeline panel ───────────────────────────────────────── */
   #timeline-panel {
@@ -1174,6 +1270,7 @@
       <button id="graph-save-btn-desk" class="g-savebtn">💾 Save</button>
       <button id="graph-load-btn-desk" class="g-loadbtn">📂 Load</button>
       <button id="graph-auto-btn-desk" class="g-autobtn" title="Auto-generate on param change">⏺ Auto</button>
+      <button id="graph-test-btn-desk" class="g-autobtn" title="Test all nodes">🧪 Test</button>
       <span id="graph-status-desk"></span>
     </div>
 
@@ -1264,6 +1361,27 @@
   <div id="graph-output-strip"></div>
 </div>
 
+<!-- ── Node Tester panel ─────────────────────────────────────── -->
+<div id="nt-panel">
+  <div id="nt-header">
+    <span>🧪 Node Tester</span>
+    <span id="nt-summary"></span>
+    <button id="nt-close-btn" title="Close">✕</button>
+  </div>
+  <div id="nt-body">
+    <div id="nt-progress" style="display:none">
+      <span class="nd-spinner" style="display:inline-block;margin-right:6px"></span>
+      <span id="nt-progress-text">Running tests…</span>
+    </div>
+    <div id="nt-results"></div>
+  </div>
+  <div id="nt-footer" style="display:none">
+    <button id="nt-run-btn" class="gm-btn primary">▶ Run All Tests</button>
+    <button id="nt-batch-apply-btn" class="gm-btn muted" style="display:none">⚕ Batch Apply Fixes</button>
+    <button id="nt-export-btn" class="gm-btn muted">📋 Export Report</button>
+  </div>
+</div>
+
 <!-- Fullscreen image/video overlay -->
 <div id="graph-img-fullscreen">
   <img id="graph-fs-img" src="" alt="">
@@ -1298,6 +1416,16 @@
       <button class="gm-btn danger" id="gm-ungroup-btn">Ungroup</button>
       <button class="gm-btn muted" id="gm-close-btn">Close</button>
     </div>
+  </div>
+</div>
+
+<!-- ── Node error modal ──────────────────────────────── -->
+<div id="node-error-modal">
+  <div id="nem-box">
+    <div id="nem-title">⚠ Node Error</div>
+    <div id="nem-node-name"></div>
+    <div id="nem-error-text"></div>
+    <button id="nem-close-btn">Close</button>
   </div>
 </div>
 
@@ -2074,6 +2202,27 @@ const gCtxMenu      = document.getElementById('graph-ctx-menu');
 const gWireTooltip  = document.getElementById('wire-tooltip');
 const gNodeTooltip  = document.getElementById('node-tooltip');
 let   gLastGraphJobId = null;
+
+// ── Node error modal ─────────────────────────────────────
+const nemModal   = document.getElementById('node-error-modal');
+const nemName    = document.getElementById('nem-node-name');
+const nemText    = document.getElementById('nem-error-text');
+const nemClose   = document.getElementById('nem-close-btn');
+nemClose.addEventListener('click', () => nemModal.classList.remove('open'));
+nemModal.addEventListener('click', e => { if (e.target === nemModal) nemModal.classList.remove('open'); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') nemModal.classList.remove('open'); });
+
+// Click on a node header with error opens the error modal
+gNodesEl.addEventListener('click', e => {
+  const header = e.target.closest('.gnode-header');
+  const nodeEl = header?.closest('.gnode');
+  if (!nodeEl || !nodeEl.classList.contains('node-error') || !nodeEl.dataset.errorMsg) return;
+  const nodeId = nodeEl.id.replace('gnode-', '');
+  const node = gNodes.find(n => n.id === nodeId);
+  nemName.textContent = node ? (node.name || node.method_id) : nodeId;
+  nemText.textContent = nodeEl.dataset.errorMsg;
+  nemModal.classList.add('open');
+});
 
 // ── Node header tooltip (description / error) ──────────────────
 gNodesEl.addEventListener('mouseover', e => {
@@ -2933,6 +3082,61 @@ async function gLoadGroupPresets() {
   } catch {}
 }
 
+// ── Test Node report loader ──────────────────────────────────────
+async function gLoadTestNodeReport(nodeId) {
+  const body = document.getElementById('tn-report-body');
+  if (!body) return;
+  try {
+    const r = await fetch(`/api/test-node/report/${nodeId}`);
+    const d = await r.json();
+    if (!d.report) {
+      body.innerHTML = '<span style="color:var(--muted)">Run the graph to generate a report.</span>';
+      return;
+    }
+    const rep = d.report;
+    let html = '';
+
+    // Inputs section
+    html += '<div style="margin-bottom:8px"><strong style="color:var(--accent)">Inputs</strong></div>';
+    for (const [port, info] of Object.entries(rep.inputs)) {
+      const status = info.connected ? '✓' : '✗';
+      const color = info.connected ? 'var(--success)' : 'var(--err)';
+      html += `<div style="margin:2px 0;font-size:10px"><span style="color:${color}">${status}</span> <strong>${port}</strong>`;
+      if (info.connected) {
+        if (info.error) {
+          html += ` <span style="color:var(--err)">${escHtml(info.error)}</span>`;
+        } else if (info.value !== undefined) {
+          html += ` = <span style="color:var(--text)">${info.value}</span>`;
+        } else if (info.shape) {
+          html += ` <span style="color:var(--muted)">${info.shape.join('×')} ${info.dtype}</span>`;
+          if (info.mean !== undefined) html += ` · μ=${info.mean}`;
+          if (info.count !== undefined) html += ` · count=${info.count}`;
+        }
+      }
+      html += '</div>';
+    }
+
+    // Outputs section
+    html += '<div style="margin:8px 0 4px"><strong style="color:var(--success)">Outputs</strong></div>';
+    for (const [port, info] of Object.entries(rep.outputs)) {
+      html += `<div style="margin:2px 0;font-size:10px"><strong>${port}</strong>`;
+      if (typeof info === 'object') {
+        if (info.pattern) html += ` · ${info.pattern}`;
+        if (info.shape) html += ` <span style="color:var(--muted)">${info.shape.join('×')}</span>`;
+        if (info.mean !== undefined) html += ` · μ=${info.mean}`;
+        if (info.count !== undefined) html += ` · count=${info.count}`;
+      } else {
+        html += ` = <span style="color:var(--text)">${info}</span>`;
+      }
+      html += '</div>';
+    }
+
+    body.innerHTML = html;
+  } catch {
+    body.innerHTML = '<span style="color:var(--err)">Could not load report</span>';
+  }
+}
+
 // ── Serialize one node for API call ───────────────────────────
 function gSerializeNodeForApi(n, frame) {
   if (n.type === 'group') {
@@ -3657,6 +3861,16 @@ function gShowNodeParams(node) {
   gParamsForm.innerHTML = entries.length
     ? entries.map(([k,s]) => renderParamField(k, s)).join('')
     : '<p style="font-size:12px;color:var(--muted)">No parameters.</p>';
+
+  // ── Test Node: show report section ──────────────────────────────
+  if (node.method_id === '__test__') {
+    const reportDiv = document.createElement('div');
+    reportDiv.id = 'test-node-report';
+    reportDiv.style.cssText = 'margin-top:16px;border-top:1px solid var(--border);padding-top:12px';
+    reportDiv.innerHTML = '<div class="section-label">Test Report</div><div id="tn-report-body" style="font-size:11px;color:var(--muted)">Run the graph to generate a report.</div>';
+    gParamsForm.appendChild(reportDiv);
+    gLoadTestNodeReport(node.id);
+  }
 
   if (!node.animParams) node.animParams = {};
   for (const [key, spec] of entries) {
@@ -5548,6 +5762,8 @@ function gConnectEvents() {
         await gLoadMethodPalette();
         if (typeof gLoadPortTypes === 'function') await gLoadPortTypes();
         gShowToast('Methods updated');
+        // Notify Node Doctor apply flow that hot-reload completed
+        window.dispatchEvent(new CustomEvent('nd-hot-reload'));
     });
     es.onerror = () => {
         es.close();
@@ -5623,8 +5839,12 @@ gLoadGroupPresets();
     ndMessages.push({ role: 'user', content: text });
     ndAppend('user', text);
 
-    const thinkEl = ndAppend('bot', '⋯');
+    const thinkEl = ndAppend('bot', '');
     thinkEl.classList.add('nd-thinking');
+    // Show spinner while waiting for first response chunk
+    const spinner = document.createElement('span');
+    spinner.className = 'nd-spinner';
+    thinkEl.prepend(spinner);
 
     let botText = '';
     try {
@@ -5645,6 +5865,8 @@ gLoadGroupPresets();
       const dec    = new TextDecoder();
       thinkEl.textContent = '';
       thinkEl.classList.remove('nd-thinking');
+      // Add blinking cursor during streaming
+      thinkEl.classList.add('nd-stream-cursor');
 
       let buf = '';
       while (true) {
@@ -5666,8 +5888,11 @@ gLoadGroupPresets();
           } catch { /* partial JSON */ }
         }
       }
+      // Remove streaming cursor when done
+      thinkEl.classList.remove('nd-stream-cursor');
     } catch (err) {
       thinkEl.classList.remove('nd-thinking');
+      thinkEl.classList.remove('nd-stream-cursor');
       thinkEl.textContent = '⚠ ' + err.message;
     }
 
@@ -5695,6 +5920,12 @@ gLoadGroupPresets();
     const node = gNodes.find(n => n.id === gSelectedNode);
     if (!node) return;
     ndApplyBtn.disabled = true;
+    // Show pending message with spinner
+    const statusEl = ndAppend('bot', '');
+    const spinner = document.createElement('span');
+    spinner.className = 'nd-spinner';
+    statusEl.prepend(spinner);
+    statusEl.appendChild(document.createTextNode(' Applying & hot-reloading…'));
     try {
       const r = await fetch('/api/node-doctor/apply', {
         method: 'POST',
@@ -5706,13 +5937,47 @@ gLoadGroupPresets();
         ndBackupId = data.backup_id;
         ndUndoBtn.classList.add('nd-show');
         ndUndoBtn.disabled = false;
-        ndAppend('bot', '✓ Applied — hot-reloading…');
+        // Wait for SSE confirmation or timeout
+        const confirmed = await new Promise(resolve => {
+          const timeout = setTimeout(() => resolve(false), 5000);
+          const handler = () => { clearTimeout(timeout); resolve(true); };
+          window.addEventListener('nd-hot-reload', handler, { once: true });
+        });
+        if (confirmed) {
+          statusEl.textContent = '';
+          statusEl.classList.remove('nd-thinking');
+          statusEl.classList.add('nd-msg', 'nd-bot');
+          statusEl.textContent = '✓ Hot-reload complete — method updated';
+          // Flash the node green briefly
+          const nodeEl = document.querySelector(`.gnode[data-id="${node.id}"]`);
+          if (nodeEl) {
+            nodeEl.style.transition = 'border-color 0.15s, box-shadow 0.15s';
+            nodeEl.style.borderColor = '#34d399';
+            nodeEl.style.boxShadow = '0 0 12px rgba(52,211,153,0.5)';
+            setTimeout(() => {
+              nodeEl.style.borderColor = '';
+              nodeEl.style.boxShadow = '';
+            }, 1200);
+          }
+        } else {
+          statusEl.textContent = '';
+          statusEl.classList.remove('nd-thinking');
+          statusEl.classList.add('nd-msg', 'nd-bot');
+          statusEl.textContent = '⚠ Applied, but hot-reload confirmation not received (server may need restart)';
+          ndApplyBtn.disabled = false;
+        }
       } else {
-        ndAppend('bot', '⚠ Apply failed: ' + (data.error || 'unknown'));
+        statusEl.textContent = '';
+        statusEl.classList.remove('nd-thinking');
+        statusEl.classList.add('nd-msg', 'nd-bot');
+        statusEl.textContent = '⚠ Apply failed: ' + (data.error || 'unknown');
         ndApplyBtn.disabled = false;
       }
     } catch (err) {
-      ndAppend('bot', '⚠ ' + err.message);
+      statusEl.textContent = '';
+      statusEl.classList.remove('nd-thinking');
+      statusEl.classList.add('nd-msg', 'nd-bot');
+      statusEl.textContent = '⚠ ' + err.message;
       ndApplyBtn.disabled = false;
     }
   });
@@ -5801,5 +6066,226 @@ renderTimelineRuler();
   });
 })();
 </script>
+
+<!-- ── Node Tester ──────────────────────────────────────────────── -->
+<script>
+(function() {
+  const ntPanel      = document.getElementById('nt-panel');
+  const ntCloseBtn   = document.getElementById('nt-close-btn');
+  const ntResults    = document.getElementById('nt-results');
+  const ntProgress   = document.getElementById('nt-progress');
+  const ntProgressText = document.getElementById('nt-progress-text');
+  const ntSummary    = document.getElementById('nt-summary');
+  const ntRunBtn     = document.getElementById('nt-run-btn');
+  const ntBatchBtn   = document.getElementById('nt-batch-apply-btn');
+  const ntExportBtn  = document.getElementById('nt-export-btn');
+  const ntFooter     = document.getElementById('nt-footer');
+  const testBtnDesk  = document.getElementById('graph-test-btn-desk');
+
+  let ntReport = null;
+  let ntRunning = false;
+  let ntFixes = {};  // method_id → source_code from Node Doctor
+
+  function ntOpen() {
+    ntPanel.classList.add('nt-open');
+    ntLoadLastReport();
+  }
+  function ntClose() { ntPanel.classList.remove('nt-open'); }
+  ntCloseBtn.addEventListener('click', ntClose);
+  testBtnDesk.addEventListener('click', ntOpen);
+
+  async function ntLoadLastReport() {
+    try {
+      const r = await fetch('/api/node-tester/report');
+      const d = await r.json();
+      if (d.report) {
+        ntReport = d.report;
+        ntRenderReport(d.report);
+      } else {
+        ntResults.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:12px 0">No test report yet. Click "Run All Tests" to start.</div>';
+        ntSummary.textContent = '';
+        ntFooter.style.display = 'flex';
+      }
+    } catch {
+      ntResults.innerHTML = '<div style="color:var(--err);font-size:12px">Could not load report</div>';
+    }
+  }
+
+  function ntRenderReport(report) {
+    ntResults.innerHTML = '';
+    ntSummary.textContent = `${report.passed}✓ ${report.failed}✗ (${report.duration_s}s)`;
+    ntFooter.style.display = 'flex';
+
+    if (!report.results || report.results.length === 0) {
+      ntResults.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:12px 0">No results.</div>';
+      return;
+    }
+
+    // Group by method_id
+    const byMethod = {};
+    for (const r of report.results) {
+      if (!byMethod[r.method_id]) byMethod[r.method_id] = { meta: r, tests: [] };
+      byMethod[r.method_id].tests.push(r);
+    }
+
+    const hasFails = report.failed > 0;
+    ntBatchBtn.style.display = hasFails ? '' : 'none';
+
+    for (const [mid, group] of Object.entries(byMethod).sort()) {
+      const anyFail = group.tests.some(t => !t.passed);
+      const row = document.createElement('div');
+      row.className = `nt-method-row ${anyFail ? 'nt-fail' : 'nt-pass'}`;
+      row.innerHTML = `
+        <span class="nt-status">${anyFail ? '✗' : '✓'}</span>
+        <span class="nt-mid">${mid}</span>
+        <span class="nt-name">${escHtml(group.meta.method_name)}</span>
+        <span class="nt-detail">${group.tests.filter(t => !t.passed).length}/${group.tests.length} failed</span>
+      `;
+
+      // Detail expandable
+      const detail = document.createElement('div');
+      detail.className = 'nt-test-detail';
+      for (const t of group.tests) {
+        const p = document.createElement('div');
+        p.innerHTML = `<span class="nt-param-set">${t.param_set}</span> — ${t.passed ? '✓' : '✗'} (${t.duration_ms}ms)`;
+        detail.appendChild(p);
+        if (!t.passed && t.error_trace) {
+          const trace = document.createElement('div');
+          trace.className = 'nt-error-text';
+          trace.textContent = t.error_trace;
+          detail.appendChild(trace);
+        }
+      }
+
+      row.addEventListener('click', () => detail.classList.toggle('nt-open'));
+      ntResults.appendChild(row);
+      ntResults.appendChild(detail);
+    }
+  }
+
+  ntRunBtn.addEventListener('click', async () => {
+    if (ntRunning) return;
+    ntRunning = true;
+    ntRunBtn.disabled = true;
+    ntRunBtn.textContent = '⏳ Running…';
+    ntProgress.style.display = 'flex';
+    ntProgressText.textContent = 'Starting…';
+    ntResults.innerHTML = '';
+
+    try {
+      const resp = await fetch('/api/node-tester/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ include_edge_cases: true }),
+      });
+      if (!resp.ok) throw new Error(`Server error ${resp.status}`);
+
+      const reader = resp.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const d = JSON.parse(line.slice(6));
+            if (d.done) {
+              if (d.report) {
+                ntReport = d.report;
+                ntRenderReport(d.report);
+                ntProgress.style.display = 'none';
+              } else if (d.error) {
+                ntResults.innerHTML = `<div style="color:var(--err);font-size:12px">⚠ ${d.error}</div>`;
+                ntProgress.style.display = 'none';
+              }
+            }
+          } catch { /* partial */ }
+        }
+      }
+    } catch (err) {
+      ntResults.innerHTML = `<div style="color:var(--err);font-size:12px">⚠ ${err.message}</div>`;
+      ntProgress.style.display = 'none';
+    }
+
+    ntRunning = false;
+    ntRunBtn.disabled = false;
+    ntRunBtn.textContent = '▶ Run All Tests';
+  });
+
+  ntExportBtn.addEventListener('click', () => {
+    if (!ntReport) return;
+    const blob = new Blob([JSON.stringify(ntReport, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `node-test-report-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+
+  // Batch apply: collect Node Doctor fixes for all failing methods
+  ntBatchBtn.addEventListener('click', async () => {
+    if (!ntReport || !ntReport.failed) return;
+    // For each failing method, try to get a fix from Node Doctor
+    const failingIds = new Set();
+    for (const r of ntReport.results) {
+      if (!r.passed) failingIds.add(r.method_id);
+    }
+    if (failingIds.size === 0) return;
+
+    // We need source code for each failing method — fetch from node-doctor source endpoint
+    const fixes = [];
+    for (const mid of failingIds) {
+      try {
+        const r = await fetch(`/api/node-doctor/source/${mid}`);
+        const d = await r.json();
+        if (d.source) {
+          fixes.push({ method_id: mid, source: d.source });
+        }
+      } catch {}
+    }
+
+    if (fixes.length === 0) {
+      gShowToast('No source files found for failing methods', true);
+      return;
+    }
+
+    ntBatchBtn.disabled = true;
+    ntBatchBtn.textContent = '⏳ Applying…';
+
+    try {
+      const r = await fetch('/api/node-tester/batch-apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fixes }),
+      });
+      const d = await r.json();
+      gShowToast(`Applied ${d.applied} fixes, ${d.failed.length} failed`);
+      if (d.applied > 0) {
+        // Re-run tests after applying
+        setTimeout(() => ntRunBtn.click(), 1000);
+      }
+    } catch (err) {
+      gShowToast('Batch apply failed: ' + err.message, true);
+    }
+
+    ntBatchBtn.disabled = false;
+    ntBatchBtn.textContent = '⚕ Batch Apply Fixes';
+  });
+
+  // Listen for test-progress SSE events
+  const ntEs = new EventSource('/api/events');
+  ntEs.addEventListener('test-progress', e => {
+    try {
+      const d = JSON.parse(e.data);
+      ntProgressText.textContent = `${d.method_name} (${d.method_id}) — ${d.param_set}: ${d.status}`;
+    } catch {}
+  });
+})();
+</script>
+
 </body>
 </html>

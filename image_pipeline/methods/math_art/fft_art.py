@@ -17,6 +17,7 @@ except ImportError:
     _has_cv2 = False
 
 @method(id="48", name="FFT Art", category="math_art", tags=["frequency","fast", "expanded"],
+         inputs={"image_in": "IMAGE"},
          params={"filter_type":{"description":"filter type","choices":["ring","concentric","spiral","star","checkerboard","text_mask","input_mask","gabor_bank","fractal_noise","polar_fft","phase_swap","convolution_kernel","frequency_paint","radial_pattern","time_frequency"],"default":"ring"},
                  "source":{"description":"source","choices":["random","perlin","wave_interference","color_noise","input_image","texture_synth"],"default":"random"},
                  "color_mode":{"description":"coloring","choices":["gradient","palette","phase","magnitude","multi_channel","phase_magnitude_blend","rainbow","heatmap","channel_swap"],"default":"gradient"},
@@ -127,6 +128,19 @@ def method_fft_art(out_dir: Path, seed: int, params=None):
         pal = PALETTES.get(pal_name, [])
 
         # ── Generate source ──
+        # If an upstream image is wired in, use it as the FFT source
+        wired_input_path = params.get("input_image", "")
+        if wired_input_path:
+            try:
+                from ...core.utils import load_input
+                img_arr = load_input(wired_input_path, W, H)
+                noise = 0.299 * img_arr[:, :, 0] + 0.587 * img_arr[:, :, 1] + 0.114 * img_arr[:, :, 2]
+                noise = (noise - 0.5) * 2  # remap [0,1] → [-1,1]
+                noise = np.stack([noise] * 3, axis=-1)
+                src = "__wired__"
+            except (FileNotFoundError, OSError):
+                pass
+
         if src == "random":
             noise = np_rng.standard_normal((H, W))
         elif src == "perlin":
