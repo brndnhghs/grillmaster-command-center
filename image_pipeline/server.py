@@ -61,6 +61,38 @@ SEQUENCES_DIR.mkdir(parents=True, exist_ok=True)
 # In-memory keyframe store (per-node keyframe lists, replace semantics)
 _keyframe_store: dict[str, list[dict]] = {}
 
+# ── Live preview buffer (MJPEG streaming) ──────────────────────────────
+_LIVE_FRAME: bytes | None = None
+_LIVE_FRAME_LOCK = threading.Lock()
+_LIVE_FRAME_COND = threading.Condition(_LIVE_FRAME_LOCK)  # for MJPEG waiters
+_LIVE_FRAME_ID = 0  # monotonic counter so MJPEG can detect new frames
+
+
+def _push_live_frame(arr):
+    """Encode a numpy array as JPEG and store in the live buffer.
+    Thread-safe. Wakes any MJPEG streaming clients waiting on the condition.
+    """
+    global _LIVE_FRAME, _LIVE_FRAME_ID
+    from PIL import Image
+    import numpy as np
+    if isinstance(arr, np.ndarray):
+        if arr.dtype != np.uint8:
+            arr = (arr.clip(0, 1) * 255).astype(np.uint8)
+        img = Image.fromarray(arr)
+    else:
+        img = arr
+    img = img.convert("RGB")
+    # Halve resolution for lightweight preview
+    w, h = img.size
+    img = img.resize((max(1, w // 2), max(1, h // 2)), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=65)
+    with _LIVE_FRAME_LOCK:
+        _LIVE_FRAME = buf.getvalue()
+        _LIVE_FRAME_ID += 1
+        _LIVE_FRAME_COND.notify_all()
+
+
 UI_DIR = Path(__file__).resolve().parent.parent / "ui"
 
 # ── Hot-reload infrastructure ─────────────────────────────────────────
@@ -213,17 +245,67 @@ def _parse_choices(desc: str, default_val) -> list | None:
     return None
 
 
-def _enrich_params(params: dict | None) -> dict | None:
-    """Inject 'choices' into param specs where the description encodes an enum list."""
+# ── Hand-curated param schemas (from pipeline_viewer.py artifact) ─────
+# These override auto-detected choices and add min/max/default for sliders.
+_PARAM_SCHEMAS: dict[str, dict] = {
+    "1": {"preset": {"desc":"ASCII preset","default":"blocks","choices":["blocks","narrow","dense","braille","geometric","shapes","shade","wide","minimal","grayscale"]},"color":{"desc":"color mode","default":"mono","choices":["mono","random","rainbow","heat"]},"invert":{"desc":"invert","default":False}},
+    "2": {"palette":{"desc":"color palette","default":"pico8","choices":["bw","grayscale","amber","green","gameboy","cga","pico8","nes","apple2","zxspectrum","c64","megadrive","sms","atari2600","amiga","warm","cool","vapor","sepia"]},"dither":{"desc":"dither","default":"none","choices":["none","bayer","floyd"]},"grid":{"desc":"grid overlay","default":False},"round":{"desc":"rounded corners","default":False}},
+    "5": {"noise_type":{"desc":"noise type","default":"perlin","choices":["perlin","value","simplex","curl","cloud","marble","plasma","cell","wood","terrain","spot","ring","brick"]},"domain_warp":{"desc":"warp strength","min":0,"max":10,"default":2},"scale":{"desc":"frequency scale","min":0.1,"max":10,"default":2},"octaves":{"desc":"octaves","min":1,"max":12,"default":4},"water_level":{"desc":"water level","min":0,"max":1,"default":0}},
+    "7": {"formula":{"desc":"fractal formula","default":"mandelbrot","choices":["mandelbrot","julia","burning_ship","tricorn","celtic","mandelbrot3","mandelbrot4"]},"iterations":{"desc":"max iterations","min":20,"max":500,"default":150},"zoom":{"desc":"zoom level","min":1,"max":100000,"default":1},"colormap":{"desc":"colormap","default":"inferno","choices":["inferno","magma","plasma","viridis","turbo","cool","hot"]},"color_shift":{"desc":"hue shift","min":0,"max":1,"default":0}},
+    "13": {"algorithm":{"desc":"dither algorithm","default":"floyd","choices":["floyd","atkinson","stucki","sierra","jarvis","bayer2","bayer4","bayer8","cluster3","cluster4","random"]},"levels":{"desc":"levels per channel","min":2,"max":8,"default":4},"contrast":{"desc":"contrast boost","min":0,"max":2,"default":1}},
+    "17": {"glitch_type":{"desc":"glitch type","default":"shift","choices":["shift","sort","noise","scanline","vhs","jpeg","bitcrush","wave","datamosh","kaleidoscope","all"]},"intensity":{"desc":"intensity","min":0,"max":1,"default":0.3}},
+    "18": {"automaton":{"desc":"cellular automaton","default":"conway","choices":["conway","coral","maze","anneal","day_night","cyclic","bz","langtons_ant","forest_fire","rps","turmite"]},"rule":{"desc":"wolfram rule","min":0,"max":255,"default":110}},
+    "19": {"preset":{"desc":"L-system preset","default":"tree","choices":["tree","bush","weed","dragon","sierpinski","koch","gosper","hilbert","pythagoras","algae"]},"iterations":{"desc":"iterations","min":2,"max":8,"default":5},"branch_angle":{"desc":"branch angle","min":10,"max":90,"default":25}},
+    "20": {"emitter":{"desc":"emitter type","default":"point","choices":["point","line","circle","radial","grid","explosion","fountain"]},"physics":{"desc":"physics","default":"gravity","choices":["gravity","wind","vortex","bounce","attract","spring"]},"trail_length":{"desc":"trail length","min":0,"max":50,"default":8}},
+    "29": {"points":{"desc":"number of points","min":10,"max":500,"default":50},"metric":{"desc":"distance metric","default":"euclidean","choices":["euclidean","manhattan","chebyshev","minkowski"]},"style":{"desc":"render style","default":"mosaic","choices":["mosaic","bevel","treemap","terrain","wireframe"]}},
+    "30": {"attractor":{"desc":"attractor type","default":"clifford","choices":["clifford","de_jong","bedhead","lorenz","ikeda","henon","tinkerbell","gingerbreadman"]},"palette":{"desc":"color palette","default":"cool","choices":["cool","warm","fire","ice","rainbow","mono"]}},
+    "31": {"size":{"desc":"image size","min":256,"max":2048,"default":1024},"roughness":{"desc":"roughness","min":0.1,"max":2,"default":0.7},"terrain":{"desc":"terrain mode","default":"none","choices":["none","shaded","contour","fill"]}},
+    "32": {"preset":{"desc":"Gray-Scott preset","default":"spots","choices":["spots","worms","coral","mitosis","labyrinth","chaos","maze","honeycomb","biofilm","ripple","skeleton","coral2","bubbles","swirl","dots"]},"quality":{"desc":"quality","default":"medium","choices":["low","medium","high"]}},
+    "34": {"boids":{"desc":"number of boids","min":20,"max":500,"default":150},"max_speed":{"desc":"max speed","min":1,"max":8,"default":3},"species_mode":{"desc":"species","default":"single","choices":["single","dual","predator_prey"]}},
+    "35": {"particles":{"desc":"number of particles","min":100,"max":3000,"default":800},"speed":{"desc":"speed","min":0.5,"max":5,"default":1.5},"field_type":{"desc":"field type","default":"perlin","choices":["random","perlin","vortex","radial","sinusoidal","checker","spiral","cross","gabor","perlin_warp","cellular"]}},
+    "36": {"particles":{"desc":"number of particles","min":500,"max":30000,"default":5000},"growth_mode":{"desc":"growth mode","default":"classic","choices":["classic","ballistic","cluster_cluster","surface","julia_field","gradient_field"]}},
+    "37": {"levels":{"desc":"contour levels","min":3,"max":30,"default":10},"field_type":{"desc":"field type","default":"sin_wave","choices":["sin_wave","perlin","vortex","wave_interference","radial_waves","bump","ridged"]},"style":{"desc":"render style","default":"filled","choices":["filled","wireframe","filled_lines","shaded","glow","ribbon"]}},
+    "38": {"algorithm":{"desc":"algorithm","default":"classic","choices":["classic","color","sirds"]},"depth_mode":{"desc":"depth mode","default":"sphere","choices":["sphere","radial","torus","perlin","text","input"]},"max_offset":{"desc":"max offset","min":10,"max":80,"default":40}},
+    "39": {"colors":{"desc":"number of colors","min":2,"max":32,"default":8},"source":{"desc":"source","default":"random","choices":["random","gradient","perlin","spiral","checker","input"]},"style":{"desc":"render style","default":"raw","choices":["raw","edge_overlay","outlined","mosaic","smooth"]}},
+    "43": {"points":{"desc":"number of points","min":50,"max":5000,"default":500},"sigma":{"desc":"blur sigma","min":1,"max":20,"default":5},"style":{"desc":"render style","default":"colormap","choices":["colormap","contour","scatter","glow","isosurface","3d","ridge","stippled","multilayer","edge"]}},
+    "48": {"filter_type":{"desc":"frequency filter","default":"ring","choices":["ring","concentric","spiral","star","checker","gabor","fractal","polar","phase_swap","convolution","radial"]},"source":{"desc":"source","default":"random","choices":["random","perlin","wave","color_noise","input"]},"color_mode":{"desc":"color mode","default":"rainbow","choices":["gradient","palette","phase","magnitude","rainbow","heatmap","swap"]}},
+    "53": {"balls":{"desc":"number of metaballs","min":2,"max":50,"default":12},"behavior":{"desc":"ball behavior","default":"random_walk","choices":["random_walk","gravity","attract_repel","bounce","swarm","orbit","spiral","wave","noise_driven","explosion","morph","flock","galaxy","pulse","breathing"]},"style":{"desc":"render style","default":"filled","choices":["filled","palette","gradient","wireframe","glow","threshold","3d","edge_glow","neon","mosaic","aurora","glass","luminous"]}},
+    "54": {"max_num":{"desc":"max number","min":50,"max":5000,"default":500},"spiral_type":{"desc":"spiral type","default":"clockwise","choices":["clockwise","counter","diamond","hexagonal","archimedean"]},"color_mode":{"desc":"color mode","default":"palette","choices":["binary","palette","factor","twin","gap","semiprime","goldbach"]}},
+    "56": {"cell_size":{"desc":"cell size","min":4,"max":40,"default":20},"algorithm":{"desc":"maze algorithm","default":"recursive","choices":["recursive","eller","prim","kruskal","hunt_kill","sidewinder","growing_tree"]},"geometry":{"desc":"geometry","default":"rect","choices":["rect","hex","polar"]}},
+    "62": {"map_type":{"desc":"chaotic map","default":"henon","choices":["henon","logistic","tinkerbell","gingerbreadman","ikeda","lorenz","standard","baker","arnold_cat","duffing","rossler","multi"]},"n":{"desc":"iterations","min":1000,"max":500000,"default":50000},"style":{"desc":"render style","default":"density","choices":["density","trace","bifurcation","poincare","phase","orbit"]}},
+    "65": {"wave_type":{"desc":"wave type","default":"sine","choices":["sine","sawtooth","square","triangle","pulse","am","fm","noise","lissajous","spectrum","harmonic","interference","granular","wavetable"]},"layout":{"desc":"layout","default":"single","choices":["single","multi","stereo","circular","3d","equalizer","waterfall","polar"]},"style":{"desc":"render style","default":"glow","choices":["line","palette","gradient","glow","oscilloscope","spectrogram","filled","particle","neon","heat"]}},
+    "73": {"points":{"desc":"number of points","min":50,"max":3000,"default":500},"style":{"desc":"render style","default":"filled","choices":["filled","wireframe","filled_wireframe","glow","dual","shaded_3d","gradient","noise"]}},
+    "76": {"bits":{"desc":"bits per column","min":4,"max":16,"default":8},"data_source":{"desc":"data source","default":"sine_wave","choices":["x_position","input","sine","noise","prime","time","gray_code","fibonacci"]},"layout":{"desc":"layout","default":"rows","choices":["rows","cols","radial","spiral","matrix","barcode","3d"]}},
+    "78": {"max_circles":{"desc":"max circles","min":20,"max":500,"default":150},"min_radius":{"desc":"min radius","min":1,"max":20,"default":3},"packing":{"desc":"packing strategy","default":"random","choices":["random","radial","spiral","hex","input","relaxation","fibonacci","bouncing"]},"style":{"desc":"render style","default":"filled","choices":["filled","wireframe","concentric","sunburst","halftone","voronoi","shadow","mosaic"]}},
+}
+
+
+def _enrich_params(params: dict | None, method_id: str | None = None) -> dict | None:
+    """Inject 'choices' into param specs where the description encodes an enum list.
+    Also applies hand-curated PARAM_SCHEMAS as overrides for known methods.
+    """
     if not params:
         return params
     result = {}
+    # Hand-curated overrides from pipeline_viewer.py
+    # Normalize method_id: strip leading zeros to match PARAM_SCHEMAS keys
+    norm_id = method_id.lstrip('0') if method_id else None
+    overrides = _PARAM_SCHEMAS.get(norm_id, {}) if norm_id else {}
     for key, spec in params.items():
-        if not isinstance(spec, dict) or 'choices' in spec:
+        if not isinstance(spec, dict):
             result[key] = spec
             continue
-        choices = _parse_choices(spec.get('description', ''), spec.get('default'))
-        result[key] = {**spec, 'choices': choices} if choices else spec
+        # Start with the original spec
+        enriched = dict(spec)
+        # Apply hand-curated override if available
+        if key in overrides:
+            enriched.update(overrides[key])
+        # Auto-detect choices from description if not already set
+        if 'choices' not in enriched:
+            choices = _parse_choices(spec.get('description', ''), spec.get('default'))
+            if choices:
+                enriched['choices'] = choices
+        result[key] = enriched
     return result
 
 
@@ -261,7 +343,7 @@ def list_methods():
             "name": meta.name,
             "category": meta.category,
             "tags": meta.tags,
-            "params": _enrich_params(meta.params),
+            "params": _enrich_params(meta.params, method_id=meta.id),
         }
         for meta in sorted(all_methods.values(), key=lambda m: m.id)
     ]
@@ -356,7 +438,7 @@ def _encode_frame(arr) -> str:
     img = img.convert("RGB")
     # Halve the resolution for a lightweight live preview
     w, h = img.size
-    img = img.resize((max(1, w // 2), max(1, h // 2)), Image.BILINEAR)
+    img = img.resize((max(1, w // 2), max(1, h // 2)), Image.LANCZOS)
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=65)
     return base64.b64encode(buf.getvalue()).decode()
@@ -388,6 +470,7 @@ def _run_job(job_id, method_id, seed, params, animate, fps, duration, out_dir, f
                 if now - last_frame_t[0] < 0.05:   # cap preview at ~20 fps
                     return
                 last_frame_t[0] = now
+                _push_live_frame(arr)
                 q.put(("frame", _encode_frame(arr)))
 
             # ── Install per-thread job context for capture_frame() ──
@@ -445,6 +528,14 @@ def _run_job(job_id, method_id, seed, params, animate, fps, duration, out_dir, f
                 out_path = pngs[-1]
                 # ── Cache store ──
                 _cache.store(method_id, seed, out_path, params)
+
+            # ── Push to live preview ──
+            try:
+                from PIL import Image as _PIL_live
+                import numpy as _np_live
+                _push_live_frame(_np_live.array(_PIL_live.open(str(out_path)).convert("RGB")))
+            except Exception:
+                pass
 
             # ── Quality check ──
             report = _quality_check(out_path)
@@ -552,6 +643,67 @@ async def sse_events():
     )
 
 
+# ── Live preview endpoints (MJPEG stream + polling fallback) ──────────
+
+
+@app.get("/api/live/stream")
+async def live_mjpeg_stream():
+    """MJPEG multipart/x-mixed-replace stream of the live preview buffer.
+    The browser <img> tag handles this natively — no JS polling needed.
+    """
+    async def generate():
+        last_id = -1
+        while True:
+            with _LIVE_FRAME_LOCK:
+                fid = _LIVE_FRAME_ID
+                data = _LIVE_FRAME
+            if data is not None and fid != last_id:
+                last_id = fid
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n"
+                    b"Content-Length: " + str(len(data)).encode() + b"\r\n"
+                    b"\r\n" + data + b"\r\n"
+                )
+            else:
+                # No new frame yet — brief sleep to avoid busy-wait
+                await asyncio.sleep(0.05)
+
+    return StreamingResponse(
+        generate(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+
+
+@app.get("/api/live/frame.jpg")
+def live_frame_jpg():
+    """Polling fallback — returns the latest live frame as a JPEG.
+    The browser polls this with ?t=timestamp to bypass cache.
+    """
+    with _LIVE_FRAME_LOCK:
+        data = _LIVE_FRAME
+    if data is None:
+        from fastapi.responses import Response
+        return Response(status_code=204)
+    from fastapi.responses import Response
+    return Response(
+        content=data,
+        media_type="image/jpeg",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+
+
 # ── File result ───────────────────────────────────────────────────────
 
 
@@ -623,9 +775,9 @@ def get_wire_payload(job_id: str, src_node_id: str):
 def get_node_defs():
     from image_pipeline.core.graph import get_all_node_defs
     defs = get_all_node_defs()
-    for nd in defs.values():
+    for mid, nd in defs.items():
         if nd.get('params'):
-            nd['params'] = _enrich_params(nd['params'])
+            nd['params'] = _enrich_params(nd['params'], method_id=mid)
     return defs
 
 
@@ -819,6 +971,7 @@ def _run_graph_job(job_id, nodes, edges, seed, frames, start_frame, out_dir):
             arr = (flat_outputs.get(terminal_id) or {}).get("image")
             if arr is not None:
                 terminal_frames.append(arr)
+                _push_live_frame(arr)
                 encoded = _encode_frame(arr)
                 payload = json.dumps({"frame": frame, "node_id": terminal_id, "data": encoded})
                 q.put(("graph_frame", payload))

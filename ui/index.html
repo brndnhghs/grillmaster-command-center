@@ -314,6 +314,7 @@
   <aside id="output-panel">
     <div id="output-header">
       <h2>Output <span id="status-badge" class="badge-idle">idle</span></h2>
+      <button id="live-preview-btn" class="g-autobtn" title="Live MJPEG preview" style="margin-left:auto;font-size:11px">📺 Live</button>
     </div>
     <div id="output-body">
       <div id="progress-section">
@@ -1250,6 +1251,7 @@
       <button id="graph-save-btn" class="g-savebtn">💾</button>
       <button id="graph-load-btn" class="g-loadbtn">📂</button>
       <button id="graph-auto-btn" class="g-autobtn" title="Auto-generate on param change">⏺ Auto</button>
+      <button id="graph-live-btn" class="g-autobtn" title="Live MJPEG preview">📺 Live</button>
       <span id="graph-status"></span>
     </div>
 
@@ -1271,6 +1273,7 @@
       <button id="graph-load-btn-desk" class="g-loadbtn">📂 Load</button>
       <button id="graph-auto-btn-desk" class="g-autobtn" title="Auto-generate on param change">⏺ Auto</button>
       <button id="graph-test-btn-desk" class="g-autobtn" title="Test all nodes">🧪 Test</button>
+      <button id="graph-live-btn-desk" class="g-autobtn" title="Live MJPEG preview">📺 Live</button>
       <span id="graph-status-desk"></span>
     </div>
 
@@ -1479,6 +1482,34 @@ const viewer        = document.getElementById('viewer');
 const resultImg     = document.getElementById('result-img');
 const resultVideo   = document.getElementById('result-video');
 const downloadBtn   = document.getElementById('download-btn');
+
+// ── Methods-tab live preview (MJPEG stream) ──────────────────────
+const livePreviewBtn = document.getElementById('live-preview-btn');
+let methodsLiveActive = false;
+let methodsLiveImg = null;
+
+livePreviewBtn.addEventListener('click', () => {
+  methodsLiveActive = !methodsLiveActive;
+  livePreviewBtn.classList.toggle('active', methodsLiveActive);
+
+  if (methodsLiveActive) {
+    if (!methodsLiveImg) {
+      methodsLiveImg = document.createElement('img');
+      methodsLiveImg.style.width = '100%';
+      methodsLiveImg.style.height = '100%';
+      methodsLiveImg.style.objectFit = 'contain';
+      methodsLiveImg.style.background = '#000';
+      methodsLiveImg.style.borderRadius = '6px';
+      viewer.innerHTML = '';
+      viewer.appendChild(methodsLiveImg);
+      viewer.style.display = 'block';
+    }
+    methodsLiveImg.src = '/api/live/stream?' + Date.now();
+  } else {
+    if (methodsLiveImg) methodsLiveImg.src = '';
+    viewer.style.display = '';
+  }
+});
 
 // ── Mobile sidebar toggle ──────────────────────────────────────────
 const sidebarEl = document.getElementById('sidebar');
@@ -4423,6 +4454,44 @@ function gToggleAutoGen() {
 try { if (localStorage.getItem('graph-auto-gen') === '1') gToggleAutoGen(); } catch {}
 gAutoBtn.addEventListener('click', gToggleAutoGen);
 gAutoBtnDesk.addEventListener('click', gToggleAutoGen);
+
+// ── Live preview toggle (MJPEG stream) ──────────────────────────
+const gLiveBtn = document.getElementById('graph-live-btn');
+const gLiveBtnDesk = document.getElementById('graph-live-btn-desk');
+let gLiveStreamActive = false;
+let gLiveStreamImg = null;
+
+function gToggleLiveStream() {
+  gLiveStreamActive = !gLiveStreamActive;
+  gLiveBtn.classList.toggle('active', gLiveStreamActive);
+  gLiveBtnDesk.classList.toggle('active', gLiveStreamActive);
+  gLiveBtn.textContent = gLiveStreamActive ? '📺 Live' : '📺 Live';
+  gLiveBtnDesk.textContent = gLiveStreamActive ? '📺 Live' : '📺 Live';
+
+  if (gLiveStreamActive) {
+    // Create MJPEG stream img — browser handles multipart/x-mixed-replace natively
+    if (!gLiveStreamImg) {
+      gLiveStreamImg = document.createElement('img');
+      gLiveStreamImg.style.width = '100%';
+      gLiveStreamImg.style.height = '100%';
+      gLiveStreamImg.style.objectFit = 'contain';
+      gLiveStreamImg.style.background = '#000';
+      gMainPreview.innerHTML = '';
+      gMainPreview.appendChild(gLiveStreamImg);
+      gMainPreview.classList.add('active');
+      gPreviewShow();
+    }
+    gLiveStreamImg.src = '/api/live/stream?' + Date.now();
+    gSetStatus('📺 Live preview active');
+  } else {
+    if (gLiveStreamImg) {
+      gLiveStreamImg.src = '';
+    }
+    gSetStatus('');
+  }
+}
+gLiveBtn.addEventListener('click', gToggleLiveStream);
+gLiveBtnDesk.addEventListener('click', gToggleLiveStream);
 
 // ── Auto-generate: fire-and-cancel ───────────────────────────
 let _autoGenTimer = null;
