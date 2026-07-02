@@ -32,7 +32,9 @@ Verified: `HERMES_AGENT_DIR`/`HERMES_PYTHON` override the resolved interpreter i
 - Node Doctor backups written to `output/nd-backups/` instead of `methods/`; committed `.nd-bak-*.py` files deleted; pattern gitignored and excluded from the audit tool (audit #19).
 - Optional `GRILLMASTER_API_TOKEN`: when set, mutating endpoints (`/admin/restart`, `/api/node-doctor/apply|undo`, `/api/graph/live`) require the token header; startup warning when tunneling without it (audit #22).
 
-## Phase 4 — Philosophy docs & hygiene — STATUS: pending
+## Phase 4 — Philosophy docs & hygiene — STATUS: done
+
+`DESIGN.md` rewritten around the three-pillar vision (Houdini payloads × TouchDesigner live × Hermes-driven evolution) with the port registry/colors, MASK/COLORMAP, per-pixel luminance, dirty-flag and live-mode semantics, stable seeds, duplicate-id policy, and system/channel nodes all matching the code. `AGENT_GUIDE.md`: COLORMAP row, return-dict image contract (§2 rewritten), duplicate-id-raises rule, `description=` requirement, audit-gate step in the checklist, Hermes named as sole LLM backend. `README.md` rewritten for the node editor (old text described the Streamlit app removed 2026-06-20). `chord_bot.egg-info` untracked; `.gitignore` cleaned up in Phase 3.
 
 - `DESIGN.md`: vision statement (Houdini × TouchDesigner × Hermes-driven evolution, real-time goal); port table corrected against `core/port_types.py` (+ MASK, COLORMAP); dirty-flag section updated to describe actual behavior; outputs table corrected; per-pixel luminance documented.
 - `AGENT_GUIDE.md`: COLORMAP row; duplicate-ID-now-raises rule; `description=` required in the checklist; Hermes-based Node Doctor noted.

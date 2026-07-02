@@ -22,3 +22,4 @@ image_pipeline/output/
 # NOTE: deliberately NOT ignoring *.html / *.txt globally — the UI
 # (ui/index.html) and requirements.txt are tracked source. Output text
 # and HTML land under image_pipeline/output/ which is ignored above.
+*.egg-info/
