@@ -2,7 +2,55 @@
   {
     "id": "01",
     "name": "ASCII Art",
-    "file": "codegen/ascii_art.py",
+    "file": "codegen/ascii_art.nd-bak-4cb20def.py",
+    "category": "codegen",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "SCALAR",
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "01",
+    "name": "ASCII Art",
+    "file": "codegen/ascii_art.nd-bak-830dc061.py",
+    "category": "codegen",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [
+      "SCALAR",
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "01",
+    "name": "ASCII Art",
+    "file": "codegen/ascii_art.nd-bak-beeb879f.py",
     "category": "codegen",
     "class": "filter",
     "current_outputs": [
@@ -15,6 +63,27 @@
     ],
     "missing_outputs": [],
     "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "01",
+    "name": "ASCII Art",
+    "file": "codegen/ascii_art.py",
+    "category": "codegen",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
     "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -99,12 +168,10 @@
       "image",
       "luminance"
     ],
-    "has_explicit_outputs": false,
-    "detected_signals": [
-      "FIELD?"
-    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": true,
+    "has_fallback_png": false,
     "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -206,6 +273,28 @@
     "class": "generator",
     "current_outputs": [
       "image",
+      "luminance",
+      "palette"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "11",
+    "name": "Gradient",
+    "file": "codegen/gradient.nd-bak-904b8f5c.py",
+    "category": "codegen",
+    "class": "generator",
+    "current_outputs": [
+      "image",
       "luminance"
     ],
     "has_explicit_outputs": false,
@@ -229,7 +318,7 @@
       "image",
       "luminance"
     ],
-    "has_explicit_outputs": false,
+    "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
     "has_fallback_png": false,
@@ -250,10 +339,10 @@
       "image",
       "luminance"
     ],
-    "has_explicit_outputs": false,
+    "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": true,
+    "has_fallback_png": false,
     "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -292,18 +381,22 @@
     "class": "generator",
     "current_outputs": [
       "image",
-      "particles"
+      "luminance"
     ],
-    "has_explicit_outputs": true,
+    "has_explicit_outputs": false,
     "detected_signals": [
-      "PARTICLES",
+      "PARTICLES?",
       "FIELD?"
     ],
-    "missing_outputs": [],
+    "missing_outputs": [
+      "PARTICLES?"
+    ],
     "has_fallback_png": false,
     "has_try_except": false,
     "uses_underscore_temps": false,
-    "audit_notes": [],
+    "audit_notes": [
+      "particle-like vars: positions — may warrant particles output"
+    ],
     "audit_warnings": [
       "no description set"
     ]
@@ -316,18 +409,22 @@
     "class": "generator",
     "current_outputs": [
       "image",
-      "particles"
+      "luminance"
     ],
     "has_explicit_outputs": true,
     "detected_signals": [
-      "PARTICLES",
+      "PARTICLES?",
       "FIELD?"
     ],
-    "missing_outputs": [],
-    "has_fallback_png": true,
+    "missing_outputs": [
+      "PARTICLES?"
+    ],
+    "has_fallback_png": false,
     "has_try_except": true,
     "uses_underscore_temps": false,
-    "audit_notes": [],
+    "audit_notes": [
+      "particle-like vars: positions — may warrant particles output"
+    ],
     "audit_warnings": [
       "no description set"
     ]
@@ -340,19 +437,22 @@
     "class": "generator",
     "current_outputs": [
       "image",
-      "luminance",
-      "field"
+      "luminance"
     ],
-    "has_explicit_outputs": true,
+    "has_explicit_outputs": false,
     "detected_signals": [
-      "FIELD",
-      "PARTICLES?"
+      "PARTICLES?",
+      "FIELD?"
     ],
-    "missing_outputs": [],
+    "missing_outputs": [
+      "FIELD?"
+    ],
     "has_fallback_png": false,
     "has_try_except": false,
     "uses_underscore_temps": false,
-    "audit_notes": [],
+    "audit_notes": [
+      "field-like vars: field — may warrant field output"
+    ],
     "audit_warnings": [
       "no description set"
     ]
@@ -389,12 +489,10 @@
     "class": "generator",
     "current_outputs": [
       "image",
-      "field"
+      "luminance"
     ],
     "has_explicit_outputs": true,
-    "detected_signals": [
-      "FIELD"
-    ],
+    "detected_signals": [],
     "missing_outputs": [],
     "has_fallback_png": false,
     "has_try_except": false,
@@ -468,7 +566,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": true,
+    "has_fallback_png": false,
     "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -504,15 +602,13 @@
     "name": "ffmpeg Frame",
     "file": "cli_tools.py",
     "category": "cli_tools",
-    "class": "filter",
+    "class": "generator",
     "current_outputs": [
       "image",
       "luminance"
     ],
-    "has_explicit_outputs": false,
-    "detected_signals": [
-      "FILTER"
-    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [],
     "missing_outputs": [],
     "has_fallback_png": false,
     "has_try_except": false,
@@ -555,12 +651,10 @@
       "image",
       "luminance"
     ],
-    "has_explicit_outputs": false,
-    "detected_signals": [
-      "SCALAR"
-    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": true,
+    "has_fallback_png": false,
     "has_try_except": true,
     "uses_underscore_temps": true,
     "audit_notes": [],
@@ -602,7 +696,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": true,
+    "has_fallback_png": false,
     "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -632,51 +726,9 @@
     ]
   },
   {
-    "id": "25",
-    "name": "boxes",
-    "file": "cli_tools.py",
-    "category": "cli_tools",
-    "class": "generator",
-    "current_outputs": [
-      "image",
-      "luminance"
-    ],
-    "has_explicit_outputs": false,
-    "detected_signals": [],
-    "missing_outputs": [],
-    "has_fallback_png": true,
-    "has_try_except": true,
-    "uses_underscore_temps": false,
-    "audit_notes": [],
-    "audit_warnings": [
-      "no description set"
-    ]
-  },
-  {
     "id": "26",
     "name": "cowsay",
     "file": "cli_tools.nd-bak-728734db.py",
-    "category": "cli_tools",
-    "class": "generator",
-    "current_outputs": [
-      "image",
-      "luminance"
-    ],
-    "has_explicit_outputs": false,
-    "detected_signals": [],
-    "missing_outputs": [],
-    "has_fallback_png": true,
-    "has_try_except": true,
-    "uses_underscore_temps": false,
-    "audit_notes": [],
-    "audit_warnings": [
-      "no description set"
-    ]
-  },
-  {
-    "id": "26",
-    "name": "cowsay",
-    "file": "cli_tools.py",
     "category": "cli_tools",
     "class": "generator",
     "current_outputs": [
@@ -728,7 +780,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": true,
+    "has_fallback_png": false,
     "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -749,7 +801,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": true,
+    "has_fallback_png": false,
     "has_try_except": true,
     "uses_underscore_temps": true,
     "audit_notes": [],
@@ -791,7 +843,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": true,
+    "has_fallback_png": false,
     "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -953,17 +1005,21 @@
     "class": "generator",
     "current_outputs": [
       "image",
-      "particles"
+      "luminance"
     ],
     "has_explicit_outputs": true,
     "detected_signals": [
-      "PARTICLES"
+      "PARTICLES?"
     ],
-    "missing_outputs": [],
+    "missing_outputs": [
+      "PARTICLES?"
+    ],
     "has_fallback_png": false,
     "has_try_except": false,
     "uses_underscore_temps": false,
-    "audit_notes": [],
+    "audit_notes": [
+      "particle-like vars: positions — may warrant particles output"
+    ],
     "audit_warnings": [
       "no description set"
     ]
@@ -1002,7 +1058,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": true,
+    "has_fallback_png": false,
     "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -1084,18 +1140,19 @@
     "name": "Density Heatmap",
     "file": "math_art/density_heatmap.py",
     "category": "math_art",
-    "class": "generator",
+    "class": "filter",
     "current_outputs": [
       "image",
       "field"
     ],
     "has_explicit_outputs": true,
     "detected_signals": [
-      "FIELD"
+      "FIELD",
+      "FILTER"
     ],
     "missing_outputs": [],
     "has_fallback_png": false,
-    "has_try_except": false,
+    "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [],
     "audit_warnings": [
@@ -1131,18 +1188,15 @@
     "name": "img2txt",
     "file": "cli_tools.py",
     "category": "cli_tools",
-    "class": "filter",
+    "class": "generator",
     "current_outputs": [
       "image",
       "luminance"
     ],
-    "has_explicit_outputs": false,
-    "detected_signals": [
-      "PARTICLES?",
-      "FILTER"
-    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": true,
+    "has_fallback_png": false,
     "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -1181,10 +1235,10 @@
       "image",
       "luminance"
     ],
-    "has_explicit_outputs": false,
+    "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": true,
+    "has_fallback_png": false,
     "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -1262,17 +1316,15 @@
     "name": "Chafa",
     "file": "cli_tools.py",
     "category": "cli_tools",
-    "class": "filter",
+    "class": "generator",
     "current_outputs": [
       "image",
       "luminance"
     ],
-    "has_explicit_outputs": false,
-    "detected_signals": [
-      "FILTER"
-    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": true,
+    "has_fallback_png": false,
     "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -1285,13 +1337,15 @@
     "name": "FFT Art",
     "file": "math_art/fft_art.py",
     "category": "math_art",
-    "class": "generator",
+    "class": "filter",
     "current_outputs": [
       "image",
       "luminance"
     ],
     "has_explicit_outputs": false,
-    "detected_signals": [],
+    "detected_signals": [
+      "FILTER"
+    ],
     "missing_outputs": [],
     "has_fallback_png": true,
     "has_try_except": true,
@@ -1397,7 +1451,7 @@
     "name": "Metaballs",
     "file": "simulations/metaballs.py",
     "category": "simulations",
-    "class": "simulation",
+    "class": "filter",
     "current_outputs": [
       "image",
       "field"
@@ -1405,7 +1459,8 @@
     "has_explicit_outputs": true,
     "detected_signals": [
       "FIELD",
-      "PARTICLES?"
+      "PARTICLES?",
+      "FILTER"
     ],
     "missing_outputs": [],
     "has_fallback_png": true,
@@ -1523,7 +1578,7 @@
       "image",
       "luminance"
     ],
-    "has_explicit_outputs": false,
+    "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
     "has_fallback_png": false,
@@ -1790,18 +1845,19 @@
     "name": "Low Poly",
     "file": "math_art/lowpoly.py",
     "category": "math_art",
-    "class": "generator",
+    "class": "filter",
     "current_outputs": [
       "image",
       "luminance"
     ],
     "has_explicit_outputs": false,
     "detected_signals": [
-      "FIELD?"
+      "FIELD?",
+      "FILTER"
     ],
     "missing_outputs": [],
     "has_fallback_png": false,
-    "has_try_except": false,
+    "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [],
     "audit_warnings": [
@@ -1857,16 +1913,18 @@
     "name": "False Color IR",
     "file": "codegen/false_color_ir.py",
     "category": "codegen",
-    "class": "generator",
+    "class": "filter",
     "current_outputs": [
       "image",
       "luminance"
     ],
-    "has_explicit_outputs": false,
-    "detected_signals": [],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FILTER"
+    ],
     "missing_outputs": [],
     "has_fallback_png": false,
-    "has_try_except": false,
+    "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [],
     "audit_warnings": [
@@ -1981,6 +2039,27 @@
     "missing_outputs": [],
     "has_fallback_png": false,
     "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "83",
+    "name": "p5.js Sketch",
+    "file": "p5_sketches.py",
+    "category": "p5_sketches",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [],
     "audit_warnings": [
@@ -3458,6 +3537,27 @@
     ]
   },
   {
+    "id": "146",
+    "name": "Sand Dune Migration",
+    "file": "simulations/sand_dune_migration.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
     "id": "147",
     "name": "Viscoelastic Buckling Lattice",
     "file": "simulations/buckling_lattice.py",
@@ -3889,27 +3989,6 @@
     ]
   },
   {
-    "id": "165",
-    "name": "Sand Dune Migration",
-    "file": "simulations/sand_dune_migration.py",
-    "category": "simulations",
-    "class": "simulation",
-    "current_outputs": [
-      "image",
-      "luminance"
-    ],
-    "has_explicit_outputs": false,
-    "detected_signals": [],
-    "missing_outputs": [],
-    "has_fallback_png": false,
-    "has_try_except": false,
-    "uses_underscore_temps": false,
-    "audit_notes": [],
-    "audit_warnings": [
-      "no description set"
-    ]
-  },
-  {
     "id": "166",
     "name": "Parametric Oscillator Lattice",
     "file": "simulations/oscillon_resonance.py",
@@ -4050,6 +4129,393 @@
       "field-like vars: psi, psi — may warrant field output"
     ],
     "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "__age_heat__",
+    "name": "AgeHeat",
+    "file": "channels.py",
+    "category": "channels",
+    "class": "generator",
+    "current_outputs": [
+      "value",
+      "r",
+      "g",
+      "b"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "__beats__",
+    "name": "Beats",
+    "file": "channels.py",
+    "category": "channels",
+    "class": "generator",
+    "current_outputs": [
+      "beat",
+      "bar",
+      "trigger"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "__blend__",
+    "name": "Blend",
+    "file": "channels.py",
+    "category": "channels",
+    "class": "generator",
+    "current_outputs": [
+      "value"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "__burst__",
+    "name": "Burst",
+    "file": "channels.py",
+    "category": "channels",
+    "class": "generator",
+    "current_outputs": [
+      "value",
+      "active"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "__counter__",
+    "name": "Counter",
+    "file": "channels.py",
+    "category": "channels",
+    "class": "generator",
+    "current_outputs": [
+      "value",
+      "phase"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "__envelope__",
+    "name": "Envelope",
+    "file": "channels.py",
+    "category": "channels",
+    "class": "generator",
+    "current_outputs": [
+      "value"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "__image_to_mask__",
+    "name": "Image to Mask",
+    "file": "compositing/image_to_mask.py",
+    "category": "compositing",
+    "class": "composite",
+    "current_outputs": [
+      "mask",
+      "luminance"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "SCALAR",
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "outputs= declares 'mask' but write_mask() never called",
+      "no description set"
+    ]
+  },
+  {
+    "id": "__lfo__",
+    "name": "LFO",
+    "file": "channels.py",
+    "category": "channels",
+    "class": "generator",
+    "current_outputs": [
+      "value",
+      "bipolar"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "__logic__",
+    "name": "Logic",
+    "file": "channels.py",
+    "category": "channels",
+    "class": "generator",
+    "current_outputs": [
+      "value"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "__math__",
+    "name": "Math",
+    "file": "channels.py",
+    "category": "channels",
+    "class": "generator",
+    "current_outputs": [
+      "value"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "__noise1d__",
+    "name": "Noise1D",
+    "file": "channels.py",
+    "category": "channels",
+    "class": "generator",
+    "current_outputs": [
+      "value"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "PARTICLES?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "__noise__",
+    "name": "Noise",
+    "file": "compositing/noise_node.py",
+    "category": "compositing",
+    "class": "composite",
+    "current_outputs": [
+      "field",
+      "image",
+      "luminance",
+      "mask",
+      "particles",
+      "amplitude"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD?"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "outputs= declares 'field' but write_field() never called",
+      "outputs= declares 'particles' but write_particles() never called",
+      "outputs= declares 'mask' but write_mask() never called",
+      "no description set"
+    ]
+  },
+  {
+    "id": "__ramp__",
+    "name": "Ramp",
+    "file": "channels.py",
+    "category": "channels",
+    "class": "generator",
+    "current_outputs": [
+      "value",
+      "phase"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "__strobe__",
+    "name": "Strobe",
+    "file": "channels.py",
+    "category": "channels",
+    "class": "generator",
+    "current_outputs": [
+      "value",
+      "trigger"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "__test__",
+    "name": "Test Node",
+    "file": "compositing/test_node.py",
+    "category": "compositing",
+    "class": "composite",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "field",
+      "particles",
+      "mask",
+      "test_scalar"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "outputs= declares 'field' but write_field() never called",
+      "outputs= declares 'particles' but write_particles() never called",
+      "outputs= declares 'mask' but write_mask() never called",
+      "no description set"
+    ]
+  },
+  {
+    "id": "__timeline__",
+    "name": "Timeline",
+    "file": "system/timeline_node.py",
+    "category": "system",
+    "class": "generator",
+    "current_outputs": [
+      "t",
+      "phase",
+      "speed",
+      "beat",
+      "segment"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "SCALAR"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "__transform__",
+    "name": "Transform",
+    "file": "filters/transform.py",
+    "category": "filters",
+    "class": "filter",
+    "current_outputs": [
+      "image",
+      "luminance",
+      "field"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [
+      "FIELD?",
+      "FILTER"
+    ],
+    "missing_outputs": [],
+    "has_fallback_png": false,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "outputs= declares 'field' but write_field() never called",
       "no description set"
     ]
   }
