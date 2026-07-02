@@ -407,7 +407,7 @@ class GraphExecutor:
                         )
                         flat_outputs[node_id] = {
                             "image":     _arr_c,
-                            "luminance": _lum_c if _lum_c is not None else (np.mean(_arr_c, axis=-1) if _arr_c is not None else 0.0),
+                            "luminance": np.mean(_arr_c, axis=-1) if _arr_c is not None else 0.0,
                             "field":     _field_c if _field_c is not None else _arr_c,
                             "particles": _parts_c,
                             "mask":      _mask_c,
@@ -981,6 +981,22 @@ class GraphExecutor:
                 if nid in render_nodes:
                     return nid
         has_outgoing = {e.src_node for e in edges if not e.feedback}
+        node_map = {n.id: n for n in nodes}
+
+        def _produces_image(nid: str) -> bool:
+            n = node_map.get(nid)
+            if n is None or not n.method_id:
+                return True  # group node — assume image-capable
+            meta = registry.get_meta(n.method_id)
+            if meta is None:
+                return True
+            return "image" in (meta.outputs or {})
+
+        # Prefer image-producing sinks — data-only nodes (Timeline, LFO,
+        # Math, …) are often dangling and must not be picked as terminal.
+        for nid in reversed(order):
+            if nid not in has_outgoing and _produces_image(nid):
+                return nid
         for nid in reversed(order):
             if nid not in has_outgoing:
                 return nid

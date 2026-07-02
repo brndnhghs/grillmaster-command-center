@@ -96,6 +96,14 @@ class _DynDim:
     def __floor__(self):          return math.floor(self._val())
     def __ceil__(self):           return math.ceil(self._val())
 
+    # ── NumPy interop — makes np.result_type(), np.mgrid[:H,:W], etc. work ──
+    # numpy's dtype-detection code (nd_grid, result_type, …) calls np.asarray()
+    # on unknown objects.  Returning a 0-d int64 array makes numpy treat us as
+    # an integer scalar without affecting shape or broadcasting semantics.
+    def __array__(self, dtype=None):
+        v = self._val()
+        return np.array(v, dtype=dtype) if dtype is not None else np.array(v, dtype=np.intp)
+
 
 def set_canvas(w: int, h: int) -> "_cv.Token":
     """Activate canvas dimensions for the current thread. Returns a reset token."""
@@ -181,6 +189,43 @@ def _install_cv2_canvas_patch() -> None:
 
 
 _install_cv2_canvas_patch()
+
+
+# ── numpy mgrid/ogrid patch ────────────────────────────────────────────
+# np.mgrid[:H, :W] builds a slice list and passes the bounds to
+# np.result_type().  numpy's result_type C code doesn't honour __array__
+# for unknown objects — it calls str(H) → '512' → np.dtype('512') which
+# raises TypeError.  Pre-converting _DynDim bounds to plain int fixes all
+# ~70 call sites without touching the node files.
+def _install_numpy_canvas_patch() -> None:
+    try:
+        def _fix_key(key):
+            def _fix(s):
+                if isinstance(s, slice):
+                    return slice(
+                        int(s.start) if isinstance(s.start, _DynDim) else s.start,
+                        int(s.stop)  if isinstance(s.stop,  _DynDim) else s.stop,
+                        int(s.step)  if isinstance(s.step,  _DynDim) else s.step,
+                    )
+                return int(s) if isinstance(s, _DynDim) else s
+
+            if isinstance(key, tuple):
+                return tuple(_fix(s) for s in key)
+            return _fix(key)
+
+        for grid_obj in (np.mgrid, np.ogrid):
+            cls = type(grid_obj)
+            _orig = cls.__getitem__
+
+            def _patched(self, key, _orig=_orig):
+                return _orig(self, _fix_key(key))
+
+            cls.__getitem__ = _patched
+    except Exception:
+        pass
+
+
+_install_numpy_canvas_patch()
 
 
 def write_scalars(node_dir: Path, **kwargs: float) -> None:

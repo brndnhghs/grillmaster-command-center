@@ -1017,7 +1017,11 @@ def _run_graph_job(job_id, nodes, edges, seed, frames, start_frame, out_dir, wid
 
         # Assemble output file
         if not terminal_frames:
-            q.put(("error", "No output produced — terminal node generated no image"))
+            _term_desc = f"'{terminal_node_id}'" if terminal_node_id else "(none found)"
+            q.put(("error",
+                   f"No output produced — terminal node {_term_desc} generated no image. "
+                   "It may be a data-only node (Timeline, LFO, Math, …); "
+                   "set the render flag on an image-producing node."))
             return
 
         if n_frames > 1:

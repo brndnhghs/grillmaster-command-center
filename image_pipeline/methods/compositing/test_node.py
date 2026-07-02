@@ -39,7 +39,7 @@ from ...core.animation import capture_frame
         "field_in": "FIELD",
         "particles_in": "PARTICLES",
         "mask_in": "MASK",
-        "anim_speed": "FIELD",
+        "anim_speed": "SCALAR",
     },
     outputs={
         "image": "IMAGE",
@@ -86,7 +86,7 @@ from ...core.animation import capture_frame
             "default": "none",
         },
         "anim_speed": {
-            "description": "animation speed multiplier (can be driven by FIELD)",
+            "description": "animation speed multiplier (can be driven by SCALAR)",
             "min": 0.0, "max": 5.0, "default": 0.5,
         },
     },
