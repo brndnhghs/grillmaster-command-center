@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "name": "age_density",
+  "nodes": [
+    {
+      "id": "n52",
+      "method_id": "__counter__",
+      "params": {
+        "mode": "loop",
+        "end": 100
+      },
+      "x": 100,
+      "y": 150,
+      "render": false
+    },
+    {
+      "id": "n53",
+      "method_id": "__lfo__",
+      "params": {
+        "waveform": "sine",
+        "min": 0.05,
+        "max": 0.7
+      },
+      "x": 100,
+      "y": 300,
+      "render": false
+    },
+    {
+      "id": "n54",
+      "method_id": "18",
+      "params": {
+        "rule": "conway",
+        "seed_pattern": "random",
+        "density": 0.3,
+        "color": "mono",
+        "size": 4
+      },
+      "x": 400,
+      "y": 200,
+      "render": true
+    }
+  ],
+  "edges": [
+    {
+      "src_node": "n52",
+      "src_port": "value",
+      "dst_node": "n54",
+      "dst_port": "age_input"
+    },
+    {
+      "src_node": "n53",
+      "src_port": "value",
+      "dst_node": "n54",
+      "dst_port": "density"
+    }
+  ]
+}

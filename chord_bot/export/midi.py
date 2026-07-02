@@ -14,7 +14,7 @@ import struct
 from pathlib import Path
 from typing import Sequence
 
-from ..types import HarmonicState, SequenceEntry, QUALITY_INTERVALS
+from ..chord_types import HarmonicState, SequenceEntry, QUALITY_INTERVALS
 
 
 # ── MIDI utility ───────────────────────────────────────────────────────────────
@@ -182,7 +182,7 @@ def write_midi(
             gate        = float(parts[2]) if len(parts) > 2 else 0.8
             span        = int(parts[3]) if len(parts) > 3 else 1
             try:
-                from ..types import note_to_pc
+                from ..chord_types import note_to_pc
                 root_pc = note_to_pc(s.root)
             except Exception:
                 root_pc = 0

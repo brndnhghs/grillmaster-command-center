@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from ..registry import chord
-from ..types import HarmonicState, note_to_pc, pc_to_note
+from ..chord_types import HarmonicState, note_to_pc, pc_to_note
 
 
 @chord(

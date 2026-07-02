@@ -5,6 +5,7 @@ import base64
 import importlib
 import io
 import json
+import os
 import queue
 import re
 import shutil
@@ -61,6 +62,35 @@ SEQUENCES_DIR.mkdir(parents=True, exist_ok=True)
 # In-memory keyframe store (per-node keyframe lists, replace semantics)
 _keyframe_store: dict[str, list[dict]] = {}
 
+# ── Live preview buffer (MJPEG streaming) ──────────────────────────────
+_LIVE_FRAME: bytes | None = None
+_LIVE_FRAME_LOCK = threading.Lock()
+_LIVE_FRAME_COND = threading.Condition(_LIVE_FRAME_LOCK)  # for MJPEG waiters
+_LIVE_FRAME_ID = 0  # monotonic counter so MJPEG can detect new frames
+
+
+def _push_live_frame(arr):
+    """Encode a numpy array as JPEG and store in the live buffer."""
+    global _LIVE_FRAME, _LIVE_FRAME_ID
+    from PIL import Image
+    import numpy as np
+    if isinstance(arr, np.ndarray):
+        if arr.dtype != np.uint8:
+            arr = (arr.clip(0, 1) * 255).astype(np.uint8)
+        img = Image.fromarray(arr)
+    else:
+        img = arr
+    img = img.convert("RGB")
+    w, h = img.size
+    if w > 1280:
+        ratio = 1280 / w
+        img = img.resize((1280, int(h * ratio)), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=85)
+    with _LIVE_FRAME_LOCK:
+        _LIVE_FRAME = buf.getvalue()
+        _LIVE_FRAME_ID += 1
+        _LIVE_FRAME_COND.notify_all()
 UI_DIR = Path(__file__).resolve().parent.parent / "ui"
 
 # ── Hot-reload infrastructure ─────────────────────────────────────────
@@ -173,6 +203,9 @@ class _ThreadDispatchWriter:
     def fileno(self):
         return self._real.fileno()
 
+    def isatty(self):
+        return self._real.isatty()
+
 
 _stdout_proxy = _ThreadDispatchWriter(sys.__stdout__)
 _stderr_proxy = _ThreadDispatchWriter(sys.__stderr__)
@@ -252,6 +285,21 @@ def serve_ui():
     return FileResponse(str(UI_DIR / "index.html"))
 
 
+@app.get("/health")
+def health():
+    return {"ok": True}
+
+
+@app.post("/admin/restart")
+def admin_restart():
+    """Re-exec the server process in place — picks up any source changes."""
+    def _exec():
+        time.sleep(0.4)  # let the HTTP response drain first
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    threading.Thread(target=_exec, daemon=True).start()
+    return {"restarting": True}
+
+
 @app.get("/api/methods")
 def list_methods():
     all_methods = registry.get_all()
@@ -276,6 +324,8 @@ class GenerateRequest(BaseModel):
     duration: float = 3.0
     filter: str | None = None  # postprocess filter spec, e.g. "oil" or '{"effect":"bloom"}'
     demo: bool = False          # overlay param annotations on output image
+    width: int = 768
+    height: int = 512
 
 
 @app.post("/api/generate")
@@ -300,7 +350,7 @@ def generate(req: GenerateRequest):
         target=_run_job,
         args=(job_id, req.method_id, req.seed, req.params or None,
               req.animate, req.fps, req.duration, out_dir,
-              req.filter, req.demo),
+              req.filter, req.demo, req.width, req.height),
         daemon=True,
     )
     thread.start()
@@ -362,7 +412,9 @@ def _encode_frame(arr) -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
-def _run_job(job_id, method_id, seed, params, animate, fps, duration, out_dir, filter_spec=None, demo=False):
+def _run_job(job_id, method_id, seed, params, animate, fps, duration, out_dir, filter_spec=None, demo=False, width=768, height=512):
+    from image_pipeline.core.utils import set_canvas as _set_canvas
+    _set_canvas(width, height)
     job = _jobs[job_id]
     q = job["q"]
     cancel_event: threading.Event = job["cancel_event"]
@@ -552,6 +604,69 @@ async def sse_events():
     )
 
 
+# ── Live preview endpoints (MJPEG stream + polling fallback) ──────────
+
+
+@app.get("/api/live/stream")
+async def live_mjpeg_stream():
+    """MJPEG multipart/x-mixed-replace stream of the live preview buffer."""
+    def _wait_for_new_frame(last_id):
+        """Block until a new frame is available or timeout."""
+        with _LIVE_FRAME_COND:
+            if _LIVE_FRAME_ID == last_id:
+                _LIVE_FRAME_COND.wait(timeout=1.0)
+
+    async def generate():
+        last_id = -1
+        loop = asyncio.get_event_loop()
+        while True:
+            if _LIVE_FRAME_ID == last_id:
+                await loop.run_in_executor(None, _wait_for_new_frame, last_id)
+            with _LIVE_FRAME_LOCK:
+                fid = _LIVE_FRAME_ID
+                data = _LIVE_FRAME
+            if data is not None and fid != last_id:
+                last_id = fid
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n"
+                    b"Content-Length: " + str(len(data)).encode() + b"\r\n"
+                    b"\r\n" + data + b"\r\n"
+                )
+
+    return StreamingResponse(
+        generate(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+
+
+@app.get("/api/live/frame.jpg")
+def live_frame_jpg():
+    """Polling fallback — returns the latest live frame as a JPEG.
+    The browser polls this with ?t=timestamp to bypass cache.
+    """
+    with _LIVE_FRAME_LOCK:
+        data = _LIVE_FRAME
+    if data is None:
+        from fastapi.responses import Response
+        return Response(status_code=204)
+    from fastapi.responses import Response
+    return Response(
+        content=data,
+        media_type="image/jpeg",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
 # ── File result ───────────────────────────────────────────────────────
 
 
@@ -731,6 +846,8 @@ class GraphRequest(BaseModel):
     seed: int = 42
     frames: int = 1
     frame: int = 0
+    width: int = 768
+    height: int = 512
 
 
 @app.post("/api/graph/execute")
@@ -753,14 +870,72 @@ def execute_graph(req: GraphRequest):
 
     thread = threading.Thread(
         target=_run_graph_job,
-        args=(job_id, req.nodes, req.edges, req.seed, req.frames, req.frame, out_dir),
+        args=(job_id, req.nodes, req.edges, req.seed, req.frames, req.frame, out_dir,
+              req.width, req.height),
         daemon=True,
     )
     thread.start()
     return {"job_id": job_id}
 
 
-def _run_graph_job(job_id, nodes, edges, seed, frames, start_frame, out_dir):
+# ── Live sim: continuous graph execution ──────────────────────────
+_live_sim_cancel = threading.Event()
+_live_sim_nodes = []
+_live_sim_edges = []
+_live_sim_seed = 0
+_live_sim_width = 768
+_live_sim_height = 512
+
+
+@app.post("/api/graph/live")
+def live_graph_sim(req: GraphRequest):
+    """Start or stop a continuous graph simulation.
+    Runs the graph in an infinite loop, pushing frames to the live preview.
+    """
+    global _live_sim_cancel, _live_sim_nodes, _live_sim_edges, _live_sim_seed, _live_sim_width, _live_sim_height
+    if req.frames == 0:
+        # Stop
+        _live_sim_cancel.set()
+        return {"status": "stopped"}
+    # Start
+    _live_sim_cancel = threading.Event()
+    _live_sim_nodes = req.nodes
+    _live_sim_edges = req.edges
+    _live_sim_seed = req.seed
+    _live_sim_width = req.width
+    _live_sim_height = req.height
+
+    def _live_loop():
+        from image_pipeline.core.graph import GraphExecutor
+        from image_pipeline.core.utils import set_canvas as _set_canvas
+        _set_canvas(_live_sim_width, _live_sim_height)
+        executor = GraphExecutor(OUTPUT_ROOT / "_live_sim", in_memory=True)
+        frame = 0
+        while not _live_sim_cancel.is_set():
+            try:
+                flat_outputs, terminal_id, _ = executor.execute(
+                    _live_sim_nodes, _live_sim_edges, _live_sim_seed,
+                    frame=frame, frames=1
+                )
+                render_id = next((n["id"] for n in _live_sim_nodes if n.get("render")), None)
+                if render_id and render_id in flat_outputs:
+                    terminal_id = render_id
+                arr = (flat_outputs.get(terminal_id) or {}).get("image") if terminal_id else None
+                if arr is not None:
+                    _push_live_frame(arr)
+                frame += 1
+            except Exception:
+                pass
+            time.sleep(0.01)
+
+    thread = threading.Thread(target=_live_loop, daemon=True)
+    thread.start()
+    return {"status": "running"}
+
+
+def _run_graph_job(job_id, nodes, edges, seed, frames, start_frame, out_dir, width=768, height=512):
+    from image_pipeline.core.utils import set_canvas as _set_canvas
+    _set_canvas(width, height)
     job = _jobs[job_id]
     q = job["q"]
     cancel_event: threading.Event = job["cancel_event"]
@@ -772,12 +947,21 @@ def _run_graph_job(job_id, nodes, edges, seed, frames, start_frame, out_dir):
 
     try:
         from image_pipeline.core.animation import frames_to_mp4
-        executor = GraphExecutor(_GRAPH_SESSION_DIR)
+        executor = GraphExecutor(_GRAPH_SESSION_DIR, in_memory=True)
         terminal_frames: list = []
         terminal_node_id: str | None = None
 
         n_frames = max(1, frames)
         all_errors: dict[str, str] = {}
+
+        # ── Force all nodes dirty so every run re-executes ──────────────
+        # The client marks nodes clean after a successful run, but the
+        # executor's disk cache (_GRAPH_SESSION_DIR) persists across jobs.
+        # Without this, the dirty-flag skip reads the last frame's PNG from
+        # the previous run for every frame — producing a static image instead
+        # of re-cooking the animation.
+        for n in nodes:
+            n["dirty"] = True
 
         # ── Determine timeline sequence name ──────────────────────────
         # Use the timeline name from the graph, or auto-generate one.
@@ -934,6 +1118,8 @@ class SequenceRequest(BaseModel):
     end_frame: int = 47
     fps: int = 24
     output_name: str = "sequence"
+    width: int = 768
+    height: int = 512
 
 
 @app.post("/api/graph/render-sequence")
@@ -956,7 +1142,9 @@ async def render_sequence(req: SequenceRequest):
     loop = asyncio.get_event_loop()
 
     def _seq_worker():
-        executor = GraphExecutor(work_dir, fps=req.fps)
+        from image_pipeline.core.utils import set_canvas as _set_canvas
+        _set_canvas(req.width, req.height)
+        executor = GraphExecutor(work_dir, fps=req.fps, in_memory=True)
         n_frames = end_frame - start_frame + 1
 
         # Extract per-node animParams (stripped from GraphNode schema)
@@ -1052,13 +1240,17 @@ def get_sequence_frame(name: str, frame: int):
     if not png_path.exists():
         from fastapi import HTTPException
         raise HTTPException(404, f"Frame {frame} not found in sequence '{name}'")
+    # Serve as JPEG for faster transfer — PNGs are 5-10x larger
+    jpg_path = png_path.with_suffix(".jpg")
+    if not jpg_path.exists():
+        from PIL import Image
+        img = Image.open(str(png_path)).convert("RGB")
+        img.save(str(jpg_path), format="JPEG", quality=85)
     return FileResponse(
-        str(png_path),
-        media_type="image/png",
+        str(jpg_path),
+        media_type="image/jpeg",
         headers={
-            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-            "Pragma": "no-cache",
-            "Expires": "0",
+            "Cache-Control": "public, max-age=31536000, immutable",
         },
     )
 

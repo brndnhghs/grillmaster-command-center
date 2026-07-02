@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .registry import get_meta, ChordMeta
-from .types import HarmonicState, SequenceEntry
+from .chord_types import HarmonicState, SequenceEntry
 from .keyframes import evaluate_param_tracks
 
 
@@ -119,19 +119,38 @@ class ChordExecutor:
             meta = get_meta(node.type)
             node_axis[nid] = meta.axis if meta else "horizontal"
 
-        # Map each horizontal node → sorted list of vertical augmenters attached to it
-        # An augmenter is attached when its harmonic_in edge comes from a horizontal node.
-        aug_map: dict[str, list[str]] = {nid: [] for nid in order if node_axis.get(nid) == "horizontal"}
+        # Build adjacency for vertical chain walking (V→V edges)
+        v_adj: dict[str, list[str]] = {nid: [] for nid in order}
         for edge in gedges:
-            if node_axis.get(edge.dst_node) == "vertical" and node_axis.get(edge.src_node) == "horizontal":
-                if edge.src_node in aug_map:
-                    aug_map[edge.src_node].append(edge.dst_node)
+            if node_axis.get(edge.dst_node) == "vertical":
+                v_adj[edge.src_node].append(edge.dst_node)
 
-        # Build a sub-order for augmenters of each horizontal node
-        # (sort by topological position within the full order to respect dependencies)
+        # Map each horizontal node → ordered list of ALL vertical augmenters reachable
+        # from it (including V→V chains), in topological visit order.
         order_index = {nid: i for i, nid in enumerate(order)}
-        for src_nid in aug_map:
-            aug_map[src_nid].sort(key=lambda nid: order_index.get(nid, 0))
+
+        def _collect_augs(h_nid: str) -> list[str]:
+            """BFS from an H node through the V chain, returning V node ids in topo order."""
+            visited: set[str] = set()
+            result: list[str] = []
+            queue = list(v_adj.get(h_nid, []))
+            while queue:
+                vid = queue.pop(0)
+                if vid in visited:
+                    continue
+                if node_axis.get(vid) != "vertical":
+                    continue
+                visited.add(vid)
+                result.append(vid)
+                queue.extend(v_adj.get(vid, []))
+            result.sort(key=lambda nid: order_index.get(nid, 0))
+            return result
+
+        aug_map: dict[str, list[str]] = {
+            nid: _collect_augs(nid)
+            for nid in order
+            if node_axis.get(nid) == "horizontal"
+        }
 
         # Initialise state with a silent placeholder
         state = HarmonicState()
@@ -155,6 +174,12 @@ class ChordExecutor:
             run_params = dict(node.params)
             kf_vals = evaluate_param_tracks(node.paramKeyframes, beat)
             run_params.update(kf_vals)
+            # Inject current beat position so node functions can use it for
+            # position-dependent seeding (Markov, randomisation, etc.)
+            run_params["_beat"] = beat
+            # Inject accumulated sequence so Repeat node (and others) can
+            # reference previously generated material.
+            run_params["_sequence"] = [e.to_dict() for e in sequence]
 
             # ── Execute horizontal node ───────────────────────────────────────
             result = None

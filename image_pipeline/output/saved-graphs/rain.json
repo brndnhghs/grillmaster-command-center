@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "name": "rain",
+  "nodes": [
+    {
+      "id": "n25",
+      "method_id": "__noise1d__",
+      "params": {
+        "min": 0.0,
+        "max": 0.3,
+        "rate": 2.0
+      },
+      "x": 100,
+      "y": 200,
+      "render": false
+    },
+    {
+      "id": "n26",
+      "method_id": "18",
+      "params": {
+        "rule": "conway",
+        "seed_pattern": "random",
+        "density": 0.3,
+        "color": "mono",
+        "size": 4
+      },
+      "x": 400,
+      "y": 200,
+      "render": true
+    }
+  ],
+  "edges": [
+    {
+      "src_node": "n25",
+      "src_port": "value",
+      "dst_node": "n26",
+      "dst_port": "inject_rate"
+    }
+  ]
+}

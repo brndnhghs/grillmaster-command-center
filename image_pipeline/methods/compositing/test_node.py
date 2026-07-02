@@ -1,11 +1,13 @@
 """Test Node — graph-level connection tester.
 
-Outputs known test patterns for every data type (IMAGE, SCALAR, FIELD, PARTICLES, MASK)
+Outputs known test patterns for every data type (IMAGE, FIELD, PARTICLES, MASK, SCALAR)
 so you can wire it to any node and verify connections pass data correctly.
 
 When wired as an input, it reads the incoming data and reports what it received
 (type, shape, value range, sample values) so you can see if a node is actually
 producing valid output on its ports.
+
+Supports animation modes for testing temporal continuity and FIELD-driven params.
 
 Usage:
   1. Drop a Test Node into the graph
@@ -14,16 +16,16 @@ Usage:
   4. Run the graph — the Test Node writes a detailed report to its output dir
   5. Click the Test Node to see the report in the params panel
 """
-
 from __future__ import annotations
 import json
+import math
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
 
 from ...core.registry import method
-from ...core.utils import save, mn, write_scalars, write_field, W, H
+from ...core.utils import W, H
+from ...core.animation import capture_frame
 
 
 @method(
@@ -37,15 +39,15 @@ from ...core.utils import save, mn, write_scalars, write_field, W, H
         "field_in": "FIELD",
         "particles_in": "PARTICLES",
         "mask_in": "MASK",
+        "anim_speed": "FIELD",
     },
     outputs={
         "image": "IMAGE",
-        "luminance": "SCALAR",
+        "luminance": "FIELD",
         "field": "FIELD",
         "particles": "PARTICLES",
         "mask": "MASK",
         "test_scalar": "SCALAR",
-        "test_scalar_b": "SCALAR",
     },
     params={
         "test_pattern": {
@@ -63,9 +65,7 @@ from ...core.utils import save, mn, write_scalars, write_field, W, H
         },
         "particle_count": {
             "description": "number of test particles to emit",
-            "min": 0,
-            "max": 10000,
-            "default": 100,
+            "min": 0, "max": 10000, "default": 100,
         },
         "mask_pattern": {
             "description": "output mask pattern",
@@ -74,45 +74,58 @@ from ...core.utils import save, mn, write_scalars, write_field, W, H
         },
         "scalar_value": {
             "description": "test scalar output value",
-            "min": -1000,
-            "max": 1000,
-            "default": 42.0,
+            "default": 1.0,
         },
         "scalar_value_b": {
             "description": "second test scalar output",
-            "min": -1000,
-            "max": 1000,
-            "default": 3.14159,
+            "default": 25.0,
+        },
+        "anim_mode": {
+            "description": "animation mode for testing temporal continuity",
+            "choices": ["none", "pattern_morph", "scalar_sweep", "field_rotate"],
+            "default": "none",
+        },
+        "anim_speed": {
+            "description": "animation speed multiplier (can be driven by FIELD)",
+            "min": 0.0, "max": 5.0, "default": 0.5,
         },
     },
 )
 def method_test_node(out_dir: Path, seed: int, params=None):
+    """Test Node — graph-level connection tester.
+
+    Generates test patterns for every data type and reports what inputs
+    were received. Supports animation modes for testing temporal continuity.
+
+    Returns:
+        dict with "image", "field", "particles", "mask", "test_scalar", "test_scalar_b"
+    """
     if params is None:
         params = {}
 
-    # ── Read wired inputs ──────────────────────────────────────────
-    report = {
-        "inputs": {},
-        "outputs": {},
-    }
+    t = float(params.get("time", 0.0))
+    anim_mode = params.get("anim_mode", "none")
+    anim_speed_field = params.get("_field_anim_speed")
+    if anim_speed_field is not None:
+        anim_speed = float(np.mean(anim_speed_field))
+    else:
+        anim_speed = float(params.get("anim_speed", 0.5))
 
-    # Check for wired image input
-    input_image_path = params.get("input_image", "")
-    if input_image_path:
-        try:
-            img = Image.open(input_image_path).convert("RGB")
-            arr = np.array(img, dtype=np.float32) / 255.0
-            report["inputs"]["image_in"] = {
-                "connected": True,
-                "shape": list(arr.shape),
-                "dtype": str(arr.dtype),
-                "mean": round(float(np.mean(arr)), 4),
-                "min": round(float(np.min(arr)), 4),
-                "max": round(float(np.max(arr)), 4),
-                "std": round(float(np.std(arr)), 4),
-            }
-        except Exception as e:
-            report["inputs"]["image_in"] = {"connected": True, "error": str(e)[:200]}
+    # ── Read wired inputs ──────────────────────────────────────────
+    report = {"inputs": {}, "outputs": {}}
+
+    # Check for wired image input (new contract: _input_image)
+    input_img = params.get("_input_image")
+    if input_img is not None:
+        report["inputs"]["image_in"] = {
+            "connected": True,
+            "shape": list(input_img.shape),
+            "dtype": str(input_img.dtype),
+            "mean": round(float(np.mean(input_img)), 4),
+            "min": round(float(np.min(input_img)), 4),
+            "max": round(float(np.max(input_img)), 4),
+            "std": round(float(np.std(input_img)), 4),
+        }
     else:
         report["inputs"]["image_in"] = {"connected": False}
 
@@ -127,21 +140,17 @@ def method_test_node(out_dir: Path, seed: int, params=None):
     else:
         report["inputs"]["scalar_in"] = {"connected": False}
 
-    # Check for wired field input
-    field_a_path = params.get("field_a_path", "")
-    if field_a_path:
-        try:
-            farr = np.load(field_a_path)
-            report["inputs"]["field_in"] = {
-                "connected": True,
-                "shape": list(farr.shape),
-                "dtype": str(farr.dtype),
-                "mean": round(float(np.mean(farr)), 4),
-                "min": round(float(np.min(farr)), 4),
-                "max": round(float(np.max(farr)), 4),
-            }
-        except Exception as e:
-            report["inputs"]["field_in"] = {"connected": True, "error": str(e)[:200]}
+    # Check for wired field input (new contract: _field_field_in)
+    field_val = params.get("_field_field_in")
+    if field_val is not None:
+        report["inputs"]["field_in"] = {
+            "connected": True,
+            "shape": list(field_val.shape),
+            "dtype": str(field_val.dtype),
+            "mean": round(float(np.mean(field_val)), 4),
+            "min": round(float(np.min(field_val)), 4),
+            "max": round(float(np.max(field_val)), 4),
+        }
     else:
         report["inputs"]["field_in"] = {"connected": False}
 
@@ -179,24 +188,60 @@ def method_test_node(out_dir: Path, seed: int, params=None):
     else:
         report["inputs"]["mask_in"] = {"connected": False}
 
+    # ── Animation: effective params ──
+    effective_pattern = params.get("test_pattern", "color_bars")
+    effective_field = params.get("field_pattern", "sine_gradient")
+    effective_scalar = float(params.get("scalar_value", 1.0))
+    scalar_b = float(params.get("scalar_value_b", 25.0))
+    morph_fade = 0.0
+    pattern_b = effective_pattern
+    field_b = effective_field
+
+    if anim_mode == "pattern_morph":
+        choices = ["color_bars", "checkerboard", "gradient_h", "gradient_v", "noise", "color_ramp"]
+        n = len(choices)
+        raw_idx = (t / (2 * math.pi)) * n * anim_speed
+        idx_a = int(raw_idx) % n
+        idx_b = (idx_a + 1) % n
+        morph_fade = raw_idx - int(raw_idx)
+        effective_pattern = choices[idx_a]
+        pattern_b = choices[idx_b]
+
+    elif anim_mode == "scalar_sweep":
+        # Lerp between scalar_value and scalar_value_b on test_scalar output
+        t_norm = 0.5 + 0.5 * math.sin(t * anim_speed)
+        effective_scalar = effective_scalar + (scalar_b - effective_scalar) * t_norm
+
+    elif anim_mode == "field_rotate":
+        fchoices = ["sine_gradient", "gaussian", "checkerboard", "constant"]
+        n = len(fchoices)
+        raw_idx = (t / (2 * math.pi)) * n * anim_speed
+        idx_a = int(raw_idx) % n
+        idx_b = (idx_a + 1) % n
+        morph_fade = raw_idx - int(raw_idx)
+        effective_field = fchoices[idx_a]
+        field_b = fchoices[idx_b]
+
     # ── Generate output image ─────────────────────────────────────
-    pattern = params.get("test_pattern", "color_bars")
-    img_arr = _make_image_pattern(pattern, seed)
-    save(img_arr, mn(999, "test-node"), out_dir)
+    img_arr = _make_image_pattern(effective_pattern, seed)
+    if anim_mode == "pattern_morph" and morph_fade > 0.0:
+        img_b = _make_image_pattern(pattern_b, seed + 1)
+        img_arr = (1.0 - morph_fade) * img_arr + morph_fade * img_b
 
     report["outputs"]["image"] = {
-        "pattern": pattern,
+        "pattern": effective_pattern,
         "shape": list(img_arr.shape),
         "mean": round(float(np.mean(img_arr)), 4),
     }
 
     # ── Generate output field ─────────────────────────────────────
-    field_pattern = params.get("field_pattern", "sine_gradient")
-    field_arr = _make_field_pattern(field_pattern, seed)
-    write_field(out_dir, field_arr)
+    field_arr = _make_field_pattern(effective_field, seed)
+    if anim_mode == "field_rotate" and morph_fade > 0.0:
+        field_b_arr = _make_field_pattern(field_b, seed + 1)
+        field_arr = (1.0 - morph_fade) * field_arr + morph_fade * field_b_arr
 
     report["outputs"]["field"] = {
-        "pattern": field_pattern,
+        "pattern": effective_field,
         "shape": list(field_arr.shape),
         "mean": round(float(np.mean(field_arr)), 4),
         "min": round(float(np.min(field_arr)), 4),
@@ -206,7 +251,6 @@ def method_test_node(out_dir: Path, seed: int, params=None):
     # ── Generate output particles ──────────────────────────────────
     pcount = int(params.get("particle_count", 100))
     particles = _make_particles(pcount, seed)
-    np.save(str(out_dir / "particles.npy"), particles)
 
     report["outputs"]["particles"] = {
         "count": pcount,
@@ -217,7 +261,6 @@ def method_test_node(out_dir: Path, seed: int, params=None):
     # ── Generate output mask ──────────────────────────────────────
     mask_pattern = params.get("mask_pattern", "circle")
     mask_arr = _make_mask_pattern(mask_pattern, seed)
-    np.save(str(out_dir / "mask.npy"), mask_arr)
 
     report["outputs"]["mask"] = {
         "pattern": mask_pattern,
@@ -225,16 +268,20 @@ def method_test_node(out_dir: Path, seed: int, params=None):
         "mean": round(float(np.mean(mask_arr)), 4),
     }
 
-    # ── Output scalars ─────────────────────────────────────────────
-    scalar_val = float(params.get("scalar_value", 42.0))
-    scalar_b = float(params.get("scalar_value_b", 3.14159))
-    write_scalars(out_dir, test_scalar=scalar_val, test_scalar_b=scalar_b)
-
-    report["outputs"]["test_scalar"] = scalar_val
-    report["outputs"]["test_scalar_b"] = scalar_b
-
     # ── Write report ─────────────────────────────────────────────
     (out_dir / "test_report.json").write_text(json.dumps(report, indent=2))
+
+    # ── Live preview ──────────────────────────────────────────────
+    capture_frame("__test__", img_arr)
+
+    # ── Return dict matching declared outputs ─────────────────────
+    return {
+        "image": img_arr,
+        "field": field_arr,
+        "particles": particles,
+        "mask": mask_arr,
+        "test_scalar": effective_scalar,
+    }
 
 
 def _make_image_pattern(pattern: str, seed: int) -> np.ndarray:
@@ -243,18 +290,11 @@ def _make_image_pattern(pattern: str, seed: int) -> np.ndarray:
     arr = np.zeros((H, W, 3), dtype=np.float32)
 
     if pattern == "color_bars":
-        # 8 vertical color bars
         bars = 8
         bw = W // bars
         colors = [
-            (1.0, 1.0, 1.0),  # white
-            (1.0, 1.0, 0.0),  # yellow
-            (0.0, 1.0, 1.0),  # cyan
-            (0.0, 1.0, 0.0),  # green
-            (1.0, 0.0, 1.0),  # magenta
-            (1.0, 0.0, 0.0),  # red
-            (0.0, 0.0, 1.0),  # blue
-            (0.0, 0.0, 0.0),  # black
+            (1.0, 1.0, 1.0), (1.0, 1.0, 0.0), (0.0, 1.0, 1.0), (0.0, 1.0, 0.0),
+            (1.0, 0.0, 1.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0), (0.0, 0.0, 0.0),
         ]
         for i, (r, g, b) in enumerate(colors):
             arr[:, i * bw : (i + 1) * bw] = [r, g, b]
@@ -318,10 +358,10 @@ def _make_particles(count: int, seed: int) -> np.ndarray:
     """Generate test particles: [x, y, vx, vy]."""
     rng = np.random.RandomState(seed)
     particles = np.zeros((count, 4), dtype=np.float32)
-    particles[:, 0] = rng.rand(count).astype(np.float32) * W  # x
-    particles[:, 1] = rng.rand(count).astype(np.float32) * H  # y
-    particles[:, 2] = (rng.rand(count).astype(np.float32) - 0.5) * 4  # vx
-    particles[:, 3] = (rng.rand(count).astype(np.float32) - 0.5) * 4  # vy
+    particles[:, 0] = rng.rand(count).astype(np.float32) * W
+    particles[:, 1] = rng.rand(count).astype(np.float32) * H
+    particles[:, 2] = (rng.rand(count).astype(np.float32) - 0.5) * 4
+    particles[:, 3] = (rng.rand(count).astype(np.float32) - 0.5) * 4
     return particles
 
 

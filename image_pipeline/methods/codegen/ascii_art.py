@@ -1,5 +1,7 @@
-"""
-Code-gen method — auto-split from codegen.py
+"""ASCII Art — pure image-to-ASCII processing node.
+
+Requires an upstream image wired into image_in. No internal source generation.
+If no input is connected, returns an error state (black image).
 """
 from __future__ import annotations
 import math
@@ -10,9 +12,9 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 from ...core.registry import method
-from ...core.utils import save, mn, seed_all, get_font, W, H, write_scalars
+from ...core.utils import seed_all, get_font, W, H, mn
 from ...core.animation import capture_frame
-from ...core.utils import ordered_dither, load_input
+from ...core.utils import ordered_dither
 from scipy.ndimage import map_coordinates
 
 BUILTIN_CHARSETS = {
@@ -33,28 +35,40 @@ BUILTIN_CHARSETS = {
     "math": "∫∑∏√∞≈≠≤≥±∓×÷∩∪⊂⊃∈∉∀∃∄∧∨⊕⊗⊖⊘⊙⊚⊛",
 }
 
+# ── Error placeholder ──────────────────────────────────────────
+_ERROR_IMG = np.zeros((H, W, 3), dtype=np.float32)
+
+
 @method(id="01", name="ASCII Art", category="codegen", tags=["text", "fast", "animation", "expanded"],
+         inputs={"image_in": "IMAGE",
+                 "font_size": "FIELD",
+                 "dither_strength": "FIELD",
+                 "char_spacing": "FIELD",
+                 "anim_speed": "FIELD"},
+         outputs={"image": "IMAGE", "luminance": "FIELD"},
          params={
              "preset": {"description": "built-in charset name", "choices": ["default", "blocks", "shapes", "narrow", "dense", "braille", "binary", "half", "morse", "wide", "emoji", "katakana", "runes", "geometric", "math"], "default": "default"},
              "charset": {"description": "custom ramp characters (overrides preset). dark→light order", "default": ""},
-             "sw": {"description": "width divisor (smaller = coarser)", "min": 2, "max": 128, "default": 32},
-             "sh": {"description": "height divisor (smaller = coarser)", "min": 2, "max": 128, "default": 48},
-             "font_size": {"description": "render font size", "min": 6, "max": 20, "default": 10},
-             "char_spacing": {"description": "horizontal spacing multiplier (<1 = tighter)", "min": 0.3, "max": 2.0, "default": 1.0},
+             "font_size": {"description": "render font size (can be driven by FIELD)", "min": 6, "max": 20, "default": 10},
+             "char_spacing": {"description": "horizontal spacing multiplier (<1 = tighter, can be driven by FIELD)", "min": 0.3, "max": 2.0, "default": 1.0},
              "invert": {"description": "white-on-dark instead of dark-on-white", "default": False},
              "color": {"description": "preserve source image colors on each char", "default": False},
-             "source": {"description": "image source", "choices": ["perlin", "input_image", "text_input", "emoji"], "default": "perlin"},
-             "text_content": {"description": "text to render as ASCII (for text_input source)", "default": "Hello World"},
              "output_format": {"description": "output format", "choices": ["png", "html", "svg", "ansi"], "default": "png"},
-             "charset_mode": {"description": "charset generation mode", "choices": ["preset", "auto_generate", "weighted_random", "adaptive", "image_adaptive"], "default": "preset"},
-             "charset_prompt": {"description": "text prompt for auto_generate charset mode", "default": "@%#*+=-:. "},
              "effect": {"description": "visual effect", "choices": ["none", "dither", "edge_emphasis", "glow", "color_bleed", "drift", "scroll", "char_morph", "wave"], "default": "none"},
-             "dither_strength": {"description": "dither/effect strength", "min": 0.0, "max": 1.0, "default": 0.5},
-             "input_path": {"description": "path to input image (for input_image source)", "default": ""},
+             "dither_strength": {"description": "dither/effect strength (can be driven by FIELD)", "min": 0.0, "max": 1.0, "default": 0.5},
              "anim_mode": {"description": "animation mode", "choices": ["none", "charset_morph", "font_pulse", "dither_strength_sweep", "char_spacing_pulse"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.0, "max": 2.0, "default": 0.25},
          })
-def method_ascii(out_dir: Path, seed: int, params=None, image_in=None):
+def method_ascii(out_dir: Path, seed: int, params=None):
+    """Convert an upstream image to ASCII art.
+
+    Requires an image wired into image_in. If no input is connected,
+    returns an error state (black image).
+
+    Applies effects (dither, edge, glow, drift, scroll, wave) to the
+    grayscale source before mapping to characters. Supports animation
+    modes for charset morphing, font pulsing, and parameter sweeps.
+    """
     if params is None:
         params = {}
     time_param = float(params.get("time", 0.0))
@@ -67,12 +81,9 @@ def method_ascii(out_dir: Path, seed: int, params=None, image_in=None):
         time_param = 0.0
         anim_speed = 0.0
 
-    # ── Parse params ──
+    # ── Parse params (with FIELD overrides) ──
     preset = params.get("preset", "default")
     raw_charset = params.get("charset", "")
-    sw = max(1, W // int(params.get("sw", 32)))
-    sh = max(1, H // int(params.get("sh", 48)))
-    font_size = int(params.get("font_size", 10))
     char_spacing = float(params.get("char_spacing", 1.0))
     invert = params.get("invert", False)
     if isinstance(invert, str):
@@ -82,17 +93,32 @@ def method_ascii(out_dir: Path, seed: int, params=None, image_in=None):
     if isinstance(use_color, str):
         use_color = use_color.lower() in ("true", "1", "yes")
     use_color = bool(use_color)
-    source = params.get("source", "perlin")
-    text_content = params.get("text_content", "Hello World")
     output_format = params.get("output_format", "png")
-    charset_mode = params.get("charset_mode", "preset")
-    charset_prompt = params.get("charset_prompt", "@%#*+=-:. ")
     effect = params.get("effect", "none")
     dither_strength = float(params.get("dither_strength", 0.5))
 
-    # ── Effective effect/source for morph modes ──
+    # FIELD-driven params: if a FIELD port is wired, use it as per-pixel array
+    font_size_field = params.get("_field_font_size")
+    dither_strength_field = params.get("_field_dither_strength")
+    char_spacing_field = params.get("_field_char_spacing")
+    anim_speed_field = params.get("_field_anim_speed")
+
+    # Resolve font_size: FIELD override → scalar default
+    if font_size_field is not None:
+        font_size = int(np.clip(np.mean(font_size_field) * 14 + 6, 6, 20))
+    else:
+        font_size = int(params.get("font_size", 10))
+    font_size = max(6, min(20, font_size))
+
+    # Resolve anim_speed: FIELD override → scalar default
+    if anim_speed_field is not None:
+        anim_speed = float(np.mean(anim_speed_field))
+    else:
+        anim_speed = float(params.get("anim_speed", 0.25))
+
+    # ── Effective effect for morph modes ──
     effective_effect = effect
-    morph_fade = 0.0  # cross-fade blend factor for smooth transitions
+    morph_fade = 0.0
     if anim_mode == "charset_morph":
         charset_keys = list(BUILTIN_CHARSETS.keys())
         raw_idx = (time_param / (2 * math.pi)) * len(charset_keys) * anim_speed
@@ -104,14 +130,8 @@ def method_ascii(out_dir: Path, seed: int, params=None, image_in=None):
     elif anim_mode == "font_pulse":
         font_size = 6 + 14 * (0.5 + 0.5 * math.sin(time_param * anim_speed))
     elif anim_mode == "dither_strength_sweep":
-        # Sweep dither_strength 0→1 over the animation cycle
         dither_strength = 0.5 + 0.5 * math.sin(time_param * anim_speed)
-        # Force an effect that's always visible regardless of `effect` param
-        # When effect is "none", use it as base contrast modulation
-        if effective_effect == "none" or effective_effect == "dither":
-            pass  # applied inline below or in effects block
     elif anim_mode == "char_spacing_pulse":
-        # Characters breathe horizontally — tight→loose→tight
         char_spacing = 0.3 + 1.7 * (0.5 + 0.5 * math.sin(time_param * anim_speed))
 
     # ── Resolve charset ──
@@ -120,77 +140,40 @@ def method_ascii(out_dir: Path, seed: int, params=None, image_in=None):
     else:
         CHARS = BUILTIN_CHARSETS.get(preset, BUILTIN_CHARSETS["default"])
 
-    # ── Build source image ──
-    img_src = Image.new("RGB", (W, H), (10, 10, 18))
-    draw_src = ImageDraw.Draw(img_src)
+    # ── Read upstream image ──
+    wired_input_array = params.get("_input_image")
+    if wired_input_array is None:
+        # No input connected — return error state
+        capture_frame("01", _ERROR_IMG)
+        return {"image": _ERROR_IMG, "luminance": 0.0}
 
-    # If an upstream image is wired in, ALWAYS use it — override the source param
-    wired_input_path = params.get("input_image", "")
-    if wired_input_path:
-        try:
-            img_src_arr = load_input(wired_input_path, W, H)
-            img_src = Image.fromarray((img_src_arr * 255).astype(np.uint8), "RGB")
-        except (FileNotFoundError, OSError):
-            pass  # fall through to source-based generation below
-
-    if source == "perlin" and not wired_input_path:
-        # Generate simple perlin-like noise
-        yy, xx = np.mgrid[:H, :W].astype(np.float32)
-        cx, cy = W / 2.0, H / 2.0
-        xc = xx - cx
-        yc = yy - cy
-        r = np.sqrt(xc ** 2 + yc ** 2)
-        theta = np.arctan2(yc, xc)
-        val = np.sin(r * 0.03 + theta * 3) * 0.5 + 0.5
-        val = val * 0.7 + 0.3 * np.sin(xx * 0.02 + yy * 0.015)
-        img_src_arr = (val * 255).astype(np.uint8)
-        img_src = Image.fromarray(np.stack([img_src_arr] * 3, axis=-1), "RGB")
-    elif source == "input_image" and not wired_input_path:
-        # Use the pipeline's image_in input if available, else fallback to file
-        # image_in is passed as a keyword argument from the pipeline
-        if image_in is not None:
-            # image_in is float32 HxWx3 in [0,1]
-            img_src_arr = (np.clip(image_in, 0, 1) * 255).astype(np.uint8)
-            img_src = Image.fromarray(img_src_arr, "RGB")
-        else:
-            # Fallback: try params (legacy) or file
-            fallback = params.get("image_in")
-            if fallback is not None:
-                img_src_arr = (np.clip(fallback, 0, 1) * 255).astype(np.uint8)
-                img_src = Image.fromarray(img_src_arr, "RGB")
-            else:
-                try:
-                    img_src_arr = load_input(str(out_dir / "input.png"), W, H)
-                    img_src = Image.fromarray((img_src_arr * 255).astype(np.uint8), "RGB")
-                except (FileNotFoundError, OSError):
-                    # Fallback: gradient
-                    for y in range(H):
-                        col = (int(50 + 100 * y / H), int(30 + 50 * y / H), int(80 + 120 * y / H))
-                        draw_src.line([(0, y), (W, y)], fill=col)
-    elif source == "text_input":
-        font = get_font(48)
-        lines = text_content.split("\n")
-        y_off = H // 2 - len(lines) * 30
-        for line in lines:
-            try:
-                bbox = font.getbbox(line)
-                tw = bbox[2] - bbox[0]
-            except AttributeError:
-                tw, th = font.getsize(line)
-            draw_src.text(((W - tw) // 2, y_off), line, fill=(200, 200, 200), font=font)
-            y_off += 60
-    elif source == "emoji":
-        font = get_font(120)
-        draw_src.text((W // 2 - 60, H // 2 - 60), text_content if text_content else "😀", fill=(200, 200, 200), font=font)
+    img_src_arr = (np.clip(wired_input_array, 0, 1) * 255).astype(np.uint8)
+    img_src = Image.fromarray(img_src_arr, "RGB")
 
     # ── Convert to grayscale ──
     gray = img_src.convert("L")
     gray_arr = np.array(gray, dtype=np.float32) / 255.0
 
-    # ── Effects ──
-    # dither_strength_sweep as standalone contrast modulation (works with any effect)
+    # ── Effects (with FIELD overrides) ──
+    if font_size_field is not None:
+        # Per-pixel font size: map field [0,1] → font_size range
+        font_size_min = 6
+        font_size_max = 20
+        font_size_arr = font_size_min + font_size_field * (font_size_max - font_size_min)
+    else:
+        font_size_arr = None
+
+    if dither_strength_field is not None:
+        dither_strength_arr = dither_strength_field
+    else:
+        dither_strength_arr = None
+
+    if char_spacing_field is not None:
+        char_spacing_arr = 0.3 + char_spacing_field * 1.7
+    else:
+        char_spacing_arr = None
+
     if effective_effect == "none" and anim_mode == "dither_strength_sweep":
-        # Direct contrast modulation — visible regardless of effect setting
         contrast = 0.5 + dither_strength
         gray_arr = np.clip((gray_arr - 0.5) * contrast + 0.5, 0, 1)
     if effective_effect == "edge_emphasis":
@@ -202,8 +185,13 @@ def method_ascii(out_dir: Path, seed: int, params=None, image_in=None):
         glow_arr = np.array(blurred, dtype=np.float32) / 255.0
         gray_arr = np.clip(gray_arr * 1.2 + glow_arr * 0.3, 0, 1)
     elif effective_effect == "dither":
-        n_levels = int(2 + 6 * dither_strength + 2 * math.sin(time_param * 2 * anim_speed))
-        gray_arr = ordered_dither(gray_arr, levels=max(2, n_levels))
+        if dither_strength_arr is not None:
+            # Per-pixel dither levels
+            n_levels_arr = np.clip(2 + 6 * dither_strength_arr, 2, 8).astype(int)
+            gray_arr = ordered_dither(gray_arr, levels=n_levels_arr)
+        else:
+            n_levels = int(2 + 6 * dither_strength + 2 * math.sin(time_param * 2 * anim_speed))
+            gray_arr = ordered_dither(gray_arr, levels=max(2, n_levels))
     elif effective_effect == "color_bleed":
         rnd = np.random.RandomState(seed + 42)
         bleed = rnd.randn(H, W) * dither_strength * 0.1
@@ -215,12 +203,11 @@ def method_ascii(out_dir: Path, seed: int, params=None, image_in=None):
         coords = np.stack([np.clip(yy + dy, 0, H - 1), np.clip(xx + dx, 0, W - 1)], axis=0)
         gray_arr = map_coordinates(gray_arr, coords, order=1, mode="reflect")
     elif effective_effect == "scroll":
-        shift = (time_param * 20 * anim_speed) % W  # float, not int
+        shift = (time_param * 20 * anim_speed) % W
         yy, xx = np.mgrid[:H, :W].astype(np.float32)
         coords = np.stack([yy, (xx - shift) % W], axis=0)
         gray_arr = map_coordinates(gray_arr, coords, order=1, mode="wrap")
     elif effective_effect == "char_morph":
-        # Blur-warp effect
         blur_r = int(1 + dither_strength * 4 + math.sin(time_param * 1.5 * anim_speed) * 2)
         gray = Image.fromarray((gray_arr * 255).astype(np.uint8), "L")
         gray = gray.filter(ImageFilter.GaussianBlur(radius=max(1, blur_r)))
@@ -245,10 +232,18 @@ def method_ascii(out_dir: Path, seed: int, params=None, image_in=None):
     step_y = fh
     cols = max(1, W // step_x)
     rows = max(1, H // step_y)
-
-    def _render_ascii(gray_src, charset, fs, invert_flag, use_color_flag, img_src_ref, spacing):
-        """Render ASCII from grayscale source. Returns PIL Image."""
-        f = get_font(fs)
+    def _render_ascii(gray_src, charset, fs, invert_flag, use_color_flag, img_src_ref, spacing,
+                      fs_arr=None, sp_arr=None):
+        """Render ASCII from grayscale source. Returns PIL Image.
+        fs_arr: per-pixel font size array (H,W) or None
+        sp_arr: per-pixel char spacing array (H,W) or None
+        """
+        if fs_arr is not None:
+            # Per-pixel font size: use a single representative value for layout
+            _fs = int(np.median(fs_arr))
+        else:
+            _fs = fs
+        f = get_font(_fs)
         try:
             fw2 = f.getbbox("A")[2]
             fh2 = f.getbbox("A")[3]
@@ -256,7 +251,11 @@ def method_ascii(out_dir: Path, seed: int, params=None, image_in=None):
             fw2, fh2 = f.getsize("A")
         fw2 = max(fw2, 4)
         fh2 = max(fh2, 4)
-        sx2 = int(fw2 * spacing)
+        if sp_arr is not None:
+            _sp = float(np.median(sp_arr))
+        else:
+            _sp = spacing
+        sx2 = int(fw2 * _sp)
         sy2 = fh2
         c2 = max(1, W // sx2)
         r2 = max(1, H // sy2)
@@ -297,16 +296,18 @@ def method_ascii(out_dir: Path, seed: int, params=None, image_in=None):
     # ── Cross-fade rendering ──
     if anim_mode == "charset_morph" and morph_fade > 0.0:
         charset_b = BUILTIN_CHARSETS.get(_morph_charset_b, BUILTIN_CHARSETS["default"])
-        img_a = _render_ascii(gray_arr, CHARS, font_size, invert, use_color, img_src, char_spacing)
-        img_b = _render_ascii(gray_arr, charset_b, font_size, invert, use_color, img_src, char_spacing)
+        img_a = _render_ascii(gray_arr, CHARS, font_size, invert, use_color, img_src, char_spacing,
+                              fs_arr=font_size_arr, sp_arr=char_spacing_arr)
+        img_b = _render_ascii(gray_arr, charset_b, font_size, invert, use_color, img_src, char_spacing,
+                              fs_arr=font_size_arr, sp_arr=char_spacing_arr)
         out_img = Image.blend(img_a, img_b, morph_fade)
     else:
-        out_img = _render_ascii(gray_arr, CHARS, font_size, invert, use_color, img_src, char_spacing)
+        out_img = _render_ascii(gray_arr, CHARS, font_size, invert, use_color, img_src, char_spacing,
+                                fs_arr=font_size_arr, sp_arr=char_spacing_arr)
 
     # ── Output ──
-    # Always save PNG and capture frame
-    save(out_img, mn(1, "ASCII-Art"), out_dir)
-    capture_frame("01", np.array(out_img).astype(np.float32) / 255.0)
+    out_arr = np.array(out_img).astype(np.float32) / 255.0
+    capture_frame("01", out_arr)
 
     # Additional output formats
     if output_format == "html":
@@ -381,9 +382,8 @@ def method_ascii(out_dir: Path, seed: int, params=None, image_in=None):
             f.write("\n".join(ansi_lines))
         print(f"  ✓ {ansi_path.name}")
 
-    # ── Luminance scalar output ──
-    out_arr = np.array(out_img).astype(np.float32) / 255.0
-    luminance = float(np.mean(out_arr))
-    write_scalars(out_dir, luminance=luminance)
-
-    return out_arr
+    # ── Return dict matching declared outputs ──
+    return {
+        "image": out_arr,
+        "luminance": float(np.mean(out_arr)),
+    }

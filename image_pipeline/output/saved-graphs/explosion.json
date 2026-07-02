@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "name": "explosion",
+  "nodes": [
+    {
+      "id": "n21",
+      "method_id": "__ramp__",
+      "params": {
+        "mode": "once",
+        "start": 0.3,
+        "end": 0.6,
+        "duration_frames": 30
+      },
+      "x": 100,
+      "y": 200,
+      "render": false
+    },
+    {
+      "id": "n22",
+      "method_id": "18",
+      "params": {
+        "rule": "conway",
+        "seed_pattern": "random",
+        "density": 0.3,
+        "color": "mono",
+        "size": 4
+      },
+      "x": 400,
+      "y": 200,
+      "render": true
+    }
+  ],
+  "edges": [
+    {
+      "src_node": "n21",
+      "src_port": "value",
+      "dst_node": "n22",
+      "dst_port": "density"
+    }
+  ]
+}

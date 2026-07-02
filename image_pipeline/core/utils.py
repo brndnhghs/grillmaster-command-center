@@ -1,6 +1,8 @@
 """Shared utilities for all methods — saving, normalization, naming."""
 from __future__ import annotations
+import contextvars as _cv
 import math
+import operator as _operator
 import random
 from io import BytesIO
 from pathlib import Path
@@ -8,6 +10,177 @@ from pathlib import Path
 # cv2 imported lazily inside functions that need it
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
+
+
+# ── Per-job canvas context ─────────────────────────────────────────────
+# All ~160 node files do ``from ...core.utils import W, H``.  These imports
+# run once at module-load time and bind the local names to the _DynDim
+# objects below.  _DynDim deliberately does NOT subclass int: CPython
+# fast-paths PyLong_Check for int subclasses, bypassing __index__ and
+# __int__ overrides and reading the stored C-level integer directly.  As a
+# plain non-int class, every C extension that needs an integer calls the
+# Python-level nb_index / nb_int slot bridges, which honour our overrides
+# and resolve from the active ContextVar.  This makes the following work:
+#
+#   np.zeros((H, W, 3))           → __index__ → dynamic ✓
+#   range(W)                       → __index__ → dynamic ✓
+#   cv2.warpAffine(…, (W, H))     → __int__   → dynamic ✓
+#   pil.resize((W, H))            → __int__   → dynamic ✓
+#   W // 2,  W - 1,  W * 0.5 …   → arithmetic overrides → plain int ✓
+#
+# Perf: ContextVar.get() is O(1) ~100 ns; only called inside node bodies.
+
+CANVAS_DEFAULT: tuple[int, int] = (768, 512)
+_CANVAS: _cv.ContextVar[tuple[int, int]] = _cv.ContextVar(
+    "_canvas", default=CANVAS_DEFAULT
+)
+
+
+class _DynDim:
+    """Canvas dimension proxy that resolves from the active canvas ContextVar."""
+    __slots__ = ("_idx",)
+
+    def __init__(self, idx: int):
+        self._idx = idx
+
+    def _val(self) -> int:
+        return _CANVAS.get()[self._idx]
+
+    # ── C-extension protocol hooks ───────────────────────────────────
+    def __index__(self):         return self._val()
+    def __int__(self):           return self._val()
+    def __float__(self):         return float(self._val())
+    def __bool__(self):          return bool(self._val())
+
+    # ── Arithmetic — always return plain int so callers stay unaware ─
+    def _o(self, o): return o._val() if isinstance(o, _DynDim) else o
+
+    def __add__(self, o):         return self._val() + self._o(o)
+    def __radd__(self, o):        return self._o(o) + self._val()
+    def __sub__(self, o):         return self._val() - self._o(o)
+    def __rsub__(self, o):        return self._o(o) - self._val()
+    def __mul__(self, o):         return self._val() * self._o(o)
+    def __rmul__(self, o):        return self._o(o) * self._val()
+    def __floordiv__(self, o):    return self._val() // self._o(o)
+    def __rfloordiv__(self, o):   return self._o(o) // self._val()
+    def __truediv__(self, o):     return self._val() / self._o(o)
+    def __rtruediv__(self, o):    return self._o(o) / self._val()
+    def __mod__(self, o):         return self._val() % self._o(o)
+    def __rmod__(self, o):        return self._o(o) % self._val()
+    def __pow__(self, o, m=None): return pow(self._val(), self._o(o), m)
+    def __neg__(self):            return -self._val()
+    def __pos__(self):            return +self._val()
+    def __abs__(self):            return abs(self._val())
+    def __lshift__(self, o):      return self._val() << self._o(o)
+    def __rshift__(self, o):      return self._val() >> self._o(o)
+    def __and__(self, o):         return self._val() & self._o(o)
+    def __or__(self, o):          return self._val() | self._o(o)
+    def __xor__(self, o):         return self._val() ^ self._o(o)
+
+    # ── Comparisons — Python prefers subclass reflected op, so
+    #    ``plain_int < W`` calls W.__gt__(plain_int) → correct ──────
+    def __lt__(self, o):  return self._val() <  self._o(o)
+    def __le__(self, o):  return self._val() <= self._o(o)
+    def __gt__(self, o):  return self._val() >  self._o(o)
+    def __ge__(self, o):  return self._val() >= self._o(o)
+    def __eq__(self, o):  return self._val() == self._o(o)
+    def __ne__(self, o):  return self._val() != self._o(o)
+    def __hash__(self):   return hash(self._val())
+
+    # ── Formatting / math protocol ───────────────────────────────────
+    def __repr__(self):           return repr(self._val())
+    def __str__(self):            return str(self._val())
+    def __format__(self, spec):   return format(self._val(), spec)
+    def __round__(self, n=None):  return round(self._val(), n)
+    def __trunc__(self):          return int(self._val())
+    def __floor__(self):          return math.floor(self._val())
+    def __ceil__(self):           return math.ceil(self._val())
+
+
+def set_canvas(w: int, h: int) -> "_cv.Token":
+    """Activate canvas dimensions for the current thread. Returns a reset token."""
+    return _CANVAS.set((int(w), int(h)))
+
+
+def reset_canvas(token: "_cv.Token") -> None:
+    """Restore the canvas context to what it was before set_canvas()."""
+    _CANVAS.reset(token)
+
+
+def get_canvas() -> tuple[int, int]:
+    """Return (width, height) of the currently active canvas context."""
+    return _CANVAS.get()
+
+
+# Module-level canvas dimension proxies.  All node files that do
+# ``from ...core.utils import W, H`` get these objects once at import
+# time; every subsequent use inside a node function resolves dynamically.
+W = _DynDim(0)
+H = _DynDim(1)
+
+
+# ── PIL patch — apply operator.index() before the C extension sees sizes ──
+# PIL's C layer calls PyLong_AsLong which reads the stored int of a _DynDim
+# subclass rather than calling __index__.  Wrapping new() and resize() on
+# the Python side fixes this with zero impact on non-_DynDim callers.
+def _install_pil_canvas_patch() -> None:
+    try:
+        import PIL.Image as _PI
+        _orig_new = _PI.new
+
+        def _new_patched(mode, size, color=0):
+            if hasattr(size, "__len__") and len(size) == 2:
+                size = (_operator.index(size[0]), _operator.index(size[1]))
+            return _orig_new(mode, size, color)
+
+        _PI.new = _new_patched
+
+        _orig_resize = _PI.Image.resize
+
+        def _resize_patched(self, size, *args, **kwargs):
+            if hasattr(size, "__len__") and len(size) == 2:
+                size = (_operator.index(size[0]), _operator.index(size[1]))
+            return _orig_resize(self, size, *args, **kwargs)
+
+        _PI.Image.resize = _resize_patched
+    except Exception:
+        pass  # PIL unavailable or API changed; degrade gracefully
+
+
+_install_pil_canvas_patch()
+
+
+# ── cv2 patch — convert (W, H) size tuples to actual ints ─────────────
+# cv2's C bindings use PyLong_Check for dsize elements, which rejects our
+# non-int _DynDim proxy.  Wrapping the specific functions that accept a
+# canvas-sized dsize tuple resolves the dimensions on the Python side first.
+def _install_cv2_canvas_patch() -> None:
+    try:
+        import cv2 as _cv
+
+        def _int_tuple(t):
+            return tuple(int(x) for x in t)
+
+        _orig_resize = _cv.resize
+        def _resize(src, dsize, *a, **kw):
+            return _orig_resize(src, _int_tuple(dsize), *a, **kw)
+        _cv.resize = _resize
+
+        _orig_warp = _cv.warpAffine
+        def _warpAffine(src, M, dsize, *a, **kw):
+            return _orig_warp(src, M, _int_tuple(dsize), *a, **kw)
+        _cv.warpAffine = _warpAffine
+
+        _orig_persp = _cv.warpPerspective
+        def _warpPerspective(src, M, dsize, *a, **kw):
+            return _orig_persp(src, M, _int_tuple(dsize), *a, **kw)
+        _cv.warpPerspective = _warpPerspective
+
+    except Exception:
+        pass  # cv2 unavailable; degrade gracefully
+
+
+_install_cv2_canvas_patch()
 
 
 def write_scalars(node_dir: Path, **kwargs: float) -> None:
@@ -119,7 +292,6 @@ def seed_all(s: int):
 
 
 BG_DEFAULT = (128, 128, 128)
-W, H = 768, 512
 
 # ── Palettes for pixel art & posterize ────────────────────────────────
 
@@ -294,13 +466,25 @@ def floyd_steinberg_dither(arr: np.ndarray, levels: int = 2) -> np.ndarray:
     return out.clip(0, 1)
 
 
-def load_input(path: str | Path, target_w: int = W, target_h: int = H) -> np.ndarray:
-    """Load an external image, resize to target, return float32 [0,1] array (H,W,3)."""
-    from PIL import Image
+def load_input(
+    path: str | Path,
+    target_w: int | None = None,
+    target_h: int | None = None,
+) -> np.ndarray:
+    """Load an external image, resize to canvas size, return float32 [0,1] (H,W,3).
+
+    target_w / target_h default to the active canvas context so that callers
+    with hardcoded ``load_input(path, W, H)`` still receive explicit values
+    (W and H are _DynDim objects whose __index__ resolves correctly), and
+    callers with no explicit size get the job's canvas automatically.
+    """
+    from PIL import Image as _PILI
+    cw, ch = get_canvas()
+    tw = target_w if target_w is not None else cw
+    th = target_h if target_h is not None else ch
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError(f"Input image not found: {p}")
-    img = Image.open(str(p)).convert("RGB")
-    img = img.resize((target_w, target_h), Image.LANCZOS)
-    arr = np.array(img, dtype=np.float32) / 255.0
-    return arr
+    img = _PILI.open(str(p)).convert("RGB")
+    img = img.resize((int(tw), int(th)), _PILI.LANCZOS)
+    return np.array(img, dtype=np.float32) / 255.0
