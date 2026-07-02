@@ -18,38 +18,58 @@ from ..core.animation import capture_frame
 
 
 @method(id="22", name="ffmpeg Frame", category="cli_tools", tags=["ffmpeg", "expanded"],
+        inputs={
+            "image_in": "IMAGE",
+            "font_size": "SCALAR",
+        },
+        outputs={"image": "IMAGE", "luminance": "FIELD"},
         params={
             "text": {"description": "overlay text on frame", "default": "ffmpeg Frame"},
             "bg_color": {"description": "background hex color", "default": "#0a0a12"},
             "text_color": {"description": "text hex color", "default": "#4a3a2a"},
-            "font_size": {"description": "text font size", "min": 12, "max": 120, "default": 24},
+            "font_size": {"description": "text font size", "default": 24},
             "font_path": {"description": "TTF font file path", "default": "/System/Library/Fonts/Helvetica.ttc"},
         })
 def method_ffmpeg(out_dir: Path, seed: int, params=None):
     """Generate a frame with ffmpeg drawtext filter, with PIL fallback.
 
-    Uses ffmpeg's drawtext filter to render text over a solid color or
-    input image. Falls back to PIL ImageDraw if ffmpeg is unavailable.
+    Architecture B (stateless, one call = one frame). Accepts an optional
+    upstream image via image_in for text overlay compositing.
 
     Params:
         text: overlay text on frame
         bg_color: background hex color
         text_color: text hex color
-        font_size: text font size (12-120)
+        font_size: text font size
         font_path: TTF font file path
     """
     if params is None:
         params = {}
     seed_all(seed)
+
+    # ── Read SCALAR inputs ──
+    font_size_override = params.get("font_size")
+    if font_size_override is not None:
+        font_size = int(font_size_override)
+    else:
+        font_size = int(params.get("font_size", 24))
+
+    # ── Read UI params ──
     text = params.get("text", "ffmpeg Frame")
     bg_color = params.get("bg_color", "#0a0a12").lstrip("#")
     text_color = params.get("text_color", "#4a3a2a").lstrip("#")
-    font_size = int(params.get("font_size", 24))
     font_path = params.get("font_path", "/System/Library/Fonts/Helvetica.ttc")
+
+    # ── Read upstream image (optional) ──
+    input_img = params.get("_input_image")
+    img_arr = None
+    if input_img is not None:
+        img_arr = (np.clip(input_img, 0, 1) * 255).astype(np.uint8)
+
     outpath = str(out_dir / mn(22, "ffmpeg Frame"))
-    if params.get("input_image"):
-        img_arr = load_input(params["input_image"])
-        _input_img = Image.fromarray((img_arr * 255).astype(np.uint8))
+    if input_img is not None:
+        img_arr = (np.clip(input_img, 0, 1) * 255).astype(np.uint8)
+        _input_img = Image.fromarray(img_arr)
         _input_path = str(out_dir / "_ffmpeg_input.png")
         _input_img.save(_input_path)
         cmd = [
@@ -70,36 +90,53 @@ def method_ffmpeg(out_dir: Path, seed: int, params=None):
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
     if r.returncode == 0 and (out_dir / mn(22, "ffmpeg Frame")).exists():
         print(f"  ✓ {mn(22, 'ffmpeg Frame')}  ({(out_dir / mn(22, 'ffmpeg Frame')).stat().st_size // 1024} KB)")
+        # Read back the ffmpeg output
+        from PIL import Image as _PIL_read
+        result_img = _PIL_read.open(str(out_dir / mn(22, "ffmpeg Frame"))).convert("RGB")
+        result_arr = np.array(result_img, dtype=np.float32) / 255.0
     else:
-        img = Image.new("RGB", (W, H), tuple(int(bg_color[i:i+2], 16) for i in (0, 2, 4)))
-        draw = ImageDraw.Draw(img)
+        # PIL fallback
+        bg = tuple(int(bg_color[i:i+2], 16) for i in (0, 2, 4))
         tc = tuple(int(text_color[i:i+2], 16) for i in (0, 2, 4))
+        if input_img is not None and img_arr is not None:
+            img = Image.fromarray(img_arr).convert("RGB")
+        else:
+            img = Image.new("RGB", (W, H), bg)
+        draw = ImageDraw.Draw(img)
         draw.text((W // 2 - 120, H // 2 - 20), text, fill=tc, font=get_font(font_size, font_path))
-        capture_frame("22", np.array(img, dtype=np.float32) / 255.0)
-        save(img, mn(22, "ffmpeg Frame"), out_dir)
+        result_arr = np.array(img, dtype=np.float32) / 255.0
+
+    capture_frame("22", result_arr)
+    return {"image": result_arr}
 
 
 @method(id="23", name="ImageMagick", category="cli_tools", tags=["imagemagick", "expanded"],
+        inputs={
+            "image_in": "IMAGE",
+            "title_size": "SCALAR",
+            "subtitle_size": "SCALAR",
+            "detail_size": "SCALAR",
+        },
+        outputs={"image": "IMAGE", "luminance": "FIELD"},
         params={
             "bg_color": {"description": "canvas background color", "default": "#0a0a12"},
             "fill_color": {"description": "text fill color", "default": "#3a2a1a"},
             "title": {"description": "title text", "default": "ImageMagick"},
             "subtitle": {"description": "subtitle text", "default": "text overlay"},
             "detail": {"description": "detail line text", "default": "font=Helvetica, size=36/18/12"},
-            "title_size": {"description": "title font size", "min": 12, "max": 120, "default": 36},
-            "subtitle_size": {"description": "subtitle font size", "min": 8, "max": 72, "default": 18},
-            "detail_size": {"description": "detail font size", "min": 8, "max": 72, "default": 12},
+            "title_size": {"description": "title font size", "default": 36},
+            "subtitle_size": {"description": "subtitle font size", "default": 18},
+            "detail_size": {"description": "detail font size", "default": 12},
             "font": {"description": "font name", "default": "Helvetica"},
-            "spread": {"description": "pixel spread amount", "min": 0, "max": 50, "default": 5},
+            "spread": {"description": "pixel spread amount", "default": 5},
             "noise_type": {"description": "ImageMagick noise type", "default": "Gaussian"},
-            "min_bytes": {"description": "minimum output file size to accept", "min": 100, "max": 100000, "default": 1000},
+            "min_bytes": {"description": "minimum output file size to accept", "default": 1000},
         })
 def method_imagemagick(out_dir: Path, seed: int, params=None):
     """Generate an image using ImageMagick's convert command, with PIL fallback.
 
-    Uses ImageMagick to render text over a colored canvas with spread and
-    noise effects. Falls back to a solid-color PIL image if ImageMagick
-    is unavailable or produces a file below min_bytes.
+    Architecture B (stateless, one call = one frame). Accepts an optional
+    upstream image via image_in for text overlay compositing.
 
     Params:
         bg_color: canvas background color (hex)
@@ -107,39 +144,63 @@ def method_imagemagick(out_dir: Path, seed: int, params=None):
         title: title text
         subtitle: subtitle text
         detail: detail line text
-        title_size: title font size (12-120)
-        subtitle_size: subtitle font size (8-72)
-        detail_size: detail font size (8-72)
+        title_size: title font size
+        subtitle_size: subtitle font size
+        detail_size: detail font size
         font: font name
-        spread: pixel spread amount (0-50)
+        spread: pixel spread amount
         noise_type: ImageMagick noise type
-        min_bytes: minimum output file size to accept (100-100000)
+        min_bytes: minimum output file size to accept
     """
     if params is None:
         params = {}
     seed_all(seed)
-    if params.get("input_image"):
-        img_arr = load_input(params["input_image"])
-        _input_img = Image.fromarray((img_arr * 255).astype(np.uint8))
-        _input_path = str(out_dir / "_imagemagick_input.png")
-        _input_img.save(_input_path)
+
+    # ── Read SCALAR inputs ──
+    title_size_override = params.get("title_size")
+    if title_size_override is not None:
+        title_size = int(title_size_override)
+    else:
+        title_size = int(params.get("title_size", 36))
+
+    subtitle_size_override = params.get("subtitle_size")
+    if subtitle_size_override is not None:
+        subtitle_size = int(subtitle_size_override)
+    else:
+        subtitle_size = int(params.get("subtitle_size", 18))
+
+    detail_size_override = params.get("detail_size")
+    if detail_size_override is not None:
+        detail_size = int(detail_size_override)
+    else:
+        detail_size = int(params.get("detail_size", 12))
+
+    # ── Read UI params ──
     bg_color = params.get("bg_color", "#0a0a12")
     fill_color = params.get("fill_color", "#3a2a1a")
     title = params.get("title", "ImageMagick")
     subtitle = params.get("subtitle", "text overlay")
     detail = params.get("detail", "font=Helvetica, size=36/18/12")
-    title_size = int(params.get("title_size", 36))
-    subtitle_size = int(params.get("subtitle_size", 18))
-    detail_size = int(params.get("detail_size", 12))
     font_name = params.get("font", "Helvetica")
     spread = int(params.get("spread", 5))
     noise_type = params.get("noise_type", "Gaussian")
     min_bytes = int(params.get("min_bytes", 1000))
+
+    # ── Read upstream image (optional) ──
+    input_img = params.get("_input_image")
+    img_arr = None
+    if input_img is not None:
+        img_arr = (np.clip(input_img, 0, 1) * 255).astype(np.uint8)
+
     r = subprocess.run(["which", "convert"], capture_output=True, text=True)
     if r.returncode != 0:
         subprocess.run(["brew", "install", "imagemagick"], capture_output=True)
     outpath = str(out_dir / mn(23, "ImageMagick"))
-    if params.get("input_image"):
+    if input_img is not None:
+        img_arr = (np.clip(input_img, 0, 1) * 255).astype(np.uint8)
+        _input_img = Image.fromarray(img_arr)
+        _input_path = str(out_dir / "_imagemagick_input.png")
+        _input_img.save(_input_path)
         cmd = [
             "convert", _input_path,
             "-fill", fill_color, "-font", font_name, "-pointsize", str(title_size),
@@ -163,10 +224,25 @@ def method_imagemagick(out_dir: Path, seed: int, params=None):
         pass
     if (out_dir / mn(23, "ImageMagick")).exists() and (out_dir / mn(23, "ImageMagick")).stat().st_size > min_bytes:
         print(f"  ✓ {mn(23, 'ImageMagick')}  ({(out_dir / mn(23, 'ImageMagick')).stat().st_size // 1024} KB)")
+        from PIL import Image as _PIL_read
+        result_img = _PIL_read.open(str(out_dir / mn(23, "ImageMagick"))).convert("RGB")
+        result_arr = np.array(result_img, dtype=np.float32) / 255.0
     else:
-        img = Image.new("RGB", (W, H), tuple(int(bg_color.lstrip("#")[i:i+2], 16) for i in (0, 2, 4)))
-        capture_frame("23", np.array(img, dtype=np.float32) / 255.0)
-        save(img, mn(23, "ImageMagick"), out_dir)
+        # PIL fallback
+        bg = tuple(int(bg_color.lstrip("#")[i:i+2], 16) for i in (0, 2, 4))
+        fc = tuple(int(fill_color.lstrip("#")[i:i+2], 16) for i in (0, 2, 4))
+        if input_img is not None and img_arr is not None:
+            img = Image.fromarray(img_arr).convert("RGB")
+        else:
+            img = Image.new("RGB", (W, H), bg)
+        draw = ImageDraw.Draw(img)
+        draw.text((W // 2 - 120, H // 2 - 80), title, fill=fc, font=get_font(title_size))
+        draw.text((W // 2 - 120, H // 2), subtitle, fill=fc, font=get_font(subtitle_size))
+        draw.text((W // 2 - 120, H // 2 + 60), detail, fill=fc, font=get_font(detail_size))
+        result_arr = np.array(img, dtype=np.float32) / 255.0
+
+    capture_frame("23", result_arr)
+    return {"image": result_arr}
 
 
 @method(id="24", name="pyfiglet", category="cli_tools", tags=["text", "expanded"],
@@ -232,130 +308,6 @@ def method_pyfiglet(out_dir: Path, seed: int, params=None):
     save(img, mn(24, "pyfiglet"), out_dir)
 
 
-@method(id="25", name="boxes", category="cli_tools", tags=["text", "expanded"],
-        params={
-            "box_design": {"description": "boxes design name", "default": "whirly"},
-            "message": {"description": "text content piped into boxes", "default": "IMAGE PIPELINE v2\n\nmethod: 25\nbox: whirly"},
-            "fallback_text": {"description": "fallback if boxes fails", "default": "no boxes"},
-            "x_offset": {"description": "horizontal text offset", "min": 0, "max": W, "default": 10},
-            "y_offset": {"description": "vertical text offset", "min": 0, "max": H, "default": 10},
-            "line_spacing": {"description": "pixels between lines", "min": 8, "max": 48, "default": 14},
-            "font_size": {"description": "PIL font size", "min": 6, "max": 48, "default": 12},
-            "bg_color": {"description": "background RGB tuple as string", "default": "10,10,18"},
-            "text_color": {"description": "text RGB tuple as string", "default": "90,70,50"},
-        })
-def method_boxes(out_dir: Path, seed: int, params=None):
-    """Render text inside ASCII art boxes using the `boxes` CLI tool.
-
-    Pipes a message through the `boxes` command-line tool to generate
-    decorative ASCII art boxes, then renders the result as a PIL image.
-    Installs boxes via brew if not available.
-
-    Params:
-        box_design: boxes design name
-        message: text content piped into boxes
-        fallback_text: fallback if boxes fails
-        x_offset: horizontal text offset (0-W)
-        y_offset: vertical text offset (0-H)
-        line_spacing: pixels between lines (8-48)
-        font_size: PIL font size (6-48)
-        bg_color: background RGB tuple as string (e.g. \"10,10,18\")
-        text_color: text RGB tuple as string (e.g. \"90,70,50\")
-    """
-    if params is None:
-        params = {}
-    seed_all(seed)
-    box_design = params.get("box_design", "whirly")
-    message = params.get("message", "IMAGE PIPELINE v2\n\nmethod: 25\nbox: whirly")
-    fallback_text = params.get("fallback_text", "no boxes")
-    x_offset = int(params.get("x_offset", 10))
-    y_offset = int(params.get("y_offset", 10))
-    line_spacing = int(params.get("line_spacing", 14))
-    font_size = int(params.get("font_size", 12))
-    bg_color = tuple(int(x) for x in params.get("bg_color", "10,10,18").split(",")[:3])
-    text_color = tuple(int(x) for x in params.get("text_color", "90,70,50").split(",")[:3])
-    r = subprocess.run(["which", "boxes"], capture_output=True, text=True)
-    if r.returncode != 0:
-        subprocess.run(["brew", "install", "boxes"], capture_output=True)
-    try:
-        r = subprocess.run(
-            ["boxes", "-d", box_design],
-            input=message,
-            capture_output=True, text=True, timeout=5,
-        )
-        output = r.stdout if r.returncode == 0 else fallback_text
-    except Exception:
-        output = fallback_text
-    lines = output.split("\n")
-    img = Image.new("L", (W, H), 0)
-    draw = ImageDraw.Draw(img)
-    font = get_font(font_size)
-    for y, line in enumerate(lines):
-        draw.text((x_offset, y_offset + y * line_spacing), line, fill=255, font=font)
-    colored = Image.new("RGB", (W, H), bg_color)
-    colored.paste(ImageOps.colorize(img, bg_color, text_color), (0, 0))
-    capture_frame("25", np.array(colored, dtype=np.float32) / 255.0)
-    save(colored, mn(25, "boxes"), out_dir)
-
-
-@method(id="26", name="cowsay", category="cli_tools", tags=["text", "expanded"],
-        params={
-            "message": {"description": "text content for cowsay", "default": "Image Pipeline v2\nmethod: cowsay\nID: 26"},
-            "fallback_text": {"description": "fallback if cowsay fails", "default": "no cowsay"},
-            "x_offset": {"description": "horizontal text offset", "min": 0, "max": W, "default": 10},
-            "y_offset": {"description": "vertical text offset", "min": 0, "max": H, "default": 10},
-            "line_spacing": {"description": "pixels between lines", "min": 8, "max": 48, "default": 14},
-            "font_size": {"description": "PIL font size", "min": 6, "max": 48, "default": 12},
-            "bg_color": {"description": "background RGB tuple as string", "default": "10,10,18"},
-            "text_color": {"description": "text RGB tuple as string", "default": "90,70,50"},
-        })
-def method_cowsay(out_dir: Path, seed: int, params=None):
-    """Render text as ASCII art using the cowsay CLI tool, with PIL rendering.
-
-    Pipes a message through the `cowsay` command-line tool to generate
-    ASCII art with a cow character, then renders the result as a PIL image.
-
-    Params:
-        message: text content for cowsay
-        fallback_text: fallback if cowsay fails
-        x_offset: horizontal text offset (0-W)
-        y_offset: vertical text offset (0-H)
-        line_spacing: pixels between lines (8-48)
-        font_size: PIL font size (6-48)
-        bg_color: background RGB tuple as string (e.g. \"10,10,18\")
-        text_color: text RGB tuple as string (e.g. \"90,70,50\")
-    """
-    if params is None:
-        params = {}
-    seed_all(seed)
-    message = params.get("message", "Image Pipeline v2\nmethod: cowsay\nID: 26")
-    fallback_text = params.get("fallback_text", "no cowsay")
-    x_offset = int(params.get("x_offset", 10))
-    y_offset = int(params.get("y_offset", 10))
-    line_spacing = int(params.get("line_spacing", 14))
-    font_size = int(params.get("font_size", 12))
-    bg_color = tuple(int(x) for x in params.get("bg_color", "10,10,18").split(",")[:3])
-    text_color = tuple(int(x) for x in params.get("text_color", "90,70,50").split(",")[:3])
-    try:
-        r = subprocess.run(
-            ["cowsay", message],
-            capture_output=True, text=True, timeout=5,
-        )
-        output = r.stdout if r.returncode == 0 else fallback_text
-    except Exception:
-        output = fallback_text
-    lines = output.split("\n")
-    img = Image.new("L", (W, H), 0)
-    draw = ImageDraw.Draw(img)
-    font = get_font(font_size)
-    for y, line in enumerate(lines):
-        draw.text((x_offset, y_offset + y * line_spacing), line, fill=255, font=font)
-    colored = Image.new("RGB", (W, H), bg_color)
-    colored.paste(ImageOps.colorize(img, bg_color, text_color), (0, 0))
-    capture_frame("26", np.array(colored, dtype=np.float32) / 255.0)
-    save(colored, mn(26, "cowsay"), out_dir)
-
-
 @method(id="27", name="qrencode", category="cli_tools", tags=["code", "expanded"],
         params={
             "qr_data": {"description": "QR code payload text", "default": "ImagePipeline v2: method 27 (QR Code)"},
@@ -403,54 +355,60 @@ def method_qrencode(out_dir: Path, seed: int, params=None):
 
 
 @method(id="44", name="img2txt", category="cli_tools", tags=["text", "caca", "expanded"],
+        inputs={
+            "image_in": "IMAGE",
+            "ascii_width": "SCALAR",
+            "font_size": "SCALAR",
+        },
+        outputs={"image": "IMAGE", "luminance": "FIELD"},
         params={
-            "circle_count": {"description": "number of random circles to draw", "min": 10, "max": 200, "default": 50},
-            "circle_radius": {"description": "circle radius in pixels", "min": 2, "max": 50, "default": 10},
-            "bg_color": {"description": "background RGB tuple as string", "default": "10,10,18"},
-            "text_color": {"description": "text color RGB tuple as string", "default": "60,50,40"},
+            "bg_color": {"description": "background RGB tuple as string", "default": "0,0,0"},
+            "text_color": {"description": "text color RGB tuple as string", "default": "255,255,255"},
             "ascii_width": {"description": "img2txt output width in chars", "min": 40, "max": 300, "default": 120},
             "ascii_format": {"description": "img2txt output format", "default": "utf8"},
             "charset": {"description": "fallback ASCII ramp characters", "default": "@%#*+=-:. "},
             "subsample": {"description": "fallback pixel subsample step", "min": 1, "max": 16, "default": 4},
             "font_size": {"description": "PIL font size for rendering", "min": 6, "max": 48, "default": 10},
-            "anim_mode": {"description": "animation mode", "choices": ["none", "circle_morph", "char_cycle"], "default": "none"},
-            "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
         })
 def method_img2txt(out_dir: Path, seed: int, params=None):
     """Convert an image to ASCII text using img2txt CLI or fallback.
 
-    Generates a source image (random circles or input image), converts it
-    to ASCII text via the img2txt CLI tool (or a pure-Python fallback),
-    and renders the text onto a colored background. Animation modulates
-    circle positions or cycles through character sets.
+    Requires an upstream image via image_in. Converts it to ASCII text
+    via the img2txt CLI tool (or a pure-Python fallback), and renders
+    the text onto a colored background.
 
     Args:
         out_dir: Output directory for the generated image.
         seed: Random seed for deterministic output.
         params: Dict with keys:
-            circle_count: number of random circles to draw (10-200)
-            circle_radius: circle radius in pixels (2-50)
-            bg_color: background RGB tuple as string (e.g. '10,10,18')
-            text_color: text color RGB tuple as string (e.g. '60,50,40')
+            bg_color: background RGB tuple as string (e.g. '0,0,0')
+            text_color: text color RGB tuple as string (e.g. '255,255,255')
             ascii_width: img2txt output width in chars (40-300)
             ascii_format: img2txt output format
             charset: fallback ASCII ramp characters
             subsample: fallback pixel subsample step (1-16)
             font_size: PIL font size for rendering (6-48)
-            time: animation time in radians (0-6.28)
-            anim_mode: animation mode (none/circle_morph/char_cycle)
-            anim_speed: animation speed multiplier (0.1-5.0)
     """
     if params is None:
         params = {}
-    anim_time = float(params.get("time", 0.0))
-    anim_mode = params.get("anim_mode", "none")
-    anim_speed = float(params.get("anim_speed", 1.0))
-    seed_all(seed)
-    rng = random.Random(seed)
 
-    circle_count = int(params.get("circle_count", 50))
-    circle_radius = int(params.get("circle_radius", 10))
+    seed = seed & 0xFFFF0000
+    seed_all(seed)
+
+    # ── Read SCALAR inputs ──
+    ascii_width_override = params.get("ascii_width")
+    if ascii_width_override is not None:
+        ascii_width = int(ascii_width_override)
+    else:
+        ascii_width = int(params.get("ascii_width", 120))
+
+    font_size_override = params.get("font_size")
+    if font_size_override is not None:
+        font_size = int(font_size_override)
+    else:
+        font_size = int(params.get("font_size", 10))
+
+    # ── Read UI params ──
     try:
         bg_color = tuple(int(x) for x in params.get("bg_color", "10,10,18").split(",")[:3])
     except (ValueError, TypeError):
@@ -459,37 +417,16 @@ def method_img2txt(out_dir: Path, seed: int, params=None):
         text_color = tuple(int(x) for x in params.get("text_color", "60,50,40").split(",")[:3])
     except (ValueError, TypeError):
         text_color = (60, 50, 40)
-    ascii_width = int(params.get("ascii_width", 120))
     ascii_format = params.get("ascii_format", "utf8")
     charset = params.get("charset", "@%#*+=-:. ")
     subsample = int(params.get("subsample", 4))
-    font_size = int(params.get("font_size", 10))
 
-    # ── Animation ──
-    t = anim_time * anim_speed
-    if anim_mode == "circle_morph":
-        circle_radius = int(circle_radius * (0.5 + 0.5 * abs(math.sin(t * 0.3))))
-    elif anim_mode == "char_cycle":
-        charsets = ["@%#*+=-:. ", "█▓▒░ ", "▄▀■□○●", "▲▼◄►◆◇"]
-        idx = int(t * 0.2) % len(charsets)
-        charset = charsets[idx]
-    # else: none — use params as-is
-
-    # ── Generate source image ──
-    if params.get("input_image"):
-        from ..core.utils import load_input
-        img_arr = load_input(params["input_image"])
-        img = Image.fromarray((img_arr * 255).astype(np.uint8))
-    else:
-        img = Image.new("RGB", (W // 2, H // 2), bg_color)
-        draw = ImageDraw.Draw(img)
-        for _ in range(circle_count):
-            x = rng.randint(0, img.width)
-            y = rng.randint(0, img.height)
-            draw.ellipse(
-                [x - circle_radius, y - circle_radius, x + circle_radius, y + circle_radius],
-                fill=(rng.randint(30, 100), rng.randint(30, 80), rng.randint(30, 60)),
-            )
+    # ── Read upstream image (required) ──
+    input_img = params.get("_input_image")
+    if input_img is None:
+        print("  ✗ img2txt: no input image — requires image_in to be wired")
+        return {"image": np.zeros((H, W, 3), dtype=np.float32)}
+    img = Image.fromarray((np.clip(input_img, 0, 1) * 255).astype(np.uint8))
 
     # ── Convert to ASCII ──
     src = out_dir / "_caca_src.png"
@@ -497,7 +434,7 @@ def method_img2txt(out_dir: Path, seed: int, params=None):
         img.save(str(src))
     except OSError as e:
         print(f"  ✗ img2txt: source save failed: {e}")
-        return
+        return {"image": np.zeros((H, W, 3), dtype=np.float32)}
     ascii_text = ""
     try:
         result = subprocess.run(["img2txt", "-W", str(ascii_width), "-f", ascii_format, str(src)], capture_output=True, text=True, timeout=10)
@@ -520,26 +457,33 @@ def method_img2txt(out_dir: Path, seed: int, params=None):
     for y, line in enumerate(text_lines):
         out_draw.text((10, 10 + y * 12), line, fill=255, font=font)
     colored = ImageOps.colorize(out_img, bg_color, text_color)
-    capture_frame("44", np.array(colored, dtype=np.float32) / 255.0)
-    save(colored, mn(44, "img2txt"), out_dir)
+    colored_arr = np.array(colored, dtype=np.float32) / 255.0
+    capture_frame("44", colored_arr)
+    return {"image": colored_arr}
 
 
 @method(id="45", name="Graphviz", category="cli_tools", tags=["graph", "expanded"],
+        inputs={"anim_speed": "SCALAR",
+                "edge_density": "FIELD",
+                "node_count": "FIELD",
+                "edge_len": "FIELD",
+                "node_font_size": "FIELD"},
+        outputs={"image": "IMAGE", "luminance": "FIELD"},
         params={
-            "node_count": {"description": "number of graph nodes", "min": 10, "max": 200, "default": 40},
-            "edge_density": {"description": "number of random edges (node_count × multiplier)", "min": 1, "max": 10, "default": 2},
+            "node_count": {"description": "number of graph nodes (can be driven by FIELD)", "min": 10, "max": 200, "default": 40},
+            "edge_density": {"description": "number of random edges (node_count × multiplier, can be driven by FIELD)", "min": 1, "max": 10, "default": 2},
             "layout": {"description": "Graphviz layout engine (neato/dot/fdp/sfdp/twopi/circo)", "default": "neato"},
             "bg_color": {"description": "graph background hex color", "default": "#0a0a12"},
             "node_fill": {"description": "default node fill hex color", "default": "#2a2a32"},
             "node_font_color": {"description": "node label font hex color", "default": "#8a7a6a"},
             "node_border": {"description": "node border hex color", "default": "#4a4a5a"},
-            "node_font_size": {"description": "node label font size", "min": 4, "max": 24, "default": 8},
+            "node_font_size": {"description": "node label font size (can be driven by FIELD)", "min": 4, "max": 24, "default": 8},
             "edge_color": {"description": "edge line hex color", "default": "#4a3a2a"},
-            "edge_len": {"description": "edge length factor", "min": 0.5, "max": 10.0, "default": 1.5},
+            "edge_len": {"description": "edge length factor (can be driven by FIELD)", "min": 0.5, "max": 10.0, "default": 1.5},
             "dpi": {"description": "output DPI", "min": 36, "max": 300, "default": 72},
             "anim_mode": {"description": "animation mode", "choices": ["none", "edge_morph", "color_cycle",
                 "layout_cycle", "node_drift", "font_pulse", "bg_cycle", "edge_len_morph"], "default": "none"},
-            "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
+            "anim_speed": {"description": "animation speed multiplier (can be driven by FIELD)", "min": 0.1, "max": 5.0, "default": 1.0},
         })
 def method_graphviz(out_dir: Path, seed: int, params=None):
     """Generate a graph visualization using Graphviz dot.
@@ -550,43 +494,50 @@ def method_graphviz(out_dir: Path, seed: int, params=None):
     edge density, node colors, layout engine, node count, font size, and
     background color.
 
-    Args:
-        out_dir: Output directory for the generated image.
-        seed: Random seed for deterministic output.
-        params: Dict with keys:
-            node_count: number of graph nodes (10-200)
-            edge_density: edge multiplier (1-10)
-            layout: Graphviz layout engine (neato/dot/fdp/sfdp/twopi/circo)
-            bg_color: graph background hex color
-            node_fill: default node fill hex color
-            node_font_color: node label font hex color
-            node_border: node border hex color
-            node_font_size: node label font size (4-24)
-            edge_color: edge line hex color
-            edge_len: edge length factor (0.5-10)
-            dpi: output DPI (36-300)
-            time: animation time in radians (0-6.28)
-            anim_mode: animation mode (none/edge_morph/color_cycle/layout_cycle/node_drift/font_pulse/bg_cycle/edge_len_morph)
-            anim_speed: animation speed multiplier (0.1-5.0)
+    Returns:
+        dict with "image" (H,W,3 float32 [0,1]) — luminance auto-computed
     """
     if params is None:
         params = {}
     anim_time = float(params.get("time", 0.0))
     anim_mode = params.get("anim_mode", "none")
-    anim_speed = float(params.get("anim_speed", 1.0))
     seed_all(seed)
     rng = random.Random(seed)
 
+    # ── SCALAR-driven anim_speed ──
+    anim_speed_override = params.get("anim_speed")
+    if anim_speed_override is not None:
+        anim_speed = float(anim_speed_override)
+    else:
+        anim_speed = float(params.get("anim_speed", 1.0))
+
+    edge_density_field = params.get("_field_edge_density")
+    node_count_field = params.get("_field_node_count")
+    edge_len_field = params.get("_field_edge_len")
+    font_size_field = params.get("_field_node_font_size")
+
     n_nodes = int(params.get("node_count", 40))
+    if node_count_field is not None:
+        n_nodes = int(np.clip(np.mean(node_count_field) * 190 + 10, 10, 200))
+
     base_edge_density = int(params.get("edge_density", 2))
+    if edge_density_field is not None:
+        base_edge_density = int(np.clip(np.mean(edge_density_field) * 9 + 1, 1, 10))
+
     layout = params.get("layout", "neato")
     bg_color = params.get("bg_color", "#0a0a12")
     node_fill = params.get("node_fill", "#2a2a32")
     node_font_color = params.get("node_font_color", "#8a7a6a")
     node_border = params.get("node_border", "#4a4a5a")
     base_font_size = int(params.get("node_font_size", 8))
+    if font_size_field is not None:
+        base_font_size = int(np.clip(np.mean(font_size_field) * 20 + 4, 4, 24))
+
     edge_color = params.get("edge_color", "#4a3a2a")
     base_edge_len = float(params.get("edge_len", 1.5))
+    if edge_len_field is not None:
+        base_edge_len = float(np.clip(np.mean(edge_len_field) * 9.5 + 0.5, 0.5, 10.0))
+
     dpi = int(params.get("dpi", 72))
 
     # ── Per-frame time + seed ──
@@ -607,7 +558,6 @@ def method_graphviz(out_dir: Path, seed: int, params=None):
     _layouts = ["neato", "dot", "fdp", "sfdp", "twopi", "circo"]
 
     if anim_mode == "edge_morph":
-        # Smooth sin (no cusp) + round() not int() so it hits base_edge_density at peak
         frac = 0.3 + 0.7 * (0.5 + 0.5 * math.sin(t * 0.3))
         edge_density = max(1, round(base_edge_density * frac))
     elif anim_mode == "color_cycle":
@@ -619,16 +569,13 @@ def method_graphviz(out_dir: Path, seed: int, params=None):
         use_layout = _layouts[idx]
     elif anim_mode == "node_drift":
         edge_density = base_edge_density
-        # Oscillate node count between 50% and 100% of base
         frac = 0.5 + 0.5 * math.sin(t * 0.15)
         use_n_nodes = max(10, int(n_nodes * (0.5 + 0.5 * frac)))
     elif anim_mode == "font_pulse":
         edge_density = base_edge_density
-        # Pulse font size smoothly
         use_font_size = max(4, round(base_font_size * (0.6 + 0.8 * (0.5 + 0.5 * math.sin(t * 0.3)))))
     elif anim_mode == "bg_cycle":
         edge_density = base_edge_density
-        # Background hue cycle (sin-based RGB)
         hue = (t * 0.08) % 1.0
         r_c = int(40 * (0.5 + 0.5 * math.sin(hue * 2 * math.pi)))
         g_c = int(40 * (0.5 + 0.5 * math.sin(hue * 2 * math.pi + 2.094)))
@@ -645,8 +592,7 @@ def method_graphviz(out_dir: Path, seed: int, params=None):
     except (FileNotFoundError, subprocess.TimeoutExpired):
         fallback = np.ones((H, W, 3), dtype=np.float32) * 0.05
         capture_frame("45", fallback)
-        save(fallback, mn(45, "Graphviz"), out_dir)
-        return
+        return {"image": fallback}
 
     # ── Build DOT graph ──
     dot_lines = [
@@ -656,7 +602,6 @@ def method_graphviz(out_dir: Path, seed: int, params=None):
         f'  node [style=filled, fillcolor="{node_fill}", fontcolor="{node_font_color}", color="{node_border}", fontsize={use_font_size}];',
         f'  edge [color="{edge_color}", len={use_edge_len}];',
     ]
-    # Use _frng (per-frame seed) so node_drift and others get fresh layouts
     for i in range(use_n_nodes):
         if anim_mode == "color_cycle":
             hue = (i / max(1, use_n_nodes) + hue_shift) % 1.0
@@ -688,8 +633,7 @@ def method_graphviz(out_dir: Path, seed: int, params=None):
                 img = img.resize((W, H), Image.LANCZOS)
                 arr = np.array(img, dtype=np.float32) / 255.0
                 capture_frame("45", arr)
-                save(img, mn(45, "Graphviz"), out_dir)
-                return
+                return {"image": arr}
             except Exception:
                 pass
     except (FileNotFoundError, Exception):
@@ -698,7 +642,7 @@ def method_graphviz(out_dir: Path, seed: int, params=None):
     # ── Fallback ──
     fallback = np.ones((H, W, 3), dtype=np.float32) * 0.05
     capture_frame("45", fallback)
-    save(fallback, mn(45, "Graphviz"), out_dir)
+    return {"image": fallback}
 
 
 @method(id="46", name="ImageMagick Plasma", category="cli_tools", tags=["imagemagick", "expanded"],
@@ -819,103 +763,57 @@ def method_gmic_plasma(out_dir: Path, seed: int, params=None):
 
 
 @method(id="47", name="Chafa", category="cli_tools", tags=["text", "caca", "expanded"],
+        inputs={
+            "image_in": "IMAGE",
+            "char_scale": "SCALAR",
+        },
+        outputs={"image": "IMAGE", "luminance": "FIELD"},
         params={
-            "shape_count": {"description": "number of random shapes", "min": 10, "max": 200, "default": 60},
-            "circle_radius": {"description": "circle outline radius", "min": 5, "max": 60, "default": 15},
-            "line_width_min": {"description": "minimum random line width", "min": 1, "max": 10, "default": 1},
-            "line_width_max": {"description": "maximum random line width", "min": 1, "max": 20, "default": 5},
-            "bg_color": {"description": "background RGB tuple as string", "default": "10,10,18"},
-            "text_color": {"description": "text color RGB tuple as string", "default": "60,50,40"},
+            "bg_color": {"description": "background RGB tuple as string", "default": "0,0,0"},
+            "text_color": {"description": "text color RGB tuple as string", "default": "255,255,255"},
             "chafa_symbols": {"description": "chafa --symbols argument", "default": "all"},
-            "chafa_size": {"description": "chafa --size argument", "default": "80x40"},
-            "chafa_colors": {"description": "chafa -c color count", "default": 256},
-            "font_size": {"description": "PIL font size for rendering", "min": 6, "max": 48, "default": 10},
-            "anim_mode": {"description": "animation mode", "choices": ["none", "shape_morph", "color_cycle"], "default": "none"},
-            "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
+            "char_scale": {"description": "character density multiplier. Higher = more chars (finer detail), lower = fewer chars (bigger text)", "default": 1.0},
         })
 def method_chafa(out_dir: Path, seed: int, params=None):
-    """Generate ASCII art from random shapes using Chafa CLI, with PIL fallback.
+    """Convert an image to ASCII art using Chafa CLI.
 
-    Creates a canvas of random shapes (lines, ellipses), converts to ASCII art
-    via the Chafa CLI tool, and renders the result as a colored text image.
-    Falls back to a simple text placeholder if Chafa is unavailable.
+    Requires an upstream image via image_in. Converts it to ASCII art
+    via the Chafa CLI tool and renders the result as a colored text image.
 
-    Args:
-        out_dir: Output directory for the generated image.
-        seed: Random seed for deterministic output.
-        params: Dict with keys:
-            shape_count: number of random shapes (10-200)
-            circle_radius: circle outline radius (5-60)
-            line_width_min: minimum random line width (1-10)
-            line_width_max: maximum random line width (1-20)
-            bg_color: background RGB tuple as string ("r,g,b")
-            text_color: text color RGB tuple as string ("r,g,b")
-            chafa_symbols: chafa --symbols argument
-            chafa_size: chafa --size argument (e.g. "80x40")
-            chafa_colors: chafa -c color count
-            font_size: PIL font size for rendering (6-48)
-            time: animation time in radians (0-6.28)
-            anim_mode: animation mode (none/shape_morph/color_cycle)
-            anim_speed: animation speed multiplier (0.1-5.0)
+    Returns:
+        dict with "image" (H,W,3 float32 [0,1]) — luminance auto-computed
     """
     if params is None:
         params = {}
-    anim_time = float(params.get("time", 0.0))
-    anim_mode = params.get("anim_mode", "none")
-    anim_speed = float(params.get("anim_speed", 1.0))
+
+    seed = seed & 0xFFFF0000
     seed_all(seed)
-    rng = random.Random(seed)
 
-    shape_count = int(params.get("shape_count", 60))
-    circle_radius = int(params.get("circle_radius", 15))
-    line_width_min = int(params.get("line_width_min", 1))
-    line_width_max = int(params.get("line_width_max", 5))
-    chafa_symbols = params.get("chafa_symbols", "all")
-    chafa_size = params.get("chafa_size", "80x40")
-    chafa_colors = int(params.get("chafa_colors", 256))
-    font_size = int(params.get("font_size", 10))
-
-    # ── Parse color strings ──
-    try:
-        bg_color = tuple(int(x) for x in params.get("bg_color", "10,10,18").split(",")[:3])
-    except (ValueError, TypeError):
-        bg_color = (10, 10, 18)
-    try:
-        text_color = tuple(int(x) for x in params.get("text_color", "60,50,40").split(",")[:3])
-    except (ValueError, TypeError):
-        text_color = (60, 50, 40)
-
-    # ── Animation ──
-    t = anim_time * anim_speed
-    if anim_mode == "shape_morph":
-        shape_count = max(10, int(shape_count * (0.3 + 0.7 * (0.5 + 0.5 * math.sin(t * 0.3)))))
-        circle_radius = max(3, int(circle_radius * (0.3 + 0.7 * (0.5 + 0.5 * math.sin(t * 0.5 + 1.0)))))
-    elif anim_mode == "color_cycle":
-        hue_shift = (t * 0.1) % 1.0
-        # Modulate text color via hue rotation
-        r_c = int(60 * (0.5 + 0.5 * math.sin(hue_shift * 2 * math.pi)))
-        g_c = int(50 * (0.5 + 0.5 * math.sin(hue_shift * 2 * math.pi + 2.094)))
-        b_c = int(40 * (0.5 + 0.5 * math.sin(hue_shift * 2 * math.pi + 4.189)))
-        text_color = (r_c, g_c, b_c)
-
-    # ── Build source image ──
-    if params.get("input_image"):
-        from ..core.utils import load_input
-        img_arr = load_input(params["input_image"])
-        img = Image.fromarray((img_arr * 255).astype(np.uint8))
+    # ── Read SCALAR inputs ──
+    char_scale_override = params.get("char_scale")
+    if char_scale_override is not None:
+        char_scale = float(char_scale_override)
     else:
-        img = Image.new("RGB", (W, H), bg_color)
-        draw = ImageDraw.Draw(img)
-        for i in range(shape_count):
-            x0 = rng.randint(0, W)
-            y0 = rng.randint(0, H)
-            x1 = rng.randint(0, W)
-            y1 = rng.randint(0, H)
-            r = rng.randint(30, 80)
-            g = rng.randint(30, 70)
-            b = rng.randint(40, 60)
-            draw.line([(x0, y0), (x1, y1)], fill=(r, g, b), width=rng.randint(line_width_min, line_width_max))
-            draw.ellipse([x0 - circle_radius, y0 - circle_radius, x0 + circle_radius, y0 + circle_radius], outline=(r + 20, g, b), width=2)
+        char_scale = float(params.get("char_scale", 1.0))
+
+    # ── Read UI params ──
+    chafa_symbols = params.get("chafa_symbols", "all")
+
+    try:
+        bg_color = tuple(int(x) for x in params.get("bg_color", "0,0,0").split(",")[:3])
+    except (ValueError, TypeError):
+        bg_color = (0, 0, 0)
+    try:
+        text_color = tuple(int(x) for x in params.get("text_color", "255,255,255").split(",")[:3])
+    except (ValueError, TypeError):
+        text_color = (255, 255, 255)
+
+    # ── Read upstream image (required) ──
+    input_img = params.get("_input_image")
+    if input_img is None:
+        print("  ✗ chafa: no input image — requires image_in to be wired")
+        return {"image": np.zeros((H, W, 3), dtype=np.float32)}
+    img = Image.fromarray((np.clip(input_img, 0, 1) * 255).astype(np.uint8))
 
     # ── Convert via Chafa ──
     src = out_dir / "_chafa_src.png"
@@ -925,8 +823,10 @@ def method_chafa(out_dir: Path, seed: int, params=None):
         pass
     chafa_out = ""
     try:
+        # Compute chafa width from char_scale: base 80 chars at scale=1.0
+        chafa_width = max(10, int(80 * char_scale))
         result = subprocess.run(
-            ["chafa", str(src), "--symbols", chafa_symbols, "--size", chafa_size, "-c", str(chafa_colors)],
+            ["chafa", str(src), "--symbols", chafa_symbols, "--size", str(chafa_width)],
             capture_output=True, text=True, timeout=15,
         )
         chafa_out = result.stdout if result.returncode == 0 else ""
@@ -939,17 +839,23 @@ def method_chafa(out_dir: Path, seed: int, params=None):
     if not lines or all(l.strip() == "" for l in lines):
         lines = ["Chafa unavailable", "  :(  "]
 
+    # Auto-scale font to fill the frame edge-to-edge
+    n_cols = max(len(l) for l in lines)
+    n_rows = len(lines)
+    font_size = max(6, min(48, int(min(W / max(n_cols, 1), H / max(n_rows, 1)))))
+
     font = get_font(font_size)
     fw, fh = font.getbbox("A")[2:4]
     fw = max(4, fw)
     fh = max(8, fh)
 
+    # Render text filling the full frame
     out_img = Image.new("L", (W, H), 0)
     out_draw = ImageDraw.Draw(out_img)
     for y, line in enumerate(lines):
-        out_draw.text((4, 4 + y * fh), line, fill=255, font=font)
+        out_draw.text((0, 0 + y * fh), line, fill=255, font=font)
     colored = ImageOps.colorize(out_img, bg_color, text_color)
     result_arr = np.array(colored, dtype=np.float32) / 255.0
+
     capture_frame("47", result_arr)
-    save(colored, mn(47, "Chafa"), out_dir)
-    return result_arr
+    return {"image": result_arr}

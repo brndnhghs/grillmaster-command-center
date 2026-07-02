@@ -1,0 +1,11 @@
+Metadata-Version: 2.1
+Name: chord-bot
+Version: 0.1.0
+Summary: Generative music theory node graph — the graph is the timeline.
+Requires-Python: >=3.10
+Requires-Dist: fastapi>=0.110
+Requires-Dist: uvicorn>=0.29
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: pytest-cov>=5.0; extra == "dev"
+Provides-Extra: midi

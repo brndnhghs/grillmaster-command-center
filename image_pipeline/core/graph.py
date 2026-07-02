@@ -85,9 +85,18 @@ def _make_node_def(meta: registry.MethodMeta) -> NodeDef:
     # else: inputs={} — no inputs at all (pure data source like Timeline)
 
     # ── Auto-detect wireable param ports ──────────────────────────────
+    # Only add params that don't already have explicit input declarations
+    # and don't have min/max constraints (internal sliders, not wireable)
     param_ports: set[str] = set()
+    declared_inputs = set(meta.inputs or {})
     for pname, spec in (meta.params or {}).items():
-        default = spec.get("default") if isinstance(spec, dict) else None
+        if pname in declared_inputs:
+            continue  # already explicitly declared
+        if not isinstance(spec, dict):
+            continue
+        if 'min' in spec or 'max' in spec:
+            continue  # has slider constraints — internal control, not wireable
+        default = spec.get("default")
         if default is None:
             continue
         if isinstance(default, bool):
@@ -201,17 +210,24 @@ def _inject_typed(
             logging.warning("graph: SCALAR wire to bool param %r skipped", param)
             return
         if orig is None or isinstance(orig, (int, float)):
-            run_params[param] = round(float(value)) if isinstance(orig, int) else float(value)
+            val = round(float(value)) if isinstance(orig, int) else float(value)
+            run_params[param] = val
+            # Also inject as uniform field for FIELD-input methods
+            from image_pipeline.core.utils import W as _W, H as _H
+            run_params[f"_field_{param}"] = np.full((_H, _W), val, dtype=np.float32)
         else:
             logging.warning(
                 "graph: SCALAR→%s type mismatch for param %r, skipping",
                 type(orig).__name__, param,
             )
     elif src_type == "field":
-        if value is None:
-            return
-        if orig is None or isinstance(orig, (list, tuple)):
+        # FIELD can wire to list/tuple params (old convention) OR
+        # to int/float params (new convention — method reads _field_<name>)
+        if isinstance(orig, (list, tuple)):
             run_params[param] = value
+        elif orig is None or isinstance(orig, (int, float)):
+            # Inject as _field_<param> so method can read it
+            run_params[f"_field_{param}"] = value
         else:
             logging.warning(
                 "graph: FIELD→%s type mismatch for param %r, skipping",
@@ -280,11 +296,15 @@ def _write_error_placeholder(node_dir: Path) -> np.ndarray:
 class GraphExecutor:
     """Execute a node graph for one or more frames."""
 
-    def __init__(self, out_dir: Path, fps: int = 24):
+    def __init__(self, out_dir: Path, fps: int = 24, in_memory: bool = False):
         self.out_dir = out_dir
         self._fps = fps
+        self._in_memory = in_memory
         # Keyed by node_id → {"image": ndarray | None, "luminance": float}
         self._prev_outputs: dict[str, dict[str, Any]] = {}
+        # Simulation state cache: keyed by (node_id, seed) → list of ndarray frames
+        self._sim_cache: dict[tuple[str, int], list] = {}
+        self._sim_params_hash: dict[str, int] = {}
 
     def execute(
         self,
@@ -313,6 +333,13 @@ class GraphExecutor:
         tl_total = int(tl_params.get("total_frames", frames))
         tl_fps = int(tl_params.get("fps", self._fps))
         tl_speed = float(tl_params.get("speed", 1.0))
+
+        # Also check per-node anim_speed — first node with anim_speed wins for global timeline
+        for n in gnodes:
+            ns = float(n.params.get("anim_speed", 1.0))
+            if ns != 1.0:
+                tl_speed = ns
+                break
 
         timeline = make_timeline(
             global_frame=frame,
@@ -380,7 +407,7 @@ class GraphExecutor:
                         )
                         flat_outputs[node_id] = {
                             "image":     _arr_c,
-                            "luminance": float(np.mean(_arr_c)),
+                            "luminance": _lum_c if _lum_c is not None else (np.mean(_arr_c, axis=-1) if _arr_c is not None else 0.0),
                             "field":     _field_c if _field_c is not None else _arr_c,
                             "particles": _parts_c,
                             "mask":      _mask_c,
@@ -398,6 +425,112 @@ class GraphExecutor:
                         ran[node_id] = False
                         print(f"  ↩ {node_id} skipped (clean)")
                         continue
+
+            # ── Architecture A: simulation with capture_frame() ──────
+            node_seed = seed + frame + (hash(node_id) & 0xFFFF)
+            from .arch import detect_architecture
+            arch = detect_architecture(meta)
+            sim_cache_key = (node_id, seed)
+
+            if arch == "A":
+                # Check if simulation is already cached
+                import json as _json_hash
+                params_hash = hash(_json_hash.dumps(
+                    {k: str(v) for k, v in sorted(node.params.items())},
+                    sort_keys=True
+                ))
+
+                if (sim_cache_key in self._sim_cache
+                        and self._sim_params_hash.get(node_id) == params_hash):
+                    cached = self._sim_cache[sim_cache_key]
+                    if frame < len(cached):
+                        arr = cached[frame]
+                        flat_outputs[node_id] = {
+                            "image": arr,
+                            "luminance": np.mean(arr, axis=-1),
+                            "field": arr,
+                            "particles": None,
+                            "mask": None,
+                        }
+                        ran[node_id] = True
+                        continue
+
+                # Need to (re)run the simulation
+                # Override n_frames to match the requested frame range
+                run_params_preview = dict(node.params)
+                if "n_frames" in run_params_preview and frames > 1:
+                    run_params_preview["n_frames"] = frames
+
+                # Install capture context
+                from image_pipeline.core.animation import (
+                    set_job_context, clear_job_context, get_frames, JobCancelled
+                )
+                import threading as _thr
+                _captured = []
+                _cancel_evt = _thr.Event()
+                def _on_capture(arr):
+                    _captured.append(
+                        (arr.copy() / 255.0).astype(np.float32)
+                        if isinstance(arr, np.ndarray) and arr.dtype == np.uint8
+                        else (arr.copy() if isinstance(arr, np.ndarray) else np.array(arr))
+                    )
+
+                node_dir_sim = self.out_dir / node_id
+                node_dir_sim.mkdir(parents=True, exist_ok=True)
+
+                # Build run params for the full simulation
+                sim_params = dict(node.params)
+                if "n_frames" in sim_params and frames > 1:
+                    sim_params["n_frames"] = frames
+                sim_params["_timeline"] = timeline
+                sim_params["time"] = timeline.phase
+                sim_params["frame"] = 0
+                sim_params["frame_seed"] = node_seed
+
+                set_job_context(on_frame=_on_capture, cancel_event=_cancel_evt)
+                try:
+                    try:
+                        meta.fn(node_dir_sim, node_seed, params=sim_params)
+                    except TypeError as _te:
+                        if "unexpected keyword argument" not in str(_te):
+                            raise
+                        meta.fn(node_dir_sim, node_seed)
+                except JobCancelled:
+                    pass
+                finally:
+                    clear_job_context()
+
+                # Collect captured frames
+                sim_frames = get_frames(meta.id) or _captured
+                if not sim_frames:
+                    # Fallback: read PNG from disk
+                    _pngs = sorted(
+                        p for p in node_dir_sim.glob("*.png")
+                        if not p.name.startswith("_")
+                    )
+                    if _pngs:
+                        from PIL import Image as _PILfb
+                        _arr = np.array(
+                            _PILfb.open(str(_pngs[-1])).convert("RGB"),
+                            dtype=np.float32
+                        ) / 255.0
+                        sim_frames = [_arr]
+
+                if sim_frames:
+                    self._sim_cache[sim_cache_key] = sim_frames
+                    self._sim_params_hash[node_id] = params_hash
+
+                    arr = sim_frames[min(frame, len(sim_frames) - 1)]
+                    flat_outputs[node_id] = {
+                        "image": arr,
+                        "luminance": float(np.mean(arr)),
+                        "field": arr,
+                        "particles": None,
+                        "mask": None,
+                    }
+                    ran[node_id] = True
+                    continue
+                # If no frames captured, fall through to normal execution
 
             run_params = dict(node.params)
             # ── Prebake: run sim ahead before first output frame ──────
@@ -473,7 +606,8 @@ class GraphExecutor:
                     _s = self._prev_outputs.get(edge.src_node)
                     slot = _s if _s is not None else {}
                     src_img = slot.get("image")
-                    src_lum = float(slot.get("luminance") or 0.0)
+                    src_lum_raw = slot.get("luminance")
+                    src_lum = float(np.mean(src_lum_raw)) if isinstance(src_lum_raw, np.ndarray) else float(src_lum_raw or 0.0)
                     # Black-image fallback so feedback edges work on frame 0
                     if src_img is None and edge.dst_port == "image_in":
                         src_img = np.zeros((H, W, 3), dtype=np.float32)
@@ -481,12 +615,24 @@ class GraphExecutor:
                     _s = flat_outputs.get(edge.src_node)
                     slot = _s if _s is not None else {}
                     src_img = slot.get("image")
-                    src_lum = float(slot.get("luminance") or 0.0)
+                    src_lum_raw = slot.get("luminance")
+                    src_lum = float(np.mean(src_lum_raw)) if isinstance(src_lum_raw, np.ndarray) else float(src_lum_raw or 0.0)
 
                 # ── IMAGE passthrough ──────────────────────────────────
                 if edge.dst_port == "image_in":
                     if src_img is not None:
                         image_candidates.append(src_img)
+                    continue
+
+                # ── Named IMAGE port (e.g. seed_image, mask_image) ─────
+                # Check if this dst_port is declared as IMAGE type in the node def
+                _nd = get_all_node_defs().get(node.method_id, {})
+                _port_type = (_nd.get("inputs") or {}).get(edge.dst_port)
+                if _port_type and _port_type.lower() == "image" and edge.dst_port != "image_in":
+                    if src_img is not None:
+                        run_params[edge.dst_port] = src_img
+                    else:
+                        pass  # no upstream image — leave as None
                     continue
 
                 # ── Named merge-port injection (writes temp file, injects _path param) ──
@@ -530,12 +676,23 @@ class GraphExecutor:
                         run_params[edge.dst_port] = mask_val
                     continue
 
+                # ── COLORMAP wire ──────────────────────────────────────
+                if edge.src_port == "palette":
+                    cm_val = slot.get("palette")
+                    if cm_val is not None:
+                        run_params[edge.dst_port] = cm_val
+                    continue
+
                 # ── Determine source value and wire type ──────────────
                 # Check flat_outputs directly so named scalar sidecars (r, amplitude, …)
                 # are resolved by port name, not just by hardcoded "luminance".
                 slot_val = slot.get(edge.src_port)
 
-                if edge.src_port == "luminance" or (
+                if edge.src_port == "luminance" and isinstance(slot_val, np.ndarray):
+                    # luminance is now a per-pixel FIELD (H,W) float32
+                    src_val = slot_val
+                    src_type = "field"
+                elif edge.src_port == "luminance" or (
                     slot_val is not None and isinstance(slot_val, (int, float))
                 ):
                     # Named scalar output — could be "luminance" or a sidecar key like "r"
@@ -570,7 +727,13 @@ class GraphExecutor:
             # Save upstream image to a file so methods can read it via load_input()
             upstream_arr: np.ndarray | None = None
             if image_candidates:
-                upstream_arr = np.mean(image_candidates, axis=0).astype(np.float32)
+                if len(image_candidates) == 1:
+                    upstream_arr = image_candidates[0].astype(np.float32)
+                else:
+                    # Screen blend: 1 - (1-a)*(1-b) — preserves brightness
+                    upstream_arr = image_candidates[0].astype(np.float32).copy()
+                    for _cand in image_candidates[1:]:
+                        upstream_arr = 1 - (1 - upstream_arr) * (1 - _cand.astype(np.float32))
 
             if upstream_arr is not None:
                 # Write upstream to disk so methods can load it via load_input(params["input_image"])
@@ -578,10 +741,15 @@ class GraphExecutor:
                 from PIL import Image as _PILpre2
                 _PILpre2.fromarray((upstream_arr * 255).astype(np.uint8)).save(str(upstream_path))
                 run_params["input_image"] = str(upstream_path)
+                # Inject in-memory array for new-contract methods
+                run_params["_input_image"] = upstream_arr
                 # Methods whose source param has an "input_image" choice need it selected explicitly
                 src_spec = (meta.params or {}).get("source", {})
                 if isinstance(src_spec, dict) and "input_image" in (src_spec.get("choices") or []):
                     run_params["source"] = "input_image"
+            else:
+                # No upstream image — inject None so methods can check
+                run_params["_input_image"] = None
 
             node_seed = seed + frame + (hash(node_id) & 0xFFFF)
             run_params["frame"] = frame
@@ -598,13 +766,30 @@ class GraphExecutor:
                 if _evaled is not run_params[_pk]:
                     run_params[_pk] = _evaled
 
+            # ── In-memory output capture ────────────────────────────
+            _captured_output = getattr(self, '_captured_output', {})
+            _original_save_fn = None
+            from image_pipeline.core import utils as _utils_mod
+            if self._in_memory:
+                _original_save_fn = _utils_mod.save
+                def _capturing_save(arr_to_save, name, out_dir_cap):
+                    _captured_output[node_id] = (
+                        arr_to_save.copy()
+                        if isinstance(arr_to_save, np.ndarray)
+                        else np.array(arr_to_save)
+                    )
+                    # Still write to disk for methods that need the file
+                    _original_save_fn(arr_to_save, name, out_dir_cap)
+                _utils_mod.save = _capturing_save
+
+            # ── Call the method ──
+            _fn_result = None
             try:
-                try:
-                    meta.fn(node_dir, node_seed, params=run_params)
-                except TypeError as _te:
-                    if "unexpected keyword argument" not in str(_te):
-                        raise
-                    meta.fn(node_dir, node_seed)
+                _fn_result = meta.fn(node_dir, node_seed, params=run_params)
+            except TypeError as _te:
+                if "unexpected keyword argument" not in str(_te):
+                    raise
+                _fn_result = meta.fn(node_dir, node_seed)
             except Exception as exc:
                 err_text = traceback.format_exc(limit=8)
                 err_img = _write_error_placeholder(node_dir)
@@ -618,43 +803,86 @@ class GraphExecutor:
                     "mask":      None,
                 }
                 ran[node_id] = True
+                if self._in_memory and _original_save_fn is not None:
+                    _utils_mod.save = _original_save_fn
+                self._captured_output = _captured_output
                 continue
 
-            # Read back the produced PNG and compute luminance.
-            # Exclude _input.png (the upstream temp file): "_" (ASCII 95) sorts after
-            # digit-prefixed method outputs (48-57), so pngs[-1] would return the
-            # input file instead of the generated output without this filter.
-            pngs = sorted(p for p in node_dir.glob("*.png") if not p.name.startswith("_"))
+            # ── Read back output ────────────────────────────────────
             arr = None
-            if pngs:
-                from PIL import Image
-                img = Image.open(str(pngs[-1])).convert("RGB")
-                arr = np.array(img, dtype=np.float32) / 255.0
+            extra_outputs: dict = {}
 
+            if isinstance(_fn_result, list):
+                # Architecture A: list of dicts — cache all frames
+                self._sim_cache[sim_cache_key] = _fn_result
+                self._sim_params_hash[node_id] = params_hash
+                if frame < len(_fn_result):
+                    frame_data = _fn_result[frame]
+                    arr = frame_data.get("image")
+                    extra_outputs = {k: v for k, v in frame_data.items() if k not in ("image", "luminance")}
+            elif isinstance(_fn_result, dict):
+                # Architecture B: single dict
+                arr = _fn_result.get("image")
+                extra_outputs = {k: v for k, v in _fn_result.items() if k not in ("image", "luminance")}
+            elif isinstance(_fn_result, np.ndarray):
+                # Legacy: ndarray → treat as image
+                arr = _fn_result
+            elif hasattr(_fn_result, 'mode') and hasattr(_fn_result, 'size'):
+                # Legacy: PIL Image → treat as image
+                arr = np.array(_fn_result, dtype=np.float32) / 255.0
+            else:
+                # Legacy: None → fall back to disk read-back
+                if self._in_memory:
+                    arr = _captured_output.get(node_id)
+                if arr is None:
+                    pngs = sorted(p for p in node_dir.glob("*.png") if not p.name.startswith("_"))
+                    if pngs:
+                        from PIL import Image
+                        img = Image.open(str(pngs[-1])).convert("RGB")
+                        arr = np.array(img, dtype=np.float32) / 255.0
+                # Read sidecar files
+                import json as _json
+                scalars_path = node_dir / "scalars.json"
+                extra_outputs = _json.loads(scalars_path.read_text()) if scalars_path.exists() else {}
+                for _key in ("field", "particles", "mask"):
+                    _path = node_dir / f"{_key}.npy"
+                    if _path.exists():
+                        extra_outputs[_key] = np.load(str(_path))
 
-            # ── Sidecar files written by method (Phase 1 protocol) ────────
-            import json as _json
-            scalars_path = node_dir / "scalars.json"
-            extra_scalars: dict = _json.loads(scalars_path.read_text()) if scalars_path.exists() else {}
+            # ── Write to disk (for timeline playback) ──
+            if arr is not None:
+                from PIL import Image as _PIL_write
+                arr_u8 = (np.clip(arr, 0, 1) * 255).astype(np.uint8) if arr.dtype != np.uint8 else arr
+                _PIL_write.fromarray(arr_u8).save(str(node_dir / f"{meta.filename()}"))
 
-            field_path = node_dir / "field.npy"
-            field_arr = np.load(str(field_path)) if field_path.exists() else None
+            # ── Write sidecar files ──
+            for _key in ("field", "particles", "mask"):
+                _val = extra_outputs.get(_key)
+                if _val is not None:
+                    np.save(str(node_dir / f"{_key}.npy"), np.asarray(_val, dtype=np.float32))
+            _scalars = {k: v for k, v in extra_outputs.items()
+                        if isinstance(v, (int, float)) and k not in ("field", "particles", "mask")}
+            if _scalars:
+                import json
+                (node_dir / "scalars.json").write_text(json.dumps(_scalars))
 
-            particles_path = node_dir / "particles.npy"
-            particles_arr = np.load(str(particles_path)) if particles_path.exists() else None
+            if self._in_memory and _original_save_fn is not None:
+                _utils_mod.save = _original_save_fn
+            self._captured_output = _captured_output
 
-            mask_path = node_dir / "mask.npy"
-            mask_arr = np.load(str(mask_path)) if mask_path.exists() else None
-
+            # ── Build flat_outputs ──
+            # luminance is always computed as per-pixel grayscale (H,W) float32
+            _lum = np.mean(arr, axis=-1) if arr is not None else 0.0
             flat_outputs[node_id] = {
                 "image":     arr,
-                "luminance": float(np.mean(arr)) if arr is not None else 0.0,
-                # field falls back to image array so existing FIELD wires keep working
-                "field":     field_arr if field_arr is not None else arr,
-                "particles": particles_arr,
-                "mask":      mask_arr,
-                **extra_scalars,
+                "luminance": _lum,
+                "field":     extra_outputs.get("field", arr),
+                "particles": extra_outputs.get("particles"),
+                "mask":      extra_outputs.get("mask"),
+                **{k: v for k, v in extra_outputs.items()
+                   if k not in ("field", "particles", "mask", "luminance")},
             }
+            ran[node_id] = True
 
             # ── Payload inheritance: merge upstream scalars not produced by this node ──
             _inherited = {
@@ -745,10 +973,13 @@ class GraphExecutor:
     def _find_terminal(
         self, nodes: list[GraphNode], edges: list[GraphEdge], order: list[str]
     ) -> str | None:
-        """Return the render-flagged node if any; otherwise the last node with no outgoing non-feedback edges."""
-        for n in nodes:
-            if n.render and n.id in order:
-                return n.id
+        """Return the last render-flagged node in topo order; otherwise the last node with no outgoing non-feedback edges."""
+        render_nodes = [n.id for n in nodes if n.render and n.id in order]
+        if render_nodes:
+            # Return the LAST render-flagged node in topological order
+            for nid in reversed(order):
+                if nid in render_nodes:
+                    return nid
         has_outgoing = {e.src_node for e in edges if not e.feedback}
         for nid in reversed(order):
             if nid not in has_outgoing:

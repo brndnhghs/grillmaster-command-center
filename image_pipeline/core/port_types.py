@@ -41,4 +41,5 @@ register_port_type("SCALAR",    "#888888", "Python float", accepts_from=["IMAGE"
 register_port_type("FIELD",     "#4caf50", "float32 ndarray (H,W) arbitrary range")
 register_port_type("PARTICLES", "#ff9800", "float32 ndarray (N,4) — [x,y,vx,vy]")
 register_port_type("MASK",      "#e8e8e8", "float32 ndarray (H,W) values [0,1]")
+register_port_type("COLORMAP",  "#e040fb", "float32 ndarray (N,3) or (N,4) — color palette/lookup table")
 register_port_type("ANY",       "#444444", "wildcard input type")

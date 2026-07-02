@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from ..registry import chord
-from ..types import HarmonicState, note_to_pc
+from ..chord_types import HarmonicState, note_to_pc
 
 
 # Tension annotation name → semitone offset from root

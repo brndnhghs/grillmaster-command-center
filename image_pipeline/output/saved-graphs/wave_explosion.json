@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "name": "wave_explosion",
+  "nodes": [
+    {
+      "id": "n45",
+      "method_id": "__lfo__",
+      "params": {
+        "waveform": "sine",
+        "min": 0.0,
+        "max": 1.0
+      },
+      "x": 100,
+      "y": 150,
+      "render": false
+    },
+    {
+      "id": "n46",
+      "method_id": "__ramp__",
+      "params": {
+        "mode": "once",
+        "start": 0.3,
+        "end": 0.6,
+        "duration_frames": 30
+      },
+      "x": 100,
+      "y": 300,
+      "render": false
+    },
+    {
+      "id": "n47",
+      "method_id": "18",
+      "params": {
+        "rule": "conway",
+        "seed_pattern": "random",
+        "density": 0.3,
+        "color": "mono",
+        "size": 4
+      },
+      "x": 400,
+      "y": 200,
+      "render": true
+    }
+  ],
+  "edges": [
+    {
+      "src_node": "n45",
+      "src_port": "value",
+      "dst_node": "n47",
+      "dst_port": "wave_phase"
+    },
+    {
+      "src_node": "n46",
+      "src_port": "value",
+      "dst_node": "n47",
+      "dst_port": "density"
+    }
+  ]
+}

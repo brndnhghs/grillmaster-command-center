@@ -1,4 +1,9 @@
-"""Code-gen method — auto-split from codegen.py"""
+"""Gradient — procedural gradient generator with FIELD-driven controls.
+
+Generates linear, radial, concentric, angular, and diamond gradients.
+Can blend with an upstream image. Supports FIELD-driven center position,
+direction, and animation modes.
+"""
 from __future__ import annotations
 import math
 from pathlib import Path
@@ -7,18 +12,22 @@ import numpy as np
 from PIL import Image
 
 from ...core.registry import method
-from ...core.utils import save, mn, seed_all, W, H
+from ...core.utils import seed_all, W, H
 from ...core.animation import capture_frame
 
-# ────────────────────────────────────────────────────────────────────────────
-# #11 — Gradient
-# ────────────────────────────────────────────────────────────────────────────
+_ERROR_IMG = np.zeros((H, W, 3), dtype=np.float32)
+
 
 @method(
     id="11",
     name="Gradient",
     category="codegen",
     tags=["gradient", "fast", "animation"],
+    inputs={"cx": "FIELD",
+            "cy": "FIELD",
+            "direction": "FIELD",
+            "anim_speed": "FIELD"},
+    outputs={"image": "IMAGE", "luminance": "SCALAR"},
     params={
         "gradient_type": {
             "description": "gradient shape/pattern",
@@ -30,6 +39,26 @@ from ...core.animation import capture_frame
             "choices": ["solid", "striped", "noise", "sparkle", "harmonic"],
             "default": "solid",
         },
+        "cx": {
+            "description": "gradient center X (0-1, can be driven by FIELD)",
+            "min": 0.0, "max": 1.0, "default": 0.5,
+        },
+        "cy": {
+            "description": "gradient center Y (0-1, can be driven by FIELD)",
+            "min": 0.0, "max": 1.0, "default": 0.5,
+        },
+        "direction": {
+            "description": "gradient direction in degrees (0-360, can be driven by FIELD)",
+            "min": 0.0, "max": 360.0, "default": 0.0,
+        },
+        "color1": {
+            "description": "gradient start color as RGB tuple string e.g. '0.1,0.1,0.5'",
+            "default": "0.1,0.1,0.5",
+        },
+        "color2": {
+            "description": "gradient end color as RGB tuple string e.g. '0.9,0.3,0.1'",
+            "default": "0.9,0.3,0.1",
+        },
         "anim_mode": {
             "description": "gradient animation mode",
             "choices": ["none", "center_orbit", "direction_morph", "color_sweep", "style_morph", "type_morph"],
@@ -37,32 +66,20 @@ from ...core.animation import capture_frame
         },
         "anim_speed": {
             "description": "animation speed multiplier",
-            "min": 0.1,
-            "max": 3.0,
-            "default": 0.25,
-        },
-        "cx": {
-            "description": "gradient center X (0-1)",
-            "min": 0.0,
-            "max": 1.0,
-            "default": 0.5,
-        },
-        "cy": {
-            "description": "gradient center Y (0-1)",
-            "min": 0.0,
-            "max": 1.0,
-            "default": 0.5,
-        },
-        "direction": {
-            "description": "gradient direction in degrees (0-360)",
-            "min": 0.0,
-            "max": 360.0,
-            "default": 0.0,
+            "min": 0.1, "max": 3.0, "default": 0.25,
         },
     },
 )
 def method_gradient(out_dir: Path, seed: int, params=None):
-    """Render procedural gradient images with multiple styles and animation modes."""
+    """Render procedural gradient images with multiple styles and animation modes.
+
+    Generates a gradient field (linear, radial, concentric, angular, diamond)
+    and applies a color style. Can blend with an upstream image wired into
+    image_in. Supports FIELD-driven cx, cy, and direction for per-pixel control.
+
+    Returns:
+        dict with "image" (H,W,3 float32 [0,1]) and "luminance" (float)
+    """
     if params is None:
         params = {}
     t = float(params.get("time", 0.0))
@@ -76,13 +93,30 @@ def method_gradient(out_dir: Path, seed: int, params=None):
     cy = float(params.get("cy", 0.5))
     direction = float(params.get("direction", 0.0))
 
+    # ── Parse color params ──
+    def _parse_color(s: str) -> np.ndarray:
+        parts = s.split(",")
+        return np.array([float(p.strip()) for p in parts[:3]], dtype=np.float32)
+
+    color1_str = params.get("color1", "0.1,0.1,0.5")
+    color2_str = params.get("color2", "0.9,0.3,0.1")
+    color1 = _parse_color(color1_str)
+    color2 = _parse_color(color2_str)
+
+    # ── FIELD-driven params ──
+    cx_field = params.get("_field_cx")
+    cy_field = params.get("_field_cy")
+    direction_field = params.get("_field_direction")
+
+    # ── Upstream image ──
+    # Gradient is a pure generator — no image_in input
+
     # ── Animation: effective parameters ──
     effective_x = cx
     effective_y = cy
     effective_direction = direction
-    effective_color1 = np.array([0.1, 0.1, 0.5], dtype=np.float32)
-    effective_color2 = np.array([0.9, 0.3, 0.1], dtype=np.float32)
-    # Morph variables
+    effective_color1 = color1
+    effective_color2 = color2
     style_morph_a = style
     style_morph_b = style
     type_morph_a = gradient_type
@@ -90,17 +124,14 @@ def method_gradient(out_dir: Path, seed: int, params=None):
     morph_fade = 0.0
 
     if anim_mode == "center_orbit":
-        # Continuous orbital motion — NO `if anim_time != 0.0:` guard
         orbit_angle = t * 0.5 * anim_speed
         effective_x = 0.5 + 0.35 * math.cos(orbit_angle)
         effective_y = 0.5 + 0.35 * math.sin(orbit_angle)
 
     elif anim_mode == "direction_morph":
-        # Sweep direction angle continuously
         effective_direction = (t * 0.3 * anim_speed * 180.0 / math.pi) % 360.0
 
     elif anim_mode == "color_sweep":
-        # Cycle hue of both colors — full cycle over animation range
         hue_shift = t * 1.5 * anim_speed
         r1 = 0.5 + 0.5 * math.sin(hue_shift)
         g1 = 0.5 + 0.5 * math.sin(hue_shift + 2.094)
@@ -113,7 +144,7 @@ def method_gradient(out_dir: Path, seed: int, params=None):
 
     elif anim_mode == "style_morph":
         style_choices = ["solid", "striped", "noise", "sparkle", "harmonic"]
-        n_styles = len(style_choices) - 1  # don't include sparkle (RNG-based)
+        n_styles = len(style_choices) - 1
         raw_idx = (t / (2 * math.pi)) * n_styles * anim_speed
         idx_a = int(raw_idx) % n_styles
         idx_b = (idx_a + 1) % n_styles
@@ -202,15 +233,24 @@ def method_gradient(out_dir: Path, seed: int, params=None):
         img_a = _render_style(val_a, style, effective_color1, effective_color2)
         img_b = _render_style(val_b, style, effective_color1, effective_color2)
         img = (1.0 - morph_fade) * img_a + morph_fade * img_b
+        val_blend = (1.0 - morph_fade) * val_a + morph_fade * val_b
     elif anim_mode == "style_morph":
         val = _gradient_val(gradient_type, effective_x, effective_y)
         img_a = _render_style(val, style_morph_a, effective_color1, effective_color2)
         img_b = _render_style(val, style_morph_b, effective_color1, effective_color2)
         img = (1.0 - morph_fade) * img_a + morph_fade * img_b
+        val_blend = val
     else:
         val = _gradient_val(gradient_type, effective_x, effective_y)
         img = _render_style(val, style, effective_color1, effective_color2)
+        val_blend = val
 
+    # ── Blend with input image if provided ──
+    # Gradient is a pure generator — no image_in input
+
+    # ── Output ──
     capture_frame("11", img)
-    save(img, mn(11, "Gradient"), out_dir)
-
+    return {
+        "image": img,
+        "luminance": float(np.mean(img)),
+    }

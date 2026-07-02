@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "name": "invasion",
+  "nodes": [
+    {
+      "id": "n33",
+      "method_id": "18",
+      "params": {
+        "rule": "conway",
+        "seed_pattern": "two_species",
+        "density": 0.3,
+        "color": "mono",
+        "size": 4
+      },
+      "x": 300,
+      "y": 200,
+      "render": true
+    }
+  ],
+  "edges": []
+}

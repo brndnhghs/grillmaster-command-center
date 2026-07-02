@@ -90,7 +90,7 @@ class TestChordLookup(unittest.TestCase):
 class TestFunctionNode(unittest.TestCase):
 
     def _run(self, state_params: dict, node_params: dict):
-        from chord_bot.types import HarmonicState
+        from chord_bot.chord_types import HarmonicState
         from chord_bot.registry import get_meta
         state = HarmonicState(**{k: v for k, v in state_params.items()
                                   if k in HarmonicState.__dataclass_fields__})
@@ -100,7 +100,7 @@ class TestFunctionNode(unittest.TestCase):
 
     def test_function_returns_harmonic_state(self):
         """Function node always returns a HarmonicState."""
-        from chord_bot.types import HarmonicState
+        from chord_bot.chord_types import HarmonicState
         result = self._run(
             {"key": "C", "mode": "major", "function": "tonic"},
             {"target": "subdominant", "style": "jazz", "duration": 4},

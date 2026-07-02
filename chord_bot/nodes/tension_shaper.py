@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from ..registry import chord
-from ..types import HarmonicState, build_chord_name, compute_voices, compute_bass, note_to_pc
+from ..chord_types import HarmonicState, build_chord_name, compute_voices, compute_bass, note_to_pc
 
 
 # Tension adds extensions in increasing order; reducing strips them

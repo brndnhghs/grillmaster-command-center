@@ -96,6 +96,14 @@
   #params-scroll { flex: 1; overflow-y: auto; padding: 14px 18px; }
   #params-empty { color: var(--muted); padding: 40px 18px; text-align: center; font-size: 13px; }
 
+  /* Color picker */
+  .color-row { display: flex; gap: 6px; align-items: center; }
+  .color-row input[type=text] { flex: 1; }
+  .color-swatch { width: 32px; height: 32px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; flex-shrink: 0; padding: 0; }
+  .color-swatch::-webkit-color-swatch-wrapper { padding: 2px; }
+  .color-swatch::-webkit-color-swatch { border: none; border-radius: 4px; }
+  .color-swatch::-moz-color-swatch { border: none; border-radius: 4px; }
+
   /* Param rows */
   .param-row { margin-bottom: 14px; }
   .param-row.overridden { opacity: 0.4; }
@@ -550,7 +558,9 @@
   #graph-toolbar {
     padding: 8px 14px; border-top: 1px solid var(--border); display: flex;
     gap: 8px; align-items: center; background: var(--bg1); flex-shrink: 0;
+    overflow-x: auto;
   }
+  #graph-toolbar::-webkit-scrollbar { display: none; }
   #graph-run-btn {
     padding: 8px 18px; background: var(--accent); color: #fff;
     border: none; border-radius: 7px; font-size: 13px; font-weight: 700;
@@ -806,13 +816,13 @@
     #graph-palette-close { display: flex; }
 
     /* Show mobile top bar; hide desktop toolbar */
-    #graph-mobile-topbar { display: flex; }
+    #graph-mobile-topbar { display: flex; overflow-x: auto; }
+    #graph-mobile-topbar::-webkit-scrollbar { display: none; }
     #graph-toolbar { display: none; }
 
     /* Mobile topbar: frames/layout/status only (Run+Clear move to bottom bar) */
-    #graph-mobile-topbar #graph-frames-wrap { font-size: 11px; }
-    #graph-mobile-topbar #graph-frames { width: 46px; min-height: 40px; }
-    #graph-mobile-topbar #graph-status { font-size: 11px; max-width: 80px; }
+    #graph-mobile-topbar #graph-frames-wrap { font-size: 11px; flex-shrink: 0; }
+    #graph-mobile-topbar #graph-status { font-size: 11px; max-width: 80px; flex-shrink: 0; }
 
     /* Fixed run bar at screen bottom */
     #graph-mobile-bottom-bar {
@@ -833,9 +843,11 @@
       border-top: none;
       border-bottom: 1px solid var(--border);
     }
+    /* Handle only makes sense for the fixed-bottom collapsed/expanded mode — hide in mob-top */
+    #graph-preview-panel.mob-top #graph-preview-handle { display: none; }
 
-    /* Canvas col: bottom padding for fixed run bar */
-    #graph-canvas-col { padding-bottom: 60px; }
+    /* Canvas col: bottom padding for fixed run bar (bar is ~66px: 44px buttons + 10+12px padding) */
+    #graph-canvas-col { padding-bottom: 68px; }
 
     /* Params panel: bottom sheet */
     #graph-params-panel {
@@ -876,9 +888,9 @@
     #graph-main-preview.active { height: 130px; }
     #graph-main-preview img, #graph-main-preview video { max-height: 130px; }
 
-    /* Shift canvas bottom when preview is showing (stacks on 60px base) */
-    #graph-canvas-col.has-preview-collapsed { padding-bottom: calc(44px + 60px); }
-    #graph-canvas-col.has-preview-expanded  { padding-bottom: calc(280px + 60px); }
+    /* Shift canvas bottom when preview is showing (stacks on 68px base) */
+    #graph-canvas-col.has-preview-collapsed { padding-bottom: calc(44px + 68px); }
+    #graph-canvas-col.has-preview-expanded  { padding-bottom: calc(280px + 68px); }
   }
 
   /* ── Node Picker (Houdini-style popup) ───────────────────── */
@@ -1205,8 +1217,19 @@
     #tl-name-group { flex-shrink: 0; }
     #tl-encode-area { flex-shrink: 0; }
   }
-  .tl-trim-handle { opacity: 0; transition: opacity 0.1s; }
-  .tl-clip-bar:hover .tl-trim-handle { opacity: 1; }
+  .tl-clip-bar { touch-action: none; }
+  .tl-trim-handle { opacity: 0; transition: opacity 0.1s; touch-action: none; }
+  .tl-clip-bar:hover .tl-trim-handle,
+  .tl-clip-bar.selected .tl-trim-handle { opacity: 1; }
+  .tl-clip-bar.selected { outline: 2px solid rgba(255,255,255,0.55); outline-offset: -1px; border-radius: 4px; }
+  .tl-loop-zone {
+    position: absolute; top: 0; bottom: 0; pointer-events: none; z-index: 2;
+    background: repeating-linear-gradient(135deg,
+      rgba(0,0,0,0) 0px, rgba(0,0,0,0) 6px,
+      rgba(0,0,0,0.22) 6px, rgba(0,0,0,0.22) 8px);
+    border-left: 1.5px solid rgba(255,255,255,0.35);
+    border-radius: 0 4px 4px 0;
+  }
   #tl-ctx-menu {
     position: fixed; z-index: 9999; background: var(--bg2);
     border: 1px solid var(--border); border-radius: 6px;
@@ -1221,6 +1244,24 @@
   #tl-ctx-menu button:hover { background: var(--bg3); }
   #tl-ctx-menu button.danger { color: #ef4444; }
   #tl-ctx-menu button.danger:hover { background: rgba(239,68,68,0.12); }
+  #tl-ctx-menu button.mode { color: #6c8ef5; }
+  #tl-ctx-menu button.mode:hover { background: rgba(108,142,245,0.1); }
+  #tl-ctx-menu .sep { height: 1px; background: var(--border); margin: 3px 0; }
+
+  /* ── Server restart button ── */
+  #server-restart-btn {
+    position: fixed; bottom: 14px; right: 14px; z-index: 9998;
+    width: 30px; height: 30px; border-radius: 50%;
+    border: 1px solid var(--border); background: var(--bg2);
+    color: var(--text-dim, #888); font-size: 15px; line-height: 1;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    opacity: 0.35; transition: opacity 0.15s, color 0.15s; padding: 0;
+    user-select: none;
+  }
+  #server-restart-btn:hover:not(:disabled) { opacity: 0.85; color: var(--text); }
+  #server-restart-btn:disabled { cursor: not-allowed; opacity: 0.7; }
+  #server-restart-btn.restarting { animation: srv-spin 0.9s linear infinite; opacity: 0.9; color: #6c8ef5; }
+  @keyframes srv-spin { to { transform: rotate(360deg); } }
 </style>
 
 <div id="graph-shell">
@@ -1252,6 +1293,13 @@
       <button id="graph-load-btn" class="g-loadbtn">📂</button>
       <button id="graph-auto-btn" class="g-autobtn" title="Auto-generate on param change">⏺ Auto</button>
       <button id="graph-live-btn" class="g-autobtn" title="Live MJPEG preview">📺 Live</button>
+      <select id="graph-canvas-preset-mob" title="Canvas size" style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:2px 6px;font-size:12px;cursor:pointer;flex-shrink:0">
+        <option value="768x512">768×512</option>
+        <option value="512x512">512×512</option>
+        <option value="1024x576">1024×576</option>
+        <option value="1280x720">1280×720</option>
+        <option value="1920x1080">1920×1080</option>
+      </select>
       <span id="graph-status"></span>
     </div>
 
@@ -1274,6 +1322,13 @@
       <button id="graph-auto-btn-desk" class="g-autobtn" title="Auto-generate on param change">⏺ Auto</button>
       <button id="graph-test-btn-desk" class="g-autobtn" title="Test all nodes">🧪 Test</button>
       <button id="graph-live-btn-desk" class="g-autobtn" title="Live MJPEG preview">📺 Live</button>
+      <select id="graph-canvas-preset" title="Canvas size" style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:2px 6px;font-size:12px;cursor:pointer">
+        <option value="768x512">768×512</option>
+        <option value="512x512">512×512</option>
+        <option value="1024x576">1024×576</option>
+        <option value="1280x720">1280×720</option>
+        <option value="1920x1080">1920×1080</option>
+      </select>
       <span id="graph-status-desk"></span>
     </div>
 
@@ -1297,8 +1352,8 @@
         <button id="tl-next" title="Next frame">▶▶</button>
       </div>
       <div class="tl-group">
-        <label>Start</label><input id="tl-start" type="number" value="0" min="0" style="width:48px">
-        <label>End</label><input id="tl-end" type="number" value="47" min="1" style="width:48px">
+        <label>Start</label><input id="tl-start" type="number" value="1" min="0" style="width:48px">
+        <label>End</label><input id="tl-end" type="number" value="24" min="1" style="width:48px">
         <label>FPS</label><input id="tl-fps" type="number" value="24" min="1" max="60" style="width:40px">
       </div>
       <div id="tl-name-group" class="tl-group">
@@ -1667,9 +1722,30 @@ function renderParams(method) {
   // Method-specific params
   const paramEntries = Object.entries(method.params || {});
   if (paramEntries.length) {
-    html += `<hr class="section-divider"><p class="section-label">Parameters</p>`;
+    // Separate animation params from regular params
+    const animKeys = new Set(['anim_mode', 'anim_speed', 'n_frames']);
+    const animParams = [];
+    const regularParams = [];
     for (const [key, spec] of paramEntries) {
-      html += renderParamField(key, spec);
+      if (animKeys.has(key)) {
+        animParams.push([key, spec]);
+      } else {
+        regularParams.push([key, spec]);
+      }
+    }
+    // Render regular params first
+    if (regularParams.length) {
+      html += `<hr class="section-divider"><p class="section-label">Parameters</p>`;
+      for (const [key, spec] of regularParams) {
+        html += renderParamField(key, spec);
+      }
+    }
+    // Render animation params under a dedicated heading
+    if (animParams.length) {
+      html += `<hr class="section-divider"><h2 class="section-label" style="font-size:14px;margin:8px 0 4px">Animation</h2>`;
+      for (const [key, spec] of animParams) {
+        html += renderParamField(key, spec);
+      }
     }
   }
 
@@ -1709,12 +1785,107 @@ function renderParams(method) {
     el.addEventListener('input', scheduleAutoGenerate);
     el.addEventListener('change', scheduleAutoGenerate);
   });
+
+  // Wire color picker swatch ↔ text field sync
+  paramsForm.querySelectorAll('.color-swatch').forEach(swatch => {
+    const textId = swatch.id.replace('_swatch', '');
+    const textField = document.getElementById(textId);
+    if (!textField) return;
+
+    // Helper: sync swatch from text field value
+    function syncSwatchFromText() {
+      const hex = _parseColorToHex(textField.value);
+      swatch.value = hex;
+    }
+
+    // Determine the expected format from the default value
+    const defVal = textField.value;
+    const isHexDefault = /^#/.test(defVal);
+    const isFloatDefault = defVal.split(',').every(p => { const n = parseFloat(p.trim()); return !isNaN(n) && n <= 1; });
+
+    // Initial sync: swatch reflects the text field's current value
+    syncSwatchFromText();
+
+    // Swatch → text field: convert hex to the expected format
+    swatch.addEventListener('input', () => {
+      const hex = swatch.value;
+      if (isHexDefault) {
+        textField.value = hex;
+      } else {
+        const r = parseInt(hex.slice(1,3), 16);
+        const g = parseInt(hex.slice(3,5), 16);
+        const b = parseInt(hex.slice(5,7), 16);
+        if (isFloatDefault) {
+          textField.value = `${(r/255).toFixed(3)},${(g/255).toFixed(3)},${(b/255).toFixed(3)}`;
+        } else {
+          textField.value = `${r},${g},${b}`;
+        }
+      }
+    });
+    // Text field → swatch: always update
+    textField.addEventListener('input', syncSwatchFromText);
+  });
 }
 
 function _isPaletteParam(key, spec) {
   if (spec.choices && spec.choices.length) return false;
   if (['palette', 'palette_name', 'colormap', 'color_palette'].includes(key)) return true;
   return /\bPALETTES\s+name\b/.test(spec.description || '');
+}
+
+function _isColorParam(key, spec) {
+  if (spec.choices && spec.choices.length) return false;
+  // Numbers and booleans are never color pickers regardless of name or description.
+  if (typeof spec.default === 'number' || typeof spec.default === 'boolean') return false;
+  const def = String(spec.default ?? '');
+  const k = key.toLowerCase();
+  const desc = (spec.description || '').toLowerCase();
+  // Key directly names this as a color value (not merely related to color)
+  if (k === 'color' || k.endsWith('_color') || k.startsWith('bg_') || k === 'edge_color') return true;
+  // Default value already looks like a hex color
+  if (_isHexColor(def)) return true;
+  // Description explicitly describes a color format (not just "mentions color")
+  if (desc.includes('hex color') || desc.includes('rgb tuple') || desc.includes('#rrggbb')) return true;
+  return false;
+}
+
+function _isHexColor(s) {
+  return /^#[0-9a-fA-F]{6}$/.test(s);
+}
+
+function _rgbToHex(r, g, b) {
+  return '#' + [r,g,b].map(c => Math.max(0, Math.min(255, Math.round(c))).toString(16).padStart(2,'0')).join('');
+}
+
+function _parseColorToHex(s) {
+  // Already hex
+  if (_isHexColor(s)) return s;
+  // RGB tuple string: "10,10,18" or "0.1,0.1,0.5"
+  const parts = s.split(',').map(p => parseFloat(p.trim())).filter(n => !isNaN(n));
+  if (parts.length >= 3) {
+    if (parts[0] <= 1 && parts[1] <= 1 && parts[2] <= 1) {
+      // Float [0,1] format
+      return _rgbToHex(parts[0] * 255, parts[1] * 255, parts[2] * 255);
+    }
+    return _rgbToHex(parts[0], parts[1], parts[2]);
+  }
+  return '#000000';
+}
+
+function renderColorField(key, spec) {
+  const def = spec.default || '#000000';
+  const desc = spec.description || '';
+  const hex = _parseColorToHex(String(def));
+  return `<div class="param-row">
+    <div class="param-label">
+      <span class="param-name">${escHtml(key)}</span>
+      <span class="param-desc">${escHtml(desc)}</span>
+    </div>
+    <div class="color-row">
+      <input type="color" class="color-swatch param-ctrl" id="p_${escHtml(key)}_swatch" value="${hex}">
+      <input type="text" class="param-input param-ctrl" id="p_${escHtml(key)}" value="${escHtml(String(def))}">
+    </div>
+  </div>`;
 }
 
 function renderParamField(key, spec) {
@@ -1744,6 +1915,11 @@ function renderParamField(key, spec) {
     const defStr = String(def ?? '');
     const opts = (defStr && !gPalettes.includes(defStr)) ? [defStr, ...gPalettes] : gPalettes;
     return makeSelect(opts);
+  }
+
+  // 0b. Color picker — any param whose key or description indicates a color value
+  if (_isColorParam(key, spec)) {
+    return renderColorField(key, spec);
   }
 
   // 1. Explicit choices array on the spec
@@ -2155,7 +2331,8 @@ let gPalettes       = [];  // palette key list from /api/palettes
 let gPendingEdge    = null;
 let gPanX = 0, gPanY = 0;
 let gCanvasScale = 1.0;
-let gPanTouch = null, gPinchState = null, gMousePan = null;
+let gCanvasW = 768, gCanvasH = 512;
+let gPanTouch = null, gPinchState = null, gMousePan = null, gTrimDragging = false;
 let gAutoGen = false;
 let gAutoGenJobId = null;
 let gAutoGenAbort = null;  // AbortController for cancelling in-flight auto-gen
@@ -2318,7 +2495,7 @@ const gGraphMobileBottomBar = document.getElementById('graph-mobile-bottom-bar')
 // ── Shared helpers ─────────────────────────────────────────────
 function gGetFrames() {
   const start = parseInt(document.getElementById('tl-start')?.value) || 0;
-  const end   = parseInt(document.getElementById('tl-end')?.value)   || 47;
+  const end   = parseInt(document.getElementById('tl-end')?.value)   || 24;
   return Math.max(1, end - start + 1);
 }
 function gUpdateFrameCount() {
@@ -2406,7 +2583,7 @@ function gGraphDoneSwap(type, relPath, seqName) {
     tlName.value = seqName;
     // Create a clip on the timeline
     const start = parseInt(tlStart.value) || 0;
-    const end   = parseInt(tlEnd.value)   || 47;
+    const end   = parseInt(tlEnd.value)   || 24;
     // Collect paramKeyframes from all nodes
     const allPkf = {};
     for (const node of gNodes) {
@@ -2434,8 +2611,9 @@ function tlClipAtFrame(timelineFrame) {
   const clip = candidates[0];
   const srcLen = clip.srcLength || (clip.endFrame - clip.startFrame + 1);
   const trimIn = clip.trimIn || 0;
-  const raw = (timelineFrame - clip.startFrame) + trimIn;
-  const localFrame = ((raw % srcLen) + srcLen) % srcLen;
+  const usableLen = Math.max(1, srcLen - trimIn);
+  const raw = timelineFrame - clip.startFrame;
+  const localFrame = trimIn + (((raw % usableLen) + usableLen) % usableLen);
   return { seqName: clip.seqName, localFrame };
 }
 
@@ -2445,42 +2623,71 @@ function tlClearPreview() {
   }
 }
 
+const _tlFrameCache = new Map();
+
+function _tlDisplayBlob(blob) {
+  const url = URL.createObjectURL(blob);
+  if (!gLivePreviewImg) {
+    gMainPreview.innerHTML = '';
+    gLivePreviewImg = document.createElement('img');
+    gLivePreviewImg.addEventListener('click', () => {
+      gFsVideo.style.display = 'none';
+      gFsImg.src = gLivePreviewImg.src; gFsImg.style.display = '';
+      gFsOverlay.classList.add('visible');
+    });
+    gMainPreview.appendChild(gLivePreviewImg);
+    gMainPreview.classList.add('active');
+    gPreviewShow();
+  }
+  if (gLivePreviewImg._tlUrl) URL.revokeObjectURL(gLivePreviewImg._tlUrl);
+  gLivePreviewImg._tlUrl = url;
+  gLivePreviewImg.src = url;
+  gLivePreviewImg.style.display = '';
+  gLivePreviewImg.style.opacity = '1';
+}
+
 function tlLoadFrame(timelineFrame) {
   const hit = tlClipAtFrame(timelineFrame);
   if (!hit) { tlClearPreview(); return; }
   const { seqName, localFrame } = hit;
-  fetch(`/api/sequences/${encodeURIComponent(seqName)}/${localFrame}`)
-    .then(r => {
-      if (!r.ok) throw new Error('Frame not found');
-      return r.blob();
-    })
-    .then(blob => {
-      const url = URL.createObjectURL(blob);
-      if (!gLivePreviewImg) {
-        gMainPreview.innerHTML = '';
-        gLivePreviewImg = document.createElement('img');
-        gLivePreviewImg.addEventListener('click', () => {
-          gFsVideo.style.display = 'none';
-          gFsImg.src = gLivePreviewImg.src; gFsImg.style.display = '';
-          gFsOverlay.classList.add('visible');
-        });
-        gMainPreview.appendChild(gLivePreviewImg);
-        gMainPreview.classList.add('active');
-        gPreviewShow();
-      }
-      if (gLivePreviewImg._tlUrl) URL.revokeObjectURL(gLivePreviewImg._tlUrl);
-      gLivePreviewImg._tlUrl = url;
-      gLivePreviewImg.src = url;
-      gLivePreviewImg.style.display = '';
-      gLivePreviewImg.style.opacity = '1';
-    })
-    .catch(() => {
-      if (!gLivePreviewImg) {
-        gMainPreview.innerHTML = '<div style="padding:20px;color:var(--muted);font-size:12px;text-align:center;">No frame rendered yet</div>';
-        gMainPreview.classList.add('active');
-        gPreviewShow();
-      }
-    });
+  const cacheKey = `${seqName}:${localFrame}`;
+
+  // Check cache first
+  const cached = _tlFrameCache.get(cacheKey);
+  if (cached) {
+    _tlDisplayBlob(cached);
+    _tlFrameCache.delete(cacheKey);
+  } else {
+    fetch(`/api/sequences/${encodeURIComponent(seqName)}/${localFrame}`)
+      .then(r => {
+        if (!r.ok) throw new Error('Frame not found');
+        return r.blob();
+      })
+      .then(blob => { _tlDisplayBlob(blob); })
+      .catch(() => {
+        if (!gLivePreviewImg) {
+          gMainPreview.innerHTML = '<div style="padding:20px;color:var(--muted);font-size:12px;text-align:center;">No frame rendered yet</div>';
+          gMainPreview.classList.add('active');
+          gPreviewShow();
+        }
+      });
+  }
+
+  // Pre-fetch next frame
+  const nextFrame = localFrame + 1;
+  const nextKey = `${seqName}:${nextFrame}`;
+  if (!_tlFrameCache.has(nextKey)) {
+    fetch(`/api/sequences/${encodeURIComponent(seqName)}/${nextFrame}`)
+      .then(r => r.ok ? r.blob() : null)
+      .then(blob => { if (blob) _tlFrameCache.set(nextKey, blob); })
+      .catch(() => {});
+  }
+
+  // Clean old cache entries (keep max 5)
+  while (_tlFrameCache.size > 5) {
+    const firstKey = _tlFrameCache.keys().next().value;
+    _tlFrameCache.delete(firstKey);
+  }
 }
 
 function gPreviewShow() {
@@ -2512,11 +2719,15 @@ function setGraphMobileLayout(mob) {
     gCanvasCol.insertBefore(gPreviewPanel, gCanvasWrap);
     gPreviewPanel.classList.add('mob-top');
     gGraphMobileBottomBar.append(gRunBtn, gClearBtn);
+    gSidebarFloatBtn.style.display = 'none';
   } else {
     document.getElementById('graph-shell').after(gPreviewPanel);
     gPreviewPanel.classList.remove('mob-top');
     const paletteBtn = document.getElementById('graph-palette-btn');
     paletteBtn.after(gRunBtn, gClearBtn);
+    if (gGraphSidebar.classList.contains('gsidebar-collapsed')) {
+      gSidebarFloatBtn.style.display = 'block';
+    }
   }
   gUpdateCanvasPad();
 }
@@ -2658,6 +2869,7 @@ gCanvasWrap.addEventListener('drop', async e => {
 
 // ── Canvas touch: 1-finger pan + 2-finger pinch-to-zoom ───────────────
 gCanvasWrap.addEventListener('touchstart', e => {
+  if (gTrimDragging) return;
   if (e.target.closest('.gnode') || e.target.classList.contains('gport')) return;
   e.preventDefault();
   if (e.touches.length === 2) {
@@ -2703,6 +2915,7 @@ gCanvasWrap.addEventListener('touchcancel', () => { gPanTouch = null; gPinchStat
 
 // ── Desktop: drag-to-pan + scroll-to-zoom ─────────────────────────────
 gCanvasWrap.addEventListener('mousedown', e => {
+  if (gTrimDragging) return;
   if (e.target.closest('.gnode') || e.target.classList.contains('gport')) return;
   if (e.button !== 0 || gPendingEdge) return;
   e.preventDefault();
@@ -3816,7 +4029,6 @@ function gRedrawEdges() {
     const d = gNodesEl.querySelector(`.gport[data-nid="${edge.dst_node}"][data-port="${edge.dst_port}"][data-dir="input"]`);
     if (!s || !d) continue;
     const p0 = gPortPos(s), p1 = gPortPos(d);
-    const dx = Math.abs(p1.x - p0.x) / 2 + 80;
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('d', `M${p0.x},${p0.y} L${p1.x},${p1.y}`);
     path.setAttribute('class', 'gedge' + (edge.feedback ? ' feedback' : ''));
@@ -3912,6 +4124,13 @@ function gShowNodeParams(node) {
     const v = gParamsForm.querySelector(`#val_${key}`);
     if (v) v.textContent = formatVal(el.value);
 
+    // Sync color swatch from text field value
+    const swatch = document.getElementById(`p_${key}_swatch`);
+    if (swatch) {
+      const hex = _parseColorToHex(String(el.value));
+      swatch.value = hex;
+    }
+
     // Expr + anim toggles for numeric params
     if (el.type === 'number' || el.type === 'range') {
       const paramRow = el.closest('.param-row');
@@ -4000,6 +4219,39 @@ function gShowNodeParams(node) {
     el.addEventListener('change', () => {
       const val = el.type==='checkbox' ? el.checked : (el.type==='range'||el.type==='number') ? parseFloat(el.value) : el.value;
       gUpdateNodeParam(node.id, key, val);
+      gDoAutoGen();
+    });
+  });
+  // Wire color swatch ↔ text field sync in graph node params
+  gParamsForm.querySelectorAll('.color-swatch').forEach(swatch => {
+    const textId = swatch.id.replace('_swatch', '');
+    const textField = document.getElementById(textId);
+    if (!textField) return;
+    const key = textId.replace('p_', '');
+    const defVal = textField.value;
+    const isHexDefault = /^#/.test(defVal);
+    const isFloatDefault = defVal.split(',').every(p => { const n = parseFloat(p.trim()); return !isNaN(n) && n <= 1; });
+    // Swatch → text field + save
+    swatch.addEventListener('input', () => {
+      const hex = swatch.value;
+      let newVal;
+      if (isHexDefault) {
+        newVal = hex;
+      } else {
+        const r = parseInt(hex.slice(1,3), 16);
+        const g = parseInt(hex.slice(3,5), 16);
+        const b = parseInt(hex.slice(5,7), 16);
+        newVal = isFloatDefault ? `${(r/255).toFixed(3)},${(g/255).toFixed(3)},${(b/255).toFixed(3)}` : `${r},${g},${b}`;
+      }
+      textField.value = newVal;
+      gUpdateNodeParam(node.id, key, newVal);
+      gDoAutoGen();
+    });
+    // Text field → swatch + save on change
+    textField.addEventListener('change', () => {
+      const hex = _parseColorToHex(textField.value);
+      swatch.value = hex;
+      gUpdateNodeParam(node.id, key, textField.value);
       gDoAutoGen();
     });
   });
@@ -4394,7 +4646,7 @@ function gSetupExprToggle(key, spec, node, el) {
 // ── Per-param linear animation ─────────────────────────────────
 function gGetAnimatedParams(node, frame) {
   const start = parseInt(document.getElementById('tl-start').value) || 0;
-  const end   = parseInt(document.getElementById('tl-end').value)   || 47;
+  const end   = parseInt(document.getElementById('tl-end').value)   || 24;
   const t     = end > start ? (frame - start) / (end - start) : 0;
   const params = { ...node.params };
   if (node.animParams) {
@@ -4423,13 +4675,14 @@ async function gDoRun() {
   gSetRunDisabled(true);
   gSetStatus('Running…');
   const tlStartVal = parseInt(document.getElementById('tl-start').value) || 0;
-  const tlEndVal   = parseInt(document.getElementById('tl-end').value)   || 47;
+  const tlEndVal   = parseInt(document.getElementById('tl-end').value)   || 24;
   const totalFrames = Math.max(1, tlEndVal - tlStartVal + 1);
   const body = {
     nodes: gNodes.map(n => gSerializeNodeForApi(n, tlStartVal)),
     edges: gEdges.map(e=>({src_node:e.src_node,src_port:e.src_port,dst_node:e.dst_node,dst_port:e.dst_port,feedback:e.feedback})),
     seed: 42, frames: totalFrames,
     frame: tlStartVal,
+    width: gCanvasW, height: gCanvasH,
   };
   try {
     const res = await fetch('/api/graph/execute', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
@@ -4508,6 +4761,7 @@ function gDoAutoGen() {
       nodes: gNodes.map(n => gSerializeNodeForApi(n)),
       edges: gEdges.map(e=>({src_node:e.src_node,src_port:e.src_port,dst_node:e.dst_node,dst_port:e.dst_port,feedback:e.feedback})),
       seed: 42, frames: 1,
+      width: gCanvasW, height: gCanvasH,
     };
     fetch('/api/graph/execute', {
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -4585,7 +4839,7 @@ function renderTimelineRuler() {
   if (!header || !lanes) return;
 
   const start = parseInt(document.getElementById('tl-start')?.value) || 0;
-  const end   = parseInt(document.getElementById('tl-end')?.value) || 47;
+  const end   = parseInt(document.getElementById('tl-end')?.value) || 24;
   const total = Math.max(1, end - start + 1);
   const pixelWidth = total * 12; // 12px per frame
 
@@ -4640,14 +4894,14 @@ function renderTimelineRuler() {
       const barW = Math.max(4, (relEnd - relStart) * 12);
 
       const bar = document.createElement('div');
-      bar.className = 'tl-clip-bar';
-      bar.style.cssText = `position:absolute;top:4px;left:${barX}px;width:${barW}px;height:${laneHeight - 8}px;background:${clip.color || '#4a6cf7'};border-radius:4px;cursor:grab;display:flex;align-items:center;padding:0 14px;font-size:10px;color:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;z-index:5;`;
+      bar.className = 'tl-clip-bar' + (clip._selected ? ' selected' : '');
+      bar.style.cssText = `position:absolute;top:4px;left:${barX}px;width:${barW}px;height:${laneHeight - 8}px;background:${clip.color || '#4a6cf7'};border-radius:4px;cursor:grab;display:flex;align-items:center;padding:0 14px;font-size:10px;color:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;z-index:5;touch-action:none;`;
       bar.textContent = clip.name;
       bar.title = `${clip.name} (F${clip.startFrame}-F${clip.endFrame})`;
       bar.dataset.clipId = clip.id;
 
-      // Trim handles
-      const handleStyle = `position:absolute;top:0;width:10px;height:100%;cursor:ew-resize;z-index:10;display:flex;align-items:center;justify-content:center;`;
+      // Trim handles — wider touch target, narrower visual
+      const handleStyle = `position:absolute;top:0;width:14px;height:100%;cursor:ew-resize;z-index:10;display:flex;align-items:center;justify-content:center;`;
       const trimL = document.createElement('div');
       trimL.className = 'tl-trim-handle';
       trimL.style.cssText = handleStyle + 'left:0;border-radius:4px 0 0 4px;background:rgba(0,0,0,0.25);';
@@ -4655,99 +4909,146 @@ function renderTimelineRuler() {
       const trimR = document.createElement('div');
       trimR.className = 'tl-trim-handle';
       trimR.style.cssText = handleStyle + 'right:0;border-radius:0 4px 4px 0;background:rgba(0,0,0,0.25);';
-      trimR.innerHTML = `<svg width="3" height="12" viewBox="0 0 3 12"><rect x="0" y="0" width="1" height="12" fill="rgba(255,255,255,0.6)"/><rect x="2" y="0" width="1" height="12" fill="rgba(255,255,255,0.6)"/></svg>`;
+
+      // ── Loop zone overlay (only when bar extends past usable source) ──
+      const srcLen = clip.srcLength || (clip.endFrame - clip.startFrame + 1);
+      const trimIn = clip.trimIn || 0;
+      const usableLen = Math.max(1, srcLen - trimIn);
+      const barLen = clip.endFrame - clip.startFrame + 1;
+      const isLooped = !!clip.looped;
+      const inLoop = isLooped && (barLen > usableLen);
+
+      // Right handle: ↺ icon when clip is in loop mode, stripes when trim mode
+      const rhSvg = `<svg width="3" height="12" viewBox="0 0 3 12"><rect x="0" y="0" width="1" height="12" fill="rgba(255,255,255,0.6)"/><rect x="2" y="0" width="1" height="12" fill="rgba(255,255,255,0.6)"/></svg>`;
+      trimR.innerHTML = isLooped ? `<span style="font-size:9px;color:rgba(255,255,255,0.9)">↺</span>` : rhSvg;
       bar.appendChild(trimL);
       bar.appendChild(trimR);
 
-      // Loop zone overlay — shows looped sections with a stripe pattern
-      const srcLen = clip.srcLength || (clip.endFrame - clip.startFrame + 1);
-      const trimIn = clip.trimIn || 0;
-      const originalFramesLeft = srcLen - trimIn; // frames until first loop boundary
-      const firstLoopPx = originalFramesLeft * 12; // px from bar left edge
-      if (firstLoopPx < barW) {
-        // Draw repeating loop zone stripes past the original content boundary
+      if (inLoop) {
+        const loopPx = (barLen - usableLen) * 12;
         const loopZone = document.createElement('div');
-        loopZone.style.cssText = `position:absolute;top:0;left:${firstLoopPx}px;right:0;bottom:0;
-          background:repeating-linear-gradient(135deg,
-            rgba(0,0,0,0) 0px, rgba(0,0,0,0) 6px,
-            rgba(0,0,0,0.22) 6px, rgba(0,0,0,0.22) 8px);
-          border-left:1.5px solid rgba(255,255,255,0.35);
-          border-radius:0 4px 4px 0;pointer-events:none;z-index:2;`;
+        loopZone.className = 'tl-loop-zone';
+        loopZone.style.left = `${usableLen * 12}px`;
+        loopZone.style.width = `${loopPx}px`;
         bar.appendChild(loopZone);
-      }
-      // If trimIn > 0, mark the front-trimmed zone (loop content at start)
-      if (trimIn > 0) {
-        // Already handled by localFrame mod — no visual needed beyond the trim itself
+        // GarageBand-style notch markers: thin vertical lines + top/bottom ears at each repetition boundary
+        const iterPx = usableLen * 12;
+        for (let x = iterPx; x < loopPx; x += iterPx) {
+          if (x >= barW) break;
+          const notch = document.createElement('div');
+          notch.style.cssText = `position:absolute;top:0;left:${x}px;width:2px;height:100%;background:rgba(255,255,255,0.55);z-index:3;pointer-events:none;`;
+          const earT = document.createElement('div');
+          earT.style.cssText = `position:absolute;top:0;left:-2px;width:6px;height:4px;background:rgba(255,255,255,0.75);border-radius:0 0 3px 3px;pointer-events:none;`;
+          const earB = document.createElement('div');
+          earB.style.cssText = `position:absolute;bottom:0;left:-2px;width:6px;height:4px;background:rgba(255,255,255,0.75);border-radius:3px 3px 0 0;pointer-events:none;`;
+          notch.appendChild(earT);
+          notch.appendChild(earB);
+          loopZone.appendChild(notch);
+        }
       }
 
-      const addTrimListener = (handle, side) => {
-        handle.addEventListener('mousedown', (e) => {
-          e.stopPropagation();
-          e.preventDefault();
+      // ── Single pointerdown on the bar: route to trim or drag ──
+      bar.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        bar.setPointerCapture(e.pointerId);
+
+        const handle = e.target.closest('.tl-trim-handle');
+        if (handle) {
+          // ── Trim / loop-extend mode ──
+          const side = handle === trimL ? 'L' : 'R';
           const startX = e.clientX;
           const origStart = clip.startFrame;
           const origEnd = clip.endFrame;
           const origTrimIn = clip.trimIn || 0;
           document.body.style.cursor = 'ew-resize';
+          gTrimDragging = true;
 
-          const onMove = (me) => {
-            const delta = Math.round((me.clientX - startX) / 12);
-            if (side === 'L') {
-              // Left trim: move start AND shift trimIn to maintain source alignment
-              const newStart = Math.max(0, Math.min(origStart + delta, origEnd - 1));
-              clip.startFrame = newStart;
-              clip.trimIn = origTrimIn + (newStart - origStart);
-            } else {
-              // Right trim/extend: only move endFrame (looping handled by modulo)
-              clip.endFrame = Math.max(origStart + 1, origEnd + delta);
+          // Ensure a live-update loop zone element exists in the bar
+          if (!bar.querySelector('.tl-loop-zone')) {
+            const lz = document.createElement('div');
+            lz.className = 'tl-loop-zone';
+            lz.style.display = 'none';
+            bar.appendChild(lz);
+          }
+
+          // Helper: sync loop zone position/size + right handle icon
+          const rhSvg = `<svg width="3" height="12" viewBox="0 0 3 12"><rect x="0" y="0" width="1" height="12" fill="rgba(255,255,255,0.6)"/><rect x="2" y="0" width="1" height="12" fill="rgba(255,255,255,0.6)"/></svg>`;
+          function updateLoopLive() {
+            const lz = bar.querySelector('.tl-loop-zone');
+            const nowUsable = Math.max(1, srcLen - (clip.trimIn || 0));
+            const nowBarLen = clip.endFrame - clip.startFrame + 1;
+            const lp = clip.looped ? Math.max(0, nowBarLen - nowUsable) * 12 : 0;
+            if (lz) {
+              lz.style.left = `${nowUsable * 12}px`;
+              lz.style.width = `${lp}px`;
+              lz.style.display = lp > 0 ? '' : 'none';
             }
-            bar.style.left = Math.max(0, (clip.startFrame - start) * 12) + 'px';
+            trimR.innerHTML = clip.looped
+              ? `<span style="font-size:9px;color:rgba(255,255,255,0.9)">↺</span>`
+              : rhSvg;
+          }
+
+          const onMove = (pe) => {
+            pe.preventDefault();
+            const delta = Math.round((pe.clientX - startX) / 12);
+            if (side === 'L') {
+              // Left trim: startFrame + trimIn shift together; interior frames hold timeline position.
+              // Clamps: can't expose before source start, can't go before frame 0, must keep ≥1 frame.
+              const minDelta = Math.max(-origTrimIn, -origStart, -(origEnd - origStart - 1));
+              const maxDelta = srcLen - 1 - origTrimIn;
+              const d = Math.max(minDelta, Math.min(maxDelta, delta));
+              clip.trimIn = origTrimIn + d;
+              clip.startFrame = origStart + d;
+              bar.style.left = (clip.startFrame - start) * 12 + 'px';
+            } else if (clip.looped) {
+              // Loop mode: extend freely; clamp at next clip in same lane or section end
+              const sectionEnd = parseInt(document.getElementById('tl-end')?.value) || 24;
+              const nextStart = tlClips
+                .filter(c => c.id !== clip.id && c.lane === clip.lane && c.startFrame > clip.startFrame)
+                .reduce((mn, c) => c.startFrame < mn ? c.startFrame : mn, sectionEnd + 1);
+              clip.endFrame = Math.min(nextStart - 1, Math.max(origStart + 1, origEnd + delta));
+            } else {
+              // Trim mode: right edge cannot extend past source content end
+              const maxEnd = origStart + usableLen - 1;
+              clip.endFrame = Math.max(origStart, Math.min(maxEnd, origEnd + delta));
+            }
             bar.style.width = Math.max(4, (clip.endFrame - clip.startFrame + 1) * 12) + 'px';
             bar.title = `${clip.name} (F${clip.startFrame}-F${clip.endFrame})`;
+            updateLoopLive();
             tlLoadFrame(parseInt(tlFrame.value) || 0);
           };
-
           const onUp = () => {
+            gTrimDragging = false;
             document.body.style.cursor = '';
-            document.removeEventListener('mousemove', onMove);
-            document.removeEventListener('mouseup', onUp);
+            bar.removeEventListener('pointermove', onMove);
+            bar.removeEventListener('pointerup', onUp);
+            bar.removeEventListener('pointercancel', onUp);
             clip._origStart = clip.startFrame;
             clip._origEnd = clip.endFrame;
             renderTimelineRuler();
             tlSaveClips();
           };
+          bar.addEventListener('pointermove', onMove);
+          bar.addEventListener('pointerup', onUp);
+          bar.addEventListener('pointercancel', onUp);
+          return;
+        }
 
-          document.addEventListener('mousemove', onMove);
-          document.addEventListener('mouseup', onUp);
-        });
-      };
-      addTrimListener(trimL, 'L');
-      addTrimListener(trimR, 'R');
-
-      // Click to select clip and show its keyframe lanes
-      bar.addEventListener('click', (e) => {
-        e.stopPropagation();
-        tlSelectClip(clip.id);
-      });
-
-      // Drag: horizontal always, vertical lane switch activates when cursor leaves origin lane
-      let dragStartX = 0, dragOrigStart = 0;
-      bar.addEventListener('mousedown', (e) => {
-        if (e.button !== 0) return;
-        e.stopPropagation();
+        // ── Drag mode ──
         tlClips.forEach(c => { c._selected = (c.id === clip.id); });
         const origLane = clip.lane;
         let targetLane = origLane;
-        let laneMode = false;   // true once cursor has left the origin lane
+        let laneMode = false;
         let inCancel = false;
         let ghostEl = null, cancelEl = null;
 
-        dragStartX = e.clientX;
-        dragOrigStart = clip.startFrame;
+        const dragStartX = e.clientX;
+        const dragOrigStart = clip.startFrame;
         tlDragClip = { clip, lane: li, startX: e.clientX };
 
-        const onMove = (me) => {
-          const dx = me.clientX - dragStartX;
+        const onMove = (pe) => {
+          const dx = pe.clientX - dragStartX;
           const frameDelta = Math.round(dx / 12);
           const newStart = Math.max(0, dragOrigStart + frameDelta);
           const clipLen = clip._origEnd - clip._origStart;
@@ -4755,7 +5056,7 @@ function renderTimelineRuler() {
           bar.style.left = (newStart - start) * 12 + 'px';
 
           const lanesRect = lanes.getBoundingClientRect();
-          const relY = me.clientY - lanesRect.top;
+          const relY = pe.clientY - lanesRect.top;
           const rawLane = Math.max(0, Math.floor(relY / laneHeight));
           const hoveredLane = tlNearestFreeLane(rawLane, clip.id);
 
@@ -4836,14 +5137,22 @@ function renderTimelineRuler() {
           clip.endFrame = clip.startFrame + trimmedDuration;
           clip.lane = (laneMode && !inCancel) ? targetLane : origLane;
           renderTimelineRuler();
-          document.removeEventListener('mousemove', onMove);
-          document.removeEventListener('mouseup', onUp);
+          bar.removeEventListener('pointermove', onMove);
+          bar.removeEventListener('pointerup', onUp);
+          bar.removeEventListener('pointercancel', onUp);
           tlDragClip = null;
           tlSaveClips();
         };
 
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
+        bar.addEventListener('pointermove', onMove);
+        bar.addEventListener('pointerup', onUp);
+        bar.addEventListener('pointercancel', onUp);
+      });
+
+      // Click to select clip
+      bar.addEventListener('click', (e) => {
+        e.stopPropagation();
+        tlSelectClip(clip.id);
       });
 
       laneDiv.appendChild(bar);
@@ -4936,6 +5245,42 @@ function tlDeleteClip(clipId) {
   renderTimelineRuler();
 }
 
+function tlSplitClipAtPlayhead(clipId) {
+  const tf = parseInt(document.getElementById('tl-frame')?.value) || 0;
+  const idx = tlClips.findIndex(c => c.id === clipId);
+  if (idx === -1) return;
+  const clip = tlClips[idx];
+  const S = clip.startFrame, E = clip.endFrame;
+  // Playhead must be strictly inside: left half needs ≥1 frame, right half needs ≥1 frame
+  if (tf <= S || tf > E) return;
+
+  const T = clip.trimIn || 0;
+  const L = clip.srcLength || (E - S + 1);
+  const usableLen = Math.max(1, L - T);
+  // Source frame the playhead lands on — this becomes the right clip's trimIn
+  const rightTrimIn = T + ((tf - S) % usableLen);
+
+  const leftClip = {
+    ...clip,
+    id: 'clip_' + (++tlClipIdCounter),
+    endFrame: tf - 1,
+    _origStart: S, _origEnd: tf - 1,
+    _selected: false,
+  };
+  const rightClip = {
+    ...clip,
+    id: 'clip_' + (++tlClipIdCounter),
+    startFrame: tf,
+    trimIn: rightTrimIn,
+    _origStart: tf, _origEnd: E,
+    _selected: false,
+  };
+
+  tlClips.splice(idx, 1, leftClip, rightClip);
+  renderTimelineRuler();
+  tlSaveClips();
+}
+
 // Delete key removes selected clip
 document.addEventListener('keydown', (e) => {
   const tag = document.activeElement?.tagName;
@@ -4957,17 +5302,19 @@ document.addEventListener('keydown', (e) => {
 
 function tlAddClip(name, seqName, startFrame, endFrame, nodeId, paramKeyframes) {
   const id = 'clip_' + (++tlClipIdCounter);
-  const lane = tlNextFreeLane();
   const colors = ['#4a6cf7', '#f59e0b', '#34d399', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
   const color = colors[tlClips.length % colors.length];
+  // New clip goes at the top (lane 0); shift existing clips down by 1
+  tlClips.forEach(c => { c.lane += 1; });
   const clip = {
-    id, name, seqName, startFrame, endFrame, lane, color,
+    id, name, seqName, startFrame, endFrame, lane: 0, color,
     nodeId, paramKeyframes: JSON.parse(JSON.stringify(paramKeyframes || {})),
     srcLength: endFrame - startFrame + 1,
     trimIn: 0,
+    looped: false,
     _origStart: startFrame, _origEnd: endFrame,
   };
-  tlClips.push(clip);
+  tlClips.unshift(clip);
   tlSaveClips();
   renderTimelineRuler();
   return clip;
@@ -4988,8 +5335,8 @@ function tlLoadClips() {
     if (data) {
       tlClips = JSON.parse(data).map(c => ({
         srcLength: c.endFrame - c.startFrame + 1,
-        trimIn: 0,
         ...c,
+        looped: c.looped ?? false,
         _origStart: c.startFrame,
         _origEnd: c.endFrame,
       }));
@@ -5044,7 +5391,7 @@ tlNext.addEventListener('click', () => {
     const rect = ruler.getBoundingClientRect();
     const x = ('touches' in e ? e.touches[0].clientX : e.clientX) - rect.left + wrap.scrollLeft;
     const start = parseInt(tlStart.value) || 0;
-    const end   = parseInt(tlEnd.value)   || 47;
+    const end   = parseInt(tlEnd.value)   || 24;
     return Math.max(start, Math.min(end, start + Math.round(x / 12)));
   }
   function onStart(e) {
@@ -5135,7 +5482,6 @@ tlNext.addEventListener('click', () => {
 })();
 
 let _tlFrameAbort = null;
-let _tlPlayGen = 0;
 tlPlay.addEventListener('click', () => {
   tlPlaying = !tlPlaying;
   tlPlay.textContent = tlPlaying ? '⏸' : '▶';
@@ -5143,7 +5489,7 @@ tlPlay.addEventListener('click', () => {
     const fps   = Math.max(1, parseInt(tlFps.value) || 24);
     const delay = Math.round(1000 / fps);
     tlPlayTimer = setInterval(() => {
-      const end  = parseInt(tlEnd.value)   || 47;
+      const end  = parseInt(tlEnd.value)   || 24;
       const st   = parseInt(tlStart.value) || 0;
       const cur  = parseInt(tlFrame.value) || 0;
       const next = cur >= end ? st : cur + 1;
@@ -5219,7 +5565,7 @@ tlCancel.addEventListener('click', () => {
 
 async function tlDoRenderSequence() {
   const start = parseInt(tlStart.value) || 0;
-  const end   = parseInt(tlEnd.value)   || 47;
+  const end   = parseInt(tlEnd.value)   || 24;
   const fps   = parseInt(tlFps.value)   || 24;
   const name  = tlName.value.trim()     || 'sequence';
 
@@ -5254,6 +5600,7 @@ async function tlDoRenderSequence() {
     end_frame:   end,
     fps,
     output_name: name,
+    width: gCanvasW, height: gCanvasH,
   };
 
   try {
@@ -5370,8 +5717,15 @@ document.getElementById('graph-layout-btn-desk')?.addEventListener('click', gPhy
 
 // ── Persistence ────────────────────────────────────────────────
 function gSave() {
-  localStorage.setItem('pipeline-graph', JSON.stringify({nodes:gNodes,edges:gEdges,panX:gPanX,panY:gPanY,scale:gCanvasScale}));
-  gAutoSave();
+  localStorage.setItem('pipeline-graph', JSON.stringify({nodes:gNodes,edges:gEdges,panX:gPanX,panY:gPanY,scale:gCanvasScale,canvasW:gCanvasW,canvasH:gCanvasH}));
+}
+function _gApplyCanvasSize(w, h) {
+  gCanvasW = w || 768; gCanvasH = h || 512;
+  const key = `${gCanvasW}x${gCanvasH}`;
+  for (const id of ['graph-canvas-preset', 'graph-canvas-preset-mob']) {
+    const sel = document.getElementById(id);
+    if (sel && [...sel.options].some(o => o.value === key)) sel.value = key;
+  }
 }
 function gLoad() {
   try {
@@ -5382,9 +5736,10 @@ function gLoad() {
     gEdges = (s.edges || []).map(e =>
       e.dst_port === 'image' ? { ...e, dst_port: 'image_in' } : e
     );
-    gEdgeCounter = gEdges.length;
+    gEdgeCounter = Math.max(0, ...gEdges.map(e => parseInt(e.id?.slice(1)) || 0));
     gPanX = s.panX || 0; gPanY = s.panY || 0;
     gCanvasScale = s.scale || 1.0;
+    _gApplyCanvasSize(s.canvasW, s.canvasH);
   } catch { gNodes=[]; gEdges=[]; }
 }
 async function gRestoreGraph() {
@@ -5402,34 +5757,25 @@ async function gRestoreGraph() {
 gLoad();
 setTimeout(gRestoreGraph, 100);
 
-// ── Restore-session banner ─────────────────────────────────────
-setTimeout(() => {
-  try {
-    const saved = localStorage.getItem('gm-autosave');
-    if (!saved) return;
-    const data = JSON.parse(saved);
-    if (!data.nodes || !data.nodes.length) return;
-    const banner = document.createElement('div');
-    banner.id = 'restore-banner';
-    banner.innerHTML =
-      `<span>Restore last session? (${data.nodes.length} node${data.nodes.length !== 1 ? 's' : ''})</span>` +
-      `<button onclick="gLoadGraph(JSON.parse(localStorage.getItem('gm-autosave')));this.parentElement.remove()">Restore</button>` +
-      `<button onclick="this.parentElement.remove()">Dismiss</button>`;
-    banner.style.cssText = 'position:fixed;top:8px;left:50%;transform:translateX(-50%);' +
-      'background:#2a2a2a;border:1px solid #444;padding:8px 14px;border-radius:6px;' +
-      'z-index:9999;display:flex;gap:8px;align-items:center;font-size:13px;';
-    banner.querySelector('button').style.cssText =
-      'padding:4px 10px;background:var(--accent);color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:12px;';
-    banner.querySelectorAll('button')[1].style.cssText =
-      'padding:4px 10px;background:var(--bg3);color:var(--muted);border:1px solid var(--border);border-radius:5px;cursor:pointer;font-size:12px;';
-    document.body.appendChild(banner);
-  } catch(e) {}
-}, 200);
+// ── Canvas size preset ────────────────────────────────────────────
+_gApplyCanvasSize(gCanvasW, gCanvasH); // sync selects to restored state
+for (const id of ['graph-canvas-preset', 'graph-canvas-preset-mob']) {
+  const sel = document.getElementById(id);
+  if (!sel) continue;
+  sel.addEventListener('change', () => {
+    const [w, h] = sel.value.split('x').map(Number);
+    _gApplyCanvasSize(w, h); // updates both selects
+    gSave();
+  });
+}
+
 
 // ── Serialize graph to plain object ───────────────────────────
 function gSerializeGraph() {
   return {
     version: 1,
+    canvasW: gCanvasW,
+    canvasH: gCanvasH,
     nodes: gNodes.map(n => {
       if (n.type === 'group') return {
         id: n.id, type: 'group', name: n.name,
@@ -5471,6 +5817,9 @@ async function gLoadGraph(data) {
   if (isMobile()) gParamsSheetClose();
   gSetStatus('');
 
+  // Restore canvas size if present in the saved graph
+  if (data.canvasW && data.canvasH) _gApplyCanvasSize(data.canvasW, data.canvasH);
+
   // Ensure node defs are ready
   if (!Object.keys(gNodeDefs).length) {
     gNodeDefs = await fetch('/api/node-defs').then(r => r.json());
@@ -5506,15 +5855,6 @@ async function gLoadGraph(data) {
   gUpdateConnectedPorts();
   gRedrawEdges();
   gSave();
-}
-
-// ── Auto-save debounce ─────────────────────────────────────────
-let _autoSaveTimer = null;
-function gAutoSave() {
-  clearTimeout(_autoSaveTimer);
-  _autoSaveTimer = setTimeout(() => {
-    try { localStorage.setItem('gm-autosave', JSON.stringify(gSerializeGraph())); } catch(e) {}
-  }, 2000);
 }
 
 // ── Save graph to server ───────────────────────────────────────
@@ -6098,34 +6438,71 @@ renderTimelineRuler();
 </script>
 
 <div id="tl-ctx-menu">
+  <button id="tl-ctx-mode" class="mode">↺ Switch to Loop</button>
+  <button id="tl-ctx-split">✂ Split at playhead</button>
+  <div class="sep"></div>
   <button id="tl-ctx-delete" class="danger">Delete clip</button>
 </div>
 
 <script>
 (function() {
   const menu = document.getElementById('tl-ctx-menu');
+  const menuMode = document.getElementById('tl-ctx-mode');
+  const menuSplit = document.getElementById('tl-ctx-split');
   const menuDelete = document.getElementById('tl-ctx-delete');
   let ctxClipId = null;
 
   function showCtxMenu(x, y, clipId) {
     ctxClipId = clipId;
+    const clip = tlClips.find(c => c.id === clipId);
+    if (clip) {
+      menuMode.textContent = clip.looped ? '✂ Switch to Trim' : '↺ Switch to Loop';
+      const tf = parseInt(document.getElementById('tl-frame')?.value) || 0;
+      const playheadInside = tf > clip.startFrame && tf <= clip.endFrame;
+      menuSplit.style.display = playheadInside ? '' : 'none';
+    }
     menu.style.display = 'block';
     const mw = menu.offsetWidth, mh = menu.offsetHeight;
     menu.style.left = Math.min(x, window.innerWidth - mw - 4) + 'px';
     menu.style.top  = Math.min(y, window.innerHeight - mh - 4) + 'px';
   }
+  window.tlShowClipCtxMenu = showCtxMenu;
 
   function hideCtxMenu() { menu.style.display = 'none'; ctxClipId = null; }
 
   document.addEventListener('click', hideCtxMenu);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideCtxMenu(); });
 
+  menuMode.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!ctxClipId) return;
+    const clip = tlClips.find(c => c.id === ctxClipId);
+    if (!clip) return;
+    clip.looped = !clip.looped;
+    if (!clip.looped) {
+      // Switching to trim: snap right edge back within source bounds
+      const us = Math.max(1, (clip.srcLength || 1) - (clip.trimIn || 0));
+      clip.endFrame = Math.min(clip.endFrame, clip.startFrame + us - 1);
+      clip._origEnd = clip.endFrame;
+    }
+    renderTimelineRuler();
+    tlSaveClips();
+    hideCtxMenu();
+  });
+
+  menuSplit.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!ctxClipId) return;
+    tlSplitClipAtPlayhead(ctxClipId);
+    hideCtxMenu();
+  });
+
   menuDelete.addEventListener('click', () => {
     if (ctxClipId) tlDeleteClip(ctxClipId);
     hideCtxMenu();
   });
 
-  // Delegate contextmenu on clip bars
+  // Delegate contextmenu on clip bars (right-click desktop; long-press fires contextmenu on mobile)
   document.addEventListener('contextmenu', (e) => {
     const bar = e.target.closest('.tl-clip-bar');
     if (!bar) return;
@@ -6352,6 +6729,46 @@ renderTimelineRuler();
       const d = JSON.parse(e.data);
       ntProgressText.textContent = `${d.method_name} (${d.method_id}) — ${d.param_set}: ${d.status}`;
     } catch {}
+  });
+})();
+</script>
+
+<!-- ── Server restart button ────────────────────────────────────────── -->
+<button id="server-restart-btn" title="Restart server (picks up code changes)">⟳</button>
+<script>
+(function () {
+  const btn = document.getElementById('server-restart-btn');
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    btn.classList.add('restarting');
+    btn.title = 'Restarting…';
+
+    try {
+      await fetch('/admin/restart', { method: 'POST' });
+    } catch (_) {
+      // Server may close the connection before responding — that's fine
+    }
+
+    // Poll /health every 500 ms; reload once it responds ok (max 30 s)
+    let attempts = 0;
+    const poll = async () => {
+      if (++attempts > 60) {
+        btn.disabled = false;
+        btn.classList.remove('restarting');
+        btn.title = 'Server did not come back — check the terminal';
+        return;
+      }
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 2000);
+        const r = await fetch('/health', { cache: 'no-store', signal: ctrl.signal });
+        clearTimeout(t);
+        if (r.ok) { window.location.reload(); return; }
+      } catch (_) {}
+      setTimeout(poll, 500);
+    };
+    // Give the old process ~1.2 s to die before we start polling
+    setTimeout(poll, 1200);
   });
 })();
 </script>

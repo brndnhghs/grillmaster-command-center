@@ -12,7 +12,7 @@ from __future__ import annotations
 import math
 import random
 from ..registry import chord
-from ..types import (
+from ..chord_types import (
     HarmonicState,
     note_to_pc,
     pc_to_note,
@@ -276,11 +276,26 @@ def _smooth_voices(phrase: list[HarmonicState], octave: int) -> list[HarmonicSta
 
 
 def _total_movement(v1: list[int], v2: list[int]) -> float:
-    """Sum of squared intervals between matched voices (greedy nearest-note)."""
-    used  = set()
+    """Sum of squared intervals between matched voices (greedy nearest-note).
+
+    Handles unequal voicing sizes by matching as many voices as possible and
+    adding a small penalty for any unmatched voices instead of crashing.
+    """
+    if not v1 or not v2:
+        return 0.0
+
+    used: set[int] = set()
     total = 0.0
     for n in v1:
-        best = min((abs(n - m), i) for i, m in enumerate(v2) if i not in used)
+        candidates = [(abs(n - m), i) for i, m in enumerate(v2) if i not in used]
+        if not candidates:
+            # More source voices than target voices — penalize unmatched voices.
+            total += 12.0
+            continue
+        best = min(candidates)
         used.add(best[1])
         total += best[0] ** 2
+
+    # Small penalty for any target voices that were never matched.
+    total += 12.0 * max(0, len(v2) - len(used))
     return total
