@@ -285,6 +285,22 @@ class GraphError(Exception):
     pass
 
 
+def _stable_node_offset(node_id: str) -> int:
+    """Deterministic per-node seed offset.
+
+    Built-in hash() is randomized per process (PYTHONHASHSEED), which made
+    node seeds — and therefore output — change across server restarts.
+    """
+    import hashlib
+    return int.from_bytes(hashlib.sha1(node_id.encode()).digest()[:2], "big")
+
+
+def _node_params_hash(params: dict) -> str:
+    """Stable digest of a node's params for the simulation cache."""
+    import json as _json
+    return _json.dumps({k: str(v) for k, v in sorted(params.items())}, sort_keys=True)
+
+
 def _write_error_placeholder(node_dir: Path) -> np.ndarray:
     """Write a dark-red W×H placeholder PNG; return as float32 ndarray [0,1]."""
     from PIL import Image as _PILe
@@ -427,19 +443,16 @@ class GraphExecutor:
                         continue
 
             # ── Architecture A: simulation with capture_frame() ──────
-            node_seed = seed + frame + (hash(node_id) & 0xFFFF)
+            node_seed = seed + frame + _stable_node_offset(node_id)
             from .arch import detect_architecture
             arch = detect_architecture(meta)
             sim_cache_key = (node_id, seed)
+            # Computed unconditionally: the list-result readback below uses it
+            # even when the architecture heuristic said "B".
+            params_hash = _node_params_hash(node.params)
 
             if arch == "A":
                 # Check if simulation is already cached
-                import json as _json_hash
-                params_hash = hash(_json_hash.dumps(
-                    {k: str(v) for k, v in sorted(node.params.items())},
-                    sort_keys=True
-                ))
-
                 if (sim_cache_key in self._sim_cache
                         and self._sim_params_hash.get(node_id) == params_hash):
                     cached = self._sim_cache[sim_cache_key]
@@ -625,9 +638,11 @@ class GraphExecutor:
                     continue
 
                 # ── Named IMAGE port (e.g. seed_image, mask_image) ─────
-                # Check if this dst_port is declared as IMAGE type in the node def
-                _nd = get_all_node_defs().get(node.method_id, {})
-                _port_type = (_nd.get("inputs") or {}).get(edge.dst_port)
+                # Port type comes from the method's own declared inputs — no
+                # need to rebuild every node def per edge (was O(edges×methods)).
+                _port_type = None
+                if meta.inputs and edge.dst_port in meta.inputs:
+                    _port_type = meta.inputs[edge.dst_port]
                 if _port_type and _port_type.lower() == "image" and edge.dst_port != "image_in":
                     if src_img is not None:
                         run_params[edge.dst_port] = src_img
@@ -751,7 +766,7 @@ class GraphExecutor:
                 # No upstream image — inject None so methods can check
                 run_params["_input_image"] = None
 
-            node_seed = seed + frame + (hash(node_id) & 0xFFFF)
+            node_seed = seed + frame + _stable_node_offset(node_id)
             run_params["frame"] = frame
             run_params["frame_seed"] = node_seed
 
@@ -840,14 +855,20 @@ class GraphExecutor:
                         from PIL import Image
                         img = Image.open(str(pngs[-1])).convert("RGB")
                         arr = np.array(img, dtype=np.float32) / 255.0
-                # Read sidecar files
-                import json as _json
-                scalars_path = node_dir / "scalars.json"
-                extra_outputs = _json.loads(scalars_path.read_text()) if scalars_path.exists() else {}
-                for _key in ("field", "particles", "mask"):
-                    _path = node_dir / f"{_key}.npy"
-                    if _path.exists():
-                        extra_outputs[_key] = np.load(str(_path))
+
+            # ── Read sidecar files — for every return type ──
+            # Methods may combine a return value with write_scalars /
+            # write_field / write_particles sidecars; in-memory values from
+            # the return dict take priority over the files.
+            import json as _json
+            scalars_path = node_dir / "scalars.json"
+            if scalars_path.exists():
+                for _k, _v in _json.loads(scalars_path.read_text()).items():
+                    extra_outputs.setdefault(_k, _v)
+            for _key in ("field", "particles", "mask"):
+                _path = node_dir / f"{_key}.npy"
+                if _path.exists() and _key not in extra_outputs:
+                    extra_outputs[_key] = np.load(str(_path))
 
             # ── Write to disk (for timeline playback) ──
             if arr is not None:

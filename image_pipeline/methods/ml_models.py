@@ -220,9 +220,9 @@ def method_comfyui(out_dir: Path, seed: int, params=None):
                 shutil.copy(str(out[-1]), str(out_dir / mn(28, "ComfyUI")))
                 capture_frame("28", out_dir / mn(28, "ComfyUI"))
                 print(f"  ✓ {mn(28, 'ComfyUI')}  ({out[-1].stat().st_size // 1024} KB)")
-            else:
-                print("  ✗ ComfyUI: no output found")
-            return
+                return
+            print("  ✗ ComfyUI: no output found")
         except Exception as e:
             print(f"  … ComfyUI port {port}: {e}")
-    print("  ✗ ComfyUI: no running instance found")
+    print("  ✗ ComfyUI: no running instance found — writing fallback")
+    save(np.zeros((H, W, 3), dtype=np.float32), mn(28, "ComfyUI"), out_dir)

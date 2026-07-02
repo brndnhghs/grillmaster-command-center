@@ -11,7 +11,11 @@ from __future__ import annotations
 import json, logging, os, sys
 from pathlib import Path
 
-HERMES_AGENT = Path.home() / ".hermes" / "hermes-agent"
+# Same resolution as server.py's HERMES_AGENT_DIR — Hermes is the sole
+# LLM backend; only its install location is configurable.
+HERMES_AGENT = Path(
+    os.environ.get("HERMES_AGENT_DIR", str(Path.home() / ".hermes" / "hermes-agent"))
+)
 sys.path.insert(0, str(HERMES_AGENT))
 
 os.environ.setdefault("HERMES_YOLO_MODE", "1")

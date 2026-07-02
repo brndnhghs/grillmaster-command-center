@@ -95,6 +95,15 @@ def method(
     """Decorator: register a generation method."""
 
     def wrapper(fn):
+        existing = _registry.get(id)
+        if existing is not None and existing.module != fn.__module__:
+            # Last-write-wins silently ate methods twice (#18, then #83/#146).
+            # Same-module re-registration stays allowed for hot-reload.
+            raise ValueError(
+                f"Duplicate method id '{id}': '{name}' ({fn.__module__}) collides with "
+                f"'{existing.name}' ({existing.module}). "
+                f"Get a fresh id with tools/next_id.py — never reuse one."
+            )
         meta = MethodMeta(
             id=id,
             name=name,

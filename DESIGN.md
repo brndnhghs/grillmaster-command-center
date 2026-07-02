@@ -1,8 +1,18 @@
 # Pipeline Design
 
+## Vision
+
+Grillmaster Command Center is a node-based image/video editor that takes the best of two worlds and adds a third:
+
+- **From Houdini:** the named-attribute payload model. Every node produces a structured, typed payload — not an anonymous blob — and downstream nodes consume attributes by name. Non-destructive, procedural, auditable.
+- **From TouchDesigner:** the live instinct. The graph is meant to *run*, not just render — a continuous cook loop streams frames to the editor (MJPEG live mode), CHOP-style channel nodes (LFO, Counter, Beats, Envelope, Math, Logic…) drive parameters over time, and selective recooking keeps interactive tweaks fast. Real-time rendering is the optimization target, even where today's cook times don't reach it yet.
+- **LLM-infused evolution:** the pipeline is designed to be read, extended, and repaired by LLM agents. The Node Doctor (backed by the **Hermes agent — the sole LLM backend for all LLM calls**) can inspect a node's source, rewrite it, hot-reload it into the running editor, and batch-fix failures found by the node tester. The tool is supposed to evolve continuously with user input.
+
+Every design decision below serves one of those three pillars, under one shared constraint: **mutual legibility** — a human or an agent reading a single method file must understand exactly what it does, needs, and produces.
+
 ## Philosophy
 
-The grillmaster pipeline is a **named-attribute payload model** — inspired by Houdini's node geometry model. Each node produces a structured dict of typed outputs (its _payload_), not just a single image. Downstream nodes can consume any attribute from the payload, with attributes propagating automatically unless overridden.
+The pipeline is a **named-attribute payload model**. Each node produces a structured dict of typed outputs (its _payload_), not just a single image. Downstream nodes can consume any attribute from the payload, with attributes propagating automatically unless overridden.
 
 Three principles drive all design decisions:
 
@@ -16,15 +26,19 @@ Three principles drive all design decisions:
 
 ## Port Type System
 
-| Type       | Value key    | Wire colour | Carries                                   |
-|------------|--------------|-------------|-------------------------------------------|
-| `IMAGE`    | `image`      | white        | H×W×3 float32 ndarray, range [0, 1]      |
-| `SCALAR`   | `luminance` / any named scalar | yellow | float                  |
-| `FIELD`    | `field`      | blue         | H×W float32 ndarray (angle / potential)  |
-| `PARTICLES`| `particles`  | orange       | N×4 float32 [x, y, vx, vy]              |
-| `ANY`      | —            | grey         | fallback; accepts any upstream value      |
+Port types live in an **open registry** — `core/port_types.py`, `register_port_type()` — so new types can be added without touching core (COLORMAP was added exactly this way). The UI fetches colors and descriptions from `GET /api/port-types`; nothing is hardcoded frontend-side.
 
-Port types are declared in `PortType(str, Enum)` in `core/graph.py`. String equality lets them serialize cleanly to JSON and compare across the graph/registry boundary.
+| Type       | Value key    | Wire colour        | Carries                                        |
+|------------|--------------|--------------------|------------------------------------------------|
+| `IMAGE`    | `image`      | blue `#4a9eff`     | H×W×3 float32 ndarray, range [0, 1]           |
+| `SCALAR`   | `luminance` / any named scalar | gray `#888888` | float                          |
+| `FIELD`    | `field`      | green `#4caf50`    | H×W float32 ndarray (angle / potential)       |
+| `PARTICLES`| `particles`  | orange `#ff9800`   | N×4 float32 [x, y, vx, vy]                    |
+| `MASK`     | `mask`       | white `#e8e8e8`    | H×W float32, range [0, 1]                     |
+| `COLORMAP` | `palette`    | magenta `#e040fb`  | N×3 / N×4 float32 palette or lookup table     |
+| `ANY`      | —            | dark gray `#444444`| fallback; accepts any upstream value           |
+
+**Luminance note:** in `flat_outputs` the executor computes `luminance` as a per-pixel H×W grayscale array (so it can drive FIELD consumers); when wired to a scalar param it collapses to `float(mean)`. Methods still declare it `"luminance": "SCALAR"` and sidecar-written scalars are plain floats.
 
 ---
 
@@ -34,11 +48,12 @@ Methods write sidecar files alongside their PNG to expose non-image outputs:
 
 | File             | Content                          | Produced by                     |
 |------------------|----------------------------------|---------------------------------|
-| `scalars.json`   | `{"key": float, …}`              | `write_scalars(out_dir, {…})`   |
+| `scalars.json`   | `{"key": float, …}`              | `write_scalars(out_dir, k=v, …)`|
 | `field.npy`      | H×W float32 ndarray              | `write_field(out_dir, arr)`     |
 | `particles.npy`  | N×4 float32 [x, y, vx, vy]      | `write_particles(out_dir, arr)` |
+| `mask.npy`       | H×W float32 [0, 1]              | `write_mask(out_dir, arr)`      |
 
-The executor reads these back after each node execution and merges them into `flat_outputs[node_id]`. Because they live on disk, the executor can reload them without re-running the method — enabling the dirty-flag skip.
+The executor reads sidecars back after each node execution — **for every method return style** (return-dict, returned ndarray/PIL image, or legacy write-to-disk) — and merges them into `flat_outputs[node_id]`. In-memory values from a returned dict take priority over the files. Because sidecars live on disk, the executor can reload them without re-running the method — enabling the dirty-flag skip.
 
 Helper functions live in `core/utils.py`. Methods import the helpers they need.
 
@@ -49,17 +64,32 @@ Helper functions live in `core/utils.py`. Methods import the helpers they need.
 `GraphExecutor.execute()` performs a single frame pass:
 
 1. **Topological sort** (Kahn's algorithm, feedback edges excluded).
-2. **Truncate at terminal** — the node flagged `render=True` or the last node with no outgoing edges.
+2. **Truncate at terminal** — the node flagged `render=True` or the last image-producing node with no outgoing edges (data-only nodes like Timeline/LFO are never auto-picked as terminal).
 3. **For each node in order:**
    a. **Dirty check**: if `node.dirty == False` and no upstream node ran this frame, load cached PNG + sidecars from disk → skip re-execution.
    b. **Upstream scalar harvest**: collect all scalar attributes from connected upstream payloads; name-score them against the current node's params and pre-populate `run_params` (implicit inheritance).
-   c. **Edge processing**: explicit wires override the pre-seeded values. IMAGE → `input_image` file path; PARTICLES → direct `run_params[dst_port]`; SCALAR/FIELD → typed injection with `_inject_typed`.
+   c. **Edge processing**: explicit wires override the pre-seeded values. IMAGE → `input_image` file path + `_input_image` in-memory array; PARTICLES/MASK/COLORMAP → direct `run_params[dst_port]`; SCALAR/FIELD → typed injection with `_inject_typed`.
    d. **Execute** `meta.fn(node_dir, seed, params=run_params)`.
-   e. **Read back**: PNG + sidecars → `flat_outputs[node_id]`.
+   e. **Read back**: returned dict / ndarray / PIL image, else disk PNG; plus sidecars → `flat_outputs[node_id]`.
    f. **Payload inheritance**: merge upstream scalars (lower priority) into `flat_outputs[node_id]` so downstream nodes can read inherited attributes even without explicit scalar wires.
-4. Store `flat_outputs` as `_prev_outputs` for feedback edges.
+4. Store `flat_outputs` as `_prev_outputs` for feedback edges (feedback wires read the *previous* frame's payload; frame 0 gets a black-image fallback).
 
-The executor instance uses `_GRAPH_SESSION_DIR` (a stable directory) so that cached outputs persist across graph runs. Per-run directories (`graph-{job_id}`) are only used for the final assembled output file.
+**Determinism:** per-node seeds are `seed + frame + sha1(node_id)`-derived — stable across server restarts. Identical graph + seed + params ⇒ identical output, always.
+
+**Architecture A/B** (`core/arch.py`): simulation methods that run an internal loop and `capture_frame()` (A) are cooked once and their frame list cached in memory; stateless methods (B) cook per frame, driven by `time`/`_timeline`/`frame_seed`.
+
+### Dirty flags / selective recooking
+
+`GraphNode.dirty: bool = True`. The frontend marks a node dirty when its params change and marks all nodes clean after a successful run.
+
+- **Single-frame runs** (`frames == 1`, the interactive tweak loop): the server honors client dirty flags — clean nodes reload their cached output from `_GRAPH_SESSION_DIR` and log `↩ skipped (clean)`. The skip is invalidated wholesale when the **seed, frame, or wiring** changed since the last single-frame run (the client only dirties nodes on param edits).
+- **Multi-frame renders** (`frames > 1`): every node is forced dirty — reusing a previous run's PNG for each frame would freeze the animation.
+
+### Live mode (real-time loop)
+
+`POST /api/graph/live` starts a continuous cook loop server-side: the graph executes frame after frame, each terminal image is JPEG-encoded into a shared buffer, and the browser displays `GET /api/live/stream` (MJPEG, multipart/x-mixed-replace; `GET /api/live/frame.jpg` is the polling fallback). One loop runs at a time — re-POSTing hot-swaps the graph, `frames: 0` stops, `GET /api/graph/live/status` reports state. Node errors are logged; ten consecutive whole-frame failures stop the loop. The 📺 Live button in the editor toggles all of this; param edits while live re-POST the graph (debounced) so the loop always cooks the current state. Cheap graphs cook at ~20+ fps; heavy simulation nodes are the current bottleneck (see Planned Extensions).
+
+The executor instance uses `_GRAPH_SESSION_DIR` (a stable directory) so that cached outputs persist across graph runs. Per-run directories are only used for the final assembled output file.
 
 ---
 
@@ -74,54 +104,77 @@ Every method declares its outputs in the `@method` decorator:
 )
 ```
 
-The executor reads `meta.outputs` via `_make_node_def()` to build the port list. No tag-based guessing. Named sidecar scalars (e.g. `r`, `amplitude`, `spread`) are registered via `write_scalars` at runtime and appear in `flat_outputs` automatically — they don't need explicit `outputs=` entries (though declaring them is good practice for discoverability).
+The executor reads `meta.outputs` via `_make_node_def()` to build the port list. No tag-based guessing. Named sidecar scalars (e.g. `r`, `amplitude`, `spread`) must be declared in `outputs=` — `tools/audit_methods.py` (wired as a pre-commit hook) fails on undeclared sidecar writes.
+
+**Method IDs are unique, forever.** The registry **raises** on duplicate registration from a different module (same-module re-registration stays allowed for hot-reload). Get fresh IDs from `tools/next_id.py`; never pick one manually, never reuse one. (History: silent last-write-wins ate methods #18, #83, and #146 before this guard existed.)
 
 Input ports are auto-derived from param defaults:
-- `int` / `float` default → SCALAR input port
+- `int` / `float` default (no min/max slider constraints) → SCALAR input port
 - `list` / `tuple` default → FIELD input port
 
-Ports that can't be auto-derived (e.g. a PARTICLES input whose param defaults to `None`) are declared with `inputs={"particles": "PARTICLES"}` in the decorator.
+Ports that can't be auto-derived (e.g. a PARTICLES input whose param defaults to `None`) are declared with `inputs={"particles": "PARTICLES"}` in the decorator. `inputs={}` means "no inputs at all" (pure data source, e.g. Timeline); `inputs=None` (the default) auto-generates `image_in`.
+
+---
+
+## System & Channel Nodes
+
+- **Timeline** (`__timeline__`, `methods/system/timeline_node.py`) — global animation clock; outputs `t`, `phase`, `speed`, `beat`, `segment` as SCALARs. When present in a graph, its params (total_frames / fps / speed) drive the global `Timeline` object the executor injects into every node's `_timeline` param.
+- **Channels** (`methods/channels.py`) — TouchDesigner-CHOP-style data sources and operators: Counter, Ramp, LFO, Beats, Noise1D, Envelope, Math, Logic, Blend, Strobe, Burst, AgeHeat. They output SCALARs meant to be wired into any numeric param.
+
+---
+
+## LLM Integration (Hermes)
+
+**All LLM calls go through the Hermes agent. No other backend.**
+
+- **Node Doctor** (`/api/node-doctor/*`, panel in the editor): chat about a node with its source and context in the system prompt; apply a rewritten file (backed up to `output/nd-backups/`, undoable); the file watcher hot-reloads it and the editor refreshes node defs over SSE.
+- **Node Tester** (`/api/node-tester/*`): runs every method with default + edge-case params, reports failures, and can batch-apply Node Doctor fixes.
+- **Configuration:** `HERMES_AGENT_DIR` (default `~/.hermes/hermes-agent`) or `HERMES_PYTHON` locate the Hermes install; `server.py` and `nd_runner.py` resolve the same variables and the server logs at startup whether the backend was found.
+- **Exposure:** endpoints that write method source or restart the process accept an optional `GRILLMASTER_API_TOKEN` (header `X-Api-Token`); set it whenever the server is tunneled.
 
 ---
 
 ## Current Named Outputs Table
 
-| Method id | Name                   | `outputs` keys                                  |
+| Method id | Name                   | `outputs` keys beyond image+luminance          |
 |-----------|------------------------|-------------------------------------------------|
-| 16        | Flow Field (codegen)   | image, luminance, field                         |
-| 20        | Particles              | image, luminance, particles                     |
-| 34        | Boids                  | image, luminance, particles                     |
-| 35        | Flowfield              | image, luminance, field                         |
-| 83        | Langton's Ant          | image, luminance, particles                     |
-| 86        | Physarum               | image, luminance, field, particles              |
-| 88        | Particle Life          | image, luminance, particles                     |
-| 106       | Dielectric Breakdown   | image, luminance, field                         |
-| 113       | N-body Gravity         | image, luminance, field                         |
-| 130       | Particle Painter       | image, luminance _(PARTICLES consumer)_         |
+| 16        | Flow Field (codegen)   | field                                           |
+| 20        | Particles              | particles                                       |
+| 34        | Boids                  | particles                                       |
+| 35        | Flowfield              | field                                           |
+| 83        | Langton's Ant          | particles, field                                |
+| 86        | Physarum               | field, particles                                |
+| 88        | Particle Life          | particles                                       |
+| 106       | Dielectric Breakdown   | field                                           |
+| 113       | N-body Gravity         | field                                           |
+| 130       | Particle Painter       | — _(PARTICLES consumer)_                        |
+| 166       | Parametric Oscillator Lattice | epsilon, damping, resonance_energy, peak_amplitude |
+| 167       | Spectral Ocean Synthesis | wind_speed, peak_freq, significant_height, phillips_alpha |
 
-All other methods produce at minimum `image` and `luminance` (the default).
+This table is illustrative, not exhaustive — `GET /api/node-defs` is the authoritative, always-current list. All methods produce at minimum `image` and `luminance`.
 
 ---
 
 ## Planned Extensions
 
-### Wire Inspector
-Hovering a bezier edge shows a tooltip listing the upstream node's payload manifest (keys + types). Implemented: `GET /api/graph/wire-payload/{job_id}/{src_node_id}` reads from `_GRAPH_SESSION_DIR / node_id`, the frontend fetches on `mouseenter` and positions a fixed `#wire-tooltip` div.
+### Real-time deepening
+The live loop cooks whole graphs; the next optimizations are a persistent per-session executor (so Architecture-A sim caches survive across interactive runs), skipping disk writes during live cooking, and a cheap always-cook fast path for channel nodes.
 
-### Dirty Flag / Selective Recooking
-`GraphNode.dirty: bool = True`. The executor skips a node if `dirty=False` and no upstream node ran. The frontend marks a node dirty when any param changes; resets all nodes to clean after a successful run. This makes iterative tweaking fast — only changed nodes re-execute.
+### Animation system convergence
+Three param-animation mechanisms coexist: per-param keyframes with easing (`paramKeyframes`, evaluated in the executor — the canonical one), linear `animParams` (render-sequence endpoint only), and a vestigial keyframe-store API. They should converge on `paramKeyframes`.
 
 ### Named Image Planes
-Future: methods could write `beauty.npy`, `depth.npy`, `normals.npy` alongside the main PNG (analogous to Houdini deep / mantra planes). The executor would expose them as additional IMAGE-type outputs.
+Methods could write `beauty.npy`, `depth.npy`, `normals.npy` alongside the main PNG (analogous to Houdini render planes). The executor would expose them as additional IMAGE-type outputs.
 
 ### VEX-style Wrangle Node
-A node that accepts a small Python/expression snippet and runs it over the upstream payload dict — analogous to Houdini's Attribute Wrangle. Useful for ad-hoc scalar transforms without a full method file.
+A node that accepts a small Python/expression snippet and runs it over the upstream payload dict — analogous to Houdini's Attribute Wrangle. (Per-param expressions already exist: numeric params accept expression strings evaluated by the whitelisted AST evaluator in `core/expr.py`, with `frame`, `seed`, `t`, and math functions in scope.)
 
 ---
 
 ## Visibility Contract
 
-- **Methods** write to `out_dir` and return an `Image.Image`. They must not read from sibling node directories. They must not import from `core/graph.py`.
+- **Methods** write to `out_dir` and return a dict / ndarray / PIL image (or nothing, legacy). They must not read from sibling node directories. They must not import from `core/graph.py`.
 - **The executor** constructs `run_params` from node params + upstream wires. It must not know about image formats beyond RGB PNG.
-- **The server** serialises/deserialises the graph JSON and manages job lifecycle. It must not hold long-lived numpy arrays in memory.
-- **The frontend** is the only place where port colours, node layout, and edge routing are decided. The backend never sends pixel coordinates.
+- **The server** serialises/deserialises the graph JSON and manages job lifecycle. Long-lived numpy arrays are limited to the executor's simulation cache.
+- **The frontend** is the only place where node layout and edge routing are decided; port colours come from the port-type registry via the API. The backend never sends pixel coordinates.
+- **The wire inspector** (hover any edge) shows the live payload manifest flowing through it — the visibility contract's answer to implicit attribute inheritance.

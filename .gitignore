@@ -2,17 +2,24 @@
 __pycache__/
 *.pyc
 .DS_Store
-*.mp4
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.svg
-*.html
-*.txt
 *.sqlite3
 data/
 noise_output/
 _grid_params/
 *.bak
 *.corrupted
+*.nd-bak-*.py
+
+# Generated media — outputs only, never source assets
+image_pipeline/output/
+*.mp4
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+
+# NOTE: deliberately NOT ignoring *.html / *.txt globally — the UI
+# (ui/index.html) and requirements.txt are tracked source. Output text
+# and HTML land under image_pipeline/output/ which is ignored above.
+*.egg-info/

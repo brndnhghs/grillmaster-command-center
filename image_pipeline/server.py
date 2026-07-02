@@ -24,7 +24,7 @@ _repo_root = Path(__file__).resolve().parent.parent
 if str(_repo_root) not in sys.path:
     sys.path.insert(0, str(_repo_root))
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -165,6 +165,20 @@ async def lifespan(app: FastAPI):
     _observer.join()
 
 
+# ── Mutating-endpoint auth ────────────────────────────────────────────
+# Endpoints that write method source, restart the process, or spawn cook
+# loops are unauthenticated by default (localhost use). When the server is
+# exposed (e.g. --tunnel), set GRILLMASTER_API_TOKEN; those endpoints then
+# require the X-Api-Token header. The UI attaches it automatically from
+# localStorage['api-token'].
+API_TOKEN = os.environ.get("GRILLMASTER_API_TOKEN", "")
+
+
+def require_token(request: Request):
+    if API_TOKEN and request.headers.get("x-api-token") != API_TOKEN:
+        raise HTTPException(401, "Missing or invalid X-Api-Token header")
+
+
 app = FastAPI(title="Image Pipeline", lifespan=lifespan)
 app.mount("/output", StaticFiles(directory=str(OUTPUT_ROOT)), name="output")
 
@@ -262,6 +276,10 @@ def _enrich_params(params: dict | None) -> dict | None:
 
 # ── In-memory job store ───────────────────────────────────────────────
 
+# (seed, frame, edges-digest) of the last single-frame graph run — the
+# dirty-flag skip is only valid while these are unchanged; see _run_graph_job.
+_last_single_frame_ctx: tuple | None = None
+
 _jobs: dict[str, dict] = {}
 _JOB_MAX_AGE = 3600  # seconds
 
@@ -290,7 +308,7 @@ def health():
     return {"ok": True}
 
 
-@app.post("/admin/restart")
+@app.post("/admin/restart", dependencies=[Depends(require_token)])
 def admin_restart():
     """Re-exec the server process in place — picks up any source changes."""
     def _exec():
@@ -879,58 +897,74 @@ def execute_graph(req: GraphRequest):
 
 
 # ── Live sim: continuous graph execution ──────────────────────────
+_live_sim_lock = threading.Lock()
 _live_sim_cancel = threading.Event()
-_live_sim_nodes = []
-_live_sim_edges = []
-_live_sim_seed = 0
-_live_sim_width = 768
-_live_sim_height = 512
+_live_sim_thread: threading.Thread | None = None
 
 
-@app.post("/api/graph/live")
+@app.post("/api/graph/live", dependencies=[Depends(require_token)])
 def live_graph_sim(req: GraphRequest):
     """Start or stop a continuous graph simulation.
-    Runs the graph in an infinite loop, pushing frames to the live preview.
+
+    frames == 0 stops; anything else (re)starts. Only one live loop runs at
+    a time — starting while one is active stops the old loop first, so
+    re-POSTing with an edited graph hot-swaps it.
     """
-    global _live_sim_cancel, _live_sim_nodes, _live_sim_edges, _live_sim_seed, _live_sim_width, _live_sim_height
-    if req.frames == 0:
-        # Stop
-        _live_sim_cancel.set()
-        return {"status": "stopped"}
-    # Start
-    _live_sim_cancel = threading.Event()
-    _live_sim_nodes = req.nodes
-    _live_sim_edges = req.edges
-    _live_sim_seed = req.seed
-    _live_sim_width = req.width
-    _live_sim_height = req.height
+    global _live_sim_cancel, _live_sim_thread
+    with _live_sim_lock:
+        # Stop any existing loop (both for stop requests and restarts)
+        if _live_sim_thread is not None and _live_sim_thread.is_alive():
+            _live_sim_cancel.set()
+            _live_sim_thread.join(timeout=5.0)
+        _live_sim_thread = None
+        if req.frames == 0:
+            return {"status": "stopped"}
 
-    def _live_loop():
-        from image_pipeline.core.graph import GraphExecutor
-        from image_pipeline.core.utils import set_canvas as _set_canvas
-        _set_canvas(_live_sim_width, _live_sim_height)
-        executor = GraphExecutor(OUTPUT_ROOT / "_live_sim", in_memory=True)
-        frame = 0
-        while not _live_sim_cancel.is_set():
-            try:
-                flat_outputs, terminal_id, _ = executor.execute(
-                    _live_sim_nodes, _live_sim_edges, _live_sim_seed,
-                    frame=frame, frames=1
-                )
-                render_id = next((n["id"] for n in _live_sim_nodes if n.get("render")), None)
-                if render_id and render_id in flat_outputs:
-                    terminal_id = render_id
-                arr = (flat_outputs.get(terminal_id) or {}).get("image") if terminal_id else None
-                if arr is not None:
-                    _push_live_frame(arr)
-                frame += 1
-            except Exception:
-                pass
-            time.sleep(0.01)
+        cancel = threading.Event()
+        nodes, edges, seed = req.nodes, req.edges, req.seed
+        width, height = req.width, req.height
 
-    thread = threading.Thread(target=_live_loop, daemon=True)
-    thread.start()
-    return {"status": "running"}
+        def _live_loop():
+            from image_pipeline.core.graph import GraphExecutor
+            from image_pipeline.core.utils import set_canvas as _set_canvas
+            _set_canvas(width, height)
+            executor = GraphExecutor(OUTPUT_ROOT / "_live_sim", in_memory=True)
+            frame = 0
+            consecutive_errors = 0
+            while not cancel.is_set():
+                try:
+                    flat_outputs, terminal_id, node_errors = executor.execute(
+                        nodes, edges, seed, frame=frame, frames=1
+                    )
+                    for nid, err in node_errors.items():
+                        print(f"[live-sim] node {nid} error:\n{err}")
+                    render_id = next((n["id"] for n in nodes if n.get("render")), None)
+                    if render_id and render_id in flat_outputs:
+                        terminal_id = render_id
+                    arr = (flat_outputs.get(terminal_id) or {}).get("image") if terminal_id else None
+                    if arr is not None:
+                        _push_live_frame(arr)
+                    frame += 1
+                    consecutive_errors = 0
+                except Exception:
+                    import traceback as _tb
+                    print(f"[live-sim] frame {frame} failed:\n{_tb.format_exc(limit=6)}")
+                    consecutive_errors += 1
+                    if consecutive_errors >= 10:
+                        print("[live-sim] 10 consecutive failures — stopping loop")
+                        break
+                    time.sleep(0.5)  # don't spin on a persistently broken graph
+                time.sleep(0.01)
+
+        _live_sim_cancel = cancel
+        _live_sim_thread = threading.Thread(target=_live_loop, daemon=True)
+        _live_sim_thread.start()
+        return {"status": "running"}
+
+
+@app.get("/api/graph/live/status")
+def live_graph_status():
+    return {"running": _live_sim_thread is not None and _live_sim_thread.is_alive()}
 
 
 def _run_graph_job(job_id, nodes, edges, seed, frames, start_frame, out_dir, width=768, height=512):
@@ -954,14 +988,21 @@ def _run_graph_job(job_id, nodes, edges, seed, frames, start_frame, out_dir, wid
         n_frames = max(1, frames)
         all_errors: dict[str, str] = {}
 
-        # ── Force all nodes dirty so every run re-executes ──────────────
-        # The client marks nodes clean after a successful run, but the
-        # executor's disk cache (_GRAPH_SESSION_DIR) persists across jobs.
-        # Without this, the dirty-flag skip reads the last frame's PNG from
-        # the previous run for every frame — producing a static image instead
-        # of re-cooking the animation.
-        for n in nodes:
-            n["dirty"] = True
+        # ── Dirty-flag handling ──────────────────────────────────────────
+        # Multi-frame renders force everything dirty: the executor's disk
+        # cache (_GRAPH_SESSION_DIR) persists across jobs, and reusing the
+        # previous run's PNG for every frame would produce a static image
+        # instead of re-cooking the animation.
+        # Single-frame runs honor the client's dirty flags (selective
+        # recooking) — unless the seed, frame, or wiring changed since the
+        # last run, which invalidates every cached output regardless of
+        # param edits (the client only dirties nodes on param change).
+        global _last_single_frame_ctx
+        _run_ctx = (seed, start_frame, json.dumps(edges, sort_keys=True, default=str))
+        if n_frames > 1 or _last_single_frame_ctx != _run_ctx:
+            for n in nodes:
+                n["dirty"] = True
+        _last_single_frame_ctx = _run_ctx if n_frames == 1 else None
 
         # ── Determine timeline sequence name ──────────────────────────
         # Use the timeline name from the graph, or auto-generate one.
@@ -1391,8 +1432,30 @@ def nd_get_source(method_id: str):
     return {"source": path.read_text(), "path": str(path)}
 
 
-_ND_RUNNER   = Path(__file__).resolve().parent / "nd_runner.py"
-_HERMES_PY   = Path.home() / ".hermes" / "hermes-agent" / "venv" / "bin" / "python"
+_ND_RUNNER = Path(__file__).resolve().parent / "nd_runner.py"
+
+# ── Hermes agent — the sole LLM backend for all LLM calls ────────────
+# The install location is configurable so Node Doctor works on any machine
+# with a Hermes install, not just the one where it lives at the default path.
+#   HERMES_AGENT_DIR — hermes-agent checkout (default ~/.hermes/hermes-agent)
+#   HERMES_PYTHON    — interpreter to run nd_runner.py under
+#                      (default <HERMES_AGENT_DIR>/venv/bin/python)
+# nd_runner.py resolves the same variables, so both processes agree.
+HERMES_AGENT_DIR = Path(
+    os.environ.get("HERMES_AGENT_DIR", str(Path.home() / ".hermes" / "hermes-agent"))
+)
+_HERMES_PY = Path(
+    os.environ.get("HERMES_PYTHON", str(HERMES_AGENT_DIR / "venv" / "bin" / "python"))
+)
+
+if _HERMES_PY.exists():
+    print(f"[node-doctor] Hermes backend found: {_HERMES_PY}")
+else:
+    print(
+        f"[node-doctor] WARNING: Hermes backend not found at {_HERMES_PY} — "
+        f"Node Doctor chat will fail. Set HERMES_AGENT_DIR (or HERMES_PYTHON) "
+        f"to your hermes-agent install."
+    )
 
 
 @app.post("/api/node-doctor/chat")
@@ -1425,6 +1488,11 @@ current_param_values: {json.dumps(node_params)}
     stdin_bytes = json.dumps({"system_prompt": system, "messages": messages}).encode()
 
     async def generate():
+        if not _HERMES_PY.exists():
+            msg = (f"⚠ Hermes backend not found at {_HERMES_PY}. "
+                   f"Set HERMES_AGENT_DIR (or HERMES_PYTHON) and restart.")
+            yield f"data: {json.dumps({'text': msg})}\n\n"
+            return
         try:
             proc = await asyncio.create_subprocess_exec(
                 str(_HERMES_PY), str(_ND_RUNNER),
@@ -1468,7 +1536,7 @@ current_param_values: {json.dumps(node_params)}
     )
 
 
-@app.post("/api/node-doctor/apply")
+@app.post("/api/node-doctor/apply", dependencies=[Depends(require_token)])
 async def nd_apply(payload: dict):
     method_id  = payload.get("method_id", "")
     new_source = payload.get("source", "")
@@ -1479,8 +1547,12 @@ async def nd_apply(payload: dict):
     if not path or not path.exists():
         return {"error": "Method source file not found"}
 
-    backup_id   = uuid.uuid4().hex[:8]
-    backup_path = path.with_suffix(f".nd-bak-{backup_id}.py")
+    backup_id = uuid.uuid4().hex[:8]
+    # Backups live outside methods/ — in-tree copies carry duplicate
+    # @method ids, feed the file watcher, and pollute the audit scan.
+    backup_dir = OUTPUT_ROOT / "nd-backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    backup_path = backup_dir / f"{path.stem}.nd-bak-{backup_id}.py"
     shutil.copy2(str(path), str(backup_path))
     _nd_backups[backup_id] = (str(path), str(backup_path))
 
@@ -1489,7 +1561,7 @@ async def nd_apply(payload: dict):
     return {"ok": True, "backup_id": backup_id}
 
 
-@app.post("/api/node-doctor/undo/{backup_id}")
+@app.post("/api/node-doctor/undo/{backup_id}", dependencies=[Depends(require_token)])
 async def nd_undo(backup_id: str):
     entry = _nd_backups.pop(backup_id, None)
     if not entry:
@@ -1615,7 +1687,7 @@ def nt_get_report():
     return {"report": json.loads(report_path.read_text())}
 
 
-@app.post("/api/node-tester/batch-apply")
+@app.post("/api/node-tester/batch-apply", dependencies=[Depends(require_token)])
 async def nt_batch_apply(payload: dict):
     """Apply Node Doctor fixes to multiple failing methods at once.
 
@@ -1658,6 +1730,13 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.tunnel:
+        if not API_TOKEN:
+            print(
+                "⚠  WARNING: tunneling without GRILLMASTER_API_TOKEN set — "
+                "anyone with the URL can write method source and restart the "
+                "server. Set the env var and put the token in the UI's "
+                "localStorage['api-token']."
+            )
         from pyngrok import ngrok
         tunnel = ngrok.connect(args.port, bind_tls=True)
         print(f"🌐 Public URL: {tunnel.public_url}")

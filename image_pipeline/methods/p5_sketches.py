@@ -137,7 +137,7 @@ function draw() {
 </script></body></html>"""
 
 
-@method(id="83", name="p5.js Sketch", category="p5_sketches",
+@method(id="171", name="p5.js Sketch", category="p5_sketches",
         tags=["p5js", "webgl", "fast", "expanded"],
         inputs={},
         outputs={"image": "IMAGE", "luminance": "FIELD"},
