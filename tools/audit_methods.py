@@ -109,6 +109,22 @@ def _call_name(node: ast.Call) -> str | None:
     return None
 
 
+_BROAD_EXCEPTIONS = frozenset(("Exception", "BaseException"))
+
+
+def _is_broad_handler(handler: ast.ExceptHandler) -> bool:
+    """True for handlers that can swallow any error: bare except / Exception."""
+    t = handler.type
+    if t is None:
+        return True  # bare except:
+    names = t.elts if isinstance(t, ast.Tuple) else [t]
+    for n in names:
+        name = n.id if isinstance(n, ast.Name) else (n.attr if isinstance(n, ast.Attribute) else "")
+        if name in _BROAD_EXCEPTIONS:
+            return True
+    return False
+
+
 def _find_method_decorators(tree: ast.Module) -> list[tuple[ast.FunctionDef, ast.Call]]:
     """Return (func_def, decorator_call) for every @method(...) decorated function."""
     out: list[tuple[ast.FunctionDef, ast.Call]] = []
@@ -149,6 +165,7 @@ class _BodyAnalyzer(ast.NodeVisitor):
         self.save_count = 0
         self.has_try_except = False
         self.save_in_except = False
+        self.swallowing_handlers: list[int] = []  # end line of each broad swallow
         self.uses_underscore_temps = False
 
     # ── visits ──────────────────────────────────────────────────────────────
@@ -207,11 +224,24 @@ class _BodyAnalyzer(ast.NodeVisitor):
 
     def visit_Try(self, node: ast.Try) -> None:
         self.has_try_except = True
-        # Check each except handler for save() calls
+        # A handler is safe if it saves a fallback PNG, returns (the
+        # return-dict contract — an error-image dict is a valid fallback),
+        # or re-raises (the GraphExecutor writes an error-placeholder PNG
+        # for any method that raises). Narrow handlers (ImportError,
+        # AttributeError, …) are compat shims that fall through to the
+        # normal save path; only broad catches can swallow the whole render.
         for handler in node.handlers:
+            safe = False
             for child in ast.walk(handler):
                 if isinstance(child, ast.Call) and _call_name(child) == "save":
                     self.save_in_except = True
+                    safe = True
+                elif isinstance(child, (ast.Raise, ast.Return)):
+                    safe = True
+            if not safe and _is_broad_handler(handler):
+                # Swallow-then-fall-through is fine when fallback output code
+                # follows the handler; _analyze_body resolves that with line info.
+                self.swallowing_handlers.append(handler.end_lineno or handler.lineno)
         self.generic_visit(node)
 
     @staticmethod
@@ -265,6 +295,21 @@ def _analyze_body(func: ast.FunctionDef) -> dict[str, Any]:
     v = _BodyAnalyzer()
     for child in func.body:
         v.visit(child)
+
+    # A broad swallowing handler is unsafe only when nothing after it can
+    # still produce output — no save() call and no return below its end line.
+    unsafe_broad_except = False
+    for end_line in v.swallowing_handlers:
+        produces_after = any(
+            (isinstance(n, ast.Return)
+             or (isinstance(n, ast.Call) and _call_name(n) == "save"))
+            and getattr(n, "lineno", 0) > end_line
+            for n in ast.walk(func)
+        )
+        if not produces_after:
+            unsafe_broad_except = True
+            break
+
     return {
         "writes_scalars":      v.writes_scalars,
         "writes_field":        v.writes_field,
@@ -279,6 +324,7 @@ def _analyze_body(func: ast.FunctionDef) -> dict[str, Any]:
         "save_count":          v.save_count,
         "has_try_except":      v.has_try_except,
         "save_in_except":      v.save_in_except,
+        "unsafe_broad_except": unsafe_broad_except,
         "uses_underscore_temps": v.uses_underscore_temps,
     }
 
@@ -470,7 +516,8 @@ def _scan_file(path: Path) -> list[dict[str, Any]]:
         klass = _classify(category, reads_input, sig)
 
         has_fallback_png = (
-            sig["save_in_except"]
+            not sig["unsafe_broad_except"]
+            or sig["save_in_except"]
             or (sig["save_count"] >= 2 and sig["has_try_except"])
         )
 

@@ -2,77 +2,6 @@
   {
     "id": "01",
     "name": "ASCII Art",
-    "file": "codegen/ascii_art.nd-bak-4cb20def.py",
-    "category": "codegen",
-    "class": "filter",
-    "current_outputs": [
-      "image",
-      "luminance"
-    ],
-    "has_explicit_outputs": false,
-    "detected_signals": [
-      "SCALAR",
-      "FILTER"
-    ],
-    "missing_outputs": [],
-    "has_fallback_png": false,
-    "has_try_except": true,
-    "uses_underscore_temps": false,
-    "audit_notes": [],
-    "audit_warnings": [
-      "no description set"
-    ]
-  },
-  {
-    "id": "01",
-    "name": "ASCII Art",
-    "file": "codegen/ascii_art.nd-bak-830dc061.py",
-    "category": "codegen",
-    "class": "filter",
-    "current_outputs": [
-      "image",
-      "luminance"
-    ],
-    "has_explicit_outputs": false,
-    "detected_signals": [
-      "SCALAR",
-      "FILTER"
-    ],
-    "missing_outputs": [],
-    "has_fallback_png": false,
-    "has_try_except": true,
-    "uses_underscore_temps": false,
-    "audit_notes": [],
-    "audit_warnings": [
-      "no description set"
-    ]
-  },
-  {
-    "id": "01",
-    "name": "ASCII Art",
-    "file": "codegen/ascii_art.nd-bak-beeb879f.py",
-    "category": "codegen",
-    "class": "filter",
-    "current_outputs": [
-      "image",
-      "luminance"
-    ],
-    "has_explicit_outputs": false,
-    "detected_signals": [
-      "FILTER"
-    ],
-    "missing_outputs": [],
-    "has_fallback_png": true,
-    "has_try_except": true,
-    "uses_underscore_temps": false,
-    "audit_notes": [],
-    "audit_warnings": [
-      "no description set"
-    ]
-  },
-  {
-    "id": "01",
-    "name": "ASCII Art",
     "file": "codegen/ascii_art.py",
     "category": "codegen",
     "class": "generator",
@@ -83,7 +12,7 @@
     "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -171,7 +100,7 @@
     "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -192,7 +121,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -236,7 +165,7 @@
       "FIELD?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -279,28 +208,7 @@
     "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
-    "has_try_except": false,
-    "uses_underscore_temps": false,
-    "audit_notes": [],
-    "audit_warnings": [
-      "no description set"
-    ]
-  },
-  {
-    "id": "11",
-    "name": "Gradient",
-    "file": "codegen/gradient.nd-bak-904b8f5c.py",
-    "category": "codegen",
-    "class": "generator",
-    "current_outputs": [
-      "image",
-      "luminance"
-    ],
-    "has_explicit_outputs": false,
-    "detected_signals": [],
-    "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -321,7 +229,7 @@
     "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -342,7 +250,7 @@
     "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -365,7 +273,7 @@
       "FILTER"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -391,7 +299,7 @@
     "missing_outputs": [
       "PARTICLES?"
     ],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [
@@ -419,7 +327,7 @@
     "missing_outputs": [
       "PARTICLES?"
     ],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [
@@ -447,7 +355,7 @@
     "missing_outputs": [
       "FIELD?"
     ],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [
@@ -473,7 +381,7 @@
       "FILTER"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -494,7 +402,7 @@
     "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -515,7 +423,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -543,7 +451,7 @@
     "missing_outputs": [
       "FIELD?"
     ],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [
@@ -566,32 +474,9 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": true,
     "uses_underscore_temps": false,
-    "audit_notes": [],
-    "audit_warnings": [
-      "no description set"
-    ]
-  },
-  {
-    "id": "22",
-    "name": "ffmpeg Frame",
-    "file": "cli_tools.nd-bak-728734db.py",
-    "category": "cli_tools",
-    "class": "filter",
-    "current_outputs": [
-      "image",
-      "luminance"
-    ],
-    "has_explicit_outputs": false,
-    "detected_signals": [
-      "FILTER"
-    ],
-    "missing_outputs": [],
-    "has_fallback_png": false,
-    "has_try_except": false,
-    "uses_underscore_temps": true,
     "audit_notes": [],
     "audit_warnings": [
       "no description set"
@@ -610,31 +495,8 @@
     "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
-    "has_try_except": false,
-    "uses_underscore_temps": true,
-    "audit_notes": [],
-    "audit_warnings": [
-      "no description set"
-    ]
-  },
-  {
-    "id": "23",
-    "name": "ImageMagick",
-    "file": "cli_tools.nd-bak-728734db.py",
-    "category": "cli_tools",
-    "class": "filter",
-    "current_outputs": [
-      "image",
-      "luminance"
-    ],
-    "has_explicit_outputs": false,
-    "detected_signals": [
-      "FILTER"
-    ],
-    "missing_outputs": [],
     "has_fallback_png": true,
-    "has_try_except": true,
+    "has_try_except": false,
     "uses_underscore_temps": true,
     "audit_notes": [],
     "audit_warnings": [
@@ -654,7 +516,7 @@
     "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": true,
     "uses_underscore_temps": true,
     "audit_notes": [],
@@ -665,91 +527,7 @@
   {
     "id": "24",
     "name": "pyfiglet",
-    "file": "cli_tools.nd-bak-728734db.py",
-    "category": "cli_tools",
-    "class": "generator",
-    "current_outputs": [
-      "image",
-      "luminance"
-    ],
-    "has_explicit_outputs": false,
-    "detected_signals": [],
-    "missing_outputs": [],
-    "has_fallback_png": true,
-    "has_try_except": true,
-    "uses_underscore_temps": false,
-    "audit_notes": [],
-    "audit_warnings": [
-      "no description set"
-    ]
-  },
-  {
-    "id": "24",
-    "name": "pyfiglet",
     "file": "cli_tools.py",
-    "category": "cli_tools",
-    "class": "generator",
-    "current_outputs": [
-      "image",
-      "luminance"
-    ],
-    "has_explicit_outputs": false,
-    "detected_signals": [],
-    "missing_outputs": [],
-    "has_fallback_png": false,
-    "has_try_except": true,
-    "uses_underscore_temps": false,
-    "audit_notes": [],
-    "audit_warnings": [
-      "no description set"
-    ]
-  },
-  {
-    "id": "25",
-    "name": "boxes",
-    "file": "cli_tools.nd-bak-728734db.py",
-    "category": "cli_tools",
-    "class": "generator",
-    "current_outputs": [
-      "image",
-      "luminance"
-    ],
-    "has_explicit_outputs": false,
-    "detected_signals": [],
-    "missing_outputs": [],
-    "has_fallback_png": true,
-    "has_try_except": true,
-    "uses_underscore_temps": false,
-    "audit_notes": [],
-    "audit_warnings": [
-      "no description set"
-    ]
-  },
-  {
-    "id": "26",
-    "name": "cowsay",
-    "file": "cli_tools.nd-bak-728734db.py",
-    "category": "cli_tools",
-    "class": "generator",
-    "current_outputs": [
-      "image",
-      "luminance"
-    ],
-    "has_explicit_outputs": false,
-    "detected_signals": [],
-    "missing_outputs": [],
-    "has_fallback_png": true,
-    "has_try_except": true,
-    "uses_underscore_temps": false,
-    "audit_notes": [],
-    "audit_warnings": [
-      "no description set"
-    ]
-  },
-  {
-    "id": "27",
-    "name": "qrencode",
-    "file": "cli_tools.nd-bak-728734db.py",
     "category": "cli_tools",
     "class": "generator",
     "current_outputs": [
@@ -780,7 +558,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -801,7 +579,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": true,
     "uses_underscore_temps": true,
     "audit_notes": [],
@@ -822,7 +600,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -843,7 +621,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -864,7 +642,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -890,7 +668,7 @@
       "FILTER"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -939,7 +717,7 @@
       "FILTER"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -965,7 +743,7 @@
       "FILTER"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -989,7 +767,7 @@
       "PARTICLES?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -1014,7 +792,7 @@
     "missing_outputs": [
       "PARTICLES?"
     ],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [
@@ -1058,7 +836,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -1081,7 +859,7 @@
       "FILTER"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -1151,30 +929,6 @@
       "FILTER"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
-    "has_try_except": true,
-    "uses_underscore_temps": false,
-    "audit_notes": [],
-    "audit_warnings": [
-      "no description set"
-    ]
-  },
-  {
-    "id": "44",
-    "name": "img2txt",
-    "file": "cli_tools.nd-bak-728734db.py",
-    "category": "cli_tools",
-    "class": "filter",
-    "current_outputs": [
-      "image",
-      "luminance"
-    ],
-    "has_explicit_outputs": false,
-    "detected_signals": [
-      "PARTICLES?",
-      "FILTER"
-    ],
-    "missing_outputs": [],
     "has_fallback_png": true,
     "has_try_except": true,
     "uses_underscore_temps": false,
@@ -1196,27 +950,6 @@
     "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
-    "has_try_except": true,
-    "uses_underscore_temps": false,
-    "audit_notes": [],
-    "audit_warnings": [
-      "no description set"
-    ]
-  },
-  {
-    "id": "45",
-    "name": "Graphviz",
-    "file": "cli_tools.nd-bak-728734db.py",
-    "category": "cli_tools",
-    "class": "generator",
-    "current_outputs": [
-      "image",
-      "luminance"
-    ],
-    "has_explicit_outputs": false,
-    "detected_signals": [],
-    "missing_outputs": [],
     "has_fallback_png": true,
     "has_try_except": true,
     "uses_underscore_temps": false,
@@ -1236,27 +969,6 @@
       "luminance"
     ],
     "has_explicit_outputs": true,
-    "detected_signals": [],
-    "missing_outputs": [],
-    "has_fallback_png": false,
-    "has_try_except": true,
-    "uses_underscore_temps": false,
-    "audit_notes": [],
-    "audit_warnings": [
-      "no description set"
-    ]
-  },
-  {
-    "id": "46",
-    "name": "ImageMagick Plasma",
-    "file": "cli_tools.nd-bak-728734db.py",
-    "category": "cli_tools",
-    "class": "generator",
-    "current_outputs": [
-      "image",
-      "luminance"
-    ],
-    "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
     "has_fallback_png": true,
@@ -1291,29 +1003,6 @@
   {
     "id": "47",
     "name": "Chafa",
-    "file": "cli_tools.nd-bak-728734db.py",
-    "category": "cli_tools",
-    "class": "filter",
-    "current_outputs": [
-      "image",
-      "luminance"
-    ],
-    "has_explicit_outputs": false,
-    "detected_signals": [
-      "FILTER"
-    ],
-    "missing_outputs": [],
-    "has_fallback_png": true,
-    "has_try_except": true,
-    "uses_underscore_temps": false,
-    "audit_notes": [],
-    "audit_warnings": [
-      "no description set"
-    ]
-  },
-  {
-    "id": "47",
-    "name": "Chafa",
     "file": "cli_tools.py",
     "category": "cli_tools",
     "class": "generator",
@@ -1324,7 +1013,7 @@
     "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -1581,7 +1270,7 @@
     "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -1651,7 +1340,7 @@
       "FILTER"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -1674,7 +1363,7 @@
       "FILTER"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -1695,7 +1384,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -1718,7 +1407,7 @@
       "PARTICLES?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -1763,7 +1452,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -1786,7 +1475,7 @@
       "FIELD"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -1811,7 +1500,7 @@
       "FIELD"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -1832,7 +1521,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -1856,7 +1545,7 @@
       "FILTER"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -1879,7 +1568,7 @@
       "FILTER"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -1900,7 +1589,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -1923,7 +1612,7 @@
       "FILTER"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -1944,7 +1633,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -1992,7 +1681,7 @@
       "FILTER"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2016,7 +1705,7 @@
       "FIELD?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2037,29 +1726,8 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
-    "uses_underscore_temps": false,
-    "audit_notes": [],
-    "audit_warnings": [
-      "no description set"
-    ]
-  },
-  {
-    "id": "83",
-    "name": "p5.js Sketch",
-    "file": "p5_sketches.py",
-    "category": "p5_sketches",
-    "class": "generator",
-    "current_outputs": [
-      "image",
-      "luminance"
-    ],
-    "has_explicit_outputs": true,
-    "detected_signals": [],
-    "missing_outputs": [],
-    "has_fallback_png": false,
-    "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [],
     "audit_warnings": [
@@ -2084,7 +1752,7 @@
       "FIELD"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2107,7 +1775,7 @@
       "FIELD"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2154,7 +1822,7 @@
       "FIELD"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2175,7 +1843,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2199,7 +1867,7 @@
       "PARTICLES"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2225,7 +1893,7 @@
       "FIELD?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2246,7 +1914,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2267,7 +1935,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2291,7 +1959,7 @@
       "FIELD?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2317,7 +1985,7 @@
       "SCALAR"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2341,7 +2009,7 @@
       "PARTICLES?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2364,7 +2032,7 @@
       "FIELD?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2385,7 +2053,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2408,7 +2076,7 @@
       "PARTICLES?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2431,7 +2099,7 @@
       "FIELD?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2452,7 +2120,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2479,7 +2147,7 @@
       "PARTICLES?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2502,7 +2170,7 @@
       "FIELD"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2525,7 +2193,7 @@
       "PARTICLES"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2549,7 +2217,7 @@
       "PARTICLES?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2572,7 +2240,7 @@
       "FIELD?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2620,7 +2288,7 @@
       "FIELD"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2644,7 +2312,7 @@
       "PARTICLES?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2667,7 +2335,7 @@
       "PARTICLES?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2690,7 +2358,7 @@
       "FILTER"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2713,7 +2381,7 @@
       "FILTER"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2736,7 +2404,7 @@
       "FILTER"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2760,7 +2428,7 @@
       "FILTER"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2784,7 +2452,7 @@
       "FIELD"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2807,7 +2475,7 @@
       "PARTICLES?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2831,7 +2499,7 @@
       "FIELD"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2854,7 +2522,7 @@
       "FIELD?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2878,7 +2546,7 @@
       "FIELD"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2903,7 +2571,7 @@
       "FILTER"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2928,7 +2596,7 @@
       "FILTER"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2953,7 +2621,7 @@
       "FILTER"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2977,7 +2645,7 @@
       "FIELD"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -2998,7 +2666,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3021,7 +2689,7 @@
       "FIELD"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3045,7 +2713,7 @@
       "FIELD"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3068,7 +2736,7 @@
       "FIELD?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3089,7 +2757,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3113,7 +2781,7 @@
       "FIELD"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3137,7 +2805,7 @@
       "FIELD"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3163,7 +2831,7 @@
     "missing_outputs": [
       "FIELD?"
     ],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [
@@ -3186,7 +2854,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3209,7 +2877,7 @@
       "PARTICLES?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3232,7 +2900,7 @@
       "FIELD"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3255,7 +2923,7 @@
       "FIELD?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3276,7 +2944,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3301,7 +2969,7 @@
       "PARTICLES?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3322,7 +2990,7 @@
     "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3344,7 +3012,7 @@
       "SCALAR"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3366,7 +3034,7 @@
       "FIELD"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3388,7 +3056,7 @@
       "PARTICLES"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3413,7 +3081,7 @@
       "FILTER"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3436,7 +3104,7 @@
       "FIELD?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3457,7 +3125,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3482,7 +3150,7 @@
     "missing_outputs": [
       "FIELD?"
     ],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [
@@ -3507,7 +3175,7 @@
       "FIELD?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3528,28 +3196,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
-    "has_try_except": false,
-    "uses_underscore_temps": false,
-    "audit_notes": [],
-    "audit_warnings": [
-      "no description set"
-    ]
-  },
-  {
-    "id": "146",
-    "name": "Sand Dune Migration",
-    "file": "simulations/sand_dune_migration.py",
-    "category": "simulations",
-    "class": "simulation",
-    "current_outputs": [
-      "image",
-      "luminance"
-    ],
-    "has_explicit_outputs": false,
-    "detected_signals": [],
-    "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3573,7 +3220,7 @@
       "FIELD?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3598,7 +3245,7 @@
     "missing_outputs": [
       "FIELD?"
     ],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [
@@ -3621,7 +3268,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3646,7 +3293,7 @@
     "missing_outputs": [
       "FIELD?"
     ],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [
@@ -3669,7 +3316,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3693,7 +3340,7 @@
       "FIELD?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3714,7 +3361,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3737,7 +3384,7 @@
       "FIELD?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3760,7 +3407,7 @@
       "FIELD"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3809,7 +3456,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3834,7 +3481,7 @@
     "missing_outputs": [
       "FIELD?"
     ],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [
@@ -3861,7 +3508,7 @@
     "missing_outputs": [
       "FIELD?"
     ],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [
@@ -3884,7 +3531,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3909,7 +3556,7 @@
     "missing_outputs": [
       "FIELD?"
     ],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [
@@ -3932,7 +3579,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3957,7 +3604,7 @@
     "missing_outputs": [
       "FIELD?"
     ],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [
@@ -3970,7 +3617,7 @@
   {
     "id": "164",
     "name": "Moiré Patterns",
-    "file": "simulations/brusselator.py",
+    "file": "simulations/moire_animation.py",
     "category": "simulations",
     "class": "simulation",
     "current_outputs": [
@@ -3980,7 +3627,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -3996,28 +3643,24 @@
     "class": "simulation",
     "current_outputs": [
       "image",
-      "luminance"
+      "luminance",
+      "epsilon",
+      "damping",
+      "resonance_energy",
+      "peak_amplitude"
     ],
-    "has_explicit_outputs": false,
+    "has_explicit_outputs": true,
     "detected_signals": [
       "SCALAR",
       "FIELD?"
     ],
     "missing_outputs": [
-      "SCALAR:damping",
-      "SCALAR:epsilon",
-      "SCALAR:peak_amplitude",
-      "SCALAR:resonance_energy",
       "FIELD?"
     ],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [
-      "write_scalars(damping=…) called but 'damping' not in outputs=",
-      "write_scalars(epsilon=…) called but 'epsilon' not in outputs=",
-      "write_scalars(peak_amplitude=…) called but 'peak_amplitude' not in outputs=",
-      "write_scalars(resonance_energy=…) called but 'resonance_energy' not in outputs=",
       "field-like vars: u, v, u, v — may warrant field output"
     ],
     "audit_warnings": [
@@ -4032,27 +3675,21 @@
     "class": "simulation",
     "current_outputs": [
       "image",
-      "luminance"
+      "luminance",
+      "wind_speed",
+      "peak_freq",
+      "significant_height",
+      "phillips_alpha"
     ],
-    "has_explicit_outputs": false,
+    "has_explicit_outputs": true,
     "detected_signals": [
       "SCALAR"
     ],
-    "missing_outputs": [
-      "SCALAR:peak_freq",
-      "SCALAR:phillips_alpha",
-      "SCALAR:significant_height",
-      "SCALAR:wind_speed"
-    ],
-    "has_fallback_png": false,
+    "missing_outputs": [],
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
-    "audit_notes": [
-      "write_scalars(peak_freq=…) called but 'peak_freq' not in outputs=",
-      "write_scalars(phillips_alpha=…) called but 'phillips_alpha' not in outputs=",
-      "write_scalars(significant_height=…) called but 'significant_height' not in outputs=",
-      "write_scalars(wind_speed=…) called but 'wind_speed' not in outputs="
-    ],
+    "audit_notes": [],
     "audit_warnings": [
       "no description set"
     ]
@@ -4070,7 +3707,7 @@
     "has_explicit_outputs": false,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -4095,7 +3732,7 @@
     "missing_outputs": [
       "FIELD?"
     ],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [
@@ -4122,12 +3759,54 @@
     "missing_outputs": [
       "FIELD?"
     ],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [
       "field-like vars: psi, psi — may warrant field output"
     ],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "171",
+    "name": "p5.js Sketch",
+    "file": "p5_sketches.py",
+    "category": "p5_sketches",
+    "class": "generator",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": true,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": true,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
+    "audit_warnings": [
+      "no description set"
+    ]
+  },
+  {
+    "id": "172",
+    "name": "Sand Dune Migration",
+    "file": "simulations/sand_dune_migration.py",
+    "category": "simulations",
+    "class": "simulation",
+    "current_outputs": [
+      "image",
+      "luminance"
+    ],
+    "has_explicit_outputs": false,
+    "detected_signals": [],
+    "missing_outputs": [],
+    "has_fallback_png": true,
+    "has_try_except": false,
+    "uses_underscore_temps": false,
+    "audit_notes": [],
     "audit_warnings": [
       "no description set"
     ]
@@ -4147,7 +3826,7 @@
     "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -4169,7 +3848,7 @@
     "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -4189,7 +3868,7 @@
     "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -4210,7 +3889,7 @@
     "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -4231,7 +3910,7 @@
     "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -4251,7 +3930,7 @@
     "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -4275,7 +3954,7 @@
       "FILTER"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -4297,7 +3976,7 @@
     "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -4317,7 +3996,7 @@
     "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -4337,7 +4016,7 @@
     "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -4359,7 +4038,7 @@
       "PARTICLES?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -4386,7 +4065,7 @@
       "FIELD?"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -4410,7 +4089,7 @@
     "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -4431,7 +4110,7 @@
     "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -4456,7 +4135,7 @@
     "has_explicit_outputs": true,
     "detected_signals": [],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": true,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -4485,7 +4164,7 @@
       "SCALAR"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],
@@ -4510,7 +4189,7 @@
       "FILTER"
     ],
     "missing_outputs": [],
-    "has_fallback_png": false,
+    "has_fallback_png": true,
     "has_try_except": false,
     "uses_underscore_temps": false,
     "audit_notes": [],

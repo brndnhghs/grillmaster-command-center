@@ -1,13 +1,11 @@
 # Method Audit Report
 
-**195 methods scanned** across all category packages.
+**181 methods scanned** across all category packages.
 
 Sorted by gap severity (confirmed missing × 3 + inferred missing).
 
 | ID | Name | File | Class | Current Outputs | Signals | Missing |
 |---|---|---|---|---|---|---|
-| `166` | Parametric Oscillator Lattice | `simulations/oscillon_resonance.py` | simulation | image, luminance | SCALAR, FIELD? | **SCALAR:damping, SCALAR:epsilon, SCALAR:peak_amplitude, SCALAR:resonance_energy, FIELD?** |
-| `167` | Spectral Ocean Synthesis | `simulations/ocean_spectral.py` | simulation | image, luminance | SCALAR | **SCALAR:peak_freq, SCALAR:phillips_alpha, SCALAR:significant_height, SCALAR:wind_speed** |
 | `130` | Particle Painter | `simulations/particle_painter.py` | simulation | image, luminance | PARTICLES?, FIELD? | **FIELD?** |
 | `14` | Geometric Abstraction | `codegen/geometric_abstraction.py` | generator | image, luminance | PARTICLES?, FIELD? | **PARTICLES?** |
 | `144` | Faraday Wave Patterns | `simulations/faraday_waves.py` | simulation | image, luminance | FIELD? | **FIELD?** |
@@ -19,13 +17,11 @@ Sorted by gap severity (confirmed missing × 3 + inferred missing).
 | `16` | Flow Field | `codegen/flow_field.py` | generator | image, luminance | PARTICLES?, FIELD? | **FIELD?** |
 | `161` | Spectral Tapestry | `simulations/spectral_tapestry.py` | simulation | image, luminance | FIELD? | **FIELD?** |
 | `163` | Fractional Laplacian Reaction-Diffusion | `simulations/fractional_rd.py` | simulation | image, luminance | FIELD? | **FIELD?** |
+| `166` | Parametric Oscillator Lattice | `simulations/oscillon_resonance.py` | simulation | image, luminance, epsilon, damping, resonance_energy, peak_amplitude | SCALAR, FIELD? | **FIELD?** |
 | `169` | Turing Morphogenesis | `simulations/turing_morphogenesis.py` | simulation | image, luminance | FIELD? | **FIELD?** |
 | `170` | Phase Field Crystal | `simulations/pfc.py` | simulation | image, luminance | FIELD? | **FIELD?** |
 | `20` | Particle System | `simulations/particles.py` | filter | image, luminance, particles | PARTICLES, FIELD?, FILTER | **FIELD?** |
 | `37` | Collage | `codegen/collage.py` | generator | image, luminance | PARTICLES? | **PARTICLES?** |
-| `01` | ASCII Art | `codegen/ascii_art.nd-bak-4cb20def.py` | filter | image, luminance | SCALAR, FILTER | **—** |
-| `01` | ASCII Art | `codegen/ascii_art.nd-bak-830dc061.py` | filter | image, luminance | SCALAR, FILTER | **—** |
-| `01` | ASCII Art | `codegen/ascii_art.nd-bak-beeb879f.py` | filter | image, luminance | FILTER | **—** |
 | `01` | ASCII Art | `codegen/ascii_art.py` | generator | image, luminance | — | **—** |
 | `02` | Quasicrystal | `patterns/quasicrystal.py` | generator | image, field | FIELD | **—** |
 | `03` | Moiré | `patterns/moire.py` | generator | image, luminance | — | **—** |
@@ -46,7 +42,6 @@ Sorted by gap severity (confirmed missing × 3 + inferred missing).
 | `107` | Magnetic Pendulum | `simulations/magnetic_pendulum.py` | simulation | image, field | FIELD, PARTICLES? | **—** |
 | `108` | 4D Hypercube | `math_art/polytope_4d.py` | generator | image, luminance | PARTICLES? | **—** |
 | `109` | Rayleigh-Taylor Instability | `simulations/rayleigh_taylor.py` | filter | image, luminance | FILTER | **—** |
-| `11` | Gradient | `codegen/gradient.nd-bak-904b8f5c.py` | generator | image, luminance | — | **—** |
 | `11` | Gradient | `codegen/gradient.py` | generator | image, luminance | — | **—** |
 | `110` | Sheared Rayleigh-Taylor | `simulations/sheared_rayleigh_taylor.py` | filter | image, luminance | FILTER | **—** |
 | `111` | Multi-Layer RT | `simulations/multilayer_rt.py` | filter | image, luminance | FILTER | **—** |
@@ -84,7 +79,6 @@ Sorted by gap severity (confirmed missing × 3 + inferred missing).
 | `143` | Bacterial Colony (v2) | `simulations/bacterial_colony_v2.py` | simulation | image, luminance | — | **—** |
 | `145` | Dynamic Fracture Network | `simulations/dynamic_fracture.py` | simulation | image, luminance | FIELD? | **—** |
 | `146` | AC + PM Diffusion | `simulations/cahn_hilliard.py` | simulation | image, luminance | — | **—** |
-| `146` | Sand Dune Migration | `simulations/sand_dune_migration.py` | simulation | image, luminance | — | **—** |
 | `147` | Viscoelastic Buckling Lattice | `simulations/buckling_lattice.py` | simulation | image, luminance | PARTICLES?, FIELD? | **—** |
 | `149` | Ferrofluid Rosensweig Instability | `simulations/ferrofluid.py` | simulation | image, luminance | — | **—** |
 | `151` | 4D Polytope | `simulations/tesseract.py` | simulation | image, luminance | — | **—** |
@@ -96,21 +90,18 @@ Sorted by gap severity (confirmed missing × 3 + inferred missing).
 | `157` | Swift-Hohenberg Pattern Formation | `simulations/rayleigh_benard.py` | simulation | image, luminance | — | **—** |
 | `160` | Bacterial Colony Morphogenesis | `simulations/bacterial_colony.py` | simulation | image, luminance | — | **—** |
 | `162` | Rössler Oscillator Array | `simulations/roessler_array.py` | simulation | image, luminance | — | **—** |
-| `164` | Moiré Patterns | `simulations/brusselator.py` | simulation | image, luminance | — | **—** |
+| `164` | Moiré Patterns | `simulations/moire_animation.py` | simulation | image, luminance | — | **—** |
+| `167` | Spectral Ocean Synthesis | `simulations/ocean_spectral.py` | simulation | image, luminance, wind_speed, peak_freq, significant_height, phillips_alpha | SCALAR | **—** |
 | `168` | PM Anisotropic RD | `simulations/pm_anisotropic_rd.py` | simulation | image, luminance | — | **—** |
 | `17` | Glitch Art | `filters/glitch.py` | filter | image, luminance | PARTICLES?, FILTER | **—** |
+| `171` | p5.js Sketch | `p5_sketches.py` | generator | image, luminance | — | **—** |
+| `172` | Sand Dune Migration | `simulations/sand_dune_migration.py` | simulation | image, luminance | — | **—** |
 | `18` | Cellular Automata | `codegen/simulations.py` | generator | image, luminance | — | **—** |
 | `19` | L-System | `fractals/lsystem.py` | fractal | image, luminance | — | **—** |
 | `21` | SD1.5 (diffusers) | `ml_models.py` | generator | image, luminance | — | **—** |
-| `22` | ffmpeg Frame | `cli_tools.nd-bak-728734db.py` | filter | image, luminance | FILTER | **—** |
 | `22` | ffmpeg Frame | `cli_tools.py` | generator | image, luminance | — | **—** |
-| `23` | ImageMagick | `cli_tools.nd-bak-728734db.py` | filter | image, luminance | FILTER | **—** |
 | `23` | ImageMagick | `cli_tools.py` | generator | image, luminance | — | **—** |
-| `24` | pyfiglet | `cli_tools.nd-bak-728734db.py` | generator | image, luminance | — | **—** |
 | `24` | pyfiglet | `cli_tools.py` | generator | image, luminance | — | **—** |
-| `25` | boxes | `cli_tools.nd-bak-728734db.py` | generator | image, luminance | — | **—** |
-| `26` | cowsay | `cli_tools.nd-bak-728734db.py` | generator | image, luminance | — | **—** |
-| `27` | qrencode | `cli_tools.nd-bak-728734db.py` | generator | image, luminance | — | **—** |
 | `27` | qrencode | `cli_tools.py` | generator | image, luminance | — | **—** |
 | `28` | ComfyUI | `ml_models.py` | generator | image, luminance | — | **—** |
 | `29` | Voronoi Tiles | `codegen/voronoi_tiles.py` | generator | image, luminance | — | **—** |
@@ -127,13 +118,9 @@ Sorted by gap severity (confirmed missing × 3 + inferred missing).
 | `41` | Oil Paint | `filters/oil_paint.py` | filter | image, luminance | FILTER | **—** |
 | `42` | Fake HDR | `filters/hdr.py` | filter | image, luminance | FILTER | **—** |
 | `43` | Density Heatmap | `math_art/density_heatmap.py` | filter | image, field | FIELD, FILTER | **—** |
-| `44` | img2txt | `cli_tools.nd-bak-728734db.py` | filter | image, luminance | PARTICLES?, FILTER | **—** |
 | `44` | img2txt | `cli_tools.py` | generator | image, luminance | — | **—** |
-| `45` | Graphviz | `cli_tools.nd-bak-728734db.py` | generator | image, luminance | — | **—** |
 | `45` | Graphviz | `cli_tools.py` | generator | image, luminance | — | **—** |
-| `46` | ImageMagick Plasma | `cli_tools.nd-bak-728734db.py` | generator | image, luminance | — | **—** |
 | `46` | ImageMagick Plasma | `cli_tools.py` | generator | image, luminance | — | **—** |
-| `47` | Chafa | `cli_tools.nd-bak-728734db.py` | filter | image, luminance | FILTER | **—** |
 | `47` | Chafa | `cli_tools.py` | generator | image, luminance | — | **—** |
 | `48` | FFT Art | `math_art/fft_art.py` | filter | image, luminance | FILTER | **—** |
 | `49` | Buddhabrot | `fractals/buddhabrot.py` | fractal | image, field | FIELD, PARTICLES? | **—** |
@@ -166,7 +153,6 @@ Sorted by gap severity (confirmed missing × 3 + inferred missing).
 | `80` | Pixel Mosaic | `filters/pixel_mosaic.py` | filter | image, luminance | FILTER | **—** |
 | `81` | Fourier Circles | `math_art/fourier_circles.py` | generator | image, luminance | PARTICLES?, FIELD? | **—** |
 | `82` | GPU Procedural Shaders | `gpu_shaders.py` | generator | image, luminance | — | **—** |
-| `83` | p5.js Sketch | `p5_sketches.py` | generator | image, luminance | — | **—** |
 | `83` | Langton's Ant | `simulations/langtons_ant.py` | simulation | image, luminance, particles, field | PARTICLES, FIELD | **—** |
 | `84` | Quantum Wave Interference | `simulations/quantum_interference.py` | simulation | image, field | FIELD | **—** |
 | `85` | Strange Attractors (Chaos Density) | `math_art/strange_attractors.py` | generator | image, luminance | — | **—** |

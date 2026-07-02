@@ -156,7 +156,15 @@ def _render_envelope(u: np.ndarray, buf: list[np.ndarray],
             "description": "simulation frames to capture",
             "min": 50, "max": 600, "default": 300,
         },
-    }
+    },
+    outputs={
+        "image": "IMAGE",
+        "luminance": "SCALAR",
+        "epsilon": "SCALAR",
+        "damping": "SCALAR",
+        "resonance_energy": "SCALAR",
+        "peak_amplitude": "SCALAR",
+    },
 )
 def method_oscillon_resonance(out_dir: Path, seed: int, params=None):
     """Parametric oscillator lattice — coupled Mathieu-type oscillators.
@@ -313,7 +321,7 @@ def method_oscillon_resonance(out_dir: Path, seed: int, params=None):
         canvas_np = np.array(canvas_img, dtype=np.uint8)
 
         save(canvas_np, f"frame_{frame:04d}.png", out_dir)
-        capture_frame("148", canvas_np)
+        capture_frame("166", canvas_np)
 
     # Write diagnostic scalars
     write_scalars(out_dir, epsilon=float(epsilon),

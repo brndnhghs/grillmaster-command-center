@@ -43,6 +43,84 @@ def _render_sandpile_preview(grid, colors, size, h, w):
     result = cv2.resize(result.astype(np.float32) / 255.0, (w, h), interpolation=cv2.INTER_NEAREST)
     return result
 
+def _hsv_to_rgb(h, s, v):
+    """Vectorized HSV→RGB. h/s/v are float arrays in [0,1]; returns (…, 3)."""
+    i = (h * 6.0).astype(np.int32) % 6
+    f = h * 6.0 - np.floor(h * 6.0)
+    p = v * (1.0 - s)
+    q = v * (1.0 - s * f)
+    t = v * (1.0 - s * (1.0 - f))
+    rgb = np.zeros(h.shape + (3,), dtype=np.float32)
+    for idx, (r_, g_, b_) in enumerate(((v, t, p), (q, v, p), (p, v, t),
+                                        (p, q, v), (t, p, v), (v, p, q))):
+        m = i == idx
+        rgb[m, 0], rgb[m, 1], rgb[m, 2] = r_[m], g_[m], b_[m]
+    return rgb
+
+
+def _render_langton_frame(grid, visited, age_grid, pal_arr, bg_color,
+                          color_mode, render_style, n_colors):
+    """Render the ant grid to a float32 (H, W, 3) image in [0, 1].
+
+    grid     : uint8 (H, W) cell states 0..n_colors-1
+    visited  : bool  (H, W) cells any ant has touched
+    age_grid : int32 (H, W) steps since last visit (999999 = never)
+    """
+    h, w = grid.shape
+    img = np.empty((h, w, 3), dtype=np.float32)
+    img[:] = bg_color.astype(np.float32) / 255.0
+
+    pal_f = pal_arr.astype(np.float32) / 255.0
+    n_pal = max(len(pal_f), 1)
+
+    # Normalized trail age: 0 = freshly visited, 1 = oldest visited cell
+    max_age = float(age_grid[visited].max()) if visited.any() else 1.0
+    age = np.clip(age_grid.astype(np.float32) / max(max_age, 1.0), 0.0, 1.0)
+
+    if color_mode == "age":
+        # Fresh cells take the bright (late) palette entries, old the early
+        idx = ((1.0 - age) * (n_pal - 1)).astype(np.int32)
+        colors = pal_f[idx]
+    elif color_mode == "trail":
+        # Single-color trail that fades with age
+        colors = pal_f[-1][None, None, :] * (1.0 - 0.85 * age)[:, :, None]
+    elif color_mode == "gradient":
+        # Vertical palette gradient, brightness modulated by cell state
+        row_idx = np.linspace(0, n_pal - 1e-3, h).astype(np.int32)
+        colors = np.broadcast_to(pal_f[row_idx][:, None, :], (h, w, 3)).copy()
+        colors *= (0.4 + 0.6 * grid.astype(np.float32) / max(n_colors - 1, 1))[:, :, None]
+    elif color_mode == "rainbow":
+        hue = (grid.astype(np.float32) / max(n_colors, 1) + (1.0 - age) * 0.3) % 1.0
+        colors = _hsv_to_rgb(hue, np.ones_like(hue), 1.0 - 0.5 * age)
+    elif color_mode == "palette":
+        # Palette cycled by age bucket
+        idx = (age * (n_pal - 1)).astype(np.int32)
+        colors = pal_f[idx]
+    else:  # "state" (default): palette color per cell state
+        colors = pal_f[grid.astype(np.int32) % n_pal]
+
+    img[visited] = colors[visited]
+
+    if render_style == "trails":
+        img[visited] *= (1.0 - 0.7 * age[visited])[:, None]
+    elif render_style == "glow":
+        # Cheap separable 3-tap blur added on top of the filled render
+        blur = img.copy()
+        for axis in (0, 1):
+            blur = (np.roll(blur, 1, axis) + blur + np.roll(blur, -1, axis)) / 3.0
+        img = img + 0.5 * blur
+    elif render_style == "edge":
+        # Keep only cells where the state changes — outlines of structures
+        d0 = np.abs(np.diff(grid.astype(np.int16), axis=0, prepend=grid[:1].astype(np.int16))) > 0
+        d1 = np.abs(np.diff(grid.astype(np.int16), axis=1, prepend=grid[:, :1].astype(np.int16))) > 0
+        edges = (d0 | d1) & visited
+        img[:] = bg_color.astype(np.float32) / 255.0
+        img[edges] = colors[edges]
+    # "filled": leave as-is
+
+    return np.clip(img, 0.0, 1.0)
+
+
 @method(id="83", name="Langton's Ant", category="simulations",
          tags=["agents", "turmite", "emergent", "animation", "expanded"],
          timeout=120,
