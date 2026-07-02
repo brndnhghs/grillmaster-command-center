@@ -109,8 +109,8 @@ The dynamic canvas proxy is impressively engineered and well-commented, but it p
 
 ## P1 — LLM pillar
 
-### 18. Node Doctor only works on one machine
-`server.py:1395` hardcodes `_HERMES_PY = Path.home()/".hermes"/"hermes-agent"/"venv"/"bin"/"python"`, and `nd_runner.py` sys-path-injects that personal install and imports `hermes_cli` / `run_agent`. On any other machine (including this audit environment) every Node Doctor chat fails with a subprocess error. For the "constantly evolving with user input" pillar, the LLM backend is the one component that must be portable. Recommendation: make the backend pluggable — env-var-configured command, with a direct Anthropic-API fallback (`anthropic` SDK, streamed) so a fresh clone plus an API key gets a working Doctor. The surrounding design (SSE chat, apply/undo with backups, hot-reload on write, node context in the system prompt, batch-fix via node tester) is solid and worth keeping as-is.
+### 18. Node Doctor's Hermes install path is hardcoded
+**Owner decision (2026-07-02): Hermes agent is the sole LLM backend for all LLM calls — no other providers.** Within that constraint, the current wiring is still fragile: `server.py:1395` hardcodes `_HERMES_PY = Path.home()/".hermes"/"hermes-agent"/"venv"/"bin"/"python"`, and `nd_runner.py` sys-path-injects that same fixed path before importing `hermes_cli` / `run_agent`. On any machine where Hermes lives elsewhere (or under a different user), every Node Doctor chat fails with a subprocess error, and the failure surfaces only as a generic "runner failed" toast. Recommendation: keep Hermes, but resolve its location from configuration — e.g. a `HERMES_AGENT_DIR` / `HERMES_PYTHON` env var (defaulting to the current `~/.hermes/hermes-agent` path), share that resolution between `server.py` and `nd_runner.py`, and emit a clear startup log line stating whether the Hermes backend was found so a misconfigured install is diagnosed in seconds instead of per-chat. The surrounding design (SSE chat, apply/undo with backups, hot-reload on write, node context in the system prompt, batch-fix via node tester) is solid and worth keeping as-is.
 
 ### 19. Node Doctor backup litter is committed and scanned
 Five `.nd-bak-*.py` files are tracked in git (`methods/cli_tools.nd-bak-728734db.py` — 977 lines — plus three `ascii_art` and one `gradient` backup in `codegen/`). They carry live `@method` decorators with duplicate IDs; today they're saved from the registry only because nothing imports them, but `tools/audit_methods.py` already scans them (inflating the report) and the watchdog hot-reloader fires on their creation. Add `*.nd-bak-*.py` to `.gitignore` and the audit tool's exclusions, delete the tracked ones, and write backups outside `methods/` (e.g. `output/nd-backups/`) so the watcher never sees them.
@@ -161,7 +161,7 @@ chord_bot re-implements the entire node stack — its own `registry.py`, `execut
 - **The open port-type registry** (`core/port_types.py`) — adding COLORMAP without touching core proved the design.
 - **The `@method` contract + `AGENT_GUIDE.md`.** The guide is the best document in the repo; the contract (always-write-a-PNG, `_`-prefix temps, declared outputs) is precisely what makes LLM extension safe. `tools/audit_methods.py` + `next_id.py` + pre-commit enforcement is the right self-checking instinct — it just needs to be green (#21) and collision-proof (#2).
 - **Hot-reload → SSE `node-defs-updated`** — the editor updating itself when an agent edits a file is the "constantly evolving" pillar working today.
-- **Node tester + batch-apply loop** — automated find-broken-nodes → LLM-fix → hot-reload is a real self-healing loop; once #18 lands it works anywhere.
+- **Node tester + batch-apply loop** — automated find-broken-nodes → LLM-fix → hot-reload is a real self-healing loop; once #18 lands it works on any machine with a Hermes install.
 - **`core/expr.py`** — a correctly whitelisted AST expression evaluator with client-side preview parity.
 - **Error containment** — per-node tracebacks, dark-red placeholder frames, `node-error` SSE events surfaced on the node UI: failures stay local, graphs keep cooking.
 - **chord_bot test discipline** — 120 passing tests; the image side should match it (currently only `image_pipeline/tests/test_fidelity.py` and an empty root `tests/`).
@@ -177,7 +177,7 @@ chord_bot re-implements the entire node stack — its own `registry.py`, `execut
 | 3 | Fix `params_hash` NameError + stable node seeds (`hashlib`, not `hash()`) | Houdini | tiny |
 | 4 | Wire the Live buttons → `/api/graph/live` + `<img src=/api/live/stream>`; add double-start guard and error surfacing to the live loop | TouchDesigner | small |
 | 5 | Persistent per-session executor; honor dirty flags in single-frame runs; hoist `get_all_node_defs()`; skip disk writes in live mode | TouchDesigner | medium |
-| 6 | Pluggable Node Doctor backend with Anthropic-API fallback; move backups out of `methods/`; delete committed `.nd-bak` files | LLM | small |
+| 6 | Configurable Hermes path (env var, shared by `server.py`/`nd_runner.py`, startup check) — Hermes remains the sole LLM backend; move backups out of `methods/`; delete committed `.nd-bak` files | LLM | small |
 | 7 | Auth token for mutating endpoints when tunneled | LLM/safety | small |
 | 8 | Converge the three animation systems on `paramKeyframes` | TouchDesigner | medium |
 | 9 | Update `DESIGN.md` (ports, colors, MASK/COLORMAP, #83) and rewrite `README.md` for the node editor | all | small |
