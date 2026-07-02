@@ -1,155 +1,124 @@
 """Code-gen method - auto-split from codegen.py"""
 from __future__ import annotations
-import colorsys
 import math
-import random
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image
 
 from ...core.registry import method
-from ...core.utils import save, mn, seed_all, W, H
+from ...core.utils import W, H
 from ...core.animation import capture_frame
 
 # --- 37 Collage ---
 
 @method(id="37", name="Collage", category="codegen",
-         tags=["composite", "tiles", "mosaic", "animation", "expanded"],
+         tags=["composite", "tiles", "mosaic", "layout"],
+         inputs={
+             "image_1": "IMAGE",
+             "image_2": "IMAGE",
+             "image_3": "IMAGE",
+             "image_4": "IMAGE",
+             "n_tiles": "SCALAR",
+             "gap": "SCALAR",
+             "rotation": "SCALAR",
+             "offset_x": "SCALAR",
+             "offset_y": "SCALAR",
+             "layout_select": "SCALAR",
+         },
+         outputs={"image": "IMAGE", "luminance": "FIELD"},
          params={
              "layout": {"description": "tile layout pattern", "choices": ["grid", "mosaic", "stack", "spiral"], "default": "grid"},
-             "n_tiles": {"description": "number of sub-tiles", "min": 2, "max": 16, "default": 4},
+             "n_tiles": {"description": "number of sub-tiles", "default": 4},
              "blend_mode": {"description": "compositing blend mode", "choices": ["normal", "multiply", "screen", "overlay"], "default": "normal"},
-             "gap": {"description": "gap between tiles (pixels)", "min": 0, "max": 20, "default": 2},
-             "anim_mode": {"description": "animation mode", "choices": ["none", "rotate", "drift", "morph", "palette_sweep", "pattern_cycle", "size_pulse", "blend_cycle", "gap_pulse", "layout_cycle", "n_tiles_sweep", "tile_phase"], "default": "none"},
-             "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
+             "gap": {"description": "gap between tiles (pixels)", "default": 2},
+             "rotation": {"description": "SCALAR-driven tile rotation angle. Wire LFO.value here.", "default": 0.0},
+             "offset_x": {"description": "SCALAR-driven horizontal tile offset. Wire LFO.value here.", "default": 0.0},
+             "offset_y": {"description": "SCALAR-driven vertical tile offset. Wire LFO.value here.", "default": 0.0},
+             "layout_select": {"description": "SCALAR-driven layout index (0-1 maps to grid/mosaic/stack/spiral). Wire Counter.value here.", "default": -1.0},
          })
 def method_37_collage(out_dir: Path, seed: int, params=None):
-    """Composite multiple pattern tiles into a collage layout.
+    """Arrange multiple source images into a collage layout.
 
-    Generates sub-tiles with random geometric patterns (rects, circles,
-    lines, dots, triangles) and arranges them in one of 4 layouts (grid,
-    mosaic, stack, spiral). Supports blend modes and 12 animation modes
-    that modulate tile content, layout, sizing, palette, and composition.
+    Architecture B (stateless, one call = one frame). Wire 1-4 source
+    images into image_1 through image_4. Tiles cycle through the available
+    sources — with 2 images and 8 tiles, each image appears 4 times.
 
-    Args:
-        out_dir: Output directory for the generated image.
-        seed: Random seed for deterministic output.
-        params: Dict with keys:
-            layout: tile layout pattern (grid/mosaic/stack/spiral)
-            n_tiles: number of sub-tiles (2-16)
-            blend_mode: compositing blend mode (normal/multiply/screen/overlay)
-            gap: gap between tiles in pixels (0-20)
-            time: animation time in radians (0-6.28)
-            anim_mode: animation mode
-            anim_speed: animation speed multiplier (0.1-5.0)
+    Wire channel nodes to drive params:
+      LFO.value → rotation      (tile rotation)
+      LFO.value → offset_x     (horizontal drift)
+      LFO.value → offset_y     (vertical drift)
+      Counter.value → layout_select (layout cycling)
+      LFO.value → n_tiles      (tile count sweep)
+      LFO.value → gap          (gap pulse)
     """
     if params is None:
         params = {}
-    at = float(params.get("time", 0.0))
-    anim_mode = params.get("anim_mode", "none")
-    anim_speed = float(params.get("anim_speed", 1.0))
-    seed_all(seed)
-    rng = random.Random(seed)
+    t = float(params.get("time", 0.0))
 
-    layout = params.get("layout", "grid")
-    n_tiles = int(params.get("n_tiles", 4))
-    blend_mode = params.get("blend_mode", "normal")
-    gap = int(params.get("gap", 2))
+    # ── Read source images (1-4, injected by executor as named IMAGE ports) ──
+    sources = []
+    for i in range(1, 5):
+        img = params.get(f"image_{i}")
+        if img is not None:
+            sources.append(Image.fromarray((np.clip(img, 0, 1) * 255).astype(np.uint8)))
+    if not sources:
+        print("  ✗ Collage: no source images — wire at least one image into image_1..image_4")
+        return {"image": np.zeros((H, W, 3), dtype=np.float32)}
+    n_sources = len(sources)
 
-    # ── Per-frame time and seed ──
-    _t = at * anim_speed
-    if anim_mode == "none":
-        _t = 0.0
+    # ── Read SCALAR inputs ──
+    n_tiles_override = params.get("n_tiles")
+    if n_tiles_override is not None:
+        n_tiles = max(2, min(16, int(n_tiles_override)))
+    else:
+        n_tiles = max(2, min(16, int(params.get("n_tiles", 4))))
 
-    # ── Per-frame seed (so layout_cycle/blend_cycle re-generates tiles differently) ──
-    _frame_seed = seed + int(_t * 10000)
+    gap_override = params.get("gap")
+    if gap_override is not None:
+        gap = max(0, int(gap_override))
+    else:
+        gap = max(0, int(params.get("gap", 2)))
 
-    # ── Animation bases ──
-    _base_n_tiles = n_tiles
-    _base_gap = gap
-    _base_blend = blend_mode
-    _base_layout = layout
-    _modes_all = ["grid", "mosaic", "stack", "spiral"]
-    _blends_all = ["normal", "multiply", "screen", "overlay"]
-    _patterns_all = ["rects", "circles", "lines", "dots", "triangles"]
+    rotation_override = params.get("rotation")
+    rotation = float(rotation_override) if rotation_override is not None else float(params.get("rotation", 0.0))
 
-    # ── Per-frame animation modulation ──
-    if anim_mode == "size_pulse":
-        n_tiles = max(2, int(_base_n_tiles * (0.4 + 0.6 * (0.5 + 0.5 * math.sin(_t * 0.3)))))
-    elif anim_mode == "gap_pulse":
-        gap = int(_base_gap + 10.0 * (0.5 + 0.5 * math.sin(_t * 0.35)))
-    elif anim_mode == "blend_cycle":
-        bidx = int(_t * 0.15) % len(_blends_all)
-        blend_mode = _blends_all[bidx]
-    elif anim_mode == "layout_cycle":
-        lidx = int(_t * 0.12) % len(_modes_all)
-        layout = _modes_all[lidx]
-    elif anim_mode == "n_tiles_sweep":
-        n_tiles = 2 + int(14.0 * (0.5 + 0.5 * math.sin(_t * 0.2)))
-    elif anim_mode == "tile_phase":
-        # Just pass through — phase affects _make_tile
-        pass
-    # else: none/rotate/drift/morph/palette_sweep/pattern_cycle — handled in _make_tile
+    offset_x_override = params.get("offset_x")
+    offset_x = float(offset_x_override) if offset_x_override is not None else float(params.get("offset_x", 0.0))
+
+    offset_y_override = params.get("offset_y")
+    offset_y = float(offset_y_override) if offset_y_override is not None else float(params.get("offset_y", 0.0))
+
+    layout_select_override = params.get("layout_select")
+    if layout_select_override is not None:
+        lidx = int(float(layout_select_override) * 4) % 4
+        layout = ["grid", "mosaic", "stack", "spiral"][lidx]
+    else:
+        layout = params.get("layout", "grid")
 
     n_tiles = max(2, min(16, n_tiles))
+    blend_mode = params.get("blend_mode", "normal")
 
-    def _make_tile(tw: int, th: int, tile_idx: int) -> Image.Image:
-        tile = Image.new("RGB", (tw, th), (10, 10, 18))
-        draw = ImageDraw.Draw(tile)
-        tile_rng = random.Random(tile_idx * 777 + _frame_seed)
+    _NO_GRID = -9999
 
-        # ── Pattern type (with animation) ──
-        if anim_mode == "pattern_cycle":
-            pidx = int(_t * 0.15 + tile_idx * 1.1) % len(_patterns_all)
-            ptype = _patterns_all[pidx]
+    def _crop_tile(tw: int, th: int, tile_idx: int, gx: int = _NO_GRID, gy: int = _NO_GRID) -> Image.Image:
+        """Crop a tile from one of the source images.
+        
+        For grid layouts, gx/gy give the grid position for proper source alignment.
+        For non-grid layouts, tiles cycle through the source in strips.
+        """
+        src = sources[tile_idx % n_sources]
+        if gx != _NO_GRID and gy != _NO_GRID:
+            # Grid position — crop from corresponding area of source
+            sx = (gx * tw) % src.width
+            sy = (gy * th) % src.height
         else:
-            ptype = tile_rng.choice(_patterns_all)
-
-        # ── Palette offset (for palette_sweep) ──
-        hue_offset = 0.0
-        if anim_mode == "palette_sweep":
-            hue_offset = _t * 0.1
-
-        # ── Size factor (for tile_phase) ──
-        size_factor = 1.0
-        if anim_mode == "tile_phase":
-            size_factor = 0.3 + 0.7 * (0.5 + 0.5 * math.sin(_t * 0.3 + tile_idx * 1.7))
-
-        n = tile_rng.randint(10, 50)
-        for _ in range(n):
-            x = tile_rng.uniform(0, tw)
-            y = tile_rng.uniform(0, th)
-            sz = tile_rng.uniform(5, min(tw, th) * 0.15) * size_factor
-            hue = (tile_rng.uniform(0, 1) + hue_offset) % 1.0
-            col = tuple(int(c * 255) for c in colorsys.hsv_to_rgb(
-                hue, tile_rng.uniform(0.5, 1.0), tile_rng.uniform(0.7, 1.0)))
-            if ptype == "rects":
-                draw.rectangle([x, y, x + sz, y + sz], fill=col)
-            elif ptype == "circles":
-                draw.ellipse([x - sz / 2, y - sz / 2, x + sz / 2, y + sz / 2], fill=col)
-            elif ptype == "lines":
-                draw.line([(x, y), (x + sz, y + sz)], fill=col, width=max(1, int(sz / 4)))
-            elif ptype == "dots":
-                r = max(1, int(sz * 0.15))
-                draw.ellipse([x - r, y - r, x + r, y + r], fill=col)
-            elif ptype == "triangles":
-                draw.polygon([(x, y - sz / 2), (x - sz / 2, y + sz / 2), (x + sz / 2, y + sz / 2)], fill=col)
-
-        # ── Morph lines (improved) ──
-        if anim_mode == "morph":
-            # 3 morph lines with alternating colors instead of single white line
-            for mi in range(3):
-                ms = (_t * 15 * (tile_idx + 1 + mi * 3)) % max(tw, th)
-                morph_hue = (_t * 0.05 + mi * 0.33) % 1.0
-                mc = tuple(int(c * 255) for c in colorsys.hsv_to_rgb(morph_hue, 0.8, 0.9))
-                draw.line([(int(ms) % tw, 0), (int(ms) % tw, th)], fill=mc, width=2 + mi)
-
-        # ── Tile phase rotation ──
-        if anim_mode == "tile_phase" and _t > 0:
-            rot = _t * 10 * (tile_idx + 1)
-            tile = tile.rotate(rot, expand=False, fillcolor=(10, 10, 18))
-
+            # Non-grid — divide source into strips by tile index
+            sx = (tile_idx * tw) % src.width
+            sy = ((tile_idx * tw) // src.width * th) % src.height
+        tile = src.crop((sx, sy, min(sx + tw, src.width), min(sy + th, src.height)))
+        if tile.size != (tw, th):
+            tile = tile.resize((tw, th), Image.LANCZOS)
         return tile
 
     canvas = Image.new("RGB", (W, H), (10, 10, 18))
@@ -162,24 +131,24 @@ def method_37_collage(out_dir: Path, seed: int, params=None):
         for idx in range(n_tiles):
             gx = idx % cols
             gy = idx // cols
-            tile = _make_tile(tw, th, idx)
-            if anim_mode == "rotate" and _t > 0:
-                tile = tile.rotate(_t * 20 * (idx + 1), expand=False, fillcolor=(10, 10, 18))
+            tile = _crop_tile(tw, th, idx, gx, gy)
+            if rotation > 0:
+                tile = tile.rotate(t * 20 * (idx + 1) * rotation, expand=False, fillcolor=(10, 10, 18))
             px = gap + gx * (tw + gap)
             py = gap + gy * (th + gap)
-            if anim_mode == "drift":
-                px += int(20 * math.sin(_t * 0.5 + idx * 1.3))
-                py += int(20 * math.cos(_t * 0.7 + idx * 1.7))
+            if offset_x != 0 or offset_y != 0:
+                px += int(20 * math.sin(t * 0.5 + idx * 1.3) * offset_x)
+                py += int(20 * math.cos(t * 0.7 + idx * 1.7) * offset_y)
             canvas.paste(tile, (px, py))
     elif layout == "mosaic":
         positions = []
         used = np.zeros((H, W), dtype=bool)
         for idx in range(n_tiles):
             for _ in range(50):
-                cxi = rng.randint(50, W - 50)
-                cyi = rng.randint(50, H - 50)
-                tw = rng.randint(80, 300)
-                th = rng.randint(80, 300)
+                cxi = np.random.randint(50, W - 50)
+                cyi = np.random.randint(50, H - 50)
+                tw = np.random.randint(80, 300)
+                th = np.random.randint(80, 300)
                 x0 = max(0, cxi - tw // 2)
                 y0 = max(0, cyi - th // 2)
                 x1 = min(W, x0 + tw)
@@ -194,9 +163,9 @@ def method_37_collage(out_dir: Path, seed: int, params=None):
             th = y1 - y0
             if tw < 10 or th < 10:
                 continue
-            tile = _make_tile(tw, th, idx)
-            if anim_mode == "rotate" and _t > 0:
-                tile = tile.rotate(_t * 15 * (idx + 1), expand=False, fillcolor=(10, 10, 18))
+            tile = _crop_tile(tw, th, idx)
+            if rotation > 0:
+                tile = tile.rotate(t * 15 * (idx + 1) * rotation, expand=False, fillcolor=(10, 10, 18))
             canvas.paste(tile, (x0, y0))
     elif layout == "stack":
         base_tw = W - gap * 2
@@ -206,28 +175,26 @@ def method_37_collage(out_dir: Path, seed: int, params=None):
             scale = 1.0 - frac * 0.3
             tw = max(20, int(base_tw * scale))
             th = max(20, int(base_th * scale))
-            tile = _make_tile(tw, th, idx)
-            if anim_mode == "rotate":
-                angle = _t * 30 * (idx + 1) + idx * 15
+            tile = _crop_tile(tw, th, idx)
+            if rotation > 0:
+                angle = t * 30 * (idx + 1) * rotation + idx * 15
                 tile = tile.rotate(angle, expand=True, fillcolor=(10, 10, 18))
-            ox = int(gap + (base_tw - tw) / 2 + math.sin(_t * 0.5 + idx * 1.3) * 20)
-            oy = int(gap + (base_th - th) / 2 + math.cos(_t * 0.7 + idx * 1.7) * 20)
+            ox = int(gap + (base_tw - tw) / 2 + math.sin(t * 0.5 + idx * 1.3) * (1.0 + offset_x))
+            oy = int(gap + (base_th - th) / 2 + math.cos(t * 0.7 + idx * 1.7) * (1.0 + offset_y))
             canvas.paste(tile, (ox, oy))
     elif layout == "spiral":
         cxs, cys = W / 2.0, H / 2.0
         for idx in range(n_tiles):
             frac = idx / max(1, n_tiles - 1)
-            angle = frac * 2 * math.pi * 2 + _t * 0.5
+            angle = frac * 2 * math.pi * 2 + t * 0.5
             radius = 50 + frac * min(W, H) * 0.4
-            x = cxs + radius * math.cos(angle) - 75
-            y = cys + radius * math.sin(angle) - 75
             tw = th = 150
-            tile = _make_tile(tw, th, idx)
-            if anim_mode == "rotate":
-                rot = _t * 25 * (idx + 1) + idx * 20
+            tile = _crop_tile(tw, th, idx)
+            if rotation > 0:
+                rot = t * 25 * (idx + 1) * rotation + idx * 20
                 tile = tile.rotate(rot, expand=False, fillcolor=(10, 10, 18))
-            px = max(0, min(W - tw, int(x)))
-            py = max(0, min(H - th, int(y)))
+            px = int(cxs + radius * math.cos(angle) - tw / 2)
+            py = int(cys + radius * math.sin(angle) - th / 2)
             canvas.paste(tile, (px, py))
 
     if blend_mode != "normal":
@@ -245,4 +212,4 @@ def method_37_collage(out_dir: Path, seed: int, params=None):
 
     arr = np.array(canvas).astype(np.float32) / 255.0
     capture_frame("37", arr)
-    save(canvas, mn(37, f"collage-{layout}"), out_dir)
+    return {"image": arr}

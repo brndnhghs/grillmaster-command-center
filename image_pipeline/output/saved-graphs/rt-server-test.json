@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "x1",
+      "method_id": "10",
+      "params": {},
+      "animParams": {},
+      "x": 50,
+      "y": 100,
+      "render": false
+    },
+    {
+      "id": "x2",
+      "method_id": "10",
+      "params": {},
+      "animParams": {},
+      "x": 250,
+      "y": 100,
+      "render": false
+    }
+  ],
+  "edges": [
+    {
+      "src_node": "x1",
+      "src_port": "image",
+      "dst_node": "x2",
+      "dst_port": "image_in",
+      "feedback": false
+    }
+  ],
+  "name": "rt-server-test",
+  "saved_at": "2026-06-30T22:15:06.728217"
+}

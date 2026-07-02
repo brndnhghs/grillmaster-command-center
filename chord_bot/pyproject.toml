@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chord-bot"
+version = "0.1.0"
+description = "Generative music theory node graph — the graph is the timeline."
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+]
+midi = [
+    # midiutil or similar if you want richer MIDI output in future
+]
+
+[project.scripts]
+chord-bot = "chord_bot.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["chord_bot*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.coverage.run]
+source = ["chord_bot"]
+omit = ["*/tests/*", "*/__pycache__/*"]

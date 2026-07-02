@@ -2,17 +2,17 @@
 #58 — Cellular Automata (Variants)
 Conway's Game of Life and related cellular automata rules.
 Pure numpy — no external deps. Inherently animated.
+
+Refactored per node-refactor-contract: Architecture B (stateless, one call = one frame).
+Animation is driven by wired SCALAR inputs instead of internal anim_mode logic.
 """
 from __future__ import annotations
 import math
-import random
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
 
 from ..core.registry import method
-from ..core.utils import save, mn, W, H
 from ..core.animation import capture_frame
 
 
@@ -110,19 +110,8 @@ def _step_walled_cities(grid):
 
 def _step_brians_brain(grid):
     """Brian's Brain — 3-state variant. Cells: 0=dead, 1=alive, 2=dying."""
-    dying = (grid == 2)  # dying → dead next frame
-    alive = (grid == 1)  # alive stays alive
-    neighbor = (
-        np.roll(np.roll(grid, 1, 0), 1, 1) +
-        np.roll(np.roll(grid, 1, 0), 0, 1) +
-        np.roll(np.roll(grid, 1, 0), -1, 1) +
-        np.roll(grid, 1, 1) +
-        np.roll(grid, -1, 1) +
-        np.roll(np.roll(grid, -1, 0), 1, 1) +
-        np.roll(np.roll(grid, -1, 0), 0, 1) +
-        np.roll(np.roll(grid, -1, 0), -1, 1)
-    )
-    # Count neighbors that are alive (==1)
+    dying = (grid == 2)
+    alive = (grid == 1)
     alive_mask = (grid == 1)
     alive_neighbors = (
         np.roll(np.roll(alive_mask, 1, 0), 1, 1) +
@@ -149,6 +138,8 @@ RULES = {
     "brians_brain": _step_brians_brain,
 }
 
+RULE_NAMES = list(RULES.keys())
+
 
 def _random_init(H, W, density, seed):
     """Initialize grid with random live cells at given density."""
@@ -169,7 +160,6 @@ def _pulsar_init(H, W, seed):
     """Add a pulsar oscillator at center."""
     grid = np.zeros((H, W), dtype=np.uint8)
     cy, cx = H // 2 - 6, W // 2 - 6
-    # Pulsar shape (period 3 oscillator)
     p = np.array([
         [0,0,1,1,1,0,0,0,1,1,1,0,0],
         [0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -195,6 +185,7 @@ INIT_MODES = {
     "glider": _glider_init,
     "pulsar": _pulsar_init,
 }
+INIT_NAMES = list(INIT_MODES.keys())
 
 
 # ─── Color helpers ───
@@ -205,7 +196,6 @@ def _make_color_grid(grid, age_grid, rule, color_mode, t, hue_shift):
     img = np.zeros((h, w, 3), dtype=np.float32)
 
     if rule == "brians_brain":
-        # 3-state coloring
         for y in range(h):
             for x in range(w):
                 if grid[y, x] == 1:
@@ -232,14 +222,11 @@ def _make_color_grid(grid, age_grid, rule, color_mode, t, hue_shift):
                         )
                     else:
                         img[y, x] = (0.8, 0.3, 0.3)
-                # dead = black
     else:
-        # 2-state coloring with age
         age_map = age_grid / np.maximum(age_grid.max(), 1)
         if color_mode == "mono":
             color = np.array([0.7, 0.8, 0.9], dtype=np.float32)
         elif color_mode == "heat":
-            # Black → red → yellow → white based on age
             img[:, :, 0] = np.clip(age_map * 2.0, 0, 1) * grid
             img[:, :, 1] = np.clip(age_map * 2.0 - 1.0, 0, 1) * grid
             img[:, :, 2] = np.clip(age_map * 3.0 - 2.0, 0, 1) * grid
@@ -267,176 +254,79 @@ def _make_color_grid(grid, age_grid, rule, color_mode, t, hue_shift):
     return img
 
 
-# ─── The Method ───
+# ─── The Method (Architecture B — stateless, one call = one frame) ───
 
 @method(id="58", name="Cellular Automata (Variants)", category="simulations",
-         tags=["cellular", "life", "animation", "expanded"],
-         params={
-             "rule": {"description": "cellular automaton rule",
-                      "choices": ["conway", "highlife", "daynight", "seeds",
-                                  "living_on_edge", "walled_cities", "brians_brain"],
-                      "default": "conway"},
-             "init": {"description": "initial pattern",
-                      "choices": ["random", "glider", "pulsar"],
-                      "default": "random"},
-             "density": {"description": "initial live cell density (random init)", "min": 0.05, "max": 0.6, "default": 0.15},
-             "color_mode": {"description": "coloring scheme",
-                            "choices": ["mono", "heat", "rainbow", "gradient", "lime"],
-                            "default": "mono"},
-             "speed": {"description": "generations per frame (animation tick multiplier)", "min": 0.5, "max": 8.0, "default": 1.0},
-             "anim_mode": {"description": "animation mode",
-                           "choices": ["none", "simulate", "rule_cycle", "density_pulse",
-                                       "color_cycle", "speed_pulse", "pop_explosion",
-                                       "glider_swarm", "pulsar_breathe", "blinker_phase",
-                                       "chaos_birth", "wave_birth", "invert_wave",
-                                       "sparse_garden", "dense_ecology", "seed_storm",
-                                       "highlife_gliders", "daynight_fill", "wall_crawl",
-                                       "brain_waves", "dual_rule", "emerge_collapse"],
-                           "default": "none"},
-             "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.5},
-         })
+        tags=["cellular", "life", "animation", "expanded"],
+        inputs={
+            "density": "SCALAR",
+            "speed": "SCALAR",
+            "hue_shift": "SCALAR",
+            "rule_select": "SCALAR",
+            "init_select": "SCALAR",
+        },
+        outputs={"image": "IMAGE", "luminance": "FIELD"},
+        params={
+            "rule": {"description": "cellular automaton rule",
+                     "choices": ["conway", "highlife", "daynight", "seeds",
+                                 "living_on_edge", "walled_cities", "brians_brain"],
+                     "default": "conway"},
+            "init": {"description": "initial pattern",
+                     "choices": ["random", "glider", "pulsar"],
+                     "default": "random"},
+            "density": {"description": "initial live cell density (random init)", "min": 0.05, "max": 0.6, "default": 0.15},
+            "color_mode": {"description": "coloring scheme",
+                           "choices": ["mono", "heat", "rainbow", "gradient", "lime"],
+                           "default": "mono"},
+            "speed": {"description": "generations per frame (animation tick multiplier)", "min": 0.5, "max": 8.0, "default": 1.0},
+            "hue_shift": {"description": "hue shift for rainbow color mode (0-1)", "min": 0.0, "max": 1.0, "default": 0.0},
+            "rule_select": {"description": "SCALAR-driven rule index (0-1 maps to rule list). Overrides 'rule' param when wired.", "min": 0.0, "max": 1.0, "default": -1.0},
+            "init_select": {"description": "SCALAR-driven init mode index (0-1 maps to init list). Overrides 'init' param when wired.", "min": 0.0, "max": 1.0, "default": -1.0},
+        })
 def method_58_cellular(out_dir: Path, seed: int, params=None):
-    """Run cellular automata simulations with 22 animation modes.
+    """Run cellular automata simulations.
 
-    Animates Conway's Game of Life and 6 variant rules. Each frame
-    advances the simulation by N generations based on speed param.
-    Animation modes modulate the rule, density, coloring, and
-    simulation parameters over time.
+    Architecture B (stateless, one call = one frame). Animation is driven
+    by wired SCALAR inputs (density, speed, hue_shift, rule_select, init_select)
+    instead of internal anim_mode logic.
     """
     if params is None:
         params = {}
     t = float(params.get("time", 0.0))
-    anim_speed = float(params.get("anim_speed", 0.5))
-    anim_mode = params.get("anim_mode", "none")
-    rule = params.get("rule", "conway")
-    init_mode = params.get("init", "random")
-    density = float(params.get("density", 0.15))
+
+    # ── SCALAR-driven params (override UI params when wired) ──
+    density_override = params.get("density")
+    effective_density = float(density_override) if density_override is not None else float(params.get("density", 0.15))
+
+    speed_override = params.get("speed")
+    effective_speed = float(speed_override) if speed_override is not None else float(params.get("speed", 1.0))
+
+    hue_shift_override = params.get("hue_shift")
+    hue_shift = float(hue_shift_override) if hue_shift_override is not None else float(params.get("hue_shift", 0.0))
+
+    rule_select_override = params.get("rule_select")
+    if rule_select_override is not None:
+        idx = int(float(rule_select_override) * len(RULE_NAMES)) % len(RULE_NAMES)
+        effective_rule = RULE_NAMES[idx]
+    else:
+        effective_rule = params.get("rule", "conway")
+
+    init_select_override = params.get("init_select")
+    if init_select_override is not None:
+        idx = int(float(init_select_override) * len(INIT_NAMES)) % len(INIT_NAMES)
+        effective_init = INIT_NAMES[idx]
+    else:
+        effective_init = params.get("init", "random")
+
     color_mode = params.get("color_mode", "mono")
-    speed = float(params.get("speed", 1.0))
 
-    # ── Animation effects ──
-    effective_rule = rule
-    effective_density = density
-    effective_speed = speed
-    hue_shift = 0.0
-    effective_color_mode = color_mode
-    effective_init = init_mode
-    n_gens_per_frame = int(max(1, speed * 2.0))
+    # Freeze seed so animation is driven by SCALAR inputs, not seed changes
+    seed = seed & 0xFFFF0000
 
-    t_base = 0.5 + 0.5 * math.sin(t * 0.3 * anim_speed)
+    # ── Run simulation ──
+    from ..core.utils import W, H
 
-    if anim_mode == "simulate":
-        pass  # Just runs the simulation normally with time
-
-    elif anim_mode == "rule_cycle":
-        rule_list = list(RULES.keys())
-        idx = int(t * anim_speed * 2) % len(rule_list)
-        effective_rule = rule_list[idx]
-
-    elif anim_mode == "density_pulse":
-        effective_density = 0.05 + 0.4 * (0.5 + 0.5 * math.sin(t * 0.5 * anim_speed))
-        effective_init = "random"
-
-    elif anim_mode == "color_cycle":
-        hue_shift = t * 0.3 * anim_speed
-        effective_color_mode = "rainbow"
-
-    elif anim_mode == "speed_pulse":
-        n_gens_per_frame = max(1, int(8 * t_base))
-
-    elif anim_mode == "pop_explosion":
-        effective_density = 0.2 + 0.3 * (0.5 + 0.5 * math.sin(t * 0.4 * anim_speed))
-        n_gens_per_frame = max(1, int(4 * (0.5 + 0.5 * math.sin(t * 0.3 * anim_speed + 1.0))))
-        effective_init = "random"
-
-    elif anim_mode == "glider_swarm":
-        effective_init = "glider"
-        effective_density = 0.02
-        n_gens_per_frame = max(1, int(4 * t_base))
-
-    elif anim_mode == "pulsar_breathe":
-        effective_init = "pulsar"
-        effective_density = 0.0
-        n_gens_per_frame = max(1, int(2 + 6 * t_base))
-
-    elif anim_mode == "blinker_phase":
-        effective_init = "random"
-        effective_density = 0.3
-
-    elif anim_mode == "chaos_birth":
-        effective_density = 0.1 + 0.4 * (0.5 + 0.5 * math.sin(t * 0.6 * anim_speed))
-        n_gens_per_frame = int(3 * (0.5 + 0.5 * math.sin(t * 0.5 * anim_speed)) + 2)
-        effective_init = "random"
-
-    elif anim_mode == "wave_birth":
-        # Sweep density like a wave through time
-        effective_density = 0.05 + 0.35 * (0.5 + 0.5 * math.sin(t * 0.4 * anim_speed + 2.0))
-        effective_init = "random"
-
-    elif anim_mode == "invert_wave":
-        effective_density = 0.5 - 0.35 * (0.5 + 0.5 * math.sin(t * 0.3 * anim_speed))
-        effective_init = "random"
-
-    elif anim_mode == "sparse_garden":
-        effective_density = 0.05 + 0.1 * (0.5 + 0.5 * math.sin(t * 0.5 * anim_speed))
-        effective_init = "random"
-
-    elif anim_mode == "dense_ecology":
-        effective_density = 0.3 + 0.25 * (0.5 + 0.5 * math.sin(t * 0.4 * anim_speed))
-        effective_init = "random"
-
-    elif anim_mode == "seed_storm":
-        effective_rule = "seeds"
-        effective_density = 0.1 + 0.2 * (0.5 + 0.5 * math.sin(t * 0.6 * anim_speed))
-        n_gens_per_frame = max(1, int(4 * t_base))
-        effective_init = "random"
-
-    elif anim_mode == "highlife_gliders":
-        effective_rule = "highlife"
-        effective_density = 0.1 + 0.15 * (0.5 + 0.5 * math.sin(t * 0.5 * anim_speed))
-        effective_init = "random"
-
-    elif anim_mode == "daynight_fill":
-        effective_rule = "daynight"
-        effective_density = 0.3 + 0.2 * (0.5 + 0.5 * math.sin(t * 0.4 * anim_speed))
-        effective_init = "random"
-
-    elif anim_mode == "wall_crawl":
-        effective_rule = "walled_cities"
-        effective_density = 0.3 + 0.2 * (0.5 + 0.5 * math.sin(t * 0.5 * anim_speed))
-        effective_init = "random"
-        n_gens_per_frame = max(1, int(3 * t_base))
-
-    elif anim_mode == "brain_waves":
-        effective_rule = "brians_brain"
-        effective_density = 0.15 + 0.2 * (0.5 + 0.5 * math.sin(t * 0.5 * anim_speed))
-        effective_init = "random"
-
-    elif anim_mode == "dual_rule":
-        # Alternate between two rules every few frames
-        if int(t * 2 * anim_speed) % 2 == 0:
-            effective_rule = "conway"
-        else:
-            effective_rule = "highlife"
-        effective_density = 0.2
-        effective_init = "random"
-
-    elif anim_mode == "emerge_collapse":
-        # Dense → sparse cycle with rule change
-        phase = (t * anim_speed) % 1.0
-        if phase < 0.3:
-            effective_density = 0.4
-            effective_rule = "daynight"
-        elif phase < 0.6:
-            effective_density = 0.2
-            effective_rule = "conway"
-        else:
-            effective_density = 0.08
-            effective_rule = "seeds"
-        effective_init = "random"
-
-    # ── Run simulation (cumulative — frame N runs N × step gens) ──
-    step_fn = RULES.get(effective_rule, _step_conway)
+    n_gens_per_frame = max(1, int(effective_speed * 2.0))
 
     # Initialize
     if effective_init == "glider":
@@ -448,13 +338,11 @@ def method_58_cellular(out_dir: Path, seed: int, params=None):
 
     age_grid = grid.astype(np.float32)
 
-    # Run cumulative gens: frame at t=0 has 0 gens, at t=2π has max gens
-    # This way consecutive frames see different sim states
-    max_total_gens = 120  # Enough for evolving patterns
-    n_total = int((t / (2 * math.pi)) * max_total_gens * anim_speed)
-    step_fn = RULES.get(effective_rule, _step_conway)
+    # Run cumulative gens based on time
+    max_total_gens = 120
+    n_total = int((t / (2 * math.pi)) * max_total_gens * 0.5)
 
-    # Re-init for cumulative run (density modes already did above)
+    # Re-init for cumulative run
     if effective_init == "glider":
         grid = _glider_init(H, W, seed)
     elif effective_init == "pulsar":
@@ -463,14 +351,15 @@ def method_58_cellular(out_dir: Path, seed: int, params=None):
         grid = _random_init(H, W, effective_density, seed)
     age_grid = grid.astype(np.float32)
 
+    step_fn = RULES.get(effective_rule, _step_conway)
     for gen in range(n_total):
         grid = step_fn(grid)
         age_grid = np.where(grid > 0, age_grid + 1.0, 0.0)
 
     # ── Render ──
-    img = _make_color_grid(grid, age_grid, effective_rule, effective_color_mode, t, hue_shift)
+    img = _make_color_grid(grid, age_grid, effective_rule, color_mode, t, hue_shift)
     img = np.clip(img, 0.0, 1.0)
 
-    result_arr = img.copy()
-    capture_frame("58", result_arr)
-    save((img * 255).astype(np.uint8), mn(58, "cellular"), out_dir)
+    capture_frame("58", img)
+
+    return {"image": img}

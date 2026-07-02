@@ -14,4 +14,8 @@ from . import (
     arpeggiator,
     rhythm,
     color,
+    secondary_dominant,
+    sequence,
+    suspension,
+    passing_chord,
 )

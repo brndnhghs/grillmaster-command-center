@@ -1,0 +1,56 @@
+{
+  "inputs": {
+    "image_in": {
+      "connected": false
+    },
+    "scalar_in": {
+      "connected": false
+    },
+    "field_in": {
+      "connected": false
+    },
+    "particles_in": {
+      "connected": false
+    },
+    "mask_in": {
+      "connected": false
+    }
+  },
+  "outputs": {
+    "image": {
+      "pattern": "checkerboard",
+      "shape": [
+        512,
+        768,
+        3
+      ],
+      "mean": 0.5
+    },
+    "field": {
+      "pattern": "sine_gradient",
+      "shape": [
+        512,
+        768
+      ],
+      "mean": -0.0,
+      "min": -1.0,
+      "max": 1.0
+    },
+    "particles": {
+      "count": 100,
+      "shape": [
+        100,
+        4
+      ],
+      "dtype": "float32"
+    },
+    "mask": {
+      "pattern": "circle",
+      "shape": [
+        512,
+        768
+      ],
+      "mean": 0.2328
+    }
+  }
+}

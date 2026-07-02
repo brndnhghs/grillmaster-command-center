@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from ..registry import chord
-from ..types import HarmonicState
+from ..chord_types import HarmonicState
 
 
 @chord(

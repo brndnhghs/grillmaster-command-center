@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "sn1",
+      "method_id": "gradient",
+      "params": {},
+      "animParams": {},
+      "x": 50,
+      "y": 50,
+      "render": false
+    }
+  ],
+  "edges": [
+    {
+      "src_node": "sn1",
+      "src_port": "image_out",
+      "dst_node": "sn2",
+      "dst_port": "image_in",
+      "feedback": false
+    }
+  ],
+  "name": "roundtrip-test",
+  "saved_at": "2026-06-30T22:12:53.175921"
+}

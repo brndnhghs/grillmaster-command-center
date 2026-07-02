@@ -9,7 +9,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
 from ...core.registry import method
-from ...core.utils import save, mn, seed_all, get_font, W, H, apply_palette
+from ...core.utils import W, H, get_font, apply_palette
 from ...core.animation import capture_frame
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -1333,25 +1333,12 @@ def _render_stained_glass(colors, palette_type, n_colors, phase_offset=0.0, seed
 
 # Dispatch table for display modes
 _DISPLAY_RENDERERS = {
-    # v4 modes (1-10)
     "harmony_wheel": _render_harmony_wheel,
-    "aurora_blend": _render_aurora_blend,
-    "radial_mesh": _render_radial_mesh,
     "concentric_rings": _render_concentric_rings,
-    "weighted_scatter": _render_weighted_scatter,
-    "neon_glow_strips": _render_neon_glow_strips,
-    "color_frequency": _render_color_frequency,
-    "interpolation_ribbon": _render_interpolation_ribbon,
     "gradient_mesh": _render_gradient_mesh,
-    "color_field": _render_color_field,
-    # Art director modes (11-20)
     "paint_deck": _render_paint_deck,
     "editorial_spread": _render_editorial_spread,
-    "watercolor_wash": _render_watercolor_wash,
     "museum_labels": _render_museum_labels,
-    "jewel_box": _render_jewel_box,
-    "letterpress_series": _render_letterpress_series,
-    "iro_washi": _render_iro_washi,
     "fabric_swatches": _render_fabric_swatches,
     "specimen_cards": _render_specimen_cards,
     "stained_glass": _render_stained_glass,
@@ -1368,13 +1355,32 @@ _DISPLAY_CHOICES = sorted(_DISPLAY_RENDERERS.keys())
     id="10",
     name="Color Palette",
     category="codegen",
-    tags=["palette", "color", "fast", "animation", "expanded"],
+    tags=["palette", "color", "fast"],
+    inputs={
+        "image_in": "IMAGE",
+        "hue_offset": "SCALAR",
+        "phase_offset": "SCALAR",
+        "rot_offset": "SCALAR",
+        "saturation": "SCALAR",
+        "value": "SCALAR",
+        "palette_select": "SCALAR",
+        "n_colors": "SCALAR",
+        "display_select": "SCALAR",
+    },
+    outputs={"image": "IMAGE", "luminance": "FIELD", "palette": "COLORMAP"},
     params={
+        "source": {
+            "description": "palette source: generated (30 palette types) or sampled (extract from wired image_in)",
+            "choices": ["generated", "sampled"],
+            "default": "generated",
+        },
         "n_colors": {
             "description": "number of palette colors",
-            "min": 3,
-            "max": 32,
             "default": 8,
+        },
+        "n_sample_colors": {
+            "description": "number of colors to extract when sampling an input image",
+            "default": 6,
         },
         "layout": {
             "description": "palette display layout (legacy — use display_mode for v4 renderers)",
@@ -1387,32 +1393,37 @@ _DISPLAY_CHOICES = sorted(_DISPLAY_RENDERERS.keys())
             "default": "harmony_wheel",
         },
         "palette_type": {
-            "description": "palette generation method (30 types)",
+            "description": "palette generation method (30 types). Ignored when source=sampled.",
             "choices": _PALETTE_CHOICES,
             "default": "golden-ratio",
         },
         "saturation": {
-            "description": "color saturation override (0.0-1.0, -1=auto)",
-            "min": -1.0,
-            "max": 1.0,
+            "description": "color saturation override (0.0-1.0, -1=auto). Wire LFO.value here.",
             "default": -1.0,
         },
         "value": {
-            "description": "color value/brightness override (0.0-1.0, -1=auto)",
-            "min": -1.0,
-            "max": 1.0,
+            "description": "color value/brightness override (0.0-1.0, -1=auto). Wire LFO.value here.",
             "default": -1.0,
         },
-        "anim_mode": {
-            "description": "palette animation mode",
-            "choices": ["none", "wheel_spin", "gradient_sweep", "hue_rotate", "palette_morph", "saturation_pulse", "value_pulse"],
-            "default": "none",
+        "hue_offset": {
+            "description": "SCALAR-driven hue rotation. Wire LFO.value here.",
+            "default": 0.0,
         },
-        "anim_speed": {
-            "description": "animation speed multiplier",
-            "min": 0.0,
-            "max": 2.0,
-            "default": 0.25,
+        "phase_offset": {
+            "description": "SCALAR-driven phase offset for gradient/display sweep. Wire LFO.value here.",
+            "default": 0.0,
+        },
+        "rot_offset": {
+            "description": "SCALAR-driven wheel rotation offset. Wire LFO.value here.",
+            "default": 0.0,
+        },
+        "palette_select": {
+            "description": "SCALAR-driven palette type index (0-1 maps to all 30 palette types). Wire Counter.value here.",
+            "default": -1.0,
+        },
+        "display_select": {
+            "description": "SCALAR-driven display mode index (0-1 maps to all display modes). Wire Counter.value here.",
+            "default": -1.0,
         },
         "palette": {
             "description": "PALETTES name to remap output colors (none = generated colors)",
@@ -1421,28 +1432,81 @@ _DISPLAY_CHOICES = sorted(_DISPLAY_RENDERERS.keys())
     },
 )
 def method_10_color_palette(out_dir: Path, seed: int, params=None):
-    """Multi-mode color palette display with 30 palette types, 6 layouts, and animation."""
+    """Multi-mode color palette display with 30 palette types and 20 display modes.
+
+    Architecture B (stateless, one call = one frame). Animation is driven
+    by wired SCALAR inputs instead of internal anim_mode logic.
+
+    When image_in is wired and source=sampled, the palette is extracted
+    from the input image's dominant colors instead of generated.
+
+    Wire channel nodes to drive params:
+      LFO.value → hue_offset      (hue rotation, replaces hue_rotate)
+      LFO.value → phase_offset    (gradient/display sweep, replaces gradient_sweep)
+      LFO.value → rot_offset      (wheel spin, replaces wheel_spin)
+      LFO.value → saturation      (saturation pulse, replaces saturation_pulse)
+      LFO.value → value           (value pulse, replaces value_pulse)
+      Counter.value → palette_select (palette type cycling, replaces palette_morph)
+      Counter.value → display_select (display mode cycling)
+      LFO.value → n_colors        (color count sweep)
+    """
     if params is None:
         params = {}
 
-    # ── Extract time BEFORE seed to conform to animation conventions ──
-    t = float(params.get("time", 0.0))
-    anim_speed = float(params.get("anim_speed", 0.25))
+    # ── Read SCALAR inputs ──
+    hue_offset_override = params.get("hue_offset")
+    effective_hue_offset = float(hue_offset_override) if hue_offset_override is not None else float(params.get("hue_offset", 0.0))
 
-    seed_all(seed)
+    phase_offset_override = params.get("phase_offset")
+    effective_phase_offset = float(phase_offset_override) if phase_offset_override is not None else float(params.get("phase_offset", 0.0))
 
-    # ── Parse params ──
-    n_colors = int(params.get("n_colors", 8))
+    rot_offset_override = params.get("rot_offset")
+    effective_rot_offset = float(rot_offset_override) if rot_offset_override is not None else float(params.get("rot_offset", 0.0))
+
+    sat_override = params.get("saturation")
+    if sat_override is not None:
+        effective_sat = max(0.0, min(1.0, float(sat_override)))
+    else:
+        sat_override_ui = float(params.get("saturation", -1.0))
+        effective_sat = sat_override_ui if sat_override_ui >= 0 else 0.75
+
+    val_override = params.get("value")
+    if val_override is not None:
+        effective_val = max(0.0, min(1.0, float(val_override)))
+    else:
+        val_override_ui = float(params.get("value", -1.0))
+        effective_val = val_override_ui if val_override_ui >= 0 else 0.7
+
+    palette_select_override = params.get("palette_select")
+    if palette_select_override is not None:
+        pidx = int(float(palette_select_override) * len(_PALETTE_CHOICES)) % len(_PALETTE_CHOICES)
+        palette_type = _PALETTE_CHOICES[pidx]
+    else:
+        palette_type = params.get("palette_type", "golden-ratio")
+
+    display_select_override = params.get("display_select")
+    if display_select_override is not None:
+        didx = int(float(display_select_override) * len(_DISPLAY_CHOICES)) % len(_DISPLAY_CHOICES)
+        display_mode = _DISPLAY_CHOICES[didx]
+    else:
+        display_mode = params.get("display_mode", "harmony_wheel")
+
+    n_colors_override = params.get("n_colors")
+    if n_colors_override is not None:
+        n_colors = max(3, min(32, int(n_colors_override)))
+    else:
+        n_colors = max(3, min(32, int(params.get("n_colors", 8))))
+
+    # ── Read UI params ──
     layout = params.get("layout", "vertical")
-    palette_type = params.get("palette_type", "golden-ratio")
-    anim_mode = params.get("anim_mode", "none")
-    display_mode = params.get("display_mode", "harmony_wheel")
-    sat_override = float(params.get("saturation", -1.0))
-    val_override = float(params.get("value", -1.0))
+    source = params.get("source", "generated")
+    n_sample_colors = max(2, min(16, int(params.get("n_sample_colors", 6))))
+
+    # ── Check for sampled input image ──
+    input_img = params.get("_input_image")
+    use_sampled = (source == "sampled" and input_img is not None)
 
     # ── Per-palette-type default sat/val ──
-    # Each palette type has a natural sat/val that defines its character.
-    # The user can override with the saturation/value params.
     _DEFAULT_SAT = {
         "monochromatic": 0.75, "analogous": 0.75, "complementary": 0.75,
         "split": 0.75, "triadic": 0.75, "tetradic": 0.75, "square": 0.75,
@@ -1471,90 +1535,76 @@ def method_10_color_palette(out_dir: Path, seed: int, params=None):
         "complementary-split-wide": 0.7, "triadic-alt": 0.7,
         "random": 0.7,
     }
-    sat = sat_override if sat_override >= 0 else _DEFAULT_SAT.get(palette_type, 0.75)
-    val = val_override if val_override >= 0 else _DEFAULT_VAL.get(palette_type, 0.7)
+    # Only use defaults when sat/val weren't wired AND weren't set in UI
+    if sat_override is None:
+        sat_ui = float(params.get("saturation", -1.0))
+        if sat_ui < 0:
+            effective_sat = _DEFAULT_SAT.get(palette_type, 0.75)
+    if val_override is None:
+        val_ui = float(params.get("value", -1.0))
+        if val_ui < 0:
+            effective_val = _DEFAULT_VAL.get(palette_type, 0.7)
 
-    # ── Animation: conditional on mode ──
-    effective_hue_offset = 0.0
-    effective_rot_offset = 0.0
-    effective_phase_offset = 0.0
-    effective_sat = sat
-    effective_val = val
-    palette_morph_type_a = palette_type
-    palette_morph_type_b = palette_type
-    palette_morph_fade = 0.0
+    # ── Generate or sample palette ──
+    if use_sampled:
+        # Extract dominant colors from input image via color quantization
+        img_pil = Image.fromarray((np.clip(input_img, 0, 1) * 255).astype(np.uint8))
+        # Downsample to speed up quantization
+        img_small = img_pil.resize((64, 64), Image.LANCZOS)
+        pixels = np.array(img_small).reshape(-1, 3).astype(np.float32)
 
-    if anim_mode == "wheel_spin":
-        effective_hue_offset = t * 30.0 * anim_speed
-        effective_rot_offset = t * 30.0 * anim_speed
+        # Simple k-means with 5 iterations
+        k = min(n_sample_colors, len(pixels))
+        rng = np.random.RandomState(seed)
+        idxs = rng.choice(len(pixels), k, replace=False)
+        centroids = pixels[idxs].copy()
 
-    elif anim_mode == "gradient_sweep":
-        effective_phase_offset = (t * anim_speed) % 1.0
+        for _ in range(5):
+            dists = np.sum((pixels[:, None, :] - centroids[None, :, :]) ** 2, axis=-1)
+            labels = np.argmin(dists, axis=-1)
+            for ci in range(k):
+                mask = labels == ci
+                if mask.any():
+                    centroids[ci] = pixels[mask].mean(axis=0)
 
-    elif anim_mode == "hue_rotate":
-        effective_hue_offset = t * 60.0 * anim_speed
+        # Sort by luminance (brightest first) for a clean display
+        lum = centroids.mean(axis=1)
+        order = np.argsort(-lum)
+        colors = [tuple(int(c) for c in centroids[i]) for i in order]
 
-    elif anim_mode == "palette_morph":
-        palette_keys = _PALETTE_CHOICES
-        n_palettes = len(palette_keys)
-        raw_idx = (t / (2 * math.pi)) * n_palettes * anim_speed
-        idx_a = int(raw_idx) % n_palettes
-        idx_b = (idx_a + 1) % n_palettes
-        palette_morph_fade = raw_idx - int(raw_idx)
-        palette_morph_type_a = palette_keys[idx_a]
-        palette_morph_type_b = palette_keys[idx_b]
+        # Apply hue offset rotation to sampled colors
+        if effective_hue_offset != 0.0:
+            rotated = []
+            for r, g, b in colors:
+                h, s, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+                h = (h + effective_hue_offset / 360.0) % 1.0
+                rotated.append(_hsv_to_rgb(h, s, v))
+            colors = rotated
 
-    elif anim_mode == "saturation_pulse":
-        effective_sat = sat * (0.2 + 0.8 * (0.5 + 0.5 * math.sin(t * 1.5 * anim_speed)))
-
-    elif anim_mode == "value_pulse":
-        effective_val = val * (0.3 + 0.7 * (0.5 + 0.5 * math.sin(t * 1.3 * anim_speed)))
-
-    # gradient_sweep modulates phase_offset, which is only consumed by
-    # the gradient layout — force it so the modulation actually lands.
-    if anim_mode == "gradient_sweep":
-        layout = "gradient"
-
-    # ── Generate palette(s) and render ──
-    render_display = display_mode in _DISPLAY_RENDERERS
-
-    if anim_mode == "palette_morph":
-        # Render both palette types and blend
-        gen_a = _PALETTE_GENERATORS.get(palette_morph_type_a, _golden_ratio_palette)
-        gen_b = _PALETTE_GENERATORS.get(palette_morph_type_b, _golden_ratio_palette)
-        colors_a = gen_a(n_colors, seed, hue_off=0.0, sat=sat, val=val)
-        colors_b = gen_b(n_colors, seed, hue_off=0.0, sat=sat, val=val)
-
-        if render_display:
-            img_a = _DISPLAY_RENDERERS[display_mode](colors_a, palette_morph_type_a, n_colors,
-                                                     phase_offset=0.0, hue_off=0.0,
-                                                     rot_offset=0.0)
-            img_b = _DISPLAY_RENDERERS[display_mode](colors_b, palette_morph_type_b, n_colors,
-                                                     phase_offset=0.0, hue_off=0.0,
-                                                     rot_offset=0.0)
-        else:
-            img_a = _render_palette_layout(colors_a, layout, palette_morph_type_a,
-                                           n_colors, phase_offset=0.0, rot_offset=0.0)
-            img_b = _render_palette_layout(colors_b, layout, palette_morph_type_b,
-                                           n_colors, phase_offset=0.0, rot_offset=0.0)
-        img = Image.blend(img_a, img_b, palette_morph_fade)
+        palette_label = f"sampled ({n_sample_colors} colors)"
     else:
+        # Generate from palette type
         gen_fn = _PALETTE_GENERATORS.get(palette_type, _golden_ratio_palette)
         colors = gen_fn(n_colors, seed, hue_off=effective_hue_offset,
                         sat=effective_sat, val=effective_val)
-        if render_display:
-            img = _DISPLAY_RENDERERS[display_mode](colors, palette_type, n_colors,
-                                                   phase_offset=effective_phase_offset,
-                                                   hue_off=effective_hue_offset,
-                                                   rot_offset=effective_rot_offset)
-        else:
-            img = _render_palette_layout(colors, layout, palette_type, n_colors,
-                                         phase_offset=effective_phase_offset,
-                                         rot_offset=effective_rot_offset)
+        palette_label = palette_type
 
-    # ── Convert to numpy array, capture frame, save ──
+    # ── Render ──
+    render_display = display_mode in _DISPLAY_RENDERERS
+    if render_display:
+        img = _DISPLAY_RENDERERS[display_mode](colors, palette_label, len(colors),
+                                               phase_offset=effective_phase_offset,
+                                               hue_off=effective_hue_offset,
+                                               rot_offset=effective_rot_offset)
+    else:
+        img = _render_palette_layout(colors, layout, palette_label, len(colors),
+                                     phase_offset=effective_phase_offset,
+                                     rot_offset=effective_rot_offset)
+
+    # ── Convert to numpy array, capture frame, return ──
     result_arr = np.array(img).astype(np.float32) / 255.0
     result_arr = apply_palette(result_arr, params.get("palette", "none"))
     capture_frame("10", result_arr)
-    save(result_arr, mn(10, "color-palette"), out_dir)
-    return result_arr
+    # Output palette as (N,3) float32 COLORMAP for downstream nodes
+    palette_arr = np.array(colors, dtype=np.float32) / 255.0
+    return {"image": result_arr, "palette": palette_arr}

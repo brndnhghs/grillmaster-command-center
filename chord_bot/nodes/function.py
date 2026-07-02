@@ -9,7 +9,7 @@ import random
 from typing import NamedTuple
 
 from ..registry import chord
-from ..types import (
+from ..chord_types import (
     HarmonicState,
     note_to_pc,
     pc_to_note,
@@ -73,6 +73,28 @@ _QUALITY_TABLE: dict[str, dict[str, list[str]]] = {
         "pop":       ["dom7", "min",  "dim",  "maj",  "min",  "min",  "maj"],
         "modal":     ["dom7", "min7", "m7b5", "maj7", "min7", "min7", "maj7"],
     },
+    # ── Modes previously falling through to major defaults ────────────────────
+    "phrygian": {
+        # I=min, bII=maj, bIII=min, iv=min, v°=dim, bVI=maj, bVII=min
+        "classical": ["min",  "maj",  "min",  "min",  "dim",  "maj",  "min"],
+        "jazz":      ["min7", "maj7", "min7", "min7", "m7b5", "maj7", "min7"],
+        "pop":       ["min",  "maj",  "min",  "min",  "dim",  "maj",  "min"],
+        "modal":     ["min7", "maj7", "min7", "min7", "m7b5", "maj7", "min7"],
+    },
+    "lydian": {
+        # I=maj, II=maj, iii=min, #iv°=dim, V=maj, vi=min, vii=min
+        "classical": ["maj",  "maj",  "min",  "dim",  "maj",  "min",  "min"],
+        "jazz":      ["maj7", "dom7", "min7", "m7b5", "maj7", "min7", "min7"],
+        "pop":       ["maj",  "maj",  "min",  "dim",  "maj",  "min",  "min"],
+        "modal":     ["maj7", "dom7", "min7", "m7b5", "maj7", "min7", "min7"],
+    },
+    "locrian": {
+        # i°=dim, bII=maj, biii=min, iv=min, bV=maj, bVI=maj, bvii=min
+        "classical": ["dim",  "maj",  "min",  "min",  "maj",  "maj",  "min"],
+        "jazz":      ["m7b5", "maj7", "min7", "min7", "maj7", "dom7", "min7"],
+        "pop":       ["dim",  "maj",  "min",  "min",  "maj",  "maj",  "min"],
+        "modal":     ["m7b5", "maj7", "min7", "min7", "maj7", "dom7", "min7"],
+    },
 }
 
 # Fallback to major when mode isn't explicitly tabulated
@@ -111,6 +133,24 @@ _FUNCTION_DEGREES: dict[str, dict[str, list[int]]] = {
         "subdominant":  [3, 6],
         "dominant":     [4, 6],
         "pre-dominant": [1, 3],
+    },
+    "phrygian": {
+        "tonic":        [0, 5],        # i, bVI
+        "subdominant":  [3, 1],        # iv, bII
+        "dominant":     [6, 4],        # bVII, v° (phrygian avoids V)
+        "pre-dominant": [1, 3],        # bII, iv
+    },
+    "lydian": {
+        "tonic":        [0, 4, 2],     # I, V, iii
+        "subdominant":  [1, 3],        # II, #iv°
+        "dominant":     [4, 6],        # V, vii
+        "pre-dominant": [1, 3],
+    },
+    "locrian": {
+        "tonic":        [0, 2],        # i°, biii
+        "subdominant":  [3, 5],        # iv, bVI
+        "dominant":     [1, 6],        # bII, bvii (locrian has no major V)
+        "pre-dominant": [3, 5],
     },
 }
 
@@ -244,10 +284,12 @@ def node_function(state: HarmonicState, params: dict) -> HarmonicState:
     velocity           = int(params.get("velocity",            80))
     strength           = float(params.get("strength",           0.8))
     seed_param         = int(params.get("seed",                0))
+    beat               = float(params.get("_beat",             0.0))
 
-    # Derive a seed from current state if none provided
+    # Derive a seed that incorporates beat position so repeated Function nodes
+    # in the same graph don't all make the same Markov transition.
     rng_seed = seed_param if seed_param > 0 else (
-        hash((state.key, state.chord, state.cadence_count)) & 0xFFFF
+        hash((state.key, state.chord, state.cadence_count, int(beat * 100))) & 0xFFFF
     )
     rng = random.Random(rng_seed)
 

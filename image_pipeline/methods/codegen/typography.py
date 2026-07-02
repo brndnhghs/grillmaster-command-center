@@ -19,6 +19,12 @@ from ...core.animation import capture_frame
 
 @method(id="15", name="Typography", category="codegen",
          tags=["text", "font", "fast", "expanded", "animation"],
+         inputs={
+             "font_size": "SCALAR",
+             "anim_speed": "SCALAR",
+             "spacing": "SCALAR",
+         },
+         outputs={"image": "IMAGE", "luminance": "FIELD"},
          params={
              "content": {"description": "input text content to render", "default": "Hello World"},
              "source_mode": {"description": "text source / render mode",
@@ -26,11 +32,11 @@ from ...core.animation import capture_frame
                                          "quote", "clock", "calendar", "typewriter",
                                          "scrolling_text", "fade_in", "bounce"],
                              "default": "text"},
-             "font_size": {"description": "base font size", "min": 12, "max": 200, "default": 48},
+             "font_size": {"description": "base font size", "default": 48},
              "color": {"description": "text color hex or name", "default": "#dcdcc8"},
              "bg_color": {"description": "background color hex or name", "default": "#0a0a12"},
              "alignment": {"description": "text alignment", "choices": ["left", "center", "right"], "default": "center"},
-             "spacing": {"description": "line spacing multiplier", "min": 0.5, "max": 3.0, "default": 1.2},
+             "spacing": {"description": "line spacing multiplier", "default": 1.2},
              "anim_mode": {"description": "animation mode",
                            "choices": ["none", "typewriter", "scrolling", "fade_in", "bounce", "wave", "glitch",
                                        "font_size_pulse", "spacing_morph", "color_cycle",
@@ -51,102 +57,79 @@ from ...core.animation import capture_frame
                                        "letter_heatmap", "letter_xray", "letter_ghost", "letter_shadow", "letter_outline",
                                        "word_rotate", "word_scale", "word_drop", "word_scatter", "word_swirl"],
                            "default": "none"},
-             "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
+             "anim_speed": {"description": "animation speed multiplier", "default": 1.0},
          })
 def method_15_typography(out_dir: Path, seed: int, params=None):
     """Render typography with 13+ source modes and 30+ animation modes."""
     if params is None:
         params = {}
     t = float(params.get("time", 0.0))
-    anim_speed = float(params.get("anim_speed", 1.0))
+
+    # ── Read SCALAR inputs ──
+    anim_speed_override = params.get("anim_speed")
+    if anim_speed_override is not None:
+        anim_speed = float(anim_speed_override)
+    else:
+        anim_speed = float(params.get("anim_speed", 1.0))
+
+    font_size_override = params.get("font_size")
+    if font_size_override is not None:
+        font_size = int(font_size_override)
+    else:
+        font_size = int(params.get("font_size", 48))
+
+    spacing_override = params.get("spacing")
+    if spacing_override is not None:
+        spacing = float(spacing_override)
+    else:
+        spacing = float(params.get("spacing", 1.2))
+
+    # ── Read UI params ──
     content = params.get("content", "Hello World")
     source_mode = params.get("source_mode", "text")
-    font_size = int(params.get("font_size", 48))
     color_hex = params.get("color", "#dcdcc8")
     bg_hex = params.get("bg_color", "#0a0a12")
     alignment = params.get("alignment", "center")
-    spacing = float(params.get("spacing", 1.2))
     anim_mode = params.get("anim_mode", "none")
 
     # ── Deterministic RNG ──
     rng = random.Random(seed)
 
     # ── Wire anim_mode to override source_mode ──
-    anim_to_source = {
+    # Letter/word animation modes map to themselves (they are valid elif branches).
+    # Source-level modes (typewriter, scrolling, fade_in, bounce) also map to themselves.
+    # Modes that don't exist as branches fall back to 'text'.
+    _anim_to_source = {
         "scrolling": "scrolling_text",
-        "typewriter": "typewriter",
-        "fade_in": "fade_in",
-        "bounce": "bounce",
-        "wave": "wave",
-        "glitch": "glitch",
-        "font_size_pulse": "font_size_pulse",
-        "spacing_morph": "spacing_morph",
-        "color_cycle": "color_cycle",
-        "letter_rotate": "letter_rotate",
-        "letter_scale": "letter_scale",
-        "letter_drop": "letter_drop",
-        "letter_rise": "letter_rise",
-        "letter_fly": "letter_fly",
-        "letter_scatter": "letter_scatter",
-        "letter_shake": "letter_shake",
-        "letter_flip": "letter_flip",
-        "letter_swirl": "letter_swirl",
-        "letter_rainbow": "letter_rainbow",
-        "letter_jump": "letter_jump",
-        "letter_spiral_in": "letter_spiral_in",
-        "letter_zigzag": "letter_zigzag",
-        "letter_breathe": "letter_breathe",
-        "letter_ripple": "letter_ripple",
-        "letter_explode": "letter_explode",
-        "letter_twist": "letter_twist",
-        "letter_gravity": "letter_gravity",
-        "letter_glow_pulse": "letter_glow_pulse",
-        "letter_skew": "letter_skew",
-        "letter_stagger": "letter_stagger",
-        "letter_hop": "letter_hop",
-        "letter_dance": "letter_dance",
-        "letter_wipe": "letter_wipe",
-        "letter_scan": "letter_scan",
-        "letter_matrix": "letter_matrix",
-        "letter_neon": "letter_neon",
-        "letter_morph": "letter_morph",
-        "letter_dissolve": "letter_dissolve",
-        "letter_blinds": "letter_blinds",
-        "letter_radar": "letter_radar",
-        "letter_pendulum": "letter_pendulum",
-        "letter_elastic": "letter_elastic",
-        "letter_wobble": "letter_wobble",
-        "letter_spring": "letter_spring",
-        "letter_scramble": "letter_scramble",
-        "letter_static": "letter_static",
-        "letter_fire": "letter_fire",
-        "letter_rain": "letter_rain",
-        "letter_smoke": "letter_smoke",
-        "letter_perspective": "letter_perspective",
-        "letter_depth": "letter_depth",
-        "letter_zoom": "letter_zoom",
-        "letter_parallax": "letter_parallax",
-        "letter_cascade": "letter_cascade",
-        "letter_alternate": "letter_alternate",
-        "letter_pingpong": "letter_pingpong",
-        "letter_march": "letter_march",
-        "letter_circle_reveal": "letter_circle_reveal",
-        "letter_split": "letter_split",
-        "letter_compress": "letter_compress",
-        "letter_unfold": "letter_unfold",
-        "letter_heatmap": "letter_heatmap",
-        "letter_xray": "letter_xray",
-        "letter_ghost": "letter_ghost",
-        "letter_shadow": "letter_shadow",
-        "letter_outline": "letter_outline",
-        "word_rotate": "word_rotate",
-        "word_scale": "word_scale",
-        "word_drop": "word_drop",
-        "word_scatter": "word_scatter",
-        "word_swirl": "word_swirl",
     }
-    if anim_mode in anim_to_source:
-        source_mode = anim_to_source[anim_mode]
+    _known_source_modes = {
+        "text", "words", "text_wall", "url", "gradient", "image",
+        "quote", "clock", "calendar",
+        "typewriter", "scrolling_text", "fade_in", "bounce",
+        "wave", "glitch", "font_size_pulse", "spacing_morph", "color_cycle",
+        "letter_rotate", "letter_scale", "letter_drop", "letter_rise",
+        "letter_fly", "letter_scatter", "letter_shake", "letter_flip",
+        "letter_swirl", "letter_rainbow", "letter_jump",
+        "letter_spiral_in", "letter_zigzag", "letter_breathe",
+        "letter_ripple", "letter_explode", "letter_twist",
+        "letter_gravity", "letter_glow_pulse", "letter_skew",
+        "letter_stagger", "letter_hop", "letter_dance",
+        "letter_wipe", "letter_scan", "letter_matrix", "letter_neon",
+        "letter_morph", "letter_dissolve", "letter_blinds", "letter_radar",
+        "letter_pendulum", "letter_elastic", "letter_wobble", "letter_spring",
+        "letter_scramble", "letter_static", "letter_fire", "letter_rain", "letter_smoke",
+        "letter_perspective", "letter_depth", "letter_zoom", "letter_parallax",
+        "letter_cascade", "letter_alternate", "letter_pingpong", "letter_march",
+        "letter_circle_reveal", "letter_split", "letter_compress", "letter_unfold",
+        "letter_heatmap", "letter_xray", "letter_ghost", "letter_shadow", "letter_outline",
+        "word_rotate", "word_scale", "word_drop", "word_scatter", "word_swirl",
+    }
+    if anim_mode in _anim_to_source:
+        source_mode = _anim_to_source[anim_mode]
+    elif anim_mode in _known_source_modes:
+        source_mode = anim_mode
+    elif anim_mode != "none":
+        source_mode = "text"
 
     # ── Parse colors ──
     def _hex_to_rgb(h):
@@ -286,7 +269,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _render_text(draw, line, y_start + i * line_h, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-text"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "words":
         img = _make_base_image()
@@ -304,7 +287,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             draw.text((x, y), word, fill=text_color, font=font)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-words"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "text_wall":
         img = _make_base_image()
@@ -326,7 +309,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             y += line_h
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-wall"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "url":
         img = _make_base_image()
@@ -350,7 +333,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _render_text(draw, line, y_start + i * line_h, font_small, c)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-url"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "gradient":
         img = _make_base_image()
@@ -368,7 +351,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             x_offset += tw
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-gradient"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "image":
         img = _make_base_image()
@@ -393,7 +376,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
         draw.rectangle([5, 5, W - 5, H - 5], outline=border_color, width=2)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-image"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "quote":
         img = _make_base_image()
@@ -414,7 +397,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
         _render_text(draw, "— " + author, auth_y, font_small, (min(255, text_color[0] + 40), min(255, text_color[1] + 40), min(255, text_color[2] + 40)))
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-quote"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "clock":
         img = _make_base_image()
@@ -429,7 +412,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
         draw.ellipse([cx_clock - radius, cy_clock - radius, cx_clock + radius, cy_clock + radius], outline=text_color, width=3)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-clock"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "calendar":
         img = _make_base_image()
@@ -449,7 +432,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
         draw.line([(20, 140), (W - 20, 140)], fill=tuple(min(255, c + 40) for c in text_color), width=1)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-calendar"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "typewriter":
         img = _make_base_image()
@@ -468,7 +451,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
         draw.text((x, y), display_text, fill=text_color, font=font_large)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-typewriter"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "scrolling_text":
         img = _make_base_image()
@@ -484,7 +467,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             draw.text((x_offset2, y), content, fill=text_color, font=font_large)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-scrolling"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "fade_in":
         img = _make_base_image()
@@ -501,7 +484,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _render_text(draw, line, y_start + i * line_h, font, fade_color, alpha=line_alpha)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-fadein"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "bounce":
         img = _make_base_image()
@@ -516,7 +499,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _render_text(draw, line, base_y + i * line_h - y_offset, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-bounce"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "wave":
         img = _make_base_image()
@@ -536,7 +519,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
                 x_offset += tw
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-wave"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "glitch":
         img = _make_base_image()
@@ -561,7 +544,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
                 x_offset += tw
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-glitch"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "font_size_pulse":
         img = _make_base_image()
@@ -577,7 +560,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _render_text(draw, line, y_start + i * line_h, f_pulse, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-fontpulse"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "spacing_morph":
         img = _make_base_image()
@@ -591,7 +574,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _render_text(draw, line, y_start + i * line_h, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-spacing"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "color_cycle":
         img = _make_base_image()
@@ -609,7 +592,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _render_text(draw, line, y_start + i * line_h, font, (r, g, b))
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-colorcycle"), out_dir)
+        return {"image": result_arr}
 
     # ═══════════════════════════════════════════════════════════════════════
     # KINETIC TYPOGRAPHY — Per-Character Animation Modes
@@ -627,7 +610,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_rotated_char(draw, ch, cx, cy, angle, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterrotate"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_scale":
         """Each character pulses in size with per-char phase offset."""
@@ -643,7 +626,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_rotated_char(draw, ch, cx, cy, 0, f_scaled, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterscale"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_drop":
         """Characters fall from above into position (gravity reveal)."""
@@ -660,7 +643,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, x, int(drop_y), font, text_color, alpha)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterdrop"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_rise":
         """Characters rise from below into position."""
@@ -677,7 +660,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, x, int(rise_y), font, text_color, alpha)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterrise"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_fly":
         """Characters fly in from random directions to their positions."""
@@ -700,7 +683,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, fly_x, fly_y, font, text_color, alpha)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterfly"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_scatter":
         """Characters scatter outward from center then return."""
@@ -721,7 +704,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, sx, sy, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterscatter"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_shake":
         """Each character vibrates with random offset."""
@@ -736,7 +719,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, sx, sy, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-lettershake"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_flip":
         """Characters flip horizontally (mirror) with oscillation."""
@@ -758,7 +741,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
                 _draw_char_at(draw, ch, x, y, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterflip"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_swirl":
         """Characters orbit around center in spiral."""
@@ -779,7 +762,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, sx - cw // 2, sy - ch_h // 2, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterswirl"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_rainbow":
         """Each character cycles through different hue."""
@@ -794,7 +777,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, x, y, font, (r, g, b))
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterrainbow"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_jump":
         """Characters jump up sequentially like a word game."""
@@ -807,7 +790,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, x, y - jump_y, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterjump"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_spiral_in":
         """Characters spiral inward from edges."""
@@ -830,7 +813,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, sx - cw // 2, sy - ch_h // 2, font, text_color, alpha)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterspiralin"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_zigzag":
         """Characters move in zigzag pattern."""
@@ -844,7 +827,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, zx, zy, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterzigzag"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_breathe":
         """Characters pulse in size with breathing effect."""
@@ -860,7 +843,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_rotated_char(draw, ch, cx, cy, 0, f_breathe, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterbreathe"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_ripple":
         """Ripple effect through characters like water."""
@@ -875,7 +858,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, x, ry, font, text_color, alpha)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterripple"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_explode":
         """Characters explode outward from center."""
@@ -897,7 +880,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, ex, ey, font, text_color, alpha)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterexplode"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_twist":
         """Line twist: left chars twist one way, right chars twist opposite."""
@@ -916,7 +899,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_rotated_char(draw, ch, cx, cy, twist_angle, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-lettertwist"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_gravity":
         """Characters bounce with simulated gravity."""
@@ -930,7 +913,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, x, gy, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-lettergravity"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_glow_pulse":
         """Characters pulse with glow effect (multiple passes)."""
@@ -950,7 +933,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, x, y, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterglow"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_skew":
         """Characters shear/slant with oscillation using affine transform."""
@@ -974,7 +957,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             draw._image.paste(sheared, (x - pad, y - pad), sheared)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterskew"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_stagger":
         """Characters appear with staggered timing."""
@@ -994,7 +977,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_rotated_char(draw, ch, cx, cy, 0, f_stag, text_color, alpha)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterstagger"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_hop":
         """Characters hop up and down with per-char phase."""
@@ -1007,7 +990,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, x, hy, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterhop"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_dance":
         """Complex multi-axis per-character motion."""
@@ -1024,7 +1007,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_rotated_char(draw, ch, cx, cy, rot, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterdance"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_wipe":
         """Text revealed by a wiping mask."""
@@ -1051,7 +1034,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
                 x_offset += cw
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterwipe"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_scan":
         """Scan line reveals text."""
@@ -1074,7 +1057,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
         draw.line([(0, scan_y), (W, scan_y)], fill=scan_color, width=2)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterscan"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_matrix":
         """Matrix-style rain effect on characters."""
@@ -1105,7 +1088,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
                 x_offset += cw
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-lettermatrix"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_neon":
         """Neon glow pulse effect."""
@@ -1134,7 +1117,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _render_text(draw, line, y_pos, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterneon"), out_dir)
+        return {"image": result_arr}
 
     # ═══════════════════════════════════════════════════════════════════════
     # MORPH / TRANSITION MODES
@@ -1174,7 +1157,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
                 x_offset += cw
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-lettermorph"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_dissolve":
         """Random pixel dissolve reveal."""
@@ -1197,7 +1180,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
                 x_offset += cw
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterdissolve"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_blinds":
         """Venetian blind reveal — horizontal strips."""
@@ -1220,7 +1203,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
                     _render_text(draw, line, y_pos, font, text_color, alpha)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterblinds"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_radar":
         """Circular sweep reveal from center."""
@@ -1250,7 +1233,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
                 x_offset += cw
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterradar"), out_dir)
+        return {"image": result_arr}
 
     # ═══════════════════════════════════════════════════════════════════════
     # PHYSICS MODES
@@ -1268,7 +1251,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_rotated_char(draw, ch, cx, cy, swing, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterpendulum"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_elastic":
         """Characters stretch vertically with elastic bounce."""
@@ -1286,7 +1269,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_rotated_char(draw, ch, cx, cy, 0, f_elastic, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterelastic"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_wobble":
         """Jello wobble — characters oscillate in x and y at different frequencies."""
@@ -1300,7 +1283,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, x + wx, y + wy, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterwobble"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_spring":
         """Characters oscillate to rest like a spring."""
@@ -1319,7 +1302,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
                 _draw_char_at(draw, ch, x, y, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterspring"), out_dir)
+        return {"image": result_arr}
 
     # ═══════════════════════════════════════════════════════════════════════
     # CHAOS / EFFECT MODES
@@ -1338,7 +1321,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, new_ch, x, y, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterscramble"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_static":
         """TV static noise on characters."""
@@ -1362,7 +1345,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
                 x_offset += cw
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterstatic"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_fire":
         """Characters flicker upward like flames."""
@@ -1381,7 +1364,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, x, fy, font, (r, g, b))
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterfire"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_rain":
         """Characters fall downward like rain."""
@@ -1396,7 +1379,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, x, ry, font, text_color, alpha)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterrain"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_smoke":
         """Characters drift upward and fade like smoke."""
@@ -1412,7 +1395,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, sx, sy, font, text_color, alpha)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-lettersmoke"), out_dir)
+        return {"image": result_arr}
 
     # ═══════════════════════════════════════════════════════════════════════
     # 3D / PERSPECTIVE MODES
@@ -1438,7 +1421,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_rotated_char(draw, ch, cx, cy, 0, f_persp, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterperspective"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_depth":
         """Z-axis push — characters move toward/away from viewer."""
@@ -1455,7 +1438,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_rotated_char(draw, ch, cx, cy, 0, f_depth, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterdepth"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_zoom":
         """Zoom in/out — text scales from center."""
@@ -1472,7 +1455,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _render_text(draw, line, y_start + li * line_h, f_zoom, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterzoom"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_parallax":
         """Layers move at different speeds — multi-line depth effect."""
@@ -1492,7 +1475,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _render_text(draw, line, y_start + li * line_h, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterparallax"), out_dir)
+        return {"image": result_arr}
 
     # ═══════════════════════════════════════════════════════════════════════
     # PATTERN / SEQUENCE MODES
@@ -1511,7 +1494,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, x, y + cascade_y, font, text_color, alpha)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-lettercascade"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_alternate":
         """Every other character animates in opposite phase."""
@@ -1524,7 +1507,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, x, ay, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letteralternate"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_pingpong":
         """Characters bounce back and forth horizontally."""
@@ -1537,7 +1520,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, px, y, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterpingpong"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_march":
         """Characters move in sequence like a marching band."""
@@ -1551,7 +1534,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, mx, my, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-lettermarch"), out_dir)
+        return {"image": result_arr}
 
     # ═══════════════════════════════════════════════════════════════════════
     # MASK / REVEAL MODES
@@ -1582,7 +1565,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
                 x_offset += cw
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-lettercirclereveal"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_split":
         """Text splits apart from center."""
@@ -1600,7 +1583,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, sx, sy, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-lettersplit"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_compress":
         """Text compresses horizontally then expands."""
@@ -1617,7 +1600,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _render_text(draw, line, y_start + li * line_h, f_compress, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-lettercompress"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_unfold":
         """Text unfolds from center outward."""
@@ -1637,7 +1620,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_rotated_char(draw, ch, cx_char, cy_char, 0, f_unfold, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterunfold"), out_dir)
+        return {"image": result_arr}
 
     # ═══════════════════════════════════════════════════════════════════════
     # COLOR / EFFECT MODES
@@ -1656,7 +1639,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, x, y, font, (r, g, b))
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterheatmap"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_xray":
         """Inverted colors with glow — x-ray effect."""
@@ -1677,7 +1660,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, x, y, font, inv_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterxray"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_ghost":
         """Fade trail — characters leave ghost copies."""
@@ -1696,7 +1679,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, ch, x, y, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letterghost"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_shadow":
         """Animated drop shadow — shadow moves independently."""
@@ -1724,7 +1707,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _render_text(draw, line, y_pos, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-lettershadow"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "letter_outline":
         """Stroke width pulses — outline effect."""
@@ -1754,7 +1737,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _render_text(draw, line, y_pos, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-letteroutline"), out_dir)
+        return {"image": result_arr}
 
     # ═══════════════════════════════════════════════════════════════════════
     # WORD-LEVEL MODES
@@ -1781,7 +1764,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_rotated_char(draw, word, cx, cy, angle, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-wordrotate"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "word_scale":
         """Each word pulses in size."""
@@ -1806,7 +1789,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_rotated_char(draw, word, cx, cy, 0, f_scale, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-wordscale"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "word_drop":
         """Words fall from above into position."""
@@ -1830,7 +1813,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, word, x, int(drop_y), font, text_color, alpha)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-worddrop"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "word_scatter":
         """Words scatter outward from center."""
@@ -1860,7 +1843,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, word, sx, sy, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-wordscatter"), out_dir)
+        return {"image": result_arr}
 
     elif source_mode == "word_swirl":
         """Words orbit around center in spiral."""
@@ -1890,7 +1873,7 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _draw_char_at(draw, word, sx - cw // 2, sy - ch_h // 2, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography-wordswirl"), out_dir)
+        return {"image": result_arr}
 
     else:
         # Fallback to simple text render
@@ -1904,4 +1887,4 @@ def method_15_typography(out_dir: Path, seed: int, params=None):
             _render_text(draw, line, y_start + i * line_h, font, text_color)
         result_arr = np.array(img).astype(np.float32) / 255.0
         capture_frame("15", result_arr)
-        save(img, mn(15, "typography"), out_dir)
+        return {"image": result_arr}

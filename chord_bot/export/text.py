@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from ..types import SequenceEntry
+from ..chord_types import SequenceEntry
 
 
 def progression_to_text(sequence: list[SequenceEntry]) -> str:
