@@ -1504,6 +1504,20 @@
 </div><!-- end #shell -->
 
 <script>
+// ── API auth ───────────────────────────────────────────────────────
+// When the server runs with GRILLMASTER_API_TOKEN (tunneled setups),
+// store the token in localStorage['api-token'] and every API call
+// carries it. No-op when unset.
+(() => {
+  const t = localStorage.getItem('api-token');
+  if (!t) return;
+  const orig = window.fetch.bind(window);
+  window.fetch = (url, opts = {}) => {
+    opts.headers = Object.assign({}, opts.headers, { 'X-Api-Token': t });
+    return orig(url, opts);
+  };
+})();
+
 // ── Utils / helpers ────────────────────────────────────────────────
 function isMobile() { return window.matchMedia('(max-width: 768px)').matches; }
 function getCatState() {

@@ -24,7 +24,7 @@ _repo_root = Path(__file__).resolve().parent.parent
 if str(_repo_root) not in sys.path:
     sys.path.insert(0, str(_repo_root))
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -165,6 +165,20 @@ async def lifespan(app: FastAPI):
     _observer.join()
 
 
+# ── Mutating-endpoint auth ────────────────────────────────────────────
+# Endpoints that write method source, restart the process, or spawn cook
+# loops are unauthenticated by default (localhost use). When the server is
+# exposed (e.g. --tunnel), set GRILLMASTER_API_TOKEN; those endpoints then
+# require the X-Api-Token header. The UI attaches it automatically from
+# localStorage['api-token'].
+API_TOKEN = os.environ.get("GRILLMASTER_API_TOKEN", "")
+
+
+def require_token(request: Request):
+    if API_TOKEN and request.headers.get("x-api-token") != API_TOKEN:
+        raise HTTPException(401, "Missing or invalid X-Api-Token header")
+
+
 app = FastAPI(title="Image Pipeline", lifespan=lifespan)
 app.mount("/output", StaticFiles(directory=str(OUTPUT_ROOT)), name="output")
 
@@ -294,7 +308,7 @@ def health():
     return {"ok": True}
 
 
-@app.post("/admin/restart")
+@app.post("/admin/restart", dependencies=[Depends(require_token)])
 def admin_restart():
     """Re-exec the server process in place — picks up any source changes."""
     def _exec():
@@ -888,7 +902,7 @@ _live_sim_cancel = threading.Event()
 _live_sim_thread: threading.Thread | None = None
 
 
-@app.post("/api/graph/live")
+@app.post("/api/graph/live", dependencies=[Depends(require_token)])
 def live_graph_sim(req: GraphRequest):
     """Start or stop a continuous graph simulation.
 
@@ -1418,8 +1432,30 @@ def nd_get_source(method_id: str):
     return {"source": path.read_text(), "path": str(path)}
 
 
-_ND_RUNNER   = Path(__file__).resolve().parent / "nd_runner.py"
-_HERMES_PY   = Path.home() / ".hermes" / "hermes-agent" / "venv" / "bin" / "python"
+_ND_RUNNER = Path(__file__).resolve().parent / "nd_runner.py"
+
+# ── Hermes agent — the sole LLM backend for all LLM calls ────────────
+# The install location is configurable so Node Doctor works on any machine
+# with a Hermes install, not just the one where it lives at the default path.
+#   HERMES_AGENT_DIR — hermes-agent checkout (default ~/.hermes/hermes-agent)
+#   HERMES_PYTHON    — interpreter to run nd_runner.py under
+#                      (default <HERMES_AGENT_DIR>/venv/bin/python)
+# nd_runner.py resolves the same variables, so both processes agree.
+HERMES_AGENT_DIR = Path(
+    os.environ.get("HERMES_AGENT_DIR", str(Path.home() / ".hermes" / "hermes-agent"))
+)
+_HERMES_PY = Path(
+    os.environ.get("HERMES_PYTHON", str(HERMES_AGENT_DIR / "venv" / "bin" / "python"))
+)
+
+if _HERMES_PY.exists():
+    print(f"[node-doctor] Hermes backend found: {_HERMES_PY}")
+else:
+    print(
+        f"[node-doctor] WARNING: Hermes backend not found at {_HERMES_PY} — "
+        f"Node Doctor chat will fail. Set HERMES_AGENT_DIR (or HERMES_PYTHON) "
+        f"to your hermes-agent install."
+    )
 
 
 @app.post("/api/node-doctor/chat")
@@ -1452,6 +1488,11 @@ current_param_values: {json.dumps(node_params)}
     stdin_bytes = json.dumps({"system_prompt": system, "messages": messages}).encode()
 
     async def generate():
+        if not _HERMES_PY.exists():
+            msg = (f"⚠ Hermes backend not found at {_HERMES_PY}. "
+                   f"Set HERMES_AGENT_DIR (or HERMES_PYTHON) and restart.")
+            yield f"data: {json.dumps({'text': msg})}\n\n"
+            return
         try:
             proc = await asyncio.create_subprocess_exec(
                 str(_HERMES_PY), str(_ND_RUNNER),
@@ -1495,7 +1536,7 @@ current_param_values: {json.dumps(node_params)}
     )
 
 
-@app.post("/api/node-doctor/apply")
+@app.post("/api/node-doctor/apply", dependencies=[Depends(require_token)])
 async def nd_apply(payload: dict):
     method_id  = payload.get("method_id", "")
     new_source = payload.get("source", "")
@@ -1506,8 +1547,12 @@ async def nd_apply(payload: dict):
     if not path or not path.exists():
         return {"error": "Method source file not found"}
 
-    backup_id   = uuid.uuid4().hex[:8]
-    backup_path = path.with_suffix(f".nd-bak-{backup_id}.py")
+    backup_id = uuid.uuid4().hex[:8]
+    # Backups live outside methods/ — in-tree copies carry duplicate
+    # @method ids, feed the file watcher, and pollute the audit scan.
+    backup_dir = OUTPUT_ROOT / "nd-backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    backup_path = backup_dir / f"{path.stem}.nd-bak-{backup_id}.py"
     shutil.copy2(str(path), str(backup_path))
     _nd_backups[backup_id] = (str(path), str(backup_path))
 
@@ -1516,7 +1561,7 @@ async def nd_apply(payload: dict):
     return {"ok": True, "backup_id": backup_id}
 
 
-@app.post("/api/node-doctor/undo/{backup_id}")
+@app.post("/api/node-doctor/undo/{backup_id}", dependencies=[Depends(require_token)])
 async def nd_undo(backup_id: str):
     entry = _nd_backups.pop(backup_id, None)
     if not entry:
@@ -1642,7 +1687,7 @@ def nt_get_report():
     return {"report": json.loads(report_path.read_text())}
 
 
-@app.post("/api/node-tester/batch-apply")
+@app.post("/api/node-tester/batch-apply", dependencies=[Depends(require_token)])
 async def nt_batch_apply(payload: dict):
     """Apply Node Doctor fixes to multiple failing methods at once.
 
@@ -1685,6 +1730,13 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.tunnel:
+        if not API_TOKEN:
+            print(
+                "⚠  WARNING: tunneling without GRILLMASTER_API_TOKEN set — "
+                "anyone with the URL can write method source and restart the "
+                "server. Set the env var and put the token in the UI's "
+                "localStorage['api-token']."
+            )
         from pyngrok import ngrok
         tunnel = ngrok.connect(args.port, bind_tls=True)
         print(f"🌐 Public URL: {tunnel.public_url}")

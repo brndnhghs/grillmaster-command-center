@@ -24,7 +24,9 @@ Verified over HTTP: MJPEG stream pushes ~23 fps for a cheap node graph; re-POSTi
 - Hoist `get_all_node_defs()` out of the per-edge loop (audit #7).
 - Honor client dirty flags for single-frame runs; force-dirty only for multi-frame animation renders (audit #6, conservative first step).
 
-## Phase 3 — Hermes backend & security — STATUS: pending
+## Phase 3 — Hermes backend & security — STATUS: done
+
+Verified: `HERMES_AGENT_DIR`/`HERMES_PYTHON` override the resolved interpreter in both `server.py` and `nd_runner.py`; startup logs found/not-found; Node Doctor chat fails fast with a clear message instead of a generic subprocess error. With `GRILLMASTER_API_TOKEN` set: mutating endpoints return 401 without/with-wrong token and 200 with it; unset = open (localhost default). Backups now write to `output/nd-backups/`; `.nd-bak` deletion had already landed in Phase 1; `.gitignore` narrowed (no more global `*.html`/`*.txt`).
 
 - Hermes install path resolved from `HERMES_AGENT_DIR` env var (default `~/.hermes/hermes-agent`), shared by `server.py` and `nd_runner.py`; startup log states whether Hermes was found (audit #18). Hermes remains the sole LLM backend.
 - Node Doctor backups written to `output/nd-backups/` instead of `methods/`; committed `.nd-bak-*.py` files deleted; pattern gitignored and excluded from the audit tool (audit #19).
