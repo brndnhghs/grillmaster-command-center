@@ -262,6 +262,10 @@ def _enrich_params(params: dict | None) -> dict | None:
 
 # ── In-memory job store ───────────────────────────────────────────────
 
+# (seed, frame, edges-digest) of the last single-frame graph run — the
+# dirty-flag skip is only valid while these are unchanged; see _run_graph_job.
+_last_single_frame_ctx: tuple | None = None
+
 _jobs: dict[str, dict] = {}
 _JOB_MAX_AGE = 3600  # seconds
 
@@ -879,58 +883,74 @@ def execute_graph(req: GraphRequest):
 
 
 # ── Live sim: continuous graph execution ──────────────────────────
+_live_sim_lock = threading.Lock()
 _live_sim_cancel = threading.Event()
-_live_sim_nodes = []
-_live_sim_edges = []
-_live_sim_seed = 0
-_live_sim_width = 768
-_live_sim_height = 512
+_live_sim_thread: threading.Thread | None = None
 
 
 @app.post("/api/graph/live")
 def live_graph_sim(req: GraphRequest):
     """Start or stop a continuous graph simulation.
-    Runs the graph in an infinite loop, pushing frames to the live preview.
+
+    frames == 0 stops; anything else (re)starts. Only one live loop runs at
+    a time — starting while one is active stops the old loop first, so
+    re-POSTing with an edited graph hot-swaps it.
     """
-    global _live_sim_cancel, _live_sim_nodes, _live_sim_edges, _live_sim_seed, _live_sim_width, _live_sim_height
-    if req.frames == 0:
-        # Stop
-        _live_sim_cancel.set()
-        return {"status": "stopped"}
-    # Start
-    _live_sim_cancel = threading.Event()
-    _live_sim_nodes = req.nodes
-    _live_sim_edges = req.edges
-    _live_sim_seed = req.seed
-    _live_sim_width = req.width
-    _live_sim_height = req.height
+    global _live_sim_cancel, _live_sim_thread
+    with _live_sim_lock:
+        # Stop any existing loop (both for stop requests and restarts)
+        if _live_sim_thread is not None and _live_sim_thread.is_alive():
+            _live_sim_cancel.set()
+            _live_sim_thread.join(timeout=5.0)
+        _live_sim_thread = None
+        if req.frames == 0:
+            return {"status": "stopped"}
 
-    def _live_loop():
-        from image_pipeline.core.graph import GraphExecutor
-        from image_pipeline.core.utils import set_canvas as _set_canvas
-        _set_canvas(_live_sim_width, _live_sim_height)
-        executor = GraphExecutor(OUTPUT_ROOT / "_live_sim", in_memory=True)
-        frame = 0
-        while not _live_sim_cancel.is_set():
-            try:
-                flat_outputs, terminal_id, _ = executor.execute(
-                    _live_sim_nodes, _live_sim_edges, _live_sim_seed,
-                    frame=frame, frames=1
-                )
-                render_id = next((n["id"] for n in _live_sim_nodes if n.get("render")), None)
-                if render_id and render_id in flat_outputs:
-                    terminal_id = render_id
-                arr = (flat_outputs.get(terminal_id) or {}).get("image") if terminal_id else None
-                if arr is not None:
-                    _push_live_frame(arr)
-                frame += 1
-            except Exception:
-                pass
-            time.sleep(0.01)
+        cancel = threading.Event()
+        nodes, edges, seed = req.nodes, req.edges, req.seed
+        width, height = req.width, req.height
 
-    thread = threading.Thread(target=_live_loop, daemon=True)
-    thread.start()
-    return {"status": "running"}
+        def _live_loop():
+            from image_pipeline.core.graph import GraphExecutor
+            from image_pipeline.core.utils import set_canvas as _set_canvas
+            _set_canvas(width, height)
+            executor = GraphExecutor(OUTPUT_ROOT / "_live_sim", in_memory=True)
+            frame = 0
+            consecutive_errors = 0
+            while not cancel.is_set():
+                try:
+                    flat_outputs, terminal_id, node_errors = executor.execute(
+                        nodes, edges, seed, frame=frame, frames=1
+                    )
+                    for nid, err in node_errors.items():
+                        print(f"[live-sim] node {nid} error:\n{err}")
+                    render_id = next((n["id"] for n in nodes if n.get("render")), None)
+                    if render_id and render_id in flat_outputs:
+                        terminal_id = render_id
+                    arr = (flat_outputs.get(terminal_id) or {}).get("image") if terminal_id else None
+                    if arr is not None:
+                        _push_live_frame(arr)
+                    frame += 1
+                    consecutive_errors = 0
+                except Exception:
+                    import traceback as _tb
+                    print(f"[live-sim] frame {frame} failed:\n{_tb.format_exc(limit=6)}")
+                    consecutive_errors += 1
+                    if consecutive_errors >= 10:
+                        print("[live-sim] 10 consecutive failures — stopping loop")
+                        break
+                    time.sleep(0.5)  # don't spin on a persistently broken graph
+                time.sleep(0.01)
+
+        _live_sim_cancel = cancel
+        _live_sim_thread = threading.Thread(target=_live_loop, daemon=True)
+        _live_sim_thread.start()
+        return {"status": "running"}
+
+
+@app.get("/api/graph/live/status")
+def live_graph_status():
+    return {"running": _live_sim_thread is not None and _live_sim_thread.is_alive()}
 
 
 def _run_graph_job(job_id, nodes, edges, seed, frames, start_frame, out_dir, width=768, height=512):
@@ -954,14 +974,21 @@ def _run_graph_job(job_id, nodes, edges, seed, frames, start_frame, out_dir, wid
         n_frames = max(1, frames)
         all_errors: dict[str, str] = {}
 
-        # ── Force all nodes dirty so every run re-executes ──────────────
-        # The client marks nodes clean after a successful run, but the
-        # executor's disk cache (_GRAPH_SESSION_DIR) persists across jobs.
-        # Without this, the dirty-flag skip reads the last frame's PNG from
-        # the previous run for every frame — producing a static image instead
-        # of re-cooking the animation.
-        for n in nodes:
-            n["dirty"] = True
+        # ── Dirty-flag handling ──────────────────────────────────────────
+        # Multi-frame renders force everything dirty: the executor's disk
+        # cache (_GRAPH_SESSION_DIR) persists across jobs, and reusing the
+        # previous run's PNG for every frame would produce a static image
+        # instead of re-cooking the animation.
+        # Single-frame runs honor the client's dirty flags (selective
+        # recooking) — unless the seed, frame, or wiring changed since the
+        # last run, which invalidates every cached output regardless of
+        # param edits (the client only dirties nodes on param change).
+        global _last_single_frame_ctx
+        _run_ctx = (seed, start_frame, json.dumps(edges, sort_keys=True, default=str))
+        if n_frames > 1 or _last_single_frame_ctx != _run_ctx:
+            for n in nodes:
+                n["dirty"] = True
+        _last_single_frame_ctx = _run_ctx if n_frames == 1 else None
 
         # ── Determine timeline sequence name ──────────────────────────
         # Use the timeline name from the graph, or auto-generate one.

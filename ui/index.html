@@ -4679,9 +4679,65 @@ try { if (localStorage.getItem('graph-auto-gen') === '1') gToggleAutoGen(); } ca
 gAutoBtn.addEventListener('click', gToggleAutoGen);
 gAutoBtnDesk.addEventListener('click', gToggleAutoGen);
 
+// ── Live mode (continuous server loop → MJPEG preview) ────────
+const gLiveBtn = document.getElementById('graph-live-btn');
+const gLiveBtnDesk = document.getElementById('graph-live-btn-desk');
+let gLiveMode = false;
+let gLiveImg = null;
+
+function gLiveGraphBody(stop) {
+  return {
+    nodes: gNodes.map(n => gSerializeNodeForApi(n)),
+    edges: gEdges.map(e=>({src_node:e.src_node,src_port:e.src_port,dst_node:e.dst_node,dst_port:e.dst_port,feedback:e.feedback})),
+    seed: 42, frames: stop ? 0 : 1,
+    width: gCanvasW, height: gCanvasH,
+  };
+}
+
+async function gSetLive(on) {
+  try {
+    await fetch('/api/graph/live', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(gLiveGraphBody(!on)),
+    });
+  } catch(e) { gSetStatus('Live: ' + e.message); return; }
+  gLiveMode = on;
+  gLiveBtn.classList.toggle('active', on);
+  gLiveBtnDesk.classList.toggle('active', on);
+  if (on) {
+    // Swap the main preview to the MJPEG stream — frames arrive as fast
+    // as the server loop cooks them, no SSE round-trips.
+    gMainPreview.innerHTML = '';
+    gLivePreviewImg = null;
+    gLiveImg = document.createElement('img');
+    gLiveImg.src = '/api/live/stream?t=' + Date.now();
+    gMainPreview.appendChild(gLiveImg);
+    gMainPreview.classList.add('active');
+    gPreviewShow();
+    gSetStatus('Live — graph cooking continuously');
+  } else {
+    if (gLiveImg) { gLiveImg.src = ''; gLiveImg.remove(); gLiveImg = null; }
+    gSetStatus('Live stopped.');
+  }
+}
+
+function gToggleLive() {
+  if (!gLiveMode && !gNodes.length) { gSetStatus('No nodes.'); return; }
+  gSetLive(!gLiveMode);
+}
+gLiveBtn.addEventListener('click', gToggleLive);
+gLiveBtnDesk.addEventListener('click', gToggleLive);
+
 // ── Auto-generate: fire-and-cancel ───────────────────────────
 let _autoGenTimer = null;
 function gDoAutoGen() {
+  if (gLiveMode) {
+    // Param edits while live hot-swap the running loop instead of
+    // firing one-shot executes.
+    clearTimeout(_autoGenTimer);
+    _autoGenTimer = setTimeout(() => { gSetLive(true); }, 150);
+    return;
+  }
   if (!gAutoGen) return;
   if (!gNodes.length) return;
   // Cancel any in-flight auto-gen

@@ -638,9 +638,11 @@ class GraphExecutor:
                     continue
 
                 # ── Named IMAGE port (e.g. seed_image, mask_image) ─────
-                # Check if this dst_port is declared as IMAGE type in the node def
-                _nd = get_all_node_defs().get(node.method_id, {})
-                _port_type = (_nd.get("inputs") or {}).get(edge.dst_port)
+                # Port type comes from the method's own declared inputs — no
+                # need to rebuild every node def per edge (was O(edges×methods)).
+                _port_type = None
+                if meta.inputs and edge.dst_port in meta.inputs:
+                    _port_type = meta.inputs[edge.dst_port]
                 if _port_type and _port_type.lower() == "image" and edge.dst_port != "image_in":
                     if src_img is not None:
                         run_params[edge.dst_port] = src_img

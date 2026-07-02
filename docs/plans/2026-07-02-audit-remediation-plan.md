@@ -15,7 +15,9 @@ Landed beyond the original scope: Langton's Ant #83 was itself broken in all com
 - Stable node seeds via hashlib, not randomized `hash()` (audit #5).
 - Declare the confirmed missing sidecar scalars on #166/#167 so `tools/audit_methods.py --fail-on-violations` is green (audit #21).
 
-## Phase 2 — Real-time path — STATUS: pending
+## Phase 2 — Real-time path — STATUS: done
+
+Verified over HTTP: MJPEG stream pushes ~23 fps for a cheap node graph; re-POSTing hot-swaps the running loop; stop works; `/api/graph/live/status` added. Single-frame `/api/graph/execute` now honors client dirty flags (clean nodes log "skipped (clean)") and invalidates on seed/frame/wiring changes; multi-frame renders still force-dirty.
 
 - Wire the 📺 Live buttons to `/api/graph/live` and the MJPEG `/api/live/stream` (audit #13).
 - Live loop: double-start guard, error logging instead of silent `pass` (audit #14).
