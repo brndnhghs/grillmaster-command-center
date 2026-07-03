@@ -3,11 +3,19 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Image Pipeline</title>
+<title>Grillmaster Command Center</title>
+<script>
+// Theme bootstrap — runs before first paint so the saved theme never flashes.
+try {
+  var _t = localStorage.getItem('gm-theme');
+  if (_t && _t !== 'slate') document.documentElement.dataset.theme = _t;
+} catch (e) {}
+</script>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Ccircle%20cx='4'%20cy='8'%20r='2.6'%20fill='%234a9eff'/%3E%3Ccircle%20cx='12'%20cy='8'%20r='2.6'%20fill='%236c8ef5'/%3E%3Crect%20x='5'%20y='7.25'%20width='6'%20height='1.5'%20fill='%236c8ef5'/%3E%3C/svg%3E">
 <style>
   /* ── Tab bar ─────────────────────────────────────── */
   #tab-bar {
-    display: flex; background: #0a0c11; border-bottom: 1px solid var(--border);
+    display: flex; background: var(--bg0); border-bottom: 1px solid var(--border);
     flex-shrink: 0; z-index: 20;
   }
   .tab-btn {
@@ -28,23 +36,83 @@
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --bg0:    #0d0f14;
-    --bg1:    #13161e;
-    --bg2:    #1a1e28;
-    --bg3:    #222738;
-    --border: #2e3348;
-    --accent: #6c8ef5;
-    --accent2: #a78bfa;
+    /* ── Theme: Slate (default) — neutral gray, muted steel accent ── */
+    /* surfaces (darkest → most raised) */
+    --bg0:    #0f1012;
+    --bg1:    #141517;
+    --bg2:    #1a1c1f;
+    --bg3:    #232529;
+    --border: #2a2d33;
+    --border-strong: #3d4048;
+    /* brand + semantic */
+    --accent: #64748b;
+    --accent2: #94a3b8;
     --success: #34d399;
     --warn:   #fbbf24;
     --err:    #f87171;
-    --text:   #e2e8f0;
-    --muted:  #64748b;
+    --live:   #f43f5e;
+    --text:   #e7e9ec;
+    --muted:  #8f939c;
+    --muted2: #5f636c;
+    --tag-bg: #24272c;
+    --tag-fg: #9aa4b2;
+    --grid-dot: #212328;
+    --focus-ring: 0 0 0 2px rgba(100,116,139,0.38);
+    /* system (theme-independent) */
+    --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'Menlo', 'Consolas', monospace;
+    --radius-s: 4px;
+    --radius-m: 7px;
+    --radius-l: 10px;
+    --shadow-1: 0 1px 2px rgba(0,0,0,0.45);
+    --shadow-2: 0 4px 16px rgba(0,0,0,0.45);
+    --shadow-3: 0 12px 36px rgba(0,0,0,0.6);
+  }
+
+  /* ── Theme: Graphite — warm near-black, ember accent ── */
+  html[data-theme="graphite"] {
+    --bg0:    #0d0d0c;
+    --bg1:    #121211;
+    --bg2:    #181816;
+    --bg3:    #21211e;
+    --border: #2a2a26;
+    --border-strong: #3e3d37;
+    --accent: #c2622d;
+    --accent2: #d98e4a;
+    --text:   #e8e6e1;
+    --muted:  #94918a;
+    --muted2: #605e57;
+    --tag-bg: #262420;
+    --tag-fg: #c9a37a;
+    --grid-dot: #23231f;
+    --focus-ring: 0 0 0 2px rgba(194,98,45,0.35);
+  }
+
+  /* ── Theme: Midnight — deep blue, neon accent (the original look) ── */
+  html[data-theme="midnight"] {
+    --bg0:    #0b0d12;
+    --bg1:    #10131a;
+    --bg2:    #161a24;
+    --bg3:    #1f2432;
+    --border: #262c3d;
+    --border-strong: #3a4258;
+    --accent: #6c8ef5;
+    --accent2: #a78bfa;
+    --text:   #e6ebf4;
+    --muted:  #8b93a7;
+    --muted2: #5c6478;
     --tag-bg: #1e2640;
     --tag-fg: #818cf8;
+    --grid-dot: #222941;
+    --focus-ring: 0 0 0 2px rgba(108,142,245,0.32);
   }
 
   html, body { height: 100%; background: var(--bg0); color: var(--text); font-family: system-ui, -apple-system, sans-serif; font-size: 14px; }
+
+  /* ── Shared focus affordance ────────────────────────── */
+  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+    outline: none; box-shadow: var(--focus-ring);
+  }
+  button { font-family: inherit; }
 
   /* ── Layout ─────────────────────────────── */
   #app { display: flex; height: 100vh; overflow: hidden; }
@@ -80,7 +148,7 @@
   }
   .method-item:hover { background: var(--bg2); }
   .method-item.active { background: var(--bg3); border-left-color: var(--accent); }
-  .method-item .mid { font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .method-item .mid { font-size: 10px; color: var(--muted2); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
   .method-item .mname { font-size: 13px; font-weight: 500; }
   .method-item .tags { margin-top: 3px; display: flex; flex-wrap: wrap; gap: 3px; }
   .tag { font-size: 10px; background: var(--tag-bg); color: var(--tag-fg); border-radius: 4px; padding: 1px 5px; }
@@ -110,7 +178,7 @@
   .param-row.overridden .param-ctrl { pointer-events: none; }
   .param-row.overridden .param-name::after { content: ' ⊕'; color: var(--accent); font-weight: 400; font-size: 10px; }
   .param-label { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
-  .param-name { font-size: 12px; font-weight: 600; color: var(--text); }
+  .param-name { font-size: 11px; font-weight: 600; color: var(--text); font-family: var(--font-mono); letter-spacing: 0.01em; }
   .param-desc { font-size: 11px; color: var(--muted); max-width: 200px; text-align: right; }
   .param-input { width: 100%; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 6px 10px; font-size: 13px; outline: none; }
   .param-input:focus { border-color: var(--accent); }
@@ -160,7 +228,7 @@
   #progress-header { padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; }
   #progress-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
   #elapsed-timer { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-  #log { max-height: 160px; overflow-y: auto; padding: 0 12px 10px; font-size: 12px; font-family: 'Menlo', 'Consolas', monospace; }
+  #log { max-height: 160px; overflow-y: auto; padding: 0 12px 10px; font-size: 12px; font-family: var(--font-mono); }
   .log-line { padding: 1px 0; color: #94a3b8; line-height: 1.5; }
   .log-line.ok { color: var(--success); }
   .log-line.err { color: var(--err); }
@@ -186,10 +254,11 @@
   #download-btn:hover { background: var(--bg2); }
 
   /* Scrollbar styling */
-  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: var(--border); }
+  ::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border-strong); background-clip: padding-box; }
+  ::-webkit-scrollbar-corner { background: transparent; }
 
   /* Hamburger — hidden on desktop */
   #sidebar-toggle {
@@ -426,24 +495,43 @@
   }
   #graph-nodes { position: absolute; inset: 0; }
   #graph-canvas-wrap {
-    background-image: radial-gradient(circle, #2e3348 1px, transparent 1px);
+    background-image: radial-gradient(circle, var(--grid-dot) 1px, transparent 1px);
     background-size: 24px 24px;
+  }
+  /* Static vignette — paints once, sits under the nodes layer */
+  #graph-canvas-wrap::before {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse at 50% 40%, transparent 55%, rgba(0,0,0,0.32) 100%);
   }
 
   /* ── Nodes ────────────────────────────────────────────── */
   .gnode {
     position: absolute; min-width: 160px; background: var(--bg2);
-    border: 1px solid var(--border); border-radius: 8px; user-select: none;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.4); transition: border-color 0.1s;
+    border: 1px solid var(--border-strong); border-radius: var(--radius-m); user-select: none;
+    box-shadow: var(--shadow-2); transition: border-color 0.1s, box-shadow 0.1s;
     touch-action: none;
   }
-  .gnode:hover, .gnode.selected { border-color: var(--accent); }
+  .gnode:hover { border-color: var(--accent); }
+  .gnode.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent), var(--shadow-2);
+  }
   .gnode-header {
     padding: 7px 10px 6px; border-bottom: 1px solid var(--border);
-    cursor: move; border-radius: 8px 8px 0 0; background: var(--bg3);
-    display: flex; justify-content: space-between; align-items: center;
+    cursor: move; border-radius: calc(var(--radius-m) - 1px) calc(var(--radius-m) - 1px) 0 0; background: var(--bg3);
+    display: flex; justify-content: space-between; align-items: center; gap: 4px;
   }
-  .gnode-title { font-size: 11px; font-weight: 700; color: var(--text); }
+  .gnode-title {
+    font-size: 11px; font-weight: 700; color: var(--text);
+    font-family: var(--font-mono); letter-spacing: 0.01em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* Category chip — colour derived from the node's category (set by JS as --cat-c) */
+  .gnode:not(.gnode-group) .gnode-title::before {
+    content: ''; display: inline-block; width: 8px; height: 8px;
+    border-radius: 2px; background: var(--cat-c, var(--muted2));
+    margin-right: 6px; vertical-align: 0;
+  }
   .gnode-delete, .gnode-render {
     font-size: 13px; color: var(--muted); cursor: pointer; padding: 0 4px;
     border: none; background: none; line-height: 1; min-width: 24px; min-height: 24px;
@@ -452,7 +540,7 @@
   .gnode-delete:hover { color: var(--err); }
   .gnode-render:hover { color: var(--success); }
   .gnode-render.active { color: var(--success); }
-  .gnode.render-target { border-color: var(--success) !important; }
+  .gnode.render-target { border-color: var(--success) !important; box-shadow: 0 0 0 1px var(--success), var(--shadow-2); }
   .gnode-deprecated { border-color: #f59e0b !important; }
   .gnode-deprecated .gnode-title::after { content: ' ⚠ dep'; color: #f59e0b; font-size: 9px; font-weight: 400; }
   .node-error { border: 2px solid #e53935 !important; box-shadow: 0 0 8px rgba(229,57,53,0.4); }
@@ -530,14 +618,14 @@
   .gnode-port-row.paired .gport[data-dir="input"]  { left:  -6px; }
   .gnode-port-row.paired .gport[data-dir="output"] { right: -6px; }
   .gport {
-    width: 12px; height: 12px; border-radius: 50%; border: 2px solid #0d0f14;
+    width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--bg0);
     cursor: crosshair; flex-shrink: 0; position: absolute; transition: transform 0.1s;
-    touch-action: none;
+    touch-action: none; box-shadow: 0 0 0 1px rgba(0,0,0,0.4);
   }
-  .gport:hover { transform: scale(1.4); }
+  .gport:hover { transform: scale(1.45); }
   .gnode-port-row.input .gport  { left: -6px; }
   .gnode-port-row.output .gport { right: -6px; }
-  .gport-label { font-size: 10px; color: var(--muted); padding: 0 14px; }
+  .gport-label { font-size: 10px; color: var(--muted); padding: 0 14px; font-family: var(--font-mono); }
 
   .pt-image     { background: #4a9eff; }
   .pt-field     { background: #51cf66; }
@@ -546,11 +634,16 @@
   .pt-mask      { background: #e8e8e8; border: 2px solid #333; box-sizing: border-box; }
   .pt-any       { background: #888; }
 
-  /* ── Edges ────────────────────────────────────────────── */
-  .gedge { fill: none; stroke: #4a9eff88; stroke-width: 2; pointer-events: stroke; cursor: pointer; }
-  .gedge:hover { stroke: #4a9eff; stroke-width: 3; }
-  .gedge.feedback { stroke-dasharray: 6 4; stroke: #ff922b88; }
-  .gedge.feedback:hover { stroke: #ff922b; }
+  /* ── Edges ─────────────────────────────────────────────
+     Stroke colour is set inline per edge from the server port-type
+     registry (gRedrawEdges); these rules control weight + hover. */
+  .gedge {
+    fill: none; stroke: var(--accent); stroke-width: 2; opacity: 0.6;
+    pointer-events: stroke; cursor: pointer;
+    transition: opacity 0.1s, stroke-width 0.1s;
+  }
+  .gedge:hover { opacity: 1; stroke-width: 3.5; }
+  .gedge.feedback { stroke-dasharray: 6 4; }
   .gedge-pending { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 4 3; pointer-events: none; }
 
   /* ── Bottom toolbar ───────────────────────────────────── */
@@ -560,37 +653,49 @@
     overflow-x: auto;
   }
   #graph-toolbar::-webkit-scrollbar { display: none; }
-  #graph-run-btn {
-    padding: 8px 18px; background: var(--accent); color: #fff;
-    border: none; border-radius: 7px; font-size: 13px; font-weight: 700;
-    cursor: pointer; transition: opacity 0.15s;
+  /* Ghost-button family: every secondary toolbar control shares this look */
+  #graph-clear-btn, #graph-clear-btn-desk, #graph-layout-btn, #graph-layout-btn-desk,
+  .g-autobtn, .g-savebtn, .g-loadbtn, #graph-help-btn {
+    height: 30px; padding: 0 12px; display: inline-flex; align-items: center; gap: 5px;
+    background: var(--bg2); color: var(--muted);
+    border: 1px solid var(--border); border-radius: var(--radius-m);
+    font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
   }
-  #graph-run-btn:hover { opacity: 0.85; }
-  #graph-run-btn:disabled { opacity: 0.4; cursor: default; }
-  #graph-clear-btn {
-    padding: 8px 14px; background: var(--bg3); color: var(--muted);
-    border: 1px solid var(--border); border-radius: 7px; font-size: 13px; cursor: pointer;
+  #graph-clear-btn:hover, #graph-clear-btn-desk:hover, #graph-layout-btn:hover, #graph-layout-btn-desk:hover,
+  .g-autobtn:hover, .g-savebtn:hover, .g-loadbtn:hover, #graph-help-btn:hover {
+    color: var(--text); background: var(--bg3); border-color: var(--border-strong);
   }
-  #graph-clear-btn:hover { color: var(--text); }
+  #graph-run-btn, #graph-run-btn-desk {
+    height: 30px; padding: 0 18px; background: var(--accent); color: #fff;
+    border: 1px solid transparent; border-radius: var(--radius-m); font-size: 13px; font-weight: 700;
+    cursor: pointer; transition: filter 0.12s; box-shadow: var(--shadow-1);
+    display: inline-flex; align-items: center; white-space: nowrap;
+  }
+  #graph-run-btn:hover, #graph-run-btn-desk:hover { filter: brightness(1.12); }
+  #graph-run-btn:disabled, #graph-run-btn-desk:disabled { opacity: 0.4; cursor: default; filter: none; }
   #graph-frames-wrap { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
-  #graph-frames { width: 60px; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 5px 8px; font-size: 12px; }
+  #graph-frames { width: 60px; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-m); color: var(--text); padding: 5px 8px; font-size: 12px; }
+  #graph-frame-count, #graph-frame-count-mobile { font-family: var(--font-mono); font-size: 11px; }
   #graph-status { font-size: 12px; color: var(--muted); margin-left: 4px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #graph-layout-btn, #graph-layout-btn-desk {
-    padding: 6px 12px; background: var(--bg3); color: var(--muted);
-    border: 1px solid var(--border); border-radius: 7px; font-size: 12px; cursor: pointer;
-    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  #graph-status-desk { font-family: var(--font-mono); font-size: 11px; }
+  #graph-layout-btn.active, #graph-layout-btn-desk.active,
+  .g-autobtn.active {
+    background: rgba(52,211,153,0.1); color: var(--success); border-color: var(--success);
   }
-  #graph-layout-btn:hover, #graph-layout-btn-desk:hover { color: var(--text); }
-  #graph-layout-btn.active, #graph-layout-btn-desk.active {
-    background: #1a3d1a; color: var(--success); border-color: var(--success);
+  /* Live toggle reads as ON AIR: red tint + pulsing dot */
+  #graph-live-btn.active, #graph-live-btn-desk.active {
+    background: rgba(244,63,94,0.12); color: #fb7185; border-color: var(--live);
   }
-  .g-autobtn {
-    padding: 6px 10px; background: var(--bg3); color: var(--muted);
-    border: 1px solid var(--border); border-radius: 7px; font-size: 11px; cursor: pointer;
-    white-space: nowrap; transition: background 0.15s, color 0.15s, border-color 0.15s;
+  #graph-live-btn.active::before, #graph-live-btn-desk.active::before {
+    content: ''; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--live); flex-shrink: 0;
+    animation: live-pulse 1.2s ease-in-out infinite;
   }
-  .g-autobtn:hover { color: var(--text); }
-  .g-autobtn.active { background: #1a3d1a; color: var(--success); border-color: var(--success); }
+  @keyframes live-pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(244,63,94,0.5); }
+    50%      { opacity: 0.55; box-shadow: 0 0 0 4px rgba(244,63,94,0); }
+  }
 
   /* ── Preview panel ────────────────────────────────────── */
   #graph-preview-panel {
@@ -620,13 +725,123 @@
   /* Main live preview area — sole display area for graph renders */
   #graph-main-preview {
     display: none; align-items: center; justify-content: center;
-    background: #000; flex-shrink: 0; overflow: hidden;
+    background: #000; flex-shrink: 0; overflow: hidden; position: relative;
   }
-  #graph-main-preview.active { display: flex; height: 240px; }
+  #graph-main-preview.active { display: flex; height: var(--pv-h, 240px); }
   #graph-main-preview img, #graph-main-preview video {
-    max-width: 100%; max-height: 240px; width: auto; height: 100%;
+    max-width: 100%; max-height: 100%; width: auto; height: 100%;
     object-fit: contain; cursor: pointer; display: block;
   }
+
+  /* Hover chrome over the preview (pop-out / PiP) — JS keeps it mounted */
+  #preview-toolbar {
+    position: absolute; top: 8px; right: 10px; display: flex; gap: 6px; z-index: 6;
+    opacity: 0; transition: opacity 0.15s;
+  }
+  #graph-main-preview:hover #preview-toolbar { opacity: 1; }
+  @media (pointer: coarse) { #preview-toolbar { opacity: 0.75; } }
+  #preview-toolbar button {
+    width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+    background: rgba(11,13,18,0.82); color: var(--muted); font-size: 14px;
+    border: 1px solid var(--border-strong); border-radius: var(--radius-s); cursor: pointer;
+    transition: color 0.12s, border-color 0.12s;
+  }
+  #preview-toolbar button:hover { color: var(--text); border-color: var(--accent); }
+
+  /* Drag handle under the preview — resizes it (persisted) */
+  #preview-resize-handle {
+    display: none; height: 5px; flex-shrink: 0; cursor: ns-resize;
+    background: transparent; transition: background 0.12s; touch-action: none;
+  }
+  #graph-main-preview.active + #preview-resize-handle { display: block; }
+  #preview-resize-handle:hover, #preview-resize-handle.dragging { background: var(--accent); }
+
+  /* ── Keyboard cheat-sheet overlay ─────────────────────── */
+  #help-overlay {
+    position: fixed; inset: 0; z-index: 300; display: none;
+    align-items: center; justify-content: center; background: rgba(0,0,0,0.55);
+  }
+  #help-overlay.visible { display: flex; }
+  #help-card {
+    width: min(520px, calc(100vw - 32px)); max-height: 80vh; overflow-y: auto;
+    background: var(--bg1); border: 1px solid var(--border-strong);
+    border-radius: var(--radius-l); box-shadow: var(--shadow-3);
+  }
+  #help-card-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    font-size: 12px; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  #help-close-btn {
+    background: none; border: none; color: var(--muted); font-size: 14px;
+    cursor: pointer; padding: 2px 6px;
+  }
+  #help-close-btn:hover { color: var(--text); }
+  .help-grid {
+    display: grid; grid-template-columns: auto 1fr; gap: 8px 14px;
+    padding: 14px 16px 18px; font-size: 13px; align-items: baseline;
+  }
+  .help-grid kbd {
+    font-family: var(--font-mono); font-size: 11px; color: var(--text);
+    background: var(--bg3); border: 1px solid var(--border-strong);
+    border-radius: var(--radius-s); padding: 2px 7px; white-space: nowrap;
+    justify-self: start;
+  }
+  .help-grid span { color: var(--muted); }
+
+  /* ── Settings page ────────────────────────────────────── */
+  #settings-page {
+    position: fixed; inset: 0; z-index: 310; display: none;
+    align-items: flex-start; justify-content: center; overflow-y: auto;
+    background: rgba(0,0,0,0.55); padding: 5vh 16px;
+  }
+  #settings-page.visible { display: flex; }
+  #settings-card {
+    width: min(640px, 100%); background: var(--bg1);
+    border: 1px solid var(--border-strong); border-radius: var(--radius-l);
+    box-shadow: var(--shadow-3); margin-bottom: 5vh;
+  }
+  #settings-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 18px; border-bottom: 1px solid var(--border);
+    font-size: 12px; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  #settings-close-btn {
+    background: none; border: none; color: var(--muted); font-size: 14px;
+    cursor: pointer; padding: 2px 6px;
+  }
+  #settings-close-btn:hover { color: var(--text); }
+  .settings-section { padding: 16px 18px; border-bottom: 1px solid var(--border); }
+  .settings-section:last-child { border-bottom: none; }
+  .settings-title { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  .settings-hint { font-size: 11.5px; color: var(--muted); margin-bottom: 12px; line-height: 1.5; }
+  .settings-row { display: flex; gap: 8px; align-items: center; }
+  #settings-api-token {
+    flex: 1; background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius-m); color: var(--text); padding: 7px 10px;
+    font-size: 13px; font-family: var(--font-mono); min-width: 0;
+  }
+  #settings-api-token:focus { border-color: var(--accent); outline: none; }
+
+  /* Theme cards */
+  #theme-picker { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+  .theme-card {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius-m); padding: 12px; cursor: pointer;
+    text-align: left; transition: border-color 0.12s, background 0.12s;
+  }
+  .theme-card:hover { border-color: var(--border-strong); background: var(--bg3); }
+  .theme-card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .theme-swatches { display: flex; gap: 5px; margin-bottom: 9px; }
+  .theme-swatches i {
+    width: 22px; height: 22px; border-radius: 6px; display: block;
+    border: 1px solid rgba(255,255,255,0.09);
+  }
+  .theme-name { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .theme-card.active .theme-name::after { content: '✓'; color: var(--accent2); font-size: 12px; }
+  .theme-desc { font-size: 11px; color: var(--muted); margin-top: 3px; line-height: 1.4; }
 
   #graph-output-strip {
     display: flex; gap: 8px; padding: 8px 14px; overflow-x: auto; overflow-y: hidden;
@@ -884,8 +1099,9 @@
     .goutput-thumb { height: 80px; }
 
     /* Main preview on mobile: shorter */
-    #graph-main-preview.active { height: 130px; }
-    #graph-main-preview img, #graph-main-preview video { max-height: 130px; }
+    #graph-main-preview.active { height: 130px !important; }
+    #graph-main-preview img, #graph-main-preview video { max-height: 100%; }
+    #preview-resize-handle { display: none !important; }
 
     /* Shift canvas bottom when preview is showing (stacks on 68px base) */
     #graph-canvas-col.has-preview-collapsed { padding-bottom: calc(44px + 68px); }
@@ -1134,17 +1350,17 @@
   .tl-group { display: flex; align-items: center; gap: 4px; }
   #tl-progress { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 120px; }
   #tl-progress-bar-wrap { flex: 1; height: 4px; background: #333; border-radius: 2px; min-width: 60px; }
-  #tl-progress-bar { height: 4px; background: #4a9eff; border-radius: 2px; width: 0%; transition: width 0.2s; }
+  #tl-progress-bar { height: 4px; background: var(--accent); border-radius: 2px; width: 0%; transition: width 0.2s; }
   #timeline-panel label { color: #888; margin-right: 2px; }
   #timeline-panel input[type=number], #timeline-panel input[type=text] {
     background: #2a2a2a; border: 1px solid #444; color: #eee;
     padding: 2px 4px; border-radius: 3px;
   }
   #tl-render-seq {
-    background: #1a3a5c; border: 1px solid #4a9eff; color: #4a9eff;
+    background: transparent; border: 1px solid var(--accent); color: var(--accent2);
     padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;
   }
-  #tl-render-seq:hover:not(:disabled) { background: #4a9eff; color: #000; }
+  #tl-render-seq:hover:not(:disabled) { background: var(--accent); color: #fff; }
   #tl-render-seq:disabled { opacity: 0.45; cursor: default; }
   #tl-cancel {
     background: none; border: 1px solid #666; color: #aaa;
@@ -1243,7 +1459,7 @@
   #tl-ctx-menu button:hover { background: var(--bg3); }
   #tl-ctx-menu button.danger { color: #ef4444; }
   #tl-ctx-menu button.danger:hover { background: rgba(239,68,68,0.12); }
-  #tl-ctx-menu button.mode { color: #6c8ef5; }
+  #tl-ctx-menu button.mode { color: var(--accent2); }
   #tl-ctx-menu button.mode:hover { background: rgba(108,142,245,0.1); }
   #tl-ctx-menu .sep { height: 1px; background: var(--border); margin: 3px 0; }
 
@@ -1259,7 +1475,7 @@
   }
   #server-restart-btn:hover:not(:disabled) { opacity: 0.85; color: var(--text); }
   #server-restart-btn:disabled { cursor: not-allowed; opacity: 0.7; }
-  #server-restart-btn.restarting { animation: srv-spin 0.9s linear infinite; opacity: 0.9; color: #6c8ef5; }
+  #server-restart-btn.restarting { animation: srv-spin 0.9s linear infinite; opacity: 0.9; color: var(--accent); }
   @keyframes srv-spin { to { transform: rotate(360deg); } }
 </style>
 
@@ -1292,6 +1508,7 @@
       <button id="graph-load-btn" class="g-loadbtn">📂</button>
       <button id="graph-auto-btn" class="g-autobtn" title="Auto-generate on param change">⏺ Auto</button>
 <button id="graph-live-btn" class="g-autobtn" title="Live MJPEG preview">📺 Live</button>
+      <button id="graph-settings-btn-mob" class="g-autobtn" title="Settings">⚙</button>
       <select id="graph-canvas-preset-mob" title="Canvas size" style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:2px 6px;font-size:12px;cursor:pointer;flex-shrink:0">
         <option value="768x512">768×512</option>
         <option value="512x512">512×512</option>
@@ -1318,6 +1535,8 @@
       <button id="graph-layout-btn-desk">⊛ Auto-layout</button>
       <button id="graph-save-btn-desk" class="g-savebtn">💾 Save</button>
       <button id="graph-load-btn-desk" class="g-loadbtn">📂 Load</button>
+      <button id="graph-help-btn" title="Keyboard shortcuts (?)">?</button>
+      <button id="graph-settings-btn" class="g-autobtn" title="Settings">⚙</button>
       <button id="graph-auto-btn-desk" class="g-autobtn" title="Auto-generate on param change">⏺ Auto</button>
       <button id="graph-test-btn-desk" class="g-autobtn" title="Test all nodes">🧪 Test</button>
 <button id="graph-live-btn-desk" class="g-autobtn" title="Live MJPEG preview">📺 Live</button>
@@ -1415,7 +1634,60 @@
     <button id="graph-preview-toggle">▲ expand</button>
   </div>
   <div id="graph-main-preview"></div>
+  <div id="preview-resize-handle" title="Drag to resize preview"></div>
   <div id="graph-output-strip"></div>
+</div>
+
+<!-- Keyboard shortcut cheat-sheet overlay -->
+<div id="help-overlay">
+  <div id="help-card">
+    <div id="help-card-header">
+      <span>Keyboard &amp; mouse</span>
+      <button id="help-close-btn" title="Close (Esc)">✕</button>
+    </div>
+    <div class="help-grid">
+      <kbd>Tab</kbd><span>Open the node picker at the cursor</span>
+      <kbd>right-click canvas</kbd><span>Open the node picker</span>
+      <kbd>↑ ↓ · Enter</kbd><span>Navigate / spawn in the picker</span>
+      <kbd>drag port → port</kbd><span>Wire nodes (colors = payload types)</span>
+      <kbd>drag edge end</kbd><span>Detach and re-route a wire</span>
+      <kbd>hover edge</kbd><span>Inspect the payload flowing through it</span>
+      <kbd>right-click edge</kbd><span>Edge menu (feedback, delete)</span>
+      <kbd>◎ on a node</kbd><span>Set the render target</span>
+      <kbd>Space</kbd><span>Play / pause the timeline</span>
+      <kbd>Delete</kbd><span>Delete the selected timeline clip</span>
+      <kbd>Esc</kbd><span>Close pickers, menus, and this card</span>
+      <kbd>?</kbd><span>Toggle this cheat-sheet</span>
+    </div>
+  </div>
+</div>
+
+<!-- Settings page -->
+<div id="settings-page">
+  <div id="settings-card">
+    <div id="settings-header">
+      <span>Settings</span>
+      <button id="settings-close-btn" title="Close (Esc)">✕</button>
+    </div>
+    <div class="settings-section">
+      <div class="settings-title">Theme</div>
+      <div class="settings-hint">Applies immediately and persists in this browser.</div>
+      <div id="theme-picker"></div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-title">API token</div>
+      <div class="settings-hint">Sent as <code>X-Api-Token</code> with every API call. Only needed when the server runs with <code>GRILLMASTER_API_TOKEN</code> set (e.g. tunneled). Takes effect on reload.</div>
+      <div class="settings-row">
+        <input id="settings-api-token" type="password" placeholder="not set" autocomplete="off">
+        <button id="settings-token-save" class="g-autobtn">Save</button>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-title">Layout</div>
+      <div class="settings-hint">Restore default panel sizes and preview height.</div>
+      <button id="settings-reset-layout" class="g-autobtn">Reset panel sizes</button>
+    </div>
+  </div>
 </div>
 
 <!-- ── Node Tester panel ─────────────────────────────────────── -->
@@ -3390,6 +3662,18 @@ function gDefaultParams(def) {
 }
 
 // ── Render a node div ──────────────────────────────────────────
+// Stable category → chip color (drives the .gnode-title::before swatch)
+const _gCatColors = {};
+function gCategoryColor(cat) {
+  if (!cat) return '';
+  if (!_gCatColors[cat]) {
+    let h = 0;
+    for (const ch of cat) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    _gCatColors[cat] = `hsl(${h % 360} 52% 60%)`;
+  }
+  return _gCatColors[cat];
+}
+
 function gRenderNode(node) {
   const def = gNodeDefs[node.method_id];
   if (!def) return;
@@ -3399,6 +3683,7 @@ function gRenderNode(node) {
   el.id = 'gnode-' + node.id;
   el.style.left = node.x + 'px';
   el.style.top  = node.y + 'px';
+  if (def.category) el.style.setProperty('--cat-c', gCategoryColor(def.category));
 
   if (node.render) el.classList.add('render-target');
   if (def.deprecated) el.classList.add('gnode-deprecated');
@@ -4019,6 +4304,9 @@ function gRedrawEdges() {
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('d', `M${p0.x},${p0.y} L${p1.x},${p1.y}`);
     path.setAttribute('class', 'gedge' + (edge.feedback ? ' feedback' : ''));
+    // Wire color = source port's payload type, from the server registry
+    const ptSpec = (window.gPortTypes || {})[(s.dataset.ptype || '').toUpperCase()];
+    if (ptSpec && ptSpec.color) path.style.stroke = ptSpec.color;
     path.dataset.eid = edge.id;
     path.addEventListener('contextmenu', ev => { ev.preventDefault(); gShowEdgeCtx(edge.id, ev.clientX, ev.clientY); });
     path.addEventListener('mousedown', ev => {
@@ -4451,7 +4739,7 @@ function openPerParamKfEditor(node, pname, idx, kf) {
     const cy1 = 1.0 - (parseFloat(p1y.value) || 0.0);
     const cx2 = parseFloat(p2x.value) || 0.58;
     const cy2 = 1.0 - (parseFloat(p2y.value) || 1.0);
-    ctx.strokeStyle = '#6c8ef5'; ctx.lineWidth = 2;
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#64748b'; ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(0, h);
     for (let t = 0; t <= 1; t += 0.02) {
@@ -4695,15 +4983,11 @@ try { if (localStorage.getItem('graph-auto-gen') === '1') gToggleAutoGen(); } ca
 gAutoBtn.addEventListener('click', gToggleAutoGen);
 gAutoBtnDesk.addEventListener('click', gToggleAutoGen);
 
-// ── Live mode (continuous server loop → WebSocket + canvas) ────────
+// ── Live mode (continuous server loop → MJPEG preview) ────────
 const gLiveBtn = document.getElementById('graph-live-btn');
 const gLiveBtnDesk = document.getElementById('graph-live-btn-desk');
 let gLiveMode = false;
-let gLiveWs = null;
-let gLiveCanvas = null;
-let gLiveCtx = null;
-let gLiveRafId = null;
-let gLivePendingFrame = null;  // latest JPEG blob from WS, consumed by rAF
+let gLiveImg = null;
 
 function gLiveGraphBody(stop) {
   return {
@@ -4725,51 +5009,20 @@ async function gSetLive(on) {
   gLiveBtn.classList.toggle('active', on);
   gLiveBtnDesk.classList.toggle('active', on);
   if (on) {
-    // Create a canvas for smooth rAF-based rendering
+    // Swap the main preview to the MJPEG stream — frames arrive as fast
+    // as the server loop cooks them, no SSE round-trips.
     gMainPreview.innerHTML = '';
-    gLiveCanvas = document.createElement('canvas');
-    gLiveCanvas.width = gCanvasW;
-    gLiveCanvas.height = gCanvasH;
-    gLiveCanvas.style.width = '100%';
-    gLiveCanvas.style.height = '100%';
-    gLiveCanvas.style.objectFit = 'contain';
-    gLiveCtx = gLiveCanvas.getContext('2d');
-    gMainPreview.appendChild(gLiveCanvas);
+    gLivePreviewImg = null;
+    gLiveImg = document.createElement('img');
+    gLiveImg.src = '/api/live/stream?t=' + Date.now();
+    gMainPreview.appendChild(gLiveImg);
     gMainPreview.classList.add('active');
     gPreviewShow();
-
-    // Connect WebSocket — binary frames arrive as JPEG blobs
-    gLiveWs = new WebSocket('ws://' + location.host + '/api/live/ws');
-    gLiveWs.binaryType = 'arraybuffer';
-    gLiveWs.onmessage = (e) => {
-      // Store the latest frame — rAF will pick it up
-      gLivePendingFrame = new Blob([e.data], {type: 'image/jpeg'});
-    };
-    gLiveWs.onopen = () => gSetStatus('Live — WebSocket connected');
-    gLiveWs.onerror = () => gSetStatus('Live — WebSocket error, falling back to MJPEG');
-    gLiveWs.onclose = () => { if (gLiveMode) gSetStatus('Live — WebSocket disconnected'); };
-
-    // rAF loop: paint the latest frame on every vsync
-    function _liveRaf() {
-      if (!gLiveMode) return;
-      if (gLivePendingFrame && gLiveCtx) {
-        createImageBitmap(gLivePendingFrame).then(bitmap => {
-          if (!gLiveCtx) return;
-          gLiveCtx.drawImage(bitmap, 0, 0, gLiveCanvas.width, gLiveCanvas.height);
-          bitmap.close();
-        }).catch(() => {});
-        gLivePendingFrame = null;
-      }
-      gLiveRafId = requestAnimationFrame(_liveRaf);
-    }
-    gLiveRafId = requestAnimationFrame(_liveRaf);
+    gSetStatus('Live — graph cooking continuously');
   } else {
-    // Teardown
-    if (gLiveRafId) { cancelAnimationFrame(gLiveRafId); gLiveRafId = null; }
-    if (gLiveWs) { gLiveWs.close(); gLiveWs = null; }
-    gLiveCanvas = null;
-    gLiveCtx = null;
-    gLivePendingFrame = null;
+    if (gLiveImg) { gLiveImg.src = ''; gLiveImg.remove(); gLiveImg = null; }
+    // Collapse the preview if nothing is left to show
+    if (!gMainPreview.querySelector('img, video')) gMainPreview.classList.remove('active');
     gSetStatus('Live stopped.');
   }
 }
@@ -4780,6 +5033,186 @@ function gToggleLive() {
 }
 gLiveBtn.addEventListener('click', gToggleLive);
 gLiveBtnDesk.addEventListener('click', gToggleLive);
+
+// ── Preview chrome: pop-out viewer + Picture-in-Picture ───────
+// The preview's innerHTML is rebuilt by several flows, so the toolbar is
+// re-mounted by a MutationObserver instead of patching every rebuild site.
+const gPreviewToolbar = document.createElement('div');
+gPreviewToolbar.id = 'preview-toolbar';
+gPreviewToolbar.innerHTML =
+  '<button id="preview-pip-btn" title="Picture-in-Picture" style="display:none">▣</button>' +
+  '<button id="preview-popout-btn" title="Pop out viewer">⧉</button>';
+
+function gSyncPreviewChrome() {
+  const hasContent = !!gMainPreview.querySelector('img, video');
+  if (hasContent && !gPreviewToolbar.isConnected) gMainPreview.appendChild(gPreviewToolbar);
+  const pip = gPreviewToolbar.querySelector('#preview-pip-btn');
+  const hasVideo = !!gMainPreview.querySelector('video');
+  pip.style.display = (hasVideo && document.pictureInPictureEnabled) ? '' : 'none';
+}
+new MutationObserver(gSyncPreviewChrome).observe(gMainPreview, { childList: true });
+
+function _gImgSrcForPopout(img) {
+  // blob: URLs get revoked as the timeline scrubs — snapshot to a data URL
+  if (!img.src.startsWith('blob:')) return img.src;
+  try {
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth || img.width;
+    c.height = img.naturalHeight || img.height;
+    c.getContext('2d').drawImage(img, 0, 0);
+    return c.toDataURL('image/png');
+  } catch { return img.src; }
+}
+
+function gPopOutViewer() {
+  const vid = gMainPreview.querySelector('video');
+  const img = gMainPreview.querySelector('img');
+  let body = null, title = 'Viewer';
+  if (gLiveMode) {
+    body = `<img src="${location.origin}/api/live/stream">`;
+    title = 'Live';
+  } else if (vid && (vid.currentSrc || vid.src)) {
+    body = `<video src="${vid.currentSrc || vid.src}" controls autoplay loop></video>`;
+    title = 'Video';
+  } else if (img && img.src) {
+    body = `<img src="${_gImgSrcForPopout(img)}">`;
+    title = 'Frame';
+  }
+  if (!body) { gShowToast('Nothing to pop out yet', true); return; }
+  const w = window.open('', '_blank', 'width=860,height=580');
+  if (!w) { gShowToast('Pop-up blocked by the browser', true); return; }
+  w.document.write(
+    `<!DOCTYPE html><html><head><title>Grillmaster — ${title}</title><style>` +
+    'html,body{margin:0;height:100%;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden}' +
+    'img,video{max-width:100vw;max-height:100vh;object-fit:contain}' +
+    '</style></head><body>' + body + '</body></html>');
+  w.document.close();
+}
+
+gPreviewToolbar.addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  e.stopPropagation();  // don't trigger the preview's fullscreen click
+  if (btn.id === 'preview-popout-btn') gPopOutViewer();
+  if (btn.id === 'preview-pip-btn') {
+    const v = gMainPreview.querySelector('video');
+    if (v) v.requestPictureInPicture().catch(err => gShowToast('PiP: ' + err.message, true));
+  }
+});
+
+// ── Resizable preview height (persisted) ──────────────────────
+const gPvHandle = document.getElementById('preview-resize-handle');
+(function () {
+  const saved = parseInt(localStorage.getItem('preview-h') || '', 10);
+  if (saved && window.innerWidth > 900) {
+    document.documentElement.style.setProperty('--pv-h', saved + 'px');
+    document.getElementById('graph-preview-panel').style.maxHeight = 'none';
+  }
+  let startY = 0, startH = 0, dragging = false;
+  gPvHandle.addEventListener('pointerdown', e => {
+    dragging = true; startY = e.clientY;
+    startH = gMainPreview.getBoundingClientRect().height;
+    gPvHandle.classList.add('dragging');
+    gPvHandle.setPointerCapture(e.pointerId);
+    document.getElementById('graph-preview-panel').style.maxHeight = 'none';
+    e.preventDefault();
+  });
+  gPvHandle.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const h = Math.min(Math.round(window.innerHeight * 0.7),
+                       Math.max(120, Math.round(startH + (e.clientY - startY))));
+    document.documentElement.style.setProperty('--pv-h', h + 'px');
+  });
+  gPvHandle.addEventListener('pointerup', () => {
+    if (!dragging) return;
+    dragging = false; gPvHandle.classList.remove('dragging');
+    const h = parseInt(getComputedStyle(gMainPreview).height, 10);
+    if (h) try { localStorage.setItem('preview-h', String(h)); } catch {}
+  });
+})();
+
+// ── Keyboard cheat-sheet ───────────────────────────────────────
+const gHelpOverlay = document.getElementById('help-overlay');
+function gToggleHelp(force) {
+  gHelpOverlay.classList.toggle('visible', force);
+}
+document.getElementById('graph-help-btn')?.addEventListener('click', () => gToggleHelp());
+document.getElementById('help-close-btn').addEventListener('click', () => gToggleHelp(false));
+gHelpOverlay.addEventListener('click', e => { if (e.target === gHelpOverlay) gToggleHelp(false); });
+document.addEventListener('keydown', e => {
+  const tag = (document.activeElement?.tagName || '').toLowerCase();
+  const isInput = tag === 'input' || tag === 'textarea' || tag === 'select';
+  if (e.key === '?' && !isInput) { e.preventDefault(); gToggleHelp(); }
+  if (e.key === 'Escape' && gHelpOverlay.classList.contains('visible')) gToggleHelp(false);
+});
+
+// ── Settings page ──────────────────────────────────────────────
+// Theme values live in CSS (:root = slate, html[data-theme=…] overrides);
+// this table only drives the picker cards.
+const GM_THEMES = {
+  slate:    { name: 'Slate',    desc: 'Neutral gray, muted steel accent',   sw: ['#1a1c1f', '#64748b', '#e7e9ec'] },
+  graphite: { name: 'Graphite', desc: 'Warm near-black, ember accent',      sw: ['#181816', '#c2622d', '#e8e6e1'] },
+  midnight: { name: 'Midnight', desc: 'Deep blue, neon accent',             sw: ['#161a24', '#6c8ef5', '#e6ebf4'] },
+};
+
+function gmApplyTheme(id) {
+  if (!GM_THEMES[id]) id = 'slate';
+  if (id === 'slate') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = id;
+  try { localStorage.setItem('gm-theme', id); } catch {}
+  document.querySelectorAll('.theme-card').forEach(c =>
+    c.classList.toggle('active', c.dataset.theme === id));
+}
+
+(function () {
+  const picker = document.getElementById('theme-picker');
+  const current = localStorage.getItem('gm-theme') || 'slate';
+  for (const [id, t] of Object.entries(GM_THEMES)) {
+    const card = document.createElement('button');
+    card.className = 'theme-card' + (id === current ? ' active' : '');
+    card.dataset.theme = id;
+    card.innerHTML =
+      `<span class="theme-swatches">${t.sw.map(c => `<i style="background:${c}"></i>`).join('')}</span>` +
+      `<span class="theme-name">${t.name}</span>` +
+      `<span class="theme-desc">${t.desc}</span>`;
+    card.addEventListener('click', () => gmApplyTheme(id));
+    picker.appendChild(card);
+  }
+})();
+
+const gSettingsPage = document.getElementById('settings-page');
+function gToggleSettings(force) {
+  const show = force !== undefined ? force : !gSettingsPage.classList.contains('visible');
+  gSettingsPage.classList.toggle('visible', show);
+  if (show) {
+    const tok = document.getElementById('settings-api-token');
+    tok.value = localStorage.getItem('api-token') || '';
+  }
+}
+document.getElementById('graph-settings-btn')?.addEventListener('click', () => gToggleSettings());
+document.getElementById('graph-settings-btn-mob')?.addEventListener('click', () => gToggleSettings());
+document.getElementById('settings-close-btn').addEventListener('click', () => gToggleSettings(false));
+gSettingsPage.addEventListener('click', e => { if (e.target === gSettingsPage) gToggleSettings(false); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && gSettingsPage.classList.contains('visible')) gToggleSettings(false);
+});
+
+document.getElementById('settings-token-save').addEventListener('click', () => {
+  const v = document.getElementById('settings-api-token').value.trim();
+  try {
+    if (v) localStorage.setItem('api-token', v);
+    else localStorage.removeItem('api-token');
+  } catch {}
+  gShowToast(v ? 'Token saved — reload to apply' : 'Token cleared — reload to apply');
+});
+
+document.getElementById('settings-reset-layout').addEventListener('click', () => {
+  try {
+    ['preview-h', 'pane-widths', 'graph-preview-expanded'].forEach(k => localStorage.removeItem(k));
+  } catch {}
+  document.documentElement.style.removeProperty('--pv-h');
+  gShowToast('Panel sizes reset — reload to apply fully');
+});
 
 // ── Auto-generate: fire-and-cancel ───────────────────────────
 let _autoGenTimer = null;

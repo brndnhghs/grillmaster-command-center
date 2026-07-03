@@ -42,6 +42,10 @@ Verified: `HERMES_AGENT_DIR`/`HERMES_PYTHON` override the resolved interpreter i
 - `.gitignore`: add `*.nd-bak-*.py`; narrow the global `*.html` / `*.txt` ignores.
 - Remove committed `chord_bot/chord_bot.egg-info/`.
 
+## Phase 5 — UI design pass & viewer capabilities (user-directed, 2026-07-02) — STATUS: done
+
+Design system: refined dark palette + spacing/radius/shadow/focus tokens in `:root`, mono accent for node/port/param labels, consistent ghost/primary button families (including the previously unstyled desktop Run/Clear), "on air" pulsing Live toggle, category color chips on node headers, per-payload-type wire colors from the server port-type registry, canvas grid + vignette, app title/favicon. Capabilities: ⧉ pop-out viewer window (live MJPEG stream, images — blob frames snapshotted to data URLs — and videos) + Picture-in-Picture for videos; drag-resizable main preview (persisted); keyboard cheat-sheet overlay on `?` / toolbar button. Verified with Playwright: zero console/page errors desktop + mobile, picker spawn, help toggle, run → preview, pop-out (image and live-stream variants), live start/stop, resize drag with persistence.
+
 ## Deferred (needs owner decision or larger design)
 
 - Converging the three animation systems on `paramKeyframes` (audit #16) — medium refactor, separate branch recommended.
