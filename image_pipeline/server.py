@@ -923,6 +923,13 @@ def live_graph_sim(req: GraphRequest):
         cancel = threading.Event()
         nodes, edges, seed = req.nodes, req.edges, req.seed
         width, height = req.width, req.height
+        # Live mode always re-cooks every frame. The client marks nodes
+        # dirty=False after a normal Run, so without this the executor's
+        # dirty-skip reloads one cached frame forever and the preview
+        # freezes. (Selective recooking is for the single-frame tweak
+        # loop, never for the continuous live loop.)
+        for _n in nodes:
+            _n["dirty"] = True
 
         def _live_loop():
             from image_pipeline.core.graph import GraphExecutor
