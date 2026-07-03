@@ -1375,16 +1375,23 @@ def list_sequences():
     return result
 
 
+def _resolve_sequence_file(name: str, *parts: str) -> tuple[str, Path]:
+    safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+    sequence_dir = (SEQUENCES_DIR / safe_name).resolve(strict=False)
+    try:
+        sequence_dir.relative_to(SEQUENCES_DIR.resolve())
+    except ValueError as exc:
+        raise HTTPException(400, "Invalid sequence path") from exc
+    return safe_name, sequence_dir.joinpath(*parts)
+
+
 @app.get("/api/sequences/{name}/video.{ext}")
 def get_sequence_video(name: str, ext: str):
     """Serve an encoded video file for a sequence."""
-    name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
     if ext not in ("mp4", "gif"):
-        from fastapi import HTTPException
         raise HTTPException(400, "Unsupported format — use mp4 or gif")
-    video_path = SEQUENCES_DIR / name / f"output.{ext}"
+    name, video_path = _resolve_sequence_file(name, f"output.{ext}")
     if not video_path.exists():
-        from fastapi import HTTPException
         raise HTTPException(404, f"Video not found for sequence '{name}' — encode first")
     media_type = "video/mp4" if ext == "mp4" else "image/gif"
     return FileResponse(str(video_path), media_type=media_type, filename=f"{name}.{ext}")
@@ -1392,10 +1399,8 @@ def get_sequence_video(name: str, ext: str):
 
 @app.get("/api/sequences/{name}/{frame}")
 def get_sequence_frame(name: str, frame: int):
-    name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
-    png_path = SEQUENCES_DIR / name / f"frame_{frame:04d}.png"
+    name, png_path = _resolve_sequence_file(name, f"frame_{frame:04d}.png")
     if not png_path.exists():
-        from fastapi import HTTPException
         raise HTTPException(404, f"Frame {frame} not found in sequence '{name}'")
     # Serve as JPEG for faster transfer — PNGs are 5-10x larger
     jpg_path = png_path.with_suffix(".jpg")
