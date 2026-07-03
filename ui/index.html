@@ -4,11 +4,18 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Grillmaster Command Center</title>
+<script>
+// Theme bootstrap — runs before first paint so the saved theme never flashes.
+try {
+  var _t = localStorage.getItem('gm-theme');
+  if (_t && _t !== 'slate') document.documentElement.dataset.theme = _t;
+} catch (e) {}
+</script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Ccircle%20cx='4'%20cy='8'%20r='2.6'%20fill='%234a9eff'/%3E%3Ccircle%20cx='12'%20cy='8'%20r='2.6'%20fill='%236c8ef5'/%3E%3Crect%20x='5'%20y='7.25'%20width='6'%20height='1.5'%20fill='%236c8ef5'/%3E%3C/svg%3E">
 <style>
   /* ── Tab bar ─────────────────────────────────────── */
   #tab-bar {
-    display: flex; background: #0a0c11; border-bottom: 1px solid var(--border);
+    display: flex; background: var(--bg0); border-bottom: 1px solid var(--border);
     flex-shrink: 0; z-index: 20;
   }
   .tab-btn {
@@ -29,26 +36,29 @@
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
+    /* ── Theme: Slate (default) — neutral gray, muted steel accent ── */
     /* surfaces (darkest → most raised) */
-    --bg0:    #0b0d12;
-    --bg1:    #10131a;
-    --bg2:    #161a24;
-    --bg3:    #1f2432;
-    --border: #262c3d;
-    --border-strong: #3a4258;
+    --bg0:    #0f1012;
+    --bg1:    #141517;
+    --bg2:    #1a1c1f;
+    --bg3:    #232529;
+    --border: #2a2d33;
+    --border-strong: #3d4048;
     /* brand + semantic */
-    --accent: #6c8ef5;
-    --accent2: #a78bfa;
+    --accent: #64748b;
+    --accent2: #94a3b8;
     --success: #34d399;
     --warn:   #fbbf24;
     --err:    #f87171;
     --live:   #f43f5e;
-    --text:   #e6ebf4;
-    --muted:  #8b93a7;
-    --muted2: #5c6478;
-    --tag-bg: #1e2640;
-    --tag-fg: #818cf8;
-    /* system */
+    --text:   #e7e9ec;
+    --muted:  #8f939c;
+    --muted2: #5f636c;
+    --tag-bg: #24272c;
+    --tag-fg: #9aa4b2;
+    --grid-dot: #212328;
+    --focus-ring: 0 0 0 2px rgba(100,116,139,0.38);
+    /* system (theme-independent) */
     --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'Menlo', 'Consolas', monospace;
     --radius-s: 4px;
     --radius-m: 7px;
@@ -56,6 +66,43 @@
     --shadow-1: 0 1px 2px rgba(0,0,0,0.45);
     --shadow-2: 0 4px 16px rgba(0,0,0,0.45);
     --shadow-3: 0 12px 36px rgba(0,0,0,0.6);
+  }
+
+  /* ── Theme: Graphite — warm near-black, ember accent ── */
+  html[data-theme="graphite"] {
+    --bg0:    #0d0d0c;
+    --bg1:    #121211;
+    --bg2:    #181816;
+    --bg3:    #21211e;
+    --border: #2a2a26;
+    --border-strong: #3e3d37;
+    --accent: #c2622d;
+    --accent2: #d98e4a;
+    --text:   #e8e6e1;
+    --muted:  #94918a;
+    --muted2: #605e57;
+    --tag-bg: #262420;
+    --tag-fg: #c9a37a;
+    --grid-dot: #23231f;
+    --focus-ring: 0 0 0 2px rgba(194,98,45,0.35);
+  }
+
+  /* ── Theme: Midnight — deep blue, neon accent (the original look) ── */
+  html[data-theme="midnight"] {
+    --bg0:    #0b0d12;
+    --bg1:    #10131a;
+    --bg2:    #161a24;
+    --bg3:    #1f2432;
+    --border: #262c3d;
+    --border-strong: #3a4258;
+    --accent: #6c8ef5;
+    --accent2: #a78bfa;
+    --text:   #e6ebf4;
+    --muted:  #8b93a7;
+    --muted2: #5c6478;
+    --tag-bg: #1e2640;
+    --tag-fg: #818cf8;
+    --grid-dot: #222941;
     --focus-ring: 0 0 0 2px rgba(108,142,245,0.32);
   }
 
@@ -448,7 +495,7 @@
   }
   #graph-nodes { position: absolute; inset: 0; }
   #graph-canvas-wrap {
-    background-image: radial-gradient(circle, #222941 1px, transparent 1px);
+    background-image: radial-gradient(circle, var(--grid-dot) 1px, transparent 1px);
     background-size: 24px 24px;
   }
   /* Static vignette — paints once, sits under the nodes layer */
@@ -571,7 +618,7 @@
   .gnode-port-row.paired .gport[data-dir="input"]  { left:  -6px; }
   .gnode-port-row.paired .gport[data-dir="output"] { right: -6px; }
   .gport {
-    width: 12px; height: 12px; border-radius: 50%; border: 2px solid #0b0d12;
+    width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--bg0);
     cursor: crosshair; flex-shrink: 0; position: absolute; transition: transform 0.1s;
     touch-action: none; box-shadow: 0 0 0 1px rgba(0,0,0,0.4);
   }
@@ -742,6 +789,59 @@
     justify-self: start;
   }
   .help-grid span { color: var(--muted); }
+
+  /* ── Settings page ────────────────────────────────────── */
+  #settings-page {
+    position: fixed; inset: 0; z-index: 310; display: none;
+    align-items: flex-start; justify-content: center; overflow-y: auto;
+    background: rgba(0,0,0,0.55); padding: 5vh 16px;
+  }
+  #settings-page.visible { display: flex; }
+  #settings-card {
+    width: min(640px, 100%); background: var(--bg1);
+    border: 1px solid var(--border-strong); border-radius: var(--radius-l);
+    box-shadow: var(--shadow-3); margin-bottom: 5vh;
+  }
+  #settings-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 18px; border-bottom: 1px solid var(--border);
+    font-size: 12px; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  #settings-close-btn {
+    background: none; border: none; color: var(--muted); font-size: 14px;
+    cursor: pointer; padding: 2px 6px;
+  }
+  #settings-close-btn:hover { color: var(--text); }
+  .settings-section { padding: 16px 18px; border-bottom: 1px solid var(--border); }
+  .settings-section:last-child { border-bottom: none; }
+  .settings-title { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  .settings-hint { font-size: 11.5px; color: var(--muted); margin-bottom: 12px; line-height: 1.5; }
+  .settings-row { display: flex; gap: 8px; align-items: center; }
+  #settings-api-token {
+    flex: 1; background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius-m); color: var(--text); padding: 7px 10px;
+    font-size: 13px; font-family: var(--font-mono); min-width: 0;
+  }
+  #settings-api-token:focus { border-color: var(--accent); outline: none; }
+
+  /* Theme cards */
+  #theme-picker { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+  .theme-card {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius-m); padding: 12px; cursor: pointer;
+    text-align: left; transition: border-color 0.12s, background 0.12s;
+  }
+  .theme-card:hover { border-color: var(--border-strong); background: var(--bg3); }
+  .theme-card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .theme-swatches { display: flex; gap: 5px; margin-bottom: 9px; }
+  .theme-swatches i {
+    width: 22px; height: 22px; border-radius: 6px; display: block;
+    border: 1px solid rgba(255,255,255,0.09);
+  }
+  .theme-name { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .theme-card.active .theme-name::after { content: '✓'; color: var(--accent2); font-size: 12px; }
+  .theme-desc { font-size: 11px; color: var(--muted); margin-top: 3px; line-height: 1.4; }
 
   #graph-output-strip {
     display: flex; gap: 8px; padding: 8px 14px; overflow-x: auto; overflow-y: hidden;
@@ -1250,17 +1350,17 @@
   .tl-group { display: flex; align-items: center; gap: 4px; }
   #tl-progress { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 120px; }
   #tl-progress-bar-wrap { flex: 1; height: 4px; background: #333; border-radius: 2px; min-width: 60px; }
-  #tl-progress-bar { height: 4px; background: #4a9eff; border-radius: 2px; width: 0%; transition: width 0.2s; }
+  #tl-progress-bar { height: 4px; background: var(--accent); border-radius: 2px; width: 0%; transition: width 0.2s; }
   #timeline-panel label { color: #888; margin-right: 2px; }
   #timeline-panel input[type=number], #timeline-panel input[type=text] {
     background: #2a2a2a; border: 1px solid #444; color: #eee;
     padding: 2px 4px; border-radius: 3px;
   }
   #tl-render-seq {
-    background: #1a3a5c; border: 1px solid #4a9eff; color: #4a9eff;
+    background: transparent; border: 1px solid var(--accent); color: var(--accent2);
     padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;
   }
-  #tl-render-seq:hover:not(:disabled) { background: #4a9eff; color: #000; }
+  #tl-render-seq:hover:not(:disabled) { background: var(--accent); color: #fff; }
   #tl-render-seq:disabled { opacity: 0.45; cursor: default; }
   #tl-cancel {
     background: none; border: 1px solid #666; color: #aaa;
@@ -1359,7 +1459,7 @@
   #tl-ctx-menu button:hover { background: var(--bg3); }
   #tl-ctx-menu button.danger { color: #ef4444; }
   #tl-ctx-menu button.danger:hover { background: rgba(239,68,68,0.12); }
-  #tl-ctx-menu button.mode { color: #6c8ef5; }
+  #tl-ctx-menu button.mode { color: var(--accent2); }
   #tl-ctx-menu button.mode:hover { background: rgba(108,142,245,0.1); }
   #tl-ctx-menu .sep { height: 1px; background: var(--border); margin: 3px 0; }
 
@@ -1375,7 +1475,7 @@
   }
   #server-restart-btn:hover:not(:disabled) { opacity: 0.85; color: var(--text); }
   #server-restart-btn:disabled { cursor: not-allowed; opacity: 0.7; }
-  #server-restart-btn.restarting { animation: srv-spin 0.9s linear infinite; opacity: 0.9; color: #6c8ef5; }
+  #server-restart-btn.restarting { animation: srv-spin 0.9s linear infinite; opacity: 0.9; color: var(--accent); }
   @keyframes srv-spin { to { transform: rotate(360deg); } }
 </style>
 
@@ -1408,6 +1508,7 @@
       <button id="graph-load-btn" class="g-loadbtn">📂</button>
       <button id="graph-auto-btn" class="g-autobtn" title="Auto-generate on param change">⏺ Auto</button>
 <button id="graph-live-btn" class="g-autobtn" title="Live MJPEG preview">📺 Live</button>
+      <button id="graph-settings-btn-mob" class="g-autobtn" title="Settings">⚙</button>
       <select id="graph-canvas-preset-mob" title="Canvas size" style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:2px 6px;font-size:12px;cursor:pointer;flex-shrink:0">
         <option value="768x512">768×512</option>
         <option value="512x512">512×512</option>
@@ -1435,6 +1536,7 @@
       <button id="graph-save-btn-desk" class="g-savebtn">💾 Save</button>
       <button id="graph-load-btn-desk" class="g-loadbtn">📂 Load</button>
       <button id="graph-help-btn" title="Keyboard shortcuts (?)">?</button>
+      <button id="graph-settings-btn" class="g-autobtn" title="Settings">⚙</button>
       <button id="graph-auto-btn-desk" class="g-autobtn" title="Auto-generate on param change">⏺ Auto</button>
       <button id="graph-test-btn-desk" class="g-autobtn" title="Test all nodes">🧪 Test</button>
 <button id="graph-live-btn-desk" class="g-autobtn" title="Live MJPEG preview">📺 Live</button>
@@ -1556,6 +1658,34 @@
       <kbd>Delete</kbd><span>Delete the selected timeline clip</span>
       <kbd>Esc</kbd><span>Close pickers, menus, and this card</span>
       <kbd>?</kbd><span>Toggle this cheat-sheet</span>
+    </div>
+  </div>
+</div>
+
+<!-- Settings page -->
+<div id="settings-page">
+  <div id="settings-card">
+    <div id="settings-header">
+      <span>Settings</span>
+      <button id="settings-close-btn" title="Close (Esc)">✕</button>
+    </div>
+    <div class="settings-section">
+      <div class="settings-title">Theme</div>
+      <div class="settings-hint">Applies immediately and persists in this browser.</div>
+      <div id="theme-picker"></div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-title">API token</div>
+      <div class="settings-hint">Sent as <code>X-Api-Token</code> with every API call. Only needed when the server runs with <code>GRILLMASTER_API_TOKEN</code> set (e.g. tunneled). Takes effect on reload.</div>
+      <div class="settings-row">
+        <input id="settings-api-token" type="password" placeholder="not set" autocomplete="off">
+        <button id="settings-token-save" class="g-autobtn">Save</button>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-title">Layout</div>
+      <div class="settings-hint">Restore default panel sizes and preview height.</div>
+      <button id="settings-reset-layout" class="g-autobtn">Reset panel sizes</button>
     </div>
   </div>
 </div>
@@ -4607,7 +4737,7 @@ function openPerParamKfEditor(node, pname, idx, kf) {
     const cy1 = 1.0 - (parseFloat(p1y.value) || 0.0);
     const cx2 = parseFloat(p2x.value) || 0.58;
     const cy2 = 1.0 - (parseFloat(p2y.value) || 1.0);
-    ctx.strokeStyle = '#6c8ef5'; ctx.lineWidth = 2;
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#64748b'; ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(0, h);
     for (let t = 0; t <= 1; t += 0.02) {
@@ -5012,6 +5142,74 @@ document.addEventListener('keydown', e => {
   const isInput = tag === 'input' || tag === 'textarea' || tag === 'select';
   if (e.key === '?' && !isInput) { e.preventDefault(); gToggleHelp(); }
   if (e.key === 'Escape' && gHelpOverlay.classList.contains('visible')) gToggleHelp(false);
+});
+
+// ── Settings page ──────────────────────────────────────────────
+// Theme values live in CSS (:root = slate, html[data-theme=…] overrides);
+// this table only drives the picker cards.
+const GM_THEMES = {
+  slate:    { name: 'Slate',    desc: 'Neutral gray, muted steel accent',   sw: ['#1a1c1f', '#64748b', '#e7e9ec'] },
+  graphite: { name: 'Graphite', desc: 'Warm near-black, ember accent',      sw: ['#181816', '#c2622d', '#e8e6e1'] },
+  midnight: { name: 'Midnight', desc: 'Deep blue, neon accent',             sw: ['#161a24', '#6c8ef5', '#e6ebf4'] },
+};
+
+function gmApplyTheme(id) {
+  if (!GM_THEMES[id]) id = 'slate';
+  if (id === 'slate') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = id;
+  try { localStorage.setItem('gm-theme', id); } catch {}
+  document.querySelectorAll('.theme-card').forEach(c =>
+    c.classList.toggle('active', c.dataset.theme === id));
+}
+
+(function () {
+  const picker = document.getElementById('theme-picker');
+  const current = localStorage.getItem('gm-theme') || 'slate';
+  for (const [id, t] of Object.entries(GM_THEMES)) {
+    const card = document.createElement('button');
+    card.className = 'theme-card' + (id === current ? ' active' : '');
+    card.dataset.theme = id;
+    card.innerHTML =
+      `<span class="theme-swatches">${t.sw.map(c => `<i style="background:${c}"></i>`).join('')}</span>` +
+      `<span class="theme-name">${t.name}</span>` +
+      `<span class="theme-desc">${t.desc}</span>`;
+    card.addEventListener('click', () => gmApplyTheme(id));
+    picker.appendChild(card);
+  }
+})();
+
+const gSettingsPage = document.getElementById('settings-page');
+function gToggleSettings(force) {
+  const show = force !== undefined ? force : !gSettingsPage.classList.contains('visible');
+  gSettingsPage.classList.toggle('visible', show);
+  if (show) {
+    const tok = document.getElementById('settings-api-token');
+    tok.value = localStorage.getItem('api-token') || '';
+  }
+}
+document.getElementById('graph-settings-btn')?.addEventListener('click', () => gToggleSettings());
+document.getElementById('graph-settings-btn-mob')?.addEventListener('click', () => gToggleSettings());
+document.getElementById('settings-close-btn').addEventListener('click', () => gToggleSettings(false));
+gSettingsPage.addEventListener('click', e => { if (e.target === gSettingsPage) gToggleSettings(false); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && gSettingsPage.classList.contains('visible')) gToggleSettings(false);
+});
+
+document.getElementById('settings-token-save').addEventListener('click', () => {
+  const v = document.getElementById('settings-api-token').value.trim();
+  try {
+    if (v) localStorage.setItem('api-token', v);
+    else localStorage.removeItem('api-token');
+  } catch {}
+  gShowToast(v ? 'Token saved — reload to apply' : 'Token cleared — reload to apply');
+});
+
+document.getElementById('settings-reset-layout').addEventListener('click', () => {
+  try {
+    ['preview-h', 'pane-widths', 'graph-preview-expanded'].forEach(k => localStorage.removeItem(k));
+  } catch {}
+  document.documentElement.style.removeProperty('--pv-h');
+  gShowToast('Panel sizes reset — reload to apply fully');
 });
 
 // ── Auto-generate: fire-and-cancel ───────────────────────────
