@@ -2611,6 +2611,8 @@ function tlClearPreview() {
 const _tlFrameCache = new Map();
 
 function _tlDisplayBlob(blob) {
+  // Don't clobber the live canvas
+  if (gLiveMode) return;
   const url = URL.createObjectURL(blob);
   if (!gLivePreviewImg) {
     gMainPreview.innerHTML = '';
@@ -4693,11 +4695,15 @@ try { if (localStorage.getItem('graph-auto-gen') === '1') gToggleAutoGen(); } ca
 gAutoBtn.addEventListener('click', gToggleAutoGen);
 gAutoBtnDesk.addEventListener('click', gToggleAutoGen);
 
-// ── Live mode (continuous server loop → MJPEG preview) ────────
+// ── Live mode (continuous server loop → WebSocket + canvas) ────────
 const gLiveBtn = document.getElementById('graph-live-btn');
 const gLiveBtnDesk = document.getElementById('graph-live-btn-desk');
 let gLiveMode = false;
-let gLiveImg = null;
+let gLiveWs = null;
+let gLiveCanvas = null;
+let gLiveCtx = null;
+let gLiveRafId = null;
+let gLivePendingFrame = null;  // latest JPEG blob from WS, consumed by rAF
 
 function gLiveGraphBody(stop) {
   return {
@@ -4719,18 +4725,51 @@ async function gSetLive(on) {
   gLiveBtn.classList.toggle('active', on);
   gLiveBtnDesk.classList.toggle('active', on);
   if (on) {
-    // Swap the main preview to the MJPEG stream — frames arrive as fast
-    // as the server loop cooks them, no SSE round-trips.
+    // Create a canvas for smooth rAF-based rendering
     gMainPreview.innerHTML = '';
-    gLivePreviewImg = null;
-    gLiveImg = document.createElement('img');
-    gLiveImg.src = '/api/live/stream?t=' + Date.now();
-    gMainPreview.appendChild(gLiveImg);
+    gLiveCanvas = document.createElement('canvas');
+    gLiveCanvas.width = gCanvasW;
+    gLiveCanvas.height = gCanvasH;
+    gLiveCanvas.style.width = '100%';
+    gLiveCanvas.style.height = '100%';
+    gLiveCanvas.style.objectFit = 'contain';
+    gLiveCtx = gLiveCanvas.getContext('2d');
+    gMainPreview.appendChild(gLiveCanvas);
     gMainPreview.classList.add('active');
     gPreviewShow();
-    gSetStatus('Live — graph cooking continuously');
+
+    // Connect WebSocket — binary frames arrive as JPEG blobs
+    gLiveWs = new WebSocket('ws://' + location.host + '/api/live/ws');
+    gLiveWs.binaryType = 'arraybuffer';
+    gLiveWs.onmessage = (e) => {
+      // Store the latest frame — rAF will pick it up
+      gLivePendingFrame = new Blob([e.data], {type: 'image/jpeg'});
+    };
+    gLiveWs.onopen = () => gSetStatus('Live — WebSocket connected');
+    gLiveWs.onerror = () => gSetStatus('Live — WebSocket error, falling back to MJPEG');
+    gLiveWs.onclose = () => { if (gLiveMode) gSetStatus('Live — WebSocket disconnected'); };
+
+    // rAF loop: paint the latest frame on every vsync
+    function _liveRaf() {
+      if (!gLiveMode) return;
+      if (gLivePendingFrame && gLiveCtx) {
+        createImageBitmap(gLivePendingFrame).then(bitmap => {
+          if (!gLiveCtx) return;
+          gLiveCtx.drawImage(bitmap, 0, 0, gLiveCanvas.width, gLiveCanvas.height);
+          bitmap.close();
+        }).catch(() => {});
+        gLivePendingFrame = null;
+      }
+      gLiveRafId = requestAnimationFrame(_liveRaf);
+    }
+    gLiveRafId = requestAnimationFrame(_liveRaf);
   } else {
-    if (gLiveImg) { gLiveImg.src = ''; gLiveImg.remove(); gLiveImg = null; }
+    // Teardown
+    if (gLiveRafId) { cancelAnimationFrame(gLiveRafId); gLiveRafId = null; }
+    if (gLiveWs) { gLiveWs.close(); gLiveWs = null; }
+    gLiveCanvas = null;
+    gLiveCtx = null;
+    gLivePendingFrame = null;
     gSetStatus('Live stopped.');
   }
 }
@@ -5663,6 +5702,8 @@ function tlHandleSeqEvent(type, data, startFrame, total) {
       tlRenderBtn.disabled        = false;
       tlProgressDiv.style.display = 'none';
       gShowToast(`🎬 Sequence complete — ${d.count ?? total} frames`, false);
+      // Auto-encode to MP4 and trigger download
+      setTimeout(() => tlDoEncodeAndDownload('mp4'), 500);
     }
   } catch {}
 }
@@ -5702,8 +5743,37 @@ async function tlDoEncode(format) {
 document.getElementById('tl-encode-mp4')?.addEventListener('click', () => tlDoEncode('mp4'));
 document.getElementById('tl-encode-gif')?.addEventListener('click', () => tlDoEncode('gif'));
 
+// ── Auto-encode + download after render sequence ──────────────
+async function tlDoEncodeAndDownload(format) {
+  const name = tlName.value.trim() || 'sequence';
+  const fps  = parseInt(tlFps.value) || 24;
+  try {
+    const res = await fetch(`/api/sequences/${encodeURIComponent(name)}/encode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fps, format }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      // Trigger browser save dialog
+      const a = document.createElement('a');
+      a.href = data.path;
+      a.download = `${name}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      gShowToast(`⬇ Downloading ${name}.${format}`, false);
+    } else {
+      gShowToast('Encode failed: ' + (data.error || 'unknown error'), true);
+    }
+  } catch (e) {
+    gShowToast('Encode error: ' + e.message, true);
+  }
+}
+
 // ── Clear ──────────────────────────────────────────────────────
 function gDoClear() {
+  if (gLiveMode) gSetLive(false);
   gNodes=[]; gEdges=[]; gSelectedNode=null; gSelectedEdge=null; gSelectedNodes.clear();
   gPanX=0; gPanY=0; gApplyPan();
   gNodesEl.innerHTML=''; gEdgesEl.innerHTML=''; gOutputStrip.innerHTML='';
