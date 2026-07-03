@@ -202,13 +202,13 @@ def _render_pixels(grid: np.ndarray, cell_size: int, color_mode: str, hue_shift:
     return np.clip(rgb, 0.0, 1.0)
 
 
-# ── The Method (Architecture B) ──
+# ── The Method (Architecture A — stateful, cooked once) ──
 
 @method(
     id="18",
     name="Cellular Automata",
     category="codegen",
-    tags=["cellular", "automata", "game-of-life", "animation", "expanded"],
+    tags=["cellular", "automata", "game-of-life", "animation", "simulation", "expanded"],
     inputs={
         "seed_image": "IMAGE",
         "seed_threshold": "SCALAR",
@@ -252,8 +252,12 @@ def _render_pixels(grid: np.ndarray, cell_size: int, color_mode: str, hue_shift:
             "min": 0.0, "max": 1.0, "default": 0.5,
         },
         "speed": {
-            "description": "generations per frame multiplier",
+            "description": "generations advanced per output frame (evolution speed)",
             "default": 1.0,
+        },
+        "n_frames": {
+            "description": "frames to cook (the sim steps forward once per frame, so it never re-simulates from scratch — constant cost per frame)",
+            "min": 30, "max": 600, "default": 120,
         },
         "hue_shift": {
             "description": "hue shift for color cycling (0-1)",
@@ -286,28 +290,25 @@ def _render_pixels(grid: np.ndarray, cell_size: int, color_mode: str, hue_shift:
     },
 )
 def method_cellular(out_dir: Path, seed: int, params=None):
-    """Conway's Game of Life — SCALAR-driven cellular automata.
+    """Conway's Game of Life — stateful cellular automata (Architecture A).
 
-    Architecture B (stateless, one call = one frame). Animation is driven
-    by wired SCALAR inputs instead of internal anim_mode logic.
+    The grid is cooked once: it persists across the captured frames, stepping
+    forward a fixed number of generations per frame rather than re-simulating
+    from the seed each frame. The executor caches the frames and serves them
+    at O(1), so per-frame cost stays constant however long the timeline runs
+    (fixing the live slowdown of the old stateless model).
 
-    Wire channel nodes to drive params:
-      LFO.value → density       (density pulse)
-      Counter.value → rule_select (rule cycling)
-      LFO.value → hue_shift     (color cycling)
-      Ramp.value → init_select  (pattern morphing)
-      LFO.value → inject_rate   (random life injection)
-      LFO.value → wave_phase    (wave propagation)
+    Params (`rule`, `size`, `seed_pattern`, `color`, `density`, `speed`) and
+    the wired SCALAR overrides are sampled once at the start of the cook.
+    Because the whole sequence is produced in one call, wired channel nodes
+    (LFO/Counter/…) set the sim up but do not modulate it per output frame —
+    that is the tradeoff for constant-cost, non-slowing playback.
 
-    Wire an IMAGE node into seed_image to use a bitmap as the initial
-    grid state. The image is resized to grid dimensions (W/cell_size ×
-    H/cell_size) with nearest-neighbour sampling, converted to grayscale,
-    and thresholded by seed_threshold. Pixels brighter than the threshold
-    become live cells. This overrides seed_pattern and density.
+    Wire an IMAGE node into seed_image to use a bitmap as the initial grid
+    state (resized to grid dims, grayscale, thresholded by seed_threshold).
     """
     if params is None:
         params = {}
-    t = float(params.get("time", 0.0))
 
     # Debug hook (kept commented — it fires every frame, ~30/s in live mode):
     # print(f"[ca18] density={params.get('density')} rule={params.get('rule')} "
@@ -375,20 +376,7 @@ def method_cellular(out_dir: Path, seed: int, params=None):
 
     survive, birth = RULES.get(effective_rule, ({2, 3}, {3}))
 
-    # ── Run simulation ──
-    # A single still (Auto mode / param tweak) should look evolved rather than
-    # a bare initial grid, so it floors the generation count. During animation
-    # the clock t sweeps up from 0 — flooring there would freeze the first
-    # frames on the floor value and hide the start of the sim (the initial
-    # grid and its early evolution), so let t drive the count from 0.
-    _tl = params.get("_timeline")
-    _animating = _tl is not None and getattr(_tl, "total_frames", 1) > 1
-    generations = int(t * 60 * effective_speed)
-    if not _animating:
-        generations = max(60, generations)
-    generations = max(0, generations)
-
-    # ── Build initial grid ──
+    # ── Build the initial grid once ──
     if seed_image is not None:
         # Resize seed image to grid dimensions, convert to grayscale, threshold
         from PIL import Image as _PIL_seed
@@ -399,27 +387,42 @@ def method_cellular(out_dir: Path, seed: int, params=None):
     else:
         grid = _make_grid(rows, cols, effective_density, seed, effective_pattern)
 
-    for gen in range(generations):
-        grid = _apply_rule(grid, survive, birth)
+    # ── Cook the sim once, stepping forward (Architecture A) ──
+    # The grid is PERSISTENT across the cook: each captured frame advances it a
+    # fixed number of generations instead of re-simulating from the seed. That
+    # keeps the per-frame cost constant no matter how far the timeline runs —
+    # the old stateless model ran `int(time*60)` generations from scratch every
+    # frame, so cost grew without bound as `time` climbed (the live slowdown).
+    # The executor caches the captured frames and serves them at O(1).
+    n_frames = int(params.get("n_frames", 120))
+    n_frames = max(1, n_frames)
+    gens_per_frame = max(1, int(round(effective_speed)))
 
-        # SCALAR-driven injection
-        if effective_inject > 0 and gen % 5 == 0:
-            noise = (np.random.default_rng(seed + gen).random((rows, cols)) < effective_inject * 0.1).astype(np.uint8)
-            grid = grid | noise
+    last_img = None
+    gen = 0
+    for f in range(n_frames):
+        # Capture the current state first, so frame 0 is the initial grid and
+        # the sim is shown from its beginning.
+        last_img = _render_pixels(grid, effective_cell_size, color_mode,
+                                  hue_shift, effective_age)
+        capture_frame("18", last_img)
 
-        # SCALAR-driven wave overlay
-        if effective_wave > 0:
-            wave_amp = effective_wave * 0.6
-            for r in range(rows):
-                phase = math.sin(r * 0.2 + t * 3) * 0.5 + 0.5
-                if phase > (1.0 - wave_amp):
-                    c = int(cols * (math.sin(r * 0.1 + t * 2) * 0.5 + 0.5))
-                    if 0 <= c < cols:
-                        grid[r, c] = 1
+        # Advance the grid for the next frame.
+        tf = (f / max(n_frames - 1, 1)) * 2.0 * math.pi   # per-frame phase for the wave
+        for _ in range(gens_per_frame):
+            grid = _apply_rule(grid, survive, birth)
+            if effective_inject > 0 and gen % 5 == 0:
+                noise = (np.random.default_rng(seed + gen).random((rows, cols))
+                         < effective_inject * 0.1).astype(np.uint8)
+                grid = grid | noise
+            if effective_wave > 0:
+                wave_amp = effective_wave * 0.6
+                for r in range(rows):
+                    ph = math.sin(r * 0.2 + tf * 3) * 0.5 + 0.5
+                    if ph > (1.0 - wave_amp):
+                        c = int(cols * (math.sin(r * 0.1 + tf * 2) * 0.5 + 0.5))
+                        if 0 <= c < cols:
+                            grid[r, c] = 1
+            gen += 1
 
-    # ── Render ──
-    img = _render_pixels(grid, effective_cell_size, color_mode, hue_shift, effective_age)
-
-    capture_frame("18", img)
-
-    return {"image": img}
+    return {"image": last_img}
