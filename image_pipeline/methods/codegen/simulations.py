@@ -309,7 +309,9 @@ def method_cellular(out_dir: Path, seed: int, params=None):
         params = {}
     t = float(params.get("time", 0.0))
 
-    print(f"[ca18] params received: density={params.get('density')}, rule={params.get('rule')}, seed_pattern={params.get('seed_pattern')}, size={params.get('size')}, color={params.get('color')}")
+    # Debug hook (kept commented — it fires every frame, ~30/s in live mode):
+    # print(f"[ca18] density={params.get('density')} rule={params.get('rule')} "
+    #       f"seed_pattern={params.get('seed_pattern')} size={params.get('size')}")
 
     # ── SCALAR-driven params (override UI params when wired) ──
     # Sentinel value -1.0 means "not wired" — only override when the value

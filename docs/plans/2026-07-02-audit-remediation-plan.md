@@ -4,6 +4,10 @@ Phased execution of the roadmap in `CODE_AUDIT_2026-07-02.md`. One commit per ph
 
 **Constraint (owner decision):** Hermes agent is the sole LLM backend for all LLM calls. No other providers.
 
+## Live-render milestone (2026-07-02) — LOCKED, do not regress
+
+Continuous live playback works and is fast. Its architecture is documented in `DESIGN.md` → "Live mode" (four invariants: always re-cook, advance the clock via `frames=LIVE_TOTAL_FRAMES`, preserve the injected monotonic `time`, throttle to ~30 fps) and in `AGENT_GUIDE.md` → "Making a method animate in live mode". Guarded by `image_pipeline/tests/test_live_regression.py` (5 tests). Bugs fixed to reach it: frozen live loop (client `dirty=False` after Run), `t` pinned at 0 for time-driven nodes, and method #18's `-1.0` scalar-override sentinels clobbering its `rule`/`seed_pattern`/`size` UI params. Any future live-mode or `time`-handling change must keep that suite green.
+
 ## Phase 1 — Registry integrity & executor correctness — STATUS: done
 
 Landed beyond the original scope: Langton's Ant #83 was itself broken in all committed history (`_render_langton_frame` never existed) — renderer written and verified across all color/render modes; sidecar files are now read for every method return type (ndarray-returning methods silently dropped `write_particles`/`write_field`); `.nd-bak` deletion pulled forward from Phase 3 to green the gate; `tools/audit_methods.py` PNG-fallback heuristic updated for the return-dict contract (re-raise/return handlers and swallow-then-fallback are safe; only genuinely silent broad catches are violations); `tools/next_id.py` no longer crashes on named ids; `brusselator.py` renamed `moire_animation.py` (it contains Moiré Patterns #164); #166/#167 `capture_frame` id typos fixed.

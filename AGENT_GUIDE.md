@@ -75,6 +75,30 @@ Methods that don't read `frame` at all still animate naturally because their see
 
 To render a frame sequence use `POST /api/graph/render-sequence` — it saves `frame_NNNN.png` files to `output/sequences/<name>/` and streams SSE progress events. Individual frames are available at `GET /api/sequences/<name>/<frame>`.
 
+#### Making a method animate in **live mode**
+
+Live mode (the 📺 continuous cook loop) is the real-time target. Whether a method moves there depends entirely on what it reads:
+
+- **Read one of `time`, `frame`, or `frame_seed`.** The live loop advances the timeline clock (`t`/`phase`, 0→1 over a 300-frame window) *and* injects a monotonic, unbounded `params['time'] = float(frame)`. A method that keys its state off any of these evolves continuously. A method that reads none of them renders the same image every frame and looks frozen — that is a method bug, not a live-mode bug.
+- **Use `time` (unbounded) for open-ended evolution; use `t`/`phase` (0→1, clamped) for looping motion** like `sin(phase)`. Don't gate motion behind a large fixed floor that swallows small time deltas unless you intend a static single-frame preview.
+- **Never require a prior "Run".** The client sends nodes as `dirty=False` after a Run; live mode force-dirties every node so it always re-cooks. Don't add state that assumes frames arrive in order or exactly once.
+
+The live architecture and its four non-regression invariants are documented in `DESIGN.md` → "Live mode", and locked by `image_pipeline/tests/test_live_regression.py`. If you change how a method reads time, run that suite.
+
+#### The `-1.0` sentinel lesson (SCALAR override ports)
+
+If a param is both a UI control *and* a wireable SCALAR override, do **not** use `-1.0` (or any in-range value) as a "not wired" sentinel checked with `is not None`. The client always sends the param at its default, so `params.get(name) is not None` is always true and the override permanently clobbers the UI value. Check the sentinel explicitly:
+
+```python
+sel = params.get("rule_select")
+if sel is not None and float(sel) >= 0:   # a wired channel sends 0..1
+    effective_rule = RULE_NAMES[int(float(sel) * len(RULE_NAMES)) % len(RULE_NAMES)]
+else:                                       # -1.0 default → honour the UI param
+    effective_rule = params.get("rule", "conway")
+```
+
+(This is exactly what silently broke method #18's `rule` / `seed_pattern` / `size` controls.)
+
 ---
 
 ## The method file contract

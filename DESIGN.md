@@ -85,11 +85,20 @@ Helper functions live in `core/utils.py`. Methods import the helpers they need.
 - **Single-frame runs** (`frames == 1`, the interactive tweak loop): the server honors client dirty flags — clean nodes reload their cached output from `_GRAPH_SESSION_DIR` and log `↩ skipped (clean)`. The skip is invalidated wholesale when the **seed, frame, or wiring** changed since the last single-frame run (the client only dirties nodes on param edits).
 - **Multi-frame renders** (`frames > 1`): every node is forced dirty — reusing a previous run's PNG for each frame would freeze the animation.
 
-### Live mode (real-time loop)
+### Live mode (real-time loop) — MILESTONE ARCHITECTURE, do not regress
 
-`POST /api/graph/live` starts a continuous cook loop server-side: the graph executes frame after frame, each terminal image is JPEG-encoded into a shared buffer, and the browser displays `GET /api/live/stream` (MJPEG, multipart/x-mixed-replace; `GET /api/live/frame.jpg` is the polling fallback). One loop runs at a time — re-POSTing hot-swaps the graph, `frames: 0` stops, `GET /api/graph/live/status` reports state. Node errors are logged; ten consecutive whole-frame failures stop the loop. The 📺 Live button in the editor toggles all of this; param edits while live re-POST the graph (debounced) so the loop always cooks the current state. Cheap graphs cook at ~20+ fps; heavy simulation nodes are the current bottleneck (see Planned Extensions).
+`POST /api/graph/live` starts a continuous cook loop server-side (`_live_loop` in `server.py`): the graph executes frame after frame, each terminal image is JPEG-encoded into a shared buffer, and the browser displays `GET /api/live/stream` (MJPEG, multipart/x-mixed-replace; `GET /api/live/frame.jpg` is the polling fallback). One loop runs at a time under `_live_sim_lock` — re-POSTing hot-swaps the graph, `frames: 0` stops, `GET /api/graph/live/status` reports state. Node errors are logged; ten consecutive whole-frame failures stop the loop. The 📺 Live button toggles it; param edits while live re-POST the graph (debounced) so the loop always cooks the current state.
 
-The executor instance uses `_GRAPH_SESSION_DIR` (a stable directory) so that cached outputs persist across graph runs. Per-run directories are only used for the final assembled output file.
+Continuous real-time playback rests on **four invariants**. Each was a bug that froze or broke live mode before it was fixed; `image_pipeline/tests/test_live_regression.py` guards them. Do not remove any without understanding the failure it prevents:
+
+1. **Always re-cook.** The loop sets `node["dirty"] = True` on every node every frame. The dirty-flag skip (selective recooking) is only for the single-frame tweak loop; in the continuous loop it would reload one cached PNG forever and freeze the preview.
+2. **Advance the clock.** The loop calls `executor.execute(..., frame=frame % LIVE_TOTAL_FRAMES, frames=LIVE_TOTAL_FRAMES)` with `LIVE_TOTAL_FRAMES = 300`. `make_timeline` pins the normalised clock `t` at `0.0` whenever `total_frames <= 1`, so passing `frames=1` freezes every time-driven (Architecture B) node. The window makes `t` sweep 0→1 and the modulo loops it forever.
+3. **Monotonic `time` for direct readers.** The loop injects `node["params"]["time"] = float(frame)` (unbounded, not the clamped `t`), for methods that evolve from raw time. The executor must preserve it — it only fills `time` from the timeline when the caller did not (`if "time" not in run_params` in `graph.py`). Overwriting it re-freezes those nodes.
+4. **Throttle.** The loop caps itself at ~30 fps (`_frame_interval = 1/30`) so the browser can actually display each frame and the cook thread doesn't spin a core for nothing.
+
+**Two animation drivers, by architecture** (see `core/arch.py`): Architecture-A sims cook their own internal frame list once, cache it in the executor, and the loop indexes into it by `frame` — motion comes from the frame index. Architecture-B nodes are stateless and re-cook each frame, deriving all motion from `t` / `phase` / `time` — which is exactly why invariants 2 and 3 exist. A method that reads none of those will not animate in live mode no matter what the loop does.
+
+The executor instance uses `_GRAPH_SESSION_DIR` for normal runs so cached outputs persist across graph runs; the live loop uses its own `OUTPUT_ROOT / "_live_sim"` executor. Performance: light graphs cook well above 30 fps (throttle-bound); heavy simulation nodes are the bottleneck. The deferred optimisation (a persistent per-session executor with sim-cache reuse, and skipping disk writes during live cooking) is in Planned Extensions — pursue it without touching the four invariants above.
 
 ---
 
