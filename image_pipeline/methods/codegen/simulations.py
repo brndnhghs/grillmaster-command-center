@@ -323,6 +323,11 @@ def method_cellular(out_dir: Path, seed: int, params=None):
     hue_shift_override = params.get("hue_shift")
     hue_shift = float(hue_shift_override) if hue_shift_override is not None else float(params.get("hue_shift", 0.0))
 
+    # These SCALAR ports use a negative sentinel (-1.0) to mean "not wired".
+    # A wired channel sends a value in [0, 1]; only then does it override the
+    # matching UI param. (Checking `is not None` was wrong — the param is
+    # always present at its -1.0 default, which silently clobbered the
+    # rule / seed_pattern / size UI params.)
     rule_select_override = params.get("rule_select")
     if rule_select_override is not None and float(rule_select_override) >= 0:
         idx = int(float(rule_select_override) * len(RULE_NAMES)) % len(RULE_NAMES)
