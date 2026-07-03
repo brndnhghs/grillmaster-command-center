@@ -309,7 +309,11 @@ def method_cellular(out_dir: Path, seed: int, params=None):
         params = {}
     t = float(params.get("time", 0.0))
 
+    print(f"[ca18] params received: density={params.get('density')}, rule={params.get('rule')}, seed_pattern={params.get('seed_pattern')}, size={params.get('size')}, color={params.get('color')}")
+
     # ── SCALAR-driven params (override UI params when wired) ──
+    # Sentinel value -1.0 means "not wired" — only override when the value
+    # is actually >= 0 (a real SCALAR input from a wired node).
     density_override = params.get("density")
     effective_density = float(density_override) if density_override is not None else float(params.get("density", 0.3))
 
@@ -320,21 +324,21 @@ def method_cellular(out_dir: Path, seed: int, params=None):
     hue_shift = float(hue_shift_override) if hue_shift_override is not None else float(params.get("hue_shift", 0.0))
 
     rule_select_override = params.get("rule_select")
-    if rule_select_override is not None:
+    if rule_select_override is not None and float(rule_select_override) >= 0:
         idx = int(float(rule_select_override) * len(RULE_NAMES)) % len(RULE_NAMES)
         effective_rule = RULE_NAMES[idx]
     else:
         effective_rule = params.get("rule", "conway")
 
     init_select_override = params.get("init_select")
-    if init_select_override is not None:
+    if init_select_override is not None and float(init_select_override) >= 0:
         idx = int(float(init_select_override) * len(INIT_PATTERNS)) % len(INIT_PATTERNS)
         effective_pattern = INIT_PATTERNS[idx]
     else:
         effective_pattern = params.get("seed_pattern", "random")
 
     cell_size_override = params.get("cell_size")
-    if cell_size_override is not None:
+    if cell_size_override is not None and float(cell_size_override) >= 0:
         effective_cell_size = max(1, int(float(cell_size_override) * 15 + 1))
     else:
         effective_cell_size = int(params.get("size", 4))
@@ -346,7 +350,7 @@ def method_cellular(out_dir: Path, seed: int, params=None):
     effective_wave = float(wave_phase_override) if wave_phase_override is not None else float(params.get("wave_phase", 0.0))
 
     age_input_override = params.get("age_input")
-    effective_age = float(age_input_override) if age_input_override is not None else -1.0
+    effective_age = float(age_input_override) if age_input_override is not None and float(age_input_override) >= 0 else -1.0
 
     # ── Seed image (IMAGE input) ──
     seed_image = params.get("seed_image")  # injected by executor from IMAGE port wiring
@@ -365,7 +369,11 @@ def method_cellular(out_dir: Path, seed: int, params=None):
     survive, birth = RULES.get(effective_rule, ({2, 3}, {3}))
 
     # ── Run simulation ──
-    generations = max(0, int(t * 60 * effective_speed))
+    # Use a fixed number of generations so single-frame executes (Auto mode,
+    # param changes) actually evolve the sim instead of showing the initial
+    # random grid. The t-based multiplier adds extra evolution for animation.
+    base_generations = 60
+    generations = max(base_generations, int(t * 60 * effective_speed))
 
     # ── Build initial grid ──
     if seed_image is not None:

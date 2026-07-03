@@ -569,7 +569,10 @@ class GraphExecutor:
                 run_params["time"] = node_tl.phase
             else:
                 run_params["_timeline"] = timeline
-                run_params["time"] = timeline.phase
+                # Don't overwrite time if the live loop already injected
+                # the raw frame number for continuous evolution.
+                if "time" not in run_params:
+                    run_params["time"] = timeline.phase
 
             # ── Per-param keyframe evaluation ────────────────────────────
             # Each param has its own independent keyframe track.

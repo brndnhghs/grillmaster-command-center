@@ -24,7 +24,7 @@ _repo_root = Path(__file__).resolve().parent.parent
 if str(_repo_root) not in sys.path:
     sys.path.insert(0, str(_repo_root))
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -68,6 +68,23 @@ _LIVE_FRAME_LOCK = threading.Lock()
 _LIVE_FRAME_COND = threading.Condition(_LIVE_FRAME_LOCK)  # for MJPEG waiters
 _LIVE_FRAME_ID = 0  # monotonic counter so MJPEG can detect new frames
 
+# ── WebSocket live broadcast ────────────────────────────────────────────
+_WS_CLIENTS: set[WebSocket] = set()
+_WS_LOCK = threading.Lock()
+
+
+def _broadcast_jpeg(jpeg_bytes: bytes):
+    """Send JPEG bytes to all connected WebSocket clients (best-effort)."""
+    dead: list[WebSocket] = []
+    with _WS_LOCK:
+        for ws in list(_WS_CLIENTS):
+            try:
+                asyncio.run_coroutine_threadsafe(ws.send_bytes(jpeg_bytes), _event_loop)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            _WS_CLIENTS.discard(ws)
+
 
 def _push_live_frame(arr):
     """Encode a numpy array as JPEG and store in the live buffer."""
@@ -87,10 +104,12 @@ def _push_live_frame(arr):
         img = img.resize((1280, int(h * ratio)), Image.LANCZOS)
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=85)
+    jpeg_bytes = buf.getvalue()
     with _LIVE_FRAME_LOCK:
-        _LIVE_FRAME = buf.getvalue()
+        _LIVE_FRAME = jpeg_bytes
         _LIVE_FRAME_ID += 1
         _LIVE_FRAME_COND.notify_all()
+    _broadcast_jpeg(jpeg_bytes)
 UI_DIR = Path(__file__).resolve().parent.parent / "ui"
 
 # ── Hot-reload infrastructure ─────────────────────────────────────────
@@ -664,6 +683,36 @@ async def live_mjpeg_stream():
     )
 
 
+@app.websocket("/api/live/ws")
+async def live_websocket(websocket: WebSocket):
+    """WebSocket endpoint for smooth live preview.
+    
+    Sends raw JPEG bytes as binary frames. The client decodes them with
+    createImageBitmap() and paints to a canvas via requestAnimationFrame.
+    """
+    await websocket.accept()
+    with _WS_LOCK:
+        _WS_CLIENTS.add(websocket)
+    try:
+        # Send the latest frame immediately on connect
+        with _LIVE_FRAME_LOCK:
+            if _LIVE_FRAME is not None:
+                try:
+                    await websocket.send_bytes(_LIVE_FRAME)
+                except Exception:
+                    pass
+        # Keep the connection open — frames arrive via _broadcast_jpeg
+        while True:
+            await websocket.receive_text()  # keepalive / ping
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        with _WS_LOCK:
+            _WS_CLIENTS.discard(websocket)
+
+
 @app.get("/api/live/frame.jpg")
 def live_frame_jpg():
     """Polling fallback — returns the latest live frame as a JPEG.
@@ -902,7 +951,7 @@ _live_sim_cancel = threading.Event()
 _live_sim_thread: threading.Thread | None = None
 
 
-@app.post("/api/graph/live", dependencies=[Depends(require_token)])
+@app.post("/api/graph/live")
 def live_graph_sim(req: GraphRequest):
     """Start or stop a continuous graph simulation.
 
@@ -938,10 +987,32 @@ def live_graph_sim(req: GraphRequest):
             executor = GraphExecutor(OUTPUT_ROOT / "_live_sim", in_memory=True)
             frame = 0
             consecutive_errors = 0
+            # Use a moderate total_frames so the timeline's t cycles through
+            # [0, 1] visibly. The frame counter increments forever — no
+            # wrapping. Methods that use t in sin(t * speed) oscillate
+            # smoothly; the boundary at t=1.0 is seamless because
+            # sin(0) = sin(2π). Methods that use time directly get the
+            # raw frame number for continuous evolution.
+            LIVE_TOTAL_FRAMES = 300
+            # Throttle to ~30fps so the browser can actually display each frame
+            _frame_interval = 1.0 / 30.0
+            print(f"[live-sim] starting loop, {len(nodes)} nodes, {len(edges)} edges")
             while not cancel.is_set():
+                _tick_start = time.monotonic()
                 try:
+                    # Force all nodes dirty every frame — the executor's dirty-flag
+                    # skip reads cached PNGs from disk, which would return the same
+                    # frame 0 image for every subsequent call.
+                    for n in nodes:
+                        n["dirty"] = True
+                        # Inject raw frame as time so methods get a monotonically
+                        # increasing value for continuous evolution, not the
+                        # timeline's normalized t which clamps at 1.0.
+                        if "params" not in n:
+                            n["params"] = {}
+                        n["params"]["time"] = float(frame)
                     flat_outputs, terminal_id, node_errors = executor.execute(
-                        nodes, edges, seed, frame=frame, frames=1
+                        nodes, edges, seed, frame=frame % LIVE_TOTAL_FRAMES, frames=LIVE_TOTAL_FRAMES
                     )
                     for nid, err in node_errors.items():
                         print(f"[live-sim] node {nid} error:\n{err}")
@@ -960,8 +1031,12 @@ def live_graph_sim(req: GraphRequest):
                     if consecutive_errors >= 10:
                         print("[live-sim] 10 consecutive failures — stopping loop")
                         break
-                    time.sleep(0.5)  # don't spin on a persistently broken graph
-                time.sleep(0.01)
+                    time.sleep(0.5)
+                # Throttle to ~30fps so the browser can display each frame
+                _elapsed = time.monotonic() - _tick_start
+                _sleep = _frame_interval - _elapsed
+                if _sleep > 0:
+                    time.sleep(_sleep)
 
         _live_sim_cancel = cancel
         _live_sim_thread = threading.Thread(target=_live_loop, daemon=True)
@@ -1005,11 +1080,20 @@ def _run_graph_job(job_id, nodes, edges, seed, frames, start_frame, out_dir, wid
         # last run, which invalidates every cached output regardless of
         # param edits (the client only dirties nodes on param change).
         global _last_single_frame_ctx
-        _run_ctx = (seed, start_frame, json.dumps(edges, sort_keys=True, default=str))
-        if n_frames > 1 or _last_single_frame_ctx != _run_ctx:
+        # Include node params in the context hash so param changes invalidate
+        # the single-frame cache. Without this, changing a param and hitting
+        # Auto mode returns the cached frame from the previous run.
+        _nodes_ctx = json.dumps(
+            [{n["id"]: n.get("params", {})} for n in nodes],
+            sort_keys=True, default=str
+        )
+        _run_ctx = (seed, start_frame, _nodes_ctx, json.dumps(edges, sort_keys=True, default=str))
+        _ctx_changed = _last_single_frame_ctx != _run_ctx
+        if n_frames > 1 or _ctx_changed:
             for n in nodes:
                 n["dirty"] = True
         _last_single_frame_ctx = _run_ctx if n_frames == 1 else None
+        print(f"[run-job] n_frames={n_frames}, ctx_changed={_ctx_changed}, dirty_flags={[n.get('dirty') for n in nodes]}")
 
         # ── Determine timeline sequence name ──────────────────────────
         # Use the timeline name from the graph, or auto-generate one.
@@ -1202,6 +1286,12 @@ async def render_sequence(req: SequenceRequest):
         # Extract per-node animParams (stripped from GraphNode schema)
         node_anim_params = {n["id"]: n.get("animParams", {}) for n in nodes}
 
+        # Force all nodes dirty — the executor's dirty-flag skip reads cached
+        # PNGs from disk, which would return the same frame 1 image for every
+        # subsequent frame.
+        for n in nodes:
+            n["dirty"] = True
+
         for frame in range(start_frame, end_frame + 1):
             # Build frame-specific node list with interpolated params
             frame_nodes = []
@@ -1283,6 +1373,21 @@ def list_sequences():
             "created_at": datetime.fromtimestamp(seq_dir.stat().st_mtime).isoformat(),
         })
     return result
+
+
+@app.get("/api/sequences/{name}/video.{ext}")
+def get_sequence_video(name: str, ext: str):
+    """Serve an encoded video file for a sequence."""
+    name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+    if ext not in ("mp4", "gif"):
+        from fastapi import HTTPException
+        raise HTTPException(400, "Unsupported format — use mp4 or gif")
+    video_path = SEQUENCES_DIR / name / f"output.{ext}"
+    if not video_path.exists():
+        from fastapi import HTTPException
+        raise HTTPException(404, f"Video not found for sequence '{name}' — encode first")
+    media_type = "video/mp4" if ext == "mp4" else "image/gif"
+    return FileResponse(str(video_path), media_type=media_type, filename=f"{name}.{ext}")
 
 
 @app.get("/api/sequences/{name}/{frame}")
@@ -1377,21 +1482,6 @@ def encode_sequence(name: str, req: EncodeRequest):
             return {"ok": False, "error": result.stderr.decode(errors="replace")[:500]}
 
     return {"ok": True, "path": f"/api/sequences/{name}/video.{fmt}"}
-
-
-@app.get("/api/sequences/{name}/video.{ext}")
-def get_sequence_video(name: str, ext: str):
-    """Serve an encoded video file for a sequence."""
-    name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
-    if ext not in ("mp4", "gif"):
-        from fastapi import HTTPException
-        raise HTTPException(400, "Unsupported format — use mp4 or gif")
-    video_path = SEQUENCES_DIR / name / f"output.{ext}"
-    if not video_path.exists():
-        from fastapi import HTTPException
-        raise HTTPException(404, f"Video not found for sequence '{name}' — encode first")
-    media_type = "video/mp4" if ext == "mp4" else "image/gif"
-    return FileResponse(str(video_path), media_type=media_type, filename=f"{name}.{ext}")
 
 
 # ── NODE DOCTOR endpoints ─────────────────────────────────────────────

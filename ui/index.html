@@ -2883,6 +2883,8 @@ function tlClearPreview() {
 const _tlFrameCache = new Map();
 
 function _tlDisplayBlob(blob) {
+  // Don't clobber the live canvas
+  if (gLiveMode) return;
   const url = URL.createObjectURL(blob);
   if (!gLivePreviewImg) {
     gMainPreview.innerHTML = '';
@@ -6133,6 +6135,8 @@ function tlHandleSeqEvent(type, data, startFrame, total) {
       tlRenderBtn.disabled        = false;
       tlProgressDiv.style.display = 'none';
       gShowToast(`🎬 Sequence complete — ${d.count ?? total} frames`, false);
+      // Auto-encode to MP4 and trigger download
+      setTimeout(() => tlDoEncodeAndDownload('mp4'), 500);
     }
   } catch {}
 }
@@ -6172,8 +6176,37 @@ async function tlDoEncode(format) {
 document.getElementById('tl-encode-mp4')?.addEventListener('click', () => tlDoEncode('mp4'));
 document.getElementById('tl-encode-gif')?.addEventListener('click', () => tlDoEncode('gif'));
 
+// ── Auto-encode + download after render sequence ──────────────
+async function tlDoEncodeAndDownload(format) {
+  const name = tlName.value.trim() || 'sequence';
+  const fps  = parseInt(tlFps.value) || 24;
+  try {
+    const res = await fetch(`/api/sequences/${encodeURIComponent(name)}/encode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fps, format }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      // Trigger browser save dialog
+      const a = document.createElement('a');
+      a.href = data.path;
+      a.download = `${name}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      gShowToast(`⬇ Downloading ${name}.${format}`, false);
+    } else {
+      gShowToast('Encode failed: ' + (data.error || 'unknown error'), true);
+    }
+  } catch (e) {
+    gShowToast('Encode error: ' + e.message, true);
+  }
+}
+
 // ── Clear ──────────────────────────────────────────────────────
 function gDoClear() {
+  if (gLiveMode) gSetLive(false);
   gNodes=[]; gEdges=[]; gSelectedNode=null; gSelectedEdge=null; gSelectedNodes.clear();
   gPanX=0; gPanY=0; gApplyPan();
   gNodesEl.innerHTML=''; gEdgesEl.innerHTML=''; gOutputStrip.innerHTML='';
