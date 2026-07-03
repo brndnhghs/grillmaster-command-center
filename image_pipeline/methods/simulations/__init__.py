@@ -80,3 +80,8 @@ from . import ocean_spectral
 from . import pm_anisotropic_rd
 from . import gpe_vortex
 from . import ferrofluid
+from . import chua_lattice
+from . import moire_animation
+from . import turing_morphogenesis
+from . import pfc
+from . import sand_dune_migration

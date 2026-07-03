@@ -18,7 +18,10 @@ def get_used_ids() -> set[int]:
             if isinstance(node, ast.Call):
                 for kw in getattr(node, 'keywords', []):
                     if kw.arg == 'id' and isinstance(kw.value, ast.Constant):
-                        ids.add(int(kw.value.value))
+                        try:
+                            ids.add(int(kw.value.value))
+                        except (TypeError, ValueError):
+                            continue  # named ids like "__counter__" don't occupy numeric slots
     return ids
 
 def main():

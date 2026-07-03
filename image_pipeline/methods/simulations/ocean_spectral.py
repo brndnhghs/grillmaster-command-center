@@ -171,7 +171,15 @@ def _render_whitecap(h: np.ndarray, hx: np.ndarray, hy: np.ndarray,
             "description": "simulation frames to capture",
             "min": 50, "max": 400, "default": 180,
         },
-    }
+    },
+    outputs={
+        "image": "IMAGE",
+        "luminance": "SCALAR",
+        "wind_speed": "SCALAR",
+        "peak_freq": "SCALAR",
+        "significant_height": "SCALAR",
+        "phillips_alpha": "SCALAR",
+    },
 )
 def method_ocean_spectral(out_dir: Path, seed: int, params=None):
     """Spectral ocean wave synthesis via JONSWAP directional spectrum.
@@ -316,7 +324,7 @@ def method_ocean_spectral(out_dir: Path, seed: int, params=None):
         canvas_np = np.array(canvas_img, dtype=np.uint8)
 
         save(canvas_np, f"frame_{frame:04d}.png", out_dir)
-        capture_frame("149", canvas_np)
+        capture_frame("167", canvas_np)
 
     write_scalars(out_dir,
                   wind_speed=U10,

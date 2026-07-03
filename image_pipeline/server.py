@@ -24,7 +24,7 @@ _repo_root = Path(__file__).resolve().parent.parent
 if str(_repo_root) not in sys.path:
     sys.path.insert(0, str(_repo_root))
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -68,6 +68,23 @@ _LIVE_FRAME_LOCK = threading.Lock()
 _LIVE_FRAME_COND = threading.Condition(_LIVE_FRAME_LOCK)  # for MJPEG waiters
 _LIVE_FRAME_ID = 0  # monotonic counter so MJPEG can detect new frames
 
+# ── WebSocket live broadcast ────────────────────────────────────────────
+_WS_CLIENTS: set[WebSocket] = set()
+_WS_LOCK = threading.Lock()
+
+
+def _broadcast_jpeg(jpeg_bytes: bytes):
+    """Send JPEG bytes to all connected WebSocket clients (best-effort)."""
+    dead: list[WebSocket] = []
+    with _WS_LOCK:
+        for ws in list(_WS_CLIENTS):
+            try:
+                asyncio.run_coroutine_threadsafe(ws.send_bytes(jpeg_bytes), _event_loop)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            _WS_CLIENTS.discard(ws)
+
 
 def _push_live_frame(arr):
     """Encode a numpy array as JPEG and store in the live buffer."""
@@ -87,12 +104,12 @@ def _push_live_frame(arr):
         img = img.resize((1280, int(h * ratio)), Image.LANCZOS)
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=85)
+    jpeg_bytes = buf.getvalue()
     with _LIVE_FRAME_LOCK:
-        _LIVE_FRAME = buf.getvalue()
+        _LIVE_FRAME = jpeg_bytes
         _LIVE_FRAME_ID += 1
         _LIVE_FRAME_COND.notify_all()
-
-
+    _broadcast_jpeg(jpeg_bytes)
 UI_DIR = Path(__file__).resolve().parent.parent / "ui"
 
 # ── Hot-reload infrastructure ─────────────────────────────────────────
@@ -165,6 +182,20 @@ async def lifespan(app: FastAPI):
     yield
     _observer.stop()
     _observer.join()
+
+
+# ── Mutating-endpoint auth ────────────────────────────────────────────
+# Endpoints that write method source, restart the process, or spawn cook
+# loops are unauthenticated by default (localhost use). When the server is
+# exposed (e.g. --tunnel), set GRILLMASTER_API_TOKEN; those endpoints then
+# require the X-Api-Token header. The UI attaches it automatically from
+# localStorage['api-token'].
+API_TOKEN = os.environ.get("GRILLMASTER_API_TOKEN", "")
+
+
+def require_token(request: Request):
+    if API_TOKEN and request.headers.get("x-api-token") != API_TOKEN:
+        raise HTTPException(401, "Missing or invalid X-Api-Token header")
 
 
 app = FastAPI(title="Image Pipeline", lifespan=lifespan)
@@ -248,71 +279,25 @@ def _parse_choices(desc: str, default_val) -> list | None:
     return None
 
 
-# ── Hand-curated param schemas (from pipeline_viewer.py artifact) ─────
-# These override auto-detected choices and add min/max/default for sliders.
-_PARAM_SCHEMAS: dict[str, dict] = {
-    "1": {"preset": {"desc":"ASCII preset","default":"blocks","choices":["blocks","narrow","dense","braille","geometric","shapes","shade","wide","minimal","grayscale"]},"color":{"desc":"color mode","default":"mono","choices":["mono","random","rainbow","heat"]},"invert":{"desc":"invert","default":False}},
-    "2": {"palette":{"desc":"color palette","default":"pico8","choices":["bw","grayscale","amber","green","gameboy","cga","pico8","nes","apple2","zxspectrum","c64","megadrive","sms","atari2600","amiga","warm","cool","vapor","sepia"]},"dither":{"desc":"dither","default":"none","choices":["none","bayer","floyd"]},"grid":{"desc":"grid overlay","default":False},"round":{"desc":"rounded corners","default":False}},
-    "5": {"noise_type":{"desc":"noise type","default":"perlin","choices":["perlin","value","simplex","curl","cloud","marble","plasma","cell","wood","terrain","spot","ring","brick"]},"domain_warp":{"desc":"warp strength","min":0,"max":10,"default":2},"scale":{"desc":"frequency scale","min":0.1,"max":10,"default":2},"octaves":{"desc":"octaves","min":1,"max":12,"default":4},"water_level":{"desc":"water level","min":0,"max":1,"default":0}},
-    "7": {"formula":{"desc":"fractal formula","default":"mandelbrot","choices":["mandelbrot","julia","burning_ship","tricorn","celtic","mandelbrot3","mandelbrot4"]},"iterations":{"desc":"max iterations","min":20,"max":500,"default":150},"zoom":{"desc":"zoom level","min":1,"max":100000,"default":1},"colormap":{"desc":"colormap","default":"inferno","choices":["inferno","magma","plasma","viridis","turbo","cool","hot"]},"color_shift":{"desc":"hue shift","min":0,"max":1,"default":0}},
-    "13": {"algorithm":{"desc":"dither algorithm","default":"floyd","choices":["floyd","atkinson","stucki","sierra","jarvis","bayer2","bayer4","bayer8","cluster3","cluster4","random"]},"levels":{"desc":"levels per channel","min":2,"max":8,"default":4},"contrast":{"desc":"contrast boost","min":0,"max":2,"default":1}},
-    "17": {"glitch_type":{"desc":"glitch type","default":"shift","choices":["shift","sort","noise","scanline","vhs","jpeg","bitcrush","wave","datamosh","kaleidoscope","all"]},"intensity":{"desc":"intensity","min":0,"max":1,"default":0.3}},
-    "18": {"automaton":{"desc":"cellular automaton","default":"conway","choices":["conway","coral","maze","anneal","day_night","cyclic","bz","langtons_ant","forest_fire","rps","turmite"]},"rule":{"desc":"wolfram rule","min":0,"max":255,"default":110}},
-    "19": {"preset":{"desc":"L-system preset","default":"tree","choices":["tree","bush","weed","dragon","sierpinski","koch","gosper","hilbert","pythagoras","algae"]},"iterations":{"desc":"iterations","min":2,"max":8,"default":5},"branch_angle":{"desc":"branch angle","min":10,"max":90,"default":25}},
-    "20": {"emitter":{"desc":"emitter type","default":"point","choices":["point","line","circle","radial","grid","explosion","fountain"]},"physics":{"desc":"physics","default":"gravity","choices":["gravity","wind","vortex","bounce","attract","spring"]},"trail_length":{"desc":"trail length","min":0,"max":50,"default":8}},
-    "29": {"points":{"desc":"number of points","min":10,"max":500,"default":50},"metric":{"desc":"distance metric","default":"euclidean","choices":["euclidean","manhattan","chebyshev","minkowski"]},"style":{"desc":"render style","default":"mosaic","choices":["mosaic","bevel","treemap","terrain","wireframe"]}},
-    "30": {"attractor":{"desc":"attractor type","default":"clifford","choices":["clifford","de_jong","bedhead","lorenz","ikeda","henon","tinkerbell","gingerbreadman"]},"palette":{"desc":"color palette","default":"cool","choices":["cool","warm","fire","ice","rainbow","mono"]}},
-    "31": {"size":{"desc":"image size","min":256,"max":2048,"default":1024},"roughness":{"desc":"roughness","min":0.1,"max":2,"default":0.7},"terrain":{"desc":"terrain mode","default":"none","choices":["none","shaded","contour","fill"]}},
-    "32": {"preset":{"desc":"Gray-Scott preset","default":"spots","choices":["spots","worms","coral","mitosis","labyrinth","chaos","maze","honeycomb","biofilm","ripple","skeleton","coral2","bubbles","swirl","dots"]},"quality":{"desc":"quality","default":"medium","choices":["low","medium","high"]}},
-    "34": {"boids":{"desc":"number of boids","min":20,"max":500,"default":150},"max_speed":{"desc":"max speed","min":1,"max":8,"default":3},"species_mode":{"desc":"species","default":"single","choices":["single","dual","predator_prey"]}},
-    "35": {"particles":{"desc":"number of particles","min":100,"max":3000,"default":800},"speed":{"desc":"speed","min":0.5,"max":5,"default":1.5},"field_type":{"desc":"field type","default":"perlin","choices":["random","perlin","vortex","radial","sinusoidal","checker","spiral","cross","gabor","perlin_warp","cellular"]}},
-    "36": {"particles":{"desc":"number of particles","min":500,"max":30000,"default":5000},"growth_mode":{"desc":"growth mode","default":"classic","choices":["classic","ballistic","cluster_cluster","surface","julia_field","gradient_field"]}},
-    "37": {"levels":{"desc":"contour levels","min":3,"max":30,"default":10},"field_type":{"desc":"field type","default":"sin_wave","choices":["sin_wave","perlin","vortex","wave_interference","radial_waves","bump","ridged"]},"style":{"desc":"render style","default":"filled","choices":["filled","wireframe","filled_lines","shaded","glow","ribbon"]}},
-    "38": {"algorithm":{"desc":"algorithm","default":"classic","choices":["classic","color","sirds"]},"depth_mode":{"desc":"depth mode","default":"sphere","choices":["sphere","radial","torus","perlin","text","input"]},"max_offset":{"desc":"max offset","min":10,"max":80,"default":40}},
-    "39": {"colors":{"desc":"number of colors","min":2,"max":32,"default":8},"source":{"desc":"source","default":"random","choices":["random","gradient","perlin","spiral","checker","input"]},"style":{"desc":"render style","default":"raw","choices":["raw","edge_overlay","outlined","mosaic","smooth"]}},
-    "43": {"points":{"desc":"number of points","min":50,"max":5000,"default":500},"sigma":{"desc":"blur sigma","min":1,"max":20,"default":5},"style":{"desc":"render style","default":"colormap","choices":["colormap","contour","scatter","glow","isosurface","3d","ridge","stippled","multilayer","edge"]}},
-    "48": {"filter_type":{"desc":"frequency filter","default":"ring","choices":["ring","concentric","spiral","star","checker","gabor","fractal","polar","phase_swap","convolution","radial"]},"source":{"desc":"source","default":"random","choices":["random","perlin","wave","color_noise","input"]},"color_mode":{"desc":"color mode","default":"rainbow","choices":["gradient","palette","phase","magnitude","rainbow","heatmap","swap"]}},
-    "53": {"balls":{"desc":"number of metaballs","min":2,"max":50,"default":12},"behavior":{"desc":"ball behavior","default":"random_walk","choices":["random_walk","gravity","attract_repel","bounce","swarm","orbit","spiral","wave","noise_driven","explosion","morph","flock","galaxy","pulse","breathing"]},"style":{"desc":"render style","default":"filled","choices":["filled","palette","gradient","wireframe","glow","threshold","3d","edge_glow","neon","mosaic","aurora","glass","luminous"]}},
-    "54": {"max_num":{"desc":"max number","min":50,"max":5000,"default":500},"spiral_type":{"desc":"spiral type","default":"clockwise","choices":["clockwise","counter","diamond","hexagonal","archimedean"]},"color_mode":{"desc":"color mode","default":"palette","choices":["binary","palette","factor","twin","gap","semiprime","goldbach"]}},
-    "56": {"cell_size":{"desc":"cell size","min":4,"max":40,"default":20},"algorithm":{"desc":"maze algorithm","default":"recursive","choices":["recursive","eller","prim","kruskal","hunt_kill","sidewinder","growing_tree"]},"geometry":{"desc":"geometry","default":"rect","choices":["rect","hex","polar"]}},
-    "62": {"map_type":{"desc":"chaotic map","default":"henon","choices":["henon","logistic","tinkerbell","gingerbreadman","ikeda","lorenz","standard","baker","arnold_cat","duffing","rossler","multi"]},"n":{"desc":"iterations","min":1000,"max":500000,"default":50000},"style":{"desc":"render style","default":"density","choices":["density","trace","bifurcation","poincare","phase","orbit"]}},
-    "65": {"wave_type":{"desc":"wave type","default":"sine","choices":["sine","sawtooth","square","triangle","pulse","am","fm","noise","lissajous","spectrum","harmonic","interference","granular","wavetable"]},"layout":{"desc":"layout","default":"single","choices":["single","multi","stereo","circular","3d","equalizer","waterfall","polar"]},"style":{"desc":"render style","default":"glow","choices":["line","palette","gradient","glow","oscilloscope","spectrogram","filled","particle","neon","heat"]}},
-    "73": {"points":{"desc":"number of points","min":50,"max":3000,"default":500},"style":{"desc":"render style","default":"filled","choices":["filled","wireframe","filled_wireframe","glow","dual","shaded_3d","gradient","noise"]}},
-    "76": {"bits":{"desc":"bits per column","min":4,"max":16,"default":8},"data_source":{"desc":"data source","default":"sine_wave","choices":["x_position","input","sine","noise","prime","time","gray_code","fibonacci"]},"layout":{"desc":"layout","default":"rows","choices":["rows","cols","radial","spiral","matrix","barcode","3d"]}},
-    "78": {"max_circles":{"desc":"max circles","min":20,"max":500,"default":150},"min_radius":{"desc":"min radius","min":1,"max":20,"default":3},"packing":{"desc":"packing strategy","default":"random","choices":["random","radial","spiral","hex","input","relaxation","fibonacci","bouncing"]},"style":{"desc":"render style","default":"filled","choices":["filled","wireframe","concentric","sunburst","halftone","voronoi","shadow","mosaic"]}},
-}
-
-
-def _enrich_params(params: dict | None, method_id: str | None = None) -> dict | None:
-    """Inject 'choices' into param specs where the description encodes an enum list.
-    Also applies hand-curated PARAM_SCHEMAS as overrides for known methods.
-    """
+def _enrich_params(params: dict | None) -> dict | None:
+    """Inject 'choices' into param specs where the description encodes an enum list."""
     if not params:
         return params
     result = {}
-    # Hand-curated overrides from pipeline_viewer.py
-    # Normalize method_id: strip leading zeros to match PARAM_SCHEMAS keys
-    norm_id = method_id.lstrip('0') if method_id else None
-    overrides = _PARAM_SCHEMAS.get(norm_id, {}) if norm_id else {}
     for key, spec in params.items():
-        if not isinstance(spec, dict):
+        if not isinstance(spec, dict) or 'choices' in spec:
             result[key] = spec
             continue
-        # Start with the original spec
-        enriched = dict(spec)
-        # Apply hand-curated override if available
-        if key in overrides:
-            enriched.update(overrides[key])
-        # Auto-detect choices from description if not already set
-        if 'choices' not in enriched:
-            choices = _parse_choices(spec.get('description', ''), spec.get('default'))
-            if choices:
-                enriched['choices'] = choices
-        result[key] = enriched
+        choices = _parse_choices(spec.get('description', ''), spec.get('default'))
+        result[key] = {**spec, 'choices': choices} if choices else spec
     return result
 
 
 # ── In-memory job store ───────────────────────────────────────────────
+
+# (seed, frame, edges-digest) of the last single-frame graph run — the
+# dirty-flag skip is only valid while these are unchanged; see _run_graph_job.
+_last_single_frame_ctx: tuple | None = None
 
 _jobs: dict[str, dict] = {}
 _JOB_MAX_AGE = 3600  # seconds
@@ -342,7 +327,7 @@ def health():
     return {"ok": True}
 
 
-@app.post("/admin/restart")
+@app.post("/admin/restart", dependencies=[Depends(require_token)])
 def admin_restart():
     """Re-exec the server process in place — picks up any source changes."""
     def _exec():
@@ -361,7 +346,7 @@ def list_methods():
             "name": meta.name,
             "category": meta.category,
             "tags": meta.tags,
-            "params": _enrich_params(meta.params, method_id=meta.id),
+            "params": _enrich_params(meta.params),
         }
         for meta in sorted(all_methods.values(), key=lambda m: m.id)
     ]
@@ -458,7 +443,7 @@ def _encode_frame(arr) -> str:
     img = img.convert("RGB")
     # Halve the resolution for a lightweight live preview
     w, h = img.size
-    img = img.resize((max(1, w // 2), max(1, h // 2)), Image.LANCZOS)
+    img = img.resize((max(1, w // 2), max(1, h // 2)), Image.BILINEAR)
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=65)
     return base64.b64encode(buf.getvalue()).decode()
@@ -492,7 +477,6 @@ def _run_job(job_id, method_id, seed, params, animate, fps, duration, out_dir, f
                 if now - last_frame_t[0] < 0.05:   # cap preview at ~20 fps
                     return
                 last_frame_t[0] = now
-                _push_live_frame(arr)
                 q.put(("frame", _encode_frame(arr)))
 
             # ── Install per-thread job context for capture_frame() ──
@@ -550,14 +534,6 @@ def _run_job(job_id, method_id, seed, params, animate, fps, duration, out_dir, f
                 out_path = pngs[-1]
                 # ── Cache store ──
                 _cache.store(method_id, seed, out_path, params)
-
-            # ── Push to live preview ──
-            try:
-                from PIL import Image as _PIL_live
-                import numpy as _np_live
-                _push_live_frame(_np_live.array(_PIL_live.open(str(out_path)).convert("RGB")))
-            except Exception:
-                pass
 
             # ── Quality check ──
             report = _quality_check(out_path)
@@ -707,6 +683,36 @@ async def live_mjpeg_stream():
     )
 
 
+@app.websocket("/api/live/ws")
+async def live_websocket(websocket: WebSocket):
+    """WebSocket endpoint for smooth live preview.
+    
+    Sends raw JPEG bytes as binary frames. The client decodes them with
+    createImageBitmap() and paints to a canvas via requestAnimationFrame.
+    """
+    await websocket.accept()
+    with _WS_LOCK:
+        _WS_CLIENTS.add(websocket)
+    try:
+        # Send the latest frame immediately on connect
+        with _LIVE_FRAME_LOCK:
+            if _LIVE_FRAME is not None:
+                try:
+                    await websocket.send_bytes(_LIVE_FRAME)
+                except Exception:
+                    pass
+        # Keep the connection open — frames arrive via _broadcast_jpeg
+        while True:
+            await websocket.receive_text()  # keepalive / ping
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        with _WS_LOCK:
+            _WS_CLIENTS.discard(websocket)
+
+
 @app.get("/api/live/frame.jpg")
 def live_frame_jpg():
     """Polling fallback — returns the latest live frame as a JPEG.
@@ -728,8 +734,6 @@ def live_frame_jpg():
             "Access-Control-Allow-Origin": "*",
         },
     )
-
-
 # ── File result ───────────────────────────────────────────────────────
 
 
@@ -801,9 +805,9 @@ def get_wire_payload(job_id: str, src_node_id: str):
 def get_node_defs():
     from image_pipeline.core.graph import get_all_node_defs
     defs = get_all_node_defs()
-    for mid, nd in defs.items():
+    for nd in defs.values():
         if nd.get('params'):
-            nd['params'] = _enrich_params(nd['params'], method_id=mid)
+            nd['params'] = _enrich_params(nd['params'])
     return defs
 
 
@@ -942,58 +946,107 @@ def execute_graph(req: GraphRequest):
 
 
 # ── Live sim: continuous graph execution ──────────────────────────
+_live_sim_lock = threading.Lock()
 _live_sim_cancel = threading.Event()
-_live_sim_nodes = []
-_live_sim_edges = []
-_live_sim_seed = 0
-_live_sim_width = 768
-_live_sim_height = 512
+_live_sim_thread: threading.Thread | None = None
 
 
 @app.post("/api/graph/live")
 def live_graph_sim(req: GraphRequest):
     """Start or stop a continuous graph simulation.
-    Runs the graph in an infinite loop, pushing frames to the live preview.
+
+    frames == 0 stops; anything else (re)starts. Only one live loop runs at
+    a time — starting while one is active stops the old loop first, so
+    re-POSTing with an edited graph hot-swaps it.
     """
-    global _live_sim_cancel, _live_sim_nodes, _live_sim_edges, _live_sim_seed, _live_sim_width, _live_sim_height
-    if req.frames == 0:
-        # Stop
-        _live_sim_cancel.set()
-        return {"status": "stopped"}
-    # Start
-    _live_sim_cancel = threading.Event()
-    _live_sim_nodes = req.nodes
-    _live_sim_edges = req.edges
-    _live_sim_seed = req.seed
-    _live_sim_width = req.width
-    _live_sim_height = req.height
+    global _live_sim_cancel, _live_sim_thread
+    with _live_sim_lock:
+        # Stop any existing loop (both for stop requests and restarts)
+        if _live_sim_thread is not None and _live_sim_thread.is_alive():
+            _live_sim_cancel.set()
+            _live_sim_thread.join(timeout=5.0)
+        _live_sim_thread = None
+        if req.frames == 0:
+            return {"status": "stopped"}
 
-    def _live_loop():
-        from image_pipeline.core.graph import GraphExecutor
-        from image_pipeline.core.utils import set_canvas as _set_canvas
-        _set_canvas(_live_sim_width, _live_sim_height)
-        executor = GraphExecutor(OUTPUT_ROOT / "_live_sim", in_memory=True)
-        frame = 0
-        while not _live_sim_cancel.is_set():
-            try:
-                flat_outputs, terminal_id, _ = executor.execute(
-                    _live_sim_nodes, _live_sim_edges, _live_sim_seed,
-                    frame=frame, frames=1
-                )
-                render_id = next((n["id"] for n in _live_sim_nodes if n.get("render")), None)
-                if render_id and render_id in flat_outputs:
-                    terminal_id = render_id
-                arr = (flat_outputs.get(terminal_id) or {}).get("image") if terminal_id else None
-                if arr is not None:
-                    _push_live_frame(arr)
-                frame += 1
-            except Exception:
-                pass
-            time.sleep(0.01)
+        cancel = threading.Event()
+        nodes, edges, seed = req.nodes, req.edges, req.seed
+        width, height = req.width, req.height
+        # Live mode always re-cooks every frame. The client marks nodes
+        # dirty=False after a normal Run, so without this the executor's
+        # dirty-skip reloads one cached frame forever and the preview
+        # freezes. (Selective recooking is for the single-frame tweak
+        # loop, never for the continuous live loop.)
+        for _n in nodes:
+            _n["dirty"] = True
 
-    thread = threading.Thread(target=_live_loop, daemon=True)
-    thread.start()
-    return {"status": "running"}
+        def _live_loop():
+            from image_pipeline.core.graph import GraphExecutor
+            from image_pipeline.core.utils import set_canvas as _set_canvas
+            _set_canvas(width, height)
+            executor = GraphExecutor(OUTPUT_ROOT / "_live_sim", in_memory=True)
+            frame = 0
+            consecutive_errors = 0
+            # Use a moderate total_frames so the timeline's t cycles through
+            # [0, 1] visibly. The frame counter increments forever — no
+            # wrapping. Methods that use t in sin(t * speed) oscillate
+            # smoothly; the boundary at t=1.0 is seamless because
+            # sin(0) = sin(2π). Methods that use time directly get the
+            # raw frame number for continuous evolution.
+            LIVE_TOTAL_FRAMES = 300
+            # Throttle to ~30fps so the browser can actually display each frame
+            _frame_interval = 1.0 / 30.0
+            print(f"[live-sim] starting loop, {len(nodes)} nodes, {len(edges)} edges")
+            while not cancel.is_set():
+                _tick_start = time.monotonic()
+                try:
+                    # Force all nodes dirty every frame — the executor's dirty-flag
+                    # skip reads cached PNGs from disk, which would return the same
+                    # frame 0 image for every subsequent call.
+                    for n in nodes:
+                        n["dirty"] = True
+                        # Inject raw frame as time so methods get a monotonically
+                        # increasing value for continuous evolution, not the
+                        # timeline's normalized t which clamps at 1.0.
+                        if "params" not in n:
+                            n["params"] = {}
+                        n["params"]["time"] = float(frame)
+                    flat_outputs, terminal_id, node_errors = executor.execute(
+                        nodes, edges, seed, frame=frame % LIVE_TOTAL_FRAMES, frames=LIVE_TOTAL_FRAMES
+                    )
+                    for nid, err in node_errors.items():
+                        print(f"[live-sim] node {nid} error:\n{err}")
+                    render_id = next((n["id"] for n in nodes if n.get("render")), None)
+                    if render_id and render_id in flat_outputs:
+                        terminal_id = render_id
+                    arr = (flat_outputs.get(terminal_id) or {}).get("image") if terminal_id else None
+                    if arr is not None:
+                        _push_live_frame(arr)
+                    frame += 1
+                    consecutive_errors = 0
+                except Exception:
+                    import traceback as _tb
+                    print(f"[live-sim] frame {frame} failed:\n{_tb.format_exc(limit=6)}")
+                    consecutive_errors += 1
+                    if consecutive_errors >= 10:
+                        print("[live-sim] 10 consecutive failures — stopping loop")
+                        break
+                    time.sleep(0.5)
+                # Throttle to ~30fps so the browser can display each frame
+                _elapsed = time.monotonic() - _tick_start
+                _sleep = _frame_interval - _elapsed
+                if _sleep > 0:
+                    time.sleep(_sleep)
+
+        _live_sim_cancel = cancel
+        _live_sim_thread = threading.Thread(target=_live_loop, daemon=True)
+        _live_sim_thread.start()
+        return {"status": "running"}
+
+
+@app.get("/api/graph/live/status")
+def live_graph_status():
+    return {"running": _live_sim_thread is not None and _live_sim_thread.is_alive()}
 
 
 def _run_graph_job(job_id, nodes, edges, seed, frames, start_frame, out_dir, width=768, height=512):
@@ -1017,14 +1070,30 @@ def _run_graph_job(job_id, nodes, edges, seed, frames, start_frame, out_dir, wid
         n_frames = max(1, frames)
         all_errors: dict[str, str] = {}
 
-        # ── Force all nodes dirty so every run re-executes ──────────────
-        # The client marks nodes clean after a successful run, but the
-        # executor's disk cache (_GRAPH_SESSION_DIR) persists across jobs.
-        # Without this, the dirty-flag skip reads the last frame's PNG from
-        # the previous run for every frame — producing a static image instead
-        # of re-cooking the animation.
-        for n in nodes:
-            n["dirty"] = True
+        # ── Dirty-flag handling ──────────────────────────────────────────
+        # Multi-frame renders force everything dirty: the executor's disk
+        # cache (_GRAPH_SESSION_DIR) persists across jobs, and reusing the
+        # previous run's PNG for every frame would produce a static image
+        # instead of re-cooking the animation.
+        # Single-frame runs honor the client's dirty flags (selective
+        # recooking) — unless the seed, frame, or wiring changed since the
+        # last run, which invalidates every cached output regardless of
+        # param edits (the client only dirties nodes on param change).
+        global _last_single_frame_ctx
+        # Include node params in the context hash so param changes invalidate
+        # the single-frame cache. Without this, changing a param and hitting
+        # Auto mode returns the cached frame from the previous run.
+        _nodes_ctx = json.dumps(
+            [{n["id"]: n.get("params", {})} for n in nodes],
+            sort_keys=True, default=str
+        )
+        _run_ctx = (seed, start_frame, _nodes_ctx, json.dumps(edges, sort_keys=True, default=str))
+        _ctx_changed = _last_single_frame_ctx != _run_ctx
+        if n_frames > 1 or _ctx_changed:
+            for n in nodes:
+                n["dirty"] = True
+        _last_single_frame_ctx = _run_ctx if n_frames == 1 else None
+        print(f"[run-job] n_frames={n_frames}, ctx_changed={_ctx_changed}, dirty_flags={[n.get('dirty') for n in nodes]}")
 
         # ── Determine timeline sequence name ──────────────────────────
         # Use the timeline name from the graph, or auto-generate one.
@@ -1066,7 +1135,6 @@ def _run_graph_job(job_id, nodes, edges, seed, frames, start_frame, out_dir, wid
             arr = (flat_outputs.get(terminal_id) or {}).get("image")
             if arr is not None:
                 terminal_frames.append(arr)
-                _push_live_frame(arr)
                 encoded = _encode_frame(arr)
                 payload = json.dumps({"frame": frame, "node_id": terminal_id, "data": encoded})
                 q.put(("graph_frame", payload))
@@ -1081,7 +1149,11 @@ def _run_graph_job(job_id, nodes, edges, seed, frames, start_frame, out_dir, wid
 
         # Assemble output file
         if not terminal_frames:
-            q.put(("error", "No output produced — terminal node generated no image"))
+            _term_desc = f"'{terminal_node_id}'" if terminal_node_id else "(none found)"
+            q.put(("error",
+                   f"No output produced — terminal node {_term_desc} generated no image. "
+                   "It may be a data-only node (Timeline, LFO, Math, …); "
+                   "set the render flag on an image-producing node."))
             return
 
         if n_frames > 1:
@@ -1214,6 +1286,12 @@ async def render_sequence(req: SequenceRequest):
         # Extract per-node animParams (stripped from GraphNode schema)
         node_anim_params = {n["id"]: n.get("animParams", {}) for n in nodes}
 
+        # Force all nodes dirty — the executor's dirty-flag skip reads cached
+        # PNGs from disk, which would return the same frame 1 image for every
+        # subsequent frame.
+        for n in nodes:
+            n["dirty"] = True
+
         for frame in range(start_frame, end_frame + 1):
             # Build frame-specific node list with interpolated params
             frame_nodes = []
@@ -1295,6 +1373,21 @@ def list_sequences():
             "created_at": datetime.fromtimestamp(seq_dir.stat().st_mtime).isoformat(),
         })
     return result
+
+
+@app.get("/api/sequences/{name}/video.{ext}")
+def get_sequence_video(name: str, ext: str):
+    """Serve an encoded video file for a sequence."""
+    name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+    if ext not in ("mp4", "gif"):
+        from fastapi import HTTPException
+        raise HTTPException(400, "Unsupported format — use mp4 or gif")
+    video_path = SEQUENCES_DIR / name / f"output.{ext}"
+    if not video_path.exists():
+        from fastapi import HTTPException
+        raise HTTPException(404, f"Video not found for sequence '{name}' — encode first")
+    media_type = "video/mp4" if ext == "mp4" else "image/gif"
+    return FileResponse(str(video_path), media_type=media_type, filename=f"{name}.{ext}")
 
 
 @app.get("/api/sequences/{name}/{frame}")
@@ -1391,21 +1484,6 @@ def encode_sequence(name: str, req: EncodeRequest):
     return {"ok": True, "path": f"/api/sequences/{name}/video.{fmt}"}
 
 
-@app.get("/api/sequences/{name}/video.{ext}")
-def get_sequence_video(name: str, ext: str):
-    """Serve an encoded video file for a sequence."""
-    name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
-    if ext not in ("mp4", "gif"):
-        from fastapi import HTTPException
-        raise HTTPException(400, "Unsupported format — use mp4 or gif")
-    video_path = SEQUENCES_DIR / name / f"output.{ext}"
-    if not video_path.exists():
-        from fastapi import HTTPException
-        raise HTTPException(404, f"Video not found for sequence '{name}' — encode first")
-    media_type = "video/mp4" if ext == "mp4" else "image/gif"
-    return FileResponse(str(video_path), media_type=media_type, filename=f"{name}.{ext}")
-
-
 # ── NODE DOCTOR endpoints ─────────────────────────────────────────────
 
 _nd_backups: dict[str, tuple[str, str]] = {}  # backup_id → (orig_path, backup_path)
@@ -1451,8 +1529,30 @@ def nd_get_source(method_id: str):
     return {"source": path.read_text(), "path": str(path)}
 
 
-_ND_RUNNER   = Path(__file__).resolve().parent / "nd_runner.py"
-_HERMES_PY   = Path.home() / ".hermes" / "hermes-agent" / "venv" / "bin" / "python"
+_ND_RUNNER = Path(__file__).resolve().parent / "nd_runner.py"
+
+# ── Hermes agent — the sole LLM backend for all LLM calls ────────────
+# The install location is configurable so Node Doctor works on any machine
+# with a Hermes install, not just the one where it lives at the default path.
+#   HERMES_AGENT_DIR — hermes-agent checkout (default ~/.hermes/hermes-agent)
+#   HERMES_PYTHON    — interpreter to run nd_runner.py under
+#                      (default <HERMES_AGENT_DIR>/venv/bin/python)
+# nd_runner.py resolves the same variables, so both processes agree.
+HERMES_AGENT_DIR = Path(
+    os.environ.get("HERMES_AGENT_DIR", str(Path.home() / ".hermes" / "hermes-agent"))
+)
+_HERMES_PY = Path(
+    os.environ.get("HERMES_PYTHON", str(HERMES_AGENT_DIR / "venv" / "bin" / "python"))
+)
+
+if _HERMES_PY.exists():
+    print(f"[node-doctor] Hermes backend found: {_HERMES_PY}")
+else:
+    print(
+        f"[node-doctor] WARNING: Hermes backend not found at {_HERMES_PY} — "
+        f"Node Doctor chat will fail. Set HERMES_AGENT_DIR (or HERMES_PYTHON) "
+        f"to your hermes-agent install."
+    )
 
 
 @app.post("/api/node-doctor/chat")
@@ -1485,6 +1585,11 @@ current_param_values: {json.dumps(node_params)}
     stdin_bytes = json.dumps({"system_prompt": system, "messages": messages}).encode()
 
     async def generate():
+        if not _HERMES_PY.exists():
+            msg = (f"⚠ Hermes backend not found at {_HERMES_PY}. "
+                   f"Set HERMES_AGENT_DIR (or HERMES_PYTHON) and restart.")
+            yield f"data: {json.dumps({'text': msg})}\n\n"
+            return
         try:
             proc = await asyncio.create_subprocess_exec(
                 str(_HERMES_PY), str(_ND_RUNNER),
@@ -1528,7 +1633,7 @@ current_param_values: {json.dumps(node_params)}
     )
 
 
-@app.post("/api/node-doctor/apply")
+@app.post("/api/node-doctor/apply", dependencies=[Depends(require_token)])
 async def nd_apply(payload: dict):
     method_id  = payload.get("method_id", "")
     new_source = payload.get("source", "")
@@ -1539,8 +1644,12 @@ async def nd_apply(payload: dict):
     if not path or not path.exists():
         return {"error": "Method source file not found"}
 
-    backup_id   = uuid.uuid4().hex[:8]
-    backup_path = path.with_suffix(f".nd-bak-{backup_id}.py")
+    backup_id = uuid.uuid4().hex[:8]
+    # Backups live outside methods/ — in-tree copies carry duplicate
+    # @method ids, feed the file watcher, and pollute the audit scan.
+    backup_dir = OUTPUT_ROOT / "nd-backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    backup_path = backup_dir / f"{path.stem}.nd-bak-{backup_id}.py"
     shutil.copy2(str(path), str(backup_path))
     _nd_backups[backup_id] = (str(path), str(backup_path))
 
@@ -1549,7 +1658,7 @@ async def nd_apply(payload: dict):
     return {"ok": True, "backup_id": backup_id}
 
 
-@app.post("/api/node-doctor/undo/{backup_id}")
+@app.post("/api/node-doctor/undo/{backup_id}", dependencies=[Depends(require_token)])
 async def nd_undo(backup_id: str):
     entry = _nd_backups.pop(backup_id, None)
     if not entry:
@@ -1675,7 +1784,7 @@ def nt_get_report():
     return {"report": json.loads(report_path.read_text())}
 
 
-@app.post("/api/node-tester/batch-apply")
+@app.post("/api/node-tester/batch-apply", dependencies=[Depends(require_token)])
 async def nt_batch_apply(payload: dict):
     """Apply Node Doctor fixes to multiple failing methods at once.
 
@@ -1718,6 +1827,13 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.tunnel:
+        if not API_TOKEN:
+            print(
+                "⚠  WARNING: tunneling without GRILLMASTER_API_TOKEN set — "
+                "anyone with the URL can write method source and restart the "
+                "server. Set the env var and put the token in the UI's "
+                "localStorage['api-token']."
+            )
         from pyngrok import ngrok
         tunnel = ngrok.connect(args.port, bind_tls=True)
         print(f"🌐 Public URL: {tunnel.public_url}")

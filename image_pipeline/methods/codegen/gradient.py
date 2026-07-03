@@ -1,7 +1,7 @@
-"""Gradient — procedural gradient generator with FIELD-driven controls.
+"""Gradient — procedural gradient generator with SCALAR-driven controls.
 
 Generates linear, radial, concentric, angular, and diamond gradients.
-Can blend with an upstream image. Supports FIELD-driven center position,
+Can blend with an upstream image. Supports SCALAR-driven center position,
 direction, and animation modes.
 """
 from __future__ import annotations
@@ -23,10 +23,10 @@ _ERROR_IMG = np.zeros((H, W, 3), dtype=np.float32)
     name="Gradient",
     category="codegen",
     tags=["gradient", "fast", "animation"],
-    inputs={"cx": "FIELD",
-            "cy": "FIELD",
-            "direction": "FIELD",
-            "anim_speed": "FIELD"},
+    inputs={"cx": "SCALAR",
+            "cy": "SCALAR",
+            "direction": "SCALAR",
+            "anim_speed": "SCALAR"},
     outputs={"image": "IMAGE", "luminance": "SCALAR"},
     params={
         "gradient_type": {
@@ -40,15 +40,15 @@ _ERROR_IMG = np.zeros((H, W, 3), dtype=np.float32)
             "default": "solid",
         },
         "cx": {
-            "description": "gradient center X (0-1, can be driven by FIELD)",
+            "description": "gradient center X (0-1, can be driven by SCALAR)",
             "min": 0.0, "max": 1.0, "default": 0.5,
         },
         "cy": {
-            "description": "gradient center Y (0-1, can be driven by FIELD)",
+            "description": "gradient center Y (0-1, can be driven by SCALAR)",
             "min": 0.0, "max": 1.0, "default": 0.5,
         },
         "direction": {
-            "description": "gradient direction in degrees (0-360, can be driven by FIELD)",
+            "description": "gradient direction in degrees (0-360, can be driven by SCALAR)",
             "min": 0.0, "max": 360.0, "default": 0.0,
         },
         "color1": {
@@ -75,7 +75,7 @@ def method_gradient(out_dir: Path, seed: int, params=None):
 
     Generates a gradient field (linear, radial, concentric, angular, diamond)
     and applies a color style. Can blend with an upstream image wired into
-    image_in. Supports FIELD-driven cx, cy, and direction for per-pixel control.
+    image_in. Supports SCALAR-driven cx, cy, direction, and anim_speed.
 
     Returns:
         dict with "image" (H,W,3 float32 [0,1]) and "luminance" (float)
@@ -103,7 +103,7 @@ def method_gradient(out_dir: Path, seed: int, params=None):
     color1 = _parse_color(color1_str)
     color2 = _parse_color(color2_str)
 
-    # ── FIELD-driven params ──
+    # ── Wire-driven params (SCALAR wires also inject uniform _field_ arrays) ──
     cx_field = params.get("_field_cx")
     cy_field = params.get("_field_cy")
     direction_field = params.get("_field_direction")

@@ -6,7 +6,7 @@ This document is for any agent creating or modifying node methods in this pipeli
 
 ## What we are building and why
 
-Grillmaster Command Center is a **node-based generative image pipeline designed to be readable and extensible by LLM agents**. Think of it as a small-scale, Python-native analog to Houdini — the professional 3D effects software — but built for 2D generative art and designed so that an agent can read a single method file and immediately understand what it does, what it needs, and what it produces.
+Grillmaster Command Center is a **node-based generative image/video editor designed to be readable and extensible by LLM agents**. It takes the best of Houdini (typed named-attribute payloads flowing through wires) and TouchDesigner (a live, continuously-cooking graph with CHOP-style channel nodes), and is built so that an agent can read a single method file and immediately understand what it does, what it needs, and what it produces. All in-app LLM features (Node Doctor, node-tester batch fixes) run through the **Hermes agent — the sole LLM backend for all LLM calls**.
 
 The pipeline currently generates 2D images. The architecture is deliberately designed to generalize to 3D (geometry, volumes, particle systems) in the future, so avoid hardcoding assumptions that are specific to 2D where possible.
 
@@ -107,25 +107,29 @@ def run(out_dir: Path, seed: int, params: dict) -> None:
 
 Rules:
 - `outputs=` is **required**. At minimum `{"image": "IMAGE", "luminance": "SCALAR"}`.
-- Declare every sidecar you write (field, particles, mask, named scalars). Undeclared sidecars are ignored by the node graph.
-- `id` must be unique across all methods. Check existing files before choosing one.
+- Declare every sidecar you write (field, particles, mask, named scalars). Undeclared sidecars are ignored by the node graph, and the pre-commit audit (`tools/audit_methods.py`) fails on them.
+- `id` must be unique across all methods — get it from `uv run python tools/next_id.py`, never pick or reuse one manually. The registry **raises at import time** on a duplicate id from a different module, which breaks server boot until fixed.
+- Set `description=` — one sentence saying what the node does. It appears in the UI tooltip and in the Node Doctor's context; a nameless node is illegible to the next agent.
 - Never use positional arguments on `@method`.
 
-### 2. Always write a PNG — on every code path
+### 2. Always produce an image — on every code path
 
-The executor reads the last non-`_`-prefixed PNG from `node_dir` as the node's image output. If a method exits without writing one — even due to an exception — the node produces no output and all downstream nodes fail silently.
+Preferred (return-dict contract): return `{"image": arr}` where `arr` is float32 (H, W, 3) in [0, 1]. Also accepted: returning an ndarray or PIL image, or (legacy) writing a PNG to `out_dir` and returning nothing — the executor reads the last non-`_`-prefixed PNG as the node's image.
+
+What must never happen is a code path that **silently exits with no image**. Concretely, any broad `except Exception:` handler must do one of three things:
 
 ```python
-try:
-    result = do_expensive_computation(...)
-    save_image(result, out_dir / f"{METHOD_ID:04d}_output.png")
 except Exception as e:
-    print(f"[warn] {e}, writing fallback")
-    blank = np.zeros((height, width, 3), dtype=np.float32)
-    save_image(blank, out_dir / f"{METHOD_ID:04d}_fallback.png")
+    # 1. return an error image:
+    return {"image": np.zeros((H, W, 3), dtype=np.float32)}
+    # …or 2. save a fallback PNG:
+    save(blank, "fallback.png", out_dir)
+    # …or 3. re-raise — the executor paints a dark-red error placeholder
+    #    and surfaces the traceback on the node in the UI:
+    raise
 ```
 
-Every branch — including early returns, fallback paths, and except blocks — must write a PNG.
+Narrow compat handlers (`except (AttributeError, TypeError):` shims that fall through to the normal save/return) are fine. The pre-commit audit enforces exactly this rule.
 
 ### 3. Temp files use `_` prefix
 
@@ -266,6 +270,8 @@ Declare: `"mask": "MASK"`
 
 ## Port types
 
+Port types live in an open registry (`core/port_types.py`) — new types are added with `register_port_type()`, no core changes needed.
+
 | Type | Color | Carries |
 |------|-------|---------|
 | IMAGE | blue | float32 ndarray (H, W, 3), values [0, 1] |
@@ -273,6 +279,7 @@ Declare: `"mask": "MASK"`
 | FIELD | green | float32 ndarray (H, W), arbitrary range |
 | PARTICLES | orange | float32 ndarray (N, 4) — [x, y, vx, vy] |
 | MASK | white | float32 ndarray (H, W), values [0, 1] |
+| COLORMAP | magenta | float32 ndarray (N, 3) or (N, 4) — palette / lookup table |
 | ANY | dark gray | wildcard, inputs only |
 
 Type coercion: SCALAR → int param uses `round()`. SCALAR → float passes through. Mismatched types skip silently with a log warning — they do not crash.
@@ -309,12 +316,14 @@ Every design decision in this repo serves mutual legibility between human and ag
 
 Before marking any task done:
 
-1. `uv run python -c "from image_pipeline.server import app"` — must import cleanly, zero errors
-2. Every code path writes a PNG (including except blocks and early returns)
+1. `uv run python -c "from image_pipeline.server import app"` — must import cleanly, zero errors (a duplicate method id raises here)
+2. Every code path produces an image (return-dict, fallback save, or re-raise — see §2)
 3. Temp files use `_` prefix
 4. `@method` has `outputs=` declared for every sidecar written
-5. All helpers are imported explicitly at the top of the file
-6. `luminance` scalar is included in `outputs=` and computed as `float(np.mean(result))`
-7. `input_image` is guarded with a truthiness check before use
-8. `uv run python tools/next_id.py` — get your method ID before writing the file. Never choose one manually.
-9. If you changed a core concept, update `DESIGN.md`
+5. `@method` has a one-sentence `description=`
+6. All helpers are imported explicitly at the top of the file
+7. `luminance` scalar is included in `outputs=` and computed as `float(np.mean(result))`
+8. `input_image` is guarded with a truthiness check before use
+9. `uv run python tools/next_id.py` — get your method ID before writing the file. Never choose one manually.
+10. `uv run python tools/audit_methods.py --fail-on-violations` — must exit 0 (this also runs as a pre-commit hook)
+11. If you changed a core concept, update `DESIGN.md`
