@@ -309,7 +309,9 @@ def method_cellular(out_dir: Path, seed: int, params=None):
         params = {}
     t = float(params.get("time", 0.0))
 
-    print(f"[ca18] params received: density={params.get('density')}, rule={params.get('rule')}, seed_pattern={params.get('seed_pattern')}, size={params.get('size')}, color={params.get('color')}")
+    # Debug hook (kept commented — it fires every frame, ~30/s in live mode):
+    # print(f"[ca18] density={params.get('density')} rule={params.get('rule')} "
+    #       f"seed_pattern={params.get('seed_pattern')} size={params.get('size')}")
 
     # ── SCALAR-driven params (override UI params when wired) ──
     # Sentinel value -1.0 means "not wired" — only override when the value
@@ -323,6 +325,11 @@ def method_cellular(out_dir: Path, seed: int, params=None):
     hue_shift_override = params.get("hue_shift")
     hue_shift = float(hue_shift_override) if hue_shift_override is not None else float(params.get("hue_shift", 0.0))
 
+    # These SCALAR ports use a negative sentinel (-1.0) to mean "not wired".
+    # A wired channel sends a value in [0, 1]; only then does it override the
+    # matching UI param. (Checking `is not None` was wrong — the param is
+    # always present at its -1.0 default, which silently clobbered the
+    # rule / seed_pattern / size UI params.)
     rule_select_override = params.get("rule_select")
     if rule_select_override is not None and float(rule_select_override) >= 0:
         idx = int(float(rule_select_override) * len(RULE_NAMES)) % len(RULE_NAMES)
@@ -369,11 +376,17 @@ def method_cellular(out_dir: Path, seed: int, params=None):
     survive, birth = RULES.get(effective_rule, ({2, 3}, {3}))
 
     # ── Run simulation ──
-    # Use a fixed number of generations so single-frame executes (Auto mode,
-    # param changes) actually evolve the sim instead of showing the initial
-    # random grid. The t-based multiplier adds extra evolution for animation.
-    base_generations = 60
-    generations = max(base_generations, int(t * 60 * effective_speed))
+    # A single still (Auto mode / param tweak) should look evolved rather than
+    # a bare initial grid, so it floors the generation count. During animation
+    # the clock t sweeps up from 0 — flooring there would freeze the first
+    # frames on the floor value and hide the start of the sim (the initial
+    # grid and its early evolution), so let t drive the count from 0.
+    _tl = params.get("_timeline")
+    _animating = _tl is not None and getattr(_tl, "total_frames", 1) > 1
+    generations = int(t * 60 * effective_speed)
+    if not _animating:
+        generations = max(60, generations)
+    generations = max(0, generations)
 
     # ── Build initial grid ──
     if seed_image is not None:
