@@ -122,6 +122,45 @@ def test_stateful_sim_18_does_not_slow_down():
         shutil.rmtree(out, ignore_errors=True)
 
 
+def test_arch_a_loops_cache_past_cooked_length():
+    """When a sim cooks FEWER frames than the live window, frames past the end
+    must LOOP the cache — not re-cook every frame.
+
+    Regression: the live window is 300 but a node whose params omit n_frames
+    cooks only its default (120). Frames 120..299 fell through to a full
+    re-cook every frame, so playback ran smoothly for ~4s (120 frames @ 30fps)
+    then collapsed to ~2-3 fps. The cache-hit path now serves cached[frame %
+    len], so it loops and never re-cooks.
+    """
+    set_canvas(96, 96)
+    out = _tmp()
+    try:
+        ex = GraphExecutor(out, in_memory=True)
+        # No n_frames in params -> executor override is skipped -> cooks default.
+        base = {"rule": "conway", "size": 4, "speed": 1.0, "rule_select": -1.0,
+                "init_select": -1.0, "cell_size": -1.0, "age_input": -1.0}
+
+        def run(f):
+            nodes = [{"id": "ca", "method_id": "18", "params": dict(base),
+                      "dirty": True, "render": True}]
+            flat, _t, errs = ex.execute(nodes, [], seed=42, frame=f % LIVE_TOTAL_FRAMES,
+                                        frames=LIVE_TOTAL_FRAMES)
+            assert not errs, errs
+            return flat["ca"]["image"].tobytes()
+
+        run(0)                                        # cook
+        cooked = len(ex._sim_cache[("ca", 42)])
+        assert 0 < cooked < LIVE_TOTAL_FRAMES, f"expected a partial cook, got {cooked}"
+
+        # A frame beyond the cooked length must equal its modulo-wrapped frame,
+        # and must not grow (re-cook) the cache.
+        past = cooked + 10
+        assert run(past) == run(past % cooked), "frame past cook did not loop the cache"
+        assert len(ex._sim_cache[("ca", 42)]) == cooked, "cache re-cooked instead of looping"
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+
+
 # ── Invariant 3: live playback actually produces motion ─────────────────────
 
 def _live_execute(ex: GraphExecutor, nodes, edges, seed, frame):

@@ -470,8 +470,13 @@ class GraphExecutor:
                 if (sim_cache_key in self._sim_cache
                         and self._sim_params_hash.get(node_id) == params_hash):
                     cached = self._sim_cache[sim_cache_key]
-                    if frame < len(cached):
-                        arr = cached[frame]
+                    if cached:
+                        # Loop the cooked frames — never re-cook a cached sim.
+                        # The live window (LIVE_TOTAL_FRAMES) can exceed the
+                        # cooked frame count; without the modulo, frames past the
+                        # end fell through to a full re-cook every frame (~2 fps
+                        # after the first few seconds of smooth playback).
+                        arr = cached[frame % len(cached)]
                         flat_outputs[node_id] = {
                             "image": arr,
                             "luminance": np.mean(arr, axis=-1),
@@ -547,7 +552,8 @@ class GraphExecutor:
                     self._sim_cache[sim_cache_key] = sim_frames
                     self._sim_params_hash[node_id] = params_hash
 
-                    arr = sim_frames[min(frame, len(sim_frames) - 1)]
+                    # Loop the cooked frames (matches the cache-hit path above).
+                    arr = sim_frames[frame % len(sim_frames)]
                     flat_outputs[node_id] = {
                         "image": arr,
                         "luminance": float(np.mean(arr)),

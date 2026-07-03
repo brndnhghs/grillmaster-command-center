@@ -102,6 +102,8 @@ Continuous real-time playback rests on **four invariants**. Each was a bug that 
 
 The Architecture-A **sim cache is keyed on the node's *defining* params only** — `_node_params_hash` (`graph.py`) excludes the per-frame clock/context keys (`time`, `frame`, `frame_seed`, `_timeline`, `input_image`), so the live loop's per-frame `time` injection doesn't invalidate the cache every frame. Without that exclusion an Architecture-A sim would re-cook on every live frame and the O(1) benefit would vanish.
 
+The cache is served **modulo its length** — `cached[frame % len(cached)]` — so it loops. The live window (`LIVE_TOTAL_FRAMES`, 300) can exceed a sim's cooked frame count (a node whose params omit `n_frames` cooks only its default), and looping means those out-of-range frames still serve from cache instead of re-cooking. Regression that motivated this: without the modulo, playback ran smoothly for ~4 s (120 cooked frames at 30 fps) then collapsed to ~2–3 fps as every subsequent frame triggered a full re-cook.
+
 The executor instance uses `_GRAPH_SESSION_DIR` for normal runs so cached outputs persist across graph runs; the live loop uses its own `OUTPUT_ROOT / "_live_sim"` executor. Performance: light graphs cook well above 30 fps (throttle-bound); heavy simulation nodes are the bottleneck. The deferred optimisation (a persistent per-session executor with sim-cache reuse, and skipping disk writes during live cooking) is in Planned Extensions — pursue it without touching the four invariants above.
 
 ---
