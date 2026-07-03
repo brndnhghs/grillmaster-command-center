@@ -295,10 +295,24 @@ def _stable_node_offset(node_id: str) -> int:
     return int.from_bytes(hashlib.sha1(node_id.encode()).digest()[:2], "big")
 
 
+# Per-frame clock/context keys injected by the executor and the live loop.
+# They are NOT part of a simulation's identity, so excluding them keeps the
+# Architecture-A sim cache stable across frames — otherwise the live loop's
+# per-frame `time = float(frame)` changes the key every frame and the cook
+# is repeated on every frame instead of served from cache.
+_VOLATILE_PARAM_KEYS = frozenset({
+    "time", "frame", "frame_seed", "_timeline", "_input_image", "input_image",
+})
+
+
 def _node_params_hash(params: dict) -> str:
-    """Stable digest of a node's params for the simulation cache."""
+    """Stable digest of a node's defining params for the simulation cache."""
     import json as _json
-    return _json.dumps({k: str(v) for k, v in sorted(params.items())}, sort_keys=True)
+    return _json.dumps(
+        {k: str(v) for k, v in sorted(params.items())
+         if k not in _VOLATILE_PARAM_KEYS},
+        sort_keys=True,
+    )
 
 
 def _write_error_placeholder(node_dir: Path) -> np.ndarray:

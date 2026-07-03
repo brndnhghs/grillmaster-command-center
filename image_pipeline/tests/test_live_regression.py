@@ -28,14 +28,25 @@ import numpy as np
 
 import image_pipeline.methods  # noqa: F401 — trigger @method registration
 from image_pipeline.core.graph import GraphExecutor
-from image_pipeline.core.registry import get_meta
+from image_pipeline.core.registry import get_meta, method
 from image_pipeline.core.timeline import make_timeline
-from image_pipeline.core.utils import set_canvas
+from image_pipeline.core.utils import W, H, set_canvas
 
 
 # The live loop's window length (server.py `_live_loop`). Kept in sync by the
 # invariant that any value > 1 makes the clock advance.
 LIVE_TOTAL_FRAMES = 300
+
+
+# A tiny stateless probe that echoes the `time` param it was given, so the
+# "executor preserves injected time" invariant can be tested without depending
+# on any production method's internals. Architecture B (no n_frames / sim tag).
+@method(id="__time_probe__", name="Time Probe", category="test", inputs={})
+def _time_probe(out_dir, seed, params=None):
+    import numpy as np
+    tval = float((params or {}).get("time", -999.0))
+    arr = np.zeros((H, W, 3), dtype=np.float32)
+    return {"image": arr, "echoed_time": tval}
 
 
 def _tmp() -> Path:
@@ -62,32 +73,53 @@ def test_timeline_clock_advances_over_a_window():
 # ── Invariant 2: an injected `time` param is not overwritten ────────────────
 
 def test_executor_preserves_injected_time():
-    """The live loop's monotonic params['time']=float(frame) must survive.
-
-    Probe with #18 at global frame 0 (timeline phase 0): if the executor
-    overwrote `time` with the phase, both renders would be identical. #18's
-    generation count is `max(60, int(time*60*speed))`, so the injected times
-    must clear that floor for the difference to be observable — use 2.0 and
-    6.0 (→ 120 vs 360 generations).
-    """
-    set_canvas(160, 160)
-    ex_out = _tmp()
+    """The live loop injects params['time']=float(frame); the executor must not
+    overwrite it with the timeline phase (or time-driven nodes freeze)."""
+    set_canvas(64, 64)
+    out = _tmp()
     try:
-        ex = GraphExecutor(ex_out, in_memory=True)
-        base = {"rule": "conway", "size": 4, "speed": 1.0, "rule_select": -1.0,
-                "init_select": -1.0, "cell_size": -1.0, "age_input": -1.0}
-
-        def render_with_time(tval):
-            nodes = [{"id": "ca", "method_id": "18",
-                      "params": {**base, "time": tval}, "dirty": True, "render": True}]
-            flat, _t, errs = ex.execute(nodes, [], seed=42, frame=0, frames=LIVE_TOTAL_FRAMES)
-            assert not errs, errs
-            return flat["ca"]["image"].tobytes()
-
-        assert render_with_time(2.0) != render_with_time(6.0), \
-            "executor overwrote the injected `time` param (live motion would freeze)"
+        ex = GraphExecutor(out, in_memory=True)
+        nodes = [{"id": "p", "method_id": "__time_probe__",
+                  "params": {"time": 123.5}, "dirty": True, "render": True}]
+        flat, _t, errs = ex.execute(nodes, [], seed=1, frame=0, frames=LIVE_TOTAL_FRAMES)
+        assert not errs, errs
+        assert abs(float(flat["p"]["echoed_time"]) - 123.5) < 1e-6, \
+            f"executor overwrote injected time: {flat['p'].get('echoed_time')}"
     finally:
-        shutil.rmtree(ex_out, ignore_errors=True)
+        shutil.rmtree(out, ignore_errors=True)
+
+
+def test_stateful_sim_18_does_not_slow_down():
+    """#18 is a stateful Architecture-A sim: cooked once, then served from the
+    cache at O(1). Per-frame cost must NOT grow as the live timeline advances
+    (the old stateless model ran int(time*60) generations from scratch every
+    frame, so cost climbed without bound)."""
+    import time as _time
+    set_canvas(160, 160)
+    out = _tmp()
+    try:
+        ex = GraphExecutor(out, in_memory=True)
+        base = {"rule": "conway", "size": 4, "speed": 1.0, "n_frames": 60,
+                "rule_select": -1.0, "init_select": -1.0, "cell_size": -1.0,
+                "age_input": -1.0}
+
+        def cook_ms(f):
+            nodes = [{"id": "ca", "method_id": "18",
+                      "params": {**base, "time": float(f)}, "dirty": True, "render": True}]
+            t0 = _time.time()
+            _flat, _t, errs = ex.execute(nodes, [], seed=42, frame=f % LIVE_TOTAL_FRAMES,
+                                         frames=LIVE_TOTAL_FRAMES)
+            assert not errs, errs
+            return (_time.time() - t0) * 1000.0
+
+        cook_ms(1)                    # first frame pays the one-time cook
+        early = cook_ms(5)            # served from cache
+        late = cook_ms(250)           # far down the timeline — must be just as cheap
+        # A stateless recompute would make `late` many times `early`; cached
+        # serves are flat. Allow generous slack for noise.
+        assert late < early * 4 + 20, f"per-frame cost grew: early={early:.1f}ms late={late:.1f}ms"
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
 
 
 # ── Invariant 3: live playback actually produces motion ─────────────────────
@@ -102,7 +134,8 @@ def _live_execute(ex: GraphExecutor, nodes, edges, seed, frame):
 
 
 def test_cellular_automata_18_animates_live():
-    """#18 (a time-driven Architecture-B node) must yield distinct live frames."""
+    """#18 (a stateful Architecture-A sim) must yield distinct live frames from
+    a dirty=False (post-Run) start — i.e. the sim actually plays, not frozen."""
     set_canvas(192, 192)
     out = _tmp()
     try:
@@ -167,7 +200,9 @@ def test_cellular_automata_18_params_honored():
     meta = get_meta("18")
     out = _tmp()
     try:
-        base = {"time": 0.5, "rule_select": -1.0, "init_select": -1.0,
+        # Small n_frames keeps the direct cook fast while still evolving enough
+        # for different rules/patterns to diverge visibly.
+        base = {"n_frames": 40, "rule_select": -1.0, "init_select": -1.0,
                 "cell_size": -1.0, "age_input": -1.0}
 
         def render(extra):
