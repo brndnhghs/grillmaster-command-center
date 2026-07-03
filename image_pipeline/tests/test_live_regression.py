@@ -127,6 +127,39 @@ def test_cellular_automata_18_animates_live():
 
 # ── Invariant 3b: #18 UI params are honoured with the -1.0 sentinels set ────
 
+def test_cellular_automata_18_sequence_shows_start():
+    """A rendered sequence must show the sim from its beginning, not clamp the
+    first N frames onto a later still.
+
+    Regression: #18 floored its generation count at 60, so every early frame
+    whose t*60 was below the floor rendered the identical 60-generation state
+    — the opening of the sim was missing and 'picked up' several frames in.
+    The floor now only applies to single stills (total_frames<=1).
+    """
+    set_canvas(160, 160)
+    out = _tmp()
+    try:
+        N = 24
+        ex = GraphExecutor(out, in_memory=True)
+        base = {"rule": "conway", "size": 4, "speed": 1.0, "rule_select": -1.0,
+                "init_select": -1.0, "cell_size": -1.0, "age_input": -1.0}
+        digests = []
+        for f in range(N):
+            nodes = [{"id": "ca", "method_id": "18", "params": dict(base),
+                      "dirty": True, "render": True}]
+            flat, _t, errs = ex.execute(nodes, [], seed=42, frame=f, frames=N)
+            assert not errs, errs
+            digests.append(hash(flat["ca"]["image"].tobytes()))
+        # At most the single opening frame may repeat; more than a couple means
+        # the start of the sim is being clamped onto a later frame again.
+        lead = 1
+        while lead < N and digests[lead] == digests[0]:
+            lead += 1
+        assert lead <= 2, f"first {lead} sequence frames are frozen on one still"
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+
+
 def test_cellular_automata_18_params_honored():
     """rule / size / seed_pattern must take effect even when the -1.0
     scalar-override sentinels are present (the client always sends them)."""

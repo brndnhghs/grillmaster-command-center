@@ -376,11 +376,17 @@ def method_cellular(out_dir: Path, seed: int, params=None):
     survive, birth = RULES.get(effective_rule, ({2, 3}, {3}))
 
     # ── Run simulation ──
-    # Use a fixed number of generations so single-frame executes (Auto mode,
-    # param changes) actually evolve the sim instead of showing the initial
-    # random grid. The t-based multiplier adds extra evolution for animation.
-    base_generations = 60
-    generations = max(base_generations, int(t * 60 * effective_speed))
+    # A single still (Auto mode / param tweak) should look evolved rather than
+    # a bare initial grid, so it floors the generation count. During animation
+    # the clock t sweeps up from 0 — flooring there would freeze the first
+    # frames on the floor value and hide the start of the sim (the initial
+    # grid and its early evolution), so let t drive the count from 0.
+    _tl = params.get("_timeline")
+    _animating = _tl is not None and getattr(_tl, "total_frames", 1) > 1
+    generations = int(t * 60 * effective_speed)
+    if not _animating:
+        generations = max(60, generations)
+    generations = max(0, generations)
 
     # ── Build initial grid ──
     if seed_image is not None:
