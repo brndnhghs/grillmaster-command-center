@@ -234,8 +234,10 @@ above is necessary but **not sufficient**. It must also play correctly and stay
 fast in all three render contexts (single still, clip, live) — most importantly,
 **per-frame cost must never grow as the timeline advances**. A stateless node
 that re-simulates up to `time` every frame gets slower and slower forever (this
-was the Cellular Automata #18 bug). Such nodes must be **Architecture A**
-(stateful, cooked once, declares `n_frames`), not Architecture B.
+was the Cellular Automata #18 bug). A state-based sim must instead keep its
+**last state** and step it one step per frame — the **persistent stateful
+pattern** (runs forever at constant cost; #18 works this way now) — or, for a
+finite scrubbable sequence, the cook-a-window Architecture-A pattern.
 
 Before writing or rewriting any simulation node, read and apply
 **`docs/prompts/simulation-node-render-contract.md`** — the Architecture A/B

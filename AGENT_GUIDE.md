@@ -85,7 +85,7 @@ Live mode (the 📺 continuous cook loop) is the real-time target. Whether a met
 
 The live architecture and its four non-regression invariants are documented in `DESIGN.md` → "Live mode", and locked by `image_pipeline/tests/test_live_regression.py`. If you change how a method reads time, run that suite.
 
-**Simulations have an extra contract.** If your node *accumulates state* over time (a CA grid, particles, an evolving field), it must be **Architecture A** (stateful, cooked once, declares `n_frames`) — never a stateless node that re-simulates up to `time` each frame, which gets slower and slower as the timeline runs (the #18 bug). Before writing or rewriting any sim node, follow `docs/prompts/simulation-node-render-contract.md`.
+**Simulations have an extra contract.** If your node *accumulates state* over time (a CA grid, particles, an evolving field), it must keep its **last state and step it one step per frame** — the persistent stateful pattern, which runs forever at constant cost (#18 works this way) — or, for a finite scrubbable sequence, the cook-a-window Architecture-A pattern. Never a stateless node that re-simulates up to `time` each frame, which gets slower and slower as the timeline runs (the #18 bug). Before writing or rewriting any sim node, follow `docs/prompts/simulation-node-render-contract.md`.
 
 #### The `-1.0` sentinel lesson (SCALAR override ports)
 

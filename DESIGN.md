@@ -98,11 +98,26 @@ Continuous real-time playback rests on **four invariants**. Each was a bug that 
 
 **Two animation drivers, by architecture** (see `core/arch.py`): Architecture-A sims cook their own internal frame list once, cache it in the executor, and the loop indexes into it by `frame` — motion comes from the frame index, and per-frame cost is O(1) after the one-time cook. Architecture-B nodes are stateless and re-cook each frame, deriving all motion from `t` / `phase` / `time` — which is exactly why invariants 2 and 3 exist. A method that reads none of those will not animate in live mode no matter what the loop does.
 
-**Cost warning — never scale per-frame work with `time`.** An Architecture-B node that does work proportional to the clock (e.g. "run `int(time·k)` simulation steps from scratch this frame") gets *slower and slower* as the live timeline advances, because `time` climbs without bound. Cellular Automata (#18) had exactly this bug. The fix was to make it **Architecture A** — a stateful sim that steps its grid forward one step per captured frame, cooked once and served from cache — so cost stays flat forever. If your sim needs to accumulate state over time, make it Architecture A (declare an `n_frames` param); do not re-simulate from the seed up to `time` every frame.
+**Cost warning — never scale per-frame work with `time`.** A node that does work proportional to the clock (e.g. "run `int(time·k)` simulation steps from scratch this frame") gets *slower and slower* as the live timeline advances, because `time` climbs without bound. Cellular Automata (#18) had exactly this bug: 42 ms/frame at frame 1, 1534 ms by frame 200. A stateful sim must **step from its last state**, never re-simulate from the seed up to `time`.
 
-The Architecture-A **sim cache is keyed on the node's *defining* params only** — `_node_params_hash` (`graph.py`) excludes the per-frame clock/context keys (`time`, `frame`, `frame_seed`, `_timeline`, `input_image`), so the live loop's per-frame `time` injection doesn't invalidate the cache every frame. Without that exclusion an Architecture-A sim would re-cook on every live frame and the O(1) benefit would vanish.
+### The stateful-sim pattern — run forever at constant cost (preferred for open-ended sims)
 
-The cache is served **modulo its length** — `cached[frame % len(cached)]` — so it loops. The live window (`LIVE_TOTAL_FRAMES`, 300) can exceed a sim's cooked frame count (a node whose params omit `n_frames` cooks only its default), and looping means those out-of-range frames still serve from cache instead of re-cooking. Regression that motivated this: without the modulo, playback ran smoothly for ~4 s (120 cooked frames at 30 fps) then collapsed to ~2–3 fps as every subsequent frame triggered a full re-cook.
+A cellular automaton, a fluid, a growth process — frame *N* is just frame *N-1* stepped once. Such a sim should keep its **last state** and advance it one step per output frame, so it runs **forever** at flat per-frame cost, with no window, no loop, and no reset. This is how #18 works now:
+
+- It is **Architecture B** (one call per output frame — no `n_frames`, no `simulation` tag).
+- It keeps a **persistent per-node state store** keyed on `out_dir` (which ends in the node id, so nodes never collide, and concurrent live/clip runs use different dirs). One grid in memory per node — constant memory.
+- Each call reads the monotonic clock (`time`; in live this is `float(frame)`, unbounded): if the clock advanced, step the grid forward `speed` generations; if a **structural** param changed (rule / pattern / density / cell size / seed image) or the clock went **backward** (scrub / restart), rebuild from the seed. Render-only params (color, hue) and step params (inject, wave) apply live every frame.
+
+Verified: flat ~30 fps at 768×512 held for 70+ seconds of continuous live play, still visibly evolving, never resetting.
+
+### The cook-a-window pattern — Architecture A (for finite/deterministic sequences)
+
+Some sims (boids, gray-scott) instead cook their whole internal frame list once, `capture_frame()` each, and let the executor cache and serve it. Declare an **`n_frames`** param to select this mode (`core/arch.py` detects it). Notes for this mode:
+
+- The **sim cache is keyed on *defining* params only** — `_node_params_hash` (`graph.py`) excludes the per-frame clock/context keys (`time`, `frame`, `frame_seed`, `_timeline`, `input_image`) — so the live loop's per-frame `time` injection doesn't invalidate the cache every frame.
+- The cache is served **modulo its length** (`cached[frame % len]`), so when the live window (`LIVE_TOTAL_FRAMES`, 300) exceeds the cooked count the frames **loop** instead of re-cooking. Without this, a partial cook (e.g. 120 frames) played smoothly for ~4 s then collapsed to ~2–3 fps as every subsequent frame re-cooked.
+
+**Which to use:** an open-ended sim you want to watch run indefinitely → the persistent-state pattern (runs forever, constant memory, but re-renders each frame). A finite deterministic sequence you'll scrub/export → cook-a-window (O(1) cached serves, but bounded length and higher memory).
 
 The executor instance uses `_GRAPH_SESSION_DIR` for normal runs so cached outputs persist across graph runs; the live loop uses its own `OUTPUT_ROOT / "_live_sim"` executor. Performance: light graphs cook well above 30 fps (throttle-bound); heavy simulation nodes are the bottleneck. The deferred optimisation (a persistent per-session executor with sim-cache reuse, and skipping disk writes during live cooking) is in Planned Extensions — pursue it without touching the four invariants above.
 

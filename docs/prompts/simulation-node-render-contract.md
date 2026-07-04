@@ -41,77 +41,123 @@ never from wall-clock or call-count.
 
 ---
 
-## 2. THE decision: Architecture A or B
+## 2. THE decision: three patterns, pick one
 
-This is the most important call. Get it right first; everything else follows.
+Get this right first; everything else follows. There are three valid patterns —
+and one anti-pattern that is never valid.
 
-- **Architecture B (stateless generator).** One call = one frame, fully
-  determined by the clock. Cost is *independent of how far the timeline has
-  run*. Correct for: gradients, noise, pattern generators, pure functions of
-  `t`/`phase`. Detected as B by default.
+- **Stateless generator (Architecture B, no state).** One call = one frame, a
+  pure function of the clock. Cost is independent of how far the timeline has
+  run. Correct for gradients, noise, pattern generators. Detected as B by
+  default.
 
-- **Architecture A (stateful simulation).** The sim accumulates state over time
-  (a grid, particle set, field that evolves). It cooks its own frame list once,
-  the executor caches it, and every subsequent frame is served from cache at
-  **O(1)**. Correct for: any CA / reaction-diffusion / boids / fluid / growth
-  process. Detected as A when the method declares an **`n_frames` param** (the
-  strongest signal), or an `anim_mode` param with a non-"none" default, or a
-  `simulation`/`sim` tag. See `core/arch.py::detect_architecture`.
+- **★ Persistent stateful sim (Architecture B + per-node state) — PREFERRED for
+  open-ended sims.** Keep the sim's **last state** in a per-node store and step
+  it forward one step per output frame. Runs **forever** at flat per-frame cost,
+  constant memory (one state per node), no window, no loop, no reset. This is
+  how #18 works now. Correct for CA / reaction-diffusion / most "watch it run"
+  sims. Still Architecture B (one call per frame) — do **not** add `n_frames` or
+  a `simulation` tag.
 
-### The failure that forces this decision (the #18 lesson)
+- **Cook-a-window sim (Architecture A).** Cook the whole internal frame list in
+  one call, `capture_frame()` each; the executor caches and serves it at O(1),
+  looping when the live window exceeds the cooked count. Correct when you need a
+  *finite, deterministic, scrubbable/exportable* sequence (boids demos, a fixed
+  gray-scott clip). Detected as A when the method declares an **`n_frames`** param
+  (strongest signal), `anim_mode` non-"none", or a `simulation`/`sim` tag. See
+  `core/arch.py::detect_architecture`. Tradeoff: bounded length, higher memory
+  (N frames held), a one-time cook hitch on start / param change; it loops rather
+  than running truly forever.
 
-**Never write an Architecture-B node whose per-frame work scales with `time`.**
-#18 was stateless and ran `int(time·60·speed)` generations *from the seed every
-frame*. In live mode `time = float(frame)` climbs without bound, so the work per
-frame grew linearly forever — measured **42 ms at frame 1 → 1534 ms at frame
-200**, and worse after. A pure generator (Gradient) never slows because its cost
-is constant in the clock. **If your node must accumulate state over time, it is
-Architecture A. If it is a pure function of the clock, it is Architecture B.
-There is no valid third option where a stateless node re-simulates up to `time`.**
+- **✗ The anti-pattern (never valid): a stateless node whose per-frame work
+  scales with `time`.** #18 originally ran `int(time·60·speed)` generations
+  *from the seed every frame*. In live `time = float(frame)` climbs without
+  bound, so cost grew linearly forever — **42 ms at frame 1 → 1534 ms at frame
+  200**. If you catch a node re-simulating up to `time`, it is broken; convert
+  it to one of the two stateful patterns.
 
 **Decision rule for this node:**
-> Does correct output at frame *k* require having computed frames *0…k-1*
-> (state accumulates)? → **Architecture A.**
-> Is frame *k* a self-contained function of the clock? → **Architecture B.**
+> Frame *k* is a self-contained function of the clock (no accumulation)?
+> → **Stateless generator (B).**
+> State accumulates, and the user wants to watch it run open-endedly?
+> → **Persistent stateful sim (★, §3).**
+> State accumulates, but you need a fixed deterministic sequence to scrub/export?
+> → **Cook-a-window (Architecture A, §3b).**
 
 ---
 
-## 3. Architecture-A structure (use this skeleton for stateful sims)
+## 3. Persistent stateful structure (★ preferred — run forever)
+
+Architecture B (one call per frame) with a persistent per-node state store. This
+is what makes a sim run forever at constant cost. Model this on #18
+(`methods/codegen/simulations.py`).
 
 ```python
+import threading as _threading
+
+# Module-level: last state per node, keyed on out_dir (ends in the node id, so
+# nodes never collide; live and clip use different dirs → independent sims).
+_STATE: dict[str, dict] = {}
+_STATE_LOCK = _threading.Lock()
+_STATE_MAX = 64                      # cap so long sessions don't grow unbounded
+
 @method(
-    id="{{METHOD_ID}}",
-    name="...",
-    category="simulations",
-    tags=[..., "simulation"],          # 'simulation' tag reinforces arch A
+    id="{{METHOD_ID}}", name="...", category="simulations",
+    tags=[..., "animation"],         # NO 'simulation' tag, NO n_frames → stays Arch B
     outputs={"image": "IMAGE", "luminance": "SCALAR", ...},
-    params={
-        ...,
-        "speed": {"description": "steps advanced per output frame", "default": 1.0},
-        "n_frames": {                  # REQUIRED for arch A — the detector signal
-            "description": "frames to cook (sim steps forward once per frame, "
-                           "constant cost per frame)",
-            "min": 30, "max": 600, "default": 120,
-        },
-    },
+    params={..., "speed": {"description": "steps advanced per output frame", "default": 1.0}},
 )
 def run(out_dir, seed, params=None):
     params = params or {}
-    # 1. Resolve params ONCE (see §5 for the -1.0 sentinel rule).
-    ...
-    # 2. Build the initial state ONCE.
-    state = build_initial_state(seed, ...)
-    # 3. Cook: persist state across frames, capture BEFORE stepping so frame 0
-    #    is the initial state (shows the sim from its beginning — see §4).
-    n_frames = max(1, int(params.get("n_frames", 120)))
+    # Resolve params (see §5 for the -1.0 sentinel rule). Split them:
+    #   struct params  -> identity of the sim (changing them rebuilds)
+    #   render/step params -> applied live every frame (no rebuild)
+    struct_sig = (seed, rule, pattern, density, cell_size, seed_image_id, ...)
     steps_per_frame = max(1, int(round(effective_speed)))
+    clock = float(params.get("time", 0.0))     # monotonic: unbounded in live, phase in clips
+    key = str(out_dir)
+
+    with _STATE_LOCK:
+        st = _STATE.get(key)
+        rebuild = st is None or st["sig"] != struct_sig or clock < st["clock"] - 1e-9
+        if rebuild:
+            state = build_initial_state(seed, ...)   # frame 0 = the start (see §4)
+            # (optional) if single still — _timeline.total_frames <= 1 — pre-step
+            # a few times so an Auto preview looks alive rather than a bare seed.
+        else:
+            state = st["state"]
+            if clock > st["clock"] + 1e-9:            # advance exactly one frame
+                for _ in range(steps_per_frame):
+                    state = step(state, ...)          # step the PERSISTENT state
+        _STATE[key] = {"state": state, "sig": struct_sig, "clock": clock}
+        if len(_STATE) > _STATE_MAX:
+            for k in list(_STATE)[:-_STATE_MAX]:
+                _STATE.pop(k, None)
+
+    return {"image": render(state, ...)}              # H×W×3 float32 [0,1]
+```
+
+Why this runs forever: it never reads anything but the **last** state; the clock
+is only used to decide *rebuild vs. advance-one-step*, never to size the work.
+`clock < last - eps` (scrub back / live restart) and a changed `struct_sig`
+(param edit) are the only rebuild triggers. Memory is one state per node.
+
+### 3b. Cook-a-window structure (Architecture A — only for finite sequences)
+
+```python
+@method(id="{{METHOD_ID}}", ..., tags=[..., "simulation"],
+        params={..., "n_frames": {"min": 30, "max": 600, "default": 120}})
+def run(out_dir, seed, params=None):
+    state = build_initial_state(seed, ...)
+    n = max(1, int(params.get("n_frames", 120)))
     last = None
-    for f in range(n_frames):
-        last = render(state, ...)      # H×W×3 float32 in [0,1]
-        capture_frame("{{METHOD_ID}}", last)   # emit this frame
-        for _ in range(steps_per_frame):
-            state = step(state, ...)   # advance the PERSISTENT state
+    for f in range(n):
+        last = render(state, ...)
+        capture_frame("{{METHOD_ID}}", last)   # frame 0 first → shows from the start
+        for _ in range(max(1, int(round(speed)))):
+            state = step(state, ...)
     return {"image": last}
+```
 ```
 
 Key points:
@@ -267,18 +313,20 @@ must be compatible with them:
 
 ## 10. Reference: the #18 fix (worked example)
 
-- **Was:** Architecture B, `generations = max(60, int(time·60·speed))`, rebuilt
-  grid from seed every frame. Live slowed 42 ms → 1534 ms+; params ignored via
-  `is not None` sentinels; first clip frames clamped onto the 60-gen floor.
-- **Now:** Architecture A with `n_frames`; grid persists, one generation stepped
-  per captured frame, cooked once and cached; sentinels checked `>= 0`; captures
-  frame 0 = initial grid. Result: **flat ~8 ms/frame at 768×512 across the whole
-  timeline; steady 30 fps over the wire with no decay.**
+- **Was:** stateless, `generations = max(60, int(time·60·speed))`, rebuilt the
+  grid from the seed every frame. Live slowed 42 ms → 1534 ms+; params ignored
+  via `is not None` sentinels; first clip frames clamped onto the 60-gen floor.
+- **Now:** the **persistent stateful pattern (§3)** — Architecture B with a
+  per-node `_CA_STATE` store keyed on `out_dir`; keeps the last grid, steps it
+  one generation per frame, rebuilds only on structural-param change or a
+  backward clock; sentinels checked `>= 0`. Result: **flat per-frame cost with no
+  window and no reset — steady 30 fps at 768×512 held for 70+ seconds of
+  continuous live play, still evolving.** Render/step params (color, inject,
+  wave) modulate the running sim live; there is no per-frame-channel tradeoff.
 - **Files:** `image_pipeline/methods/codegen/simulations.py` (the method),
-  `image_pipeline/core/graph.py` (`_node_params_hash` volatile-key exclusion —
-  system-wide, already done), `image_pipeline/tests/test_live_regression.py`.
-- **Tradeoff accepted:** wired SCALAR channels now set the sim up once rather
-  than modulating it per output frame. Note this per node if it applies.
+  `image_pipeline/tests/test_live_regression.py`. The cook-a-window path also got
+  a `_node_params_hash` volatile-key exclusion and a modulo-loop cache serve in
+  `image_pipeline/core/graph.py` — those benefit any Architecture-A sim.
 
 ---
 
