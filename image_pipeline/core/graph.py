@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import math
+import time
 import traceback
 import uuid
 from collections import deque
@@ -335,6 +336,8 @@ class GraphExecutor:
         # Simulation state cache: keyed by (node_id, seed) → list of ndarray frames
         self._sim_cache: dict[tuple[str, int], list] = {}
         self._sim_params_hash: dict[str, int] = {}
+        # Diagnostics for the last completed frame — written by execute(), read by server
+        self.last_frame_stats: dict = {}
 
     def execute(
         self,
@@ -381,6 +384,16 @@ class GraphExecutor:
         flat_outputs: dict[str, dict[str, Any]] = {}
         ran: dict[str, bool] = {}  # node_id → actually executed this frame
         node_errors: dict[str, str] = {}  # node_id → traceback text
+
+        # Diagnostics counters — accumulated per frame
+        _diag_node_timings: dict[str, float] = {}   # node_id → ms actually spent in fn()
+        _diag_cache_hits:   int = 0
+        _diag_cache_misses: int = 0
+        _diag_mem_edges:    int = 0  # edges passed as ndarray (no disk write)
+        _diag_disk_edges:   int = 0  # edges written to _input.png
+        _diag_gpu_nodes:    int = 0
+        _diag_cpu_nodes:    int = 0
+        _diag_exec_start = time.monotonic()
 
         for node_id in order:
             node = node_map[node_id]
@@ -480,6 +493,7 @@ class GraphExecutor:
                             "mask": None,
                         }
                         ran[node_id] = True
+                        _diag_cache_hits += 1
                         continue
 
                 # Need to (re)run the simulation
@@ -515,6 +529,7 @@ class GraphExecutor:
                 sim_params["frame_seed"] = node_seed
 
                 set_job_context(on_frame=_on_capture, cancel_event=_cancel_evt)
+                _t0_arch_a = time.monotonic()
                 try:
                     try:
                         meta.fn(node_dir_sim, node_seed, params=sim_params)
@@ -526,6 +541,8 @@ class GraphExecutor:
                     pass
                 finally:
                     clear_job_context()
+                _diag_node_timings[node_id] = (time.monotonic() - _t0_arch_a) * 1000.0
+                _diag_cache_misses += 1
 
                 # Collect captured frames
                 sim_frames = get_frames(meta.id) or _captured
@@ -778,6 +795,9 @@ class GraphExecutor:
                     from PIL import Image as _PILpre2
                     _PILpre2.fromarray((upstream_arr * 255).astype(np.uint8)).save(str(upstream_path))
                     run_params["input_image"] = str(upstream_path)
+                    _diag_disk_edges += 1
+                else:
+                    _diag_mem_edges += 1
                 # Methods whose source param has an "input_image" choice need it selected explicitly
                 src_spec = (meta.params or {}).get("source", {})
                 if isinstance(src_spec, dict) and "input_image" in (src_spec.get("choices") or []):
@@ -822,6 +842,12 @@ class GraphExecutor:
 
             # ── Call the method ──
             _fn_result = None
+            _is_gpu = "gpu" in (meta.tags or [])
+            if _is_gpu:
+                _diag_gpu_nodes += 1
+            else:
+                _diag_cpu_nodes += 1
+            _t0_node = time.monotonic()
             try:
                 _fn_result = meta.fn(node_dir, node_seed, params=run_params)
             except TypeError as _te:
@@ -841,10 +867,14 @@ class GraphExecutor:
                     "mask":      None,
                 }
                 ran[node_id] = True
+                _diag_node_timings[node_id] = (time.monotonic() - _t0_node) * 1000.0
+                _diag_cache_misses += 1
                 if self._in_memory and _original_save_fn is not None:
                     _utils_mod.save = _original_save_fn
                 self._captured_output = _captured_output
                 continue
+            _diag_node_timings[node_id] = (time.monotonic() - _t0_node) * 1000.0
+            _diag_cache_misses += 1
 
             # ── Read back output ────────────────────────────────────
             arr = None
@@ -943,6 +973,22 @@ class GraphExecutor:
             ran[node_id] = True
 
         self._prev_outputs = flat_outputs
+
+        # ── Write diagnostics for this frame ──────────────────────────
+        _total_node_ms = sum(_diag_node_timings.values())
+        _total_exec_ms = (time.monotonic() - _diag_exec_start) * 1000.0
+        self.last_frame_stats = {
+            "node_timings":   _diag_node_timings,
+            "cache_hits":     _diag_cache_hits,
+            "cache_misses":   _diag_cache_misses,
+            "mem_edges":      _diag_mem_edges,
+            "disk_edges":     _diag_disk_edges,
+            "gpu_nodes":      _diag_gpu_nodes,
+            "cpu_nodes":      _diag_cpu_nodes,
+            "node_compute_ms": round(_total_node_ms, 2),
+            "overhead_ms":    round(max(0.0, _total_exec_ms - _total_node_ms), 2),
+        }
+
         return flat_outputs, terminal_id, node_errors
 
     def _execute_group_node(

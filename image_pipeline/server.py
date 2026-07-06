@@ -949,8 +949,24 @@ def execute_graph(req: GraphRequest):
 _live_sim_lock = threading.Lock()
 _live_sim_cancel = threading.Event()
 _live_sim_thread: threading.Thread | None = None
-# Stats updated by the live loop — read by /api/graph/live/status
-_live_stats: dict = {"frame": 0, "cook_ms": 0.0, "fps": 0.0}
+# Stats updated by the live loop — read by /api/graph/live/status and /api/graph/diagnostics
+_live_stats: dict = {
+    "frame": 0, "cook_ms": 0.0, "fps": 0.0,
+    # per-node timing
+    "node_timings": {}, "node_names": {},
+    # cache
+    "cache_hits": 0, "cache_misses": 0,
+    "total_cache_hits": 0, "total_cache_misses": 0,
+    "last_invalidated": 0,
+    # data flow
+    "mem_edges": 0, "disk_edges": 0,
+    "gpu_nodes": 0, "cpu_nodes": 0,
+    # overhead split
+    "node_compute_ms": 0.0, "overhead_ms": 0.0,
+    # graph topology
+    "active_nodes": 0, "active_edges": 0,
+    "canvas_w": 0, "canvas_h": 0,
+}
 
 # Persistent executor — survives hot-swaps so Arch-A sim caches are kept
 _live_executor = None          # GraphExecutor | None
@@ -990,18 +1006,23 @@ def live_graph_sim(req: GraphRequest):
         # ── Persistent executor: reuse or create ──────────────────────
         from image_pipeline.core.graph import GraphExecutor as _GE
         canvas = (width, height)
+        _inv_count = 0
         if _live_executor is None or canvas != _live_last_canvas:
             _live_executor = _GE(OUTPUT_ROOT / "_live_sim", in_memory=True)
             _inv_msg = "new executor"
+            # Reset cumulative stats on new executor
+            _live_stats["total_cache_hits"] = 0
+            _live_stats["total_cache_misses"] = 0
         elif seed != _live_last_seed:
             _live_executor._sim_cache.clear()
             _live_executor._sim_params_hash.clear()
             _inv_msg = "seed changed — full flush"
         else:
-            _inv = _live_executor.selective_invalidate(
+            _inv_count = _live_executor.selective_invalidate(
                 _live_last_nodes, nodes, _live_last_edges, edges, seed
             )
-            _inv_msg = f"selective invalidation: {_inv} entries cleared"
+            _inv_msg = f"selective invalidation: {_inv_count} entries cleared"
+        _live_stats["last_invalidated"] = _inv_count
 
         _live_last_nodes  = [dict(n) for n in nodes]
         _live_last_edges  = [dict(e) for e in edges]
@@ -1055,6 +1076,30 @@ def live_graph_sim(req: GraphRequest):
                     _live_stats["frame"] = frame
                     _live_stats["cook_ms"] = round(_cook_ms, 1)
                     _live_stats["fps"] = round(1000.0 / max(_cook_ms, 1.0), 1)
+                    # Pull per-frame diagnostics from the executor
+                    _fs = executor.last_frame_stats
+                    if _fs:
+                        _live_stats["node_timings"]   = _fs.get("node_timings", {})
+                        _live_stats["cache_hits"]     = _fs.get("cache_hits", 0)
+                        _live_stats["cache_misses"]   = _fs.get("cache_misses", 0)
+                        _live_stats["total_cache_hits"]   += _fs.get("cache_hits", 0)
+                        _live_stats["total_cache_misses"] += _fs.get("cache_misses", 0)
+                        _live_stats["mem_edges"]      = _fs.get("mem_edges", 0)
+                        _live_stats["disk_edges"]     = _fs.get("disk_edges", 0)
+                        _live_stats["gpu_nodes"]      = _fs.get("gpu_nodes", 0)
+                        _live_stats["cpu_nodes"]      = _fs.get("cpu_nodes", 0)
+                        _live_stats["node_compute_ms"]= _fs.get("node_compute_ms", 0.0)
+                        _live_stats["overhead_ms"]    = _fs.get("overhead_ms", 0.0)
+                    # Build node_names map from the current node list
+                    from image_pipeline.core.registry import get_meta as _get_meta
+                    _live_stats["node_names"] = {
+                        n["id"]: (_get_meta(n.get("method_id","")) or type("M",[],{"name":n.get("method_id","?")})()).name
+                        for n in nodes
+                    }
+                    _live_stats["active_nodes"] = len(nodes)
+                    _live_stats["active_edges"] = len(edges)
+                    _live_stats["canvas_w"]     = width
+                    _live_stats["canvas_h"]     = height
                 except Exception:
                     import traceback as _tb
                     print(f"[live-sim] frame {frame} failed:\n{_tb.format_exc(limit=6)}")
@@ -1079,6 +1124,14 @@ def live_graph_sim(req: GraphRequest):
 def live_graph_status():
     running = _live_sim_thread is not None and _live_sim_thread.is_alive()
     return {"running": running, **_live_stats}
+
+
+@app.get("/api/graph/diagnostics")
+def live_graph_diagnostics():
+    """Full diagnostics snapshot — superset of /api/graph/live/status."""
+    running = _live_sim_thread is not None and _live_sim_thread.is_alive()
+    sim_cache_size = len(_live_executor._sim_cache) if _live_executor is not None else 0
+    return {"running": running, "sim_cache_entries": sim_cache_size, **_live_stats}
 
 
 def _run_graph_job(job_id, nodes, edges, seed, frames, start_frame, out_dir, width=768, height=512):
