@@ -193,6 +193,59 @@ def test_cellular_automata_18_sequence_shows_start():
         shutil.rmtree(out, ignore_errors=True)
 
 
+def test_sim_cache_survives_unchanged_hotswap():
+    """Arch-A sim cache must survive a hot-swap where only volatile params change.
+
+    The live loop injects time=float(frame) on every frame. Without selective
+    invalidation the time param would flush the sim cache on every hot-swap,
+    forcing a full re-cook from scratch every time the user tweaks any node.
+    """
+    import time as _time
+    set_canvas(64, 64)
+    out = _tmp()
+    try:
+        ex = GraphExecutor(out, in_memory=True)
+        base = {"rule": "conway", "size": 4, "speed": 1.0, "n_frames": 10,
+                "rule_select": -1.0, "init_select": -1.0, "cell_size": -1.0,
+                "age_input": -1.0}
+        nodes_v1 = [{"id": "ca", "method_id": "18",
+                     "params": {**base, "time": 0.0}, "dirty": True}]
+
+        # First cook — populates sim cache
+        ex.execute(nodes_v1, [], seed=42, frame=0, frames=10)
+        assert ("ca", 42) in ex._sim_cache, "sim cache not populated after first cook"
+        t_cold = None
+
+        # Measure cold-cook time to compare with warm-cache cost
+        t0 = _time.monotonic()
+        ex.execute(nodes_v1, [], seed=42, frame=0, frames=10)
+        t_warm = (_time.monotonic() - t0) * 1000
+
+        # Simulate hot-swap: only the volatile 'time' param changed
+        nodes_v2 = [{"id": "ca", "method_id": "18",
+                     "params": {**base, "time": 7.0}, "dirty": True}]
+        inv = ex.selective_invalidate(nodes_v1, nodes_v2, [], [], seed=42)
+        assert inv == 0, f"volatile-only change invalidated {inv} cache entries (expected 0)"
+        assert ("ca", 42) in ex._sim_cache, "cache cleared on volatile-only hotswap"
+
+        # After the unchanged hotswap, frame still served from cache (fast)
+        t0 = _time.monotonic()
+        ex.execute(nodes_v2, [], seed=42, frame=3, frames=10)
+        t_post_swap = (_time.monotonic() - t0) * 1000
+        # post-swap serve should be as fast as warm-cache (within 5×, not 10×)
+        assert t_post_swap < t_warm * 10 + 50, \
+            f"post-swap cost {t_post_swap:.1f}ms >> warm {t_warm:.1f}ms — re-cooked when it shouldn't"
+
+        # Now hot-swap with a real (non-volatile) param change: n_frames
+        nodes_v3 = [{"id": "ca", "method_id": "18",
+                     "params": {**base, "n_frames": 20, "time": 0.0}, "dirty": True}]
+        inv = ex.selective_invalidate(nodes_v2, nodes_v3, [], [], seed=42)
+        assert inv == 1, f"non-volatile change should invalidate 1 entry, got {inv}"
+        assert ("ca", 42) not in ex._sim_cache, "cache should be gone after n_frames change"
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+
+
 def test_cellular_automata_18_params_honored():
     """rule / size / seed_pattern must take effect even when the -1.0
     scalar-override sentinels are present (the client always sends them)."""

@@ -949,6 +949,15 @@ def execute_graph(req: GraphRequest):
 _live_sim_lock = threading.Lock()
 _live_sim_cancel = threading.Event()
 _live_sim_thread: threading.Thread | None = None
+# Stats updated by the live loop — read by /api/graph/live/status
+_live_stats: dict = {"frame": 0, "cook_ms": 0.0, "fps": 0.0}
+
+# Persistent executor — survives hot-swaps so Arch-A sim caches are kept
+_live_executor = None          # GraphExecutor | None
+_live_last_nodes: list = []
+_live_last_edges: list = []
+_live_last_seed:  int  = 0
+_live_last_canvas: tuple = (0, 0)
 
 
 @app.post("/api/graph/live")
@@ -958,8 +967,13 @@ def live_graph_sim(req: GraphRequest):
     frames == 0 stops; anything else (re)starts. Only one live loop runs at
     a time — starting while one is active stops the old loop first, so
     re-POSTing with an edited graph hot-swaps it.
+
+    The GraphExecutor is kept alive across hot-swaps. Arch-A simulation caches
+    survive unchanged hot-swaps; only nodes with changed non-volatile params
+    are invalidated.
     """
     global _live_sim_cancel, _live_sim_thread
+    global _live_executor, _live_last_nodes, _live_last_edges, _live_last_seed, _live_last_canvas
     with _live_sim_lock:
         # Stop any existing loop (both for stop requests and restarts)
         if _live_sim_thread is not None and _live_sim_thread.is_alive():
@@ -973,11 +987,31 @@ def live_graph_sim(req: GraphRequest):
         nodes, edges, seed = req.nodes, req.edges, req.seed
         width, height = req.width, req.height
 
+        # ── Persistent executor: reuse or create ──────────────────────
+        from image_pipeline.core.graph import GraphExecutor as _GE
+        canvas = (width, height)
+        if _live_executor is None or canvas != _live_last_canvas:
+            _live_executor = _GE(OUTPUT_ROOT / "_live_sim", in_memory=True)
+            _inv_msg = "new executor"
+        elif seed != _live_last_seed:
+            _live_executor._sim_cache.clear()
+            _live_executor._sim_params_hash.clear()
+            _inv_msg = "seed changed — full flush"
+        else:
+            _inv = _live_executor.selective_invalidate(
+                _live_last_nodes, nodes, _live_last_edges, edges, seed
+            )
+            _inv_msg = f"selective invalidation: {_inv} entries cleared"
+
+        _live_last_nodes  = [dict(n) for n in nodes]
+        _live_last_edges  = [dict(e) for e in edges]
+        _live_last_seed   = seed
+        _live_last_canvas = canvas
+        executor = _live_executor
+
         def _live_loop():
-            from image_pipeline.core.graph import GraphExecutor
             from image_pipeline.core.utils import set_canvas as _set_canvas
             _set_canvas(width, height)
-            executor = GraphExecutor(OUTPUT_ROOT / "_live_sim", in_memory=True)
             frame = 0
             consecutive_errors = 0
             # Use a moderate total_frames so the timeline's t cycles through
@@ -989,7 +1023,7 @@ def live_graph_sim(req: GraphRequest):
             LIVE_TOTAL_FRAMES = 300
             # Throttle to ~30fps so the browser can actually display each frame
             _frame_interval = 1.0 / 30.0
-            print(f"[live-sim] starting loop, {len(nodes)} nodes, {len(edges)} edges")
+            print(f"[live-sim] starting loop, {len(nodes)} nodes, {len(edges)} edges, {_inv_msg}")
             while not cancel.is_set():
                 _tick_start = time.monotonic()
                 try:
@@ -1017,6 +1051,10 @@ def live_graph_sim(req: GraphRequest):
                         _push_live_frame(arr)
                     frame += 1
                     consecutive_errors = 0
+                    _cook_ms = (time.monotonic() - _tick_start) * 1000.0
+                    _live_stats["frame"] = frame
+                    _live_stats["cook_ms"] = round(_cook_ms, 1)
+                    _live_stats["fps"] = round(1000.0 / max(_cook_ms, 1.0), 1)
                 except Exception:
                     import traceback as _tb
                     print(f"[live-sim] frame {frame} failed:\n{_tb.format_exc(limit=6)}")
@@ -1039,7 +1077,8 @@ def live_graph_sim(req: GraphRequest):
 
 @app.get("/api/graph/live/status")
 def live_graph_status():
-    return {"running": _live_sim_thread is not None and _live_sim_thread.is_alive()}
+    running = _live_sim_thread is not None and _live_sim_thread.is_alive()
+    return {"running": running, **_live_stats}
 
 
 def _run_graph_job(job_id, nodes, edges, seed, frames, start_frame, out_dir, width=768, height=512):

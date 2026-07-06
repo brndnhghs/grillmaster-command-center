@@ -768,13 +768,16 @@ class GraphExecutor:
                         upstream_arr = 1 - (1 - upstream_arr) * (1 - _cand.astype(np.float32))
 
             if upstream_arr is not None:
-                # Write upstream to disk so methods can load it via load_input(params["input_image"])
-                upstream_path = node_dir / "_input.png"
-                from PIL import Image as _PILpre2
-                _PILpre2.fromarray((upstream_arr * 255).astype(np.uint8)).save(str(upstream_path))
-                run_params["input_image"] = str(upstream_path)
                 # Inject in-memory array for new-contract methods
                 run_params["_input_image"] = upstream_arr
+                # Legacy methods (new_image_contract=False) call load_input(params["input_image"])
+                # so they need the upstream image written to disk. New-contract methods skip this
+                # entirely when running in_memory (live loop), eliminating the per-edge PNG write.
+                if not (self._in_memory and meta.new_image_contract):
+                    upstream_path = node_dir / "_input.png"
+                    from PIL import Image as _PILpre2
+                    _PILpre2.fromarray((upstream_arr * 255).astype(np.uint8)).save(str(upstream_path))
+                    run_params["input_image"] = str(upstream_path)
                 # Methods whose source param has an "input_image" choice need it selected explicitly
                 src_spec = (meta.params or {}).get("source", {})
                 if isinstance(src_spec, dict) and "input_image" in (src_spec.get("choices") or []):
@@ -804,14 +807,17 @@ class GraphExecutor:
             from image_pipeline.core import utils as _utils_mod
             if self._in_memory:
                 _original_save_fn = _utils_mod.save
-                def _capturing_save(arr_to_save, name, out_dir_cap):
+                _skip_disk = meta.new_image_contract  # True → skip disk write entirely
+                def _capturing_save(arr_to_save, name, out_dir_cap,
+                                    _skip=_skip_disk, _orig=_original_save_fn):
                     _captured_output[node_id] = (
                         arr_to_save.copy()
                         if isinstance(arr_to_save, np.ndarray)
                         else np.array(arr_to_save)
                     )
-                    # Still write to disk for methods that need the file
-                    _original_save_fn(arr_to_save, name, out_dir_cap)
+                    if not _skip:
+                        # Legacy methods may read the PNG back via load_input; keep writing.
+                        _orig(arr_to_save, name, out_dir_cap)
                 _utils_mod.save = _capturing_save
 
             # ── Call the method ──
@@ -888,7 +894,9 @@ class GraphExecutor:
                     extra_outputs[_key] = np.load(str(_path))
 
             # ── Write to disk (for timeline playback) ──
-            if arr is not None:
+            # New-contract methods in live (in_memory) mode skip this; the in-memory ndarray
+            # is already in flat_outputs and timeline playback uses separate non-live renders.
+            if arr is not None and not (self._in_memory and meta.new_image_contract):
                 from PIL import Image as _PIL_write
                 arr_u8 = (np.clip(arr, 0, 1) * 255).astype(np.uint8) if arr.dtype != np.uint8 else arr
                 _PIL_write.fromarray(arr_u8).save(str(node_dir / f"{meta.filename()}"))
@@ -1007,6 +1015,58 @@ class GraphExecutor:
             return sub_outputs[terminal_id], sub_errors
 
         return {}, sub_errors
+
+    def selective_invalidate(
+        self,
+        old_nodes: list[dict],
+        new_nodes: list[dict],
+        old_edges: list[dict],
+        new_edges: list[dict],
+        seed: int,
+    ) -> int:
+        """Invalidate only the sim-cache entries that must be re-cooked after a hot-swap.
+
+        Call this on the persistent executor before re-using it with an updated
+        graph. Returns the number of cache entries cleared.
+
+        Rules:
+        - Topology change (edge set changed) → flush everything.
+        - Node removed → remove its cache entry.
+        - Node's non-volatile params changed → remove its cache entry.
+        - Node's params unchanged (only volatile keys like 'time' differ) → keep cache.
+        """
+        def _edge_sig(e: dict) -> tuple:
+            return (e.get("src_node", ""), e.get("src_port", ""),
+                    e.get("dst_node", ""), e.get("dst_port", ""))
+
+        old_topo = sorted(_edge_sig(e) for e in old_edges)
+        new_topo = sorted(_edge_sig(e) for e in new_edges)
+
+        if old_topo != new_topo:
+            n = len(self._sim_cache)
+            self._sim_cache.clear()
+            self._sim_params_hash.clear()
+            return n
+
+        old_map = {n["id"]: n for n in old_nodes}
+        new_map = {n["id"]: n for n in new_nodes}
+        invalidated = 0
+
+        for nid in list(old_map):
+            if nid not in new_map:
+                if self._sim_cache.pop((nid, seed), None) is not None:
+                    invalidated += 1
+                self._sim_params_hash.pop(nid, None)
+
+        for nid, node in new_map.items():
+            new_hash = _node_params_hash(node.get("params", {}))
+            old_hash = self._sim_params_hash.get(nid)
+            if old_hash is not None and old_hash != new_hash:
+                if self._sim_cache.pop((nid, seed), None) is not None:
+                    invalidated += 1
+                self._sim_params_hash.pop(nid, None)
+
+        return invalidated
 
     def _find_terminal(
         self, nodes: list[GraphNode], edges: list[GraphEdge], order: list[str]
