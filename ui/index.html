@@ -1359,6 +1359,14 @@ try {
   .tl-kf-diamond.elastic { background: #f472b6; border-color: #db2777; }
   .tl-kf-diamond.cubic-bezier { background: #2dd4bf; border-color: #0d9488; }
 
+  /* ── Node-KF lane header ──────────────────────────────────────── */
+  .tl-node-kf-header {
+    position: sticky; left: 0; z-index: 4;
+    font-size: 9px; font-weight: 700; color: var(--accent);
+    background: #181818; white-space: nowrap;
+    padding: 0 6px; line-height: 18px;
+  }
+
   .tl-playhead {
     position: absolute; top: 0; width: 2px; height: 100%;
     background: #ff6b6b; z-index: 10; pointer-events: none;
@@ -4612,6 +4620,7 @@ function gSelectNode(id) {
   gSelectedNode = id;
   const node = gNodes.find(n => n.id === id);
   gShowNodeParams(node);
+  renderTimelineRuler();   // Phase 5: refresh node KF lanes
   if (isMobile()) gParamsSheetOpen();
 }
 
@@ -5265,6 +5274,21 @@ function _gUpdateLiveMeta(msg) {
   if (_lmrFrame) _lmrFrame.textContent = 'frame ' + msg.frame;
   if (_lmrMs)    _lmrMs.textContent    = msg.cook_ms + 'ms';
   if (_lmrFps)   _lmrFps.textContent   = msg.fps + ' fps';
+  // Phase 5: sync timeline frame cursor to live WS frame
+  if (gLiveMode && typeof msg.frame === 'number') {
+    const tlFrameEl = document.getElementById('tl-frame');
+    const tlEndEl   = document.getElementById('tl-end');
+    if (tlFrameEl) {
+      tlFrameEl.value = msg.frame;
+      // Auto-extend timeline end so playhead stays on-screen
+      if (tlEndEl && msg.frame > (parseInt(tlEndEl.value) || 24)) {
+        tlEndEl.value = msg.frame + 24;
+        renderTimelineRuler();
+      } else {
+        updatePlayhead();
+      }
+    }
+  }
   if (_lmrErr) {
     const hasErr = msg.node_errors && Object.keys(msg.node_errors).length > 0;
     _lmrErr.style.display = hasErr ? '' : 'none';
@@ -5782,11 +5806,15 @@ function renderTimelineRuler() {
   lanes.style.width = pixelWidth + 'px';
 
   if (tlClips.length === 0) {
+    lanes.style.height = '20px';
     const empty = document.createElement('div');
     empty.className = 'tl-empty-lane';
     empty.style.width = pixelWidth + 'px';
     empty.textContent = 'Run the graph to create a clip on the timeline';
     lanes.appendChild(empty);
+    // Phase 5: still render node KF lanes even with no clips
+    _renderNodeKfLanes(lanes, start, end, total, pixelWidth);
+    updatePlayhead();
     return;
   }
 
@@ -6083,6 +6111,9 @@ function renderTimelineRuler() {
     renderClipKeyframeLanes(selectedClip, start, total, pixelWidth, lanes);
   }
 
+  // ── Phase 5: Per-node param KF lanes for currently selected node ──
+  _renderNodeKfLanes(lanes, start, end, total, pixelWidth);
+
   // Update playhead position
   updatePlayhead();
 }
@@ -6127,6 +6158,248 @@ function renderClipKeyframeLanes(clip, start, total, pixelWidth, lanesContainer)
       laneDiv.appendChild(diamond);
     }
     lanesContainer.appendChild(laneDiv);
+  });
+  // Update container height so _renderNodeKfLanes can read it correctly
+  const kfCount = Object.values(pkf).filter(v => v && v.length > 0).length;
+  if (kfCount > 0) {
+    const baseY = (clip.lane + 1) * 40;
+    const needed = baseY + kfCount * 20;
+    const cur = parseInt(lanesContainer.style.height) || 0;
+    if (needed > cur) lanesContainer.style.height = needed + 'px';
+  }
+}
+
+// ── Phase 5: JS easing utilities (mirror of core/easing.py) ──────────────
+
+const _KF_EASING_COLORS = {
+  'linear': '#888', 'ease': '#6c8ef5', 'ease-in': '#f59e0b',
+  'ease-out': '#34d399', 'ease-in-out': '#6c8ef5',
+  'step': '#f87171', 'bounce': '#a78bfa', 'elastic': '#f472b6', 'cubic-bezier': '#2dd4bf',
+};
+
+function _kfCubicBezier(t, p1x, p1y, p2x, p2y) {
+  function sX(u) { return 3*(1-u)*(1-u)*u*p1x + 3*(1-u)*u*u*p2x + u*u*u; }
+  function sY(u) { return 3*(1-u)*(1-u)*u*p1y + 3*(1-u)*u*u*p2y + u*u*u; }
+  function dX(u) { return 3*(1-u)*(1-u)*p1x + 6*(1-u)*u*(p2x-p1x) + 3*u*u*(1-p2x); }
+  let g = t;
+  for (let i = 0; i < 8; i++) {
+    const x = sX(g) - t, dx = dX(g);
+    if (Math.abs(x) < 1e-7 || Math.abs(dx) < 1e-7) break;
+    g = Math.max(0, Math.min(1, g - x/dx));
+  }
+  return sY(g);
+}
+
+function _kfApplyEasing(t, easing, handle_in, handle_out) {
+  t = Math.max(0, Math.min(1, t));
+  if (easing === 'step') return t < 1.0 ? 0.0 : 1.0;
+  if (easing === 'bounce') {
+    if (t < 1/2.75) return 7.5625*t*t;
+    if (t < 2/2.75) { const u=t-1.5/2.75; return 7.5625*u*u+0.75; }
+    if (t < 2.5/2.75) { const u=t-2.25/2.75; return 7.5625*u*u+0.9375; }
+    const u=t-2.625/2.75; return 7.5625*u*u+0.984375;
+  }
+  if (easing === 'elastic') {
+    if (t === 0 || t === 1) return t;
+    return -Math.pow(2, 10*(t-1)) * Math.sin((t-1-0.075)*(2*Math.PI)/0.3);
+  }
+  const presets = { linear:[0,0,1,1], ease:[0.25,0.1,0.25,1], 'ease-in':[0.42,0,1,1], 'ease-out':[0,0,0.58,1], 'ease-in-out':[0.42,0,0.58,1] };
+  let p = presets[easing];
+  if (easing === 'cubic-bezier' && handle_in && handle_out) p = [handle_in[0], handle_in[1], handle_out[0], handle_out[1]];
+  if (!p) return t;
+  return _kfCubicBezier(t, p[0], p[1], p[2], p[3]);
+}
+
+function _kfEvaluateTrack(kfs, frame) {
+  if (!kfs || !kfs.length) return null;
+  const s = [...kfs].sort((a, b) => a.frame - b.frame);
+  if (frame <= s[0].frame) return s[0].value;
+  if (frame >= s[s.length-1].frame) return s[s.length-1].value;
+  for (let i = 0; i < s.length - 1; i++) {
+    const a = s[i], b = s[i+1];
+    if (a.frame <= frame && frame < b.frame) {
+      const w = b.frame - a.frame;
+      if (!w) return b.value;
+      const tE = _kfApplyEasing((frame - a.frame) / w, b.easing || 'linear', b.handle_in, b.handle_out);
+      if (typeof a.value === 'number' && typeof b.value === 'number') return a.value + (b.value - a.value) * tE;
+      return tE < 0.5 ? a.value : b.value;
+    }
+  }
+  return null;
+}
+
+// ── Phase 5: Per-node KF lanes in timeline ────────────────────────────────
+
+function _renderNodeKfLanes(lanes, start, end, total, pixelWidth) {
+  if (!gSelectedNode) return;
+  const node = gNodes.find(n => n.id === gSelectedNode);
+  if (!node || !node.paramKeyframes) return;
+  const pkf = node.paramKeyframes;
+  const paramNames = Object.keys(pkf).filter(p => pkf[p] && pkf[p].length > 0);
+  if (!paramNames.length) return;
+
+  const LANE_H = 24, HEADER_H = 18;
+  const curH = parseInt(lanes.style.height) || 0;
+  const def = gNodeDefs[node.method_id];
+  const nodeName = def ? def.name : node.id;
+
+  // Section header
+  const hdrDiv = document.createElement('div');
+  hdrDiv.style.cssText = `position:absolute;top:${curH}px;left:0;width:${pixelWidth}px;height:${HEADER_H}px;border-top:2px solid var(--accent);background:#181818;z-index:4;display:flex;align-items:center;`;
+  const hlbl = document.createElement('div');
+  hlbl.className = 'tl-node-kf-header';
+  hlbl.textContent = `⬤ ${nodeName}`;
+  hdrDiv.appendChild(hlbl);
+  lanes.appendChild(hdrDiv);
+
+  const newH = curH + HEADER_H + paramNames.length * LANE_H;
+  lanes.style.height = newH + 'px';
+
+  paramNames.forEach((pname, pi) => {
+    const kfs = [...(pkf[pname] || [])].sort((a, b) => a.frame - b.frame);
+    const laneY = curH + HEADER_H + pi * LANE_H;
+
+    const laneDiv = document.createElement('div');
+    laneDiv.className = 'tl-lane';
+    laneDiv.style.cssText = `position:absolute;top:${laneY}px;left:0;width:${pixelWidth}px;height:${LANE_H}px;display:flex;`;
+
+    const label = document.createElement('div');
+    label.className = 'tl-lane-label';
+    label.style.cssText = `line-height:${LANE_H}px;height:${LANE_H}px;font-size:9px;`;
+    label.title = pname;
+    label.textContent = pname;
+    laneDiv.appendChild(label);
+
+    const track = document.createElement('div');
+    track.className = 'tl-lane-track';
+    track.style.cssText = `position:absolute;left:100px;right:0;top:0;height:${LANE_H}px;`;
+
+    // Easing-curve SVG between adjacent KFs
+    if (kfs.length > 1) {
+      const vAll = kfs.map(k => typeof k.value === 'number' ? k.value : 0);
+      const vMin = Math.min(...vAll), vMax = Math.max(...vAll);
+      const vRange = Math.max(0.001, vMax - vMin);
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;overflow:visible;';
+      for (let i = 0; i < kfs.length - 1; i++) {
+        const kfA = kfs[i], kfB = kfs[i+1];
+        const relA = kfA.frame - start, relB = kfB.frame - start;
+        if (relB < 0 || relA > total) continue;
+        const x1 = relA * 12 + 6, x2 = relB * 12 + 6;
+        let pts = [];
+        for (let s = 0; s <= 24; s++) {
+          const t = s / 24;
+          const tE = _kfApplyEasing(t, kfB.easing || 'linear', kfB.handle_in, kfB.handle_out);
+          const vA = typeof kfA.value === 'number' ? kfA.value : 0;
+          const vB = typeof kfB.value === 'number' ? kfB.value : 0;
+          const v = vA + (vB - vA) * tE;
+          const yNorm = (v - vMin) / vRange;
+          const y = (LANE_H - 3) - yNorm * (LANE_H - 7);
+          pts.push(`${(x1 + (x2-x1)*t).toFixed(1)},${y.toFixed(1)}`);
+        }
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', 'M ' + pts.join(' L '));
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', _KF_EASING_COLORS[kfB.easing || 'linear'] || '#6c8ef5');
+        path.setAttribute('stroke-width', '1.5');
+        path.setAttribute('opacity', '0.55');
+        svg.appendChild(path);
+      }
+      track.appendChild(svg);
+    }
+
+    // Click-on-track → create KF
+    track.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || e.target.closest('.tl-kf-diamond')) return;
+      e.preventDefault();
+      const r = track.getBoundingClientRect();
+      const clickFrame = Math.max(start, Math.min(end, start + Math.round((e.clientX - r.left) / 12)));
+      if (kfs.some(k => k.frame === clickFrame)) {
+        document.getElementById('tl-frame').value = clickFrame;
+        document.getElementById('tl-frame').dispatchEvent(new Event('input'));
+        return;
+      }
+      // Value: interpolate existing track at cursor frame, else use node param default
+      const cursorFrame = parseInt(document.getElementById('tl-frame')?.value) || 0;
+      let curVal = kfs.length >= 2 ? (_kfEvaluateTrack(kfs, cursorFrame) ?? 0) :
+                   kfs.length === 1 ? kfs[0].value :
+                   (node.params[pname] ?? (def && def.params && def.params[pname] ? def.params[pname].default : 0));
+      if (typeof curVal !== 'number') curVal = 0;
+      if (!node.paramKeyframes[pname]) node.paramKeyframes[pname] = [];
+      node.paramKeyframes[pname].push({ frame: clickFrame, value: parseFloat(curVal.toFixed(4)), easing: 'ease-in-out', handle_in: null, handle_out: null });
+      node.paramKeyframes[pname].sort((a, b) => a.frame - b.frame);
+      document.getElementById('tl-frame').value = clickFrame;
+      document.getElementById('tl-frame').dispatchEvent(new Event('input'));
+      gSave(); renderTimelineRuler();
+      if (gSelectedNode === node.id && def) renderPerParamKeyframes(node, Object.entries(def.params || {}));
+      gShowToast(`KF: ${pname} @ F${clickFrame} = ${curVal.toFixed(3)}`);
+    });
+
+    // KF diamonds: drag + click + right-click-delete
+    kfs.forEach((kf, kfIdx) => {
+      const relFrame = kf.frame - start;
+      if (relFrame < 0 || relFrame > total) return;
+      const diamond = document.createElement('div');
+      diamond.className = 'tl-kf-diamond ' + (kf.easing || 'linear');
+      diamond.style.left = (relFrame * 12 + 6) + 'px';
+      const valStr = typeof kf.value === 'number' ? kf.value.toFixed(3) : kf.value;
+      diamond.title = `${pname} @ F${kf.frame} = ${valStr} (${kf.easing || 'linear'})  |  drag to move, right-click to delete`;
+
+      diamond.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.getElementById('tl-frame').value = kf.frame;
+        document.getElementById('tl-frame').dispatchEvent(new Event('input'));
+        if (gSelectedNode === node.id && def) openPerParamKfEditor(node, pname, kfIdx, kf);
+      });
+
+      diamond.addEventListener('contextmenu', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const arr = node.paramKeyframes[pname];
+        if (!arr) return;
+        const ai = arr.findIndex(k => k === kf);
+        arr.splice(ai < 0 ? kfIdx : ai, 1);
+        if (!arr.length) delete node.paramKeyframes[pname];
+        gSave(); renderTimelineRuler();
+        if (gSelectedNode === node.id && def) renderPerParamKeyframes(node, Object.entries(def.params || {}));
+        gShowToast(`Deleted KF: ${pname} @ F${kf.frame}`, true);
+      });
+
+      // Drag to reposition
+      let _dx0 = 0, _f0 = 0, _kfDragging = false;
+      diamond.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        e.stopPropagation(); e.preventDefault();
+        diamond.setPointerCapture(e.pointerId);
+        _dx0 = e.clientX; _f0 = kf.frame; _kfDragging = true;
+        diamond.classList.add('selected');
+        document.body.style.cursor = 'ew-resize';
+      });
+      diamond.addEventListener('pointermove', (e) => {
+        if (!_kfDragging) return;
+        const nf = Math.max(start, Math.min(end, _f0 + Math.round((e.clientX - _dx0) / 12)));
+        if (nf !== kf.frame) {
+          kf.frame = nf;
+          diamond.style.left = ((nf - start) * 12 + 6) + 'px';
+          document.getElementById('tl-frame').value = nf;
+          updatePlayhead();
+        }
+      });
+      const _kfUp = () => {
+        if (!_kfDragging) return;
+        _kfDragging = false; document.body.style.cursor = '';
+        diamond.classList.remove('selected');
+        node.paramKeyframes[pname].sort((a, b) => a.frame - b.frame);
+        gSave(); renderTimelineRuler();
+        if (gSelectedNode === node.id && def) renderPerParamKeyframes(node, Object.entries(def.params || {}));
+      };
+      diamond.addEventListener('pointerup', _kfUp);
+      diamond.addEventListener('pointercancel', _kfUp);
+
+      track.appendChild(diamond);
+    });
+
+    laneDiv.appendChild(track);
+    lanes.appendChild(laneDiv);
   });
 }
 
@@ -6733,13 +7006,17 @@ function gSerializeGraph() {
         render: !!n.render,
       };
       return {
-        id:         n.id,
-        method_id:  n.method_id,
-        params:     n.params || {},
-        animParams: n.animParams || {},
-        x:          Math.round(n.x),
-        y:          Math.round(n.y),
-        render:     !!n.render,
+        id:             n.id,
+        method_id:      n.method_id,
+        params:         n.params || {},
+        animParams:     n.animParams || {},
+        paramKeyframes: n.paramKeyframes || {},
+        start_frame:    n.start_frame || 0,
+        end_frame:      n.end_frame   || 0,
+        keyframes:      n.keyframes   || [],
+        x:              Math.round(n.x),
+        y:              Math.round(n.y),
+        render:         !!n.render,
       };
     }),
     edges: gEdges.map(e => ({
@@ -6782,7 +7059,7 @@ async function gLoadGraph(data) {
     } else {
       const def = gNodeDefs[n.method_id];
       if (!def) continue;
-      const node = { id: n.id, method_id: n.method_id, params: n.params || gDefaultParams(def), animParams: n.animParams || {}, x: n.x, y: n.y, render: !!n.render, dirty: true };
+      const node = { id: n.id, method_id: n.method_id, params: n.params || gDefaultParams(def), animParams: n.animParams || {}, paramKeyframes: n.paramKeyframes || {}, start_frame: n.start_frame || 0, end_frame: n.end_frame || 0, keyframes: n.keyframes || [], x: n.x, y: n.y, render: !!n.render, dirty: true };
       gNodes.push(node);
       gRenderNode(node);
     }
