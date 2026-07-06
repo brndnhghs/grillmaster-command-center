@@ -20,6 +20,7 @@ except ImportError:
 @method(
     id="80",
     name="Pixel Mosaic",
+    new_image_contract=True,
     category="filters",
     tags=["tile", "fast", "expanded", "animation"],
     params={
@@ -98,8 +99,8 @@ def method_pixel_mosaic(out_dir: Path, seed: int, params=None):
         pal_arr = np.array(pal, dtype=np.uint8)
 
     # ── Generate source image ──
-    if source == "input_image" and params.get('input_image'):
-        src = load_input(params['input_image'])
+    if source == "input_image" and params.get('_input_image') is not None:
+        src = params['_input_image']
         if src.shape[:2] != (H, W):
             from PIL import Image
             src = np.array(Image.fromarray((src * 255).astype(np.uint8)).resize((W, H))) / 255.0

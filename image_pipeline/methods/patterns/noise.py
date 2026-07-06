@@ -14,7 +14,7 @@ from ...core.utils import PALETTES
 _ERROR_IMG = np.zeros((H, W, 3), dtype=np.float32)
 
 
-@method(id="05", name="Procedural Noise", category="patterns",
+@method(id="05", name="Procedural Noise", category="patterns", new_image_contract=True,
         tags=["classic", "noise", "generative", "animated", "expanded"],
         inputs={"phase": "SCALAR",
                 "offset_x": "SCALAR",

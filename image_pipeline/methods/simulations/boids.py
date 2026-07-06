@@ -43,7 +43,7 @@ def _render_sandpile_preview(grid, colors, size, h, w):
     result = cv2.resize(result.astype(np.float32) / 255.0, (w, h), interpolation=cv2.INTER_NEAREST)
     return result
 
-@method(id="34", name="Boids Flocking", category="simulations", tags=["agents", "organic", "expanded"],
+@method(id="34", name="Boids Flocking", category="simulations", new_image_contract=True, tags=["agents", "organic", "expanded"],
          params={
              "boids": {"description": "number of agents", "min": 10, "max": 500, "default": 80},
              "frames": {"description": "simulation steps", "min": 50, "max": 1000, "default": 300},
@@ -111,9 +111,9 @@ def method_boids(out_dir: Path, seed: int, params=None):
     rng = random.Random(seed)
 
     # ── Base image ──
-    if params.get("input_image"):
-        from ...core.utils import load_input
-        img_arr = load_input(params["input_image"])
+    _inp = params.get("_input_image")
+    if _inp is not None:
+        img_arr = _inp
         base_img = Image.fromarray((img_arr * 255).astype(np.uint8))
     else:
         base_img = Image.new("RGB", (W, H), BG_DEFAULT)

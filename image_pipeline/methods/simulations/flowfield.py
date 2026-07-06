@@ -43,7 +43,7 @@ def _render_sandpile_preview(grid, colors, size, h, w):
     result = cv2.resize(result.astype(np.float32) / 255.0, (w, h), interpolation=cv2.INTER_NEAREST)
     return result
 
-@method(id="35", name="Flow Field", category="simulations", tags=["particles", "vector", "expanded"],
+@method(id="35", name="Flow Field", category="simulations", new_image_contract=True, tags=["particles", "vector", "expanded"],
          params={
              "particles": {"description": "number of particles", "min": 500, "max": 10000, "default": 3000},
              "speed": {"description": "particle speed per frame", "min": 0.5, "max": 15, "default": 2.0},
@@ -98,9 +98,9 @@ def method_flowfield(out_dir: Path, seed: int, params=None):
     from ...core.utils import PALETTES
 
     # ── Base image ──
-    if params.get("input_image"):
-        from ...core.utils import load_input
-        img_arr = load_input(params["input_image"])
+    _inp = params.get("_input_image")
+    if _inp is not None:
+        img_arr = _inp
         base_img = Image.fromarray((img_arr * 255).astype(np.uint8))
     else:
         base_img = Image.new("RGB", (W, H), (10, 10, 18))

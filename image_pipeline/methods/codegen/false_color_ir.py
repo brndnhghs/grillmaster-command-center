@@ -23,6 +23,7 @@ from ...core.animation import capture_frame
     id="77",
     name="False Color IR",
     category="codegen",
+    new_image_contract=True,
     tags=["color", "infrared", "false-color", "filter", "spectral"],
     inputs={
         "image_in": "IMAGE",  # optional — fallback to procedural generation
@@ -97,13 +98,7 @@ def method_77_false_color_ir(out_dir: Path, seed: int, params=None):
     effective_strength = min(1.0, max(0.0, strength + strength_mod * 0.2))
 
     # ── Read upstream image or generate fallback ─────────────────────
-    input_path = params.get("input_image", "")
-    input_img = None
-    if input_path:
-        try:
-            input_img = load_input(input_path, w, h)  # (H,W,3) float32 [0,1]
-        except Exception:
-            pass
+    input_img = params.get("_input_image")  # (H,W,3) float32 [0,1] or None
 
     if input_img is not None:
         # Use upstream image — extract luminance as the base band

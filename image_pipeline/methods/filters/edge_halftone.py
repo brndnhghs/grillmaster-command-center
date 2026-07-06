@@ -20,6 +20,7 @@ except ImportError:
 @method(
     id="64",
     name="Edge Halftone",
+    new_image_contract=True,
     category="filters",
     tags=["dots", "fast", "expanded", "animation"],
     params={
@@ -91,8 +92,8 @@ def method_edge_halftone(out_dir: Path, seed: int, params=None):
         pal_arr = np.array(pal, dtype=np.uint8)
 
     # ── Generate source ──
-    if source == "input_image" and params.get('input_image'):
-        img_arr = load_input(params['input_image'])
+    if source == "input_image" and params.get('_input_image') is not None:
+        img_arr = params['_input_image']
         gray = np.mean(img_arr, axis=2)
     elif source == "gradient":
         x = np.linspace(0, 1, W, dtype=np.float32)

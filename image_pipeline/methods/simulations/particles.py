@@ -43,7 +43,7 @@ def _render_sandpile_preview(grid, colors, size, h, w):
     result = cv2.resize(result.astype(np.float32) / 255.0, (w, h), interpolation=cv2.INTER_NEAREST)
     return result
 
-@method(id="20", name="Particle System", category="simulations", tags=["agents", "fast", "animation", "expanded"],
+@method(id="20", name="Particle System", category="simulations", new_image_contract=True, tags=["agents", "fast", "animation", "expanded"],
          outputs={"image": "IMAGE", "luminance": "SCALAR", "particles": "PARTICLES"},
          params={
              "particles": {"description": "particle count", "min": 100, "max": 5000, "default": 500},
@@ -323,8 +323,9 @@ def method_particles(out_dir: Path, seed: int, params=None):
         color_mode = color_mode_choices[cm_idx]
 
     # Background
-    if params.get('input_image'):
-        img_arr = load_input(params['input_image'])
+    _inp = params.get('_input_image')
+    if _inp is not None:
+        img_arr = _inp
         base_bg = Image.fromarray((img_arr * 255).astype(np.uint8))
     else:
         base_bg = Image.new("RGB", (W, H), (10, 10, 18))

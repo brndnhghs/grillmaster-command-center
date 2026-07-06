@@ -20,6 +20,7 @@ except ImportError:
 @method(
     id="63",
     name="Cross Stitch",
+    new_image_contract=True,
     category="filters",
     tags=["texture", "fast", "expanded", "animation"],
     params={
@@ -99,8 +100,8 @@ def method_cross_stitch(out_dir: Path, seed: int, params=None):
         pal_arr = np.array(pal, dtype=np.uint8)
 
     # ── Generate source ──
-    if source == "input_image" and params.get('input_image'):
-        img_arr = load_input(params['input_image'])
+    if source == "input_image" and params.get('_input_image') is not None:
+        img_arr = params['_input_image']
         base = np.array(Image.fromarray((img_arr * 255).astype(np.uint8)).resize((cols, rows), Image.LANCZOS))
     elif source == "gradient":
         x = np.linspace(0, 1, cols, dtype=np.float32)

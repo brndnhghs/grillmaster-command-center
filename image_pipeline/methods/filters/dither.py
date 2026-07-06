@@ -21,6 +21,7 @@ except ImportError:
     id="13",
     name="Dithering",
     category="filters",
+    new_image_contract=True,
     tags=["bayer", "error-diffusion", "halftone", "expanded"],
     params={
         "algorithm": {"description": "dither algorithm: fs (Floyd-Steinberg), atkinson, stucki, sierra, jarvis, bayer2, bayer4, bayer8, random, cluster3, cluster4", "default": "fs"},
@@ -97,9 +98,8 @@ def method_dither(out_dir: Path, seed: int, params=None):
         algorithm_b = algo_cycle[idx_b]
 
     # --- Build source image ---
-    if use_input and params.get("input_image"):
-        from ...core.utils import load_input
-        img_arr = load_input(params["input_image"])
+    if use_input and params.get("_input_image") is not None:
+        img_arr = params["_input_image"]
         gray = np.mean(img_arr, axis=2)
         source = gray.astype(np.float32)
         source_rgb = img_arr.copy()

@@ -21,6 +21,7 @@ except ImportError:
     id="74",
     name="Swirl Displacement",
     category="filters",
+    new_image_contract=True,
     tags=["warp", "fast", "expanded", "animation"],
     params={
         "displacement": {"description": "displacement type (swirl/pinch/bulge/twist/ripple/fisheye/wave/kaleidoscope/spiralize)", "default": "swirl"},
@@ -102,9 +103,9 @@ def method_swirl(out_dir: Path, seed: int, params=None):
 
     # ── Generate source image ──
     def _make_source():
-        if params.get("input_image"):
-            from ...core.utils import load_input
-            return load_input(params["input_image"])
+        _inp = params.get("_input_image")
+        if _inp is not None:
+            return _inp
         elif source == "noise":
             noise = rng.standard_normal((H, W, 3)).astype(np.float32) * noise_amp + 0.5
             noise = cv2.GaussianBlur(noise, (0, 0), sigmaX=blur_sigma, sigmaY=blur_sigma)

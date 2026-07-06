@@ -26,6 +26,7 @@ from ...core.utils import save, W, H
     name="Transform",
     category="filters",
     tags=["transform", "scale", "rotate", "translate", "warp", "perspective", "flip", "shear"],
+    new_image_contract=True,
     inputs={
         "image_in": "IMAGE",
         "field_a":  "FIELD",

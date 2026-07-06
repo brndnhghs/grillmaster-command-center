@@ -130,6 +130,44 @@ def test_in_memory_faster_than_disk():
     print(f"  Speedup: {disk_time / mem_time:.1f}x (mem={mem_time:.3f}s, disk={disk_time:.3f}s)")
 
 
+def test_chain_in_memory_vs_disk():
+    """Multi-node chain (Noise→Glitch→Transform) should produce identical pixel output
+    in in_memory and disk modes when new_image_contract methods are used."""
+    _cleanup(Path("/tmp/test_chain_mem"))
+    _cleanup(Path("/tmp/test_chain_disk"))
+
+    nodes = [
+        {"id": "src",   "method_id": "05",  "params": {"noise_type": "perlin"},      "dirty": True},
+        {"id": "glitch","method_id": "17",   "params": {"intensity": 0.3},            "dirty": True},
+        {"id": "xform", "method_id": "74",   "params": {"source": "input_image"},     "dirty": True},
+    ]
+    edges = [
+        {"src_node": "src",   "src_port": "image", "dst_node": "glitch", "dst_port": "image_in"},
+        {"src_node": "glitch","src_port": "image", "dst_node": "xform",  "dst_port": "image_in"},
+    ]
+
+    ex_mem  = GraphExecutor(Path("/tmp/test_chain_mem"),  in_memory=True)
+    ex_disk = GraphExecutor(Path("/tmp/test_chain_disk"), in_memory=False)
+
+    result_mem,  _, errs_mem  = ex_mem.execute(nodes,  edges, 42, frame=0, frames=1)
+    result_disk, _, errs_disk = ex_disk.execute(nodes, edges, 42, frame=0, frames=1)
+
+    arr_mem  = result_mem.get("xform",  {}).get("image")
+    arr_disk = result_disk.get("xform", {}).get("image")
+
+    assert arr_mem  is not None, f"in_memory chain produced no output: {errs_mem}"
+    assert arr_disk is not None, f"disk chain produced no output: {errs_disk}"
+
+    # Shapes must match
+    assert arr_mem.shape == arr_disk.shape, \
+        f"Shape mismatch: in_memory={arr_mem.shape} disk={arr_disk.shape}"
+
+    # Pixel values should be essentially identical (allow tiny float rounding)
+    max_diff = float(np.abs(arr_mem.astype(np.float32) - arr_disk.astype(np.float32)).max())
+    assert max_diff < 0.02, \
+        f"in_memory vs disk pixel diff too large: {max_diff:.4f} — fidelity regression"
+
+
 def test_arch_a_cache_hit():
     """Architecture A should cache simulation and serve from cache."""
     _cleanup(Path("/tmp/test_cache_hit"))
