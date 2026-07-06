@@ -73,21 +73,68 @@ _WS_CLIENTS: set[WebSocket] = set()
 _WS_LOCK = threading.Lock()
 
 
-def _broadcast_jpeg(jpeg_bytes: bytes):
-    """Send JPEG bytes to all connected WebSocket clients (best-effort)."""
+def _broadcast_ws_frame(jpeg_bytes: bytes, ws_meta: dict | None = None):
+    """Send a per-frame JSON message to all connected WebSocket clients.
+
+    The message shape:
+      {"frame": int, "cook_ms": float, "fps": float,
+       "node_timings": {id→ms}, "node_names": {id→name},
+       "node_errors": {id→str},
+       "canvas_w": int, "canvas_h": int,
+       "img": "<base64-jpeg>"}
+
+    Falls back to binary JPEG if ws_meta is None (should not happen in normal use).
+    """
+    if not _WS_CLIENTS:
+        return
+    if ws_meta is None:
+        # Legacy binary fallback (no metadata)
+        payload_text = None
+        payload_bytes = jpeg_bytes
+    else:
+        msg = {
+            "frame":        ws_meta.get("frame", 0),
+            "cook_ms":      ws_meta.get("cook_ms", 0.0),
+            "fps":          ws_meta.get("fps", 0.0),
+            "node_timings": ws_meta.get("node_timings", {}),
+            "node_names":   ws_meta.get("node_names", {}),
+            "node_errors":  ws_meta.get("node_errors", {}),
+            "gpu_nodes":    ws_meta.get("gpu_nodes", 0),
+            "cpu_nodes":    ws_meta.get("cpu_nodes", 0),
+            "mem_edges":    ws_meta.get("mem_edges", 0),
+            "disk_edges":   ws_meta.get("disk_edges", 0),
+            "canvas_w":     ws_meta.get("canvas_w", 0),
+            "canvas_h":     ws_meta.get("canvas_h", 0),
+            "img":          base64.b64encode(jpeg_bytes).decode("ascii"),
+        }
+        payload_text  = json.dumps(msg, separators=(",", ":"))
+        payload_bytes = None
+
     dead: list[WebSocket] = []
     with _WS_LOCK:
         for ws in list(_WS_CLIENTS):
             try:
-                asyncio.run_coroutine_threadsafe(ws.send_bytes(jpeg_bytes), _event_loop)
+                if payload_text is not None:
+                    asyncio.run_coroutine_threadsafe(
+                        ws.send_text(payload_text), _event_loop
+                    )
+                else:
+                    asyncio.run_coroutine_threadsafe(
+                        ws.send_bytes(payload_bytes), _event_loop
+                    )
             except Exception:
                 dead.append(ws)
         for ws in dead:
             _WS_CLIENTS.discard(ws)
 
 
-def _push_live_frame(arr):
-    """Encode a numpy array as JPEG and store in the live buffer."""
+def _push_live_frame(arr, ws_meta: dict | None = None):
+    """Encode a numpy array as JPEG, update the MJPEG buffer, broadcast to WS.
+
+    ws_meta: diagnostics snapshot to embed in the WS message.  When provided
+    the WS receives a JSON frame (image + metadata).  MJPEG clients always
+    receive raw JPEG regardless.
+    """
     global _LIVE_FRAME, _LIVE_FRAME_ID
     from PIL import Image
     import numpy as np
@@ -109,7 +156,7 @@ def _push_live_frame(arr):
         _LIVE_FRAME = jpeg_bytes
         _LIVE_FRAME_ID += 1
         _LIVE_FRAME_COND.notify_all()
-    _broadcast_jpeg(jpeg_bytes)
+    _broadcast_ws_frame(jpeg_bytes, ws_meta)
 UI_DIR = Path(__file__).resolve().parent.parent / "ui"
 
 # ── Hot-reload infrastructure ─────────────────────────────────────────
@@ -686,22 +733,17 @@ async def live_mjpeg_stream():
 @app.websocket("/api/live/ws")
 async def live_websocket(websocket: WebSocket):
     """WebSocket endpoint for smooth live preview.
-    
-    Sends raw JPEG bytes as binary frames. The client decodes them with
-    createImageBitmap() and paints to a canvas via requestAnimationFrame.
+
+    Sends JSON frames: {frame, cook_ms, fps, node_timings, node_names,
+    node_errors, canvas_w, canvas_h, img} where img is base64-encoded JPEG.
+    The live loop delivers frames via _broadcast_ws_frame; this handler just
+    keeps the connection open and accepts keepalive pings from the client.
     """
     await websocket.accept()
     with _WS_LOCK:
         _WS_CLIENTS.add(websocket)
     try:
-        # Send the latest frame immediately on connect
-        with _LIVE_FRAME_LOCK:
-            if _LIVE_FRAME is not None:
-                try:
-                    await websocket.send_bytes(_LIVE_FRAME)
-                except Exception:
-                    pass
-        # Keep the connection open — frames arrive via _broadcast_jpeg
+        # Keep the connection open — JSON frames arrive via _broadcast_ws_frame
         while True:
             await websocket.receive_text()  # keepalive / ping
     except WebSocketDisconnect:
@@ -954,6 +996,8 @@ _live_stats: dict = {
     "frame": 0, "cook_ms": 0.0, "fps": 0.0,
     # per-node timing
     "node_timings": {}, "node_names": {},
+    # per-node errors (node_id → short error string)
+    "node_errors": {},
     # cache
     "cache_hits": 0, "cache_misses": 0,
     "total_cache_hits": 0, "total_cache_misses": 0,
@@ -1068,14 +1112,19 @@ def live_graph_sim(req: GraphRequest):
                     if render_id and render_id in flat_outputs:
                         terminal_id = render_id
                     arr = (flat_outputs.get(terminal_id) or {}).get("image") if terminal_id else None
-                    if arr is not None:
-                        _push_live_frame(arr)
+
+                    # ── Update _live_stats BEFORE pushing the frame so the
+                    #    WS message carries metadata for THIS frame. ──
                     frame += 1
                     consecutive_errors = 0
                     _cook_ms = (time.monotonic() - _tick_start) * 1000.0
-                    _live_stats["frame"] = frame
-                    _live_stats["cook_ms"] = round(_cook_ms, 1)
-                    _live_stats["fps"] = round(1000.0 / max(_cook_ms, 1.0), 1)
+                    _live_stats["frame"]    = frame
+                    _live_stats["cook_ms"]  = round(_cook_ms, 1)
+                    _live_stats["fps"]      = round(1000.0 / max(_cook_ms, 1.0), 1)
+                    _live_stats["node_errors"] = {
+                        nid: str(err).splitlines()[0][:120]
+                        for nid, err in node_errors.items()
+                    }
                     # Pull per-frame diagnostics from the executor
                     _fs = executor.last_frame_stats
                     if _fs:
@@ -1100,6 +1149,10 @@ def live_graph_sim(req: GraphRequest):
                     _live_stats["active_edges"] = len(edges)
                     _live_stats["canvas_w"]     = width
                     _live_stats["canvas_h"]     = height
+
+                    # Push frame + per-frame metadata to MJPEG buffer and WS clients
+                    if arr is not None:
+                        _push_live_frame(arr, ws_meta=dict(_live_stats))
                 except Exception:
                     import traceback as _tb
                     print(f"[live-sim] frame {frame} failed:\n{_tb.format_exc(limit=6)}")

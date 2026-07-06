@@ -735,6 +735,37 @@ try {
     object-fit: contain; cursor: pointer; display: block;
   }
 
+  /* ── Live metadata readout overlay (bottom of preview) ── */
+  #live-meta-readout {
+    display: none; position: absolute; bottom: 0; left: 0; right: 0; z-index: 5;
+    background: linear-gradient(transparent, rgba(0,0,0,0.75));
+    padding: 8px 10px 6px; pointer-events: none;
+  }
+  #graph-main-preview.active.ws-live #live-meta-readout { display: block; }
+  #lmr-top {
+    display: flex; align-items: center; gap: 10px; font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+  #lmr-frame { color: var(--muted2); }
+  #lmr-ms    { color: var(--accent2); font-weight: 600; }
+  #lmr-fps   { color: #34d399; font-weight: 600; }
+  #lmr-err   { color: var(--err); display: none; }
+  #lmr-bars  {
+    display: flex; gap: 3px; align-items: flex-end; height: 16px; margin-top: 4px;
+  }
+  .lmr-bar {
+    width: 8px; min-width: 8px; background: var(--accent); border-radius: 2px 2px 0 0;
+    transition: height .1s;
+  }
+  .lmr-bar.gpu { background: #d97706; }
+  .lmr-bar-label { display: none; } /* labels only in full diagnostics tab */
+
+  /* ── WS live canvas replaces MJPEG img ───────────────── */
+  #live-ws-canvas {
+    max-width: 100%; max-height: 100%; width: auto; height: 100%;
+    object-fit: contain; display: block; cursor: pointer;
+  }
+
   /* Hover chrome over the preview (pop-out / PiP) — JS keeps it mounted */
   #preview-toolbar {
     position: absolute; top: 8px; right: 10px; display: flex; gap: 6px; z-index: 6;
@@ -1635,7 +1666,18 @@ try {
     <span id="graph-preview-label">Output</span>
     <button id="graph-preview-toggle">▲ expand</button>
   </div>
-  <div id="graph-main-preview"></div>
+  <div id="graph-main-preview">
+    <!-- Live metadata readout: updated by WS messages (Phase 4 frame cursor) -->
+    <div id="live-meta-readout">
+      <div id="lmr-top">
+        <span id="lmr-frame">frame –</span>
+        <span id="lmr-ms">–ms</span>
+        <span id="lmr-fps">– fps</span>
+        <span id="lmr-err">⚠ error</span>
+      </div>
+      <div id="lmr-bars"></div>
+    </div>
+  </div>
   <div id="preview-resize-handle" title="Drag to resize preview"></div>
   <div id="graph-output-strip"></div>
 </div>
@@ -5200,15 +5242,58 @@ try { if (localStorage.getItem('graph-auto-gen') === '1') gToggleAutoGen(); } ca
 gAutoBtn.addEventListener('click', gToggleAutoGen);
 gAutoBtnDesk.addEventListener('click', gToggleAutoGen);
 
-// ── Live mode (continuous server loop → MJPEG preview) ────────
+// ── Live mode (WebSocket primary / MJPEG fallback) ─────────────
 const gLiveBtn = document.getElementById('graph-live-btn');
 const gLiveBtnDesk = document.getElementById('graph-live-btn-desk');
 let gLiveMode = false;
-let gLiveImg = null;
-let _gLiveStatTimer = null;
+let gLiveImg = null;          // MJPEG fallback <img>
+let gLiveCanvas = null;       // WS primary <canvas>
+let _gLiveWs = null;          // active WebSocket
+let _gLiveWsPingTimer = null; // keepalive interval
+let _gLiveWsFallback = false; // true once WS failed → using MJPEG
+let _gLiveStatTimer = null;   // poll timer (fallback only)
 
+// ── Live frame metadata readout ────────────────────────────────
+const _lmrFrame = document.getElementById('lmr-frame');
+const _lmrMs    = document.getElementById('lmr-ms');
+const _lmrFps   = document.getElementById('lmr-fps');
+const _lmrErr   = document.getElementById('lmr-err');
+const _lmrBars  = document.getElementById('lmr-bars');
+
+function _gUpdateLiveMeta(msg) {
+  if (!msg) return;
+  if (_lmrFrame) _lmrFrame.textContent = 'frame ' + msg.frame;
+  if (_lmrMs)    _lmrMs.textContent    = msg.cook_ms + 'ms';
+  if (_lmrFps)   _lmrFps.textContent   = msg.fps + ' fps';
+  if (_lmrErr) {
+    const hasErr = msg.node_errors && Object.keys(msg.node_errors).length > 0;
+    _lmrErr.style.display = hasErr ? '' : 'none';
+  }
+  // Mini timing bars (one bar per node, height proportional to its share)
+  if (_lmrBars && msg.node_timings) {
+    const entries = Object.entries(msg.node_timings);
+    const maxMs = entries.reduce((m, [,v]) => Math.max(m, v), 1);
+    _lmrBars.innerHTML = '';
+    entries.forEach(([nid, ms]) => {
+      const bar = document.createElement('div');
+      const pct = Math.max(4, Math.round((ms / maxMs) * 100));
+      const isGpu = (msg.gpu_nodes || 0) > 0 && (msg.node_names||{})[nid]?.toLowerCase().startsWith('gpu');
+      bar.className = 'lmr-bar' + (isGpu ? ' gpu' : '');
+      bar.style.height = pct + '%';
+      bar.title = ((msg.node_names||{})[nid] || nid) + ': ' + ms.toFixed(1) + 'ms';
+      _lmrBars.appendChild(bar);
+    });
+  }
+  // Feed into Diagnostics tab — diagRender is exposed globally from the IIFE
+  if (typeof window.diagRender === 'function') {
+    const paused = typeof window.diagIsPaused === 'function' ? window.diagIsPaused() : false;
+    if (!paused) window.diagRender({...msg, running: true, sim_cache_entries: 0});
+  }
+}
+
+// ── MJPEG status poll (fallback path only) ─────────────────────
 async function _gPollLiveStats() {
-  if (!gLiveMode) return;
+  if (!gLiveMode || _gLiveWs) return;
   try {
     const r = await fetch('/api/graph/live/status');
     if (!r.ok) return;
@@ -5229,36 +5314,156 @@ function gLiveGraphBody(stop) {
   };
 }
 
+// ── WebSocket live: open connection, draw frames, pass metadata ──
+function _gOpenLiveWs() {
+  _gLiveWsFallback = false;
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(`${proto}//${location.host}/api/live/ws`);
+
+  // If no frame arrives within 3 s, fall back to MJPEG
+  let _noFrameTimeout = setTimeout(() => {
+    console.info('[live-ws] no frame in 3s — falling back to MJPEG');
+    ws.close();
+  }, 3000);
+
+  ws.onmessage = async (evt) => {
+    // Clear the no-frame watchdog on first message
+    if (_noFrameTimeout) { clearTimeout(_noFrameTimeout); _noFrameTimeout = null; }
+
+    let msg;
+    try { msg = JSON.parse(evt.data); } catch { return; }
+    if (!msg.img) return;
+
+    // Draw JPEG onto the canvas
+    if (gLiveCanvas) {
+      try {
+        const bin = atob(msg.img);
+        const u8  = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+        const blob = new Blob([u8], { type: 'image/jpeg' });
+        const bmp  = await createImageBitmap(blob);
+        const ctx  = gLiveCanvas.getContext('2d');
+        if (gLiveCanvas.width !== bmp.width || gLiveCanvas.height !== bmp.height) {
+          gLiveCanvas.width  = bmp.width;
+          gLiveCanvas.height = bmp.height;
+        }
+        ctx.drawImage(bmp, 0, 0);
+        bmp.close();
+      } catch (_) {}
+    }
+
+    // Update status bar
+    gSetStatus(`Live · frame ${msg.frame} · ${msg.cook_ms}ms · ${msg.fps} fps`);
+
+    // Update live metadata readout overlay
+    _gUpdateLiveMeta(msg);
+  };
+
+  ws.onerror = () => {};
+  ws.onclose = () => {
+    clearInterval(_gLiveWsPingTimer); _gLiveWsPingTimer = null;
+    _gLiveWs = null;
+    // Fall back to MJPEG if live mode is still on
+    if (gLiveMode && !_gLiveWsFallback) {
+      _gLiveWsFallback = true;
+      console.info('[live-ws] closed — switching to MJPEG fallback');
+      _gStartMjpegFallback();
+    }
+  };
+
+  // Keepalive ping every 15 s
+  _gLiveWsPingTimer = setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) ws.send('ping');
+  }, 15000);
+
+  _gLiveWs = ws;
+}
+
+function _gStartMjpegFallback() {
+  // MJPEG: plain <img> pointing at the multipart stream
+  if (gLiveImg) return; // already started
+  gMainPreview.classList.add('active');
+  gLiveImg = document.createElement('img');
+  gLiveImg.src = '/api/live/stream?t=' + Date.now();
+  gMainPreview.appendChild(gLiveImg);
+  // Re-mount preview chrome that innerHTML wipes
+  gPreviewShow();
+  // Poll stats since WS is unavailable
+  if (_gLiveStatTimer) clearInterval(_gLiveStatTimer);
+  _gLiveStatTimer = setInterval(_gPollLiveStats, 500);
+}
+
+function _gTeardownLive() {
+  // WS
+  if (_gLiveWs) {
+    _gLiveWsFallback = true; // prevent onclose from restarting MJPEG
+    _gLiveWs.close();
+    _gLiveWs = null;
+  }
+  if (_gLiveWsPingTimer) { clearInterval(_gLiveWsPingTimer); _gLiveWsPingTimer = null; }
+  // MJPEG
+  if (_gLiveStatTimer) { clearInterval(_gLiveStatTimer); _gLiveStatTimer = null; }
+  if (gLiveImg) { gLiveImg.src = ''; gLiveImg.remove(); gLiveImg = null; }
+  // Canvas
+  if (gLiveCanvas) { gLiveCanvas.remove(); gLiveCanvas = null; }
+  gMainPreview.classList.remove('ws-live');
+  if (!gMainPreview.querySelector('img, video, canvas'))
+    gMainPreview.classList.remove('active');
+}
+
 async function gSetLive(on) {
   try {
     await fetch('/api/graph/live', {
-      method:'POST', headers:{'Content-Type':'application/json'},
+      method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(gLiveGraphBody(!on)),
     });
   } catch(e) { gSetStatus('Live: ' + e.message); return; }
+
   gLiveMode = on;
   gLiveBtn.classList.toggle('active', on);
   gLiveBtnDesk.classList.toggle('active', on);
+
   if (on) {
-    // Swap the main preview to the MJPEG stream — frames arrive as fast
-    // as the server loop cooks them, no SSE round-trips.
     gMainPreview.innerHTML = '';
     gLivePreviewImg = null;
-    gLiveImg = document.createElement('img');
-    gLiveImg.src = '/api/live/stream?t=' + Date.now();
-    gMainPreview.appendChild(gLiveImg);
-    gMainPreview.classList.add('active');
-    gPreviewShow();
-    gSetStatus('Live — starting…');
-    // Poll stats every 500ms and update the status bar
-    if (_gLiveStatTimer) clearInterval(_gLiveStatTimer);
-    _gLiveStatTimer = setInterval(_gPollLiveStats, 500);
-    _gPollLiveStats();
+    gLiveCanvas = null; gLiveImg = null;
+
+    const useWs = 'WebSocket' in window;
+    if (useWs) {
+      // Primary path: canvas + WebSocket
+      gLiveCanvas = document.createElement('canvas');
+      gLiveCanvas.id = 'live-ws-canvas';
+      gLiveCanvas.onclick = () => {
+        gFsImg.src = gLiveCanvas.toDataURL('image/jpeg', 0.92);
+        gFsImg.style.display = '';
+        document.getElementById('graph-fs-overlay').style.display = 'flex';
+      };
+      gMainPreview.appendChild(gLiveCanvas);
+      gMainPreview.classList.add('active', 'ws-live');
+      gPreviewShow();
+      gSetStatus('Live — connecting…');
+      _gOpenLiveWs();
+    } else {
+      // Feature-detect fallback: browser has no WebSocket support
+      _gLiveWsFallback = true;
+      _gStartMjpegFallback();
+      gSetStatus('Live — MJPEG (no WebSocket)…');
+    }
+    // Ensure the metadata readout is re-mounted (innerHTML wipe above removes it)
+    const existingReadout = document.getElementById('live-meta-readout');
+    if (!existingReadout) {
+      const rd = document.createElement('div');
+      rd.id = 'live-meta-readout';
+      rd.innerHTML = `<div id="lmr-top">
+        <span id="lmr-frame">frame –</span>
+        <span id="lmr-ms">–ms</span>
+        <span id="lmr-fps">– fps</span>
+        <span id="lmr-err" style="display:none">⚠ error</span>
+      </div><div id="lmr-bars"></div>`;
+      gMainPreview.appendChild(rd);
+    }
   } else {
-    if (_gLiveStatTimer) { clearInterval(_gLiveStatTimer); _gLiveStatTimer = null; }
-    if (gLiveImg) { gLiveImg.src = ''; gLiveImg.remove(); gLiveImg = null; }
-    // Collapse the preview if nothing is left to show
-    if (!gMainPreview.querySelector('img, video')) gMainPreview.classList.remove('active');
+    _gTeardownLive();
     gSetStatus('Live stopped.');
   }
 }
@@ -7794,6 +7999,11 @@ window.addEventListener('resize', () => {
   if (diagSeries.fps.length) diagDrawLine(_elFpsChart, diagSeries.fps, DIAG_COLORS.fps, { min: 0 });
   if (diagSeries.ms.length)  diagDrawLine(_elMsChart,  diagSeries.ms,  DIAG_COLORS.ms,  { min: 0 });
 });
+
+// Expose for tab-switch handler, WS feed, and external callers (e.g. Playwright)
+window.diagEnsurePolling = diagEnsurePolling;
+window.diagRender        = diagRender;
+window.diagIsPaused      = () => diagPaused;
 
 })(); // end IIFE
 </script>
