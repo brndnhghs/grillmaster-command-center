@@ -152,6 +152,7 @@ try {
   .method-item .mname { font-size: 13px; font-weight: 500; }
   .method-item .tags { margin-top: 3px; display: flex; flex-wrap: wrap; gap: 3px; }
   .tag { font-size: 10px; background: var(--tag-bg); color: var(--tag-fg); border-radius: 4px; padding: 1px 5px; }
+  .tag-gpu { background: #78350f; color: #fde68a; font-weight: 600; }
 
   /* Center panel */
   #center {
@@ -1894,7 +1895,11 @@ function renderMethodList(methods, isSearch = false) {
       </div>
       <div class="category-items"${isOpen ? '' : ' style="display:none"'}>`;
     for (const m of items) {
-      const tagHtml = m.tags.map(t => `<span class="tag">${escHtml(t)}</span>`).join('');
+      const tagHtml = m.tags.map(t => {
+        const cls = t === 'gpu' ? 'tag tag-gpu' : 'tag';
+        const txt = t === 'gpu' ? '⚡ GPU' : t;
+        return `<span class="${cls}">${escHtml(txt)}</span>`;
+      }).join('');
       html += `<div class="method-item" data-id="${escHtml(m.id)}">
         <div style="display:flex;gap:6px;align-items:baseline">
           <span class="mid">#${escHtml(m.id)}</span>
@@ -4988,6 +4993,20 @@ const gLiveBtn = document.getElementById('graph-live-btn');
 const gLiveBtnDesk = document.getElementById('graph-live-btn-desk');
 let gLiveMode = false;
 let gLiveImg = null;
+let _gLiveStatTimer = null;
+
+async function _gPollLiveStats() {
+  if (!gLiveMode) return;
+  try {
+    const r = await fetch('/api/graph/live/status');
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d.running) {
+      const msg = `Live  ·  frame ${d.frame}  ·  ${d.cook_ms}ms  ·  ${d.fps} fps`;
+      gSetStatus(msg);
+    }
+  } catch {}
+}
 
 function gLiveGraphBody(stop) {
   return {
@@ -5018,8 +5037,13 @@ async function gSetLive(on) {
     gMainPreview.appendChild(gLiveImg);
     gMainPreview.classList.add('active');
     gPreviewShow();
-    gSetStatus('Live — graph cooking continuously');
+    gSetStatus('Live — starting…');
+    // Poll stats every 500ms and update the status bar
+    if (_gLiveStatTimer) clearInterval(_gLiveStatTimer);
+    _gLiveStatTimer = setInterval(_gPollLiveStats, 500);
+    _gPollLiveStats();
   } else {
+    if (_gLiveStatTimer) { clearInterval(_gLiveStatTimer); _gLiveStatTimer = null; }
     if (gLiveImg) { gLiveImg.src = ''; gLiveImg.remove(); gLiveImg = null; }
     // Collapse the preview if nothing is left to show
     if (!gMainPreview.querySelector('img, video')) gMainPreview.classList.remove('active');

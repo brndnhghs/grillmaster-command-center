@@ -1,19 +1,153 @@
 """
-GPU Procedural Shaders — method #82.
-Generates imagery from scratch using GLSL fragment shaders on the GPU.
-25 shaders available: fractals, noise, cellular, fire, smoke, terrain, etc.
-Requires ModernGL (Apple M1 Metal, GL 4.1 core).
+GPU shader nodes — individual @method wrappers for every GLSL shader.
+
+Procedural shaders (IDs 173-197): generate imagery from scratch.
+Filter shaders    (IDs 198-219): consume _input_image, return modified image.
+
+The legacy combined method #82 is kept for backward-compatibility with
+existing graphs that reference it by ID.
+
+All methods are tagged "gpu" so the ⚡ badge renders in the palette.
+Filter methods set new_image_contract=True — the executor skips _input.png
+writes and they receive the upstream ndarray directly as params["_input_image"].
 """
 from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
 
 from ..core.registry import method
-from ..core.utils import save, seed_all
+from ..core.utils import save, seed_all, get_canvas
 from ..core.animation import capture_frame
-from ..core.shaders import render_procedural, list_shaders, SHADERS
+from ..core.shaders import render_shader, render_procedural, SHADERS
+
+# ── Ordered shader lists (stable IDs) ────────────────────────────────
+_PROC_SHADERS = [
+    ("173", "mandelbrot",         "GPU Mandelbrot"),
+    ("174", "julia",              "GPU Julia"),
+    ("175", "plasma",             "GPU Plasma"),
+    ("176", "domain_warp",        "GPU Domain Warp"),
+    ("177", "voronoi",            "GPU Voronoi"),
+    ("178", "voronoise",          "GPU Voronoise"),
+    ("179", "ripples",            "GPU Ripples"),
+    ("180", "cells",              "GPU Cells"),
+    ("181", "bubble_chamber",     "GPU Bubble Chamber"),
+    ("182", "stars",              "GPU Stars"),
+    ("183", "lightning_fractal",  "GPU Lightning Fractal"),
+    ("184", "spiral",             "GPU Spiral"),
+    ("185", "dendritic",          "GPU Dendritic"),
+    ("186", "barnsley",           "GPU Barnsley Fern"),
+    ("187", "spectral",           "GPU Spectral"),
+    ("188", "truchet",            "GPU Truchet"),
+    ("189", "kaleidoscope_fractal","GPU Kaleidoscope Fractal"),
+    ("190", "waves_3d",           "GPU Waves 3D"),
+    ("191", "pixel_sort_gpu",     "GPU Pixel Sort"),
+    ("192", "ocean",              "GPU Ocean"),
+    ("193", "nebula_gpu",         "GPU Nebula"),
+    ("194", "terrain",            "GPU Terrain"),
+    ("195", "wood_grain_gpu",     "GPU Wood Grain"),
+    ("196", "fire_gpu",           "GPU Fire"),
+    ("197", "smoke_gpu",          "GPU Smoke"),
+]
+
+_FILT_SHADERS = [
+    ("198", "shader_bloom",           "GPU Bloom"),
+    ("199", "shader_emboss",          "GPU Emboss"),
+    ("200", "shader_kaleidoscope",    "GPU Kaleidoscope"),
+    ("201", "shader_water_ripple",    "GPU Water Ripple"),
+    ("202", "shader_heat_shimmer",    "GPU Heat Shimmer"),
+    ("203", "shader_pixelate_gpu",    "GPU Pixelate"),
+    ("204", "shader_ink_bleed",       "GPU Ink Bleed"),
+    ("205", "shader_halftone_gpu",    "GPU Halftone"),
+    ("206", "shader_crt_gpu",         "GPU CRT"),
+    ("207", "shader_hologram",        "GPU Hologram"),
+    ("208", "shader_mosaic_gpu",      "GPU Mosaic"),
+    ("209", "shader_edge_detect_gpu", "GPU Edge Detect"),
+    ("210", "shader_warhol",          "GPU Warhol"),
+    ("211", "shader_duotone_gpu",     "GPU Duotone"),
+    ("212", "shader_rgb_split",       "GPU RGB Split"),
+    ("213", "shader_caustics_gpu",    "GPU Caustics"),
+    ("214", "shader_glitch_gpu",      "GPU Glitch"),
+    ("215", "shader_posterize_gpu",   "GPU Posterize"),
+    ("216", "shader_oil_gpu",         "GPU Oil Paint"),
+    ("217", "shader_neon_gpu",        "GPU Neon Glow"),
+    ("218", "shader_pencil_gpu",      "GPU Pencil"),
+    ("219", "shader_motion_blur_gpu", "GPU Motion Blur"),
+]
+
+_PROC_PARAMS = {
+    "p1": {"description": "shader param 1", "min": 0.0, "max": 1.0, "default": 0.5},
+    "p2": {"description": "shader param 2", "min": 0.0, "max": 1.0, "default": 0.5},
+    "p3": {"description": "shader param 3", "min": 0.0, "max": 1.0, "default": 0.5},
+    "p4": {"description": "shader param 4", "min": 0.0, "max": 1.0, "default": 0.5},
+    "time_scale": {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0},
+}
+
+_FILT_PARAMS = {
+    "strength": {"description": "effect strength", "min": 0.0, "max": 1.0, "default": 0.5},
+    "p2": {"description": "shader param 2", "min": 0.0, "max": 1.0, "default": 0.5},
+    "time_scale": {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0},
+}
+
+
+# ── Factory: procedural ───────────────────────────────────────────────
+
+def _make_proc(method_id: str, shader_name: str, method_name: str):
+    @method(id=method_id, name=method_name, category="gpu_shaders",
+            new_image_contract=True,
+            tags=["gpu", "fast"],
+            params=_PROC_PARAMS)
+    def _fn(out_dir: Path, seed: int, params=None):
+        if params is None:
+            params = {}
+        t = float(params.get("time", 0.0)) * float(params.get("time_scale", 1.0))
+        p = tuple(float(params.get(f"p{i}", 0.5)) for i in range(1, 5))
+        cw, ch = get_canvas()
+        img = render_shader(shader_name, (cw, ch), p, t)
+        arr = np.array(img, dtype=np.uint8)
+        # Return dict: executor captures image directly; no disk write needed in live mode.
+        # Disk mode: executor writes the output PNG at graph.py:891 when in_memory=False.
+        return {"image": arr.astype(np.float32) / 255.0}
+
+    _fn.__name__ = f"gpu_proc_{shader_name}"
+    return _fn
+
+
+# ── Factory: filter ───────────────────────────────────────────────────
+
+def _make_filt(method_id: str, shader_name: str, method_name: str):
+    @method(id=method_id, name=method_name, category="gpu_shaders",
+            new_image_contract=True,
+            inputs={"image_in": "IMAGE"},
+            tags=["gpu", "fast"],
+            params=_FILT_PARAMS)
+    def _fn(out_dir: Path, seed: int, params=None):
+        if params is None:
+            params = {}
+        inp = params.get("_input_image")  # float32 [0,1] or None
+        t = float(params.get("time", 0.0)) * float(params.get("time_scale", 1.0))
+        strength = float(params.get("strength", 0.5))
+        p2 = float(params.get("p2", 0.5))
+        p = (strength, p2, 0.5, 0.5)
+        cw, ch = get_canvas()
+        img = render_shader(shader_name, (cw, ch), p, t, inp)
+        arr = np.array(img, dtype=np.uint8)
+        return {"image": arr.astype(np.float32) / 255.0}
+
+    _fn.__name__ = f"gpu_filt_{shader_name}"
+    return _fn
+
+
+# ── Register all shaders ──────────────────────────────────────────────
+
+for _mid, _sname, _mname in _PROC_SHADERS:
+    _make_proc(_mid, _sname, _mname)
+
+for _mid, _sname, _mname in _FILT_SHADERS:
+    _make_filt(_mid, _sname, _mname)
+
+
+# ── Legacy combined method #82 (kept for backward compatibility) ──────
 
 SHADER_NAMES = sorted([k for k, v in SHADERS.items() if v["type"] == "procedural"])
 
@@ -22,6 +156,7 @@ SHADER_NAMES = sorted([k for k, v in SHADERS.items() if v["type"] == "procedural
     id="82",
     name="GPU Procedural Shaders",
     category="ml_models",
+    new_image_contract=True,
     tags=["gpu", "glsl", "fast", "expanded"],
     params={
         "shader": {
@@ -37,33 +172,17 @@ SHADER_NAMES = sorted([k for k, v in SHADERS.items() if v["type"] == "procedural
     },
 )
 def method_gpu_procedural(out_dir: Path, seed: int, params=None):
-    """GPU Procedural Shaders — generate imagery from GLSL fragment shaders on the GPU.
-
-    Renders procedural textures, fractals, noise, cellular patterns, fire, smoke,
-    terrain, and more using 25+ GLSL fragment shaders via ModernGL (Apple M1 Metal).
-
-    Parameters:
-        shader (str): Shader name (domain_warp, mandelbrot, julia, fire, smoke, terrain, etc.)
-        p1 (float): Generic float param 1 (0-1, default 0.5)
-        p2 (float): Generic float param 2 (0-1, default 0.5)
-        p3 (float): Generic float param 3 (0-1, default 0.5)
-        p4 (float): Generic float param 4 (0-1, default 0.5)
-        time (float): Animation time offset (0-6.28, default 0.0)
-        anim_mode (str): Animation mode (none, animate)
-        anim_speed (float): Animation speed multiplier (0-5, default 1.0)
-    """
+    """GPU Procedural Shaders — generate imagery from GLSL fragment shaders on the GPU."""
     if params is None:
         params = {}
 
     raw_time = float(params.get("time", 0.0))
-    anim_mode = params.get("anim_mode", "none")
     anim_speed = float(params.get("anim_speed", 1.0))
     t = raw_time * anim_speed
     seed_all(seed)
 
     shader_name = params.get("shader", "domain_warp")
     if shader_name not in SHADERS or SHADERS[shader_name]["type"] != "procedural":
-        # Fallback
         shader_name = "domain_warp"
 
     p = (
@@ -73,11 +192,9 @@ def method_gpu_procedural(out_dir: Path, seed: int, params=None):
         float(params.get("p4", 0.5)),
     )
 
-    result = render_procedural(shader_name, resolution=(1024, 1024), params=p, time=t)
+    cw, ch = get_canvas()
+    result = render_shader(shader_name, (cw, ch), p, t)
     arr = np.array(result, dtype=np.uint8)
-
-    # Generate filename
-    filename = f"82_{shader_name}_{seed:04d}.png"
     capture_frame("82", arr.astype(np.float32) / 255.0)
-    save(arr, filename, out_dir)
-    return out_dir / filename
+    save(arr, f"82_{shader_name}_{seed:04d}.png", out_dir)
+    return out_dir / f"82_{shader_name}_{seed:04d}.png"

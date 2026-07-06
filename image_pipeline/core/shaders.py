@@ -6,6 +6,10 @@ Two modes:
   - Filter (--filter shader): processes an input image
 
 Runs headlessly on Apple M1 Metal backend (GL 4.1 core profile).
+
+Thread safety: each OS thread gets its own ModernGL context via threading.local().
+The live-sim loop thread and the main server thread never share a context, so no
+locking is required across threads. Calls from the same thread are always serial.
 """
 
 from __future__ import annotations
@@ -13,24 +17,26 @@ from pathlib import Path
 import math
 import random
 import re
+import threading
 
 import numpy as np
 from PIL import Image
 
 
 # ═══════════════════════════════════════════════
-#  GL CONTEXT (lazy singleton)
+#  GL CONTEXT (per-thread lazy singleton)
 # ═══════════════════════════════════════════════
 
-_CTX = None
+# One context per OS thread — avoids cross-thread GL state corruption on Metal.
+_ctx_local = threading.local()
 
 
 def _get_ctx():
-    global _CTX
-    if _CTX is None:
+    ctx = getattr(_ctx_local, "ctx", None)
+    if ctx is None:
         import moderngl
-        _CTX = moderngl.create_context(standalone=True, require=330)
-    return _CTX
+        _ctx_local.ctx = moderngl.create_context(standalone=True, require=330)
+    return _ctx_local.ctx
 
 
 # ═══════════════════════════════════════════════
@@ -737,6 +743,20 @@ _register("shader_motion_blur_gpu", "GPU directional motion blur", "filter", _fi
 #  RENDER ENGINE
 # ═══════════════════════════════════════════════
 
+# Per-thread program + VAO cache keyed by shader_name.
+# Avoids recompiling GLSL and rebuilding VAOs every frame — the dominant cost
+# for small shaders on the live loop.  Each thread owns its own cache because
+# GL programs are bound to the context that created them.
+_prog_cache_local = threading.local()
+
+
+def _get_prog_cache() -> dict:
+    cache = getattr(_prog_cache_local, "cache", None)
+    if cache is None:
+        _prog_cache_local.cache = {}
+    return _prog_cache_local.cache
+
+
 def _create_vao(ctx, prog):
     """Create full-screen quad VAO."""
     vbo = ctx.buffer(_QUAD_VERTICES.tobytes())
@@ -758,7 +778,8 @@ def render_shader(shader_name: str, resolution: tuple[int, int] = (512, 512),
         resolution: (width, height) output size
         params: 4 float uniforms mapped to u_params
         time: Time value for u_time animation
-        input_image: Optional numpy array (H,W,3) for filter shaders
+        input_image: Optional numpy array (H,W,3) float32 [0,1] or uint8,
+                     for filter shaders
 
     Returns: PIL Image
     """
@@ -767,40 +788,47 @@ def render_shader(shader_name: str, resolution: tuple[int, int] = (512, 512),
 
     info = SHADERS[shader_name]
     ctx = _get_ctx()
+    cache = _get_prog_cache()
 
     w, h = resolution
 
-    # Build fragment shader
+    # Build fragment shader source
     if info["type"] == "filter":
-        # Filter shaders already have full wrapper
         frag_src = info["source"]
     else:
-        # Procedural shaders get the prologue
         frag_src = _PROLOGUE + info["source"]
 
-    try:
-        prog = ctx.program(vertex_shader=_VERTEX_SHADER, fragment_shader=frag_src)
-    except Exception as e:
-        raise RuntimeError(f"Shader compilation failed for '{shader_name}': {e}")
+    # Cache program + VAO per shader name (recompile on first use per thread)
+    if shader_name not in cache:
+        try:
+            prog = ctx.program(vertex_shader=_VERTEX_SHADER, fragment_shader=frag_src)
+        except Exception as e:
+            raise RuntimeError(f"Shader compilation failed for '{shader_name}': {e}")
+        vao = _create_vao(ctx, prog)
+        cache[shader_name] = (prog, vao)
+    else:
+        prog, vao = cache[shader_name]
 
-    vao = _create_vao(ctx, prog)
-
-    # Create framebuffer
+    # Framebuffer is resolution-specific — create fresh each call (cheap)
     fbo = ctx.simple_framebuffer((w, h))
     fbo.use()
 
-    # Set uniforms (some may be optimized out)
+    # Set uniforms (some may be optimised out by the GLSL compiler)
     for uniform_name, uniform_value in [('u_resolution', (float(w), float(h))),
                                          ('u_time', time),
                                          ('u_params', params)]:
         if uniform_name in prog:
             prog[uniform_name].value = uniform_value
 
-    # Handle input texture
+    # Handle input texture — accept float32 [0,1] or uint8 [0,255]
+    texture = None
     if input_image is not None and 'u_texture' in prog:
-        # Upload input texture in RGB order
-        tex_data = input_image[:, :, ::-1].tobytes()  # RGB -> BGR
-        texture = ctx.texture((input_image.shape[1], input_image.shape[0]), 3, tex_data)
+        if input_image.dtype != np.uint8:
+            img_u8 = (np.clip(input_image, 0.0, 1.0) * 255).astype(np.uint8)
+        else:
+            img_u8 = input_image
+        tex_data = img_u8[:, :, ::-1].tobytes()  # RGB -> BGR for GL
+        texture = ctx.texture((img_u8.shape[1], img_u8.shape[0]), 3, tex_data)
         texture.use(0)
         prog['u_texture'].value = 0
 
@@ -811,10 +839,10 @@ def render_shader(shader_name: str, resolution: tuple[int, int] = (512, 512),
     # Convert to PIL
     img = Image.frombytes('RGB', (w, h), data, 'raw', 'BGR')
 
-    # Cleanup
+    # Release per-frame resources (program + VAO stay in cache)
     fbo.release()
-    vao.release()
-    prog.release()
+    if texture is not None:
+        texture.release()
 
     return img
 
