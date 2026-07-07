@@ -507,6 +507,21 @@ try {
     background-image: radial-gradient(circle, var(--grid-dot) 1px, transparent 1px);
     background-size: 24px 24px;
   }
+  /* Decorative FX overlay — always transparent to pointer events so drag /
+     wiring / context-menus / keyframe-lanes on the DOM graph below are untouched. */
+  #graph-overlay {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: 4; display: none;
+  }
+  #graph-overlay.on { display: block; }
+  #graph-minimap {
+    position: absolute; right: 10px; bottom: 10px; z-index: 6;
+    width: 180px; height: 120px; border-radius: 8px; overflow: hidden;
+    background: rgba(12,15,22,.82); border: 1px solid var(--border);
+    box-shadow: 0 4px 16px rgba(0,0,0,.4); cursor: pointer; backdrop-filter: blur(4px);
+  }
+  #graph-minimap canvas { width: 100%; height: 100%; display: block; }
+  @media (max-width: 760px) { #graph-minimap { width: 116px; height: 78px; right: 8px; bottom: 8px; } }
   /* Static vignette — paints once, sits under the nodes layer */
   #graph-canvas-wrap::before {
     content: ''; position: absolute; inset: 0; pointer-events: none;
@@ -1556,6 +1571,7 @@ try {
       <button id="graph-load-btn" class="g-loadbtn">📂</button>
       <button id="graph-auto-btn" class="g-autobtn" title="Auto-generate on param change">⏺ Auto</button>
 <button id="graph-live-btn" class="g-autobtn" title="Live MJPEG preview">📺 Live</button>
+      <button id="graph-overlay-btn" class="g-autobtn" title="Visual FX overlay (decorative)">✨ FX</button>
       <button id="graph-settings-btn-mob" class="g-autobtn" title="Settings">⚙</button>
       <select id="graph-canvas-preset-mob" title="Canvas size" style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:2px 6px;font-size:12px;cursor:pointer;flex-shrink:0">
         <option value="768x512">768×512</option>
@@ -1571,6 +1587,9 @@ try {
     <div id="graph-canvas-wrap">
       <div id="graph-nodes"></div>
       <svg id="graph-svg"><g id="graph-edges"></g><path id="pending-edge" class="gedge-pending" style="display:none"/></svg>
+      <!-- #4c-safe: purely decorative FX overlay (pointer-events:none, never owns interaction) -->
+      <canvas id="graph-overlay"></canvas>
+      <div id="graph-minimap" style="display:none"><canvas id="graph-minimap-canvas"></canvas></div>
     </div>
 
     <!-- Desktop toolbar (hidden on mobile) -->
@@ -1588,6 +1607,7 @@ try {
       <button id="graph-auto-btn-desk" class="g-autobtn" title="Auto-generate on param change">⏺ Auto</button>
       <button id="graph-test-btn-desk" class="g-autobtn" title="Test all nodes">🧪 Test</button>
 <button id="graph-live-btn-desk" class="g-autobtn" title="Live MJPEG preview">📺 Live</button>
+      <button id="graph-overlay-btn-desk" class="g-autobtn" title="Visual FX overlay (decorative)">✨ FX</button>
       <select id="graph-canvas-preset" title="Canvas size" style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:2px 6px;font-size:12px;cursor:pointer">
         <option value="768x512">768×512</option>
         <option value="512x512">512×512</option>
@@ -2935,6 +2955,7 @@ function gApplyPan() {
   const gs = GRID * gCanvasScale;
   gCanvasWrap.style.backgroundSize = `${gs}px ${gs}px`;
   gCanvasWrap.style.backgroundPosition = `${gPanX % gs}px ${gPanY % gs}px`;
+  if (window.gOverlayRefresh) window.gOverlayRefresh(); // keep FX overlay aligned
 }
 
 // Short display labels for port names
@@ -4879,6 +4900,7 @@ function gRedrawEdges() {
     path.addEventListener('mouseleave', () => { gWireTooltip.style.display = 'none'; });
     gEdgesEl.appendChild(path);
   }
+  if (window.gOverlayRefresh) window.gOverlayRefresh(); // realign FX overlay on edge/node changes
 }
 
 // ── Select node ────────────────────────────────────────────────
@@ -8791,6 +8813,8 @@ function diagRender(d) {
 
   // Feed the p5 graph-flow visualization (#4b).
   gDiagFlowUpdate(d);
+  // Feed the decorative graph FX overlay (#4c-safe).
+  gOverlayFeed(d);
 }
 
 // ── #4b: p5 graph-flow visualization ────────────────────────────────────────
@@ -8887,6 +8911,188 @@ async function gDiagFlowEnsure() {
   };
   _gDiagFlowInst = new P5(sketch, cont);
 }
+
+// ── #4c-safe: decorative graph FX overlay ───────────────────────────────────
+// A canvas layered over the DOM/SVG graph (pointer-events:none) that renders
+// animated wires, node cook-time heat, active/error pulses, and a minimap. It
+// shares the graph's screen space via gPortPos / node rects so it stays aligned
+// through pan/zoom, and NEVER handles graph interaction. Default off.
+let gOverlayEnabled = false;
+let _gOvlTele = { timings: {}, errors: {}, names: {}, running: false, memEdges: 0, diskEdges: 0, ts: 0 };
+let _gOvlRaf = null;
+const _gOvlCanvas = document.getElementById('graph-overlay');
+const _gOvlMini   = document.getElementById('graph-minimap');
+const _gOvlMiniCv = document.getElementById('graph-minimap-canvas');
+const NODE_W = 180, NODE_H = 92; // approx logical node box for the minimap
+
+function gOverlayFeed(d) {
+  // Telemetry from the live diagnostics feed (works for server-live graphs).
+  _gOvlTele = {
+    timings: d.node_timings || {}, errors: d.node_errors || {}, names: d.node_names || {},
+    running: !!d.running, memEdges: d.mem_edges || 0, diskEdges: d.disk_edges || 0,
+    ts: performance.now(),
+  };
+  if (gOverlayEnabled && !_gOvlRaf) _gOvlStart();
+}
+
+function _gOvlResize() {
+  if (!_gOvlCanvas) return;
+  const r = gCanvasWrap.getBoundingClientRect();
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  _gOvlCanvas.width = Math.max(1, Math.round(r.width * dpr));
+  _gOvlCanvas.height = Math.max(1, Math.round(r.height * dpr));
+  const ctx = _gOvlCanvas.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (_gOvlMiniCv) {
+    const mr = _gOvlMini.getBoundingClientRect();
+    _gOvlMiniCv.width = Math.round(mr.width * dpr); _gOvlMiniCv.height = Math.round(mr.height * dpr);
+    _gOvlMiniCv.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+}
+
+function _gOvlMaxMs() { const v = Object.values(_gOvlTele.timings); return Math.max(1, ...v); }
+
+function _gOvlDraw() {
+  if (!_gOvlCanvas || !gOverlayEnabled) return;
+  const ctx = _gOvlCanvas.getContext('2d');
+  const r = gCanvasWrap.getBoundingClientRect();
+  ctx.clearRect(0, 0, r.width, r.height);
+  const now = performance.now() / 1000;
+  const live = _gOvlTele.running && (performance.now() - _gOvlTele.ts < 1500);
+  const maxMs = _gOvlMaxMs();
+
+  // 1 + 4. Animated wires with flow-direction particles (rate ∝ throughput).
+  gEdges.forEach((edge, ei) => {
+    const s = gNodesEl.querySelector(`.gport[data-nid="${edge.src_node}"][data-port="${edge.src_port}"][data-dir="output"]`);
+    const d = gNodesEl.querySelector(`.gport[data-nid="${edge.dst_node}"][data-port="${edge.dst_port}"][data-dir="input"]`);
+    if (!s || !d) return;
+    const p0 = gPortPos(s), p1 = gPortPos(d);
+    const load = Math.min(1, (_gOvlTele.timings[edge.src_node] || 0) / maxMs);
+    if (!live || load <= 0.001) return; // idle edges stay calm (SVG wire only)
+    const count = 1 + Math.round(load * 4), speed = 0.22 + load * 1.1;
+    const phase = ei * 0.37;
+    for (let i = 0; i < count; i++) {
+      const f = ((now * speed + i / count + phase) % 1);
+      const x = p0.x + (p1.x - p0.x) * f, y = p0.y + (p1.y - p0.y) * f;
+      ctx.beginPath(); ctx.arc(x, y, 2 + load * 2.5, 0, 6.2832);
+      ctx.fillStyle = `rgba(120,210,255,${0.5 + 0.4 * Math.sin(f * Math.PI)})`;
+      ctx.fill();
+    }
+  });
+
+  // 2 + 4. Node cook-time heat, active pulse, error flash.
+  for (const n of gNodes) {
+    const el = document.getElementById('gnode-' + n.id);
+    if (!el) continue;
+    const nr = el.getBoundingClientRect();
+    const cx = nr.left - r.left + nr.width / 2, cy = nr.top - r.top + nr.height / 2;
+    const ms = _gOvlTele.timings[n.id] || 0, load = Math.min(1, ms / maxMs);
+    if (live && load > 0.001) {
+      const pulse = 1 + 0.14 * Math.sin(now * 6 + cx * 0.02);
+      const rad = (Math.max(nr.width, nr.height) * 0.62) * (1 + load * 0.5) * pulse;
+      const g = ctx.createRadialGradient(cx, cy, rad * 0.25, cx, cy, rad);
+      // cool → hot as load rises
+      const R = Math.round(60 + 195 * load), G = Math.round(180 - 90 * load), B = Math.round(255 - 150 * load);
+      g.addColorStop(0, `rgba(${R},${G},${B},${0.28 + 0.28 * load})`);
+      g.addColorStop(1, `rgba(${R},${G},${B},0)`);
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, rad, 0, 6.2832); ctx.fill();
+    }
+    if (_gOvlTele.errors && _gOvlTele.errors[n.id]) {
+      const a = 0.4 + 0.4 * Math.sin(now * 9);
+      ctx.strokeStyle = `rgba(255,70,70,${a})`; ctx.lineWidth = 2.5;
+      ctx.strokeRect(nr.left - r.left - 3, nr.top - r.top - 3, nr.width + 6, nr.height + 6);
+    }
+  }
+
+  _gOvlDrawMinimap(r);
+}
+
+function _gOvlDrawMinimap(wrapRect) {
+  if (!_gOvlMiniCv) return;
+  const ctx = _gOvlMiniCv.getContext('2d');
+  const mr = _gOvlMini.getBoundingClientRect();
+  ctx.clearRect(0, 0, mr.width, mr.height);
+  if (!gNodes.length) return;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const n of gNodes) {
+    minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
+    maxX = Math.max(maxX, n.x + NODE_W); maxY = Math.max(maxY, n.y + NODE_H);
+  }
+  // include current viewport so the rect is always visible
+  const vx0 = -gPanX / gCanvasScale, vy0 = -gPanY / gCanvasScale;
+  const vx1 = (wrapRect.width - gPanX) / gCanvasScale, vy1 = (wrapRect.height - gPanY) / gCanvasScale;
+  minX = Math.min(minX, vx0); minY = Math.min(minY, vy0);
+  maxX = Math.max(maxX, vx1); maxY = Math.max(maxY, vy1);
+  const pad = 6, spanX = Math.max(1, maxX - minX), spanY = Math.max(1, maxY - minY);
+  const sc = Math.min((mr.width - 2 * pad) / spanX, (mr.height - 2 * pad) / spanY);
+  const mx = x => pad + (x - minX) * sc, my = y => pad + (y - minY) * sc;
+  _gOvlMini._map = { minX, minY, sc, pad }; // for click→pan
+  const maxMs = _gOvlMaxMs(), live = _gOvlTele.running && (performance.now() - _gOvlTele.ts < 1500);
+  for (const n of gNodes) {
+    const load = live ? Math.min(1, (_gOvlTele.timings[n.id] || 0) / maxMs) : 0;
+    ctx.fillStyle = load > 0.001
+      ? `rgba(${60 + 195 * load},${180 - 90 * load},${255 - 150 * load},0.95)`
+      : 'rgba(120,140,180,0.7)';
+    ctx.fillRect(mx(n.x), my(n.y), Math.max(2, NODE_W * sc), Math.max(2, NODE_H * sc));
+  }
+  // viewport rectangle
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1;
+  ctx.strokeRect(mx(vx0), my(vy0), (vx1 - vx0) * sc, (vy1 - vy0) * sc);
+}
+
+function _gOvlTick() {
+  if (!gOverlayEnabled) { _gOvlRaf = null; return; }
+  _gOvlDraw();
+  const live = _gOvlTele.running && (performance.now() - _gOvlTele.ts < 1500);
+  if (live) { _gOvlRaf = requestAnimationFrame(_gOvlTick); }
+  else { _gOvlRaf = null; _gOvlDraw(); } // one calm static frame, then pause (saves fps)
+}
+function _gOvlStart() { if (!_gOvlRaf && gOverlayEnabled) _gOvlRaf = requestAnimationFrame(_gOvlTick); }
+
+// Keep the overlay aligned when the user pans/zooms or moves nodes (idle redraw).
+function gOverlayRefresh() { if (gOverlayEnabled) { _gOvlResize(); _gOvlDraw(); } }
+
+function gOverlayToggle(force) {
+  gOverlayEnabled = force !== undefined ? force : !gOverlayEnabled;
+  try { localStorage.setItem('graph-overlay', gOverlayEnabled ? '1' : '0'); } catch {}
+  _gOvlCanvas?.classList.toggle('on', gOverlayEnabled);
+  if (_gOvlMini) _gOvlMini.style.display = gOverlayEnabled ? '' : 'none';
+  for (const id of ['graph-overlay-btn', 'graph-overlay-btn-desk']) {
+    document.getElementById(id)?.classList.toggle('active', gOverlayEnabled);
+  }
+  if (gOverlayEnabled) { _gOvlResize(); _gOvlDraw(); _gOvlStart(); }
+  else if (_gOvlRaf) { cancelAnimationFrame(_gOvlRaf); _gOvlRaf = null; }
+}
+document.getElementById('graph-overlay-btn')?.addEventListener('click', () => gOverlayToggle());
+document.getElementById('graph-overlay-btn-desk')?.addEventListener('click', () => gOverlayToggle());
+window.addEventListener('resize', () => gOverlayRefresh());
+
+// Minimap interaction — its OWN widget (pointer-events:auto); isolated from the
+// graph canvas so it never interferes with node drag / wiring / context menus.
+(function () {
+  if (!_gOvlMini) return;
+  let dragging = false;
+  const panTo = (ev) => {
+    const map = _gOvlMini._map; if (!map) return;
+    const mr = _gOvlMini.getBoundingClientRect();
+    const lx = map.minX + (ev.clientX - mr.left - map.pad) / map.sc;
+    const ly = map.minY + (ev.clientY - mr.top - map.pad) / map.sc;
+    const wr = gCanvasWrap.getBoundingClientRect();
+    gPanX = wr.width / 2 - lx * gCanvasScale;
+    gPanY = wr.height / 2 - ly * gCanvasScale;
+    gApplyPan(); gRedrawEdges(); gOverlayRefresh();
+  };
+  _gOvlMini.addEventListener('pointerdown', e => { e.stopPropagation(); dragging = true; _gOvlMini.setPointerCapture(e.pointerId); panTo(e); });
+  _gOvlMini.addEventListener('pointermove', e => { if (dragging) { e.stopPropagation(); panTo(e); } });
+  _gOvlMini.addEventListener('pointerup',   e => { dragging = false; try { _gOvlMini.releasePointerCapture(e.pointerId); } catch {} });
+  _gOvlMini.addEventListener('contextmenu', e => e.preventDefault());
+})();
+
+// Exposed so the (earlier-defined) pan / edge-redraw code can keep the overlay
+// aligned without any temporal-dead-zone risk.
+window.gOverlayRefresh = gOverlayRefresh;
+
+// Restore saved state (default off → nothing changes unless the user opts in).
+try { if (localStorage.getItem('graph-overlay') === '1') gOverlayToggle(true); } catch {}
 
 // ── Polling ────────────────────────────────────────────────────
 async function diagPoll() {

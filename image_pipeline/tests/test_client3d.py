@@ -113,3 +113,26 @@ def test_2d_graph_still_renders_server_side():
     assert arr.shape == (48, 64, 3)
     assert arr.dtype == np.float32
     assert arr.max() > 0.0
+
+
+# ── 5. Graph FX overlay safety invariants (#4c-safe) ─────────────────────────
+
+def test_graph_overlay_is_noninteractive_and_default_off():
+    """The decorative FX overlay must never own graph interaction and must be
+    off by default, so the existing DOM/SVG graph is byte-for-byte unaffected
+    unless the user opts in."""
+    from fastapi.testclient import TestClient
+    from image_pipeline.server import app
+
+    html = TestClient(app).get("/").text
+    assert 'id="graph-overlay"' in html
+    # The overlay canvas is pointer-events:none (never intercepts drag/wiring/
+    # context-menus/keyframe-lanes on the DOM graph below).
+    import re
+    css = re.search(r"#graph-overlay\s*\{[^}]*\}", html)
+    assert css and "pointer-events: none" in css.group(0)
+    # Default off — the controller initializes disabled and only restores when
+    # the user previously enabled it.
+    assert "let gOverlayEnabled = false" in html
+    # Minimap starts hidden.
+    assert 'id="graph-minimap" style="display:none"' in html
