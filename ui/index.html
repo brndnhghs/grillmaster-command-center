@@ -2523,7 +2523,7 @@ function renderParamField(key, spec) {
         <span class="param-desc">${escHtml(desc)}</span>
       </div>
       <textarea class="glsl-editor param-ctrl" id="p_${escHtml(key)}" spellcheck="false">${safeVal}</textarea>
-      <button class="glsl-apply-btn" id="glsl-apply-${escHtml(key)}">Apply Shader</button>
+      <button class="glsl-apply-btn" id="glsl-apply-${escHtml(key)}">${key === 'sketch_code' ? 'Apply Sketch' : 'Apply Shader'}</button>
       <div class="glsl-error" id="glsl-err-${escHtml(key)}"></div>
     </div>`;
   }
@@ -3363,6 +3363,57 @@ const GCLIENT_NODE_DEFS = {
       light_color: { description: 'light color', default: '#ffffff' },
       ambient:     { description: 'ambient light', min: 0, max: 1, default: 0.35 },
       bg_color:    { description: 'background color', default: '#101014' },
+    },
+  },
+  '__p5sketch__': {
+    method_id: '__p5sketch__',
+    name: 'p5 Sketch',
+    category: 'client_3d',
+    clientExec: true,
+    tags: ['p5', 'client', 'webgl', 'creative', 'fast'],
+    inputs: { image_in: 'image' },
+    outputs: { image: 'image', luminance: 'field' },
+    param_ports: [],
+    description: 'Client-side p5.js sketch (instance mode). Generator or filter.',
+    version: 1, deprecated: false, start_frame: 0, end_frame: 0, prebake: 0,
+    params: {
+      sketch_code: {
+        description: 'p5.js sketch — setup(p,g) & draw(p,g). g={width,height,time,frame,p1..p4,input(p5.Image in filter mode),WEBGL,P2D}',
+        multiline: true,
+        default:
+`// p5.js instance-mode sketch. g carries animated params + input frame.
+// Works as a GENERATOR, and as a FILTER when an image is wired to image_in
+// (then g.input is the upstream frame as a canvas you can texture()/image()).
+function setup(p, g) {
+  p.createCanvas(g.width, g.height, g.WEBGL);
+  p.noStroke();
+}
+function draw(p, g) {
+  if (g.input) {                         // FILTER mode: show upstream frame
+    p.push(); p.texture(g.input);
+    p.translate(0, 0, -1); p.plane(g.width, g.height); p.pop();
+  } else {
+    p.background(8, 10, 20);             // GENERATOR mode
+  }
+  p.ambientLight(50);
+  p.pointLight(255, 255, 255, 220, -220, 340);
+  const rings = 6;
+  for (let i = 0; i < rings; i++) {
+    p.push();
+    const a = g.time * (0.6 + 0.14 * i) + i;
+    p.rotateY(a); p.rotateX(a * 0.5);
+    p.translate(150, 0, 0);
+    p.ambientMaterial(60 + 190 * g.p1, 120, 255 - 160 * g.p1);
+    p.torus(34 + 26 * g.p2, 11);
+    p.pop();
+  }
+}`,
+      },
+      p1:         { description: 'param 1 → g.p1', min: 0, max: 1, default: 0.5 },
+      p2:         { description: 'param 2 → g.p2', min: 0, max: 1, default: 0.5 },
+      p3:         { description: 'param 3 → g.p3', min: 0, max: 1, default: 0.5 },
+      p4:         { description: 'param 4 → g.p4', min: 0, max: 1, default: 0.5 },
+      time_scale: { description: 'animation speed → g.time', min: 0, max: 5, default: 1 },
     },
   },
 };
@@ -5350,11 +5401,13 @@ async function gClientRunOnce() {
   const fps   = parseInt(document.getElementById('tl-fps')?.value) || 24;
   const nodes = gNodes.map(n => gSerializeNodeForApi(n));
   const edges = gEdges.map(e => ({ src_node:e.src_node, src_port:e.src_port, dst_node:e.dst_node, dst_port:e.dst_port, feedback:e.feedback }));
-  const canvas = C.renderFrame(nodes, edges, start, gCanvasW, gCanvasH, start / fps);
+  const canvas = await C.renderFrame(nodes, edges, start, gCanvasW, gCanvasH, start / fps);
   gMountClientCanvas(canvas);
-  const err = C.lastError();
-  gSetStatus(err ? ('Client render · GLSL error (see console)') : `Client render · frame ${start} · ${gCanvasW}×${gCanvasH}`);
-  if (err) console.warn('[client3d] GLSL compile log:', err);
+  gClientSurfaceErrors();
+  const nodeErrs = C.getNodeErrors ? C.getNodeErrors() : {};
+  const err = C.lastError() || Object.values(nodeErrs)[0];
+  gSetStatus(err ? ('Client render · error (see node panel)') : `Client render · frame ${start} · ${gCanvasW}×${gCanvasH}`);
+  if (err) console.warn('[client3d] error:', err);
 }
 
 // ── Run ────────────────────────────────────────────────────────
@@ -5625,16 +5678,34 @@ async function _gStartClientLive() {
   const end   = parseInt(document.getElementById('tl-end').value)   || 24;
   const fps   = parseInt(document.getElementById('tl-fps')?.value)  || 24;
   const { nodes, edges } = _gClientGraphPayload();
-  const canvas = C.startLive({
+  const canvas = await C.startLive({
     nodes, edges, start, end, fps, width: gCanvasW, height: gCanvasH,
     onStats: ({ frame, fps }) => {
       gSetStatus(`Live (client GPU) · frame ${frame} · ${fps} fps`);
       const fEl = document.getElementById('lmr-frame'); if (fEl) fEl.textContent = `frame ${frame}`;
       const pEl = document.getElementById('lmr-fps');   if (pEl) pEl.textContent = `${fps} fps`;
+      gClientSurfaceErrors();
     },
   });
   gMountClientCanvas(canvas);
   _gClientLiveActive = true;
+}
+// Show client-side per-node errors (p5 compile/runtime, etc.) in the selected
+// node's multiline-editor error panel, mirroring the server node_errors path.
+function gClientSurfaceErrors() {
+  if (!_gClient3D || !gSelectedNode) return;
+  const errs = _gClient3D.getNodeErrors ? _gClient3D.getNodeErrors() : {};
+  const node = gNodes.find(n => n.id === gSelectedNode);
+  if (!node) return;
+  const def = gNodeDefs[node.method_id];
+  const mlKey = def && Object.entries(def.params || {})
+    .find(([, s]) => s.multiline)?.[0];
+  if (!mlKey) return;
+  const errDiv = document.getElementById(`glsl-err-${mlKey}`);
+  if (!errDiv) return;
+  const msg = errs[gSelectedNode] || '';
+  errDiv.textContent = msg;
+  errDiv.style.display = msg ? '' : 'none';
 }
 function _gStopClientLive() {
   if (!_gClientLiveActive) return;
