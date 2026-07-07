@@ -59,9 +59,6 @@ SAVED_GROUPS_DIR.mkdir(exist_ok=True)
 SEQUENCES_DIR = OUTPUT_ROOT / "sequences"
 SEQUENCES_DIR.mkdir(parents=True, exist_ok=True)
 
-# In-memory keyframe store (per-node keyframe lists, replace semantics)
-_keyframe_store: dict[str, list[dict]] = {}
-
 # ── Live preview buffer (MJPEG streaming) ──────────────────────────────
 _LIVE_FRAME: bytes | None = None
 _LIVE_FRAME_LOCK = threading.Lock()
@@ -1412,16 +1409,48 @@ def stream_graph_job(job_id: str):
 # ── Sequence render endpoints ─────────────────────────────────────────
 
 
-def _interpolate_params(node_params: dict, anim_params: dict, frame: int, start_frame: int, end_frame: int) -> dict:
-    """Linearly interpolate animated params across the frame range."""
-    if not anim_params or end_frame <= start_frame:
-        return node_params
-    t = (frame - start_frame) / (end_frame - start_frame)
-    result = dict(node_params)
+def _anim_params_to_keyframes(anim_params: dict, start_frame: int, end_frame: int) -> dict:
+    """Fold legacy per-node ``animParams`` (linear from→to tweens) into the
+    single ``paramKeyframes`` model so every param animation runs through one
+    engine (KeyframeTrack in core.graph).
+
+    Each ``animParams[key] = {enabled, from, to}`` becomes a 2-keyframe linear
+    track over [start_frame, end_frame], which evaluates identically to the old
+    server-side linear tween.
+    """
+    tracks: dict[str, list[dict]] = {}
+    if not anim_params:
+        return tracks
     for key, anim in anim_params.items():
-        if anim.get("enabled"):
-            result[key] = anim["from"] + (anim["to"] - anim["from"]) * t
-    return result
+        if not isinstance(anim, dict) or not anim.get("enabled"):
+            continue
+        if "from" not in anim or "to" not in anim:
+            continue
+        tracks[key] = [
+            {"frame": start_frame, "value": anim["from"], "easing": "linear"},
+            {"frame": end_frame, "value": anim["to"], "easing": "linear"},
+        ]
+    return tracks
+
+
+def _merge_anim_params_into_nodes(nodes: list[dict], start_frame: int, end_frame: int) -> None:
+    """In-place: convert each node's ``animParams`` into ``paramKeyframes`` so
+    the executor evaluates them via the shared keyframe engine. Idempotent with
+    respect to ``paramKeyframes`` already present on the node (animParams tracks
+    are added only for keys not already keyframed)."""
+    for n in nodes:
+        anim = n.get("animParams") or {}
+        if not anim:
+            continue
+        pk = n.get("paramKeyframes") or {}
+        folded = _anim_params_to_keyframes(anim, start_frame, end_frame)
+        for k, track in folded.items():
+            if k not in pk:
+                pk[k] = track
+        n["paramKeyframes"] = pk
+        # animParams is now only sugar over paramKeyframes; drop to avoid the
+        # executor seeing a stale, redundant mechanism.
+        n.pop("animParams", None)
 
 
 class SequenceRequest(BaseModel):
@@ -1459,8 +1488,11 @@ async def render_sequence(req: SequenceRequest):
         executor = GraphExecutor(work_dir, fps=req.fps, in_memory=True)
         n_frames = end_frame - start_frame + 1
 
-        # Extract per-node animParams (stripped from GraphNode schema)
-        node_anim_params = {n["id"]: n.get("animParams", {}) for n in nodes}
+        # Fold legacy per-node animParams into the single paramKeyframes model
+        # so every param animation is evaluated by one engine (KeyframeTrack)
+        # inside the executor. This replaces the old server-side _interpolate_params
+        # per-frame rebuild loop.
+        _merge_anim_params_into_nodes(nodes, start_frame, end_frame)
 
         # Force all nodes dirty — the executor's dirty-flag skip reads cached
         # PNGs from disk, which would return the same frame 1 image for every
@@ -1469,21 +1501,9 @@ async def render_sequence(req: SequenceRequest):
             n["dirty"] = True
 
         for frame in range(start_frame, end_frame + 1):
-            # Build frame-specific node list with interpolated params
-            frame_nodes = []
-            for n in nodes:
-                nid = n["id"]
-                anim = node_anim_params.get(nid) or {}
-                has_active_anim = any(v.get("enabled") for v in anim.values())
-                if has_active_anim:
-                    frame_params = _interpolate_params(n.get("params", {}), anim, frame, start_frame, end_frame)
-                    frame_nodes.append({**n, "params": frame_params, "dirty": True})
-                else:
-                    frame_nodes.append(n)
-
             try:
                 flat_outputs, terminal_id, frame_errors = executor.execute(
-                    frame_nodes, edges, seed, frame=frame, frames=n_frames
+                    nodes, edges, seed, frame=frame, frames=n_frames
                 )
                 render_id = next((n["id"] for n in nodes if n.get("render")), None)
                 if render_id and render_id in flat_outputs:
@@ -1843,31 +1863,6 @@ async def nd_undo(backup_id: str):
     shutil.copy2(backup_path, orig_path)
     Path(backup_path).unlink(missing_ok=True)
     return {"ok": True}
-
-
-# ── Keyframe API endpoints ────────────────────────────────────────────
-
-
-class KeyframeRequest(BaseModel):
-    node_id: str
-    keyframes: list[dict] = []
-
-
-@app.post("/api/graph/keyframes")
-def set_keyframes(req: KeyframeRequest):
-    """Store keyframes for a node. The frontend sends the full keyframe list
-    for a node on every edit (replace semantics)."""
-    # Keyframes are stored per-node in a simple in-memory dict.
-    # In a full implementation these would be persisted with the graph.
-    _keyframe_store[req.node_id] = req.keyframes
-    return {"ok": True, "count": len(req.keyframes)}
-
-
-@app.get("/api/graph/keyframes/{node_id}")
-def get_keyframes(node_id: str):
-    """Retrieve keyframes for a node."""
-    kfs = _keyframe_store.get(node_id, [])
-    return {"node_id": node_id, "keyframes": kfs}
 
 
 @app.get("/api/easing-presets")
