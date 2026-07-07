@@ -49,9 +49,43 @@ function loadP5() {
   return _p5LoadPromise;
 }
 
+// ── Shader parity bundle (WebGL2 sources for existing GPU shader nodes) ──────
+// Fetched once from /api/shader-sources; lets the browser render the server's
+// GPU shader nodes client-side for the live preview, from the SAME GLSL source.
+let _shaderBundle = null;
+let _shaderBundlePromise = null;
+function loadShaderBundle() {
+  if (_shaderBundle) return Promise.resolve(_shaderBundle);
+  if (_shaderBundlePromise) return _shaderBundlePromise;
+  _shaderBundlePromise = fetch('/api/shader-sources')
+    .then(r => r.json())
+    .then(b => { _shaderBundle = b; return b; })
+    .catch(e => { _shaderBundlePromise = null; throw e; });
+  return _shaderBundlePromise;
+}
+/** True if the graph node is an existing GPU shader node the client can render. */
+function _isGpuShaderNode(mid) {
+  return !!(_shaderBundle && _shaderBundle.node_map && _shaderBundle.node_map[mid]);
+}
+/** Heuristic (pre-bundle): numeric GPU shader ids 173–219. */
+function _looksLikeGpuShader(mid) {
+  return /^\d+$/.test(mid) && +mid >= 173 && +mid <= 219;
+}
+
 /** Preload any heavy libs a graph needs before its first synchronous execute(). */
 export async function prepare(nodes) {
-  if (nodes.some(n => n.method_id === '__p5sketch__')) await loadP5();
+  const jobs = [];
+  if (nodes.some(n => n.method_id === '__p5sketch__')) jobs.push(loadP5());
+  if (nodes.some(n => _looksLikeGpuShader(n.method_id))) jobs.push(loadShaderBundle());
+  await Promise.all(jobs);
+}
+
+/** Can every node in this graph be rendered by the client spine? */
+export function graphClientRenderable(nodes) {
+  if (!nodes.length) return false;
+  const CLIENT = new Set(['__scene3d__', '__p5sketch__', '__custom_shader__']);
+  return nodes.every(n => CLIENT.has(n.method_id) ||
+    _isGpuShaderNode(n.method_id) || _looksLikeGpuShader(n.method_id));
 }
 
 // ── Easing — a faithful port of server core/easing.py apply_easing ──────────
@@ -199,6 +233,10 @@ class ClientExecutor {
     const blackData = new Uint8Array([0, 0, 0, 255]);
     this._blackTex = new THREE.DataTexture(blackData, 1, 1, THREE.RGBAFormat);
     this._blackTex.needsUpdate = true;
+    // GPU shader node materials (parity layer): webgl2 fragment -> RawShaderMaterial.
+    this._gpuMats = new Map();
+    // Temp RT for the two-pass convention bake (flip Y + swap R/B to match server).
+    this._convRT = null;
     // Per-node p5 instances: id -> { code, inst, container, globals, tex, errBox }.
     this._p5 = new Map();
     // Per-node error strings (p5 compile/runtime, GLSL, …) surfaced to the UI.
@@ -217,6 +255,19 @@ in vec2 v_uv;
 out vec4 f_color;
 uniform sampler2D u_texture;
 void main(){ f_color = texture(u_texture, v_uv); }`,
+    });
+    // Convention blit: flip Y + swap R/B, so a client GPU-shader render matches
+    // the server's authoritative output (render_shader reads FBO bottom-up as BGR).
+    this._convMat = new THREE.RawShaderMaterial({
+      glslVersion: THREE.GLSL3,
+      uniforms: { u_texture: { value: this._blackTex } },
+      vertexShader: FILTER_VERT,
+      fragmentShader: `
+precision highp float;
+in vec2 v_uv;
+out vec4 f_color;
+uniform sampler2D u_texture;
+void main(){ f_color = texture(u_texture, vec2(v_uv.x, 1.0 - v_uv.y)).bgra; }`,
     });
     this.lastCompileError = null;
   }
@@ -357,6 +408,71 @@ void main(){ f_color = texture(u_texture, v_uv); }`,
     // Surface GLSL compile errors (WebGL logs them; three throws on use).
     const prog = this.renderer.info.programs?.find(p => p.cacheKey && p.diagnostics?.programLog);
     if (prog?.diagnostics?.programLog) this.lastCompileError = prog.diagnostics.programLog;
+  }
+
+  // ── Existing GPU shader node (parity layer) ─────────────────────────────────
+  // Renders one of the server's GPU shader nodes client-side from its WebGL2
+  // fragment. Two passes: (1) the parity fragment into a temp RT, (2) a
+  // convention blit (flip Y + swap R/B) into the node RT so the client output
+  // matches the server's authoritative render pixel-for-pixel.
+  _gpuMaterial(fragment) {
+    let mat = this._gpuMats.get(fragment);
+    if (mat) return mat;
+    const bundle = _shaderBundle;
+    const vert = (bundle && bundle.vertex ? bundle.vertex : ('#version 300 es\n' + FILTER_VERT))
+      .replace(/^#version 300 es\n?/, '');
+    mat = new THREE.RawShaderMaterial({
+      glslVersion: THREE.GLSL3,
+      uniforms: {
+        u_resolution: { value: new THREE.Vector2(this.width, this.height) },
+        u_time: { value: 0 },
+        u_params: { value: new THREE.Vector4(0.5, 0.5, 0.5, 0.5) },
+        u_texture: { value: this._blackTex },
+      },
+      vertexShader: vert,
+      fragmentShader: fragment.replace(/^#version 300 es\n?/, ''),
+    });
+    this._gpuMats.set(fragment, mat);
+    return mat;
+  }
+
+  renderGpuShader(node, params, time, inputTex, targetRT) {
+    const entry = _shaderBundle && _shaderBundle.node_map[node.method_id];
+    const info = entry && _shaderBundle.shaders[entry.shader];
+    if (!info) { this._clearRT(targetRT); return; }
+    const mat = this._gpuMaterial(info.fragment);
+    mat.uniforms.u_resolution.value.set(this.width, this.height);
+    mat.uniforms.u_time.value = time * num(params.time_scale, 1);
+    if (entry.type === 'filter') {
+      // Server filter param mapping: u_params = (strength, p2, 0.5, 0.5).
+      mat.uniforms.u_params.value.set(num(params.strength, 0.5), num(params.p2, 0.5), 0.5, 0.5);
+      mat.uniforms.u_texture.value = inputTex || this._blackTex;
+    } else {
+      mat.uniforms.u_params.value.set(
+        num(params.p1, 0.5), num(params.p2, 0.5), num(params.p3, 0.5), num(params.p4, 0.5));
+      mat.uniforms.u_texture.value = inputTex || this._blackTex;
+    }
+
+    // Pass 1: parity fragment → temp RT.
+    if (!this._convRT) this._convRT = new THREE.WebGLRenderTarget(this.width, this.height,
+      { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
+    if (this._convRT.width !== this.width || this._convRT.height !== this.height)
+      this._convRT.setSize(this.width, this.height);
+    this._quadMesh.material = mat;
+    this.renderer.setRenderTarget(this._convRT);
+    this.renderer.clear();
+    this.renderer.render(this._quadScene, this._quadCam);
+
+    // Pass 2: convention blit (flip Y + swap R/B) → node RT.
+    this._convMat.uniforms.u_texture.value = this._convRT.texture;
+    this._quadMesh.material = this._convMat;
+    this.renderer.setRenderTarget(targetRT);
+    this.renderer.clear();
+    this.renderer.render(this._quadScene, this._quadCam);
+    this.renderer.setRenderTarget(null);
+
+    const prog = this.renderer.info.programs?.find(p => p.diagnostics?.programLog);
+    if (prog?.diagnostics?.programLog) this._nodeErrors[node.id] = prog.diagnostics.programLog;
   }
 
   // ── p5.js sketch node ───────────────────────────────────────────────────────
@@ -578,6 +694,13 @@ void main(){ f_color = texture(u_texture, v_uv); }`,
         const inputCanvas = inEdge && outputs.has(inEdge.src_node)
           ? this._readRTToInputCanvas(outputs.get(inEdge.src_node)) : null;
         this.renderP5(node, params, time, frame, inputCanvas, rt);
+      } else if (_isGpuShaderNode(node.method_id)) {
+        // Existing GPU shader node rendered client-side via the parity layer.
+        const inEdge = edges.find(e => !e.feedback && e.dst_node === node.id &&
+          (e.dst_port === 'image_in' || e.dst_port === 'image'));
+        const inTex = inEdge && outputs.has(inEdge.src_node)
+          ? outputs.get(inEdge.src_node).texture : null;
+        this.renderGpuShader(node, params, time, inTex, rt);
       } else {
         // Unsupported client node — passthrough its first input (or black).
         const inEdge = edges.find(e => !e.feedback && e.dst_node === node.id);
@@ -622,6 +745,10 @@ void main(){ f_color = texture(u_texture, v_uv); }`,
     this._rts.clear();
     for (const m of this._filterMats.values()) m.dispose();
     this._filterMats.clear();
+    for (const m of this._gpuMats.values()) m.dispose();
+    this._gpuMats.clear();
+    if (this._convRT) { this._convRT.dispose(); this._convRT = null; }
+    this._convMat.dispose();
     if (this._three) {
       this._three.mesh.geometry.dispose();
       this._three.material.dispose();

@@ -147,6 +147,17 @@ for _mid, _sname, _mname in _FILT_SHADERS:
     _make_filt(_mid, _sname, _mname)
 
 
+# ── Node → shader map for client-side rendering (parity layer / feature #1) ──
+# Lets the browser executor render these EXISTING server nodes client-side for
+# the live preview, from the same GLSL source (see core/shaders.py). The server
+# remains authoritative for one-shot Run and export.
+GPU_SHADER_NODE_MAP: dict[str, dict] = {}
+for _mid, _sname, _mname in _PROC_SHADERS:
+    GPU_SHADER_NODE_MAP[_mid] = {"shader": _sname, "type": "procedural"}
+for _mid, _sname, _mname in _FILT_SHADERS:
+    GPU_SHADER_NODE_MAP[_mid] = {"shader": _sname, "type": "filter"}
+
+
 # ── Legacy combined method #82 (kept for backward compatibility) ──────
 
 SHADER_NAMES = sorted([k for k, v in SHADERS.items() if v["type"] == "procedural"])

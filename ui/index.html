@@ -1871,6 +1871,12 @@ try {
     background: var(--bg3); color: var(--muted);
   }
   #diag-status-pill.live { background: rgba(244,63,94,.12); color: var(--live); }
+  #diag-preview-mode {
+    font-size: 11px; padding: 3px 8px; border-radius: 10px;
+    background: var(--bg3); color: var(--muted); font-weight: 600;
+  }
+  #diag-preview-mode.client { background: rgba(52,211,153,.14); color: #34d399; }
+  #diag-preview-mode.server { background: rgba(108,142,245,.14); color: #6c8ef5; }
 
   /* ── Readout strip ──────────────────────────────────────── */
   #diag-readouts {
@@ -1958,6 +1964,7 @@ try {
 <div id="diag-controls">
   <h2>Live Diagnostics</h2>
   <span id="diag-status-pill">stopped</span>
+  <span id="diag-preview-mode" title="Where the live preview is rendered">preview: —</span>
   <label style="font-size:12px;color:var(--muted)">Window:
     <select id="diag-window-select">
       <option value="60">60 frames</option>
@@ -5719,24 +5726,63 @@ function gClientLiveRefresh() {
     _gClient3D.updateLiveGraph(nodes, edges);
   }
 }
+// Where the live preview is currently rendered — surfaced in Diagnostics.
+function _gSetPreviewMode(mode) {
+  window.gPreviewMode = mode;
+  const el = document.getElementById('diag-preview-mode');
+  if (el) {
+    el.textContent = 'preview: ' + (mode === 'client' ? 'client GPU'
+      : mode === 'server' ? 'server WS' : '—');
+    el.className = (mode === 'client' || mode === 'server') ? mode : '';
+  }
+}
+// True when the whole graph can be rendered by the browser spine (3D/p5/custom
+// shader + any existing GPU shader node), and WebGL2 is available.
+async function gGraphClientRenderable() {
+  if (!('WebGL2RenderingContext' in window)) return false;
+  if (!gNodes.length) return false;
+  try {
+    const C = await gClient3D();
+    const { nodes } = _gClientGraphPayload();
+    return C.graphClientRenderable(nodes);
+  } catch { return false; }
+}
 
 async function gSetLive(on) {
-  // Client-rendered graphs (3D nodes) run a browser-GPU live loop instead of
-  // the server live loop. The server's /api/graph/live + WS path is untouched
-  // and only used by 2D-only graphs.
-  if (on && gGraphHasClientNode()) {
+  // Live preview runs on the browser GPU when the whole graph is client-
+  // renderable (feature #1): 3D/p5/custom-shader nodes AND the existing GPU
+  // shader nodes (via the shader parity layer). Otherwise the server /api/
+  // graph/live + WS path (untouched) drives the preview. Run/export are
+  // unaffected — the server stays authoritative for those.
+  if (on && await gGraphClientRenderable()) {
     gLiveMode = true;
     gLiveBtn.classList.toggle('active', true);
     gLiveBtnDesk.classList.toggle('active', true);
-    try { await _gStartClientLive(); }
-    catch(e) { gSetStatus('Client live error: ' + e.message); console.error(e); }
-    return;
+    try {
+      await _gStartClientLive();
+      _gSetPreviewMode('client');
+      return;
+    } catch (e) {
+      console.warn('[live] client render failed', e);
+      _gStopClientLive();
+      // Graphs with client-only nodes cannot fall back to the server.
+      if (gGraphHasClientNode()) {
+        gSetStatus('Client live error: ' + e.message);
+        gLiveMode = false;
+        gLiveBtn.classList.toggle('active', false);
+        gLiveBtnDesk.classList.toggle('active', false);
+        return;
+      }
+      gSetStatus('Client render unavailable — using server preview');
+      // fall through to the server WS path below
+    }
   }
   if (!on && _gClientLiveActive) {
     _gStopClientLive();
     gLiveMode = false;
     gLiveBtn.classList.toggle('active', false);
     gLiveBtnDesk.classList.toggle('active', false);
+    _gSetPreviewMode('—');
     gSetStatus('Live stopped.');
     return;
   }
@@ -5751,6 +5797,7 @@ async function gSetLive(on) {
   gLiveMode = on;
   gLiveBtn.classList.toggle('active', on);
   gLiveBtnDesk.classList.toggle('active', on);
+  _gSetPreviewMode(on ? 'server' : '—');
 
   if (on) {
     gMainPreview.innerHTML = '';
@@ -5987,10 +6034,11 @@ document.getElementById('settings-reset-layout').addEventListener('click', () =>
 // ── Auto-generate: fire-and-cancel ───────────────────────────
 let _autoGenTimer = null;
 function gDoAutoGen() {
-  // Client-rendered graphs (3D): refresh the browser-GPU loop live, or do a
-  // one-shot client render in auto mode. Never touches the server path.
+  // A running client-side live loop (3D/p5/custom shader OR a GPU-shader graph
+  // under feature #1) hot-swaps on param edits — instant, no server round-trip.
+  if (_gClientLiveActive) { gClientLiveRefresh(); return; }
+  // Client-only graphs (3D/p5): one-shot browser render in auto mode.
   if (gGraphHasClientNode()) {
-    if (_gClientLiveActive) { gClientLiveRefresh(); return; }
     if (gAutoGen && gNodes.length) {
       clearTimeout(_autoGenTimer);
       _autoGenTimer = setTimeout(() => { gClientRunOnce().catch(e => console.error(e)); }, 80);

@@ -87,3 +87,32 @@ def test_shader_sources_endpoint():
     data = r.json()
     assert "plasma" in data["shaders"]
     assert data["shaders"]["plasma"]["fragment"].startswith("#version 300 es")
+
+
+# ── 5. GPU shader node map (feature #1 — client-side live preview) ────────────
+
+def test_gpu_shader_node_map_resolves():
+    """Every GPU shader node id maps to a shader that exists in the parity
+    bundle, so the browser can render that node client-side for live preview."""
+    import image_pipeline.methods  # noqa: F401
+    from image_pipeline.methods.gpu_shaders import GPU_SHADER_NODE_MAP
+
+    assert len(GPU_SHADER_NODE_MAP) == 47
+    for mid, entry in GPU_SHADER_NODE_MAP.items():
+        assert entry["type"] in ("procedural", "filter")
+        assert entry["shader"] in S.SHADERS, f"{mid} -> unknown shader {entry['shader']}"
+        # The client renders it from this WebGL2 fragment.
+        assert S.build_fragment(entry["shader"], "webgl2").startswith("#version 300 es")
+
+
+def test_endpoint_exposes_node_map():
+    from fastapi.testclient import TestClient
+    from image_pipeline.server import app
+
+    client = TestClient(app)
+    data = client.get("/api/shader-sources").json()
+    assert "node_map" in data
+    assert data["node_map"]["175"] == {"shader": "plasma", "type": "procedural"}
+    # Every mapped shader is present in the shaders bundle.
+    for entry in data["node_map"].values():
+        assert entry["shader"] in data["shaders"]
