@@ -21,6 +21,7 @@ except ImportError:
     id="41",
     name="Oil Paint",
     category="filters",
+    new_image_contract=True,
     tags=["opencv", "fast", "expanded", "animation"],
     params={
         "style": {"description": "painting style (oil_paint/impasto/watercolor/pastel/pencil_sketch/cartoon/pointillism/emboss)", "default": "oil_paint"},
@@ -101,10 +102,9 @@ def method_oil_paint(out_dir: Path, seed: int, params=None):
 
         # ── Generate source image ──
         def _make_source():
-            if params.get("input_image"):
-                from ...core.utils import load_input
-                img = load_input(params["input_image"])
-                return (img * 255).astype(np.uint8)
+            _inp = params.get("_input_image")
+            if _inp is not None:
+                return (_inp * 255).astype(np.uint8)
             elif source == "noise":
                 n = rng.standard_normal((H, W, 3)).astype(np.float32) * noise_amp + noise_offset
                 n = cv2.GaussianBlur(n, (0, 0), sigmaX=blur_sigma, sigmaY=blur_sigma)

@@ -26,8 +26,8 @@ try {
   }
   .tab-btn:hover { color: var(--text); }
   .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
-  #tab-methods, #tab-graph { display: flex; flex: 1; overflow: hidden; }
-  #tab-methods { display: none; }
+  #tab-methods, #tab-graph, #tab-diag { display: flex; flex: 1; overflow: hidden; }
+  #tab-methods, #tab-diag { display: none; }
 
   /* wrap everything in a column */
   #shell { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
@@ -152,6 +152,7 @@ try {
   .method-item .mname { font-size: 13px; font-weight: 500; }
   .method-item .tags { margin-top: 3px; display: flex; flex-wrap: wrap; gap: 3px; }
   .tag { font-size: 10px; background: var(--tag-bg); color: var(--tag-fg); border-radius: 4px; padding: 1px 5px; }
+  .tag-gpu { background: #78350f; color: #fde68a; font-weight: 600; }
 
   /* Center panel */
   #center {
@@ -343,9 +344,10 @@ try {
 </head>
 <body>
 <div id="shell">
-<div id="tab-bar" style="display:none">
+<div id="tab-bar">
   <button class="tab-btn" data-tab="methods" style="display:none">Methods</button>
   <button class="tab-btn active" data-tab="graph">Node Graph</button>
+  <button class="tab-btn" data-tab="diag">⚡ Diagnostics</button>
 </div>
 
 <!-- ── Methods tab (existing UI) ──────────────────────────── -->
@@ -731,6 +733,37 @@ try {
   #graph-main-preview img, #graph-main-preview video {
     max-width: 100%; max-height: 100%; width: auto; height: 100%;
     object-fit: contain; cursor: pointer; display: block;
+  }
+
+  /* ── Live metadata readout overlay (bottom of preview) ── */
+  #live-meta-readout {
+    display: none; position: absolute; bottom: 0; left: 0; right: 0; z-index: 5;
+    background: linear-gradient(transparent, rgba(0,0,0,0.75));
+    padding: 8px 10px 6px; pointer-events: none;
+  }
+  #graph-main-preview.active.ws-live #live-meta-readout { display: block; }
+  #lmr-top {
+    display: flex; align-items: center; gap: 10px; font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+  #lmr-frame { color: var(--muted2); }
+  #lmr-ms    { color: var(--accent2); font-weight: 600; }
+  #lmr-fps   { color: #34d399; font-weight: 600; }
+  #lmr-err   { color: var(--err); display: none; }
+  #lmr-bars  {
+    display: flex; gap: 3px; align-items: flex-end; height: 16px; margin-top: 4px;
+  }
+  .lmr-bar {
+    width: 8px; min-width: 8px; background: var(--accent); border-radius: 2px 2px 0 0;
+    transition: height .1s;
+  }
+  .lmr-bar.gpu { background: #d97706; }
+  .lmr-bar-label { display: none; } /* labels only in full diagnostics tab */
+
+  /* ── WS live canvas replaces MJPEG img ───────────────── */
+  #live-ws-canvas {
+    max-width: 100%; max-height: 100%; width: auto; height: 100%;
+    object-fit: contain; display: block; cursor: pointer;
   }
 
   /* Hover chrome over the preview (pop-out / PiP) — JS keeps it mounted */
@@ -1326,6 +1359,14 @@ try {
   .tl-kf-diamond.elastic { background: #f472b6; border-color: #db2777; }
   .tl-kf-diamond.cubic-bezier { background: #2dd4bf; border-color: #0d9488; }
 
+  /* ── Node-KF lane header ──────────────────────────────────────── */
+  .tl-node-kf-header {
+    position: sticky; left: 0; z-index: 4;
+    font-size: 9px; font-weight: 700; color: var(--accent);
+    background: #181818; white-space: nowrap;
+    padding: 0 6px; line-height: 18px;
+  }
+
   .tl-playhead {
     position: absolute; top: 0; width: 2px; height: 100%;
     background: #ff6b6b; z-index: 10; pointer-events: none;
@@ -1633,7 +1674,18 @@ try {
     <span id="graph-preview-label">Output</span>
     <button id="graph-preview-toggle">▲ expand</button>
   </div>
-  <div id="graph-main-preview"></div>
+  <div id="graph-main-preview">
+    <!-- Live metadata readout: updated by WS messages (Phase 4 frame cursor) -->
+    <div id="live-meta-readout">
+      <div id="lmr-top">
+        <span id="lmr-frame">frame –</span>
+        <span id="lmr-ms">–ms</span>
+        <span id="lmr-fps">– fps</span>
+        <span id="lmr-err">⚠ error</span>
+      </div>
+      <div id="lmr-bars"></div>
+    </div>
+  </div>
   <div id="preview-resize-handle" title="Drag to resize preview"></div>
   <div id="graph-output-strip"></div>
 </div>
@@ -1773,6 +1825,219 @@ try {
 <div id="graph-toast"></div>
 
 </div><!-- end #tab-graph -->
+
+<!-- ── Diagnostics tab ────────────────────────────────────── -->
+<div id="tab-diag">
+<style>
+  #tab-diag {
+    flex-direction: column;
+    background: var(--bg0);
+    overflow-y: auto;
+    padding: 16px;
+    gap: 14px;
+    box-sizing: border-box;
+  }
+
+  /* ── Diag top controls ──────────────────────────────────── */
+  #diag-controls {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding-bottom: 12px; border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  #diag-controls h2 {
+    font-size: 13px; font-weight: 700; color: var(--accent2);
+    text-transform: uppercase; letter-spacing: .06em; margin: 0; flex: 1;
+  }
+  #diag-pause-btn, #diag-clear-btn {
+    padding: 5px 12px; font-size: 12px; border-radius: var(--radius-s);
+    border: 1px solid var(--border); background: var(--bg2); color: var(--text);
+    cursor: pointer; transition: background .1s;
+  }
+  #diag-pause-btn:hover, #diag-clear-btn:hover { background: var(--bg3); }
+  #diag-pause-btn.active { border-color: var(--live); color: var(--live); }
+  #diag-window-select {
+    padding: 4px 8px; font-size: 12px; background: var(--bg2);
+    border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-s);
+  }
+  #diag-status-pill {
+    font-size: 11px; padding: 3px 9px; border-radius: 99px;
+    background: var(--bg3); color: var(--muted);
+  }
+  #diag-status-pill.live { background: rgba(244,63,94,.12); color: var(--live); }
+
+  /* ── Readout strip ──────────────────────────────────────── */
+  #diag-readouts {
+    display: flex; flex-wrap: wrap; gap: 10px;
+  }
+  .diag-kv {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius-m); padding: 10px 14px;
+    min-width: 100px; flex: 1 1 100px;
+  }
+  .diag-kv .dkv-label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--muted2); margin-bottom: 4px;
+  }
+  .diag-kv .dkv-val {
+    font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums;
+    color: var(--text); line-height: 1;
+  }
+  .diag-kv .dkv-unit { font-size: 12px; color: var(--muted); margin-left: 2px; }
+
+  /* ── Chart grid ─────────────────────────────────────────── */
+  #diag-charts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  @media (max-width: 700px) {
+    #diag-charts { grid-template-columns: 1fr; }
+    #tab-diag { padding: 10px; gap: 10px; }
+  }
+
+  .diag-card {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius-m); padding: 12px; overflow: hidden;
+  }
+  .diag-card-title {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--muted2); margin-bottom: 8px; font-weight: 600;
+  }
+  .diag-card canvas {
+    display: block; width: 100%; border-radius: 3px;
+  }
+
+  /* ── Node timing bars ───────────────────────────────────── */
+  #diag-node-bars { display: flex; flex-direction: column; gap: 5px; }
+  .diag-nbar-row { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+  .diag-nbar-label { color: var(--muted); min-width: 90px; max-width: 120px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+  .diag-nbar-track { flex: 1; height: 12px; background: var(--bg3);
+    border-radius: 3px; overflow: hidden; }
+  .diag-nbar-fill { height: 100%; border-radius: 3px;
+    background: var(--accent); transition: width .15s; }
+  .diag-nbar-fill.gpu { background: #d97706; }
+  .diag-nbar-val { color: var(--muted2); min-width: 44px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+
+  /* ── Split bar (overhead vs compute) ───────────────────── */
+  #diag-split-bar {
+    height: 24px; border-radius: 4px; overflow: hidden;
+    display: flex; margin-top: 4px;
+  }
+  #diag-split-compute { background: var(--accent); display: flex; align-items: center;
+    justify-content: center; font-size: 10px; color: #fff; transition: width .2s; }
+  #diag-split-overhead { background: var(--bg3); display: flex; align-items: center;
+    justify-content: center; font-size: 10px; color: var(--muted); transition: width .2s; }
+
+  /* ── Cache + data-flow chips ────────────────────────────── */
+  #diag-flow-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .diag-chip {
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: var(--radius-s); padding: 6px 10px;
+    font-size: 11px; color: var(--text); display: flex; flex-direction: column;
+    gap: 2px; flex: 1 1 80px;
+  }
+  .diag-chip .chip-label { color: var(--muted2); font-size: 10px; text-transform: uppercase; }
+  .diag-chip .chip-val { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .diag-chip.hit  .chip-val { color: var(--success); }
+  .diag-chip.miss .chip-val { color: var(--warn); }
+  .diag-chip.gpu-chip  .chip-val { color: #fbbf24; }
+  .diag-chip.mem-chip  .chip-val { color: var(--accent2); }
+  .diag-chip.disk-chip .chip-val { color: var(--muted); }
+</style>
+
+<!-- Controls -->
+<div id="diag-controls">
+  <h2>Live Diagnostics</h2>
+  <span id="diag-status-pill">stopped</span>
+  <label style="font-size:12px;color:var(--muted)">Window:
+    <select id="diag-window-select">
+      <option value="60">60 frames</option>
+      <option value="120" selected>120 frames</option>
+      <option value="300">300 frames</option>
+    </select>
+  </label>
+  <button id="diag-pause-btn">Pause</button>
+  <button id="diag-clear-btn">Clear</button>
+</div>
+
+<!-- Numeric readouts -->
+<div id="diag-readouts">
+  <div class="diag-kv"><div class="dkv-label">FPS</div>
+    <div class="dkv-val" id="dkv-fps">–</div></div>
+  <div class="diag-kv"><div class="dkv-label">Cook ms</div>
+    <div class="dkv-val" id="dkv-ms">–</div></div>
+  <div class="diag-kv"><div class="dkv-label">Avg ms</div>
+    <div class="dkv-val" id="dkv-avg">–</div></div>
+  <div class="diag-kv"><div class="dkv-label">Min/Max ms</div>
+    <div class="dkv-val" id="dkv-minmax">–</div></div>
+  <div class="diag-kv"><div class="dkv-label">Frame #</div>
+    <div class="dkv-val" id="dkv-frame">–</div></div>
+  <div class="diag-kv"><div class="dkv-label">Nodes</div>
+    <div class="dkv-val" id="dkv-nodes">–</div></div>
+  <div class="diag-kv"><div class="dkv-label">Resolution</div>
+    <div class="dkv-val" id="dkv-res" style="font-size:14px;padding-top:4px">–</div></div>
+  <div class="diag-kv"><div class="dkv-label">Cache entries</div>
+    <div class="dkv-val" id="dkv-cache">–</div></div>
+</div>
+
+<!-- Charts 2×2 grid -->
+<div id="diag-charts">
+
+  <!-- FPS over time -->
+  <div class="diag-card">
+    <div class="diag-card-title">FPS over time</div>
+    <canvas id="diag-fps-chart" height="80"></canvas>
+  </div>
+
+  <!-- Cook time over time -->
+  <div class="diag-card">
+    <div class="diag-card-title">Cook time / frame (ms)</div>
+    <canvas id="diag-ms-chart" height="80"></canvas>
+  </div>
+
+  <!-- Per-node timing -->
+  <div class="diag-card">
+    <div class="diag-card-title">Per-node cook time (this frame)</div>
+    <div id="diag-node-bars"></div>
+  </div>
+
+  <!-- Overhead split + cache + data-flow -->
+  <div class="diag-card">
+    <div class="diag-card-title">Executor overhead vs compute</div>
+    <div id="diag-split-bar">
+      <div id="diag-split-compute" style="width:50%">Compute</div>
+      <div id="diag-split-overhead" style="width:50%">Overhead</div>
+    </div>
+    <div style="display:flex;gap:12px;font-size:11px;color:var(--muted);margin:6px 0 10px;">
+      <span id="diag-compute-ms">–</span>
+      <span id="diag-overhead-ms">–</span>
+    </div>
+    <div class="diag-card-title" style="margin-top:8px">Cache &amp; data flow</div>
+    <div id="diag-flow-chips">
+      <div class="diag-chip hit"><div class="chip-label">Cache hits</div>
+        <div class="chip-val" id="dfc-hits">–</div></div>
+      <div class="diag-chip miss"><div class="chip-label">Cache misses</div>
+        <div class="chip-val" id="dfc-misses">–</div></div>
+      <div class="diag-chip"><div class="chip-label">Invalidated</div>
+        <div class="chip-val" id="dfc-inv">–</div></div>
+      <div class="diag-chip gpu-chip"><div class="chip-label">⚡ GPU nodes</div>
+        <div class="chip-val" id="dfc-gpu">–</div></div>
+      <div class="diag-chip mem-chip"><div class="chip-label">In-mem edges</div>
+        <div class="chip-val" id="dfc-mem">–</div></div>
+      <div class="diag-chip disk-chip"><div class="chip-label">Disk edges</div>
+        <div class="chip-val" id="dfc-disk">–</div></div>
+      <div class="diag-chip hit"><div class="chip-label">Nodes cooked</div>
+        <div class="chip-val" id="dfc-cooked">–</div></div>
+      <div class="diag-chip miss"><div class="chip-label">Nodes skipped</div>
+        <div class="chip-val" id="dfc-skipped">–</div></div>
+    </div>
+  </div>
+
+</div><!-- end #diag-charts -->
+</div><!-- end #tab-diag -->
+
 </div><!-- end #shell -->
 
 <script>
@@ -1894,7 +2159,11 @@ function renderMethodList(methods, isSearch = false) {
       </div>
       <div class="category-items"${isOpen ? '' : ' style="display:none"'}>`;
     for (const m of items) {
-      const tagHtml = m.tags.map(t => `<span class="tag">${escHtml(t)}</span>`).join('');
+      const tagHtml = m.tags.map(t => {
+        const cls = t === 'gpu' ? 'tag tag-gpu' : 'tag';
+        const txt = t === 'gpu' ? '⚡ GPU' : t;
+        return `<span class="${cls}">${escHtml(txt)}</span>`;
+      }).join('');
       html += `<div class="method-item" data-id="${escHtml(m.id)}">
         <div style="display:flex;gap:6px;align-items:baseline">
           <span class="mid">#${escHtml(m.id)}</span>
@@ -2571,7 +2840,9 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     const tab = btn.dataset.tab;
     document.getElementById('tab-methods').style.display = tab === 'methods' ? 'flex' : 'none';
     document.getElementById('tab-graph').style.display   = tab === 'graph'   ? 'flex' : 'none';
+    document.getElementById('tab-diag').style.display    = tab === 'diag'    ? 'flex' : 'none';
     if (tab === 'graph') gLoadMethodPalette();
+    if (tab === 'diag')  diagEnsurePolling();
   });
 });
 
@@ -4353,6 +4624,7 @@ function gSelectNode(id) {
   gSelectedNode = id;
   const node = gNodes.find(n => n.id === id);
   gShowNodeParams(node);
+  renderTimelineRuler();   // Phase 5: refresh node KF lanes
   if (isMobile()) gParamsSheetOpen();
 }
 
@@ -4983,11 +5255,83 @@ try { if (localStorage.getItem('graph-auto-gen') === '1') gToggleAutoGen(); } ca
 gAutoBtn.addEventListener('click', gToggleAutoGen);
 gAutoBtnDesk.addEventListener('click', gToggleAutoGen);
 
-// ── Live mode (continuous server loop → MJPEG preview) ────────
+// ── Live mode (WebSocket primary / MJPEG fallback) ─────────────
 const gLiveBtn = document.getElementById('graph-live-btn');
 const gLiveBtnDesk = document.getElementById('graph-live-btn-desk');
 let gLiveMode = false;
-let gLiveImg = null;
+let gLiveImg = null;          // MJPEG fallback <img>
+let gLiveCanvas = null;       // WS primary <canvas>
+let _gLiveWs = null;          // active WebSocket
+let _gLiveWsPingTimer = null; // keepalive interval
+let _gLiveWsFallback = false; // true once WS failed → using MJPEG
+let _gLiveStatTimer = null;   // poll timer (fallback only)
+
+// ── Live frame metadata readout ────────────────────────────────
+const _lmrFrame = document.getElementById('lmr-frame');
+const _lmrMs    = document.getElementById('lmr-ms');
+const _lmrFps   = document.getElementById('lmr-fps');
+const _lmrErr   = document.getElementById('lmr-err');
+const _lmrBars  = document.getElementById('lmr-bars');
+
+function _gUpdateLiveMeta(msg) {
+  if (!msg) return;
+  if (_lmrFrame) _lmrFrame.textContent = 'frame ' + msg.frame;
+  if (_lmrMs)    _lmrMs.textContent    = msg.cook_ms + 'ms';
+  if (_lmrFps)   _lmrFps.textContent   = msg.fps + ' fps';
+  // Phase 5: sync timeline frame cursor to live WS frame
+  if (gLiveMode && typeof msg.frame === 'number') {
+    const tlFrameEl = document.getElementById('tl-frame');
+    const tlEndEl   = document.getElementById('tl-end');
+    if (tlFrameEl) {
+      tlFrameEl.value = msg.frame;
+      // Auto-extend timeline end so playhead stays on-screen
+      if (tlEndEl && msg.frame > (parseInt(tlEndEl.value) || 24)) {
+        tlEndEl.value = msg.frame + 24;
+        renderTimelineRuler();
+      } else {
+        updatePlayhead();
+      }
+    }
+  }
+  if (_lmrErr) {
+    const hasErr = msg.node_errors && Object.keys(msg.node_errors).length > 0;
+    _lmrErr.style.display = hasErr ? '' : 'none';
+  }
+  // Mini timing bars (one bar per node, height proportional to its share)
+  if (_lmrBars && msg.node_timings) {
+    const entries = Object.entries(msg.node_timings);
+    const maxMs = entries.reduce((m, [,v]) => Math.max(m, v), 1);
+    _lmrBars.innerHTML = '';
+    entries.forEach(([nid, ms]) => {
+      const bar = document.createElement('div');
+      const pct = Math.max(4, Math.round((ms / maxMs) * 100));
+      const isGpu = (msg.gpu_nodes || 0) > 0 && (msg.node_names||{})[nid]?.toLowerCase().startsWith('gpu');
+      bar.className = 'lmr-bar' + (isGpu ? ' gpu' : '');
+      bar.style.height = pct + '%';
+      bar.title = ((msg.node_names||{})[nid] || nid) + ': ' + ms.toFixed(1) + 'ms';
+      _lmrBars.appendChild(bar);
+    });
+  }
+  // Feed into Diagnostics tab — diagRender is exposed globally from the IIFE
+  if (typeof window.diagRender === 'function') {
+    const paused = typeof window.diagIsPaused === 'function' ? window.diagIsPaused() : false;
+    if (!paused) window.diagRender({...msg, running: true, sim_cache_entries: 0});
+  }
+}
+
+// ── MJPEG status poll (fallback path only) ─────────────────────
+async function _gPollLiveStats() {
+  if (!gLiveMode || _gLiveWs) return;
+  try {
+    const r = await fetch('/api/graph/live/status');
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d.running) {
+      const msg = `Live  ·  frame ${d.frame}  ·  ${d.cook_ms}ms  ·  ${d.fps} fps`;
+      gSetStatus(msg);
+    }
+  } catch {}
+}
 
 function gLiveGraphBody(stop) {
   return {
@@ -4998,31 +5342,156 @@ function gLiveGraphBody(stop) {
   };
 }
 
+// ── WebSocket live: open connection, draw frames, pass metadata ──
+function _gOpenLiveWs() {
+  _gLiveWsFallback = false;
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(`${proto}//${location.host}/api/live/ws`);
+
+  // If no frame arrives within 3 s, fall back to MJPEG
+  let _noFrameTimeout = setTimeout(() => {
+    console.info('[live-ws] no frame in 3s — falling back to MJPEG');
+    ws.close();
+  }, 3000);
+
+  ws.onmessage = async (evt) => {
+    // Clear the no-frame watchdog on first message
+    if (_noFrameTimeout) { clearTimeout(_noFrameTimeout); _noFrameTimeout = null; }
+
+    let msg;
+    try { msg = JSON.parse(evt.data); } catch { return; }
+    if (!msg.img) return;
+
+    // Draw JPEG onto the canvas
+    if (gLiveCanvas) {
+      try {
+        const bin = atob(msg.img);
+        const u8  = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+        const blob = new Blob([u8], { type: 'image/jpeg' });
+        const bmp  = await createImageBitmap(blob);
+        const ctx  = gLiveCanvas.getContext('2d');
+        if (gLiveCanvas.width !== bmp.width || gLiveCanvas.height !== bmp.height) {
+          gLiveCanvas.width  = bmp.width;
+          gLiveCanvas.height = bmp.height;
+        }
+        ctx.drawImage(bmp, 0, 0);
+        bmp.close();
+      } catch (_) {}
+    }
+
+    // Update status bar
+    gSetStatus(`Live · frame ${msg.frame} · ${msg.cook_ms}ms · ${msg.fps} fps`);
+
+    // Update live metadata readout overlay
+    _gUpdateLiveMeta(msg);
+  };
+
+  ws.onerror = () => {};
+  ws.onclose = () => {
+    clearInterval(_gLiveWsPingTimer); _gLiveWsPingTimer = null;
+    _gLiveWs = null;
+    // Fall back to MJPEG if live mode is still on
+    if (gLiveMode && !_gLiveWsFallback) {
+      _gLiveWsFallback = true;
+      console.info('[live-ws] closed — switching to MJPEG fallback');
+      _gStartMjpegFallback();
+    }
+  };
+
+  // Keepalive ping every 15 s
+  _gLiveWsPingTimer = setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) ws.send('ping');
+  }, 15000);
+
+  _gLiveWs = ws;
+}
+
+function _gStartMjpegFallback() {
+  // MJPEG: plain <img> pointing at the multipart stream
+  if (gLiveImg) return; // already started
+  gMainPreview.classList.add('active');
+  gLiveImg = document.createElement('img');
+  gLiveImg.src = '/api/live/stream?t=' + Date.now();
+  gMainPreview.appendChild(gLiveImg);
+  // Re-mount preview chrome that innerHTML wipes
+  gPreviewShow();
+  // Poll stats since WS is unavailable
+  if (_gLiveStatTimer) clearInterval(_gLiveStatTimer);
+  _gLiveStatTimer = setInterval(_gPollLiveStats, 500);
+}
+
+function _gTeardownLive() {
+  // WS
+  if (_gLiveWs) {
+    _gLiveWsFallback = true; // prevent onclose from restarting MJPEG
+    _gLiveWs.close();
+    _gLiveWs = null;
+  }
+  if (_gLiveWsPingTimer) { clearInterval(_gLiveWsPingTimer); _gLiveWsPingTimer = null; }
+  // MJPEG
+  if (_gLiveStatTimer) { clearInterval(_gLiveStatTimer); _gLiveStatTimer = null; }
+  if (gLiveImg) { gLiveImg.src = ''; gLiveImg.remove(); gLiveImg = null; }
+  // Canvas
+  if (gLiveCanvas) { gLiveCanvas.remove(); gLiveCanvas = null; }
+  gMainPreview.classList.remove('ws-live');
+  if (!gMainPreview.querySelector('img, video, canvas'))
+    gMainPreview.classList.remove('active');
+}
+
 async function gSetLive(on) {
   try {
     await fetch('/api/graph/live', {
-      method:'POST', headers:{'Content-Type':'application/json'},
+      method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(gLiveGraphBody(!on)),
     });
   } catch(e) { gSetStatus('Live: ' + e.message); return; }
+
   gLiveMode = on;
   gLiveBtn.classList.toggle('active', on);
   gLiveBtnDesk.classList.toggle('active', on);
+
   if (on) {
-    // Swap the main preview to the MJPEG stream — frames arrive as fast
-    // as the server loop cooks them, no SSE round-trips.
     gMainPreview.innerHTML = '';
     gLivePreviewImg = null;
-    gLiveImg = document.createElement('img');
-    gLiveImg.src = '/api/live/stream?t=' + Date.now();
-    gMainPreview.appendChild(gLiveImg);
-    gMainPreview.classList.add('active');
-    gPreviewShow();
-    gSetStatus('Live — graph cooking continuously');
+    gLiveCanvas = null; gLiveImg = null;
+
+    const useWs = 'WebSocket' in window;
+    if (useWs) {
+      // Primary path: canvas + WebSocket
+      gLiveCanvas = document.createElement('canvas');
+      gLiveCanvas.id = 'live-ws-canvas';
+      gLiveCanvas.onclick = () => {
+        gFsImg.src = gLiveCanvas.toDataURL('image/jpeg', 0.92);
+        gFsImg.style.display = '';
+        document.getElementById('graph-fs-overlay').style.display = 'flex';
+      };
+      gMainPreview.appendChild(gLiveCanvas);
+      gMainPreview.classList.add('active', 'ws-live');
+      gPreviewShow();
+      gSetStatus('Live — connecting…');
+      _gOpenLiveWs();
+    } else {
+      // Feature-detect fallback: browser has no WebSocket support
+      _gLiveWsFallback = true;
+      _gStartMjpegFallback();
+      gSetStatus('Live — MJPEG (no WebSocket)…');
+    }
+    // Ensure the metadata readout is re-mounted (innerHTML wipe above removes it)
+    const existingReadout = document.getElementById('live-meta-readout');
+    if (!existingReadout) {
+      const rd = document.createElement('div');
+      rd.id = 'live-meta-readout';
+      rd.innerHTML = `<div id="lmr-top">
+        <span id="lmr-frame">frame –</span>
+        <span id="lmr-ms">–ms</span>
+        <span id="lmr-fps">– fps</span>
+        <span id="lmr-err" style="display:none">⚠ error</span>
+      </div><div id="lmr-bars"></div>`;
+      gMainPreview.appendChild(rd);
+    }
   } else {
-    if (gLiveImg) { gLiveImg.src = ''; gLiveImg.remove(); gLiveImg = null; }
-    // Collapse the preview if nothing is left to show
-    if (!gMainPreview.querySelector('img, video')) gMainPreview.classList.remove('active');
+    _gTeardownLive();
     gSetStatus('Live stopped.');
   }
 }
@@ -5341,11 +5810,15 @@ function renderTimelineRuler() {
   lanes.style.width = pixelWidth + 'px';
 
   if (tlClips.length === 0) {
+    lanes.style.height = '20px';
     const empty = document.createElement('div');
     empty.className = 'tl-empty-lane';
     empty.style.width = pixelWidth + 'px';
     empty.textContent = 'Run the graph to create a clip on the timeline';
     lanes.appendChild(empty);
+    // Phase 5: still render node KF lanes even with no clips
+    _renderNodeKfLanes(lanes, start, end, total, pixelWidth);
+    updatePlayhead();
     return;
   }
 
@@ -5642,6 +6115,9 @@ function renderTimelineRuler() {
     renderClipKeyframeLanes(selectedClip, start, total, pixelWidth, lanes);
   }
 
+  // ── Phase 5: Per-node param KF lanes for currently selected node ──
+  _renderNodeKfLanes(lanes, start, end, total, pixelWidth);
+
   // Update playhead position
   updatePlayhead();
 }
@@ -5686,6 +6162,248 @@ function renderClipKeyframeLanes(clip, start, total, pixelWidth, lanesContainer)
       laneDiv.appendChild(diamond);
     }
     lanesContainer.appendChild(laneDiv);
+  });
+  // Update container height so _renderNodeKfLanes can read it correctly
+  const kfCount = Object.values(pkf).filter(v => v && v.length > 0).length;
+  if (kfCount > 0) {
+    const baseY = (clip.lane + 1) * 40;
+    const needed = baseY + kfCount * 20;
+    const cur = parseInt(lanesContainer.style.height) || 0;
+    if (needed > cur) lanesContainer.style.height = needed + 'px';
+  }
+}
+
+// ── Phase 5: JS easing utilities (mirror of core/easing.py) ──────────────
+
+const _KF_EASING_COLORS = {
+  'linear': '#888', 'ease': '#6c8ef5', 'ease-in': '#f59e0b',
+  'ease-out': '#34d399', 'ease-in-out': '#6c8ef5',
+  'step': '#f87171', 'bounce': '#a78bfa', 'elastic': '#f472b6', 'cubic-bezier': '#2dd4bf',
+};
+
+function _kfCubicBezier(t, p1x, p1y, p2x, p2y) {
+  function sX(u) { return 3*(1-u)*(1-u)*u*p1x + 3*(1-u)*u*u*p2x + u*u*u; }
+  function sY(u) { return 3*(1-u)*(1-u)*u*p1y + 3*(1-u)*u*u*p2y + u*u*u; }
+  function dX(u) { return 3*(1-u)*(1-u)*p1x + 6*(1-u)*u*(p2x-p1x) + 3*u*u*(1-p2x); }
+  let g = t;
+  for (let i = 0; i < 8; i++) {
+    const x = sX(g) - t, dx = dX(g);
+    if (Math.abs(x) < 1e-7 || Math.abs(dx) < 1e-7) break;
+    g = Math.max(0, Math.min(1, g - x/dx));
+  }
+  return sY(g);
+}
+
+function _kfApplyEasing(t, easing, handle_in, handle_out) {
+  t = Math.max(0, Math.min(1, t));
+  if (easing === 'step') return t < 1.0 ? 0.0 : 1.0;
+  if (easing === 'bounce') {
+    if (t < 1/2.75) return 7.5625*t*t;
+    if (t < 2/2.75) { const u=t-1.5/2.75; return 7.5625*u*u+0.75; }
+    if (t < 2.5/2.75) { const u=t-2.25/2.75; return 7.5625*u*u+0.9375; }
+    const u=t-2.625/2.75; return 7.5625*u*u+0.984375;
+  }
+  if (easing === 'elastic') {
+    if (t === 0 || t === 1) return t;
+    return -Math.pow(2, 10*(t-1)) * Math.sin((t-1-0.075)*(2*Math.PI)/0.3);
+  }
+  const presets = { linear:[0,0,1,1], ease:[0.25,0.1,0.25,1], 'ease-in':[0.42,0,1,1], 'ease-out':[0,0,0.58,1], 'ease-in-out':[0.42,0,0.58,1] };
+  let p = presets[easing];
+  if (easing === 'cubic-bezier' && handle_in && handle_out) p = [handle_in[0], handle_in[1], handle_out[0], handle_out[1]];
+  if (!p) return t;
+  return _kfCubicBezier(t, p[0], p[1], p[2], p[3]);
+}
+
+function _kfEvaluateTrack(kfs, frame) {
+  if (!kfs || !kfs.length) return null;
+  const s = [...kfs].sort((a, b) => a.frame - b.frame);
+  if (frame <= s[0].frame) return s[0].value;
+  if (frame >= s[s.length-1].frame) return s[s.length-1].value;
+  for (let i = 0; i < s.length - 1; i++) {
+    const a = s[i], b = s[i+1];
+    if (a.frame <= frame && frame < b.frame) {
+      const w = b.frame - a.frame;
+      if (!w) return b.value;
+      const tE = _kfApplyEasing((frame - a.frame) / w, b.easing || 'linear', b.handle_in, b.handle_out);
+      if (typeof a.value === 'number' && typeof b.value === 'number') return a.value + (b.value - a.value) * tE;
+      return tE < 0.5 ? a.value : b.value;
+    }
+  }
+  return null;
+}
+
+// ── Phase 5: Per-node KF lanes in timeline ────────────────────────────────
+
+function _renderNodeKfLanes(lanes, start, end, total, pixelWidth) {
+  if (!gSelectedNode) return;
+  const node = gNodes.find(n => n.id === gSelectedNode);
+  if (!node || !node.paramKeyframes) return;
+  const pkf = node.paramKeyframes;
+  const paramNames = Object.keys(pkf).filter(p => pkf[p] && pkf[p].length > 0);
+  if (!paramNames.length) return;
+
+  const LANE_H = 24, HEADER_H = 18;
+  const curH = parseInt(lanes.style.height) || 0;
+  const def = gNodeDefs[node.method_id];
+  const nodeName = def ? def.name : node.id;
+
+  // Section header
+  const hdrDiv = document.createElement('div');
+  hdrDiv.style.cssText = `position:absolute;top:${curH}px;left:0;width:${pixelWidth}px;height:${HEADER_H}px;border-top:2px solid var(--accent);background:#181818;z-index:4;display:flex;align-items:center;`;
+  const hlbl = document.createElement('div');
+  hlbl.className = 'tl-node-kf-header';
+  hlbl.textContent = `⬤ ${nodeName}`;
+  hdrDiv.appendChild(hlbl);
+  lanes.appendChild(hdrDiv);
+
+  const newH = curH + HEADER_H + paramNames.length * LANE_H;
+  lanes.style.height = newH + 'px';
+
+  paramNames.forEach((pname, pi) => {
+    const kfs = [...(pkf[pname] || [])].sort((a, b) => a.frame - b.frame);
+    const laneY = curH + HEADER_H + pi * LANE_H;
+
+    const laneDiv = document.createElement('div');
+    laneDiv.className = 'tl-lane';
+    laneDiv.style.cssText = `position:absolute;top:${laneY}px;left:0;width:${pixelWidth}px;height:${LANE_H}px;display:flex;`;
+
+    const label = document.createElement('div');
+    label.className = 'tl-lane-label';
+    label.style.cssText = `line-height:${LANE_H}px;height:${LANE_H}px;font-size:9px;`;
+    label.title = pname;
+    label.textContent = pname;
+    laneDiv.appendChild(label);
+
+    const track = document.createElement('div');
+    track.className = 'tl-lane-track';
+    track.style.cssText = `position:absolute;left:100px;right:0;top:0;height:${LANE_H}px;`;
+
+    // Easing-curve SVG between adjacent KFs
+    if (kfs.length > 1) {
+      const vAll = kfs.map(k => typeof k.value === 'number' ? k.value : 0);
+      const vMin = Math.min(...vAll), vMax = Math.max(...vAll);
+      const vRange = Math.max(0.001, vMax - vMin);
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;overflow:visible;';
+      for (let i = 0; i < kfs.length - 1; i++) {
+        const kfA = kfs[i], kfB = kfs[i+1];
+        const relA = kfA.frame - start, relB = kfB.frame - start;
+        if (relB < 0 || relA > total) continue;
+        const x1 = relA * 12 + 6, x2 = relB * 12 + 6;
+        let pts = [];
+        for (let s = 0; s <= 24; s++) {
+          const t = s / 24;
+          const tE = _kfApplyEasing(t, kfB.easing || 'linear', kfB.handle_in, kfB.handle_out);
+          const vA = typeof kfA.value === 'number' ? kfA.value : 0;
+          const vB = typeof kfB.value === 'number' ? kfB.value : 0;
+          const v = vA + (vB - vA) * tE;
+          const yNorm = (v - vMin) / vRange;
+          const y = (LANE_H - 3) - yNorm * (LANE_H - 7);
+          pts.push(`${(x1 + (x2-x1)*t).toFixed(1)},${y.toFixed(1)}`);
+        }
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', 'M ' + pts.join(' L '));
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', _KF_EASING_COLORS[kfB.easing || 'linear'] || '#6c8ef5');
+        path.setAttribute('stroke-width', '1.5');
+        path.setAttribute('opacity', '0.55');
+        svg.appendChild(path);
+      }
+      track.appendChild(svg);
+    }
+
+    // Click-on-track → create KF
+    track.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || e.target.closest('.tl-kf-diamond')) return;
+      e.preventDefault();
+      const r = track.getBoundingClientRect();
+      const clickFrame = Math.max(start, Math.min(end, start + Math.round((e.clientX - r.left) / 12)));
+      if (kfs.some(k => k.frame === clickFrame)) {
+        document.getElementById('tl-frame').value = clickFrame;
+        document.getElementById('tl-frame').dispatchEvent(new Event('input'));
+        return;
+      }
+      // Value: interpolate existing track at cursor frame, else use node param default
+      const cursorFrame = parseInt(document.getElementById('tl-frame')?.value) || 0;
+      let curVal = kfs.length >= 2 ? (_kfEvaluateTrack(kfs, cursorFrame) ?? 0) :
+                   kfs.length === 1 ? kfs[0].value :
+                   (node.params[pname] ?? (def && def.params && def.params[pname] ? def.params[pname].default : 0));
+      if (typeof curVal !== 'number') curVal = 0;
+      if (!node.paramKeyframes[pname]) node.paramKeyframes[pname] = [];
+      node.paramKeyframes[pname].push({ frame: clickFrame, value: parseFloat(curVal.toFixed(4)), easing: 'ease-in-out', handle_in: null, handle_out: null });
+      node.paramKeyframes[pname].sort((a, b) => a.frame - b.frame);
+      document.getElementById('tl-frame').value = clickFrame;
+      document.getElementById('tl-frame').dispatchEvent(new Event('input'));
+      gSave(); renderTimelineRuler();
+      if (gSelectedNode === node.id && def) renderPerParamKeyframes(node, Object.entries(def.params || {}));
+      gShowToast(`KF: ${pname} @ F${clickFrame} = ${curVal.toFixed(3)}`);
+    });
+
+    // KF diamonds: drag + click + right-click-delete
+    kfs.forEach((kf, kfIdx) => {
+      const relFrame = kf.frame - start;
+      if (relFrame < 0 || relFrame > total) return;
+      const diamond = document.createElement('div');
+      diamond.className = 'tl-kf-diamond ' + (kf.easing || 'linear');
+      diamond.style.left = (relFrame * 12 + 6) + 'px';
+      const valStr = typeof kf.value === 'number' ? kf.value.toFixed(3) : kf.value;
+      diamond.title = `${pname} @ F${kf.frame} = ${valStr} (${kf.easing || 'linear'})  |  drag to move, right-click to delete`;
+
+      diamond.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.getElementById('tl-frame').value = kf.frame;
+        document.getElementById('tl-frame').dispatchEvent(new Event('input'));
+        if (gSelectedNode === node.id && def) openPerParamKfEditor(node, pname, kfIdx, kf);
+      });
+
+      diamond.addEventListener('contextmenu', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const arr = node.paramKeyframes[pname];
+        if (!arr) return;
+        const ai = arr.findIndex(k => k === kf);
+        arr.splice(ai < 0 ? kfIdx : ai, 1);
+        if (!arr.length) delete node.paramKeyframes[pname];
+        gSave(); renderTimelineRuler();
+        if (gSelectedNode === node.id && def) renderPerParamKeyframes(node, Object.entries(def.params || {}));
+        gShowToast(`Deleted KF: ${pname} @ F${kf.frame}`, true);
+      });
+
+      // Drag to reposition
+      let _dx0 = 0, _f0 = 0, _kfDragging = false;
+      diamond.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        e.stopPropagation(); e.preventDefault();
+        diamond.setPointerCapture(e.pointerId);
+        _dx0 = e.clientX; _f0 = kf.frame; _kfDragging = true;
+        diamond.classList.add('selected');
+        document.body.style.cursor = 'ew-resize';
+      });
+      diamond.addEventListener('pointermove', (e) => {
+        if (!_kfDragging) return;
+        const nf = Math.max(start, Math.min(end, _f0 + Math.round((e.clientX - _dx0) / 12)));
+        if (nf !== kf.frame) {
+          kf.frame = nf;
+          diamond.style.left = ((nf - start) * 12 + 6) + 'px';
+          document.getElementById('tl-frame').value = nf;
+          updatePlayhead();
+        }
+      });
+      const _kfUp = () => {
+        if (!_kfDragging) return;
+        _kfDragging = false; document.body.style.cursor = '';
+        diamond.classList.remove('selected');
+        node.paramKeyframes[pname].sort((a, b) => a.frame - b.frame);
+        gSave(); renderTimelineRuler();
+        if (gSelectedNode === node.id && def) renderPerParamKeyframes(node, Object.entries(def.params || {}));
+      };
+      diamond.addEventListener('pointerup', _kfUp);
+      diamond.addEventListener('pointercancel', _kfUp);
+
+      track.appendChild(diamond);
+    });
+
+    laneDiv.appendChild(track);
+    lanes.appendChild(laneDiv);
   });
 }
 
@@ -6292,13 +7010,17 @@ function gSerializeGraph() {
         render: !!n.render,
       };
       return {
-        id:         n.id,
-        method_id:  n.method_id,
-        params:     n.params || {},
-        animParams: n.animParams || {},
-        x:          Math.round(n.x),
-        y:          Math.round(n.y),
-        render:     !!n.render,
+        id:             n.id,
+        method_id:      n.method_id,
+        params:         n.params || {},
+        animParams:     n.animParams || {},
+        paramKeyframes: n.paramKeyframes || {},
+        start_frame:    n.start_frame || 0,
+        end_frame:      n.end_frame   || 0,
+        keyframes:      n.keyframes   || [],
+        x:              Math.round(n.x),
+        y:              Math.round(n.y),
+        render:         !!n.render,
       };
     }),
     edges: gEdges.map(e => ({
@@ -6341,7 +7063,7 @@ async function gLoadGraph(data) {
     } else {
       const def = gNodeDefs[n.method_id];
       if (!def) continue;
-      const node = { id: n.id, method_id: n.method_id, params: n.params || gDefaultParams(def), animParams: n.animParams || {}, x: n.x, y: n.y, render: !!n.render, dirty: true };
+      const node = { id: n.id, method_id: n.method_id, params: n.params || gDefaultParams(def), animParams: n.animParams || {}, paramKeyframes: n.paramKeyframes || {}, start_frame: n.start_frame || 0, end_frame: n.end_frame || 0, keyframes: n.keyframes || [], x: n.x, y: n.y, render: !!n.render, dirty: true };
       gNodes.push(node);
       gRenderNode(node);
     }
@@ -7277,6 +7999,298 @@ renderTimelineRuler();
     setTimeout(poll, 1200);
   });
 })();
+</script>
+
+<script>
+// ════════════════════════════════════════════════════════════════
+// DIAGNOSTICS TAB
+// ════════════════════════════════════════════════════════════════
+
+(function() {
+'use strict';
+
+// ── Rolling data store ─────────────────────────────────────────
+let diagWindow = 120;       // frames of history
+let diagPaused = false;
+let diagPolling = false;
+let diagTimer = null;
+
+const diagSeries = {
+  fps:    [],   // float[]
+  ms:     [],   // float[]
+};
+
+// ── Tiny canvas sparkline renderer ────────────────────────────
+const DIAG_COLORS = {
+  fps:    '#34d399',  // green
+  ms:     '#6c8ef5',  // blue
+  grid:   'rgba(255,255,255,0.04)',
+};
+
+function diagGetCSSVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function diagDrawLine(canvas, data, color, opts = {}) {
+  const dpr  = window.devicePixelRatio || 1;
+  const W    = canvas.clientWidth  || canvas.width  / dpr;
+  const H    = canvas.clientHeight || canvas.height / dpr;
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const bg = diagGetCSSVar('--bg2') || '#1a1c1f';
+  ctx.clearRect(0, 0, W, H);
+
+  if (!data || data.length < 2) {
+    ctx.fillStyle = diagGetCSSVar('--muted2') || '#5f636c';
+    ctx.font = '11px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('waiting for data…', W / 2, H / 2 + 4);
+    return;
+  }
+
+  const window_ = opts.window || diagWindow;
+  const slice   = data.slice(-window_);
+  const min     = opts.min !== undefined ? opts.min : Math.min(...slice);
+  const max_    = opts.max !== undefined ? opts.max : Math.max(...slice);
+  const range   = Math.max(max_ - min, 1);
+
+  // Grid lines
+  ctx.strokeStyle = DIAG_COLORS.grid;
+  ctx.lineWidth = 1;
+  for (let i = 1; i < 4; i++) {
+    const y = H - (i / 4) * H;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+
+  // Area fill
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, color + '55');
+  grad.addColorStop(1, color + '08');
+  ctx.beginPath();
+  ctx.moveTo(0, H);
+  slice.forEach((v, i) => {
+    const x = (i / (slice.length - 1)) * W;
+    const y = H - ((v - min) / range) * (H * 0.85) - H * 0.05;
+    if (i === 0) ctx.lineTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.lineTo(W, H);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.lineJoin = 'round';
+  slice.forEach((v, i) => {
+    const x = (i / (slice.length - 1)) * W;
+    const y = H - ((v - min) / range) * (H * 0.85) - H * 0.05;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // Min/max labels
+  ctx.fillStyle = diagGetCSSVar('--muted2') || '#5f636c';
+  ctx.font = '9px system-ui';
+  ctx.textAlign = 'right';
+  ctx.fillText(max_.toFixed(1), W - 2, 10);
+  ctx.fillText(min.toFixed(1), W - 2, H - 3);
+}
+
+// ── DOM refs ───────────────────────────────────────────────────
+let _diagDomReady = false;
+let _elFpsChart, _elMsChart, _elNodeBars, _elSplitCompute, _elSplitOverhead,
+    _elComputeMs, _elOverheadMs, _elStatusPill, _elPauseBtn;
+
+function diagBindDom() {
+  if (_diagDomReady) return;
+  _elFpsChart       = document.getElementById('diag-fps-chart');
+  _elMsChart        = document.getElementById('diag-ms-chart');
+  _elNodeBars       = document.getElementById('diag-node-bars');
+  _elSplitCompute   = document.getElementById('diag-split-compute');
+  _elSplitOverhead  = document.getElementById('diag-split-overhead');
+  _elComputeMs      = document.getElementById('diag-compute-ms');
+  _elOverheadMs     = document.getElementById('diag-overhead-ms');
+  _elStatusPill     = document.getElementById('diag-status-pill');
+  _elPauseBtn       = document.getElementById('diag-pause-btn');
+  _diagDomReady = true;
+}
+
+// ── Update readout helpers ─────────────────────────────────────
+function diagEl(id, txt) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = txt;
+}
+
+// ── Render one diagnostics snapshot ───────────────────────────
+function diagRender(d) {
+  diagBindDom();
+
+  const running = d.running;
+  _elStatusPill.textContent = running ? 'live' : 'stopped';
+  _elStatusPill.className   = 'diag-status-pill' + (running ? ' live' : '');
+
+  if (!running) return;
+
+  // Push to rolling series
+  diagSeries.fps.push(d.fps   || 0);
+  diagSeries.ms.push( d.cook_ms || 0);
+
+  // Trim to window
+  const wl = diagWindow;
+  if (diagSeries.fps.length > wl) diagSeries.fps.splice(0, diagSeries.fps.length - wl);
+  if (diagSeries.ms.length  > wl) diagSeries.ms.splice( 0, diagSeries.ms.length  - wl);
+
+  // Numeric readouts
+  diagEl('dkv-fps',    (d.fps || 0).toFixed(1));
+  diagEl('dkv-ms',     (d.cook_ms || 0).toFixed(1));
+  const msArr = diagSeries.ms;
+  const avg   = msArr.length ? (msArr.reduce((a,b) => a+b, 0) / msArr.length) : 0;
+  const mn    = msArr.length ? Math.min(...msArr) : 0;
+  const mx    = msArr.length ? Math.max(...msArr) : 0;
+  diagEl('dkv-avg',    avg.toFixed(1));
+  diagEl('dkv-minmax', mn.toFixed(0) + ' / ' + mx.toFixed(0));
+  diagEl('dkv-frame',  d.frame || 0);
+  diagEl('dkv-nodes',  (d.active_nodes || 0) + ' / ' + (d.active_edges || 0) + ' edges');
+  diagEl('dkv-res',    (d.canvas_w || '?') + '×' + (d.canvas_h || '?'));
+  diagEl('dkv-cache',  d.sim_cache_entries != null ? d.sim_cache_entries : '–');
+
+  // Charts
+  diagDrawLine(_elFpsChart, diagSeries.fps, DIAG_COLORS.fps, { min: 0 });
+  diagDrawLine(_elMsChart,  diagSeries.ms,  DIAG_COLORS.ms,  { min: 0 });
+
+  // Per-node timing bars
+  const timings  = d.node_timings  || {};
+  const names    = d.node_names    || {};
+  const totalMs  = Object.values(timings).reduce((a, b) => a + b, 0) || 1;
+  const nodeIds  = Object.keys(timings).sort((a, b) => timings[b] - timings[a]);
+
+  // Re-use or rebuild rows (keyed by node id)
+  const existingRows = {};
+  _elNodeBars.querySelectorAll('.diag-nbar-row').forEach(r => {
+    existingRows[r.dataset.nid] = r;
+  });
+  const seenIds = new Set();
+  nodeIds.forEach(nid => {
+    seenIds.add(nid);
+    const ms  = timings[nid];
+    const pct = Math.min(100, (ms / totalMs) * 100);
+    const lbl = names[nid] || nid;
+    const isGpu = lbl.toLowerCase().startsWith('gpu') || (d.gpu_nodes && ms > 0);
+
+    let row = existingRows[nid];
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 'diag-nbar-row';
+      row.dataset.nid = nid;
+      row.innerHTML = `
+        <span class="diag-nbar-label" title="${lbl}">${lbl}</span>
+        <div class="diag-nbar-track"><div class="diag-nbar-fill${isGpu ? ' gpu' : ''}"></div></div>
+        <span class="diag-nbar-val">0ms</span>`;
+      _elNodeBars.appendChild(row);
+    }
+    row.querySelector('.diag-nbar-label').textContent = lbl;
+    row.querySelector('.diag-nbar-fill').style.width  = pct.toFixed(1) + '%';
+    row.querySelector('.diag-nbar-val').textContent   = ms.toFixed(1) + 'ms';
+  });
+  // Remove stale rows
+  Object.keys(existingRows).forEach(nid => {
+    if (!seenIds.has(nid)) existingRows[nid].remove();
+  });
+
+  // Overhead split bar
+  const computeMs  = d.node_compute_ms || 0;
+  const overheadMs = d.overhead_ms     || 0;
+  const totalExec  = computeMs + overheadMs || 1;
+  const computePct  = (computeMs  / totalExec * 100).toFixed(1);
+  const overheadPct = (overheadMs / totalExec * 100).toFixed(1);
+  _elSplitCompute.style.width  = computePct  + '%';
+  _elSplitOverhead.style.width = overheadPct + '%';
+  _elSplitCompute.textContent  = computePct  > 15 ? 'Compute ' + computePct  + '%' : '';
+  _elSplitOverhead.textContent = overheadPct > 15 ? 'Overhead ' + overheadPct + '%' : '';
+  _elComputeMs.textContent  = 'Compute: '  + computeMs.toFixed(1)  + 'ms';
+  _elOverheadMs.textContent = 'Overhead: ' + overheadMs.toFixed(1) + 'ms';
+
+  // Cache & data-flow chips
+  diagEl('dfc-hits',   d.total_cache_hits   || 0);
+  diagEl('dfc-misses', d.total_cache_misses || 0);
+  diagEl('dfc-inv',    d.last_invalidated   || 0);
+  diagEl('dfc-gpu',    (d.gpu_nodes  || 0) + ' / ' + ((d.gpu_nodes || 0) + (d.cpu_nodes || 0)));
+  diagEl('dfc-mem',    d.mem_edges   || 0);
+  diagEl('dfc-disk',   d.disk_edges  || 0);
+
+  // Incremental re-cook counters (Phase 6)
+  if (d.nodes_cooked != null) diagEl('dfc-cooked',  d.nodes_cooked);
+  if (d.nodes_skipped != null) diagEl('dfc-skipped', d.nodes_skipped);
+}
+
+// ── Polling ────────────────────────────────────────────────────
+async function diagPoll() {
+  if (diagPaused) return;
+  try {
+    const r = await fetch('/api/graph/diagnostics');
+    if (!r.ok) return;
+    const d = await r.json();
+    diagRender(d);
+  } catch (_) {}
+}
+
+function diagEnsurePolling() {
+  diagBindDom();
+  if (diagPolling) return;
+  diagPolling = true;
+  const tick = () => {
+    diagPoll();
+    diagTimer = setTimeout(tick, 400);
+  };
+  tick();
+}
+
+// ── Controls ───────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  const pauseBtn  = document.getElementById('diag-pause-btn');
+  const clearBtn  = document.getElementById('diag-clear-btn');
+  const winSelect = document.getElementById('diag-window-select');
+
+  pauseBtn.addEventListener('click', () => {
+    diagPaused = !diagPaused;
+    pauseBtn.textContent = diagPaused ? 'Resume' : 'Pause';
+    pauseBtn.classList.toggle('active', diagPaused);
+  });
+
+  clearBtn.addEventListener('click', () => {
+    diagSeries.fps.length = 0;
+    diagSeries.ms.length  = 0;
+    diagBindDom();
+    if (_elNodeBars) _elNodeBars.innerHTML = '';
+    diagEl('dkv-fps', '–'); diagEl('dkv-ms', '–');
+    diagEl('dkv-avg', '–'); diagEl('dkv-minmax', '–');
+    if (_elFpsChart) diagDrawLine(_elFpsChart, [], DIAG_COLORS.fps);
+    if (_elMsChart)  diagDrawLine(_elMsChart,  [], DIAG_COLORS.ms);
+  });
+
+  winSelect.addEventListener('change', () => {
+    diagWindow = parseInt(winSelect.value, 10);
+  });
+});
+
+// Resize charts when window resizes
+window.addEventListener('resize', () => {
+  if (!_diagDomReady) return;
+  if (diagSeries.fps.length) diagDrawLine(_elFpsChart, diagSeries.fps, DIAG_COLORS.fps, { min: 0 });
+  if (diagSeries.ms.length)  diagDrawLine(_elMsChart,  diagSeries.ms,  DIAG_COLORS.ms,  { min: 0 });
+});
+
+// Expose for tab-switch handler, WS feed, and external callers (e.g. Playwright)
+window.diagEnsurePolling = diagEnsurePolling;
+window.diagRender        = diagRender;
+window.diagIsPaused      = () => diagPaused;
+
+})(); // end IIFE
 </script>
 
 </body>

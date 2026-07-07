@@ -16,7 +16,7 @@ try:
 except ImportError:
     _has_cv2 = False
 
-@method(id="43", name="Density Heatmap", category="math_art", tags=["density","fast", "expanded"],
+@method(id="43", name="Density Heatmap", category="math_art", new_image_contract=True, tags=["density","fast", "expanded"],
         inputs={"image_in": "IMAGE"},
         outputs={"image": "IMAGE", "field": "FIELD"},
          params={"points":{"description":"point count","min":1000,"max":20000,"default":5000},
@@ -113,10 +113,10 @@ def method_density_heatmap(out_dir: Path, seed: int, params=None):
     pts = []
 
     # If an upstream image is wired in, use it as the density source
-    wired_input_path = params.get("input_image", "")
-    if wired_input_path:
+    _inp = params.get("_input_image")
+    if _inp is not None:
         try:
-            img_arr = load_input(wired_input_path, W, H)
+            img_arr = _inp
             # Use luminance as density
             density = 0.299 * img_arr[:, :, 0] + 0.587 * img_arr[:, :, 1] + 0.114 * img_arr[:, :, 2]
             density = norm(density)

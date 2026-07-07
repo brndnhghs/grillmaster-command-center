@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import math
+import time
 import traceback
 import uuid
 from collections import deque
@@ -279,6 +280,39 @@ def _evaluate_param_track(keyframes: list[dict], frame: int) -> Any | None:
     return None
 
 
+# ── Incremental-recook helpers ────────────────────────────────────────
+
+
+def _compute_live_dirty(
+    nodes: list[dict],
+    edges: list[dict],
+    initially_dirty: set[str],
+) -> set[str]:
+    """Propagate an initial dirty set forward through the topology.
+
+    Returns the full set of node IDs that must re-cook this frame:
+    the initial set PLUS every node that is transitively downstream of
+    any initially-dirty node.  Feedback edges are excluded from cascading
+    (they carry the *previous* frame's output and break the DAG cycle).
+    """
+    dirty = set(initially_dirty)
+    # Build adjacency (non-feedback only)
+    downstream: dict[str, set[str]] = {n["id"]: set() for n in nodes}
+    for e in edges:
+        if not e.get("feedback", False):
+            downstream.setdefault(e["src_node"], set()).add(e["dst_node"])
+
+    # BFS forward
+    queue = list(dirty)
+    while queue:
+        nid = queue.pop()
+        for child in downstream.get(nid, ()):
+            if child not in dirty:
+                dirty.add(child)
+                queue.append(child)
+    return dirty
+
+
 # ── Graph executor ────────────────────────────────────────────────────
 
 class GraphError(Exception):
@@ -335,6 +369,8 @@ class GraphExecutor:
         # Simulation state cache: keyed by (node_id, seed) → list of ndarray frames
         self._sim_cache: dict[tuple[str, int], list] = {}
         self._sim_params_hash: dict[str, int] = {}
+        # Diagnostics for the last completed frame — written by execute(), read by server
+        self.last_frame_stats: dict = {}
 
     def execute(
         self,
@@ -382,6 +418,18 @@ class GraphExecutor:
         ran: dict[str, bool] = {}  # node_id → actually executed this frame
         node_errors: dict[str, str] = {}  # node_id → traceback text
 
+        # Diagnostics counters — accumulated per frame
+        _diag_node_timings: dict[str, float] = {}   # node_id → ms actually spent in fn()
+        _diag_cache_hits:   int = 0
+        _diag_cache_misses: int = 0
+        _diag_mem_edges:    int = 0  # edges passed as ndarray (no disk write)
+        _diag_disk_edges:   int = 0  # edges written to _input.png
+        _diag_gpu_nodes:    int = 0
+        _diag_cpu_nodes:    int = 0
+        _diag_nodes_skipped: int = 0
+        _diag_nodes_cooked:  int = 0
+        _diag_exec_start = time.monotonic()
+
         for node_id in order:
             node = node_map[node_id]
 
@@ -408,6 +456,15 @@ class GraphExecutor:
 
             # ── Selective recooking (dirty flag) ──────────────────────────────
             if not node.dirty and not upstream_ran:
+                # Fast path: in-memory live mode — reuse _prev_outputs if available.
+                # This is the main Phase 6 optimisation; disk cache is the fallback
+                # for the single-frame / sequence render paths.
+                if self._in_memory and node_id in self._prev_outputs:
+                    flat_outputs[node_id] = self._prev_outputs[node_id]
+                    ran[node_id] = False
+                    _diag_nodes_skipped += 1
+                    continue
+
                 _cache_dir = self.out_dir / node_id
                 if _cache_dir.exists():
                     _pngs_c = sorted(
@@ -470,8 +527,13 @@ class GraphExecutor:
                 if (sim_cache_key in self._sim_cache
                         and self._sim_params_hash.get(node_id) == params_hash):
                     cached = self._sim_cache[sim_cache_key]
-                    if frame < len(cached):
-                        arr = cached[frame]
+                    if cached:
+                        # Loop the cooked frames — never re-cook a cached sim.
+                        # The live window (LIVE_TOTAL_FRAMES) can exceed the
+                        # cooked frame count; without the modulo, frames past the
+                        # end fell through to a full re-cook every frame (~2 fps
+                        # after the first few seconds of smooth playback).
+                        arr = cached[frame % len(cached)]
                         flat_outputs[node_id] = {
                             "image": arr,
                             "luminance": np.mean(arr, axis=-1),
@@ -480,6 +542,7 @@ class GraphExecutor:
                             "mask": None,
                         }
                         ran[node_id] = True
+                        _diag_cache_hits += 1
                         continue
 
                 # Need to (re)run the simulation
@@ -515,6 +578,7 @@ class GraphExecutor:
                 sim_params["frame_seed"] = node_seed
 
                 set_job_context(on_frame=_on_capture, cancel_event=_cancel_evt)
+                _t0_arch_a = time.monotonic()
                 try:
                     try:
                         meta.fn(node_dir_sim, node_seed, params=sim_params)
@@ -526,6 +590,8 @@ class GraphExecutor:
                     pass
                 finally:
                     clear_job_context()
+                _diag_node_timings[node_id] = (time.monotonic() - _t0_arch_a) * 1000.0
+                _diag_cache_misses += 1
 
                 # Collect captured frames
                 sim_frames = get_frames(meta.id) or _captured
@@ -547,7 +613,8 @@ class GraphExecutor:
                     self._sim_cache[sim_cache_key] = sim_frames
                     self._sim_params_hash[node_id] = params_hash
 
-                    arr = sim_frames[min(frame, len(sim_frames) - 1)]
+                    # Loop the cooked frames (matches the cache-hit path above).
+                    arr = sim_frames[frame % len(sim_frames)]
                     flat_outputs[node_id] = {
                         "image": arr,
                         "luminance": float(np.mean(arr)),
@@ -768,13 +835,19 @@ class GraphExecutor:
                         upstream_arr = 1 - (1 - upstream_arr) * (1 - _cand.astype(np.float32))
 
             if upstream_arr is not None:
-                # Write upstream to disk so methods can load it via load_input(params["input_image"])
-                upstream_path = node_dir / "_input.png"
-                from PIL import Image as _PILpre2
-                _PILpre2.fromarray((upstream_arr * 255).astype(np.uint8)).save(str(upstream_path))
-                run_params["input_image"] = str(upstream_path)
                 # Inject in-memory array for new-contract methods
                 run_params["_input_image"] = upstream_arr
+                # Legacy methods (new_image_contract=False) call load_input(params["input_image"])
+                # so they need the upstream image written to disk. New-contract methods skip this
+                # entirely when running in_memory (live loop), eliminating the per-edge PNG write.
+                if not (self._in_memory and meta.new_image_contract):
+                    upstream_path = node_dir / "_input.png"
+                    from PIL import Image as _PILpre2
+                    _PILpre2.fromarray((upstream_arr * 255).astype(np.uint8)).save(str(upstream_path))
+                    run_params["input_image"] = str(upstream_path)
+                    _diag_disk_edges += 1
+                else:
+                    _diag_mem_edges += 1
                 # Methods whose source param has an "input_image" choice need it selected explicitly
                 src_spec = (meta.params or {}).get("source", {})
                 if isinstance(src_spec, dict) and "input_image" in (src_spec.get("choices") or []):
@@ -804,18 +877,28 @@ class GraphExecutor:
             from image_pipeline.core import utils as _utils_mod
             if self._in_memory:
                 _original_save_fn = _utils_mod.save
-                def _capturing_save(arr_to_save, name, out_dir_cap):
+                _skip_disk = meta.new_image_contract  # True → skip disk write entirely
+                def _capturing_save(arr_to_save, name, out_dir_cap,
+                                    _skip=_skip_disk, _orig=_original_save_fn):
                     _captured_output[node_id] = (
                         arr_to_save.copy()
                         if isinstance(arr_to_save, np.ndarray)
                         else np.array(arr_to_save)
                     )
-                    # Still write to disk for methods that need the file
-                    _original_save_fn(arr_to_save, name, out_dir_cap)
+                    if not _skip:
+                        # Legacy methods may read the PNG back via load_input; keep writing.
+                        _orig(arr_to_save, name, out_dir_cap)
                 _utils_mod.save = _capturing_save
 
             # ── Call the method ──
+            _diag_nodes_cooked += 1
             _fn_result = None
+            _is_gpu = "gpu" in (meta.tags or [])
+            if _is_gpu:
+                _diag_gpu_nodes += 1
+            else:
+                _diag_cpu_nodes += 1
+            _t0_node = time.monotonic()
             try:
                 _fn_result = meta.fn(node_dir, node_seed, params=run_params)
             except TypeError as _te:
@@ -835,10 +918,14 @@ class GraphExecutor:
                     "mask":      None,
                 }
                 ran[node_id] = True
+                _diag_node_timings[node_id] = (time.monotonic() - _t0_node) * 1000.0
+                _diag_cache_misses += 1
                 if self._in_memory and _original_save_fn is not None:
                     _utils_mod.save = _original_save_fn
                 self._captured_output = _captured_output
                 continue
+            _diag_node_timings[node_id] = (time.monotonic() - _t0_node) * 1000.0
+            _diag_cache_misses += 1
 
             # ── Read back output ────────────────────────────────────
             arr = None
@@ -888,7 +975,9 @@ class GraphExecutor:
                     extra_outputs[_key] = np.load(str(_path))
 
             # ── Write to disk (for timeline playback) ──
-            if arr is not None:
+            # New-contract methods in live (in_memory) mode skip this; the in-memory ndarray
+            # is already in flat_outputs and timeline playback uses separate non-live renders.
+            if arr is not None and not (self._in_memory and meta.new_image_contract):
                 from PIL import Image as _PIL_write
                 arr_u8 = (np.clip(arr, 0, 1) * 255).astype(np.uint8) if arr.dtype != np.uint8 else arr
                 _PIL_write.fromarray(arr_u8).save(str(node_dir / f"{meta.filename()}"))
@@ -935,6 +1024,24 @@ class GraphExecutor:
             ran[node_id] = True
 
         self._prev_outputs = flat_outputs
+
+        # ── Write diagnostics for this frame ──────────────────────────
+        _total_node_ms = sum(_diag_node_timings.values())
+        _total_exec_ms = (time.monotonic() - _diag_exec_start) * 1000.0
+        self.last_frame_stats = {
+            "node_timings":   _diag_node_timings,
+            "cache_hits":     _diag_cache_hits,
+            "cache_misses":   _diag_cache_misses,
+            "mem_edges":      _diag_mem_edges,
+            "disk_edges":     _diag_disk_edges,
+            "gpu_nodes":      _diag_gpu_nodes,
+            "cpu_nodes":      _diag_cpu_nodes,
+            "nodes_cooked":   _diag_nodes_cooked,
+            "nodes_skipped":  _diag_nodes_skipped,
+            "node_compute_ms": round(_total_node_ms, 2),
+            "overhead_ms":    round(max(0.0, _total_exec_ms - _total_node_ms), 2),
+        }
+
         return flat_outputs, terminal_id, node_errors
 
     def _execute_group_node(
@@ -1007,6 +1114,58 @@ class GraphExecutor:
             return sub_outputs[terminal_id], sub_errors
 
         return {}, sub_errors
+
+    def selective_invalidate(
+        self,
+        old_nodes: list[dict],
+        new_nodes: list[dict],
+        old_edges: list[dict],
+        new_edges: list[dict],
+        seed: int,
+    ) -> int:
+        """Invalidate only the sim-cache entries that must be re-cooked after a hot-swap.
+
+        Call this on the persistent executor before re-using it with an updated
+        graph. Returns the number of cache entries cleared.
+
+        Rules:
+        - Topology change (edge set changed) → flush everything.
+        - Node removed → remove its cache entry.
+        - Node's non-volatile params changed → remove its cache entry.
+        - Node's params unchanged (only volatile keys like 'time' differ) → keep cache.
+        """
+        def _edge_sig(e: dict) -> tuple:
+            return (e.get("src_node", ""), e.get("src_port", ""),
+                    e.get("dst_node", ""), e.get("dst_port", ""))
+
+        old_topo = sorted(_edge_sig(e) for e in old_edges)
+        new_topo = sorted(_edge_sig(e) for e in new_edges)
+
+        if old_topo != new_topo:
+            n = len(self._sim_cache)
+            self._sim_cache.clear()
+            self._sim_params_hash.clear()
+            return n
+
+        old_map = {n["id"]: n for n in old_nodes}
+        new_map = {n["id"]: n for n in new_nodes}
+        invalidated = 0
+
+        for nid in list(old_map):
+            if nid not in new_map:
+                if self._sim_cache.pop((nid, seed), None) is not None:
+                    invalidated += 1
+                self._sim_params_hash.pop(nid, None)
+
+        for nid, node in new_map.items():
+            new_hash = _node_params_hash(node.get("params", {}))
+            old_hash = self._sim_params_hash.get(nid)
+            if old_hash is not None and old_hash != new_hash:
+                if self._sim_cache.pop((nid, seed), None) is not None:
+                    invalidated += 1
+                self._sim_params_hash.pop(nid, None)
+
+        return invalidated
 
     def _find_terminal(
         self, nodes: list[GraphNode], edges: list[GraphEdge], order: list[str]

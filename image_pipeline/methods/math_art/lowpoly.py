@@ -16,7 +16,7 @@ try:
 except ImportError:
     _has_cv2 = False
 
-@method(id="73", name="Low Poly", category="math_art", tags=["triangulation", "fast", "expanded"],
+@method(id="73", name="Low Poly", category="math_art", new_image_contract=True, tags=["triangulation", "fast", "expanded"],
          inputs={"image_in": "IMAGE"},
          params={"points":{"description":"triangulation points","min":50,"max":500,"default":200},
                  "jitter":{"description":"jitter","min":2,"max":30,"default":10},
@@ -87,10 +87,10 @@ def method_lowpoly(out_dir: Path, seed: int, params=None):
     pal = PALETTES.get(pal_name, [])
 
     # If an upstream image is wired in, use it as the background
-    wired_input_path = params.get("input_image", "")
-    if wired_input_path:
+    _inp = params.get("_input_image")
+    if _inp is not None:
         try:
-            img_arr = load_input(wired_input_path, W, H)
+            img_arr = _inp
             img = img_arr.copy()
             bg_style = "__wired__"
         except (FileNotFoundError, OSError):

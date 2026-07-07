@@ -43,7 +43,7 @@ def _render_sandpile_preview(grid, colors, size, h, w):
     result = cv2.resize(result.astype(np.float32) / 255.0, (w, h), interpolation=cv2.INTER_NEAREST)
     return result
 
-@method(id="53", name="Metaballs", category="simulations", tags=["organic", "blob", "animation", "expanded"],
+@method(id="53", name="Metaballs", category="simulations", new_image_contract=True, tags=["organic", "blob", "animation", "expanded"],
          inputs={"image_in": "IMAGE"},
          params={
              "balls": {"description": "metaball count", "min": 3, "max": 80, "default": 20},
@@ -803,13 +803,7 @@ def method_metaballs(out_dir: Path, seed: int, params=None):
 
         # ── Background rendering ────────────────────────────────────────
         # If an upstream image is wired in, use it as the background
-        _wired_bg = None
-        wired_input_path = params.get("input_image", "")
-        if wired_input_path:
-            try:
-                _wired_bg = load_input(wired_input_path, W, H)
-            except (FileNotFoundError, OSError):
-                pass
+        _wired_bg = params.get("_input_image")
 
         def _render_bg():
             if _wired_bg is not None:

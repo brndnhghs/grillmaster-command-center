@@ -29,7 +29,7 @@ def _render_flame_preview(density, colors, h, w):
         result = np.random.rand(h, w, 3).astype(np.float32) * 0.08 + 0.02
     return result
 
-@method(id="67", name="Sierpinski Carpet", category="fractals", tags=["deterministic", "fast", "expanded", "animation"],
+@method(id="67", name="Sierpinski Carpet", category="fractals", new_image_contract=True, tags=["deterministic", "fast", "expanded", "animation"],
         outputs={"image": "IMAGE", "field": "FIELD"},
          params={
     "depth": {"description": "subdivision depth (1-7)", "min": 1, "max": 7, "default": 5},
@@ -396,9 +396,8 @@ def method_sierpinski(out_dir: Path, seed: int, params=None):
 
         elif color_mode == "input_blend":
             # Blend fractal with input image
-            if params.get('input_image'):
-                from ...core.utils import load_input
-                input_img = load_input(params['input_image'])
+            if params.get('_input_image') is not None:
+                input_img = params['_input_image']
                 if input_img.shape[:2] != (H, W):
                     input_img = np.array(Image.fromarray((input_img * 255).astype(np.uint8)).resize((W, H))) / 255.0
             else:
@@ -512,9 +511,8 @@ def method_sierpinski(out_dir: Path, seed: int, params=None):
             result = np.roll(result * 255, int(hue_shift * 255), axis=-1) / 255.0
 
         # ── Overlay input image ──
-        if overlay_alpha > 0 and params.get('input_image'):
-            from ...core.utils import load_input
-            overlay = load_input(params['input_image'])
+        if overlay_alpha > 0 and params.get('_input_image') is not None:
+            overlay = params['_input_image']
             if overlay.shape[:2] != (H, W):
                 overlay = np.array(Image.fromarray((overlay * 255).astype(np.uint8)).resize((W, H))) / 255.0
             result = result * (1.0 - overlay_alpha) + overlay * overlay_alpha

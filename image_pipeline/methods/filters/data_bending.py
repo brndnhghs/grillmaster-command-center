@@ -20,6 +20,7 @@ except ImportError:
 @method(
     id="59",
     name="Data Bending",
+    new_image_contract=True,
     category="filters",
     tags=["glitch", "byte", "expanded", "animation"],
     params={
@@ -113,10 +114,9 @@ def method_data_bending(out_dir: Path, seed: int, params=None):
 
     # ── Generate source image ──
     def _make_source():
-        if params.get("input_image"):
-            from ...core.utils import load_input
-            img_arr = load_input(params["input_image"])
-            return Image.fromarray((img_arr * 255).astype(np.uint8))
+        _inp = params.get("_input_image")
+        if _inp is not None:
+            return Image.fromarray((_inp * 255).astype(np.uint8))
         elif source == "noise":
             # Use rng for deterministic noise
             n = np_rng.standard_normal((H, W, 3)).astype(np.float32) * noise_amp + 0.5

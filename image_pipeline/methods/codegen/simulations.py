@@ -1,16 +1,18 @@
-"""#18 Cellular Automata — Conway's Game of Life with SCALAR-driven animation.
+"""#18 Cellular Automata — Conway's Game of Life, persistent stateful sim.
 
-Refactored per node-refactor-contract: Architecture B (stateless, one call = one frame).
-Animation is driven by wired SCALAR inputs instead of 20 internal anim_mode branches.
+Architecture B with persistent per-node state: each output frame is the previous
+frame stepped forward one generation. The grid persists across calls keyed on
+the node, so the sim runs forever at constant per-frame cost — it never cooks a
+window, loops, or re-simulates from the seed.
 """
 from __future__ import annotations
 import math
+import threading as _threading
 from pathlib import Path
 
 import numpy as np
 
 from ...core.registry import method
-from ...core.animation import capture_frame
 from ...core.utils import W, H
 
 
@@ -202,13 +204,25 @@ def _render_pixels(grid: np.ndarray, cell_size: int, color_mode: str, hue_shift:
     return np.clip(rgb, 0.0, 1.0)
 
 
-# ── The Method (Architecture A — stateful, cooked once) ──
+# ── Persistent per-node simulation state ──────────────────────────────
+# A cellular automaton is stateful: frame N is just frame N-1 stepped once.
+# We keep the LAST grid per node and advance it one step per output frame, so
+# the sim runs forever at O(1) per frame — no cooking a window, no looping, no
+# re-simulating from the seed. State is keyed on the node's output directory
+# (which ends in the node id), so each node has its own independent sim and
+# concurrent nodes never collide.
+_CA_STATE: dict[str, dict] = {}
+_CA_STATE_LOCK = _threading.Lock()
+_CA_STATE_MAX = 64  # cap stored nodes so long sessions don't grow unbounded
+
+
+# ── The Method (Architecture B — persistent stateful, one step per frame) ──
 
 @method(
     id="18",
     name="Cellular Automata",
     category="codegen",
-    tags=["cellular", "automata", "game-of-life", "animation", "simulation", "expanded"],
+    tags=["cellular", "automata", "game-of-life", "animation", "expanded"],
     inputs={
         "seed_image": "IMAGE",
         "seed_threshold": "SCALAR",
@@ -255,10 +269,6 @@ def _render_pixels(grid: np.ndarray, cell_size: int, color_mode: str, hue_shift:
             "description": "generations advanced per output frame (evolution speed)",
             "default": 1.0,
         },
-        "n_frames": {
-            "description": "frames to cook (the sim steps forward once per frame, so it never re-simulates from scratch — constant cost per frame)",
-            "min": 30, "max": 600, "default": 120,
-        },
         "hue_shift": {
             "description": "hue shift for color cycling (0-1)",
             "min": 0.0, "max": 1.0, "default": 0.0,
@@ -290,22 +300,22 @@ def _render_pixels(grid: np.ndarray, cell_size: int, color_mode: str, hue_shift:
     },
 )
 def method_cellular(out_dir: Path, seed: int, params=None):
-    """Conway's Game of Life — stateful cellular automata (Architecture A).
+    """Conway's Game of Life — persistent stateful cellular automaton.
 
-    The grid is cooked once: it persists across the captured frames, stepping
-    forward a fixed number of generations per frame rather than re-simulating
-    from the seed each frame. The executor caches the frames and serves them
-    at O(1), so per-frame cost stays constant however long the timeline runs
-    (fixing the live slowdown of the old stateless model).
+    Each output frame is the previous frame stepped forward `speed` generations.
+    The grid persists across calls in a per-node store (keyed on `out_dir`, which
+    ends in the node id), so the sim runs FOREVER at constant per-frame cost — it
+    never cooks a window, loops, or re-simulates from the seed. In live mode the
+    injected `time` (=float(frame), unbounded and monotonic) drives it onward
+    without bound; changing a structural param (rule / pattern / density / cell
+    size / seed image) rebuilds from the seed; scrubbing the timeline backward
+    (clock goes down) also rebuilds so clips stay deterministic.
 
-    Params (`rule`, `size`, `seed_pattern`, `color`, `density`, `speed`) and
-    the wired SCALAR overrides are sampled once at the start of the cook.
-    Because the whole sequence is produced in one call, wired channel nodes
-    (LFO/Counter/…) set the sim up but do not modulate it per output frame —
-    that is the tradeoff for constant-cost, non-slowing playback.
+    Render-only params (`color`, `hue_shift`, age) and step params (`inject_rate`,
+    `wave_phase`, `speed`) are read fresh every frame, so wired channel nodes DO
+    modulate the running sim live.
 
-    Wire an IMAGE node into seed_image to use a bitmap as the initial grid
-    state (resized to grid dims, grayscale, thresholded by seed_threshold).
+    Wire an IMAGE node into seed_image to use a bitmap as the initial grid state.
     """
     if params is None:
         params = {}
@@ -367,7 +377,7 @@ def method_cellular(out_dir: Path, seed: int, params=None):
 
     color_mode = params.get("color", "mono")
 
-    # Freeze seed — animation is driven by SCALAR inputs
+    # Freeze seed — evolution comes from stepping the persistent grid
     seed = seed & 0xFFFF0000
 
     # ── Grid dimensions ──
@@ -375,54 +385,68 @@ def method_cellular(out_dir: Path, seed: int, params=None):
     rows = H // effective_cell_size
 
     survive, birth = RULES.get(effective_rule, ({2, 3}, {3}))
-
-    # ── Build the initial grid once ──
-    if seed_image is not None:
-        # Resize seed image to grid dimensions, convert to grayscale, threshold
-        from PIL import Image as _PIL_seed
-        seed_pil = _PIL_seed.fromarray((np.clip(seed_image, 0, 1) * 255).astype(np.uint8))
-        seed_pil = seed_pil.resize((cols, rows), 0)  # NEAREST
-        seed_gray = np.array(seed_pil.convert("L"), dtype=np.float32) / 255.0
-        grid = (seed_gray > effective_seed_threshold).astype(np.uint8)
-    else:
-        grid = _make_grid(rows, cols, effective_density, seed, effective_pattern)
-
-    # ── Cook the sim once, stepping forward (Architecture A) ──
-    # The grid is PERSISTENT across the cook: each captured frame advances it a
-    # fixed number of generations instead of re-simulating from the seed. That
-    # keeps the per-frame cost constant no matter how far the timeline runs —
-    # the old stateless model ran `int(time*60)` generations from scratch every
-    # frame, so cost grew without bound as `time` climbed (the live slowdown).
-    # The executor caches the captured frames and serves them at O(1).
-    n_frames = int(params.get("n_frames", 120))
-    n_frames = max(1, n_frames)
     gens_per_frame = max(1, int(round(effective_speed)))
 
-    last_img = None
-    gen = 0
-    for f in range(n_frames):
-        # Capture the current state first, so frame 0 is the initial grid and
-        # the sim is shown from its beginning.
-        last_img = _render_pixels(grid, effective_cell_size, color_mode,
-                                  hue_shift, effective_age)
-        capture_frame("18", last_img)
+    # Structural signature — a change here means "different sim", so rebuild.
+    # Render-only params (color/hue/age) and step params (inject/wave/speed) are
+    # deliberately NOT in the signature: they apply to the running sim live.
+    _seed_id = (int(seed_image.sum()) if isinstance(seed_image, np.ndarray) else None)
+    struct_sig = (seed, effective_rule, effective_pattern, round(effective_density, 4),
+                  effective_cell_size, rows, cols, round(effective_seed_threshold, 4), _seed_id)
 
-        # Advance the grid for the next frame.
-        tf = (f / max(n_frames - 1, 1)) * 2.0 * math.pi   # per-frame phase for the wave
-        for _ in range(gens_per_frame):
-            grid = _apply_rule(grid, survive, birth)
-            if effective_inject > 0 and gen % 5 == 0:
-                noise = (np.random.default_rng(seed + gen).random((rows, cols))
-                         < effective_inject * 0.1).astype(np.uint8)
-                grid = grid | noise
-            if effective_wave > 0:
-                wave_amp = effective_wave * 0.6
-                for r in range(rows):
-                    ph = math.sin(r * 0.2 + tf * 3) * 0.5 + 0.5
-                    if ph > (1.0 - wave_amp):
-                        c = int(cols * (math.sin(r * 0.1 + tf * 2) * 0.5 + 0.5))
-                        if 0 <= c < cols:
-                            grid[r, c] = 1
-            gen += 1
+    clock = float(params.get("time", 0.0))   # monotonic: unbounded in live, phase in clips
+    node_key = str(out_dir)
+    _tl = params.get("_timeline")
+    is_still = _tl is None or getattr(_tl, "total_frames", 1) <= 1
 
-    return {"image": last_img}
+    def _build_grid():
+        if seed_image is not None:
+            from PIL import Image as _PIL_seed
+            seed_pil = _PIL_seed.fromarray((np.clip(seed_image, 0, 1) * 255).astype(np.uint8))
+            seed_pil = seed_pil.resize((cols, rows), 0)  # NEAREST
+            seed_gray = np.array(seed_pil.convert("L"), dtype=np.float32) / 255.0
+            return (seed_gray > effective_seed_threshold).astype(np.uint8)
+        return _make_grid(rows, cols, effective_density, seed, effective_pattern)
+
+    def _step(grid, gen):
+        grid = _apply_rule(grid, survive, birth)
+        if effective_inject > 0 and gen % 5 == 0:
+            noise = (np.random.default_rng(seed + gen).random((rows, cols))
+                     < effective_inject * 0.1).astype(np.uint8)
+            grid = grid | noise
+        if effective_wave > 0:
+            wave_amp = effective_wave * 0.6
+            ph_t = clock * 0.3
+            for r in range(rows):
+                ph = math.sin(r * 0.2 + ph_t * 3) * 0.5 + 0.5
+                if ph > (1.0 - wave_amp):
+                    c = int(cols * (math.sin(r * 0.1 + ph_t * 2) * 0.5 + 0.5))
+                    if 0 <= c < cols:
+                        grid[r, c] = 1
+        return grid
+
+    with _CA_STATE_LOCK:
+        st = _CA_STATE.get(node_key)
+        rebuild = (st is None or st["sig"] != struct_sig
+                   or clock < st["clock"] - 1e-9)   # scrubbed back / restarted
+        if rebuild:
+            grid = _build_grid()
+            gen = 0
+            # A single still (Auto preview) should look evolved, not a bare seed.
+            if is_still:
+                for _ in range(40):
+                    grid = _step(grid, gen); gen += 1
+        else:
+            grid = st["grid"]
+            gen = st["gen"]
+            if clock > st["clock"] + 1e-9:          # advance one frame forward
+                for _ in range(gens_per_frame):
+                    grid = _step(grid, gen); gen += 1
+        _CA_STATE[node_key] = {"grid": grid, "gen": gen, "sig": struct_sig, "clock": clock}
+        # Bound the store so long sessions with many nodes don't grow forever.
+        if len(_CA_STATE) > _CA_STATE_MAX:
+            for _k in list(_CA_STATE.keys())[:-_CA_STATE_MAX]:
+                _CA_STATE.pop(_k, None)
+
+    img = _render_pixels(grid, effective_cell_size, color_mode, hue_shift, effective_age)
+    return {"image": img}

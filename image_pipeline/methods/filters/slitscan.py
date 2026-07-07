@@ -20,6 +20,7 @@ except ImportError:
 @method(
     id="57",
     name="Slit Scan",
+    new_image_contract=True,
     category="filters",
     tags=["displacement", "fast", "expanded", "animation"],
     params={
@@ -107,8 +108,8 @@ def method_slitscan(out_dir: Path, seed: int, params=None):
         feedback_decay = float(params.get("feedback_decay", 0.6))
 
         # ── Generate source content ──
-        if source == "input_image" and params.get('input_image'):
-            src_img = load_input(params['input_image'])
+        if source == "input_image" and params.get('_input_image') is not None:
+            src_img = params['_input_image']
         elif source == "gradient":
             x = np.linspace(0, 1, W, dtype=np.float32)
             y = np.linspace(0, 1, H, dtype=np.float32)

@@ -32,7 +32,8 @@ from ...core.utils import save, mn, write_mask, W, H
             "default": "multiply",
             "choices": ["multiply", "screen", "cutout", "reveal"],
         },
-    }
+    },
+    is_time_varying=False,
 )
 def method_apply_mask(out_dir: Path, seed: int, params=None):
     if params is None:

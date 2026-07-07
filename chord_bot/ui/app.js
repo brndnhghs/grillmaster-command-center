@@ -305,12 +305,17 @@ function loadProjectJson(file) {
 }
 
 // ── Playback ───────────────────────────────────────────────────────────────────
+let _loopMode = false;
+
 function togglePlay() { if (S.isPlaying) stopPlay(); else startPlay(); }
 
 function startPlay() {
   if (!S.sequence.length) { executeGraph().then(() => { if (S.sequence.length) startPlay(); }); return; }
-  S.isPlaying = true; S.playStartTime = performance.now();
-  S.playStartBeat = S.playhead >= S.totalBeats ? 0 : S.playhead;
+  S.isPlaying = true;
+  // If at end, wrap to start
+  if (S.playhead >= S.totalBeats) S.playhead = 0;
+  S.playStartTime = performance.now();
+  S.playStartBeat = S.playhead;
   document.getElementById('btnPlay').textContent = '■ Stop';
   document.getElementById('btnPlay').classList.add('active');
   const bpm = parseInt(document.getElementById('bpmIn').value) || 120;
@@ -323,14 +328,33 @@ function stopPlay() {
   if (S.lastRaf) cancelAnimationFrame(S.lastRaf);
   document.getElementById('btnPlay').textContent = '▶ Play';
   document.getElementById('btnPlay').classList.remove('active');
-  stopAudio(); renderGraph(); renderPreview();
+  stopAudio();
+  // Render final state — playhead at current position on stop
+  renderGraph(); renderPreview();
 }
 
 function rafTick() {
   if (!S.isPlaying) return;
   const bpm = parseInt(document.getElementById('bpmIn').value) || 120;
   S.playhead = S.playStartBeat + (performance.now() - S.playStartTime) / 1000 * (bpm / 60);
-  if (S.playhead >= S.totalBeats) { S.playhead = S.totalBeats; stopPlay(); return; }
+
+  // Handle loop/end
+  if (S.playhead >= S.totalBeats) {
+    if (_loopMode) {
+      // Loop: re-schedule from beginning, reset playhead
+      S.playStartBeat = 0;
+      S.playStartTime = performance.now();
+      S.playhead = 0;
+      stopAudio();
+      scheduleSequence(S.sequence, bpm, 0);
+    } else {
+      S.playhead = S.totalBeats;
+      stopPlay();
+      return;
+    }
+  }
+
+  // Update function badge to current chord
   const cur = S.sequence.find(e => e.start_beat <= S.playhead && S.playhead < e.end_beat);
   if (cur) {
     const fn = cur.state.function, col = FUNC_COLOR[fn] || '#9b59b6';
@@ -340,8 +364,31 @@ function rafTick() {
     badge.style.borderColor  = col;
     badge.style.color        = col;
   }
+
   renderGraph(); renderPreview();
+
+  // Auto-scroll piano roll to follow playhead
+  autoScrollPreview();
+
   S.lastRaf = requestAnimationFrame(rafTick);
+}
+
+/** Scroll the piano roll canvas so the playhead stays roughly in the middle third. */
+function autoScrollPreview() {
+  const wrap = document.getElementById('previewCanvases');
+  if (!wrap || S.totalBeats <= 0) return;
+  const px = (S.playhead / S.totalBeats) * wrap.scrollWidth;
+  const viewL = wrap.scrollLeft;
+  const viewR = viewL + wrap.clientWidth;
+  const margin = wrap.clientWidth * 0.2;
+  // If playhead is in the right 20% of the visible area, scroll right
+  if (px > viewR - margin) {
+    wrap.scrollLeft = px - wrap.clientWidth * 0.3;
+  }
+  // If playhead is in the left 20% of the visible area, scroll left
+  if (px < viewL + margin) {
+    wrap.scrollLeft = px - wrap.clientWidth * 0.3;
+  }
 }
 
 // ── Storage ────────────────────────────────────────────────────────────────────
@@ -425,6 +472,12 @@ async function init() {
   // Header buttons
   document.getElementById('btnExec').addEventListener('click', executeGraph);
   document.getElementById('btnPlay').addEventListener('click', togglePlay);
+  document.getElementById('btnLoop').addEventListener('click', () => {
+    _loopMode = !_loopMode;
+    document.getElementById('btnLoop').classList.toggle('active', _loopMode);
+    document.getElementById('btnLoop').style.background = _loopMode ? 'var(--tonic)' : '';
+    document.getElementById('btnLoop').style.color = _loopMode ? '#000' : '';
+  });
   document.getElementById('btnExport').addEventListener('click', exportMidi);
   document.getElementById('btnSaveJson').addEventListener('click', saveProjectJson);
   document.getElementById('btnLoadJson').addEventListener('click', () => document.getElementById('jsonFileIn').click());

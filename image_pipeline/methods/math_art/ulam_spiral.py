@@ -16,7 +16,7 @@ try:
 except ImportError:
     _has_cv2 = False
 
-@method(id="54", name="Ulam Spiral", category="math_art", tags=["prime", "fast", "expanded"],
+@method(id="54", name="Ulam Spiral", category="math_art", new_image_contract=True, tags=["prime", "fast", "expanded"],
         outputs={"image": "IMAGE", "field": "FIELD"},
          params={
              "max_num": {"description": "max number checked for primality", "min": 50000, "max": 500000, "default": 400000},
@@ -316,9 +316,8 @@ def method_ulam_spiral(out_dir: Path, seed: int, params=None):
                 if 0 <= py < H and 0 <= px < W:
                     img[py, px] = [0.06, 0.06, 0.10]
 
-        elif bg_style == "input_image" and params.get("input_image"):
-            from ...core.utils import load_input
-            img_arr = load_input(params["input_image"])
+        elif bg_style == "input_image" and params.get("_input_image") is not None:
+            img_arr = params["_input_image"]
             if _has_cv2 and img_arr.shape[:2] != (H, W):
                 img_arr = cv2.resize(img_arr, (W, H), interpolation=cv2.INTER_LINEAR)
             img = img_arr * 0.5  # dim for prime overlay

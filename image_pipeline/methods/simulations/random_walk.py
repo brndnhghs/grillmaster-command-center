@@ -43,7 +43,7 @@ def _render_sandpile_preview(grid, colors, size, h, w):
     result = cv2.resize(result.astype(np.float32) / 255.0, (w, h), interpolation=cv2.INTER_NEAREST)
     return result
 
-@method(id="79", name="Random Walk", category="simulations", tags=["organic", "paths", "expanded", "animation"],
+@method(id="79", name="Random Walk", category="simulations", new_image_contract=True, tags=["organic", "paths", "expanded", "animation"],
          outputs={"image": "IMAGE", "particles": "PARTICLES"},
          params={
     "walkers": {"description": "random walk threads", "min": 1, "max": 200, "default": 30},
@@ -143,9 +143,10 @@ def method_random_walk(out_dir: Path, seed: int, params=None):
             base = np.ones((H, W, 3), dtype=np.float32) * 0.04
 
         # ── Background image ──
-        if params.get('input_image'):
+        _inp = params.get('_input_image')
+        if _inp is not None:
             try:
-                img_arr = load_input(params['input_image'])
+                img_arr = _inp
                 bg_arr = np.array(Image.fromarray((img_arr * 255).astype(np.uint8)).resize((W, H))) / 255.0
                 if bg_arr.shape[-1] == 4:
                     base = bg_arr[:, :, :3] * 0.5 + base * 0.5

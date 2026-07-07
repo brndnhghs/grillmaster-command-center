@@ -33,6 +33,8 @@ class MethodMeta:
         version: int = 1,
         deprecated: bool = False,
         module: str = "",
+        new_image_contract: bool = False,
+        is_time_varying: bool = True,
     ):
         self.id = id
         self.name = name
@@ -52,6 +54,15 @@ class MethodMeta:
         self.description: str = description
         self.version: int = version
         self.deprecated: bool = deprecated
+        # True when the method reads upstream image from params["_input_image"] (in-memory
+        # ndarray) instead of params["input_image"] (disk path via load_input). The
+        # executor skips the _input.png write and output-PNG write for these methods when
+        # running in in_memory=True mode (the live loop), eliminating disk I/O entirely.
+        self.new_image_contract: bool = new_image_contract
+        # False only for methods whose output is fully determined by their params
+        # and upstream inputs — no frame number, no injected time, no RNG-per-frame.
+        # Default True is the safe fallback: when in doubt, re-cook every frame.
+        self.is_time_varying: bool = is_time_varying
 
     @property
     def label(self) -> str:
@@ -91,6 +102,8 @@ def method(
     description: str = "",
     version: int = 1,
     deprecated: bool = False,
+    new_image_contract: bool = False,
+    is_time_varying: bool = True,
 ):
     """Decorator: register a generation method."""
 
@@ -118,6 +131,8 @@ def method(
             version=version,
             deprecated=deprecated,
             module=fn.__module__,
+            new_image_contract=new_image_contract,
+            is_time_varying=is_time_varying,
         )
         _registry[id] = meta
         _categories.setdefault(category, []).append(id)

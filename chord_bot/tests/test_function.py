@@ -46,6 +46,45 @@ class TestMarkovModel(unittest.TestCase):
         results = [_markov_next("subdominant", seed=42) for _ in range(5)]
         self.assertEqual(len(set(results)), 1)
 
+    def test_style_markov_classical_dominant_goes_to_tonic(self):
+        """Classical Markov: dominant goes to tonic 80% of the time."""
+        from chord_bot.nodes.function import _markov_next
+        from collections import Counter
+        results = Counter(_markov_next("dominant", style="classical", seed=s) for s in range(100))
+        # Dominant → tonic should be the most common by far
+        self.assertEqual(results.most_common(1)[0][0], "tonic")
+
+    def test_style_markov_pop_has_more_subdominant(self):
+        """Pop Markov: tonic→subdominant is the most common transition."""
+        from chord_bot.nodes.function import MARKOV_BY_STYLE
+        pop_tonic = MARKOV_BY_STYLE["pop"]["tonic"]
+        self.assertEqual(max(pop_tonic, key=pop_tonic.__getitem__), "subdominant")
+
+    def test_style_markov_blues_has_all_functions(self):
+        """Blues Markov still has all four function keys."""
+        from chord_bot.nodes.function import MARKOV_BY_STYLE
+        valid_fns = {"tonic", "subdominant", "dominant", "pre-dominant"}
+        for fn in MARKOV_BY_STYLE["blues"]:
+            self.assertIn(fn, valid_fns)
+
+    def test_all_style_markovs_have_valid_structure(self):
+        """Every style-specific Markov has valid keys and sums to 1.0."""
+        from chord_bot.nodes.function import MARKOV_BY_STYLE
+        valid_fns = {"tonic", "subdominant", "dominant", "pre-dominant"}
+        for style, table in MARKOV_BY_STYLE.items():
+            for fn in valid_fns:
+                row = table[fn]
+                self.assertAlmostEqual(sum(row.values()), 1.0,
+                                       places=5,
+                                       msg=f"{style}/{fn} sums to {sum(row.values())}")
+                # Row must have all valid function keys (even if weight=0)
+                self.assertTrue(valid_fns.issubset(set(row.keys())),
+                                msg=f"{style}/{fn} missing keys: {valid_fns - set(row.keys())}")
+                # No negative or NaN weights
+                for k, v in row.items():
+                    self.assertGreaterEqual(v, 0.0, msg=f"{style}/{fn}/{k} = {v}")
+                    self.assertLessEqual(v, 1.0, msg=f"{style}/{fn}/{k} = {v}")
+
 
 class TestChordLookup(unittest.TestCase):
 
@@ -85,6 +124,24 @@ class TestChordLookup(unittest.TestCase):
         """Degree 6 (vii) in major/jazz is 'm7b5' (half-diminished)."""
         from chord_bot.nodes.function import _get_quality
         self.assertEqual(_get_quality("major", 6, "jazz"), "m7b5")
+
+    def test_get_quality_blues_style(self):
+        """'blues' style uses dom7 chords for I, IV, V."""
+        from chord_bot.nodes.function import _get_quality
+        self.assertEqual(_get_quality("major", 0, "blues"), "dom7")
+        self.assertEqual(_get_quality("major", 3, "blues"), "dom7")
+        self.assertEqual(_get_quality("major", 4, "blues"), "dom7")
+
+    def test_get_quality_film_style(self):
+        """'film' style uses maj7 for I and dom7 for V."""
+        from chord_bot.nodes.function import _get_quality
+        self.assertEqual(_get_quality("major", 0, "film"), "maj7")
+        self.assertEqual(_get_quality("major", 4, "film"), "dom7")
+
+    def test_get_quality_unknown_style_falls_back_to_jazz(self):
+        """Unknown style falls back to 'jazz' quality table."""
+        from chord_bot.nodes.function import _get_quality
+        self.assertEqual(_get_quality("major", 0, "bogus_style"), "maj7")
 
 
 class TestFunctionNode(unittest.TestCase):
@@ -185,6 +242,47 @@ class TestFunctionNode(unittest.TestCase):
         )
         self.assertIsInstance(result.chord, str)
         self.assertGreater(len(result.chord), 0)
+
+    def test_cadence_chance_triggers_tonic_from_dominant(self):
+        """cadence_chance=1.0 forces tonic when coming from dominant."""
+        result = self._run(
+            {"key": "C", "mode": "major", "function": "dominant"},
+            {"target": "subdominant", "style": "jazz", "cadence_chance": 1.0},
+        )
+        self.assertEqual(result.function, "tonic")
+
+    def test_cadence_chance_zero_does_not_override(self):
+        """cadence_chance=0.0 does not override target."""
+        result = self._run(
+            {"key": "C", "mode": "major", "function": "dominant"},
+            {"target": "subdominant", "style": "jazz", "cadence_chance": 0.0},
+        )
+        self.assertEqual(result.function, "subdominant")
+
+    def test_no_cadence_when_not_dominant(self):
+        """cadence_chance only triggers when previous function is dominant."""
+        result = self._run(
+            {"key": "C", "mode": "major", "function": "tonic"},
+            {"target": "subdominant", "style": "jazz", "cadence_chance": 1.0},
+        )
+        self.assertEqual(result.function, "subdominant")
+
+    def test_blues_style_I_uses_7(self):
+        """Blues style: degree 0 (I) chord quality is dom7 → root+7."""
+        result = self._run(
+            {"key": "C", "mode": "major", "function": "tonic"},
+            {"target": "tonic", "style": "blues", "duration": 4},
+        )
+        self.assertEqual(result.quality, "dom7")
+        self.assertEqual(result.chord, "C7")
+
+    def test_film_style_dominant_uses_dom7(self):
+        """Film style: V chord uses dom7."""
+        result = self._run(
+            {"key": "C", "mode": "major", "function": "tonic"},
+            {"target": "dominant", "style": "film", "duration": 4},
+        )
+        self.assertEqual(result.quality, "dom7")
 
 
 class TestVoiceLeadDistance(unittest.TestCase):

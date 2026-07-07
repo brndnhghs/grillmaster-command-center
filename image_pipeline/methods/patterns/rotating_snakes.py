@@ -23,7 +23,7 @@ from ...core.utils import save, mn, seed_all, W, H, load_input, PALETTES
 from ...core.animation import capture_frame
 
 
-@method(id="105", name="Morph Grid", category="patterns",
+@method(id="105", name="Morph Grid", category="patterns", new_image_contract=True,
         tags=["grid", "warp", "filter", "flowing", "animation"],
         params={
     "grid_size": {"description": "grid cells per row (square grid)", "min": 10, "max": 60, "default": 28},
@@ -100,11 +100,11 @@ def method_morph_grid(out_dir: Path, seed: int, params=None):
             rot = t * 0.05 * aspd
 
         # ── Build or load the base image ──
-        if img_path:
+        _inp = params.get("_input_image")
+        if _inp is not None:
             try:
-                input_img = load_input(img_path)
-                input_img = input_img.resize((W, H), Image.LANCZOS)
-                base = input_img.convert("RGB")
+                _arr_u8 = (_inp * 255).astype(np.uint8)
+                base = Image.fromarray(_arr_u8).convert("RGB")
             except Exception:
                 base = None
         else:

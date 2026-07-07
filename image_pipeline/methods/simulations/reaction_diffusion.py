@@ -43,7 +43,7 @@ def _render_sandpile_preview(grid, colors, size, h, w):
     result = cv2.resize(result.astype(np.float32) / 255.0, (w, h), interpolation=cv2.INTER_NEAREST)
     return result
 
-@method(id="32", name="Reaction Diffusion", category="simulations", tags=["gray-scott", "organic", "animation", "expanded"],
+@method(id="32", name="Reaction Diffusion", category="simulations", new_image_contract=True, tags=["gray-scott", "organic", "animation", "expanded"],
          outputs={"image": "IMAGE", "luminance": "SCALAR", "field": "FIELD"},
          params={
              "preset": {"description": "named pattern: mitosis, coral, spots, stripes, waves, zebra, moving_spots, spiral_waves, self_replicate, chaotic, gliders, solitons, mazes, honeycomb, bacteria, fingers, u_skate, flower, pulse, worms, custom", "default": "mitosis"},
@@ -221,10 +221,9 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
     ch, cw = rH // 2, rW // 2
     seed_sz = max(2, int(float(params.get("seed_size", 10)) * scale))
 
-    if seed_type == "input" and params.get("input_image"):
-        from ...core.utils import load_input
-        src = load_input(params["input_image"])
-        src = cv2.resize(src, (rW, rH))
+    _inp = params.get("_input_image")
+    if seed_type == "input" and _inp is not None:
+        src = cv2.resize(_inp, (rW, rH))
         gray = np.mean(src, axis=2)
         u = np.where(gray > 0.5, 0.5, 1.0)
         v = np.where(gray > 0.5, 0.25, 0.0)
@@ -401,12 +400,9 @@ def method_reaction_diffusion(out_dir: Path, seed: int, params=None):
             gy = np.abs(np.diff(v_arr, axis=0, append=v_arr[-1:, :]))
             gx = np.abs(np.diff(v_arr, axis=1, append=v_arr[:, -1:]))
             base = _norm(gx + gy)
-        elif style_map == "input_image" and params.get("input_image"):
-            # Load an image as the parameter map
-            from ...core.utils import load_input
-            src = load_input(params["input_image"])
-            src = cv2.resize(src, (rW, rH))
-            base = np.mean(src, axis=2).astype(np.float32) / 255.0
+        elif style_map == "input_image" and _inp is not None:
+            src = cv2.resize(_inp, (rW, rH))
+            base = np.mean(src, axis=2).astype(np.float32)
         else:
             return None
         return base

@@ -227,11 +227,31 @@ Your method must appear clean in the report. Violations to fix: missing `outputs
 
 ---
 
+## Simulations & animated methods — extra contract
+
+If the method simulates or animates (its output evolves over the timeline), the
+above is necessary but **not sufficient**. It must also play correctly and stay
+fast in all three render contexts (single still, clip, live) — most importantly,
+**per-frame cost must never grow as the timeline advances**. A stateless node
+that re-simulates up to `time` every frame gets slower and slower forever (this
+was the Cellular Automata #18 bug). A state-based sim must instead keep its
+**last state** and step it one step per frame — the **persistent stateful
+pattern** (runs forever at constant cost; #18 works this way now) — or, for a
+finite scrubbable sequence, the cook-a-window Architecture-A pattern.
+
+Before writing or rewriting any simulation node, read and apply
+**`docs/prompts/simulation-node-render-contract.md`** — the Architecture A/B
+decision, the render-context matrix, the `-1.0` scalar-override sentinel rule,
+the "show-from-start" rule, and the no-slowdown verification procedure.
+
+---
+
 ## Where to find the full spec
 
+- `docs/prompts/simulation-node-render-contract.md` — **simulation / animation node contract** (arch A/B, performance, render-system integration)
 - `AGENT_GUIDE.md` — complete method authoring guide with examples
-- `DESIGN.md` — authoritative architecture document  
-- `PHASE1_PLAN.md` — upcoming infrastructure changes to be aware of
+- `DESIGN.md` — authoritative architecture document (see "Live mode" for the render invariants)
+- `image_pipeline/core/arch.py` — Architecture A/B detection
 - `image_pipeline/core/utils.py` — all helper functions
 - `image_pipeline/core/registry.py` — `@method` decorator definition
 - `image_pipeline/methods/compositing/` — reference implementations for typed I/O nodes

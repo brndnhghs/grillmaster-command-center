@@ -1,6 +1,6 @@
 # Method Audit Report
 
-**181 methods scanned** across all category packages.
+**183 methods scanned** across all category packages.
 
 Sorted by gap severity (confirmed missing × 3 + inferred missing).
 
@@ -20,7 +20,7 @@ Sorted by gap severity (confirmed missing × 3 + inferred missing).
 | `166` | Parametric Oscillator Lattice | `simulations/oscillon_resonance.py` | simulation | image, luminance, epsilon, damping, resonance_energy, peak_amplitude | SCALAR, FIELD? | **FIELD?** |
 | `169` | Turing Morphogenesis | `simulations/turing_morphogenesis.py` | simulation | image, luminance | FIELD? | **FIELD?** |
 | `170` | Phase Field Crystal | `simulations/pfc.py` | simulation | image, luminance | FIELD? | **FIELD?** |
-| `20` | Particle System | `simulations/particles.py` | filter | image, luminance, particles | PARTICLES, FIELD?, FILTER | **FIELD?** |
+| `20` | Particle System | `simulations/particles.py` | simulation | image, luminance, particles | PARTICLES, FIELD? | **FIELD?** |
 | `37` | Collage | `codegen/collage.py` | generator | image, luminance | PARTICLES? | **PARTICLES?** |
 | `01` | ASCII Art | `codegen/ascii_art.py` | generator | image, luminance | — | **—** |
 | `02` | Quasicrystal | `patterns/quasicrystal.py` | generator | image, field | FIELD | **—** |
@@ -63,7 +63,7 @@ Sorted by gap severity (confirmed missing × 3 + inferred missing).
 | `127` | Kuramoto-Sivashinsky | `simulations/kuramoto_sivashinsky.py` | simulation | image, luminance | — | **—** |
 | `128` | Swift-Hohenberg Pattern Formation | `simulations/active_brownian.py` | simulation | image, luminance, field | FIELD | **—** |
 | `129` | Cellular Potts Model | `simulations/cellular_potts.py` | simulation | image, luminance, field | FIELD | **—** |
-| `13` | Dithering | `filters/dither.py` | filter | image, luminance | FILTER | **—** |
+| `13` | Dithering | `filters/dither.py` | filter | image, luminance | — | **—** |
 | `131` | Burridge-Knopoff Earthquakes | `simulations/burridge_knopoff.py` | simulation | image, luminance | — | **—** |
 | `132` | Shallow Water Waves | `simulations/shallow_water.py` | simulation | image, luminance | PARTICLES? | **—** |
 | `133` | FitzHugh-Nagumo Excitable Media | `simulations/fitzhugh_nagumo.py` | simulation | image, field | FIELD | **—** |
@@ -93,7 +93,7 @@ Sorted by gap severity (confirmed missing × 3 + inferred missing).
 | `164` | Moiré Patterns | `simulations/moire_animation.py` | simulation | image, luminance | — | **—** |
 | `167` | Spectral Ocean Synthesis | `simulations/ocean_spectral.py` | simulation | image, luminance, wind_speed, peak_freq, significant_height, phillips_alpha | SCALAR | **—** |
 | `168` | PM Anisotropic RD | `simulations/pm_anisotropic_rd.py` | simulation | image, luminance | — | **—** |
-| `17` | Glitch Art | `filters/glitch.py` | filter | image, luminance | PARTICLES?, FILTER | **—** |
+| `17` | Glitch Art | `filters/glitch.py` | filter | image, luminance | PARTICLES? | **—** |
 | `171` | p5.js Sketch | `p5_sketches.py` | generator | image, luminance | — | **—** |
 | `172` | Sand Dune Migration | `simulations/sand_dune_migration.py` | simulation | image, luminance | — | **—** |
 | `18` | Cellular Automata | `codegen/simulations.py` | generator | image, luminance | — | **—** |
@@ -109,47 +109,47 @@ Sorted by gap severity (confirmed missing × 3 + inferred missing).
 | `31` | Plasma Fractal | `fractals/plasma.py` | fractal | image, luminance | — | **—** |
 | `32` | Reaction Diffusion | `simulations/reaction_diffusion.py` | filter | image, luminance, field | FIELD, PARTICLES?, FILTER | **—** |
 | `33` | Fractal Explorer | `fractals/fractal.py` | fractal | image, luminance | — | **—** |
-| `34` | Boids Flocking | `simulations/boids.py` | filter | image, luminance, spread, particles | PARTICLES, SCALAR, FIELD?, FILTER | **—** |
-| `35` | Flow Field | `simulations/flowfield.py` | filter | image, luminance, field | FIELD, PARTICLES?, FILTER | **—** |
+| `34` | Boids Flocking | `simulations/boids.py` | simulation | image, luminance, spread, particles | PARTICLES, SCALAR, FIELD? | **—** |
+| `35` | Flow Field | `simulations/flowfield.py` | simulation | image, luminance, field | FIELD, PARTICLES? | **—** |
 | `36` | DLA | `simulations/dla.py` | simulation | image, field | FIELD, PARTICLES? | **—** |
 | `38` | Dataviz | `math_art/dataviz.py` | generator | image, luminance | — | **—** |
 | `39` | Posterize | `codegen/posterize.py` | generator | image, luminance | — | **—** |
 | `40` | Pixel Sort | `filters/pixelsort.py` | filter | image, luminance | FILTER | **—** |
-| `41` | Oil Paint | `filters/oil_paint.py` | filter | image, luminance | FILTER | **—** |
-| `42` | Fake HDR | `filters/hdr.py` | filter | image, luminance | FILTER | **—** |
-| `43` | Density Heatmap | `math_art/density_heatmap.py` | filter | image, field | FIELD, FILTER | **—** |
+| `41` | Oil Paint | `filters/oil_paint.py` | filter | image, luminance | — | **—** |
+| `42` | Fake HDR | `filters/hdr.py` | filter | image, luminance | — | **—** |
+| `43` | Density Heatmap | `math_art/density_heatmap.py` | generator | image, field | FIELD | **—** |
 | `44` | img2txt | `cli_tools.py` | generator | image, luminance | — | **—** |
 | `45` | Graphviz | `cli_tools.py` | generator | image, luminance | — | **—** |
 | `46` | ImageMagick Plasma | `cli_tools.py` | generator | image, luminance | — | **—** |
 | `47` | Chafa | `cli_tools.py` | generator | image, luminance | — | **—** |
-| `48` | FFT Art | `math_art/fft_art.py` | filter | image, luminance | FILTER | **—** |
+| `48` | FFT Art | `math_art/fft_art.py` | generator | image, luminance | — | **—** |
 | `49` | Buddhabrot | `fractals/buddhabrot.py` | fractal | image, field | FIELD, PARTICLES? | **—** |
 | `50` | Barnsley Fern | `fractals/barnsley_fern.py` | fractal | image, field, particles | PARTICLES, FIELD | **—** |
 | `51` | Burning Ship | `fractals/burning_ship.py` | fractal | image, luminance | — | **—** |
 | `52` | Newton Fractal | `fractals/newton_fractal.py` | fractal | image, luminance | — | **—** |
-| `53` | Metaballs | `simulations/metaballs.py` | filter | image, field | FIELD, PARTICLES?, FILTER | **—** |
+| `53` | Metaballs | `simulations/metaballs.py` | simulation | image, field | FIELD, PARTICLES? | **—** |
 | `54` | Ulam Spiral | `math_art/ulam_spiral.py` | filter | image, field | FIELD, PARTICLES?, FILTER | **—** |
 | `55` | Sandpile | `simulations/sandpile.py` | simulation | image, field, particles | PARTICLES, FIELD | **—** |
 | `56` | Maze | `math_art/maze.py` | generator | image, field | FIELD | **—** |
 | `57` | Slit Scan | `filters/slitscan.py` | filter | image, luminance | FIELD?, FILTER | **—** |
 | `58` | Cellular Automata (Variants) | `simulations_cellular.py` | simulation | image, luminance | — | **—** |
-| `59` | Data Bending | `filters/data_bending.py` | filter | image, luminance | PARTICLES?, FILTER | **—** |
+| `59` | Data Bending | `filters/data_bending.py` | filter | image, luminance | PARTICLES? | **—** |
 | `62` | Chaotic Map | `math_art/chaotic_map.py` | generator | image, field | FIELD | **—** |
 | `63` | Cross Stitch | `filters/cross_stitch.py` | filter | image, luminance | FILTER | **—** |
 | `64` | Edge Halftone | `filters/edge_halftone.py` | filter | image, luminance | FILTER | **—** |
 | `65` | Waveform | `math_art/waveform.py` | generator | image, luminance | — | **—** |
 | `66` | Julia Set | `fractals/julia_set.py` | fractal | image, luminance | PARTICLES? | **—** |
-| `67` | Sierpinski Carpet | `fractals/sierpinski.py` | filter | image, field | FIELD, FILTER | **—** |
+| `67` | Sierpinski Carpet | `fractals/sierpinski.py` | fractal | image, field | FIELD | **—** |
 | `69` | Lyapunov Fractal | `fractals/lyapunov.py` | fractal | image, luminance | — | **—** |
 | `70` | Fractal Flame | `fractals/fractal_flame.py` | fractal | image, field | FIELD | **—** |
 | `71` | Chaos Game | `fractals/chaos_game.py` | fractal | image, field, particles | PARTICLES, FIELD | **—** |
 | `72` | Pythagorean Tree | `fractals/pythagorean_tree.py` | fractal | image, luminance | — | **—** |
-| `73` | Low Poly | `math_art/lowpoly.py` | filter | image, luminance | FIELD?, FILTER | **—** |
-| `74` | Swirl Displacement | `filters/swirl.py` | filter | image, luminance | FILTER | **—** |
+| `73` | Low Poly | `math_art/lowpoly.py` | generator | image, luminance | FIELD? | **—** |
+| `74` | Swirl Displacement | `filters/swirl.py` | filter | image, luminance | — | **—** |
 | `76` | Binary Counter | `math_art/binary_counter.py` | generator | image, luminance | — | **—** |
-| `77` | False Color IR | `codegen/false_color_ir.py` | filter | image, luminance | FILTER | **—** |
+| `77` | False Color IR | `codegen/false_color_ir.py` | generator | image, luminance | — | **—** |
 | `78` | Circle Packing | `math_art/circle_packing.py` | generator | image, luminance | — | **—** |
-| `79` | Random Walk | `simulations/random_walk.py` | filter | image, particles | PARTICLES, FIELD?, FILTER | **—** |
+| `79` | Random Walk | `simulations/random_walk.py` | simulation | image, particles | PARTICLES, FIELD? | **—** |
 | `80` | Pixel Mosaic | `filters/pixel_mosaic.py` | filter | image, luminance | FILTER | **—** |
 | `81` | Fourier Circles | `math_art/fourier_circles.py` | generator | image, luminance | PARTICLES?, FIELD? | **—** |
 | `82` | GPU Procedural Shaders | `gpu_shaders.py` | generator | image, luminance | — | **—** |
@@ -170,6 +170,8 @@ Sorted by gap severity (confirmed missing × 3 + inferred missing).
 | `97` | Lloyd's Algorithm | `simulations/lloyds_algorithm.py` | simulation | image, luminance | PARTICLES? | **—** |
 | `98` | Smoothed Particle Hydrodynamics | `simulations/sph.py` | simulation | image, luminance | FIELD? | **—** |
 | `99` | Active Nematic Liquid Crystals | `simulations/active_nematic.py` | simulation | image, luminance | — | **—** |
+| `?` | _fn | `gpu_shaders.py` | generator | image, luminance | — | **—** |
+| `?` | _fn | `gpu_shaders.py` | generator | image, luminance | — | **—** |
 | `__age_heat__` | AgeHeat | `channels.py` | generator | value, r, g, b | — | **—** |
 | `__beats__` | Beats | `channels.py` | generator | beat, bar, trigger | — | **—** |
 | `__blend__` | Blend | `channels.py` | generator | value | — | **—** |

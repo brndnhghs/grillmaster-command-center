@@ -34,7 +34,8 @@ from ...core.utils import save, mn, write_field, W, H
             "max": 4.0,
             "default": 1.0,
         },
-    }
+    },
+    is_time_varying=False,
 )
 def method_field_combine(out_dir: Path, seed: int, params=None):
     if params is None:

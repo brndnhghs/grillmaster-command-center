@@ -494,6 +494,9 @@ def _scan_file(path: Path) -> list[dict[str, Any]]:
             declared_outputs_dict = {"image": "IMAGE", "luminance": "SCALAR"}
         current_outputs = list(declared_outputs_dict.keys())
 
+        # Extract params dict for n_frames check
+        _params_dict = _literal(_kw_value(dec, "params")) or {}
+
         # Extract function body source text for regex supplement
         start = func.lineno - 1
         end   = func.end_lineno or len(source_lines)
@@ -508,6 +511,22 @@ def _scan_file(path: Path) -> list[dict[str, Any]]:
 
         detected = _detect_signals(sig, supp)
         missing, notes, entry_warnings = _detect_missing(sig, supp, current_outputs, detected)
+
+        # ── n_frames large-default warning ───────────────────────────────────
+        # Arch-A sims with a large n_frames default pay the full cook cost on
+        # every cold start / param change. Values ≥120 (4s at 30fps) can make
+        # the first live hot-swap feel frozen; flag them so authors consider
+        # either reducing the default or making the sim explicitly Architecture A.
+        _N_FRAMES_WARN = 120
+        _nf_spec = _params_dict.get("n_frames") if isinstance(_params_dict, dict) else None
+        if isinstance(_nf_spec, dict):
+            _nf_default = _nf_spec.get("default")
+            if isinstance(_nf_default, (int, float)) and _nf_default >= _N_FRAMES_WARN:
+                entry_warnings.append(
+                    f"n_frames default={int(_nf_default)} — cold-start cook is "
+                    f"{int(_nf_default)} frames; reduce default or ensure method is "
+                    f"Architecture A (stateful sim with per-frame cache)"
+                )
 
         # ── Missing description warning ───────────────────────────────────────
         if missing_description:
@@ -590,6 +609,10 @@ def _collect_all() -> tuple[list[dict[str, Any]], list[str], list[str]]:
         id_to_files.setdefault(mid, []).append(e.get("file", "?"))
 
     for mid, files in id_to_files.items():
+        if mid == "?":
+            # Factory-pattern registrations: id is a variable, not a literal.
+            # Static parsing can't resolve the value — skip collision check.
+            continue
         if len(files) > 1:
             hard_violations.append(f"ID COLLISION: id={mid} used in {files}")
 

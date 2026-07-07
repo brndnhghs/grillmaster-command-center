@@ -26,6 +26,7 @@ from ...core.utils import save, W, H
     name="Transform",
     category="filters",
     tags=["transform", "scale", "rotate", "translate", "warp", "perspective", "flip", "shear"],
+    new_image_contract=True,
     inputs={
         "image_in": "IMAGE",
         "field_a":  "FIELD",
@@ -140,6 +141,7 @@ from ...core.utils import save, W, H
             "choices": ["nearest", "bilinear", "bicubic", "lanczos"],
         },
     },
+    is_time_varying=False,
 )
 def method_transform(out_dir: Path, seed: int, params=None) -> dict:
     if params is None:

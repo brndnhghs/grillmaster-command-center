@@ -73,21 +73,68 @@ _WS_CLIENTS: set[WebSocket] = set()
 _WS_LOCK = threading.Lock()
 
 
-def _broadcast_jpeg(jpeg_bytes: bytes):
-    """Send JPEG bytes to all connected WebSocket clients (best-effort)."""
+def _broadcast_ws_frame(jpeg_bytes: bytes, ws_meta: dict | None = None):
+    """Send a per-frame JSON message to all connected WebSocket clients.
+
+    The message shape:
+      {"frame": int, "cook_ms": float, "fps": float,
+       "node_timings": {id→ms}, "node_names": {id→name},
+       "node_errors": {id→str},
+       "canvas_w": int, "canvas_h": int,
+       "img": "<base64-jpeg>"}
+
+    Falls back to binary JPEG if ws_meta is None (should not happen in normal use).
+    """
+    if not _WS_CLIENTS:
+        return
+    if ws_meta is None:
+        # Legacy binary fallback (no metadata)
+        payload_text = None
+        payload_bytes = jpeg_bytes
+    else:
+        msg = {
+            "frame":        ws_meta.get("frame", 0),
+            "cook_ms":      ws_meta.get("cook_ms", 0.0),
+            "fps":          ws_meta.get("fps", 0.0),
+            "node_timings": ws_meta.get("node_timings", {}),
+            "node_names":   ws_meta.get("node_names", {}),
+            "node_errors":  ws_meta.get("node_errors", {}),
+            "gpu_nodes":    ws_meta.get("gpu_nodes", 0),
+            "cpu_nodes":    ws_meta.get("cpu_nodes", 0),
+            "mem_edges":    ws_meta.get("mem_edges", 0),
+            "disk_edges":   ws_meta.get("disk_edges", 0),
+            "canvas_w":     ws_meta.get("canvas_w", 0),
+            "canvas_h":     ws_meta.get("canvas_h", 0),
+            "img":          base64.b64encode(jpeg_bytes).decode("ascii"),
+        }
+        payload_text  = json.dumps(msg, separators=(",", ":"))
+        payload_bytes = None
+
     dead: list[WebSocket] = []
     with _WS_LOCK:
         for ws in list(_WS_CLIENTS):
             try:
-                asyncio.run_coroutine_threadsafe(ws.send_bytes(jpeg_bytes), _event_loop)
+                if payload_text is not None:
+                    asyncio.run_coroutine_threadsafe(
+                        ws.send_text(payload_text), _event_loop
+                    )
+                else:
+                    asyncio.run_coroutine_threadsafe(
+                        ws.send_bytes(payload_bytes), _event_loop
+                    )
             except Exception:
                 dead.append(ws)
         for ws in dead:
             _WS_CLIENTS.discard(ws)
 
 
-def _push_live_frame(arr):
-    """Encode a numpy array as JPEG and store in the live buffer."""
+def _push_live_frame(arr, ws_meta: dict | None = None):
+    """Encode a numpy array as JPEG, update the MJPEG buffer, broadcast to WS.
+
+    ws_meta: diagnostics snapshot to embed in the WS message.  When provided
+    the WS receives a JSON frame (image + metadata).  MJPEG clients always
+    receive raw JPEG regardless.
+    """
     global _LIVE_FRAME, _LIVE_FRAME_ID
     from PIL import Image
     import numpy as np
@@ -109,7 +156,7 @@ def _push_live_frame(arr):
         _LIVE_FRAME = jpeg_bytes
         _LIVE_FRAME_ID += 1
         _LIVE_FRAME_COND.notify_all()
-    _broadcast_jpeg(jpeg_bytes)
+    _broadcast_ws_frame(jpeg_bytes, ws_meta)
 UI_DIR = Path(__file__).resolve().parent.parent / "ui"
 
 # ── Hot-reload infrastructure ─────────────────────────────────────────
@@ -686,22 +733,17 @@ async def live_mjpeg_stream():
 @app.websocket("/api/live/ws")
 async def live_websocket(websocket: WebSocket):
     """WebSocket endpoint for smooth live preview.
-    
-    Sends raw JPEG bytes as binary frames. The client decodes them with
-    createImageBitmap() and paints to a canvas via requestAnimationFrame.
+
+    Sends JSON frames: {frame, cook_ms, fps, node_timings, node_names,
+    node_errors, canvas_w, canvas_h, img} where img is base64-encoded JPEG.
+    The live loop delivers frames via _broadcast_ws_frame; this handler just
+    keeps the connection open and accepts keepalive pings from the client.
     """
     await websocket.accept()
     with _WS_LOCK:
         _WS_CLIENTS.add(websocket)
     try:
-        # Send the latest frame immediately on connect
-        with _LIVE_FRAME_LOCK:
-            if _LIVE_FRAME is not None:
-                try:
-                    await websocket.send_bytes(_LIVE_FRAME)
-                except Exception:
-                    pass
-        # Keep the connection open — frames arrive via _broadcast_jpeg
+        # Keep the connection open — JSON frames arrive via _broadcast_ws_frame
         while True:
             await websocket.receive_text()  # keepalive / ping
     except WebSocketDisconnect:
@@ -949,6 +991,33 @@ def execute_graph(req: GraphRequest):
 _live_sim_lock = threading.Lock()
 _live_sim_cancel = threading.Event()
 _live_sim_thread: threading.Thread | None = None
+# Stats updated by the live loop — read by /api/graph/live/status and /api/graph/diagnostics
+_live_stats: dict = {
+    "frame": 0, "cook_ms": 0.0, "fps": 0.0,
+    # per-node timing
+    "node_timings": {}, "node_names": {},
+    # per-node errors (node_id → short error string)
+    "node_errors": {},
+    # cache
+    "cache_hits": 0, "cache_misses": 0,
+    "total_cache_hits": 0, "total_cache_misses": 0,
+    "last_invalidated": 0,
+    # data flow
+    "mem_edges": 0, "disk_edges": 0,
+    "gpu_nodes": 0, "cpu_nodes": 0,
+    # overhead split
+    "node_compute_ms": 0.0, "overhead_ms": 0.0,
+    # graph topology
+    "active_nodes": 0, "active_edges": 0,
+    "canvas_w": 0, "canvas_h": 0,
+}
+
+# Persistent executor — survives hot-swaps so Arch-A sim caches are kept
+_live_executor = None          # GraphExecutor | None
+_live_last_nodes: list = []
+_live_last_edges: list = []
+_live_last_seed:  int  = 0
+_live_last_canvas: tuple = (0, 0)
 
 
 @app.post("/api/graph/live")
@@ -958,8 +1027,13 @@ def live_graph_sim(req: GraphRequest):
     frames == 0 stops; anything else (re)starts. Only one live loop runs at
     a time — starting while one is active stops the old loop first, so
     re-POSTing with an edited graph hot-swaps it.
+
+    The GraphExecutor is kept alive across hot-swaps. Arch-A simulation caches
+    survive unchanged hot-swaps; only nodes with changed non-volatile params
+    are invalidated.
     """
     global _live_sim_cancel, _live_sim_thread
+    global _live_executor, _live_last_nodes, _live_last_edges, _live_last_seed, _live_last_canvas
     with _live_sim_lock:
         # Stop any existing loop (both for stop requests and restarts)
         if _live_sim_thread is not None and _live_sim_thread.is_alive():
@@ -973,37 +1047,93 @@ def live_graph_sim(req: GraphRequest):
         nodes, edges, seed = req.nodes, req.edges, req.seed
         width, height = req.width, req.height
 
+        # ── Persistent executor: reuse or create ──────────────────────
+        from image_pipeline.core.graph import GraphExecutor as _GE
+        canvas = (width, height)
+        _inv_count = 0
+        if _live_executor is None or canvas != _live_last_canvas:
+            _live_executor = _GE(OUTPUT_ROOT / "_live_sim", in_memory=True)
+            _inv_msg = "new executor"
+            # Reset cumulative stats on new executor
+            _live_stats["total_cache_hits"] = 0
+            _live_stats["total_cache_misses"] = 0
+        elif seed != _live_last_seed:
+            _live_executor._sim_cache.clear()
+            _live_executor._sim_params_hash.clear()
+            _inv_msg = "seed changed — full flush"
+        else:
+            _inv_count = _live_executor.selective_invalidate(
+                _live_last_nodes, nodes, _live_last_edges, edges, seed
+            )
+            _inv_msg = f"selective invalidation: {_inv_count} entries cleared"
+        _live_stats["last_invalidated"] = _inv_count
+
+        _live_last_nodes  = [dict(n) for n in nodes]
+        _live_last_edges  = [dict(e) for e in edges]
+        _live_last_seed   = seed
+        _live_last_canvas = canvas
+        executor = _live_executor
+
         def _live_loop():
-            from image_pipeline.core.graph import GraphExecutor
             from image_pipeline.core.utils import set_canvas as _set_canvas
+            from image_pipeline.core.registry import get_meta as _get_meta_ll
+            from image_pipeline.core.graph import _compute_live_dirty as _cld
             _set_canvas(width, height)
-            executor = GraphExecutor(OUTPUT_ROOT / "_live_sim", in_memory=True)
             frame = 0
             consecutive_errors = 0
-            # Use a moderate total_frames so the timeline's t cycles through
-            # [0, 1] visibly. The frame counter increments forever — no
-            # wrapping. Methods that use t in sin(t * speed) oscillate
-            # smoothly; the boundary at t=1.0 is seamless because
-            # sin(0) = sin(2π). Methods that use time directly get the
-            # raw frame number for continuous evolution.
+            # Params snapshot for per-node change detection (excludes volatile keys)
+            _last_params: dict[str, dict] = {}
             LIVE_TOTAL_FRAMES = 300
-            # Throttle to ~30fps so the browser can actually display each frame
             _frame_interval = 1.0 / 30.0
-            print(f"[live-sim] starting loop, {len(nodes)} nodes, {len(edges)} edges")
+            print(f"[live-sim] starting loop, {len(nodes)} nodes, {len(edges)} edges, {_inv_msg}")
             while not cancel.is_set():
                 _tick_start = time.monotonic()
                 try:
-                    # Force all nodes dirty every frame — the executor's dirty-flag
-                    # skip reads cached PNGs from disk, which would return the same
-                    # frame 0 image for every subsequent call.
+                    # ── Phase 6: Selective dirty marking ──────────────────────
+                    # Build the initial set of dirty nodes for this frame:
+                    #   • Time-varying nodes (is_time_varying=True) — always
+                    #   • Arch-A simulation nodes — always (their output changes
+                    #     each frame via the sim cache, frame index advances)
+                    #   • Nodes whose user-facing params changed since last frame
+                    #   • Nodes that have paramKeyframes (keyframe eval is frame-dependent)
+                    # Then cascade that set forward through the DAG.
+                    initially_dirty: set[str] = set()
                     for n in nodes:
-                        n["dirty"] = True
-                        # Inject raw frame as time so methods get a monotonically
-                        # increasing value for continuous evolution, not the
-                        # timeline's normalized t which clamps at 1.0.
+                        nid = n["id"]
                         if "params" not in n:
                             n["params"] = {}
-                        n["params"]["time"] = float(frame)
+
+                        meta = _get_meta_ll(n.get("method_id", ""))
+                        is_tv = True if meta is None else meta.is_time_varying
+                        # Arch-A nodes always re-cook (frame index advances in sim cache)
+                        from image_pipeline.core.arch import detect_architecture as _det_arch
+                        if meta is not None and _det_arch(meta) == "A":
+                            is_tv = True
+
+                        if is_tv:
+                            # Inject time only into time-varying nodes.
+                            # Static nodes keep their last `time` value (or none),
+                            # so their params hash stays stable.
+                            n["params"]["time"] = float(frame)
+                            initially_dirty.add(nid)
+                        else:
+                            # Non-time-varying: check if user params changed
+                            cur = {k: v for k, v in n["params"].items()
+                                   if k not in ("time", "frame", "frame_seed",
+                                                "_timeline", "_input_image", "input_image")}
+                            if cur != _last_params.get(nid):
+                                initially_dirty.add(nid)
+                            _last_params[nid] = dict(cur)
+
+                        # Any node with active paramKeyframes is frame-dependent
+                        if n.get("paramKeyframes"):
+                            initially_dirty.add(nid)
+
+                    # Cascade dirty forward through the topology
+                    dirty_set = _cld(nodes, edges, initially_dirty)
+                    for n in nodes:
+                        n["dirty"] = n["id"] in dirty_set
+
                     flat_outputs, terminal_id, node_errors = executor.execute(
                         nodes, edges, seed, frame=frame % LIVE_TOTAL_FRAMES, frames=LIVE_TOTAL_FRAMES
                     )
@@ -1013,10 +1143,49 @@ def live_graph_sim(req: GraphRequest):
                     if render_id and render_id in flat_outputs:
                         terminal_id = render_id
                     arr = (flat_outputs.get(terminal_id) or {}).get("image") if terminal_id else None
-                    if arr is not None:
-                        _push_live_frame(arr)
+
+                    # ── Update _live_stats BEFORE pushing the frame so the
+                    #    WS message carries metadata for THIS frame. ──
                     frame += 1
                     consecutive_errors = 0
+                    _cook_ms = (time.monotonic() - _tick_start) * 1000.0
+                    _live_stats["frame"]    = frame
+                    _live_stats["cook_ms"]  = round(_cook_ms, 1)
+                    _live_stats["fps"]      = round(1000.0 / max(_cook_ms, 1.0), 1)
+                    _live_stats["node_errors"] = {
+                        nid: str(err).splitlines()[0][:120]
+                        for nid, err in node_errors.items()
+                    }
+                    # Pull per-frame diagnostics from the executor
+                    _fs = executor.last_frame_stats
+                    if _fs:
+                        _live_stats["node_timings"]   = _fs.get("node_timings", {})
+                        _live_stats["cache_hits"]     = _fs.get("cache_hits", 0)
+                        _live_stats["cache_misses"]   = _fs.get("cache_misses", 0)
+                        _live_stats["total_cache_hits"]   += _fs.get("cache_hits", 0)
+                        _live_stats["total_cache_misses"] += _fs.get("cache_misses", 0)
+                        _live_stats["mem_edges"]      = _fs.get("mem_edges", 0)
+                        _live_stats["disk_edges"]     = _fs.get("disk_edges", 0)
+                        _live_stats["gpu_nodes"]      = _fs.get("gpu_nodes", 0)
+                        _live_stats["cpu_nodes"]      = _fs.get("cpu_nodes", 0)
+                        _live_stats["node_compute_ms"]= _fs.get("node_compute_ms", 0.0)
+                        _live_stats["overhead_ms"]    = _fs.get("overhead_ms", 0.0)
+                        _live_stats["nodes_cooked"]   = _fs.get("nodes_cooked", 0)
+                        _live_stats["nodes_skipped"]  = _fs.get("nodes_skipped", 0)
+                    # Build node_names map from the current node list
+                    from image_pipeline.core.registry import get_meta as _get_meta
+                    _live_stats["node_names"] = {
+                        n["id"]: (_get_meta(n.get("method_id","")) or type("M",[],{"name":n.get("method_id","?")})()).name
+                        for n in nodes
+                    }
+                    _live_stats["active_nodes"] = len(nodes)
+                    _live_stats["active_edges"] = len(edges)
+                    _live_stats["canvas_w"]     = width
+                    _live_stats["canvas_h"]     = height
+
+                    # Push frame + per-frame metadata to MJPEG buffer and WS clients
+                    if arr is not None:
+                        _push_live_frame(arr, ws_meta=dict(_live_stats))
                 except Exception:
                     import traceback as _tb
                     print(f"[live-sim] frame {frame} failed:\n{_tb.format_exc(limit=6)}")
@@ -1039,7 +1208,16 @@ def live_graph_sim(req: GraphRequest):
 
 @app.get("/api/graph/live/status")
 def live_graph_status():
-    return {"running": _live_sim_thread is not None and _live_sim_thread.is_alive()}
+    running = _live_sim_thread is not None and _live_sim_thread.is_alive()
+    return {"running": running, **_live_stats}
+
+
+@app.get("/api/graph/diagnostics")
+def live_graph_diagnostics():
+    """Full diagnostics snapshot — superset of /api/graph/live/status."""
+    running = _live_sim_thread is not None and _live_sim_thread.is_alive()
+    sim_cache_size = len(_live_executor._sim_cache) if _live_executor is not None else 0
+    return {"running": running, "sim_cache_entries": sim_cache_size, **_live_stats}
 
 
 def _run_graph_job(job_id, nodes, edges, seed, frames, start_frame, out_dir, width=768, height=512):

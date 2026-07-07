@@ -21,6 +21,7 @@ except ImportError:
     id="17",
     name="Glitch Art",
     category="filters",
+    new_image_contract=True,
     tags=["glitch", "fast", "animation", "expanded"],
     params={
         "glitch_type": {"description": "glitch style: classic, pixel_sort, datamosh, vhs, screen_tear, jpeg, bit_crush, wave, all", "default": "classic"},
@@ -85,9 +86,9 @@ def method_glitch(out_dir: Path, seed: int, params=None):
     wave_distort = max(0, min(20, params.get("wave_distort", 0)))
 
     # --- Build source image ---
-    if params.get("input_image"):
-        from ...core.utils import load_input
-        a = (load_input(params["input_image"]) * 255).astype(np.uint8)
+    _inp = params.get("_input_image")
+    if _inp is not None:
+        a = (_inp * 255).astype(np.uint8)
     else:
         # Rich colorful source that glitches will actually tear apart
         seed_all(seed)
