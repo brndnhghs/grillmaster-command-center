@@ -31,7 +31,28 @@
 
 import * as THREE from '/ui/vendor/three.module.js';
 
-export const CLIENT_NODE_IDS = ['__scene3d__'];
+export const CLIENT_NODE_IDS = ['__scene3d__', '__p5sketch__'];
+
+// ── Lazy p5.js loader (UMD global, injected only when a p5 node is present) ──
+let _p5LoadPromise = null;
+function loadP5() {
+  if (window.p5) return Promise.resolve(window.p5);
+  if (_p5LoadPromise) return _p5LoadPromise;
+  _p5LoadPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = '/ui/vendor/p5.min.js';
+    s.async = true;
+    s.onload = () => resolve(window.p5);
+    s.onerror = () => { _p5LoadPromise = null; reject(new Error('failed to load p5.js')); };
+    document.head.appendChild(s);
+  });
+  return _p5LoadPromise;
+}
+
+/** Preload any heavy libs a graph needs before its first synchronous execute(). */
+export async function prepare(nodes) {
+  if (nodes.some(n => n.method_id === '__p5sketch__')) await loadP5();
+}
 
 // ── Easing — a faithful port of server core/easing.py apply_easing ──────────
 // Client and server MUST agree so keyframed params look identical whether a
@@ -178,6 +199,13 @@ class ClientExecutor {
     const blackData = new Uint8Array([0, 0, 0, 255]);
     this._blackTex = new THREE.DataTexture(blackData, 1, 1, THREE.RGBAFormat);
     this._blackTex.needsUpdate = true;
+    // Per-node p5 instances: id -> { code, inst, container, globals, tex, errBox }.
+    this._p5 = new Map();
+    // Per-node error strings (p5 compile/runtime, GLSL, …) surfaced to the UI.
+    this._nodeErrors = {};
+    // Reused scratch for reading a spine RT back into a 2D canvas (filter input).
+    this._p5InputCanvas = null; this._p5InputCtx = null;
+    this._p5ReadBuf = null; this._p5InputImg = null;
     // Passthrough blit material.
     this._blitMat = new THREE.RawShaderMaterial({
       glslVersion: THREE.GLSL3,
@@ -331,6 +359,162 @@ void main(){ f_color = texture(u_texture, v_uv); }`,
     if (prog?.diagnostics?.programLog) this.lastCompileError = prog.diagnostics.programLog;
   }
 
+  // ── p5.js sketch node ───────────────────────────────────────────────────────
+  _clearRT(rt) {
+    this.renderer.setRenderTarget(rt);
+    this.renderer.setClearColor(0x000000, 1);
+    this.renderer.clear();
+    this.renderer.setRenderTarget(null);
+  }
+
+  // Read a spine render target back into a 2D canvas the p5 sketch can consume
+  // (filter mode). This is the ONE readback in the p5 path — the OUTPUT handoff
+  // (CanvasTexture) stays readback-free. Generator sketches do no readback.
+  _readRTToInputCanvas(rt) {
+    const w = this.width, h = this.height;
+    if (!this._p5InputCanvas) {
+      this._p5InputCanvas = document.createElement('canvas');
+      this._p5InputCtx = this._p5InputCanvas.getContext('2d');
+    }
+    if (this._p5InputCanvas.width !== w || this._p5InputCanvas.height !== h) {
+      this._p5InputCanvas.width = w; this._p5InputCanvas.height = h;
+      this._p5InputImg = null;
+    }
+    if (!this._p5ReadBuf || this._p5ReadBuf.length !== w * h * 4)
+      this._p5ReadBuf = new Uint8Array(w * h * 4);
+    this.renderer.readRenderTargetPixels(rt, 0, 0, w, h, this._p5ReadBuf);
+    if (!this._p5InputImg) this._p5InputImg = this._p5InputCtx.createImageData(w, h);
+    // WebGL readback is bottom-up; flip rows into the ImageData.
+    const d = this._p5InputImg.data, rw = w * 4, buf = this._p5ReadBuf;
+    for (let y = 0; y < h; y++) {
+      const src = (h - 1 - y) * rw;
+      d.set(buf.subarray(src, src + rw), y * rw);
+    }
+    this._p5InputCtx.putImageData(this._p5InputImg, 0, 0);
+    return this._p5InputCanvas;
+  }
+
+  _buildP5(id, code) {
+    const P5 = window.p5;
+    const globals = {
+      width: this.width, height: this.height, time: 0, frame: 0,
+      p1: 0.5, p2: 0.5, p3: 0.5, p4: 0.5, input: null,
+      WEBGL: P5.prototype.WEBGL, P2D: P5.prototype.P2D,
+    };
+    const container = document.createElement('div');
+    container.style.cssText = 'position:absolute;left:-99999px;top:0;width:1px;height:1px;overflow:hidden;';
+    document.body.appendChild(container);
+    const errBox = { error: null };
+
+    // Compile the user code into {setup, draw}. Function declarations named
+    // `setup`/`draw` inside the body are hoisted locals we return by name, so
+    // nothing leaks to window. They take (p, g) — see the default sketch.
+    let resolved;
+    try {
+      const factory = new Function(
+        '"use strict";\n' + code +
+        '\n;return {setup:(typeof setup!=="undefined")?setup:null,' +
+        ' draw:(typeof draw!=="undefined")?draw:null};');
+      resolved = factory();
+    } catch (e) {
+      errBox.error = 'compile: ' + (e && e.message || e);
+      return { code, inst: null, container, globals, tex: null, errBox };
+    }
+
+    const sketch = (p) => {
+      p.setup = () => {
+        try {
+          p.pixelDensity(1);
+          if (resolved.setup) resolved.setup(p, globals);
+          if (!p.canvas) p.createCanvas(globals.width, globals.height);
+          p.noLoop(); // we drive redraw() per spine frame for determinism
+        } catch (e) { errBox.error = 'setup: ' + (e && e.message || e); try { p.noLoop(); } catch {} }
+      };
+      p.draw = () => {
+        if (!resolved.draw) return;
+        try { resolved.draw(p, globals); errBox.error = null; }
+        catch (e) { errBox.error = 'draw: ' + (e && e.message || e) +
+          (e && e.stack ? ' @ ' + e.stack.split('\n').slice(1, 3).join(' | ') : ''); }
+      };
+    };
+    const inst = new P5(sketch, container);
+    return { code, inst, container, globals, tex: null, errBox };
+  }
+
+  _destroyP5(id) {
+    const st = this._p5.get(id);
+    if (!st) return;
+    try { st.inst && st.inst.remove(); } catch {}
+    if (st.container && st.container.parentNode) st.container.parentNode.removeChild(st.container);
+    if (st.tex) st.tex.dispose();
+    this._p5.delete(id);
+    delete this._nodeErrors[id];
+  }
+
+  renderP5(node, params, time, frame, inputCanvas, targetRT) {
+    if (!window.p5) { this._clearRT(targetRT); return; } // still loading
+    const code = String(params.sketch_code || '');
+    let st = this._p5.get(node.id);
+    if (!st || st.code !== code) {          // new node or edited code → rebuild
+      if (st) this._destroyP5(node.id);
+      st = this._buildP5(node.id, code);
+      this._p5.set(node.id, st);
+    }
+    if (st.errBox.error || !st.inst) {
+      this._nodeErrors[node.id] = st.errBox.error || 'p5 build failed';
+      this._clearRT(targetRT);
+      return;
+    }
+
+    // Feed animated globals to the sketch.
+    const g = st.globals;
+    const inst = st.inst;
+    g.width = this.width; g.height = this.height;
+    g.time = time * num(params.time_scale, 1);
+    g.frame = frame;
+    g.p1 = num(params.p1, 0.5); g.p2 = num(params.p2, 0.5);
+    g.p3 = num(params.p3, 0.5); g.p4 = num(params.p4, 0.5);
+    // Filter mode: hand the sketch a p5.Image (p5 texture()/image() need a
+    // p5.Image, not a raw canvas). Built from the readback ImageData.
+    if (inputCanvas && this._p5InputImg) {
+      const w = this.width, h = this.height;
+      if (!st.inputImg || st.inputImg.width !== w || st.inputImg.height !== h)
+        st.inputImg = inst.createImage(w, h);
+      st.inputImg.loadPixels();
+      st.inputImg.pixels.set(this._p5InputImg.data);
+      st.inputImg.updatePixels();
+      g.input = st.inputImg;
+    } else {
+      g.input = null;
+    }
+
+    try {
+      if (inst.width !== this.width || inst.height !== this.height)
+        inst.resizeCanvas(this.width, this.height, true);
+      inst.redraw(); // runs the user draw once
+    } catch (e) {
+      this._nodeErrors[node.id] = 'redraw: ' + (e && e.message || e) +
+        (e && e.stack ? ' @ ' + e.stack.split('\n').slice(1, 4).join(' | ') : '');
+      this._clearRT(targetRT); return;
+    }
+    if (st.errBox.error) { this._nodeErrors[node.id] = st.errBox.error; this._clearRT(targetRT); return; }
+    delete this._nodeErrors[node.id];
+
+    // Hand the p5 canvas to the spine as a texture (texImage2D upload — no
+    // readPixels). CanvasTexture.flipY (default) yields upright orientation.
+    if (!st.tex || st.tex.image !== inst.canvas) {
+      if (st.tex) st.tex.dispose();
+      st.tex = new THREE.CanvasTexture(inst.canvas);
+    }
+    st.tex.needsUpdate = true;
+    this._blitMat.uniforms.u_texture.value = st.tex;
+    this._quadMesh.material = this._blitMat;
+    this.renderer.setRenderTarget(targetRT);
+    this.renderer.clear();
+    this.renderer.render(this._quadScene, this._quadCam);
+    this.renderer.setRenderTarget(null);
+  }
+
   // ── Graph execution ─────────────────────────────────────────────────────────
   _topoSort(nodes, edges) {
     const byId = new Map(nodes.map(n => [n.id, n]));
@@ -386,6 +570,14 @@ void main(){ f_color = texture(u_texture, v_uv); }`,
         const inTex = inEdge && outputs.has(inEdge.src_node)
           ? outputs.get(inEdge.src_node).texture : null;
         this.renderGlslFilter(node, params, time, inTex, rt);
+      } else if (node.method_id === '__p5sketch__') {
+        // Filter mode: read the upstream RT into a 2D canvas the sketch reads
+        // as g.input. Generator mode (no wired input): g.input stays null.
+        const inEdge = edges.find(e => !e.feedback && e.dst_node === node.id &&
+          (e.dst_port === 'image_in' || e.dst_port === 'image'));
+        const inputCanvas = inEdge && outputs.has(inEdge.src_node)
+          ? this._readRTToInputCanvas(outputs.get(inEdge.src_node)) : null;
+        this.renderP5(node, params, time, frame, inputCanvas, rt);
       } else {
         // Unsupported client node — passthrough its first input (or black).
         const inEdge = edges.find(e => !e.feedback && e.dst_node === node.id);
@@ -410,6 +602,12 @@ void main(){ f_color = texture(u_texture, v_uv); }`,
       this.renderer.clear();
       this.renderer.render(this._quadScene, this._quadCam);
     }
+
+    // Garbage-collect p5 instances whose node was removed from the graph.
+    if (this._p5.size) {
+      const live = new Set(nodes.map(n => n.id));
+      for (const id of [...this._p5.keys()]) if (!live.has(id)) this._destroyP5(id);
+    }
     return termId;
   }
 
@@ -419,6 +617,7 @@ void main(){ f_color = texture(u_texture, v_uv); }`,
   }
 
   dispose() {
+    for (const id of [...this._p5.keys()]) this._destroyP5(id);
     for (const rt of this._rts.values()) rt.dispose();
     this._rts.clear();
     for (const m of this._filterMats.values()) m.dispose();
@@ -448,7 +647,8 @@ function _ensureExecutor(width, height) {
 }
 
 /** One-shot render of `frame` into the executor canvas. Returns the canvas. */
-export function renderFrame(nodes, edges, frame, width, height, timeSeconds) {
+export async function renderFrame(nodes, edges, frame, width, height, timeSeconds) {
+  await prepare(nodes);
   const ex = _ensureExecutor(width, height);
   const time = timeSeconds !== undefined ? timeSeconds : frame / 24;
   ex.execute(nodes, edges, frame, time);
@@ -460,8 +660,9 @@ export function renderFrame(nodes, edges, frame, width, height, timeSeconds) {
  * driving u_time from wall clock. `onStats({frame, fps})` fires ~4x/sec.
  * Returns the executor canvas (caller mounts it).
  */
-export function startLive({ nodes, edges, start, end, fps, width, height, onStats }) {
+export async function startLive({ nodes, edges, start, end, fps, width, height, onStats }) {
   stopLive();
+  await prepare(nodes);
   const ex = _ensureExecutor(width, height);
   _live = { nodes, edges, start, end, fps: fps || 24, onStats };
 
@@ -490,7 +691,7 @@ export function startLive({ nodes, edges, start, end, fps, width, height, onStat
 
 /** Update the graph the live loop renders (params/edges changed) without restart. */
 export function updateLiveGraph(nodes, edges) {
-  if (_live) { _live.nodes = nodes; _live.edges = edges; }
+  if (_live) { _live.nodes = nodes; _live.edges = edges; prepare(nodes); }
 }
 
 export function stopLive() {
@@ -508,6 +709,7 @@ export function isLive() { return !!_live; }
  */
 export async function exportWebM({ nodes, edges, start, end, fps, width, height, onProgress }) {
   stopLive();
+  await prepare(nodes);
   const ex = _ensureExecutor(width, height);
   const total = end - start + 1;
   const stream = ex.canvas.captureStream(0);
@@ -541,3 +743,6 @@ export function disposeAll() {
 
 /** Expose the last GLSL compile error (or null). */
 export function lastError() { return _executor ? _executor.lastCompileError : null; }
+
+/** Per-node error strings (p5 compile/runtime, etc.), keyed by node id. */
+export function getNodeErrors() { return _executor ? { ..._executor._nodeErrors } : {}; }
