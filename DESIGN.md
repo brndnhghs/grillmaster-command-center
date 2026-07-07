@@ -142,6 +142,7 @@ The executor instance uses `_GRAPH_SESSION_DIR` for normal runs so cached output
 5. **Diagnostics**: `last_frame_stats` now exposes `nodes_cooked` and `nodes_skipped` per frame. The Diagnostics panel shows these live.
 
 **Current `is_time_varying=False` nodes** (audited manually; all are pure image-processing with no time/frame/RNG dependency):
+- `05` Noise, `77` False Color IR, `130` Particle Painter
 - `137` Image Blend, `138` Scalar Math, `139` Field Combine, `140` Particle Merge, `141` Apply Mask
 - `__image_to_mask__` Image to Mask, `__transform__` Transform
 
