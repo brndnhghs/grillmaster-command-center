@@ -9063,8 +9063,9 @@ function _gOvlDraw() {
   const maxMs = _gOvlMaxMs();
   const nodeById = new Map(gNodes.map(n => [n.id, n]));
   // GLOBAL TEMPO — the whole overlay's liveliness tracks fps (feel performance).
+  // Floored so motion stays legible in a loop even on a slow graph.
   const fps = _gOvlTele.fps || 0;
-  const tempo = Math.max(0.32, Math.min(1.15, 0.32 + fps / 60));
+  const tempo = Math.max(0.42, Math.min(1.2, 0.42 + fps / 55));
   const cookThresh = Math.max(0.6, maxMs * 0.03);
 
   // ── EDGES: data flow ──────────────────────────────────────────────────────
@@ -9086,7 +9087,7 @@ function _gOvlDraw() {
     // faint guide so the path always reads
     ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.bezierCurveTo(c0.x, c0.y, c1.x, c1.y, p1.x, p1.y);
     ctx.setLineDash([]); ctx.lineWidth = 1; ctx.strokeStyle = _ovlRgba(col, 0.08 + 0.10 * load); ctx.stroke();
-    const spd = (0.12 + load * 0.85) * tempo; // path-fractions/sec ∝ throughput
+    const spd = (0.24 + load * 1.0) * tempo; // path-fractions/sec ∝ throughput
     ctx.setLineDash([]);
     if (mem) {
       // MEMORY: smooth continuous stream — many small dots; size/density ∝ bytes.
@@ -9229,7 +9230,11 @@ function gOverlayToggle(force) {
   _gOvlCanvas?.classList.toggle('on', gOverlayEnabled);
   if (_gOvlMini) _gOvlMini.style.display = gOverlayEnabled ? '' : 'none';
   const _lg = document.getElementById('graph-legend');
-  if (_lg) _lg.style.display = gOverlayEnabled ? '' : 'none';
+  if (_lg) {
+    _lg.style.display = gOverlayEnabled ? '' : 'none';
+    // Small screens: start collapsed so the legend never buries the graph.
+    if (gOverlayEnabled) _lg.classList.toggle('collapsed', window.innerWidth <= 760);
+  }
   for (const id of ['graph-overlay-btn', 'graph-overlay-btn-desk']) {
     document.getElementById(id)?.classList.toggle('active', gOverlayEnabled);
   }
