@@ -71,20 +71,44 @@ function _isGpuShaderNode(mid) {
 function _looksLikeGpuShader(mid) {
   return /^\d+$/.test(mid) && +mid >= 173 && +mid <= 219;
 }
+// Client node ids that emit an IMAGE (vs 3D-data like geometry/light).
+const _IMAGE_CLIENT_IDS = new Set([
+  '__scene3d__', '__scene_render__', '__custom_shader__', '__p5sketch__',
+]);
+function _producesImage(mid) {
+  return _IMAGE_CLIENT_IDS.has(mid) || _isGpuShaderNode(mid) || _looksLikeGpuShader(mid);
+}
+
+// Lazy GLTFLoader (vendored three addon, import rewritten to our three build).
+let _gltfLoaderPromise = null;
+function loadGltfLoader() {
+  if (_gltfLoaderPromise) return _gltfLoaderPromise;
+  _gltfLoaderPromise = import('/ui/vendor/GLTFLoader.js')
+    .then(m => m.GLTFLoader)
+    .catch(e => { _gltfLoaderPromise = null; throw e; });
+  return _gltfLoaderPromise;
+}
+
+// Client-renderable node ids (the spine can execute these fully in-browser).
+const CLIENT_RENDER_IDS = new Set([
+  '__scene3d__', '__p5sketch__', '__custom_shader__',
+  '__geometry__', '__material__', '__mesh3d__', '__group3d__',
+  '__light3d__', '__camera3d__', '__scene_render__', '__gltf__',
+]);
 
 /** Preload any heavy libs a graph needs before its first synchronous execute(). */
 export async function prepare(nodes) {
   const jobs = [];
   if (nodes.some(n => n.method_id === '__p5sketch__')) jobs.push(loadP5());
   if (nodes.some(n => _looksLikeGpuShader(n.method_id))) jobs.push(loadShaderBundle());
+  if (nodes.some(n => n.method_id === '__gltf__')) jobs.push(loadGltfLoader());
   await Promise.all(jobs);
 }
 
 /** Can every node in this graph be rendered by the client spine? */
 export function graphClientRenderable(nodes) {
   if (!nodes.length) return false;
-  const CLIENT = new Set(['__scene3d__', '__p5sketch__', '__custom_shader__']);
-  return nodes.every(n => CLIENT.has(n.method_id) ||
+  return nodes.every(n => CLIENT_RENDER_IDS.has(n.method_id) ||
     _isGpuShaderNode(n.method_id) || _looksLikeGpuShader(n.method_id));
 }
 
@@ -233,6 +257,9 @@ class ClientExecutor {
     const blackData = new Uint8Array([0, 0, 0, 255]);
     this._blackTex = new THREE.DataTexture(blackData, 1, 1, THREE.RGBAFormat);
     this._blackTex.needsUpdate = true;
+    // Composable 3D family (#3): per-node THREE resources (geometry/material/
+    // mesh/light/camera/group/gltf/scene), keyed by node id.
+    this._res3d = new Map();
     // GPU shader node materials (parity layer): webgl2 fragment -> RawShaderMaterial.
     this._gpuMats = new Map();
     // Temp RT for the two-pass convention bake (flip Y + swap R/B to match server).
@@ -475,6 +502,189 @@ void main(){ f_color = texture(u_texture, vec2(v_uv.x, 1.0 - v_uv.y)).bgra; }`,
     if (prog?.diagnostics?.programLog) this._nodeErrors[node.id] = prog.diagnostics.programLog;
   }
 
+  // ── Composable 3D node family (#3) ──────────────────────────────────────────
+  // Each builder returns a typed output {kind, value}. Resources persist per
+  // node in _res3d and are mutated in place; the Scene Render node assembles a
+  // THREE.Scene from its inputs each frame and renders to its RT.
+  _paramGeometry(shape, size, detail) {
+    const s = size, d = detail;
+    const seg = (lo, hi) => Math.round(lo + (hi - lo) * d);
+    switch (shape) {
+      case 'sphere':       return new THREE.SphereGeometry(0.75 * s, seg(8, 64), seg(6, 48));
+      case 'torus':        return new THREE.TorusGeometry(0.55 * s, 0.22 * s, seg(8, 32), seg(16, 96));
+      case 'torusknot':    return new THREE.TorusKnotGeometry(0.5 * s, 0.18 * s, seg(32, 200), seg(8, 32));
+      case 'cone':         return new THREE.ConeGeometry(0.7 * s, 1.3 * s, seg(8, 64));
+      case 'cylinder':     return new THREE.CylinderGeometry(0.6 * s, 0.6 * s, 1.3 * s, seg(8, 64));
+      case 'icosahedron':  return new THREE.IcosahedronGeometry(0.85 * s, Math.round(d * 3));
+      case 'dodecahedron': return new THREE.DodecahedronGeometry(0.85 * s, Math.round(d * 3));
+      case 'plane':        return new THREE.PlaneGeometry(1.6 * s, 1.6 * s, seg(1, 32), seg(1, 32));
+      case 'box':
+      default:             return new THREE.BoxGeometry(s, s, s, seg(1, 8), seg(1, 8), seg(1, 8));
+    }
+  }
+
+  buildGeometry(node, params) {
+    let r = this._res3d.get(node.id);
+    const key = `${params.shape}|${num(params.size, 1)}|${num(params.detail, 0.5)}`;
+    if (!r || r.key !== key) {
+      if (r && r.value) r.value.dispose();
+      r = { kind: 'geometry', key, value: this._paramGeometry(String(params.shape || 'box'), num(params.size, 1), num(params.detail, 0.5)) };
+      this._res3d.set(node.id, r);
+    }
+    return r;
+  }
+
+  buildMaterial(node, params) {
+    let r = this._res3d.get(node.id);
+    if (!r || r.kind !== 'material') {
+      r = { kind: 'material', value: new THREE.MeshStandardMaterial() };
+      this._res3d.set(node.id, r);
+    }
+    const m = r.value;
+    m.color = hexToColor(params.color, '#4a9eff');
+    m.metalness = num(params.metalness, 0.4);
+    m.roughness = num(params.roughness, 0.35);
+    m.emissive = hexToColor(params.emissive, '#000000');
+    m.emissiveIntensity = num(params.emissive_intensity, 1);
+    const flat = num(params.flat_shading, 0) >= 0.5;
+    if (m.flatShading !== flat) { m.flatShading = flat; m.needsUpdate = true; }
+    return r;
+  }
+
+  buildLight(node, params) {
+    let r = this._res3d.get(node.id);
+    const type = String(params.type || 'point');
+    if (!r || r.kind !== 'light' || r.ltype !== type) {
+      if (r && r.value && r.value.dispose) r.value.dispose();
+      const light = type === 'directional' ? new THREE.DirectionalLight()
+        : type === 'spot' ? new THREE.SpotLight() : new THREE.PointLight();
+      r = { kind: 'light', ltype: type, value: light };
+      this._res3d.set(node.id, r);
+    }
+    const L = r.value;
+    L.position.set(num(params.pos_x, 3), num(params.pos_y, 4), num(params.pos_z, 5));
+    L.color = hexToColor(params.color, '#ffffff');
+    L.intensity = num(params.intensity, 60);
+    return r;
+  }
+
+  buildCamera(node, params) {
+    let r = this._res3d.get(node.id);
+    if (!r || r.kind !== 'camera') {
+      r = { kind: 'camera', value: new THREE.PerspectiveCamera(50, this.width / this.height, 0.01, 200) };
+      this._res3d.set(node.id, r);
+    }
+    const cam = r.value;
+    cam.fov = num(params.fov, 50);
+    cam.aspect = this.width / this.height;
+    cam.position.set(num(params.pos_x, 0), num(params.pos_y, 0), num(params.pos_z, 4));
+    cam.lookAt(num(params.look_x, 0), num(params.look_y, 0), num(params.look_z, 0));
+    cam.updateProjectionMatrix();
+    return r;
+  }
+
+  buildMesh(node, params, geomOut, matOut, time) {
+    let r = this._res3d.get(node.id);
+    if (!r || r.kind !== 'object3d' || !r.mesh) {
+      r = { kind: 'object3d', mesh: new THREE.Mesh(), value: null };
+      r.value = r.mesh;
+      this._res3d.set(node.id, r);
+    }
+    const mesh = r.mesh;
+    if (geomOut && geomOut.value) mesh.geometry = geomOut.value;
+    mesh.material = (matOut && matOut.value) || (r._fallbackMat ||= new THREE.MeshStandardMaterial({ color: 0x888888 }));
+    const spin = num(params.spin_speed, 0) * time;
+    mesh.position.set(num(params.pos_x, 0), num(params.pos_y, 0), num(params.pos_z, 0));
+    mesh.rotation.set(num(params.rot_x, 0) * DEG, num(params.rot_y, 0) * DEG + spin, num(params.rot_z, 0) * DEG);
+    const s = num(params.scale, 1); mesh.scale.set(s, s, s);
+    return r;
+  }
+
+  buildGroup(node, aOut, bOut) {
+    let r = this._res3d.get(node.id);
+    if (!r || r.kind !== 'object3d' || !r.group) {
+      r = { kind: 'object3d', group: new THREE.Group(), value: null };
+      r.value = r.group;
+      this._res3d.set(node.id, r);
+    }
+    r.group.clear();
+    for (const o of [aOut, bOut]) if (o && o.value) r.group.add(o.value);
+    return r;
+  }
+
+  buildGltf(node, params, time) {
+    let r = this._res3d.get(node.id);
+    const url = String(params.url || '');
+    if (!r || r.kind !== 'object3d' || r.url !== url) {
+      // (Re)start an async load; until it resolves the output is an empty group.
+      const holder = new THREE.Group();
+      r = { kind: 'object3d', url, holder, model: null, value: holder, loading: true };
+      this._res3d.set(node.id, r);
+      loadGltfLoader().then(Loader => new Promise((res, rej) => {
+        new Loader().load(url, g => res(g), undefined, err => rej(err));
+      })).then(gltf => {
+        if (this._res3d.get(node.id) !== r) return; // superseded
+        r.model = gltf.scene || gltf.scenes?.[0];
+        if (r.model) { holder.add(r.model); }
+        r.loading = false;
+      }).catch(e => { r.loading = false; this._nodeErrors[node.id] = 'gltf: ' + (e && e.message || e); });
+    }
+    // Transform the holder each frame (keyframeable).
+    const s = num(params.scale, 1); r.holder.scale.set(s, s, s);
+    r.holder.rotation.y = num(params.spin_speed, 0) * time;
+    return r;
+  }
+
+  renderSceneRender(node, params, objectOuts, lightOuts, cameraOut, targetRT) {
+    let r = this._res3d.get(node.id);
+    if (!r || r.kind !== 'scene') {
+      const scene = new THREE.Scene();
+      const ambient = new THREE.AmbientLight(0xffffff, 0.35);
+      const defLight = new THREE.PointLight(0xffffff, 60);
+      defLight.position.set(4, 5, 6);
+      const defCam = new THREE.PerspectiveCamera(50, this.width / this.height, 0.01, 200);
+      defCam.position.set(0, 0, 4); defCam.lookAt(0, 0, 0);
+      r = { kind: 'scene', scene, ambient, defLight, defCam };
+      this._res3d.set(node.id, r);
+    }
+    const { scene, ambient, defLight, defCam } = r;
+    scene.background = hexToColor(params.bg_color, '#0a0e18');
+    ambient.intensity = num(params.ambient, 0.35);
+
+    // Assemble: add wired objects + lights (or a default light), pick camera.
+    const added = [ambient];
+    scene.add(ambient);
+    for (const o of objectOuts) if (o && o.value) { scene.add(o.value); added.push(o.value); }
+    if (lightOuts.length) {
+      for (const l of lightOuts) if (l && l.value) { scene.add(l.value); added.push(l.value); }
+    } else {
+      scene.add(defLight); added.push(defLight);
+    }
+    const cam = (cameraOut && cameraOut.value) || defCam;
+    cam.aspect = this.width / this.height; cam.updateProjectionMatrix();
+
+    this.renderer.setRenderTarget(targetRT);
+    this.renderer.clear();
+    this.renderer.render(scene, cam);
+    this.renderer.setRenderTarget(null);
+
+    // Detach transient children so objects can be reused by other scenes/frames.
+    for (const o of added) scene.remove(o);
+  }
+
+  _destroy3d(id) {
+    const r = this._res3d.get(id);
+    if (!r) return;
+    try {
+      if (r.kind === 'geometry' && r.value) r.value.dispose();
+      else if (r.kind === 'material' && r.value) r.value.dispose();
+      else if (r.kind === 'object3d' && r.mesh) r.mesh.geometry?.dispose?.();
+      else if (r.kind === 'scene') { /* shared prims; nothing owned to dispose */ }
+    } catch {}
+    this._res3d.delete(id);
+    delete this._nodeErrors[id];
+  }
+
   // ── p5.js sketch node ───────────────────────────────────────────────────────
   _clearRT(rt) {
     this.renderer.setRenderTarget(rt);
@@ -661,8 +871,12 @@ void main(){ f_color = texture(u_texture, vec2(v_uv.x, 1.0 - v_uv.y)).bgra; }`,
     const flagged = nodes.find(n => n.render);
     if (flagged) return flagged.id;
     const hasOut = new Set(edges.filter(e => !e.feedback).map(e => e.src_node));
-    const sink = nodes.find(n => !hasOut.has(n.id));
-    return sink ? sink.id : (nodes.length ? nodes[nodes.length - 1].id : null);
+    const sinks = nodes.filter(n => !hasOut.has(n.id));
+    // Prefer an image-producing sink (a geometry/light node left dangling
+    // shouldn't win the terminal over a Scene Render).
+    const imageSink = sinks.find(n => _producesImage(n.method_id));
+    if (imageSink) return imageSink.id;
+    return sinks.length ? sinks[0].id : (nodes.length ? nodes[nodes.length - 1].id : null);
   }
 
   /**
@@ -672,65 +886,84 @@ void main(){ f_color = texture(u_texture, vec2(v_uv.x, 1.0 - v_uv.y)).bgra; }`,
   execute(nodes, edges, frame, time) {
     if (!nodes.length) return null;
     const order = this._topoSort(nodes, edges);
-    const outputs = new Map(); // node id -> RenderTarget
+    // node id -> typed output: {kind:'image', rt} | {kind:'geometry'|'material'|
+    // 'light'|'camera'|'object3d'|'scene', value, ...}
+    const outputs = new Map();
+
+    // Typed-input helpers.
+    const firstIn = (node, ports) => {
+      const e = edges.find(x => !x.feedback && x.dst_node === node.id && ports.includes(x.dst_port));
+      return e ? outputs.get(e.src_node) : null;
+    };
+    const allIn = (node, ports) =>
+      edges.filter(x => !x.feedback && x.dst_node === node.id && ports.includes(x.dst_port))
+        .map(e => outputs.get(e.src_node)).filter(Boolean);
+    const imgTex = (node, ports) => {
+      const o = firstIn(node, ports);
+      return o && o.kind === 'image' && o.rt ? o.rt.texture : null;
+    };
 
     for (const node of order) {
       const params = animatedParams(node, frame);
+      const mid = node.method_id;
+
+      // ── 3D-data nodes (produce THREE objects, no RT) ──
+      if (mid === '__geometry__') { outputs.set(node.id, this.buildGeometry(node, params)); continue; }
+      if (mid === '__material__') { outputs.set(node.id, this.buildMaterial(node, params)); continue; }
+      if (mid === '__light3d__')  { outputs.set(node.id, this.buildLight(node, params)); continue; }
+      if (mid === '__camera3d__') { outputs.set(node.id, this.buildCamera(node, params)); continue; }
+      if (mid === '__mesh3d__') {
+        outputs.set(node.id, this.buildMesh(node, params, firstIn(node, ['geometry']), firstIn(node, ['material']), time));
+        continue;
+      }
+      if (mid === '__group3d__') {
+        outputs.set(node.id, this.buildGroup(node, firstIn(node, ['object_a']), firstIn(node, ['object_b'])));
+        continue;
+      }
+      if (mid === '__gltf__') { outputs.set(node.id, this.buildGltf(node, params, time)); continue; }
+
+      // ── Image nodes (render into an RT) ──
       const rt = this._rtFor(node.id);
-      if (node.method_id === '__scene3d__') {
+      if (mid === '__scene3d__') {
         this.renderScene3D(node, params, time, rt);
-      } else if (node.method_id === '__custom_shader__') {
-        // First wired image input.
-        const inEdge = edges.find(e => !e.feedback && e.dst_node === node.id &&
-          (e.dst_port === 'image_in' || e.dst_port === 'image'));
-        const inTex = inEdge && outputs.has(inEdge.src_node)
-          ? outputs.get(inEdge.src_node).texture : null;
-        this.renderGlslFilter(node, params, time, inTex, rt);
-      } else if (node.method_id === '__p5sketch__') {
-        // Filter mode: read the upstream RT into a 2D canvas the sketch reads
-        // as g.input. Generator mode (no wired input): g.input stays null.
-        const inEdge = edges.find(e => !e.feedback && e.dst_node === node.id &&
-          (e.dst_port === 'image_in' || e.dst_port === 'image'));
-        const inputCanvas = inEdge && outputs.has(inEdge.src_node)
-          ? this._readRTToInputCanvas(outputs.get(inEdge.src_node)) : null;
+      } else if (mid === '__scene_render__') {
+        this.renderSceneRender(node, params,
+          allIn(node, ['object']), allIn(node, ['light']), firstIn(node, ['camera']), rt);
+      } else if (mid === '__custom_shader__') {
+        this.renderGlslFilter(node, params, time, imgTex(node, ['image_in', 'image']), rt);
+      } else if (mid === '__p5sketch__') {
+        const src = firstIn(node, ['image_in', 'image']);
+        const inputCanvas = src && src.kind === 'image' && src.rt
+          ? this._readRTToInputCanvas(src.rt) : null;
         this.renderP5(node, params, time, frame, inputCanvas, rt);
-      } else if (_isGpuShaderNode(node.method_id)) {
-        // Existing GPU shader node rendered client-side via the parity layer.
-        const inEdge = edges.find(e => !e.feedback && e.dst_node === node.id &&
-          (e.dst_port === 'image_in' || e.dst_port === 'image'));
-        const inTex = inEdge && outputs.has(inEdge.src_node)
-          ? outputs.get(inEdge.src_node).texture : null;
-        this.renderGpuShader(node, params, time, inTex, rt);
+      } else if (_isGpuShaderNode(mid)) {
+        this.renderGpuShader(node, params, time, imgTex(node, ['image_in', 'image']), rt);
       } else {
-        // Unsupported client node — passthrough its first input (or black).
-        const inEdge = edges.find(e => !e.feedback && e.dst_node === node.id);
-        const inTex = inEdge && outputs.has(inEdge.src_node)
-          ? outputs.get(inEdge.src_node).texture : this._blackTex;
-        this._blitMat.uniforms.u_texture.value = inTex;
+        const t = imgTex(node, ['image_in', 'image']) || this._blackTex;
+        this._blitMat.uniforms.u_texture.value = t;
         this._quadMesh.material = this._blitMat;
         this.renderer.setRenderTarget(rt);
         this.renderer.clear();
         this.renderer.render(this._quadScene, this._quadCam);
         this.renderer.setRenderTarget(null);
       }
-      outputs.set(node.id, rt);
+      outputs.set(node.id, { kind: 'image', rt });
     }
 
     const termId = this._terminalId(nodes, edges);
-    const termRT = termId && outputs.get(termId);
-    if (termRT) {
-      this._blitMat.uniforms.u_texture.value = termRT.texture;
+    const termOut = termId && outputs.get(termId);
+    if (termOut && termOut.kind === 'image' && termOut.rt) {
+      this._blitMat.uniforms.u_texture.value = termOut.rt.texture;
       this._quadMesh.material = this._blitMat;
       this.renderer.setRenderTarget(null);
       this.renderer.clear();
       this.renderer.render(this._quadScene, this._quadCam);
     }
 
-    // Garbage-collect p5 instances whose node was removed from the graph.
-    if (this._p5.size) {
-      const live = new Set(nodes.map(n => n.id));
-      for (const id of [...this._p5.keys()]) if (!live.has(id)) this._destroyP5(id);
-    }
+    // Garbage-collect resources for nodes removed from the graph.
+    const live = new Set(nodes.map(n => n.id));
+    if (this._p5.size) for (const id of [...this._p5.keys()]) if (!live.has(id)) this._destroyP5(id);
+    if (this._res3d.size) for (const id of [...this._res3d.keys()]) if (!live.has(id)) this._destroy3d(id);
     return termId;
   }
 
@@ -741,6 +974,7 @@ void main(){ f_color = texture(u_texture, vec2(v_uv.x, 1.0 - v_uv.y)).bgra; }`,
 
   dispose() {
     for (const id of [...this._p5.keys()]) this._destroyP5(id);
+    for (const id of [...this._res3d.keys()]) this._destroy3d(id);
     for (const rt of this._rts.values()) rt.dispose();
     this._rts.clear();
     for (const m of this._filterMats.values()) m.dispose();

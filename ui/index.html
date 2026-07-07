@@ -3423,6 +3423,108 @@ function draw(p, g) {
       time_scale: { description: 'animation speed → g.time', min: 0, max: 5, default: 1 },
     },
   },
+
+  // ── Composable 3D node family (#3) — each renders in the client spine ──────
+  '__geometry__': {
+    method_id: '__geometry__', name: '3D Geometry', category: 'client_3d', clientExec: true,
+    tags: ['3d', 'client'], inputs: {}, outputs: { geometry: 'geometry' }, param_ports: [],
+    description: 'Emits a geometry for a Mesh node.', version: 1, deprecated: false,
+    start_frame: 0, end_frame: 0, prebake: 0,
+    params: {
+      shape:  { description: 'geometry', choices: ['box','sphere','torus','torusknot','cone','cylinder','icosahedron','dodecahedron','plane'], default: 'torusknot' },
+      size:   { description: 'overall size', min: 0.1, max: 3, default: 1 },
+      detail: { description: 'tessellation detail', min: 0, max: 1, default: 0.5 },
+    },
+  },
+  '__material__': {
+    method_id: '__material__', name: '3D Material', category: 'client_3d', clientExec: true,
+    tags: ['3d', 'client', 'pbr'], inputs: {}, outputs: { material: 'material' }, param_ports: [],
+    description: 'PBR material for a Mesh node.', version: 1, deprecated: false,
+    start_frame: 0, end_frame: 0, prebake: 0,
+    params: {
+      color:              { description: 'base color', default: '#4a9eff' },
+      metalness:          { description: 'metalness', min: 0, max: 1, default: 0.4 },
+      roughness:          { description: 'roughness', min: 0, max: 1, default: 0.35 },
+      emissive:           { description: 'emissive color', default: '#000000' },
+      emissive_intensity: { description: 'emissive intensity', min: 0, max: 4, default: 1 },
+      flat_shading:       { description: 'flat shading (0/1)', min: 0, max: 1, default: 0 },
+    },
+  },
+  '__mesh3d__': {
+    method_id: '__mesh3d__', name: '3D Mesh', category: 'client_3d', clientExec: true,
+    tags: ['3d', 'client'], inputs: { geometry: 'geometry', material: 'material' },
+    outputs: { object: 'object3d' }, param_ports: [],
+    description: 'Geometry + Material → transformable object (keyframeable).',
+    version: 1, deprecated: false, start_frame: 0, end_frame: 0, prebake: 0,
+    params: {
+      pos_x: { description: 'position X', min: -5, max: 5, default: 0 },
+      pos_y: { description: 'position Y', min: -5, max: 5, default: 0 },
+      pos_z: { description: 'position Z', min: -5, max: 5, default: 0 },
+      rot_x: { description: 'rotation X (deg)', min: -180, max: 180, default: 0 },
+      rot_y: { description: 'rotation Y (deg)', min: -180, max: 180, default: 0 },
+      rot_z: { description: 'rotation Z (deg)', min: -180, max: 180, default: 0 },
+      spin_speed: { description: 'auto Y-spin (rad/s)', min: 0, max: 4, default: 0.6 },
+      scale: { description: 'uniform scale', min: 0.1, max: 3, default: 1 },
+    },
+  },
+  '__group3d__': {
+    method_id: '__group3d__', name: '3D Group', category: 'client_3d', clientExec: true,
+    tags: ['3d', 'client'], inputs: { object_a: 'object3d', object_b: 'object3d' },
+    outputs: { object: 'object3d' }, param_ports: [],
+    description: 'Combine two objects into one (auto-inserted when 2 objects meet a Scene).',
+    version: 1, deprecated: false, start_frame: 0, end_frame: 0, prebake: 0, params: {},
+  },
+  '__light3d__': {
+    method_id: '__light3d__', name: '3D Light', category: 'client_3d', clientExec: true,
+    tags: ['3d', 'client'], inputs: {}, outputs: { light: 'light' }, param_ports: [],
+    description: 'Light for a Scene Render node.', version: 1, deprecated: false,
+    start_frame: 0, end_frame: 0, prebake: 0,
+    params: {
+      type:      { description: 'light type', choices: ['point','directional','spot'], default: 'point' },
+      pos_x:     { description: 'position X', min: -10, max: 10, default: 3 },
+      pos_y:     { description: 'position Y', min: -10, max: 10, default: 4 },
+      pos_z:     { description: 'position Z', min: -10, max: 10, default: 5 },
+      color:     { description: 'light color', default: '#ffffff' },
+      intensity: { description: 'intensity', min: 0, max: 500, default: 60 },
+    },
+  },
+  '__camera3d__': {
+    method_id: '__camera3d__', name: '3D Camera', category: 'client_3d', clientExec: true,
+    tags: ['3d', 'client'], inputs: {}, outputs: { camera: 'camera' }, param_ports: [],
+    description: 'Camera for a Scene Render node.', version: 1, deprecated: false,
+    start_frame: 0, end_frame: 0, prebake: 0,
+    params: {
+      pos_x:  { description: 'camera X', min: -12, max: 12, default: 0 },
+      pos_y:  { description: 'camera Y', min: -12, max: 12, default: 0 },
+      pos_z:  { description: 'camera Z (dolly)', min: 0.5, max: 16, default: 4 },
+      look_x: { description: 'look-at X', min: -5, max: 5, default: 0 },
+      look_y: { description: 'look-at Y', min: -5, max: 5, default: 0 },
+      look_z: { description: 'look-at Z', min: -5, max: 5, default: 0 },
+      fov:    { description: 'field of view', min: 15, max: 110, default: 50 },
+    },
+  },
+  '__scene_render__': {
+    method_id: '__scene_render__', name: '3D Scene Render', category: 'client_3d', clientExec: true,
+    tags: ['3d', 'client', 'render'], inputs: { object: 'object3d', light: 'light', camera: 'camera' },
+    outputs: { image: 'image', luminance: 'field' }, param_ports: [],
+    description: 'Assemble object(s) + light + camera → rendered image.',
+    version: 1, deprecated: false, start_frame: 0, end_frame: 0, prebake: 0,
+    params: {
+      bg_color: { description: 'background color', default: '#0a0e18' },
+      ambient:  { description: 'ambient light', min: 0, max: 1, default: 0.35 },
+    },
+  },
+  '__gltf__': {
+    method_id: '__gltf__', name: '3D Model (GLTF)', category: 'client_3d', clientExec: true,
+    tags: ['3d', 'client', 'gltf'], inputs: {}, outputs: { object: 'object3d' }, param_ports: [],
+    description: 'Load a .gltf/.glb model as an object (lazy GLTFLoader).',
+    version: 1, deprecated: false, start_frame: 0, end_frame: 0, prebake: 0,
+    params: {
+      url:        { description: 'model URL (.gltf/.glb)', default: 'https://raw.githubusercontent.com/mrdoob/three.js/r160/examples/models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf' },
+      scale:      { description: 'uniform scale', min: 0.05, max: 5, default: 1 },
+      spin_speed: { description: 'auto Y-spin (rad/s)', min: 0, max: 4, default: 0.6 },
+    },
+  },
 };
 
 // Lazy-loaded ES module handle (ui/js/client3d.js). Only imported when a client
@@ -3624,10 +3726,13 @@ gCanvasWrap.addEventListener('wheel', e => {
 }, { passive: false });
 
 // ── Add a node ─────────────────────────────────────────────────
+let _gNodeIdSeq = 0;
 function gAddNode(method_id, x, y) {
   const def = gNodeDefs[method_id];
   if (!def) return;
-  const id = 'n' + Date.now().toString(36);
+  // Timestamp + monotonic counter so IDs stay unique even when several nodes
+  // are added within the same millisecond (e.g. loading a preset / template).
+  const id = 'n' + Date.now().toString(36) + (_gNodeIdSeq++).toString(36);
   const node = { id, method_id, params: gDefaultParams(def), x, y, dirty: true };
   gNodes.push(node);
   gRenderNode(node);
@@ -4673,6 +4778,8 @@ function gAddEdge(src_node, src_port, dst_node, dst_port) {
       SCALAR:    { method: '138', out_port: 'value',     in_a: 'value_a',     in_b: 'value_b'     },
       FIELD:     { method: '139', out_port: 'field',     in_a: 'field_a',     in_b: 'field_b'     },
       PARTICLES: { method: '140', out_port: 'particles', in_a: 'particles_a', in_b: 'particles_b' },
+      // Client-side 3D: two objects into one Scene port → auto-group them.
+      OBJECT3D:  { method: '__group3d__', out_port: 'object', in_a: 'object_a', in_b: 'object_b' },
     };
     const spec = mergeMap[ptype];
     if (!spec) { gSetStatus(`Cannot merge ${ptype || 'unknown'} wires`); return; }

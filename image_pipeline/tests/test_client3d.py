@@ -26,7 +26,15 @@ from image_pipeline.core.utils import set_canvas
 
 # ── 1. Client nodes are client-only (never server-registered) ────────────────
 
-@pytest.mark.parametrize("node_id", ["__scene3d__", "__p5sketch__"])
+CLIENT_ONLY_NODES = [
+    "__scene3d__", "__p5sketch__",
+    # #3 composable 3D family
+    "__geometry__", "__material__", "__mesh3d__", "__group3d__",
+    "__light3d__", "__camera3d__", "__scene_render__", "__gltf__",
+]
+
+
+@pytest.mark.parametrize("node_id", CLIENT_ONLY_NODES)
 def test_client_nodes_not_registered_server_side(node_id):
     """Client nodes render in-browser only; the server must not know them, so
     the server render/export path never tries to execute them."""
@@ -56,6 +64,17 @@ def test_ui_static_mount_serves_client_assets():
     assert "__scene3d__" in mod.text
     assert "__p5sketch__" in mod.text     # p5 renderer wired into the spine
     assert "exportWebM" in mod.text
+    # #3 composable 3D family renderers wired into the spine.
+    for handler in ("buildGeometry", "buildMaterial", "buildMesh",
+                    "buildLight", "buildCamera", "renderSceneRender", "buildGltf"):
+        assert handler in mod.text, f"{handler} missing from client3d.js"
+
+    # Vendored GLTF loader chain serves, with imports rewritten off bare 'three'.
+    for path in ("/ui/vendor/GLTFLoader.js", "/ui/vendor/BufferGeometryUtils.js"):
+        v = client.get(path)
+        assert v.status_code == 200, path
+        assert "from 'three'" not in v.text, f"{path} has an unrewritten bare import"
+        assert "/ui/vendor/three.module.js" in v.text
 
 
 # ── 3. Keyframe parity: client sampler == server _evaluate_param_track ────────
