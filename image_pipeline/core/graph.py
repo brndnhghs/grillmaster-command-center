@@ -105,7 +105,7 @@ def _make_node_def(meta: registry.MethodMeta) -> NodeDef:
         if isinstance(default, str):
             continue  # categorical choices aren't wireable
         if isinstance(default, (int, float)):
-            inputs[pname] = "scalar"   # SCALAR: receives luminance float
+            inputs[pname] = "scalar"   # SCALAR: receives a numeric scalar output (NOT luminance — that's a (H,W) FIELD)
             param_ports.add(pname)
         elif isinstance(default, (list, tuple)):
             inputs[pname] = "field"    # FIELD: receives image ndarray
@@ -179,8 +179,9 @@ def _score_param(src_port: str, param_names: list[str]) -> str | None:
 def _eligible_params(params: dict, src_type: str) -> list[tuple[str, dict]]:
     """Return params eligible for injection given the source wire type.
 
-    SCALAR (luminance float) → params with int or float defaults (not bool, not str).
+    SCALAR (numeric output) → params with int or float defaults (not bool, not str).
     FIELD  (image ndarray)   → params with list or tuple defaults.
+    NOTE: ``luminance`` is a per-pixel FIELD (H,W), never injected as a scalar param.
     """
     out: list[tuple[str, dict]] = []
     for k, spec in params.items():
@@ -621,7 +622,7 @@ class GraphExecutor:
                     arr = sim_frames[frame % len(sim_frames)]
                     flat_outputs[node_id] = {
                         "image": arr,
-                        "luminance": float(np.mean(arr)),
+                        "luminance": np.mean(arr, axis=-1),
                         "field": arr,
                         "particles": None,
                         "mask": None,

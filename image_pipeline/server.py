@@ -830,7 +830,7 @@ def get_wire_payload(job_id: str, src_node_id: str):
     pngs = [p for p in node_dir.glob("*.png") if not p.name.startswith("_")]
     if pngs:
         manifest["image"] = "IMAGE"
-        manifest["luminance"] = "SCALAR"
+        manifest["luminance"] = "FIELD"  # per-pixel (H,W) grayscale
     scalars_path = node_dir / "scalars.json"
     if scalars_path.exists():
         try:
