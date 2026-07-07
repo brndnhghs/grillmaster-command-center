@@ -8937,6 +8937,7 @@ function gOverlayFeed(d) {
 
 function _gOvlResize() {
   if (!_gOvlCanvas) return;
+  _gOvlReadPalette(); // pick up the active theme's colours
   const r = gCanvasWrap.getBoundingClientRect();
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   _gOvlCanvas.width = Math.max(1, Math.round(r.width * dpr));
@@ -8951,55 +8952,95 @@ function _gOvlResize() {
 
 function _gOvlMaxMs() { const v = Object.values(_gOvlTele.timings); return Math.max(1, ...v); }
 
+// Cohesive palette derived from the active theme (re-read on toggle/resize).
+// Flow + node activity use the muted theme accent; a warm amber is reserved for
+// genuine hotspots; --live drives errors and extreme heat.
+let _gOvlPal = null;
+function _gOvlReadPalette() {
+  const cs = getComputedStyle(document.documentElement);
+  const hex = v => { const h = (cs.getPropertyValue(v) || '').trim().replace('#',''); const n = parseInt(h.length===3? h.replace(/(.)/g,'$1$1'):h, 16); return [(n>>16)&255,(n>>8)&255,n&255]; };
+  _gOvlPal = { accent: hex('--accent'), live: hex('--live'), muted: hex('--muted'), text: hex('--text'), warm: [216, 150, 74] };
+}
+function _ovlLerp3(a, b, t) { return [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t]; }
+function _ovlRgba(c, a) { return `rgba(${c[0]|0},${c[1]|0},${c[2]|0},${a})`; }
+// Cook-time colour ramp: cool accent → warm amber → deep orange for genuine
+// hotspots. Never red — red is reserved exclusively for error state.
+function _ovlHeatColor(load) {
+  const p = _gOvlPal;
+  const hot = [232, 150, 70], hotter = [236, 120, 48];
+  let c = _ovlLerp3(p.accent, hot, Math.min(1, load * 1.2));
+  if (load > 0.8) c = _ovlLerp3(c, hotter, (load - 0.8) / 0.2);
+  return c;
+}
+function _ovlRoundRect(ctx, x, y, w, h, rad) {
+  if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, w, h, rad); return; }
+  ctx.beginPath(); ctx.moveTo(x+rad, y);
+  ctx.arcTo(x+w, y, x+w, y+h, rad); ctx.arcTo(x+w, y+h, x, y+h, rad);
+  ctx.arcTo(x, y+h, x, y, rad); ctx.arcTo(x, y, x+w, y, rad); ctx.closePath();
+}
+
 function _gOvlDraw() {
   if (!_gOvlCanvas || !gOverlayEnabled) return;
-  const ctx = _gOvlCanvas.getContext('2d');
+  if (!_gOvlPal) _gOvlReadPalette();
   const r = gCanvasWrap.getBoundingClientRect();
+  // The graph wrap resizes when the live preview panel opens/closes; keep the
+  // canvas buffer matched so the overlay stays pixel-aligned with the nodes.
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  if (_gOvlCanvas.width !== Math.round(r.width * dpr) || _gOvlCanvas.height !== Math.round(r.height * dpr)) _gOvlResize();
+  const ctx = _gOvlCanvas.getContext('2d');
   ctx.clearRect(0, 0, r.width, r.height);
   const now = performance.now() / 1000;
   const live = _gOvlTele.running && (performance.now() - _gOvlTele.ts < 1500);
   const maxMs = _gOvlMaxMs();
 
-  // 1 + 4. Animated wires with flow-direction particles (rate ∝ throughput).
-  gEdges.forEach((edge, ei) => {
+  // 1 + 4. Flow — TouchDesigner-style thin animated dashes travelling along a
+  // gentle bezier (output→input), speed ∝ throughput. Idle wires stay calm
+  // (the real SVG wire is left untouched below).
+  ctx.lineCap = 'round';
+  gEdges.forEach(edge => {
     const s = gNodesEl.querySelector(`.gport[data-nid="${edge.src_node}"][data-port="${edge.src_port}"][data-dir="output"]`);
     const d = gNodesEl.querySelector(`.gport[data-nid="${edge.dst_node}"][data-port="${edge.dst_port}"][data-dir="input"]`);
     if (!s || !d) return;
     const p0 = gPortPos(s), p1 = gPortPos(d);
     const load = Math.min(1, (_gOvlTele.timings[edge.src_node] || 0) / maxMs);
-    if (!live || load <= 0.001) return; // idle edges stay calm (SVG wire only)
-    const count = 1 + Math.round(load * 4), speed = 0.22 + load * 1.1;
-    const phase = ei * 0.37;
-    for (let i = 0; i < count; i++) {
-      const f = ((now * speed + i / count + phase) % 1);
-      const x = p0.x + (p1.x - p0.x) * f, y = p0.y + (p1.y - p0.y) * f;
-      ctx.beginPath(); ctx.arc(x, y, 2 + load * 2.5, 0, 6.2832);
-      ctx.fillStyle = `rgba(120,210,255,${0.5 + 0.4 * Math.sin(f * Math.PI)})`;
-      ctx.fill();
-    }
+    if (!live || load <= 0.01) return;
+    const off = Math.max(24, Math.min(110, Math.abs(p1.x - p0.x) * 0.5));
+    const bez = () => { ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.bezierCurveTo(p0.x + off, p0.y, p1.x - off, p1.y, p1.x, p1.y); };
+    const col = _gOvlPal.accent;
+    // faint continuous guide so the flow path reads even between dashes
+    bez(); ctx.setLineDash([]); ctx.lineWidth = 1; ctx.strokeStyle = _ovlRgba(col, 0.10 + 0.10 * load); ctx.stroke();
+    // travelling dashes (direction = data flow; speed ∝ load)
+    bez();
+    ctx.setLineDash([2.5, 9]);
+    ctx.lineDashOffset = -((now * (12 + load * 46)) % 11.5);
+    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = _ovlRgba(col, 0.34 + 0.34 * load);
+    ctx.stroke();
+    ctx.setLineDash([]);
   });
 
-  // 2 + 4. Node cook-time heat, active pulse, error flash.
+  // 2 + 4. Node activity — a tight, tasteful rim on the node footprint (no
+  // radial bloom). Hue/intensity map to cook time; error = crisp thin red ring.
   for (const n of gNodes) {
     const el = document.getElementById('gnode-' + n.id);
     if (!el) continue;
     const nr = el.getBoundingClientRect();
-    const cx = nr.left - r.left + nr.width / 2, cy = nr.top - r.top + nr.height / 2;
+    const x = nr.left - r.left, y = nr.top - r.top, w = nr.width, h = nr.height;
     const ms = _gOvlTele.timings[n.id] || 0, load = Math.min(1, ms / maxMs);
-    if (live && load > 0.001) {
-      const pulse = 1 + 0.14 * Math.sin(now * 6 + cx * 0.02);
-      const rad = (Math.max(nr.width, nr.height) * 0.62) * (1 + load * 0.5) * pulse;
-      const g = ctx.createRadialGradient(cx, cy, rad * 0.25, cx, cy, rad);
-      // cool → hot as load rises
-      const R = Math.round(60 + 195 * load), G = Math.round(180 - 90 * load), B = Math.round(255 - 150 * load);
-      g.addColorStop(0, `rgba(${R},${G},${B},${0.28 + 0.28 * load})`);
-      g.addColorStop(1, `rgba(${R},${G},${B},0)`);
-      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, rad, 0, 6.2832); ctx.fill();
+    if (live && load > 0.02) {
+      const col = _ovlHeatColor(load);
+      const pulse = 0.9 + 0.1 * Math.sin(now * 3.2 + x * 0.02);
+      ctx.save();
+      ctx.shadowColor = _ovlRgba(col, 0.5); ctx.shadowBlur = 5 + load * 6;
+      ctx.lineWidth = 1.1 + load * 1.2;
+      ctx.strokeStyle = _ovlRgba(col, (0.30 + 0.42 * load) * pulse);
+      _ovlRoundRect(ctx, x - 1.5, y - 1.5, w + 3, h + 3, 9); ctx.stroke();
+      ctx.restore();
     }
     if (_gOvlTele.errors && _gOvlTele.errors[n.id]) {
-      const a = 0.4 + 0.4 * Math.sin(now * 9);
-      ctx.strokeStyle = `rgba(255,70,70,${a})`; ctx.lineWidth = 2.5;
-      ctx.strokeRect(nr.left - r.left - 3, nr.top - r.top - 3, nr.width + 6, nr.height + 6);
+      const a = 0.7 + 0.12 * Math.sin(now * 4.5); // steady, not a flashing blob
+      ctx.lineWidth = 1.4; ctx.strokeStyle = _ovlRgba(_gOvlPal.live, a);
+      _ovlRoundRect(ctx, x - 2.5, y - 2.5, w + 5, h + 5, 10); ctx.stroke();
     }
   }
 
@@ -9026,17 +9067,20 @@ function _gOvlDrawMinimap(wrapRect) {
   const sc = Math.min((mr.width - 2 * pad) / spanX, (mr.height - 2 * pad) / spanY);
   const mx = x => pad + (x - minX) * sc, my = y => pad + (y - minY) * sc;
   _gOvlMini._map = { minX, minY, sc, pad }; // for click→pan
+  if (!_gOvlPal) _gOvlReadPalette();
   const maxMs = _gOvlMaxMs(), live = _gOvlTele.running && (performance.now() - _gOvlTele.ts < 1500);
+  // Muted node dots — rounded, low-contrast; active nodes take a restrained
+  // warm tint. No neon.
   for (const n of gNodes) {
     const load = live ? Math.min(1, (_gOvlTele.timings[n.id] || 0) / maxMs) : 0;
-    ctx.fillStyle = load > 0.001
-      ? `rgba(${60 + 195 * load},${180 - 90 * load},${255 - 150 * load},0.95)`
-      : 'rgba(120,140,180,0.7)';
-    ctx.fillRect(mx(n.x), my(n.y), Math.max(2, NODE_W * sc), Math.max(2, NODE_H * sc));
+    const col = load > 0.02 ? _ovlHeatColor(load) : _gOvlPal.muted;
+    ctx.fillStyle = _ovlRgba(col, load > 0.02 ? 0.85 : 0.45);
+    const w = Math.max(2.5, NODE_W * sc), h = Math.max(2, NODE_H * sc);
+    _ovlRoundRect(ctx, mx(n.x), my(n.y), w, h, 1.5); ctx.fill();
   }
-  // viewport rectangle
-  ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1;
-  ctx.strokeRect(mx(vx0), my(vy0), (vx1 - vx0) * sc, (vy1 - vy0) * sc);
+  // Thin viewport rectangle.
+  ctx.strokeStyle = _ovlRgba(_gOvlPal.text, 0.5); ctx.lineWidth = 1;
+  ctx.strokeRect(mx(vx0) + 0.5, my(vy0) + 0.5, (vx1 - vx0) * sc, (vy1 - vy0) * sc);
 }
 
 function _gOvlTick() {
