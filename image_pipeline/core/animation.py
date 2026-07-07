@@ -125,13 +125,21 @@ def enable_frame_capture(method_id: str):
 
 
 def capture_frame(method_id: str, arr: np.ndarray):
-    """Called by instrumented methods to submit an intermediate frame."""
+    """Called by instrumented methods to submit an intermediate frame.
+
+    The `method_id` argument is the node's id. When a method-id context is
+    active (set by the executor via utils.set_method_id, e.g. when a node was
+    renumbered), the context id is used instead so captured frames key to the
+    node's *current* id rather than a stale literal in the method body.
+    """
+    from .utils import get_method_id
+    effective_id = get_method_id() or method_id
     cancel_event = getattr(_thread_local, "cancel_event", None)
     if cancel_event is not None:
         # Server path: thread-local context is active.
         if cancel_event.is_set():
             raise JobCancelled("Cancelled")
-        getattr(_thread_local, "slots", {}).setdefault(method_id, []).append(arr.copy())
+        getattr(_thread_local, "slots", {}).setdefault(effective_id, []).append(arr.copy())
         on_frame = getattr(_thread_local, "on_frame", None)
         if on_frame is not None:
             try:
@@ -142,8 +150,8 @@ def capture_frame(method_id: str, arr: np.ndarray):
                 pass
         return
     # CLI path: module-level globals.
-    if _FRAME_CAPTURE_ENABLED and method_id in _METHOD_FRAME_SLOTS:
-        _METHOD_FRAME_SLOTS[method_id].append(arr.copy())
+    if _FRAME_CAPTURE_ENABLED and effective_id in _METHOD_FRAME_SLOTS:
+        _METHOD_FRAME_SLOTS[effective_id].append(arr.copy())
 
 
 def get_frames(method_id: str) -> list[np.ndarray]:
