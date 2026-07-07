@@ -220,7 +220,12 @@ This table is illustrative, not exhaustive — `GET /api/node-defs` is the autho
 The live loop cooks whole graphs; the next optimizations are a persistent per-session executor (so Architecture-A sim caches survive across interactive runs), skipping disk writes during live cooking, and a cheap always-cook fast path for channel nodes.
 
 ### Animation system convergence
-Three param-animation mechanisms coexist: per-param keyframes with easing (`paramKeyframes`, evaluated in the executor — the canonical one), linear `animParams` (render-sequence endpoint only), and a vestigial keyframe-store API. They should converge on `paramKeyframes`.
+Converged on `paramKeyframes` as the single param-animation model (see `core/timeline.py` → `KeyframeTrack` + `_evaluate_param_track` in `core/graph.py`):
+- **`animParams`** (legacy linear from→to tween, formerly server-side in the render-sequence endpoint) is now folded into `paramKeyframes` at ingest via `_merge_anim_params_into_nodes` — the frontend `animParams` editor is sugar over the same keyframe engine, supporting multi-keyframe easing/holds/bezier.
+- The **vestigial keyframe-store API** (`/api/graph/keyframes`, `_keyframe_store`) was removed — the cook reads `node.paramKeyframes` from the graph payload, never the global store.
+- The **single animation clock** is `Timeline` (`_timeline` / `time` / `anim_speed` injected by the executor every frame). `anim_speed` now derives from `timeline.speed` so legacy methods stay in sync. `capture_frame()` remains the frame-collection primitive for Architecture-A sims; it is orthogonal to how motion is driven.
+
+Out of scope (unchanged): Architecture-A/-B split, and the per-method `anim_mode` param, which is a method's own choice of *how* to interpret the already-injected `time`/`_timeline` — not a separate engine.
 
 ### Named Image Planes
 Methods could write `beauty.npy`, `depth.npy`, `normals.npy` alongside the main PNG (analogous to Houdini render planes). The executor would expose them as additional IMAGE-type outputs.
