@@ -1354,6 +1354,7 @@ _DISPLAY_CHOICES = sorted(_DISPLAY_RENDERERS.keys())
 @method(
     id="10",
     name="Color Palette",
+    description="Color Palette — generative node.",
     category="codegen",
     tags=["palette", "color", "fast"],
     inputs={

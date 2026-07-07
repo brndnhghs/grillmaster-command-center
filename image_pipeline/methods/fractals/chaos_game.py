@@ -363,6 +363,7 @@ def _render_trail(density, age_arr):
 
 
 @method(id="71", name="Chaos Game", category="fractals", tags=["ifs", "fast", "expanded"],
+description="Chaos Game — fractals node.",
         outputs={"image": "IMAGE", "field": "FIELD", "particles": "PARTICLES"},
         params={
     "particles": {"description": "chaos game points", "min": 50000, "max": 500000, "default": 100000},

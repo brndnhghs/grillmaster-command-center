@@ -262,6 +262,7 @@ def _build_initial_field(
 @method(
     id="109",
     name="Rayleigh-Taylor Instability",
+    description="Rayleigh-Taylor Instability — simulations node.",
     category="simulations",
     tags=["physics", "fluid", "instability", "animation"],
     timeout=180,

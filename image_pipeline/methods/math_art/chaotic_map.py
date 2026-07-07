@@ -17,6 +17,7 @@ except ImportError:
     _has_cv2 = False
 
 @method(id="62", name="Chaotic Map", category="math_art", tags=["chaos","slow", "expanded"],
+description="Chaotic Map — math-art node.",
         outputs={"image": "IMAGE", "field": "FIELD"},
          params={"map_type":{"description":"map type","choices":["henon","logistic","tinkerbell","gingerbreadman","ikeda","lorenz","standard_map","bakers_map","arnold_cat","duffing","rossler"],"default":"henon"},
                  "a":{"description":"a","min":-3.0,"max":3.0,"default":1.4},"b":{"description":"b","min":-3.0,"max":3.0,"default":0.3},

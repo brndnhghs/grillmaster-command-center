@@ -205,6 +205,7 @@ def _render_terrain(h: np.ndarray, water: np.ndarray | None = None,
 @method(
     id="156",
     name="Hydraulic Erosion / River Network",
+    description="Hydraulic Erosion / River Network — simulations node.",
     category="simulations",
     tags=["physics", "terrain", "erosion", "rivers",
           "landscapes", "animation"],

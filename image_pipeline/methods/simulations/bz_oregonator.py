@@ -109,6 +109,7 @@ def _render_frame(
 @method(
     id="91",
     name="BZ Oregonator",
+    description="BZ Oregonator — simulations node.",
     category="simulations",
     tags=["animation", "reaction-diffusion", "spirals", "waves"],
     params={

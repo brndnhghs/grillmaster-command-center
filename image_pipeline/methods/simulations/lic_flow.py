@@ -434,6 +434,7 @@ def _compute_tracers(gh, gw, u, v, _t, n_particles, seed, ds):
 @method(
     id="123",
     name="Animated LIC Flow",
+    description="Animated LIC Flow — simulations node.",
     category="simulations",
     tags=["animation", "fast", "flow", "visualization"],
     timeout=120,

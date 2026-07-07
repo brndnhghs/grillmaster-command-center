@@ -160,6 +160,7 @@ DEFAULT_REGIME = "spots"
 @method(
     id="155",
     name="Gray-Scott Reaction-Diffusion",
+    description="Gray-Scott Reaction-Diffusion — simulations node.",
     category="simulations",
     tags=["physics", "reaction-diffusion", "turing", "patterns", "autocatalytic"],
     timeout=300,

@@ -304,6 +304,7 @@ def _init_gaussian(rng: np.random.Generator, n_packets: int = 3,
 @method(
     id="124",
     name="Nonlinear Schrödinger Equation",
+    description="Nonlinear Schrödinger Equation — simulations node.",
     category="simulations",
     tags=["simulation", "animation", "physics", "quantum", "wave", "soliton", "expanded"],
     timeout=180,

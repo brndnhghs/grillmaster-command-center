@@ -141,6 +141,7 @@ def apply_colormap(data_normalized, name="plasma"):
 @method(
     id="100",
     name="Wave Equation",
+    description="Wave Equation — simulations node.",
     category="simulations",
     tags=["pde", "wave", "fdtd", "animation"],
     timeout=300,

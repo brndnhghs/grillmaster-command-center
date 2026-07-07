@@ -363,6 +363,7 @@ def _render_trail(density, age_arr):
 
 
 @method(id="70", name="Fractal Flame", category="fractals", tags=["ifs", "colorful", "expanded"],
+description="Fractal Flame — fractals node.",
         outputs={"image": "IMAGE", "field": "FIELD"},
         params={
     "points": {"description": "number of flame points", "min": 50000, "max": 2000000, "default": 200000},

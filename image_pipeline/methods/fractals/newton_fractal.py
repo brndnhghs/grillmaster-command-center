@@ -30,6 +30,7 @@ def _render_flame_preview(density, colors, h, w):
     return result
 
 @method(id="52", name="Newton Fractal", category="fractals", tags=["classic", "expanded", "animation", "fast"],
+description="Newton Fractal — fractals node.",
          params={
     "max_iter": {"description": "max Newton iterations", "min": 10, "max": 200, "default": 50},
     "tol": {"description": "root convergence tolerance", "min": 1e-12, "max": 1e-2, "default": 1e-8},

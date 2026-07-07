@@ -19,6 +19,7 @@ except ImportError:
 @method(
     id="65",
     name="Waveform",
+    description="Waveform — math-art node.",
     category="math_art",
     tags=["waveform", "audio", "expanded", "animation"],
     params={

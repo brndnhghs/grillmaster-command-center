@@ -14,6 +14,7 @@ from ...core.animation import capture_frame
 # --- 29 Voronoi Tiles ---
 
 @method(id="29", name="Voronoi Tiles", category="codegen",
+description="Voronoi Tiles — generative node.",
          tags=["procedural", "cells", "tiling", "animation"],
          params={
              "n_cells": {"description": "number of cell centers", "min": 10, "max": 500, "default": 50},

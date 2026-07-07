@@ -19,6 +19,7 @@ from ...core.utils import save, mn, seed_all, W, H
 from ...core.animation import capture_frame
 
 @method(id="150", name="FPU Chain Lattice", category="simulations",
+description="FPU Chain Lattice — simulations node.",
         tags=["fpu", "nonlinear", "recurrence", "lattice"], timeout=600,
         params={
             "k2": {"min": 0.1, "max": 5.0, "default": 1.0, "description": "Linear spring constant"},

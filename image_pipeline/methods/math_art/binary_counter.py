@@ -17,6 +17,7 @@ except ImportError:
     _has_cv2 = False
 
 @method(id="76", name="Binary Counter", category="math_art", tags=["code","fast", "expanded"],
+description="Binary Counter — math-art node.",
          params={"bits":{"description":"bit rows","min":4,"max":16,"default":8},
                  "glitch_lines":{"description":"glitch lines","min":10,"max":200,"default":50},
                  "data_source":{"description":"data source","choices":["x_position","sine_wave","noise","prime_sequence","time_animated","gray_code","fibonacci","audio_waveform"],"default":"x_position"},

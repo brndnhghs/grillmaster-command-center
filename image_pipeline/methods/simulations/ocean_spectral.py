@@ -128,6 +128,7 @@ def _render_whitecap(h: np.ndarray, hx: np.ndarray, hy: np.ndarray,
 @method(
     id="167",
     name="Spectral Ocean Synthesis",
+    description="Spectral Ocean Synthesis — simulations node.",
     category="simulations",
     tags=["animation", "ocean", "waves", "procedural", "fft",
            "jonswap", "storm", "natural"],

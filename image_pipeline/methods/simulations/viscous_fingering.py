@@ -174,6 +174,7 @@ def _render(grid, age_grid, gw, gh, frame):
 @method(
     id="101",
     name="Viscous Fingering",
+    description="Viscous Fingering — simulations node.",
     category="simulations",
     tags=["physics", "fractal", "emergence", "expanded"],
     outputs={"image": "IMAGE", "field": "FIELD"},

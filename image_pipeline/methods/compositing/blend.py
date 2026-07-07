@@ -14,6 +14,7 @@ from ...core.utils import save, mn, W, H
 @method(
     id="137",
     name="Image Blend",
+    description="Image Blend — compositing node.",
     category="compositing",
     tags=["composite", "blend", "mix", "merge"],
     inputs={"image_a": "IMAGE", "image_b": "IMAGE"},

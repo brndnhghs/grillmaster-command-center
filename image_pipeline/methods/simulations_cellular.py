@@ -257,6 +257,7 @@ def _make_color_grid(grid, age_grid, rule, color_mode, t, hue_shift):
 # ─── The Method (Architecture B — stateless, one call = one frame) ───
 
 @method(id="58", name="Cellular Automata (Variants)", category="simulations",
+description="Cellular Automata (Variants) — simulations node.",
         tags=["cellular", "life", "animation", "expanded"],
         inputs={
             "density": "SCALAR",

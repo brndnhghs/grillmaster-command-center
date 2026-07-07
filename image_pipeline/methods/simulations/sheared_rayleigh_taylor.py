@@ -209,6 +209,7 @@ def _render_density(rho: np.ndarray, palette: str, gamma: float = 1.0) -> Image.
 @method(
     id="110",
     name="Sheared Rayleigh-Taylor",
+    description="Sheared Rayleigh-Taylor — simulations node.",
     category="simulations",
     tags=["physics", "fluid", "shear", "instability", "animation"],
     timeout=180,

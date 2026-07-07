@@ -138,6 +138,7 @@ def _smooth_noise(sh: int, sw: int, scale: int,
 @method(
     id="145",
     name="Dynamic Fracture Network",
+    description="Dynamic Fracture Network — simulations node.",
     category="simulations",
     tags=["animation", "fracture", "cracks", "branching",
            "mechanical", "instability"],

@@ -225,6 +225,7 @@ def _wave(phase_rad: float) -> float:
 @method(
     id="104",
     name="Spherical Harmonics",
+    description="Spherical Harmonics — math-art node.",
     category="math_art",
     tags=["quantum", "3d", "glow", "expanded", "animation"],
     params={

@@ -18,6 +18,7 @@ from ...core.utils import save, mn, seed_all, W, H
 from ...core.animation import capture_frame
 
 @method(id="146", name="AC + PM Diffusion", category="simulations",
+description="AC + PM Diffusion — simulations node.",
         tags=["ac", "pm", "takeover", "smooth"], timeout=600,
         params={
             "bias": {"min": -5.0, "max": 5.0, "default": 0.0, "description": ">0 = white conquers"},

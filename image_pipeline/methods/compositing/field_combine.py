@@ -12,6 +12,7 @@ from ...core.utils import save, mn, write_field, W, H
 @method(
     id="139",
     name="Field Combine",
+    description="Field Combine — compositing node.",
     category="compositing",
     tags=["field", "merge", "combine"],
     inputs={"field_a": "FIELD", "field_b": "FIELD"},

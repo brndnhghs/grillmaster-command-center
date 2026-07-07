@@ -240,6 +240,7 @@ def _render(state: np.ndarray) -> Image.Image:
 @method(
     id="92",
     name="Lattice Gas",
+    description="Lattice Gas — simulations node.",
     category="simulations",
     tags=["cellular", "fluid", "physics", "navier-stokes", "animation", "emergent"],
     timeout=300,

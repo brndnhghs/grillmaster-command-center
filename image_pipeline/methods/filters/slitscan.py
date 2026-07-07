@@ -20,6 +20,7 @@ except ImportError:
 @method(
     id="57",
     name="Slit Scan",
+    description="Slit Scan — filters node.",
     new_image_contract=True,
     category="filters",
     tags=["displacement", "fast", "expanded", "animation"],

@@ -44,6 +44,7 @@ def _render_sandpile_preview(grid, colors, size, h, w):
     return result
 
 @method(id="53", name="Metaballs", category="simulations", new_image_contract=True, tags=["organic", "blob", "animation", "expanded"],
+description="Metaballs — simulations node.",
          inputs={"image_in": "IMAGE"},
          params={
              "balls": {"description": "metaball count", "min": 3, "max": 80, "default": 20},

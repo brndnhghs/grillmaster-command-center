@@ -122,6 +122,7 @@ def _render_langton_frame(grid, visited, age_grid, pal_arr, bg_color,
 
 
 @method(id="83", name="Langton's Ant", category="simulations",
+description="Langton — simulations node.",
          tags=["agents", "turmite", "emergent", "animation", "expanded"],
          timeout=120,
          outputs={"image": "IMAGE", "luminance": "SCALAR", "particles": "PARTICLES", "field": "FIELD"},

@@ -255,6 +255,7 @@ def _add_boundary_spiral(A: np.ndarray, frame: int,
 @method(
     id="126",
     name="Complex Ginzburg-Landau",
+    description="Complex Ginzburg-Landau — simulations node.",
     category="simulations",
     tags=["simulation", "animation", "physics", "pde", "spiral", "chaos"],
     timeout=180,

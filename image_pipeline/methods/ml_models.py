@@ -16,6 +16,7 @@ from ..core.utils import save, mn, seed_all, W, H
 
 
 @method(id="21", name="SD1.5 (diffusers)", category="ml_models", tags=["ml", "slow", "gpu", "expanded"], timeout=300,
+description="SD1.5 (diffusers) — ml_models node.",
         params={
             "model_id": {"description": "HuggingFace model ID", "default": "runwayml/stable-diffusion-v1-5"},
             "device": {"description": "torch device (mps/cuda/cpu)", "default": "mps"},
@@ -90,6 +91,7 @@ def method_sd15(out_dir: Path, seed: int, params=None):
 
 
 @method(id="28", name="ComfyUI", category="ml_models", tags=["ml", "slow", "gpu", "expanded"], timeout=120,
+description="ComfyUI — ml_models node.",
         params={
             "comfy_dir": {"description": "ComfyUI base directory", "default": "~/Documents/ComfyUI"},
             "download_timeout": {"description": "seconds to wait for model download", "min": 60, "max": 600, "default": 300},

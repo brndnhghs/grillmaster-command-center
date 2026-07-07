@@ -124,6 +124,7 @@ def _compute_anisotropy(phi: np.ndarray,
 @method(
     id="122",
     name="Dendritic Solidification",
+    description="Dendritic Solidification — simulations node.",
     category="simulations",
     tags=["physics", "phase-field", "crystal-growth", "dendrite", "competitive"],
     timeout=300,

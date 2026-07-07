@@ -44,6 +44,7 @@ def _render_sandpile_preview(grid, colors, size, h, w):
     return result
 
 @method(id="34", name="Boids Flocking", category="simulations", new_image_contract=True, tags=["agents", "organic", "expanded"],
+description="Boids Flocking — simulations node.",
          params={
              "boids": {"description": "number of agents", "min": 10, "max": 500, "default": 80},
              "frames": {"description": "simulation steps", "min": 50, "max": 1000, "default": 300},

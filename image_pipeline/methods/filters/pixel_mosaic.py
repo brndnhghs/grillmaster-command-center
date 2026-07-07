@@ -20,6 +20,7 @@ except ImportError:
 @method(
     id="80",
     name="Pixel Mosaic",
+    description="Pixel Mosaic — filters node.",
     new_image_contract=True,
     category="filters",
     tags=["tile", "fast", "expanded", "animation"],

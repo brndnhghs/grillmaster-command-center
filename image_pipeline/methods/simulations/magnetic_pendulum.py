@@ -68,6 +68,7 @@ def _rk4_step(state: np.ndarray, dt: float, magnet_pos: list,
 @method(
     id="107",
     name="Magnetic Pendulum",
+    description="Magnetic Pendulum — simulations node.",
     category="simulations",
     tags=["physics", "chaos", "fractal", "expanded"],
     params={

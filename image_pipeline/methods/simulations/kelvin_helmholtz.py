@@ -263,6 +263,7 @@ def _build_initial_field(
 @method(
     id="112",
     name="Kelvin-Helmholtz Instability",
+    description="Kelvin-Helmholtz Instability — simulations node.",
     category="simulations",
     tags=["physics", "fluid", "instability", "animation"],
     timeout=180,

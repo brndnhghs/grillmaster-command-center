@@ -156,6 +156,7 @@ INIT_MODES = {
 @method(
     id="154",
     name="Continuous Spatial PD (Replicator Dynamics)",
+    description="Continuous Spatial PD (Replicator Dynamics) — simulations node.",
     category="simulations",
     tags=["animation", "game-theory", "pde", "emergent", "flowing"],
     timeout=180,

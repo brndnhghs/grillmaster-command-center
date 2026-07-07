@@ -61,6 +61,7 @@ def _render_field(u: np.ndarray) -> np.ndarray:
 @method(
     id="128",
     name="Swift-Hohenberg Pattern Formation",
+    description="Swift-Hohenberg Pattern Formation — simulations node.",
     category="simulations",
     tags=["animation", "pde", "patterns", "instability"],
     timeout=180,

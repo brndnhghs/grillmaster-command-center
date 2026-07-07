@@ -26,6 +26,7 @@ from ...core.animation import capture_frame
 @method(
     id="142",
     name="Coupled Map Lattice",
+    description="Coupled Map Lattice — simulations node.",
     category="simulations",
     tags=["chaos", "lattice", "coupled-maps", "spatiotemporal"],
     timeout=300,

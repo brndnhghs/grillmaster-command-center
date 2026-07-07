@@ -30,6 +30,7 @@ def _render_flame_preview(density, colors, h, w):
     return result
 
 @method(id="69", name="Lyapunov Fractal", category="fractals", tags=["classic", "expanded", "animation"],
+description="Lyapunov Fractal — fractals node.",
          params={
     "sequence": {"description": "A/B perturbation pattern (A/B string)", "default": "ABABABAB"},
     "warmup": {"description": "warmup iterations before measuring", "min": 10, "max": 500, "default": 80},

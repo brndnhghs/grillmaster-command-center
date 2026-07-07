@@ -12,6 +12,7 @@ from ...core.animation import capture_frame
 from ...core.utils import PALETTES
 
 @method(id="02", name="Quasicrystal", category="patterns",
+description="Quasicrystal — patterns node.",
          tags=["classic", "wave", "fast", "expanded", "animation"],
         outputs={"image": "IMAGE", "field": "FIELD"},
          params={

@@ -44,6 +44,7 @@ def _render_sandpile_preview(grid, colors, size, h, w):
     return result
 
 @method(id="55", name="Sandpile", category="simulations", tags=["cellular", "slow", "animation", "expanded"],
+description="Sandpile — simulations node.",
          outputs={"image": "IMAGE", "field": "FIELD", "particles": "PARTICLES"},
          params={
              "grains": {"description": "sand grains", "min": 50000, "max": 1000000, "default": 200000},

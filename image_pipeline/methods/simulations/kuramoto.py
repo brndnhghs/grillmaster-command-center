@@ -41,6 +41,7 @@ def _wav(phase: float, wt: str, pw: float) -> float:
 
 
 @method(id="89", name="Kuramoto Sync", category="simulations",
+description="Kuramoto Sync — simulations node.",
         tags=["oscillators", "emergence", "synchronization"],
         params={
             "n_oscillators": {"description": "number of oscillators", "min": 50, "max": 500, "default": 200},

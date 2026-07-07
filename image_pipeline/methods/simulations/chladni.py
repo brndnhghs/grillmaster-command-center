@@ -161,6 +161,7 @@ def _mode_sequence(n_frames: int,
 @method(
     id="125",
     name="Chladni Eigenmode Morphing",
+    description="Chladni Eigenmode Morphing — simulations node.",
     category="simulations",
     tags=["simulation", "animation", "waves", "standing-waves", "modal",
           "geometric", "mandala", "nodal"],

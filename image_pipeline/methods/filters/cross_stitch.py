@@ -20,6 +20,7 @@ except ImportError:
 @method(
     id="63",
     name="Cross Stitch",
+    description="Cross Stitch — filters node.",
     new_image_contract=True,
     category="filters",
     tags=["texture", "fast", "expanded", "animation"],

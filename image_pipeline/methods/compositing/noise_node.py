@@ -29,6 +29,7 @@ _ERROR_FIELD = np.zeros((H, W), dtype=np.float32)
 @method(
     id="__noise__",
     name="Noise",
+    description="Noise — compositing node.",
     category="compositing",
     tags=["noise", "source", "procedural", "utility"],
     inputs={

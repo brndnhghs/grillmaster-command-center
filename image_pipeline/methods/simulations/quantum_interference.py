@@ -107,6 +107,7 @@ def _upscale(arr, target_h, target_w):
 @method(
     id="84",
     name="Quantum Wave Interference",
+    description="Quantum Wave Interference — simulations node.",
     category="simulations",
     tags=["pde", "schrodinger", "quantum", "animation", "expanded"],
     timeout=300,

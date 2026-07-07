@@ -30,6 +30,7 @@ def _render_flame_preview(density, colors, h, w):
     return result
 
 @method(id="49", name="Buddhabrot", category="fractals", tags=["classic", "expanded", "animation"],
+description="Buddhabrot — fractals node.",
         outputs={"image": "IMAGE", "field": "FIELD"},
          params={
     "samples": {"description": "random points traced", "min": 10000, "max": 500000, "default": 100000},

@@ -18,6 +18,7 @@ from ..core.animation import capture_frame
 
 
 @method(id="22", name="ffmpeg Frame", category="cli_tools", tags=["ffmpeg", "expanded"],
+description="ffmpeg Frame — cli_tools node.",
         inputs={
             "image_in": "IMAGE",
             "font_size": "SCALAR",
@@ -111,6 +112,7 @@ def method_ffmpeg(out_dir: Path, seed: int, params=None):
 
 
 @method(id="23", name="ImageMagick", category="cli_tools", tags=["imagemagick", "expanded"],
+description="ImageMagick — cli_tools node.",
         inputs={
             "image_in": "IMAGE",
             "title_size": "SCALAR",
@@ -246,6 +248,7 @@ def method_imagemagick(out_dir: Path, seed: int, params=None):
 
 
 @method(id="24", name="pyfiglet", category="cli_tools", tags=["text", "expanded"],
+description="pyfiglet — cli_tools node.",
         params={
             "top_text": {"description": "first figlet line content", "default": "METHOD #24"},
             "bottom_text": {"description": "second figlet line content", "default": "pyfiglet"},
@@ -309,6 +312,7 @@ def method_pyfiglet(out_dir: Path, seed: int, params=None):
 
 
 @method(id="27", name="qrencode", category="cli_tools", tags=["code", "expanded"],
+description="qrencode — cli_tools node.",
         params={
             "qr_data": {"description": "QR code payload text", "default": "ImagePipeline v2: method 27 (QR Code)"},
             "module_size": {"description": "QR module size in pixels", "min": 1, "max": 20, "default": 8},
@@ -355,6 +359,7 @@ def method_qrencode(out_dir: Path, seed: int, params=None):
 
 
 @method(id="44", name="img2txt", category="cli_tools", tags=["text", "caca", "expanded"],
+description="img2txt — cli_tools node.",
         inputs={
             "image_in": "IMAGE",
             "ascii_width": "SCALAR",
@@ -463,6 +468,7 @@ def method_img2txt(out_dir: Path, seed: int, params=None):
 
 
 @method(id="45", name="Graphviz", category="cli_tools", tags=["graph", "expanded"],
+description="Graphviz — cli_tools node.",
         inputs={"anim_speed": "SCALAR",
                 "edge_density": "FIELD",
                 "node_count": "FIELD",
@@ -646,6 +652,7 @@ def method_graphviz(out_dir: Path, seed: int, params=None):
 
 
 @method(id="46", name="ImageMagick Plasma", category="cli_tools", tags=["imagemagick", "expanded"],
+description="ImageMagick Plasma — cli_tools node.",
         params={
             "plasma_type": {"description": "plasma type for convert", "default": "fractal"},
             "oil_paint": {"description": "oil paint effect radius", "min": 0, "max": 20, "default": 3},
@@ -763,6 +770,7 @@ def method_gmic_plasma(out_dir: Path, seed: int, params=None):
 
 
 @method(id="47", name="Chafa", category="cli_tools", tags=["text", "caca", "expanded"],
+description="Chafa — cli_tools node.",
         inputs={
             "image_in": "IMAGE",
             "char_scale": "SCALAR",

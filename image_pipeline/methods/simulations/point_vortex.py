@@ -375,6 +375,7 @@ def _render_vortices(pos: np.ndarray, circ: np.ndarray,
 @method(
     id="116",
     name="Point Vortex Dynamics",
+    description="Point Vortex Dynamics — simulations node.",
     category="simulations",
     tags=["simulation", "animation", "physics", "fluid", "vortex", "fast"],
     timeout=300,

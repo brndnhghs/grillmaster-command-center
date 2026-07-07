@@ -383,6 +383,7 @@ def _hsv2rgb(h, s, v):
 @method(
     id="153",
     name="Spatial Prisoner's Dilemma",
+    description="Spatial Prisoner — simulations node.",
     category="simulations",
     tags=["animation", "emergent", "game-theory", "expanded"],
     timeout=180,

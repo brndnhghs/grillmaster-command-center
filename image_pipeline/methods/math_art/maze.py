@@ -17,6 +17,7 @@ except ImportError:
     _has_cv2 = False
 
 @method(id="56", name="Maze", category="math_art", tags=["recursive", "fast", "expanded"],
+description="Maze — math-art node.",
         outputs={"image": "IMAGE", "field": "FIELD"},
          params={
              "cell_size": {"description": "cells size (px)", "min": 4, "max": 40, "default": 10},

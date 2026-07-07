@@ -17,6 +17,7 @@ except ImportError:
     _has_cv2 = False
 
 @method(id="54", name="Ulam Spiral", category="math_art", new_image_contract=True, tags=["prime", "fast", "expanded"],
+description="Ulam Spiral — math-art node.",
         outputs={"image": "IMAGE", "field": "FIELD"},
          params={
              "max_num": {"description": "max number checked for primality", "min": 50000, "max": 500000, "default": 400000},

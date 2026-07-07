@@ -138,6 +138,7 @@ function draw() {
 
 
 @method(id="171", name="p5.js Sketch", category="p5_sketches",
+description="p5.js Sketch — p5_sketches node.",
         tags=["p5js", "webgl", "fast", "expanded"],
         inputs={},
         outputs={"image": "IMAGE", "luminance": "FIELD"},

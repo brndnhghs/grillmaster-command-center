@@ -57,6 +57,7 @@ def _render_aggregation(rho: np.ndarray) -> np.ndarray:
 @method(
     id="134",
     name="Nonlocal Aggregation (Chemotaxis)",
+    description="Nonlocal Aggregation (Chemotaxis) — simulations node.",
     category="simulations",
     tags=["animation", "chemotaxis", "aggregation", "streaming",
            "filaments", "emergence"],

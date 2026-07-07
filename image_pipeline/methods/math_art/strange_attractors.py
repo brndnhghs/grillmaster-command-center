@@ -111,6 +111,7 @@ _ATTRACTOR_PRESETS = {
 @method(
     id="85",
     name="Strange Attractors (Chaos Density)",
+    description="Strange Attractors (Chaos Density) — math-art node.",
     category="math_art",
     tags=["chaos", "density", "static", "expanded"],
     timeout=120,

@@ -257,6 +257,7 @@ def _render(Qxx: np.ndarray, Qxy: np.ndarray) -> np.ndarray:
 @method(
     id="99",
     name="Active Nematic Liquid Crystals",
+    description="Active Nematic Liquid Crystals — simulations node.",
     category="simulations",
     tags=["slow", "animation", "expanded", "physics"],
     timeout=180,

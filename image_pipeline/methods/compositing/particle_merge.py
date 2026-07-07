@@ -13,6 +13,7 @@ from ...core.utils import save, mn, write_particles, W, H
 @method(
     id="140",
     name="Particle Merge",
+    description="Particle Merge — compositing node.",
     category="compositing",
     tags=["particles", "merge", "combine"],
     inputs={"particles_a": "PARTICLES", "particles_b": "PARTICLES"},

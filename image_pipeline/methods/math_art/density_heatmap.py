@@ -17,6 +17,7 @@ except ImportError:
     _has_cv2 = False
 
 @method(id="43", name="Density Heatmap", category="math_art", new_image_contract=True, tags=["density","fast", "expanded"],
+description="Density Heatmap — math-art node.",
         inputs={"image_in": "IMAGE"},
         outputs={"image": "IMAGE", "field": "FIELD"},
          params={"points":{"description":"point count","min":1000,"max":20000,"default":5000},

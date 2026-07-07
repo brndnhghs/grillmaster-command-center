@@ -44,6 +44,7 @@ def _render_sandpile_preview(grid, colors, size, h, w):
     return result
 
 @method(id="79", name="Random Walk", category="simulations", new_image_contract=True, tags=["organic", "paths", "expanded", "animation"],
+description="Random Walk — simulations node.",
          outputs={"image": "IMAGE", "particles": "PARTICLES"},
          params={
     "walkers": {"description": "random walk threads", "min": 1, "max": 200, "default": 30},

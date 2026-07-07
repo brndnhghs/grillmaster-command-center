@@ -12,6 +12,7 @@ from ...core.animation import capture_frame
 from ...core.utils import PALETTES
 
 @method(id="03", name="Moiré", category="patterns",
+description="Moiré — patterns node.",
          tags=["classic", "wave", "fast", "expanded", "animation"],
          params={
     "grids": {"description": "number of overlaid grids/layers", "min": 2, "max": 12, "default": 3},

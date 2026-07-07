@@ -20,6 +20,7 @@ except ImportError:
 @method(
     id="42",
     name="Fake HDR",
+    description="Fake HDR — filters node.",
     new_image_contract=True,
     category="filters",
     tags=["opencv", "tonemap", "expanded", "animation"],

@@ -12,6 +12,7 @@ from ...core.animation import capture_frame
 
 
 @method(id="09", name="QR Code", category="codegen",
+description="QR Code — generative node.",
          tags=["qr", "code", "fast", "animation", "expanded"],
          params={
     "content": {"description": "text content to encode as QR", "default": "HELLO"},

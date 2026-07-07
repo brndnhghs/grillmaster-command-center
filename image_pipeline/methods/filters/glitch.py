@@ -20,6 +20,7 @@ except ImportError:
 @method(
     id="17",
     name="Glitch Art",
+    description="Glitch Art — filters node.",
     category="filters",
     new_image_contract=True,
     tags=["glitch", "fast", "animation", "expanded"],

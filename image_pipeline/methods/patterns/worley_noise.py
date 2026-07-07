@@ -12,6 +12,7 @@ from ...core.animation import capture_frame
 from ...core.utils import PALETTES
 
 @method(id="04", name="Worley Noise", category="patterns",
+description="Worley Noise — patterns node.",
          tags=["classic", "cellular", "fast", "expanded", "animation"],
          params={
     "points": {"description": "number of feature points", "min": 5, "max": 500, "default": 60},

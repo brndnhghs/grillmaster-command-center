@@ -60,6 +60,7 @@ def _next_angle_from_field(x, y, field, cx, cy):
 # ─── Main method ───
 
 @method(id="16", name="Flow Field", category="codegen",
+description="Flow Field — generative node.",
          tags=["particle", "generative", "fast", "animation", "expanded"],
          params={
              "n_particles": {"description": "number of particles", "min": 50, "max": 5000, "default": 500},

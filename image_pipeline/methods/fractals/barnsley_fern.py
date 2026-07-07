@@ -30,6 +30,7 @@ def _render_flame_preview(density, colors, h, w):
     return result
 
 @method(id="50", name="Barnsley Fern", category="fractals", tags=["ifs", "fast", "animation", "expanded"],
+description="Barnsley Fern — fractals node.",
         outputs={"image": "IMAGE", "field": "FIELD", "particles": "PARTICLES"},
          params={
              "particles": {"description": "fern points", "min": 50000, "max": 500000, "default": 200000},

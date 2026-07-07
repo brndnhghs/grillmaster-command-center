@@ -30,6 +30,7 @@ def _render_flame_preview(density, colors, h, w):
     return result
 
 @method(id="33", name="Fractal Explorer", category="fractals",
+description="Fractal Explorer — fractals node.",
         tags=["classic", "fast", "animated", "expanded"],
         params={
     "formula": {"description": "fractal formula",

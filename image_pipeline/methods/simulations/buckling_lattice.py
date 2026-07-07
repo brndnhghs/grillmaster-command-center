@@ -43,6 +43,7 @@ from ...core.animation import capture_frame
 @method(
     id="147",
     name="Viscoelastic Buckling Lattice",
+    description="Viscoelastic Buckling Lattice — simulations node.",
     category="simulations",
     tags=["animation", "mechanical", "buckling", "filaments",
            "elastic", "lattice", "instability"],

@@ -44,6 +44,7 @@ def _render_sandpile_preview(grid, colors, size, h, w):
     return result
 
 @method(id="20", name="Particle System", category="simulations", new_image_contract=True, tags=["agents", "fast", "animation", "expanded"],
+description="Particle System — simulations node.",
          outputs={"image": "IMAGE", "luminance": "SCALAR", "particles": "PARTICLES"},
          params={
              "particles": {"description": "particle count", "min": 100, "max": 5000, "default": 500},

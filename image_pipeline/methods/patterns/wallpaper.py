@@ -12,6 +12,7 @@ from ...core.animation import capture_frame
 from ...core.utils import PALETTES
 
 @method(id="06", name="Wallpaper Group", category="patterns",
+description="Wallpaper Group — patterns node.",
         tags=["classic", "tiling", "fast", "animated", "expanded"],
         params={
     "group": {"description": "crystallographic symmetry group",

@@ -45,6 +45,7 @@ for _i in range(256):
 @method(
     id="90",
     name="Lenia",
+    description="Lenia — simulations node.",
     category="simulations",
     tags=["animation", "organic", "emergence", "artificial-life"],
     params={

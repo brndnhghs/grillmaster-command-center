@@ -31,6 +31,7 @@ from ...core.animation import capture_frame
 @method(
     id="__test__",
     name="Test Node",
+    description="Test Node — compositing node.",
     category="compositing",
     tags=["test", "debug", "diagnostic"],
     inputs={

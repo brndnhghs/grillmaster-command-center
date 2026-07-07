@@ -20,6 +20,7 @@ except ImportError:
 @method(
     id="64",
     name="Edge Halftone",
+    description="Edge Halftone — filters node.",
     new_image_contract=True,
     category="filters",
     tags=["dots", "fast", "expanded", "animation"],

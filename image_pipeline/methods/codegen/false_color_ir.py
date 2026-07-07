@@ -22,6 +22,7 @@ from ...core.animation import capture_frame
 @method(
     id="77",
     name="False Color IR",
+    description="False Color IR — generative node.",
     category="codegen",
     new_image_contract=True,
     tags=["color", "infrared", "false-color", "filter", "spectral"],

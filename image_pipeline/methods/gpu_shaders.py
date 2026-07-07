@@ -94,6 +94,7 @@ _FILT_PARAMS = {
 
 def _make_proc(method_id: str, shader_name: str, method_name: str):
     @method(id=method_id, name=method_name, category="gpu_shaders",
+            description="GPU Procedural Shader — generated GLSL shader node.",
             new_image_contract=True,
             tags=["gpu", "fast"],
             params=_PROC_PARAMS)
@@ -117,6 +118,7 @@ def _make_proc(method_id: str, shader_name: str, method_name: str):
 
 def _make_filt(method_id: str, shader_name: str, method_name: str):
     @method(id=method_id, name=method_name, category="gpu_shaders",
+            description="GPU Shader Filter — generated GLSL filter node.",
             new_image_contract=True,
             inputs={"image_in": "IMAGE"},
             tags=["gpu", "fast"],
@@ -155,6 +157,7 @@ SHADER_NAMES = sorted([k for k, v in SHADERS.items() if v["type"] == "procedural
 @method(
     id="82",
     name="GPU Procedural Shaders",
+    description="GPU Procedural Shaders — ml_models node.",
     category="ml_models",
     new_image_contract=True,
     tags=["gpu", "glsl", "fast", "expanded"],

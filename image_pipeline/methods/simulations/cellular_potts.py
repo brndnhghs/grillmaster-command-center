@@ -124,6 +124,7 @@ def _init_voronoi(gh: int, gw: int, ncells: int,
 @method(
     id="129",
     name="Cellular Potts Model",
+    description="Cellular Potts Model — simulations node.",
     category="simulations",
     tags=["animation", "bio-inspired", "tissue", "emergent", "expanded"],
     timeout=300,

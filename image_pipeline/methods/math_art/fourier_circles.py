@@ -17,6 +17,7 @@ except ImportError:
     _has_cv2 = False
 
 @method(id="81", name="Fourier Circles", category="math_art", tags=["epicycle", "fast", "expanded", "animation"],
+description="Fourier Circles — math-art node.",
          params={
     "n_circles": {"description": "epicycle count", "min": 3, "max": 100, "default": 15},
     "shape": {"description": "target shape: circle, square, triangle, sawtooth, star, heart, butterfly, spiral, custom", "default": "circle"},

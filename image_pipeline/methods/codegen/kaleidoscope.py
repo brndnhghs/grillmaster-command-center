@@ -17,6 +17,7 @@ from ...core.animation import capture_frame
 @method(
     id="12",
     name="Kaleidoscope",
+    description="Kaleidoscope — generative node.",
     category="codegen",
     tags=["kaleidoscope", "reflection", "symmetry"],
     inputs={

@@ -30,6 +30,7 @@ def _render_flame_preview(density, colors, h, w):
     return result
 
 @method(id="66", name="Julia Set", category="fractals", tags=["classic", "fast", "expanded", "animation"],
+description="Julia Set — fractals node.",
          params={
     "constant": {"description": "Julia c parameter as real,imag or a preset name", "default": "-0.7,0.27"},
     "iterations": {"description": "max iterations", "min": 30, "max": 500, "default": 100},

@@ -69,6 +69,7 @@ def _clamp(val: float, lo: float, hi: float) -> float:
 @method(
     id="136",
     name="Elastic Coiling Instability",
+    description="Elastic Coiling Instability — simulations node.",
     category="simulations",
     tags=["physics", "elastic", "instabilities", "viscous", "folding",
           "coiling", "animation"],

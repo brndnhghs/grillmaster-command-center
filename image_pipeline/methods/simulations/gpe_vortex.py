@@ -45,6 +45,7 @@ from ...core.animation import capture_frame
 @method(
     id="148",
     name="GPE Quantum Vortex Turbulence",
+    description="GPE Quantum Vortex Turbulence — simulations node.",
     category="simulations",
     tags=["animation", "quantum", "vortex", "fluid", "pde",
            "fft", "turbulence", "complex"],

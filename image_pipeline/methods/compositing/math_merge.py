@@ -11,6 +11,7 @@ from ...core.utils import save, mn, write_scalars, W, H
 @method(
     id="138",
     name="Scalar Math",
+    description="Scalar Math — compositing node.",
     category="compositing",
     tags=["scalar", "math", "merge"],
     inputs={"value_a": "SCALAR", "value_b": "SCALAR"},

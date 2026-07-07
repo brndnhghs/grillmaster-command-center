@@ -20,6 +20,7 @@ except ImportError:
 @method(
     id="40",
     name="Pixel Sort",
+    description="Pixel Sort — filters node.",
     new_image_contract=True,
     category="filters",
     tags=["glitch", "expanded", "animation"],

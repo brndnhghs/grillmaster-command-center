@@ -241,6 +241,7 @@ def _render_fracture(
 @method(
     id="131",
     name="Burridge-Knopoff Earthquakes",
+    description="Burridge-Knopoff Earthquakes — simulations node.",
     category="simulations",
     tags=["animation", "cascades", "fracture", "branching", "emergence"],
     timeout=180,

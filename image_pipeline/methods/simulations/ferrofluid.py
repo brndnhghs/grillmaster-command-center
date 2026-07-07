@@ -44,6 +44,7 @@ from ...core.animation import capture_frame
 @method(
     id="149",
     name="Ferrofluid Rosensweig Instability",
+    description="Ferrofluid Rosensweig Instability — simulations node.",
     category="simulations",
     tags=["animation", "ferrofluid", "magnetic", "instability",
            "spikes", "pde", "spectral", "labyrinth"],

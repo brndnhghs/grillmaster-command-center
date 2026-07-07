@@ -17,6 +17,7 @@ except ImportError:
     _has_cv2 = False
 
 @method(id="73", name="Low Poly", category="math_art", new_image_contract=True, tags=["triangulation", "fast", "expanded"],
+description="Low Poly — math-art node.",
          inputs={"image_in": "IMAGE"},
          params={"points":{"description":"triangulation points","min":50,"max":500,"default":200},
                  "jitter":{"description":"jitter","min":2,"max":30,"default":10},

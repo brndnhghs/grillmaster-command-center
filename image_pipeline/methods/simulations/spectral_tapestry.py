@@ -29,6 +29,7 @@ from ...core.animation import capture_frame
 @method(
     id="161",
     name="Spectral Tapestry",
+    description="Spectral Tapestry — simulations node.",
     category="simulations",
     tags=["waves", "eigenmodes", "interference", "modal"],
     timeout=300,

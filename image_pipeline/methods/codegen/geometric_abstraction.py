@@ -18,6 +18,7 @@ from ...core.animation import capture_frame
 # ────────────────────────────────────────────────────────────────────────────
 
 @method(id="14", name="Geometric Abstraction", category="codegen",
+description="Geometric Abstraction — generative node.",
          tags=["vector", "shapes", "fast", "expanded", "animation"],
          params={
              "layout": {"description": "shape layout pattern", "choices": ["random", "grid", "radial", "sunburst", "spiral"], "default": "random"},

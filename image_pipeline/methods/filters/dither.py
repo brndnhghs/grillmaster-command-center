@@ -20,6 +20,7 @@ except ImportError:
 @method(
     id="13",
     name="Dithering",
+    description="Dithering — filters node.",
     category="filters",
     new_image_contract=True,
     tags=["bayer", "error-diffusion", "halftone", "expanded"],

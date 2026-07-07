@@ -17,6 +17,7 @@ except ImportError:
     _has_cv2 = False
 
 @method(id="48", name="FFT Art", category="math_art", new_image_contract=True, tags=["frequency","fast", "expanded"],
+description="FFT Art — math-art node.",
          inputs={"image_in": "IMAGE"},
          params={"filter_type":{"description":"filter type","choices":["ring","concentric","spiral","star","checkerboard","text_mask","input_mask","gabor_bank","fractal_noise","polar_fft","phase_swap","convolution_kernel","frequency_paint","radial_pattern","time_frequency"],"default":"ring"},
                  "source":{"description":"source","choices":["random","perlin","wave_interference","color_noise","input_image","texture_synth"],"default":"random"},

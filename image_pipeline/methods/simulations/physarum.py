@@ -65,6 +65,7 @@ def _render_trail(trail: np.ndarray, colormap_name: str, ceiling: float = None) 
 # ─── Jeff Jones 2010 Physarum transport networks ───────────────────────────
 
 @method(id="86", name="Physarum Slime Mold", category="simulations",
+description="Physarum Slime Mold — simulations node.",
          tags=["physarum", "slime-mold", "agents", "organic", "animation"],
          timeout=300,
          params={

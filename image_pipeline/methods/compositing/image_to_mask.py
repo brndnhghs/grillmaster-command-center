@@ -17,6 +17,7 @@ from ...core.utils import save, mn, write_scalars, W, H
 @method(
     id="__image_to_mask__",
     name="Image to Mask",
+    description="Image to Mask — compositing node.",
     category="compositing",
     tags=["mask", "channel", "convert", "utility"],
     inputs={"image_in": "IMAGE"},

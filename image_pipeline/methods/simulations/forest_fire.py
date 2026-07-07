@@ -99,6 +99,7 @@ def _render_frame(state: np.ndarray, fire_age: np.ndarray,
 # ── Method ─────────────────────────────────────────────────────────────────
 
 @method(id="96", name="Forest Fire", category="simulations",
+description="Forest Fire — simulations node.",
          tags=["animation", "criticality", "emergence", "organic"],
          timeout=120,
          params={

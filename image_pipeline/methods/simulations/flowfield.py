@@ -44,6 +44,7 @@ def _render_sandpile_preview(grid, colors, size, h, w):
     return result
 
 @method(id="35", name="Flow Field", category="simulations", new_image_contract=True, tags=["particles", "vector", "expanded"],
+description="Flow Field — simulations node.",
          params={
              "particles": {"description": "number of particles", "min": 500, "max": 10000, "default": 3000},
              "speed": {"description": "particle speed per frame", "min": 0.5, "max": 15, "default": 2.0},

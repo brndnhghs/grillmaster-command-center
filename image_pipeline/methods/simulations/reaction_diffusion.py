@@ -44,6 +44,7 @@ def _render_sandpile_preview(grid, colors, size, h, w):
     return result
 
 @method(id="32", name="Reaction Diffusion", category="simulations", new_image_contract=True, tags=["gray-scott", "organic", "animation", "expanded"],
+description="Reaction Diffusion — simulations node.",
          outputs={"image": "IMAGE", "luminance": "SCALAR", "field": "FIELD"},
          params={
              "preset": {"description": "named pattern: mitosis, coral, spots, stripes, waves, zebra, moving_spots, spiral_waves, self_replicate, chaotic, gliders, solitons, mazes, honeycomb, bacteria, fingers, u_skate, flower, pulse, worms, custom", "default": "mitosis"},

@@ -181,6 +181,7 @@ def _render_frame(spins: np.ndarray) -> Image.Image:
 @method(
     id="93",
     name="Ising Model",
+    description="Ising Model — simulations node.",
     category="simulations",
     tags=["animation", "statistical-physics", "phase-transition", "emergence"],
     params={

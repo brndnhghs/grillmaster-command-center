@@ -18,6 +18,7 @@ from ...core.animation import capture_frame
 # ────────────────────────────────────────────────────────────────────────────
 
 @method(id="15", name="Typography", category="codegen",
+description="Typography — generative node.",
          tags=["text", "font", "fast", "expanded", "animation"],
          inputs={
              "font_size": "SCALAR",

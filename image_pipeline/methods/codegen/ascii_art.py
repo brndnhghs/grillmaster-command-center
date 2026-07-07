@@ -40,6 +40,7 @@ _ERROR_IMG = np.zeros((H, W, 3), dtype=np.float32)
 
 
 @method(id="01", name="ASCII Art", category="codegen", tags=["text", "fast", "animation", "expanded"],
+description="ASCII Art — generative node.",
          inputs={"image_in": "IMAGE",
                  "font_size": "SCALAR",
                  "dither_strength": "SCALAR",

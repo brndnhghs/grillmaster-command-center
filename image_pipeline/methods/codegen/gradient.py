@@ -21,6 +21,7 @@ _ERROR_IMG = np.zeros((H, W, 3), dtype=np.float32)
 @method(
     id="11",
     name="Gradient",
+    description="Gradient — generative node.",
     category="codegen",
     tags=["gradient", "fast", "animation"],
     inputs={"cx": "SCALAR",

@@ -30,6 +30,7 @@ def _render_flame_preview(density, colors, h, w):
     return result
 
 @method(id="51", name="Burning Ship", category="fractals", tags=["classic", "fast", "expanded", "animation"],
+description="Burning Ship — fractals node.",
          params={
     "iterations": {"description": "max iterations", "min": 30, "max": 500, "default": 100},
     "viewpoint": {"description": "complex plane range as xmin,xmax,ymin,ymax", "default": "-2,1,-2,1.5"},

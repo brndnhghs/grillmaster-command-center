@@ -121,6 +121,7 @@ def _render_stripes_only(u: np.ndarray) -> Image.Image:
 @method(
     id="119",
     name="LV Turing Regime",
+    description="LV Turing Regime — simulations node.",
     category="simulations",
     tags=["physics", "reaction-diffusion", "turing", "pattern-formation", "expanded"],
     timeout=180,

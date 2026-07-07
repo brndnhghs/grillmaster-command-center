@@ -39,6 +39,7 @@ def _render(u):
 @method(
     id="159",
     name="Phase Separation + Darcy Advection",
+    description="Phase Separation + Darcy Advection — simulations node.",
     category="simulations",
     tags=["phase", "allen-cahn", "darcy", "blobs", "spots"],
     timeout=300,

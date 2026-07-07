@@ -144,6 +144,7 @@ def _render_species_channel(u: np.ndarray, v1: np.ndarray,
 @method(
     id="120",
     name="LV 3-Species Food Web",
+    description="LV 3-Species Food Web — simulations node.",
     category="simulations",
     tags=["physics", "reaction-diffusion", "ecological", "multi-species", "expanded"],
     timeout=180,

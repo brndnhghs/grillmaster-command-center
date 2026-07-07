@@ -221,6 +221,7 @@ _CA_STATE_MAX = 64  # cap stored nodes so long sessions don't grow unbounded
 @method(
     id="18",
     name="Cellular Automata",
+    description="Cellular Automata — generative node.",
     category="codegen",
     tags=["cellular", "automata", "game-of-life", "animation", "expanded"],
     inputs={

@@ -32,6 +32,7 @@ def _render_flame_preview(density, colors, h, w):
 @method(
     id="31",
     name="Plasma Fractal",
+    description="Plasma Fractal — fractals node.",
     category="fractals",
     tags=["diamond-square", "landscape", "animation", "expanded"],
     params={

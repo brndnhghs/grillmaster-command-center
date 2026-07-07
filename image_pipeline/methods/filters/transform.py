@@ -24,6 +24,7 @@ from ...core.utils import save, W, H
 @method(
     id="__transform__",
     name="Transform",
+    description="Transform — filters node.",
     category="filters",
     tags=["transform", "scale", "rotate", "translate", "warp", "perspective", "flip", "shear"],
     new_image_contract=True,

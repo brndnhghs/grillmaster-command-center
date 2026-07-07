@@ -20,6 +20,7 @@ except ImportError:
 @method(
     id="59",
     name="Data Bending",
+    description="Data Bending — filters node.",
     new_image_contract=True,
     category="filters",
     tags=["glitch", "byte", "expanded", "animation"],

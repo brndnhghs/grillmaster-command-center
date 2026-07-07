@@ -101,6 +101,7 @@ def _render_smooth_cloth(mesh, gy, gx, palette_name, color_by):
 @method(
     id="114",
     name="Spring-Mass Network",
+    description="Spring-Mass Network — simulations node.",
     category="simulations",
     tags=["simulation", "animation", "physics", "cloth", "web", "fast"],
     timeout=300,

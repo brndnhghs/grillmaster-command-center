@@ -20,6 +20,7 @@ except ImportError:
 @method(
     id="41",
     name="Oil Paint",
+    description="Oil Paint — filters node.",
     category="filters",
     new_image_contract=True,
     tags=["opencv", "fast", "expanded", "animation"],

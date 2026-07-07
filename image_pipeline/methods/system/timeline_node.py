@@ -28,6 +28,7 @@ from ...core.utils import save, mn, seed_all, W, H, write_scalars
 @method(
     id="__timeline__",
     name="Timeline",
+    description="Timeline — system node.",
     category="system",
     tags=["system", "timeline", "clock", "animation"],
     timeout=10,

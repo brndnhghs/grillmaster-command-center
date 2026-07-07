@@ -17,6 +17,7 @@ from ...core.utils import save, mn, seed_all, W, H
 from ...core.animation import capture_frame
 
 @method(id="169", name="Turing Morphogenesis", category="simulations",
+description="Turing Morphogenesis — simulations node.",
         tags=["turing", "morphogenesis", "growing-domain", "rd"], timeout=600,
         params={
             "a": {"min": 0.05, "max": 0.5, "default": 0.1, "description": "Schnakenberg parameter a"},

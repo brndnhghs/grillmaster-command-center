@@ -13,6 +13,7 @@ from ...core.animation import capture_frame
 # --- 37 Collage ---
 
 @method(id="37", name="Collage", category="codegen",
+description="Collage — generative node.",
          tags=["composite", "tiles", "mosaic", "layout"],
          inputs={
              "image_1": "IMAGE",

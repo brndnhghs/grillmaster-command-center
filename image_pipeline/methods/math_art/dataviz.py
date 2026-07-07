@@ -17,6 +17,7 @@ except ImportError:
     _has_cv2 = False
 
 @method(id="38", name="Dataviz", category="math_art", tags=["chart", "fast", "expanded"],
+description="Dataviz — math-art node.",
          params={"chart_type": {"description": "chart type", "choices": ["bar", "scatter", "line", "pie", "histogram"], "default": "bar"},
                  "n_points": {"description": "data points", "min": 5, "max": 50, "default": 10},
                  "color": {"description": "color hex (or use palette)", "default": "#3366FF"},

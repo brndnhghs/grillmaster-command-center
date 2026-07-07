@@ -20,6 +20,7 @@ except ImportError:
 @method(
     id="74",
     name="Swirl Displacement",
+    description="Swirl Displacement — filters node.",
     category="filters",
     new_image_contract=True,
     tags=["warp", "fast", "expanded", "animation"],

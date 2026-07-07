@@ -27,6 +27,7 @@ DARK_BG = (6, 6, 18)
 
 
 @method(id="88", name="Particle Life", category="simulations",
+description="Particle Life — simulations node.",
          tags=["particles", "emergence", "organic"],
          outputs={"image": "IMAGE", "luminance": "SCALAR", "particles": "PARTICLES"},
          params={

@@ -34,6 +34,7 @@ def _render(f):
 @method(
     id="158",
     name="Darcy-Bénard Porous Convection",
+    description="Darcy-Bénard Porous Convection — simulations node.",
     category="simulations",
     tags=["fluid", "porous", "convection", "plumes"],
     timeout=300,

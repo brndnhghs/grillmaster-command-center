@@ -24,6 +24,7 @@ from ..core.utils import seed_all
 # ═══════════════════════════════════════════════════════════════════════════
 
 @method(id="__counter__", name="Counter", category="channels",
+description="Counter — channels node.",
         tags=["chop", "time", "integer", "generator"],
         inputs={"reset": "SCALAR", "step": "SCALAR"},
         outputs={"value": "SCALAR", "phase": "SCALAR"},
@@ -86,6 +87,7 @@ def method_counter(out_dir: Path, seed: int, params=None):
 # ═══════════════════════════════════════════════════════════════════════════
 
 @method(id="__ramp__", name="Ramp", category="channels",
+description="Ramp — channels node.",
         tags=["chop", "time", "float", "generator"],
         inputs={"trigger": "SCALAR", "speed": "SCALAR"},
         outputs={"value": "SCALAR", "phase": "SCALAR"},
@@ -150,6 +152,7 @@ def method_ramp(out_dir: Path, seed: int, params=None):
 # ═══════════════════════════════════════════════════════════════════════════
 
 @method(id="__lfo__", name="LFO", category="channels",
+description="LFO — channels node.",
         tags=["chop", "time", "oscillator", "generator"],
         inputs={"rate": "SCALAR", "phase_offset": "SCALAR", "amplitude": "SCALAR"},
         outputs={"value": "SCALAR", "bipolar": "SCALAR"},
@@ -243,6 +246,7 @@ def method_lfo(out_dir: Path, seed: int, params=None):
 # ═══════════════════════════════════════════════════════════════════════════
 
 @method(id="__beats__", name="Beats", category="channels",
+description="Beats — channels node.",
         tags=["chop", "time", "music", "generator"],
         inputs={"reset": "SCALAR", "swing": "SCALAR"},
         outputs={"beat": "SCALAR", "bar": "SCALAR", "trigger": "SCALAR"},
@@ -302,6 +306,7 @@ def method_beats(out_dir: Path, seed: int, params=None):
 # ═══════════════════════════════════════════════════════════════════════════
 
 @method(id="__noise1d__", name="Noise1D", category="channels",
+description="Noise1D — channels node.",
         tags=["chop", "time", "noise", "generator"],
         inputs={"rate": "SCALAR", "seed_offset": "SCALAR"},
         outputs={"value": "SCALAR"},
@@ -369,6 +374,7 @@ def method_noise1d(out_dir: Path, seed: int, params=None):
 # ═══════════════════════════════════════════════════════════════════════════
 
 @method(id="__envelope__", name="Envelope", category="channels",
+description="Envelope — channels node.",
         tags=["chop", "time", "adsr", "generator"],
         inputs={"trigger": "SCALAR", "gate": "SCALAR"},
         outputs={"value": "SCALAR"},
@@ -445,6 +451,7 @@ def method_envelope(out_dir: Path, seed: int, params=None):
 # ═══════════════════════════════════════════════════════════════════════════
 
 @method(id="__math__", name="Math", category="channels",
+description="Math — channels node.",
         tags=["chop", "math", "operator"],
         inputs={"a": "SCALAR", "b": "SCALAR"},
         outputs={"value": "SCALAR"},
@@ -541,6 +548,7 @@ def method_math(out_dir: Path, seed: int, params=None):
 # ═══════════════════════════════════════════════════════════════════════════
 
 @method(id="__logic__", name="Logic", category="channels",
+description="Logic — channels node.",
         tags=["chop", "logic", "operator"],
         inputs={"a": "SCALAR", "b": "SCALAR", "control": "SCALAR"},
         outputs={"value": "SCALAR"},
@@ -625,6 +633,7 @@ def method_logic(out_dir: Path, seed: int, params=None):
 # ═══════════════════════════════════════════════════════════════════════════
 
 @method(id="__blend__", name="Blend", category="channels",
+description="Blend — channels node.",
         tags=["chop", "mix", "operator"],
         inputs={"a": "SCALAR", "b": "SCALAR", "mix": "SCALAR"},
         outputs={"value": "SCALAR"},
@@ -685,6 +694,7 @@ def method_blend(out_dir: Path, seed: int, params=None):
 # ═══════════════════════════════════════════════════════════════════════════
 
 @method(id="__strobe__", name="Strobe", category="channels",
+description="Strobe — channels node.",
         tags=["chop", "time", "gate", "generator"],
         inputs={"rate": "SCALAR", "duty_cycle": "SCALAR"},
         outputs={"value": "SCALAR", "trigger": "SCALAR"},
@@ -740,6 +750,7 @@ def method_strobe(out_dir: Path, seed: int, params=None):
 # ═══════════════════════════════════════════════════════════════════════════
 
 @method(id="__burst__", name="Burst", category="channels",
+description="Burst — channels node.",
         tags=["chop", "time", "pulse", "generator"],
         inputs={"trigger": "SCALAR", "rate": "SCALAR"},
         outputs={"value": "SCALAR", "active": "SCALAR"},
@@ -806,6 +817,7 @@ def method_burst(out_dir: Path, seed: int, params=None):
 # ═══════════════════════════════════════════════════════════════════════════
 
 @method(id="__age_heat__", name="AgeHeat", category="channels",
+description="AgeHeat — channels node.",
         tags=["chop", "color", "age", "generator"],
         inputs={"age": "SCALAR", "max_age": "SCALAR"},
         outputs={"value": "SCALAR", "r": "SCALAR", "g": "SCALAR", "b": "SCALAR"},

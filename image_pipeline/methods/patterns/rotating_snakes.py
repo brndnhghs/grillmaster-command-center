@@ -24,6 +24,7 @@ from ...core.animation import capture_frame
 
 
 @method(id="105", name="Morph Grid", category="patterns", new_image_contract=True,
+description="Morph Grid — patterns node.",
         tags=["grid", "warp", "filter", "flowing", "animation"],
         params={
     "grid_size": {"description": "grid cells per row (square grid)", "min": 10, "max": 60, "default": 28},

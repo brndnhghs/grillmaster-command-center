@@ -182,6 +182,7 @@ def _render_scroll(x: np.ndarray, y: np.ndarray, z: np.ndarray,
 @method(
     id="162",
     name="Rössler Oscillator Array",
+    description="Rössler Oscillator Array — simulations node.",
     category="simulations",
     tags=["spatiotemporal chaos", "chimera", "scroll waves",
           "amplitude death", "nonlinear dynamics", "animation"],

@@ -12,6 +12,7 @@ from ...core.utils import save, mn, write_mask, W, H
 @method(
     id="141",
     name="Apply Mask",
+    description="Apply Mask — compositing node.",
     category="compositing",
     tags=["mask", "composite", "opacity", "cutout"],
     inputs={"image_in": "IMAGE", "mask": "MASK"},
