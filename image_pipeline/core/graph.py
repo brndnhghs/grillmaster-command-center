@@ -581,6 +581,8 @@ class GraphExecutor:
                 _t0_arch_a = time.monotonic()
                 try:
                     try:
+                        from image_pipeline.core import utils as _core_utils
+                        _core_utils.set_method_id(meta.id)
                         meta.fn(node_dir_sim, node_seed, params=sim_params)
                     except TypeError as _te:
                         if "unexpected keyword argument" not in str(_te):
@@ -589,6 +591,8 @@ class GraphExecutor:
                 except JobCancelled:
                     pass
                 finally:
+                    from image_pipeline.core import utils as _core_utils
+                    _core_utils.set_method_id(None)
                     clear_job_context()
                 _diag_node_timings[node_id] = (time.monotonic() - _t0_arch_a) * 1000.0
                 _diag_cache_misses += 1
@@ -873,6 +877,7 @@ class GraphExecutor:
 
             # ── In-memory output capture ────────────────────────────
             _captured_output = getattr(self, '_captured_output', {})
+            _captured_sidecars = {}
             _original_save_fn = None
             from image_pipeline.core import utils as _utils_mod
             if self._in_memory:
@@ -889,6 +894,9 @@ class GraphExecutor:
                         # Legacy methods may read the PNG back via load_input; keep writing.
                         _orig(arr_to_save, name, out_dir_cap)
                 _utils_mod.save = _capturing_save
+                # Collect sidecars (field/particles/mask/scalars) in memory too,
+                # so live mode does zero disk writes — see utils.set_sidecar_context.
+                _utils_mod.set_sidecar_context(_captured_sidecars)
 
             # ── Call the method ──
             _diag_nodes_cooked += 1
@@ -900,12 +908,16 @@ class GraphExecutor:
                 _diag_cpu_nodes += 1
             _t0_node = time.monotonic()
             try:
+                from image_pipeline.core import utils as _core_utils
+                _core_utils.set_method_id(meta.id)
                 _fn_result = meta.fn(node_dir, node_seed, params=run_params)
             except TypeError as _te:
                 if "unexpected keyword argument" not in str(_te):
                     raise
                 _fn_result = meta.fn(node_dir, node_seed)
             except Exception as exc:
+                from image_pipeline.core import utils as _core_utils
+                _core_utils.set_method_id(None)
                 err_text = traceback.format_exc(limit=8)
                 err_img = _write_error_placeholder(node_dir)
                 node_errors[node_id] = err_text
@@ -922,6 +934,7 @@ class GraphExecutor:
                 _diag_cache_misses += 1
                 if self._in_memory and _original_save_fn is not None:
                     _utils_mod.save = _original_save_fn
+                    _utils_mod.set_sidecar_context(None)
                 self._captured_output = _captured_output
                 continue
             _diag_node_timings[node_id] = (time.monotonic() - _t0_node) * 1000.0
@@ -963,13 +976,19 @@ class GraphExecutor:
             # ── Read sidecar files — for every return type ──
             # Methods may combine a return value with write_scalars /
             # write_field / write_particles sidecars; in-memory values from
-            # the return dict take priority over the files.
+            # the return dict take priority over the files. In live (in_memory)
+            # mode the sidecar writers already routed into _captured_sidecars,
+            # so we read from there first and never touch disk.
             import json as _json
+            for _k, _v in (list(_captured_sidecars.items()) if self._in_memory else []):
+                extra_outputs.setdefault(_k, _v)
             scalars_path = node_dir / "scalars.json"
-            if scalars_path.exists():
+            if scalars_path.exists() and self._in_memory is False:
                 for _k, _v in _json.loads(scalars_path.read_text()).items():
                     extra_outputs.setdefault(_k, _v)
             for _key in ("field", "particles", "mask"):
+                if self._in_memory:
+                    continue
                 _path = node_dir / f"{_key}.npy"
                 if _path.exists() and _key not in extra_outputs:
                     extra_outputs[_key] = np.load(str(_path))
@@ -983,18 +1002,26 @@ class GraphExecutor:
                 _PIL_write.fromarray(arr_u8).save(str(node_dir / f"{meta.filename()}"))
 
             # ── Write sidecar files ──
-            for _key in ("field", "particles", "mask"):
-                _val = extra_outputs.get(_key)
-                if _val is not None:
-                    np.save(str(node_dir / f"{_key}.npy"), np.asarray(_val, dtype=np.float32))
-            _scalars = {k: v for k, v in extra_outputs.items()
-                        if isinstance(v, (int, float)) and k not in ("field", "particles", "mask")}
-            if _scalars:
-                import json
-                (node_dir / "scalars.json").write_text(json.dumps(_scalars))
+            # In live (in_memory) mode the writers already routed into memory,
+            # so skip disk entirely — matches the image write above.
+            if self._in_memory:
+                pass
+            else:
+                for _key in ("field", "particles", "mask"):
+                    _val = extra_outputs.get(_key)
+                    if _val is not None:
+                        np.save(str(node_dir / f"{_key}.npy"), np.asarray(_val, dtype=np.float32))
+                _scalars = {k: v for k, v in extra_outputs.items()
+                            if isinstance(v, (int, float)) and k not in ("field", "particles", "mask")}
+                if _scalars:
+                    import json
+                    (node_dir / "scalars.json").write_text(json.dumps(_scalars))
 
             if self._in_memory and _original_save_fn is not None:
                 _utils_mod.save = _original_save_fn
+                _utils_mod.set_sidecar_context(None)
+            from image_pipeline.core import utils as _core_utils
+            _core_utils.set_method_id(None)
             self._captured_output = _captured_output
 
             # ── Build flat_outputs ──

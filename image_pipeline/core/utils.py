@@ -228,14 +228,68 @@ def _install_numpy_canvas_patch() -> None:
 _install_numpy_canvas_patch()
 
 
+# ── Sidecar capture context ──────────────────────────────────────────
+# Like capture_frame() in animation.py, the write_* helpers below route their
+# payloads through a per-thread sink when one is installed. This lets the live
+# loop (in_memory=True) collect sidecars in memory instead of hitting the disk
+# every frame — otherwise a FIELD/MASK/PARTICLES-emitting sim calls np.save()
+# on every live frame, which both wastes I/O and (on a restricted output/ dir)
+# can raise PermissionError and hard-fail the frame.
+import threading as _threading
+
+_sidecar_local = _threading.local()
+
+
+def set_sidecar_context(sink: dict | None) -> None:
+    """Install a per-thread sidecar sink used by the write_* helpers in the
+    server/live path.
+
+    `sink` maps key -> ndarray (field/particles/mask) or key -> float (named
+    scalars). Pass None to restore unconditional disk writes (CLI path).
+    """
+    _sidecar_local.sink = sink
+
+
+def _sidecar_sink() -> dict | None:
+    return getattr(_sidecar_local, "sink", None)
+
+
+# ── Current-method context ───────────────────────────────────────────
+# Nodes call capture_frame("NN", arr) and save(arr, mn(NN, "Name"), out_dir)
+# with a HARDCODED id literal. When a node is renumbered, those literals go
+# stale (e.g. Gray-Scott was renumbered 134 -> 155 but its body still wrote
+# "134-*.png" and capture_frame("134")). To make renumbers safe, the executor
+# installs the real method id as a per-thread context; capture_frame() and mn()
+# then use it instead of the (possibly stale) literal. This removes the entire
+# class of id-drift bugs.
+_method_id_local = _threading.local()
+
+
+def set_method_id(method_id: str | None) -> None:
+    """Install the currently-executing method id (executor sets this before
+    each meta.fn() call). Pass None to clear (CLI path reverts to literals)."""
+    _method_id_local.id = method_id
+
+
+def get_method_id() -> str | None:
+    return getattr(_method_id_local, "id", None)
+
+
 def write_scalars(node_dir: Path, **kwargs: float) -> None:
     """Write named scalar outputs to the node graph sidecar (scalars.json).
 
     Called by methods to expose per-frame scalars (e.g. sync order r, wave amplitude).
     Values are merged into flat_outputs[node_id] by GraphExecutor and become
     wirable SCALAR output ports when the method declares them in outputs=.
+
+    When a sidecar sink is active (live/in_memory mode), the scalars are
+    collected in memory and no disk file is written.
     """
     import json
+    sink = _sidecar_sink()
+    if sink is not None:
+        sink.update({k: float(v) for k, v in kwargs.items()})
+        return
     (node_dir / "scalars.json").write_text(json.dumps({k: float(v) for k, v in kwargs.items()}))
 
 
@@ -244,7 +298,14 @@ def write_field(node_dir: Path, arr: np.ndarray) -> None:
 
     GraphExecutor reads this into flat_outputs[node_id]["field"], making it
     available to downstream FIELD wires without the image-fallback.
+
+    When a sidecar sink is active (live/in_memory mode), the array is collected
+    in memory instead of being written to disk.
     """
+    sink = _sidecar_sink()
+    if sink is not None:
+        sink["field"] = arr.astype(np.float32)
+        return
     np.save(str(node_dir / "field.npy"), arr.astype(np.float32))
 
 
@@ -253,7 +314,14 @@ def write_particles(node_dir: Path, arr: np.ndarray) -> None:
 
     GraphExecutor reads this into flat_outputs[node_id]["particles"].
     Shape convention: rows are particles, columns are [x, y, vx, vy].
+
+    When a sidecar sink is active (live/in_memory mode), the array is collected
+    in memory instead of being written to disk.
     """
+    sink = _sidecar_sink()
+    if sink is not None:
+        sink["particles"] = arr.astype(np.float32)
+        return
     np.save(str(node_dir / "particles.npy"), arr.astype(np.float32))
 
 
@@ -262,8 +330,15 @@ def write_mask(node_dir: Path, arr: np.ndarray) -> None:
 
     GraphExecutor reads this into flat_outputs[node_id]["mask"], making it
     available to downstream MASK wires.
+
+    When a sidecar sink is active (live/in_memory mode), the array is collected
+    in memory instead of being written to disk.
     """
     arr = np.clip(arr, 0.0, 1.0).astype(np.float32)
+    sink = _sidecar_sink()
+    if sink is not None:
+        sink["mask"] = arr
+        return
     np.save(str(node_dir / "mask.npy"), arr)
 
 
@@ -288,8 +363,21 @@ def norm(arr: np.ndarray) -> np.ndarray:
     return (arr - lo) / (hi - lo + 1e-8)
 
 
-def mn(i: int, label: str) -> str:
-    """Generate filename from method number and label."""
+def mn(i: int | str, label: str) -> str:
+    """Generate filename from method number and label.
+
+    When a method-id context is active (set by the executor via
+    set_method_id), the context id is used instead of the passed `i` so that
+    a renumbered node never writes a stale filename. The passed `i` is ignored
+    in that case; nodes may keep their historical literal for readability.
+    """
+    effective = get_method_id()
+    if effective is not None:
+        i = effective
+    try:
+        i = int(i)
+    except (TypeError, ValueError):
+        pass
     slug = (
         label.lower()
         .replace(" ", "-")
@@ -298,7 +386,9 @@ def mn(i: int, label: str) -> str:
         .replace(")", "")
         .replace(".", "")
     )
-    return f"{i:02d}-{slug}.png"
+    if isinstance(i, int):
+        return f"{i:02d}-{slug}.png"
+    return f"{i}-{slug}.png"
 
 
 FONT_SMALL = "/System/Library/Fonts/Menlo.ttc"

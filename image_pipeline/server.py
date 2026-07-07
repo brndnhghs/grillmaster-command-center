@@ -249,8 +249,13 @@ app = FastAPI(title="Image Pipeline", lifespan=lifespan)
 app.mount("/output", StaticFiles(directory=str(OUTPUT_ROOT)), name="output")
 
 # ── Chord Bot sub-application (served at /chordbot/) ─────────────────
-from chord_bot.server import app as _chord_app  # noqa: E402
-app.mount("/chordbot", _chord_app)
+# Guarded import: chord_bot is an independent sibling app. A failure there
+# (missing deps, import error) must not take down the image server boot path.
+try:
+    from chord_bot.server import app as _chord_app  # noqa: E402
+    app.mount("/chordbot", _chord_app)
+except Exception as _chord_err:  # noqa: BLE001 — keep the image editor alive
+    print(f"[warn] chord_bot not mounted at /chordbot: {_chord_err}")
 
 # ── Thread-safe stdout/stderr proxy ──────────────────────────────────
 # Each job thread installs its own writer via the proxy instead of replacing
