@@ -3327,12 +3327,67 @@ async function gLoadPortTypes() {
 }
 
 // ── Load method palette ────────────────────────────────────────
+// ── Client-side (browser-GPU) node defs ─────────────────────────────────────
+// These render in the browser via three.js (see ui/js/client3d.js). They are
+// injected into gNodeDefs client-side only; the server render/export path is
+// never involved for them. `clientExec:true` marks a node as client-rendered.
+const GCLIENT_NODE_DEFS = {
+  '__scene3d__': {
+    method_id: '__scene3d__',
+    name: '3D Scene',
+    category: 'client_3d',
+    clientExec: true,
+    tags: ['3d', 'client', 'webgl', 'fast'],
+    inputs: {},
+    outputs: { image: 'image', luminance: 'field' },
+    param_ports: [],
+    description: 'Real-time three.js 3D scene rendered on the browser GPU.',
+    version: 1, deprecated: false, start_frame: 0, end_frame: 0, prebake: 0,
+    params: {
+      geometry:    { description: 'mesh geometry', choices: ['box','sphere','torus','torusknot','cone','cylinder','icosahedron'], default: 'torusknot' },
+      cam_x:       { description: 'camera X', min: -8, max: 8, default: 0 },
+      cam_y:       { description: 'camera Y', min: -8, max: 8, default: 0 },
+      cam_z:       { description: 'camera Z (dolly)', min: 0.5, max: 12, default: 3 },
+      fov:         { description: 'field of view', min: 15, max: 110, default: 50 },
+      obj_rx:      { description: 'object rotate X (deg)', min: -180, max: 180, default: 0 },
+      obj_ry:      { description: 'object rotate Y (deg)', min: -180, max: 180, default: 0 },
+      obj_rz:      { description: 'object rotate Z (deg)', min: -180, max: 180, default: 0 },
+      spin_speed:  { description: 'auto Y-spin (rad/s)', min: 0, max: 4, default: 0.6 },
+      scale:       { description: 'object scale', min: 0.1, max: 3, default: 1 },
+      mat_color:   { description: 'material color', default: '#4a9eff' },
+      metalness:   { description: 'metalness', min: 0, max: 1, default: 0.4 },
+      roughness:   { description: 'roughness', min: 0, max: 1, default: 0.35 },
+      light_x:     { description: 'light X', min: -10, max: 10, default: 3 },
+      light_y:     { description: 'light Y', min: -10, max: 10, default: 4 },
+      light_z:     { description: 'light Z', min: -10, max: 10, default: 5 },
+      light_color: { description: 'light color', default: '#ffffff' },
+      ambient:     { description: 'ambient light', min: 0, max: 1, default: 0.35 },
+      bg_color:    { description: 'background color', default: '#101014' },
+    },
+  },
+};
+
+// Lazy-loaded ES module handle (ui/js/client3d.js). Only imported when a client
+// node is actually present, so three.js never bloats the initial page load.
+let _gClient3D = null;
+async function gClient3D() {
+  if (!_gClient3D) _gClient3D = await import('/ui/js/client3d.js');
+  return _gClient3D;
+}
+// True when the current graph contains any client-rendered node.
+function gGraphHasClientNode() {
+  return gNodes.some(n => gNodeDefs[n.method_id]?.clientExec);
+}
+
 async function gLoadMethodPalette() {
   if (gPaletteLoaded) return;
   gPaletteLoaded = true;
   try {
     const res = await fetch('/api/node-defs');
     gNodeDefs = await res.json();
+    // Inject client-only node defs (rendered in-browser via three.js; the
+    // server never sees these — 3D graphs run entirely client-side).
+    Object.assign(gNodeDefs, GCLIENT_NODE_DEFS);
     gRenderPalette();
   } catch(e) {
     document.getElementById('graph-method-list').innerHTML =
@@ -5264,9 +5319,52 @@ function gGetAnimatedParams(node, frame) {
   return params;
 }
 
+// ── Client-side render display helper ──────────────────────────
+// Mounts the three.js executor canvas in the main preview, replacing whatever
+// server-fed <img>/<canvas> was there. Used by both client Run and client Live.
+function gMountClientCanvas(canvas) {
+  if (canvas._mounted && canvas.parentNode === gMainPreview) return;
+  gMainPreview.innerHTML = '';
+  gLivePreviewImg = null; gLiveCanvas = null; gLiveImg = null;
+  canvas.id = 'client3d-canvas';
+  canvas.style.maxWidth = '100%';
+  canvas.style.maxHeight = '100%';
+  canvas.style.objectFit = 'contain';
+  canvas.style.display = 'block';
+  canvas.style.margin = 'auto';
+  canvas.onclick = () => {
+    gFsImg.src = canvas.toDataURL('image/png');
+    gFsImg.style.display = '';
+    document.getElementById('graph-fs-overlay').style.display = 'flex';
+  };
+  canvas._mounted = true;
+  gMainPreview.classList.add('active');
+  gMainPreview.appendChild(canvas);
+  gPreviewShow();
+}
+
+// One-shot client render of the current graph at the timeline start frame.
+async function gClientRunOnce() {
+  const C = await gClient3D();
+  const start = parseInt(document.getElementById('tl-start').value) || 0;
+  const fps   = parseInt(document.getElementById('tl-fps')?.value) || 24;
+  const nodes = gNodes.map(n => gSerializeNodeForApi(n));
+  const edges = gEdges.map(e => ({ src_node:e.src_node, src_port:e.src_port, dst_node:e.dst_node, dst_port:e.dst_port, feedback:e.feedback }));
+  const canvas = C.renderFrame(nodes, edges, start, gCanvasW, gCanvasH, start / fps);
+  gMountClientCanvas(canvas);
+  const err = C.lastError();
+  gSetStatus(err ? ('Client render · GLSL error (see console)') : `Client render · frame ${start} · ${gCanvasW}×${gCanvasH}`);
+  if (err) console.warn('[client3d] GLSL compile log:', err);
+}
+
 // ── Run ────────────────────────────────────────────────────────
 async function gDoRun() {
   if (!gNodes.length) { gSetStatus('No nodes.'); return; }
+  // Client-rendered graphs (3D nodes) never hit the server render path.
+  if (gGraphHasClientNode()) {
+    try { await gClientRunOnce(); } catch(e) { gSetStatus('Client render error: '+e.message); console.error(e); }
+    return;
+  }
   // Clear any previous node error states
   document.querySelectorAll('.node-error').forEach(el => {
     el.classList.remove('node-error');
@@ -5494,6 +5592,8 @@ function _gStartMjpegFallback() {
 }
 
 function _gTeardownLive() {
+  // Client-side live loop (browser GPU)
+  if (typeof _gStopClientLive === 'function') _gStopClientLive();
   // WS
   if (_gLiveWs) {
     _gLiveWsFallback = true; // prevent onclose from restarting MJPEG
@@ -5511,7 +5611,65 @@ function _gTeardownLive() {
     gMainPreview.classList.remove('active');
 }
 
+// ── Client-side live loop (browser GPU, for 3D graphs) ─────────
+let _gClientLiveActive = false;
+function _gClientGraphPayload() {
+  return {
+    nodes: gNodes.map(n => gSerializeNodeForApi(n)),
+    edges: gEdges.map(e => ({ src_node:e.src_node, src_port:e.src_port, dst_node:e.dst_node, dst_port:e.dst_port, feedback:e.feedback })),
+  };
+}
+async function _gStartClientLive() {
+  const C = await gClient3D();
+  const start = parseInt(document.getElementById('tl-start').value) || 0;
+  const end   = parseInt(document.getElementById('tl-end').value)   || 24;
+  const fps   = parseInt(document.getElementById('tl-fps')?.value)  || 24;
+  const { nodes, edges } = _gClientGraphPayload();
+  const canvas = C.startLive({
+    nodes, edges, start, end, fps, width: gCanvasW, height: gCanvasH,
+    onStats: ({ frame, fps }) => {
+      gSetStatus(`Live (client GPU) · frame ${frame} · ${fps} fps`);
+      const fEl = document.getElementById('lmr-frame'); if (fEl) fEl.textContent = `frame ${frame}`;
+      const pEl = document.getElementById('lmr-fps');   if (pEl) pEl.textContent = `${fps} fps`;
+    },
+  });
+  gMountClientCanvas(canvas);
+  _gClientLiveActive = true;
+}
+function _gStopClientLive() {
+  if (!_gClientLiveActive) return;
+  _gClientLiveActive = false;
+  if (_gClient3D) _gClient3D.stopLive();
+}
+// Push param/edge edits into a running client live loop without restarting.
+function gClientLiveRefresh() {
+  if (_gClientLiveActive && _gClient3D) {
+    const { nodes, edges } = _gClientGraphPayload();
+    _gClient3D.updateLiveGraph(nodes, edges);
+  }
+}
+
 async function gSetLive(on) {
+  // Client-rendered graphs (3D nodes) run a browser-GPU live loop instead of
+  // the server live loop. The server's /api/graph/live + WS path is untouched
+  // and only used by 2D-only graphs.
+  if (on && gGraphHasClientNode()) {
+    gLiveMode = true;
+    gLiveBtn.classList.toggle('active', true);
+    gLiveBtnDesk.classList.toggle('active', true);
+    try { await _gStartClientLive(); }
+    catch(e) { gSetStatus('Client live error: ' + e.message); console.error(e); }
+    return;
+  }
+  if (!on && _gClientLiveActive) {
+    _gStopClientLive();
+    gLiveMode = false;
+    gLiveBtn.classList.toggle('active', false);
+    gLiveBtnDesk.classList.toggle('active', false);
+    gSetStatus('Live stopped.');
+    return;
+  }
+
   try {
     await fetch('/api/graph/live', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -5758,6 +5916,16 @@ document.getElementById('settings-reset-layout').addEventListener('click', () =>
 // ── Auto-generate: fire-and-cancel ───────────────────────────
 let _autoGenTimer = null;
 function gDoAutoGen() {
+  // Client-rendered graphs (3D): refresh the browser-GPU loop live, or do a
+  // one-shot client render in auto mode. Never touches the server path.
+  if (gGraphHasClientNode()) {
+    if (_gClientLiveActive) { gClientLiveRefresh(); return; }
+    if (gAutoGen && gNodes.length) {
+      clearTimeout(_autoGenTimer);
+      _autoGenTimer = setTimeout(() => { gClientRunOnce().catch(e => console.error(e)); }, 80);
+    }
+    return;
+  }
   if (gLiveMode) {
     // Param edits while live hot-swap the running loop instead of
     // firing one-shot executes.
@@ -6829,6 +6997,41 @@ tlCancel.addEventListener('click', () => {
   if (tlSeqAbort) { tlSeqAbort.abort(); tlSeqAbort = null; }
 });
 
+// Client-side export for 3D-containing graphs. Renders frames on the browser
+// GPU and captures a WebM. The server export path (/api/graph/render-sequence)
+// is untouched and still used for every 2D-only graph.
+async function tlDoClientExport(start, end, fps, name, total) {
+  tlRenderBtn.disabled        = true;
+  tlProgressDiv.style.display = 'flex';
+  tlProgressBar.style.width   = '0%';
+  tlProgressLabel.textContent = `0 / ${total}`;
+  const wasLive = _gClientLiveActive;
+  try {
+    const C = await gClient3D();
+    const { nodes, edges } = _gClientGraphPayload();
+    const blob = await C.exportWebM({
+      nodes, edges, start, end, fps, width: gCanvasW, height: gCanvasH,
+      onProgress: (i, t) => {
+        tlProgressBar.style.width = `${Math.round(i / t * 100)}%`;
+        tlProgressLabel.textContent = `${i} / ${t}`;
+      },
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${name}.webm`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    gShowToast(`Exported ${name}.webm (${total} frames, client GPU)`);
+  } catch (e) {
+    gShowToast('Client export failed: ' + e.message, true);
+    console.error(e);
+  } finally {
+    tlRenderBtn.disabled = false;
+    setTimeout(() => { tlProgressDiv.style.display = 'none'; }, 1200);
+    if (wasLive) { try { await _gStartClientLive(); } catch {} }
+  }
+}
+
 async function tlDoRenderSequence() {
   const start = parseInt(tlStart.value) || 0;
   const end   = parseInt(tlEnd.value)   || 24;
@@ -6838,6 +7041,10 @@ async function tlDoRenderSequence() {
   if (end <= start) { gShowToast('End must be greater than Start', true); return; }
 
   const total = end - start + 1;
+
+  // 3D / client-rendered graphs export entirely in the browser.
+  if (gGraphHasClientNode()) { await tlDoClientExport(start, end, fps, name, total); return; }
+
   tlRenderBtn.disabled        = true;
   tlProgressDiv.style.display = 'flex';
   tlProgressBar.style.width   = '0%';
