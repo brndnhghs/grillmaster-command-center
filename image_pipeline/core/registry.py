@@ -49,8 +49,9 @@ class MethodMeta:
         self.inputs: dict[str, str] | None = inputs
         # Declared var outputs: port_name → PortType string.
         # Default covers image + luminance; methods extend this in later phases
-        # by passing outputs= to the @method decorator.
-        self.outputs: dict[str, str] = outputs or {"image": "IMAGE", "luminance": "SCALAR"}
+        # by passing outputs= to the @method decorator. luminance is a per-pixel
+        # (H,W) FIELD — the executor always computes np.mean(arr, axis=-1).
+        self.outputs: dict[str, str] = outputs or {"image": "IMAGE", "luminance": "FIELD"}
         self.description: str = description
         self.version: int = version
         self.deprecated: bool = deprecated
