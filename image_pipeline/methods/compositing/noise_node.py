@@ -104,6 +104,7 @@ _ERROR_FIELD = np.zeros((H, W), dtype=np.float32)
             "default": 1.0,
         },
     },
+    is_time_varying=False,
 )
 def method_noise(out_dir: Path, seed: int, params=None):
     """Generate a noise field with multiple output types.

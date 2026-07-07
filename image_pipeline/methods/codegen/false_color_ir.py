@@ -51,6 +51,7 @@ from ...core.animation import capture_frame
             "default": "perlin",
         },
     },
+    is_time_varying=False,
 )
 def method_77_false_color_ir(out_dir: Path, seed: int, params=None):
     """Simulate infrared false-color photography with multiple mapping schemes.

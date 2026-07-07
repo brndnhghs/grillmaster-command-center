@@ -49,7 +49,8 @@ _ERROR_IMG = np.zeros((H, W, 3), dtype=np.float32)
     "ring_count": {"description": "wood ring count", "min": 5, "max": 100, "default": 30},
     "water_level": {"description": "terrain water level cutoff (0=no water, 1=all water)", "min": 0.0, "max": 1.0, "default": 0.0},
     "erosion": {"description": "terrain simulated erosion strength (0=off)", "min": 0.0, "max": 1.0, "default": 0.0},
-})
+},
+is_time_varying=False,)
 def method_noise(out_dir: Path, seed: int, params=None):
     """
     Multi-type procedural 2D noise generator with FBM styles, domain warping,

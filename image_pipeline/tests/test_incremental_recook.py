@@ -250,9 +250,16 @@ class TestMethodMetaFlag:
         assert meta.is_time_varying is False
 
     def test_compositing_nodes_are_static(self):
-        """Production compositing nodes must be declared is_time_varying=False."""
-        static_ids = ["137", "138", "139", "140", "141",
-                      "__image_to_mask__", "__transform__"]
+        """Production compositing/generator nodes declared is_time_varying=False."""
+        static_ids = [
+            # Compositing / merge filters (Phase 6)
+            "137", "138", "139", "140", "141",
+            "__image_to_mask__", "__transform__",
+            # Static CPU generators (Phase 6 follow-on audit)
+            "05",         # Procedural Noise — seed frozen with & 0xFFFF0000, no time read
+            "__noise__",  # Noise node — same freeze pattern
+            "77",         # False Color IR — seed frozen with & 0xFFFF0000, no time read
+        ]
         for mid in static_ids:
             meta = get_meta(mid)
             assert meta is not None, f"Method {mid} not found"
@@ -308,3 +315,78 @@ class TestSkippedDiagnostics:
         skipped1 = ex.last_frame_stats.get("nodes_skipped", 0)
 
         assert skipped1 > skipped0, "nodes_skipped should increase when static node is kept clean"
+
+
+# ── Production-method skip regression ─────────────────────────────────────────
+
+class TestProductionStaticGenerators:
+    """Procedural Noise is the canonical expensive CPU root we marked static."""
+
+    def test_procedural_noise_cooked_once_not_twice(self):
+        """Procedural Noise (id='05') skips on frame 2 when nothing changed."""
+        tmp = _tmp()
+        ex = GraphExecutor(tmp, in_memory=True)
+        nodes = [{"id": "n", "method_id": "05", "params": {"noise_type": "perlin"},
+                  "dirty": True, "render": True}]
+        edges = []
+
+        out0, _, _ = ex.execute(nodes, edges, seed=1, frame=0, frames=300)
+        arr0 = out0["n"]["image"]
+        assert ex.last_frame_stats.get("nodes_cooked", 0) == 1
+
+        # Simulate live loop: static node not marked dirty
+        nodes[0]["dirty"] = False
+        out1, _, _ = ex.execute(nodes, edges, seed=1, frame=1, frames=300)
+        arr1 = out1["n"]["image"]
+
+        assert ex.last_frame_stats.get("nodes_skipped", 0) >= 1, "noise node must be skipped"
+        np.testing.assert_array_equal(arr0, arr1, err_msg="skipped output must be identical")
+
+    def test_procedural_noise_recooks_when_param_changes(self):
+        """Procedural Noise re-cooks (and produces different output) when a param changes."""
+        tmp = _tmp()
+        ex = GraphExecutor(tmp, in_memory=True)
+        # Use scale=1.0 initially; change to scale=50.0 — this always produces visually
+        # distinct output regardless of seed (different spatial frequency).
+        nodes = [{"id": "n", "method_id": "05", "params": {"scale": 1.0},
+                  "dirty": True, "render": True}]
+        edges = []
+
+        out0, _, _ = ex.execute(nodes, edges, seed=1, frame=0, frames=300)
+        arr0 = out0["n"]["image"]
+
+        # param change → live loop marks dirty
+        nodes[0]["params"]["scale"] = 50.0
+        nodes[0]["dirty"] = True
+        out1, _, _ = ex.execute(nodes, edges, seed=1, frame=1, frames=300)
+        arr1 = out1["n"]["image"]
+
+        assert ex.last_frame_stats.get("nodes_cooked", 0) >= 1
+        assert not np.array_equal(arr0, arr1), "different scale must produce different output"
+
+    def test_procedural_noise_downstream_static_filter_skipped(self):
+        """When Noise is static and unchanged, a static downstream filter is also skipped."""
+        tmp = _tmp()
+        ex = GraphExecutor(tmp, in_memory=True)
+        nodes = [
+            {"id": "src", "method_id": "05", "params": {"noise_type": "perlin"},
+             "dirty": True, "render": False},
+            {"id": "dst", "method_id": "__transform__", "params": {},
+             "dirty": True, "render": True},
+        ]
+        edges = [{"src_node": "src", "src_port": "image",
+                  "dst_node": "dst", "dst_port": "image_in"}]
+
+        out0, _, _ = ex.execute(nodes, edges, seed=1, frame=0, frames=300)
+        skipped0 = ex.last_frame_stats.get("nodes_skipped", 0)
+
+        # Neither node dirty on frame 1
+        nodes[0]["dirty"] = False
+        nodes[1]["dirty"] = False
+        out1, _, _ = ex.execute(nodes, edges, seed=1, frame=1, frames=300)
+        skipped1 = ex.last_frame_stats.get("nodes_skipped", 0)
+
+        assert skipped1 >= skipped0 + 2, (
+            f"both src and dst should be skipped on frame 1; "
+            f"skipped0={skipped0} skipped1={skipped1}"
+        )
