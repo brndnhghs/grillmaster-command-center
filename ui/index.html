@@ -522,6 +522,38 @@ try {
   }
   #graph-minimap canvas { width: 100%; height: 100%; display: block; }
   @media (max-width: 760px) { #graph-minimap { width: 116px; height: 78px; right: 8px; bottom: 8px; } }
+  /* Encoding legend — compact, elegant, corner-placed. Its own widget. */
+  #graph-legend {
+    position: absolute; left: 10px; bottom: 10px; z-index: 6;
+    width: 250px; border-radius: 9px; overflow: hidden;
+    background: rgba(12,15,22,.86); border: 1px solid var(--border);
+    box-shadow: 0 4px 16px rgba(0,0,0,.4); backdrop-filter: blur(5px);
+    font-size: 10.5px; color: var(--muted); user-select: none;
+    /* Body is informational + click-through so it never blocks the node graph;
+       only the header (below) captures clicks, to collapse. */
+    pointer-events: none;
+  }
+  #graph-legend .glg-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 5px 9px; cursor: pointer; font-weight: 700; letter-spacing: .04em;
+    color: var(--text); background: rgba(255,255,255,.03); text-transform: uppercase; font-size: 9.5px;
+    pointer-events: auto;
+  }
+  #graph-legend .glg-caret { transition: transform .18s; }
+  #graph-legend.collapsed .glg-caret { transform: rotate(-90deg); }
+  #graph-legend.collapsed .glg-body { display: none; }
+  #graph-legend .glg-body { padding: 7px 9px; display: flex; flex-direction: column; gap: 5px; }
+  #graph-legend .glg-row { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 6px; line-height: 1.4; }
+  #graph-legend .glg-cats span { display: inline-flex; align-items: center; gap: 4px; }
+  #graph-legend .glg-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  #graph-legend .glg-sub { color: #6a6f79; font-size: 9.5px; margin-top: 1px; }
+  #graph-legend .glg-frost { width: 10px; height: 8px; border-radius: 2px; display: inline-block;
+    border: 1px dashed rgba(168,190,214,.8); }
+  #graph-legend .glg-stream { width: 22px; height: 8px; display: inline-block;
+    background-image: radial-gradient(circle, #cfd6e0 1px, transparent 1.5px); background-size: 4px 8px; }
+  #graph-legend .glg-packets { width: 22px; height: 8px; display: inline-block;
+    background-image: linear-gradient(90deg, #cfd6e0 40%, transparent 40%); background-size: 11px 8px; border-radius: 1px; }
+  @media (max-width: 760px) { #graph-legend { width: 190px; font-size: 9.5px; left: 8px; bottom: 8px; } }
   /* Static vignette — paints once, sits under the nodes layer */
   #graph-canvas-wrap::before {
     content: ''; position: absolute; inset: 0; pointer-events: none;
@@ -1590,6 +1622,21 @@ try {
       <!-- #4c-safe: purely decorative FX overlay (pointer-events:none, never owns interaction) -->
       <canvas id="graph-overlay"></canvas>
       <div id="graph-minimap" style="display:none"><canvas id="graph-minimap-canvas"></canvas></div>
+      <!-- Encoding legend (its own widget; toggled, never touches the graph canvas) -->
+      <div id="graph-legend" style="display:none">
+        <div class="glg-head"><span>✨ flow legend</span><span class="glg-caret">▾</span></div>
+        <div class="glg-body">
+          <div class="glg-row glg-cats">
+            <span><i class="glg-dot" style="background:#e8a848"></i>GPU</span>
+            <span><i class="glg-dot" style="background:#60a5fa"></i>CPU</span>
+            <span><i class="glg-dot" style="background:#a78bfa"></i>3D</span>
+            <span><i class="glg-dot" style="background:#4ade80"></i>p5</span>
+          </div>
+          <div class="glg-row"><i class="glg-stream"></i> memory stream &nbsp;·&nbsp; <i class="glg-packets"></i> disk packets</div>
+          <div class="glg-row">◠ sweep = cooking &nbsp;·&nbsp; <i class="glg-frost"></i> cached &nbsp;·&nbsp; <b style="color:#f43f5e">◉</b> error</div>
+          <div class="glg-row glg-sub">speed = throughput &nbsp;·&nbsp; dot size = bytes &nbsp;·&nbsp; tempo = fps</div>
+        </div>
+      </div>
     </div>
 
     <!-- Desktop toolbar (hidden on mobile) -->
@@ -8930,7 +8977,7 @@ function gOverlayFeed(d) {
   _gOvlTele = {
     timings: d.node_timings || {}, errors: d.node_errors || {}, names: d.node_names || {},
     running: !!d.running, memEdges: d.mem_edges || 0, diskEdges: d.disk_edges || 0,
-    ts: performance.now(),
+    fps: d.fps || 0, ts: performance.now(),
   };
   if (gOverlayEnabled && !_gOvlRaf) _gOvlStart();
 }
@@ -8952,31 +8999,53 @@ function _gOvlResize() {
 
 function _gOvlMaxMs() { const v = Object.values(_gOvlTele.timings); return Math.max(1, ...v); }
 
-// Cohesive palette derived from the active theme (re-read on toggle/resize).
-// Flow + node activity use the muted theme accent; a warm amber is reserved for
-// genuine hotspots; --live drives errors and extreme heat.
+// ── "Meaningful motion" visual language ─────────────────────────────────────
+// Every animated channel encodes live telemetry so the whole system state is
+// readable at a glance (see the legend). Cohesive, limited palette.
 let _gOvlPal = null;
+// Node category → hue (subway-line style). Read instantly = node type.
+const _OVL_CAT_COL = { gpu: [232,168,72], cpu: [96,165,250], '3d': [167,139,250], p5: [74,222,128] };
+let _gOvlPrevMs = {};   // last frame's per-node cook time (cooking→cached edge detection)
+let _gOvlTickAt = {};   // node id → time it last became cached (reuse-tick animation)
 function _gOvlReadPalette() {
   const cs = getComputedStyle(document.documentElement);
   const hex = v => { const h = (cs.getPropertyValue(v) || '').trim().replace('#',''); const n = parseInt(h.length===3? h.replace(/(.)/g,'$1$1'):h, 16); return [(n>>16)&255,(n>>8)&255,n&255]; };
-  _gOvlPal = { accent: hex('--accent'), live: hex('--live'), muted: hex('--muted'), text: hex('--text'), warm: [216, 150, 74] };
+  _gOvlPal = { accent: hex('--accent'), live: hex('--live'), muted: hex('--muted'), text: hex('--text'),
+               frost: [168, 190, 214], cat: _OVL_CAT_COL };
 }
 function _ovlLerp3(a, b, t) { return [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t]; }
 function _ovlRgba(c, a) { return `rgba(${c[0]|0},${c[1]|0},${c[2]|0},${a})`; }
-// Cook-time colour ramp: cool accent → warm amber → deep orange for genuine
-// hotspots. Never red — red is reserved exclusively for error state.
-function _ovlHeatColor(load) {
-  const p = _gOvlPal;
-  const hot = [232, 150, 70], hotter = [236, 120, 48];
-  let c = _ovlLerp3(p.accent, hot, Math.min(1, load * 1.2));
-  if (load > 0.8) c = _ovlLerp3(c, hotter, (load - 0.8) / 0.2);
-  return c;
-}
 function _ovlRoundRect(ctx, x, y, w, h, rad) {
   if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, w, h, rad); return; }
   ctx.beginPath(); ctx.moveTo(x+rad, y);
   ctx.arcTo(x+w, y, x+w, y+h, rad); ctx.arcTo(x+w, y+h, x, y+h, rad);
   ctx.arcTo(x, y+h, x, y, rad); ctx.arcTo(x, y, x+w, y, rad); ctx.closePath();
+}
+// Node category from the client node def (always available, no telemetry needed).
+function _ovlCat(node) {
+  const def = gNodeDefs[node.method_id] || {}, tags = def.tags || [], cat = def.category || '', mid = node.method_id;
+  if (mid === '__p5sketch__' || tags.includes('p5')) return 'p5';
+  if (cat === 'client_3d') return '3d';
+  if (tags.includes('gpu') || cat === 'gpu_shaders' || (/^\d+$/.test(mid) && +mid >= 173 && +mid <= 219)) return 'gpu';
+  return 'cpu';
+}
+// GPU/3D/p5 nodes use the in-memory ndarray contract (smooth stream); legacy CPU
+// nodes move heavier buffers (chunky, disk-capable packets).
+function _ovlIsMem(catKey) { return catKey !== 'cpu'; }
+// Payload weight from the wire's port type → bytes/frame (packet size + density).
+function _ovlPayload(ptype) {
+  switch (ptype || 'image') {
+    case 'image': case 'mask': return 1.0;
+    case 'field': case 'colormap': return 0.58;
+    case 'particles': return 0.5;
+    case 'scalar': return 0.18;
+    default: return 0.6;
+  }
+}
+// Point on the flow bezier at parameter f∈[0,1].
+function _ovlBez(p0, c0, c1, p1, f) {
+  const u = 1 - f, a = u*u*u, b = 3*u*u*f, c = 3*u*f*f, d = f*f*f;
+  return { x: a*p0.x + b*c0.x + c*c1.x + d*p1.x, y: a*p0.y + b*c0.y + c*c1.y + d*p1.y };
 }
 
 function _gOvlDraw() {
@@ -8992,10 +9061,13 @@ function _gOvlDraw() {
   const now = performance.now() / 1000;
   const live = _gOvlTele.running && (performance.now() - _gOvlTele.ts < 1500);
   const maxMs = _gOvlMaxMs();
+  const nodeById = new Map(gNodes.map(n => [n.id, n]));
+  // GLOBAL TEMPO — the whole overlay's liveliness tracks fps (feel performance).
+  const fps = _gOvlTele.fps || 0;
+  const tempo = Math.max(0.32, Math.min(1.15, 0.32 + fps / 60));
+  const cookThresh = Math.max(0.6, maxMs * 0.03);
 
-  // 1 + 4. Flow — TouchDesigner-style thin animated dashes travelling along a
-  // gentle bezier (output→input), speed ∝ throughput. Idle wires stay calm
-  // (the real SVG wire is left untouched below).
+  // ── EDGES: data flow ──────────────────────────────────────────────────────
   ctx.lineCap = 'round';
   gEdges.forEach(edge => {
     const s = gNodesEl.querySelector(`.gport[data-nid="${edge.src_node}"][data-port="${edge.src_port}"][data-dir="output"]`);
@@ -9004,42 +9076,99 @@ function _gOvlDraw() {
     const p0 = gPortPos(s), p1 = gPortPos(d);
     const load = Math.min(1, (_gOvlTele.timings[edge.src_node] || 0) / maxMs);
     if (!live || load <= 0.01) return;
-    const off = Math.max(24, Math.min(110, Math.abs(p1.x - p0.x) * 0.5));
-    const bez = () => { ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.bezierCurveTo(p0.x + off, p0.y, p1.x - off, p1.y, p1.x, p1.y); };
-    const col = _gOvlPal.accent;
-    // faint continuous guide so the flow path reads even between dashes
-    bez(); ctx.setLineDash([]); ctx.lineWidth = 1; ctx.strokeStyle = _ovlRgba(col, 0.10 + 0.10 * load); ctx.stroke();
-    // travelling dashes (direction = data flow; speed ∝ load)
-    bez();
-    ctx.setLineDash([2.5, 9]);
-    ctx.lineDashOffset = -((now * (12 + load * 46)) % 11.5);
-    ctx.lineWidth = 1.4;
-    ctx.strokeStyle = _ovlRgba(col, 0.34 + 0.34 * load);
-    ctx.stroke();
+    const srcNode = nodeById.get(edge.src_node);
+    const catKey = srcNode ? _ovlCat(srcNode) : 'cpu';
+    const col = _gOvlPal.cat[catKey];
+    const mem = _ovlIsMem(catKey);
+    const payload = _ovlPayload(s.dataset.ptype);
+    const off = Math.max(24, Math.min(120, Math.abs(p1.x - p0.x) * 0.5));
+    const c0 = { x: p0.x + off, y: p0.y }, c1 = { x: p1.x - off, y: p1.y };
+    // faint guide so the path always reads
+    ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.bezierCurveTo(c0.x, c0.y, c1.x, c1.y, p1.x, p1.y);
+    ctx.setLineDash([]); ctx.lineWidth = 1; ctx.strokeStyle = _ovlRgba(col, 0.08 + 0.10 * load); ctx.stroke();
+    const spd = (0.12 + load * 0.85) * tempo; // path-fractions/sec ∝ throughput
     ctx.setLineDash([]);
+    if (mem) {
+      // MEMORY: smooth continuous stream — many small dots; size/density ∝ bytes.
+      const dotR = 1.1 + payload * 1.9;
+      const gap = 0.10 - payload * 0.05;              // denser for bigger payloads
+      const nDots = Math.max(4, Math.round(1 / gap));
+      for (let i = 0; i < nDots; i++) {
+        const f = ((now * spd + i / nDots) % 1);
+        const pt = _ovlBez(p0, c0, c1, p1, f);
+        ctx.beginPath(); ctx.arc(pt.x, pt.y, dotR, 0, 6.2832);
+        ctx.fillStyle = _ovlRgba(col, 0.30 + 0.45 * load);
+        ctx.fill();
+      }
+    } else {
+      // DISK: discrete chunky packets — few large rounded blocks, stepped motion.
+      const nPk = 2 + Math.round(payload * 2), steps = 7;
+      const pw = 5 + payload * 6, ph = 3 + payload * 2.5;
+      for (let i = 0; i < nPk; i++) {
+        const raw = now * spd * 0.75 + i / nPk;
+        const f = (Math.floor(raw * steps) / steps) % 1; // quantised → visibly chunky
+        const pt = _ovlBez(p0, c0, c1, p1, f);
+        _ovlRoundRect(ctx, pt.x - pw/2, pt.y - ph/2, pw, ph, 2);
+        ctx.fillStyle = _ovlRgba(col, 0.34 + 0.40 * load); ctx.fill();
+      }
+    }
   });
 
-  // 2 + 4. Node activity — a tight, tasteful rim on the node footprint (no
-  // radial bloom). Hue/intensity map to cook time; error = crisp thin red ring.
+  // ── NODES: type, load, cooking vs cached, error ───────────────────────────
   for (const n of gNodes) {
     const el = document.getElementById('gnode-' + n.id);
     if (!el) continue;
     const nr = el.getBoundingClientRect();
     const x = nr.left - r.left, y = nr.top - r.top, w = nr.width, h = nr.height;
     const ms = _gOvlTele.timings[n.id] || 0, load = Math.min(1, ms / maxMs);
-    if (live && load > 0.02) {
-      const col = _ovlHeatColor(load);
-      const pulse = 0.9 + 0.1 * Math.sin(now * 3.2 + x * 0.02);
+    const col = _gOvlPal.cat[_ovlCat(n)]; // rim HUE = category
+    const cooking = live && ms > cookThresh;
+
+    // cooking→cached transition → schedule a reuse tick (cache/skip event)
+    if (live) {
+      const prev = _gOvlPrevMs[n.id] || 0;
+      if (prev > cookThresh && ms <= cookThresh) _gOvlTickAt[n.id] = now;
+      _gOvlPrevMs[n.id] = ms;
+    }
+
+    if (cooking) {
+      // GLOW intensity ∝ cook time, in the category hue.
+      const pulse = 0.82 + 0.18 * Math.sin(now * (2.4 + load * 4) * tempo);
       ctx.save();
-      ctx.shadowColor = _ovlRgba(col, 0.5); ctx.shadowBlur = 5 + load * 6;
-      ctx.lineWidth = 1.1 + load * 1.2;
-      ctx.strokeStyle = _ovlRgba(col, (0.30 + 0.42 * load) * pulse);
+      ctx.shadowColor = _ovlRgba(col, 0.5); ctx.shadowBlur = 4 + load * 8;
+      ctx.lineWidth = 1.0 + load * 1.3;
+      ctx.strokeStyle = _ovlRgba(col, (0.26 + 0.30 * load) * pulse);
       _ovlRoundRect(ctx, x - 1.5, y - 1.5, w + 3, h + 3, 9); ctx.stroke();
       ctx.restore();
+      // COOKING SHIMMER — a bright segment sweeping the rim (speed ∝ load·tempo).
+      const perim = 2 * (w + h + 6);
+      ctx.save();
+      ctx.setLineDash([perim * 0.16, perim]);
+      ctx.lineDashOffset = -((now * (55 + load * 150) * tempo) % perim);
+      ctx.lineWidth = 1.7; ctx.strokeStyle = _ovlRgba(_ovlLerp3(col, [255,255,255], 0.25), 0.55 + 0.35 * load);
+      _ovlRoundRect(ctx, x - 1.5, y - 1.5, w + 3, h + 3, 9); ctx.stroke();
+      ctx.setLineDash([]); ctx.restore();
+    } else if (live) {
+      // CACHED / SKIPPED — static frosted dashed rim (calm, "frozen").
+      ctx.save();
+      ctx.setLineDash([1.5, 4]); ctx.lineWidth = 1;
+      ctx.strokeStyle = _ovlRgba(_gOvlPal.frost, 0.22);
+      _ovlRoundRect(ctx, x - 1.5, y - 1.5, w + 3, h + 3, 9); ctx.stroke();
+      ctx.setLineDash([]); ctx.restore();
     }
+
+    // CACHE REUSE TICK — a quick expanding ring when a node becomes cached.
+    const tickAge = _gOvlTickAt[n.id] != null ? now - _gOvlTickAt[n.id] : 99;
+    if (tickAge < 0.55) {
+      const k = tickAge / 0.55, cx = x + w/2, cy = y + h/2;
+      ctx.beginPath(); ctx.arc(cx, cy, (Math.min(w,h)*0.4) + k * 16, 0, 6.2832);
+      ctx.strokeStyle = _ovlRgba(_gOvlPal.frost, (1 - k) * 0.5); ctx.lineWidth = 1.4; ctx.stroke();
+    } else if (_gOvlTickAt[n.id] != null) { delete _gOvlTickAt[n.id]; }
+
+    // ERROR — crisp red pulse ring (overrides).
     if (_gOvlTele.errors && _gOvlTele.errors[n.id]) {
-      const a = 0.7 + 0.12 * Math.sin(now * 4.5); // steady, not a flashing blob
-      ctx.lineWidth = 1.4; ctx.strokeStyle = _ovlRgba(_gOvlPal.live, a);
+      const a = 0.6 + 0.28 * Math.sin(now * 4.2);
+      ctx.lineWidth = 1.6; ctx.strokeStyle = _ovlRgba(_gOvlPal.live, a);
       _ovlRoundRect(ctx, x - 2.5, y - 2.5, w + 5, h + 5, 10); ctx.stroke();
     }
   }
@@ -9069,12 +9198,11 @@ function _gOvlDrawMinimap(wrapRect) {
   _gOvlMini._map = { minX, minY, sc, pad }; // for click→pan
   if (!_gOvlPal) _gOvlReadPalette();
   const maxMs = _gOvlMaxMs(), live = _gOvlTele.running && (performance.now() - _gOvlTele.ts < 1500);
-  // Muted node dots — rounded, low-contrast; active nodes take a restrained
-  // warm tint. No neon.
+  // Node dots — category hue; active nodes brighten with cook time.
   for (const n of gNodes) {
     const load = live ? Math.min(1, (_gOvlTele.timings[n.id] || 0) / maxMs) : 0;
-    const col = load > 0.02 ? _ovlHeatColor(load) : _gOvlPal.muted;
-    ctx.fillStyle = _ovlRgba(col, load > 0.02 ? 0.85 : 0.45);
+    const col = load > 0.02 ? _gOvlPal.cat[_ovlCat(n)] : _gOvlPal.muted;
+    ctx.fillStyle = _ovlRgba(col, load > 0.02 ? 0.55 + 0.4 * load : 0.4);
     const w = Math.max(2.5, NODE_W * sc), h = Math.max(2, NODE_H * sc);
     _ovlRoundRect(ctx, mx(n.x), my(n.y), w, h, 1.5); ctx.fill();
   }
@@ -9100,6 +9228,8 @@ function gOverlayToggle(force) {
   try { localStorage.setItem('graph-overlay', gOverlayEnabled ? '1' : '0'); } catch {}
   _gOvlCanvas?.classList.toggle('on', gOverlayEnabled);
   if (_gOvlMini) _gOvlMini.style.display = gOverlayEnabled ? '' : 'none';
+  const _lg = document.getElementById('graph-legend');
+  if (_lg) _lg.style.display = gOverlayEnabled ? '' : 'none';
   for (const id of ['graph-overlay-btn', 'graph-overlay-btn-desk']) {
     document.getElementById(id)?.classList.toggle('active', gOverlayEnabled);
   }
@@ -9109,6 +9239,13 @@ function gOverlayToggle(force) {
 document.getElementById('graph-overlay-btn')?.addEventListener('click', () => gOverlayToggle());
 document.getElementById('graph-overlay-btn-desk')?.addEventListener('click', () => gOverlayToggle());
 window.addEventListener('resize', () => gOverlayRefresh());
+
+// Legend collapse — its own widget; clicking the header folds it to the title.
+(function () {
+  const lg = document.getElementById('graph-legend');
+  const head = lg && lg.querySelector('.glg-head');
+  if (head) head.addEventListener('click', e => { e.stopPropagation(); lg.classList.toggle('collapsed'); });
+})();
 
 // Minimap interaction — its OWN widget (pointer-events:auto); isolated from the
 // graph canvas so it never interferes with node drag / wiring / context menus.
