@@ -2017,6 +2017,12 @@ try {
     <div id="diag-node-bars"></div>
   </div>
 
+  <!-- Graph flow (p5 spatial visualization) -->
+  <div class="diag-card" style="grid-column:1 / -1">
+    <div class="diag-card-title">Graph flow — nodes light up as they cook (p5)</div>
+    <div id="diag-flow" style="width:100%;height:260px;border-radius:8px;overflow:hidden;background:#0b0e14"></div>
+  </div>
+
   <!-- Overhead split + cache + data-flow -->
   <div class="diag-card">
     <div class="diag-card-title">Executor overhead vs compute</div>
@@ -2887,7 +2893,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.getElementById('tab-graph').style.display   = tab === 'graph'   ? 'flex' : 'none';
     document.getElementById('tab-diag').style.display    = tab === 'diag'    ? 'flex' : 'none';
     if (tab === 'graph') gLoadMethodPalette();
-    if (tab === 'diag')  diagEnsurePolling();
+    if (tab === 'diag') { diagEnsurePolling(); gDiagFlowUpdate({}); }
   });
 });
 
@@ -8782,6 +8788,104 @@ function diagRender(d) {
   // Incremental re-cook counters (Phase 6)
   if (d.nodes_cooked != null) diagEl('dfc-cooked',  d.nodes_cooked);
   if (d.nodes_skipped != null) diagEl('dfc-skipped', d.nodes_skipped);
+
+  // Feed the p5 graph-flow visualization (#4b).
+  gDiagFlowUpdate(d);
+}
+
+// ── #4b: p5 graph-flow visualization ────────────────────────────────────────
+// A spatial view of the graph where each node glows by its cook time and data
+// flows as particles along the wires. Lazy p5 instance; additive to Diagnostics.
+let _gDiagFlowInst = null, _gDiagFlowData = { nodes: [], edges: [], maxMs: 1, t0: performance.now() };
+function _gDiagFlowLoadP5() {
+  if (window.p5) return Promise.resolve(window.p5);
+  if (window.__p5FlowPromise) return window.__p5FlowPromise;
+  window.__p5FlowPromise = new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = '/ui/vendor/p5.min.js'; s.async = true;
+    s.onload = () => res(window.p5); s.onerror = () => rej(new Error('p5 load failed'));
+    document.head.appendChild(s);
+  });
+  return window.__p5FlowPromise;
+}
+function gDiagFlowUpdate(d) {
+  // Build node/edge geometry from the live graph + timings.
+  const timings = d.node_timings || {};
+  const names = d.node_names || {};
+  const xs = gNodes.map(n => n.x || 0), ys = gNodes.map(n => n.y || 0);
+  const minX = Math.min(...xs, 0), maxX = Math.max(...xs, 1);
+  const minY = Math.min(...ys, 0), maxY = Math.max(...ys, 1);
+  const nx = v => (v - minX) / Math.max(1, maxX - minX);
+  const ny = v => (v - minY) / Math.max(1, maxY - minY);
+  const nodes = gNodes.map(n => ({
+    id: n.id, x: nx(n.x || 0), y: ny(n.y || 0),
+    name: names[n.id] || gNodeDefs[n.method_id]?.name || n.method_id,
+    ms: timings[n.id] || 0,
+  }));
+  const idset = new Set(nodes.map(n => n.id));
+  const edges = gEdges.filter(e => idset.has(e.src_node) && idset.has(e.dst_node))
+    .map(e => ({ a: e.src_node, b: e.dst_node }));
+  _gDiagFlowData = {
+    nodes, edges,
+    maxMs: Math.max(1, ...nodes.map(n => n.ms)),
+    t0: _gDiagFlowData.t0,
+  };
+  gDiagFlowEnsure();
+}
+async function gDiagFlowEnsure() {
+  if (_gDiagFlowInst) return;
+  const cont = document.getElementById('diag-flow');
+  if (!cont) return;
+  _gDiagFlowInst = 'loading';
+  try { await _gDiagFlowLoadP5(); } catch { _gDiagFlowInst = null; return; }
+  const P5 = window.p5;
+  const sketch = (p) => {
+    p.setup = () => {
+      const w = cont.clientWidth || 600, h = cont.clientHeight || 260;
+      p.createCanvas(w, h); p.pixelDensity(1);
+    };
+    p.windowResized = () => { p.resizeCanvas(cont.clientWidth || 600, cont.clientHeight || 260); };
+    p.draw = () => {
+      const D = _gDiagFlowData, W = p.width, H = p.height, pad = 34;
+      p.clear(); p.background(11, 14, 20);
+      const px = x => pad + x * (W - 2 * pad), py = y => pad + y * (H - 2 * pad);
+      const byId = {}; D.nodes.forEach(n => byId[n.id] = n);
+      const now = (performance.now() - D.t0) / 1000;
+      // Edges + flowing particles.
+      for (const e of D.edges) {
+        const a = byId[e.a], b = byId[e.b]; if (!a || !b) continue;
+        const ax = px(a.x), ay = py(a.y), bx = px(b.x), by = py(b.y);
+        p.stroke(60, 80, 120, 150); p.strokeWeight(1.5); p.line(ax, ay, bx, by);
+        const load = a.ms / D.maxMs;
+        const cnt = 1 + Math.round(load * 4);
+        for (let i = 0; i < cnt; i++) {
+          const f = ((now * (0.35 + load) + i / cnt) % 1);
+          const dotx = ax + (bx - ax) * f, doty = ay + (by - ay) * f;
+          p.noStroke(); p.fill(90, 200, 255, 220);
+          p.circle(dotx, doty, 3 + load * 3);
+        }
+      }
+      // Nodes — glow by cook time.
+      for (const n of D.nodes) {
+        const x = px(n.x), y = py(n.y), load = n.ms / D.maxMs;
+        const pulse = 1 + 0.12 * Math.sin(now * 4 + n.x * 6);
+        const r = (13 + load * 16) * (load > 0 ? pulse : 1);
+        p.noStroke();
+        p.fill(40 + 180 * load, 120 + 60 * load, 255 - 120 * load, 60);
+        p.circle(x, y, r * 2.2);
+        p.fill(60 + 190 * load, 150 + 60 * load, 255 - 100 * load, 235);
+        p.circle(x, y, r);
+        p.fill(220); p.textSize(10); p.textAlign(p.CENTER, p.TOP);
+        p.text(String(n.name).slice(0, 16), x, y + r + 3);
+        if (n.ms > 0) { p.fill(150, 220, 255); p.textAlign(p.CENTER, p.BOTTOM); p.text(n.ms.toFixed(1) + 'ms', x, y - r - 2); }
+      }
+      if (!D.nodes.length) {
+        p.fill(120); p.textAlign(p.CENTER, p.CENTER); p.textSize(12);
+        p.text('Run a graph live to see it flow', W / 2, H / 2);
+      }
+    };
+  };
+  _gDiagFlowInst = new P5(sketch, cont);
 }
 
 // ── Polling ────────────────────────────────────────────────────
