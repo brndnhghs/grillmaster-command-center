@@ -22,6 +22,7 @@ from ...core.utils import save, mn, W, H, PALETTES
     tags=["particle", "simulation", "consumer"],
     inputs={"particles": "PARTICLES"},
     outputs={"image": "IMAGE", "luminance": "SCALAR"},
+    is_time_varying=False,
     params={
         "render_mode": {
             "description": "points / trails / heatmap",
