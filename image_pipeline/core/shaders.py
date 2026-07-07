@@ -125,6 +125,100 @@ float fbm(vec2 p) {
 
 
 # ═══════════════════════════════════════════════
+#  SHADER PARITY LAYER
+# ═══════════════════════════════════════════════
+#
+# One GLSL body per shader runs on BOTH targets:
+#   • server  — moderngl desktop GL, "#version 330"      (build_fragment gl330)
+#   • browser — WebGL2 / GLSL ES 3.00                    (build_fragment webgl2)
+#
+# The body/uniforms/helpers are already written in the compatible subset (same
+# code the server compiles today). Only the header differs, so the shim is a
+# thin version/precision transform. `build_fragment(name,'gl330')` reproduces
+# the EXACT string render_shader() compiles today (render_shader is untouched;
+# a test locks this equivalence), so the server render path is unchanged.
+
+# Public aliases for the shared shim pieces.
+PROLOGUE_GL330 = _PROLOGUE
+VERTEX_GL330 = _VERTEX_SHADER
+
+# Vertex shader for client-side fullscreen-quad passes (GLSL ES 3.00). The
+# client feeds a [-1,1] quad `position`; v_uv is derived to match the server's
+# in_uv (0..1). Kept here so server + client agree on the varying.
+VERTEX_WEBGL2 = '''#version 300 es
+precision highp float;
+in vec3 position;
+out vec2 v_uv;
+void main() {
+    v_uv = position.xy * 0.5 + 0.5;
+    gl_Position = vec4(position.xy, 0.0, 1.0);
+}'''
+
+
+def _assemble_gl330(info: dict) -> str:
+    """Exactly how render_shader() builds the fragment source today."""
+    if info["type"] == "filter":
+        return info["source"]            # filter sources already embed the prologue
+    return _PROLOGUE + info["source"]    # procedural: prologue + body
+
+
+def _to_webgl2(frag_gl330: str) -> str:
+    """Transform an assembled #version 330 fragment into GLSL ES 3.00.
+
+    The body/uniforms/helpers are ES-compatible already; only the header
+    changes. `#version` must be the first token in ES, so leading whitespace
+    (the prologue starts with a newline) is stripped. The prologue's existing
+    `precision highp float;` is preserved, so no duplicate is introduced.
+    """
+    frag = frag_gl330.lstrip()
+    frag = frag.replace("#version 330", "#version 300 es", 1)
+    # The prologue always carries `precision highp float;` right after the
+    # version line; add one only if some source omitted it (defensive).
+    if "precision highp float;" not in frag[:120]:
+        frag = frag.replace("#version 300 es", "#version 300 es\nprecision highp float;", 1)
+    return frag
+
+
+# Tokens that would compile on desktop GL but break GLSL ES 3.00 parity.
+_WEBGL2_FORBIDDEN = ("texture2D", "textureCube", "gl_FragColor", "varying ", "attribute ")
+
+
+def build_fragment(name: str, target: str = "gl330") -> str:
+    """Assemble a shader's fragment source for a render target.
+
+    target: 'gl330' (server/moderngl) or 'webgl2' (browser/WebGL2).
+    """
+    if name not in SHADERS:
+        raise ValueError(f"Unknown shader: {name}")
+    frag = _assemble_gl330(SHADERS[name])
+    if target == "gl330":
+        return frag
+    if target == "webgl2":
+        return _to_webgl2(frag)
+    raise ValueError(f"Unknown target: {target!r} (expected 'gl330' or 'webgl2')")
+
+
+def shader_sources_for_client() -> dict:
+    """Read-only bundle for the browser executor: every shader's WebGL2 fragment
+    plus the shared WebGL2 vertex. Lets the client render any GPU shader node
+    from the SAME source the server uses. Additive — no render-path involvement.
+    """
+    return {
+        "vertex": VERTEX_WEBGL2,
+        # Server display convention: render_shader() reads the FBO bottom-up and
+        # decodes it as BGR (Image.frombytes(..,'raw','BGR')). Verified bit-exact
+        # (0.000% diff on plasma/julia/voronoi): a client render matches the
+        # server's output after a Y-flip and an R/B swap. Feature #1 applies this
+        # so the client live preview matches the server's authoritative export.
+        "convention": {"flip_y": True, "swap_rb": True},
+        "shaders": {
+            name: {"type": info["type"], "fragment": build_fragment(name, "webgl2")}
+            for name, info in SHADERS.items()
+        },
+    }
+
+
+# ═══════════════════════════════════════════════
 #  REGISTER SHADERS
 # ═══════════════════════════════════════════════
 

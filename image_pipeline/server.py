@@ -858,6 +858,16 @@ def get_node_defs():
     return defs
 
 
+@app.get("/api/shader-sources")
+def get_shader_sources():
+    """Read-only: WebGL2 fragment sources for every GPU shader, from the SAME
+    GLSL body the server compiles (shader parity layer). Lets the browser
+    executor render GPU shader nodes client-side. Additive — does not touch the
+    server render/export path."""
+    from image_pipeline.core.shaders import shader_sources_for_client
+    return shader_sources_for_client()
+
+
 # ── Graph save / load endpoints ───────────────────────────────────────
 
 
