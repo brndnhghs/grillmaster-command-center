@@ -24,15 +24,16 @@ from image_pipeline.core.graph import GraphExecutor, _evaluate_param_track
 from image_pipeline.core.utils import set_canvas
 
 
-# ── 1. The 3D node is client-only (never server-registered) ──────────────────
+# ── 1. Client nodes are client-only (never server-registered) ────────────────
 
-def test_scene3d_not_registered_server_side():
-    """__scene3d__ renders in-browser only; the server must not know it."""
-    assert "__scene3d__" not in registry.get_ids(), (
-        "__scene3d__ leaked into the server registry — it must stay client-only "
-        "so the server render/export path never executes it."
+@pytest.mark.parametrize("node_id", ["__scene3d__", "__p5sketch__"])
+def test_client_nodes_not_registered_server_side(node_id):
+    """Client nodes render in-browser only; the server must not know them, so
+    the server render/export path never tries to execute them."""
+    assert node_id not in registry.get_ids(), (
+        f"{node_id} leaked into the server registry — it must stay client-only."
     )
-    assert registry.get_meta("__scene3d__") is None
+    assert registry.get_meta(node_id) is None
 
 
 # ── 2. Static UI assets are served ───────────────────────────────────────────
@@ -46,9 +47,14 @@ def test_ui_static_mount_serves_client_assets():
     assert three.status_code == 200
     assert "WebGLRenderer" in three.text
 
+    p5 = client.get("/ui/vendor/p5.min.js")
+    assert p5.status_code == 200
+    assert "p5" in p5.text
+
     mod = client.get("/ui/js/client3d.js")
     assert mod.status_code == 200
     assert "__scene3d__" in mod.text
+    assert "__p5sketch__" in mod.text     # p5 renderer wired into the spine
     assert "exportWebM" in mod.text
 
 
