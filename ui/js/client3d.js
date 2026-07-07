@@ -260,6 +260,10 @@ class ClientExecutor {
     // Composable 3D family (#3): per-node THREE resources (geometry/material/
     // mesh/light/camera/group/gltf/scene), keyed by node id.
     this._res3d = new Map();
+    // Orbit viewport (#4a): when enabled, an interactive camera overrides the
+    // scene's authored camera so the user can look around the 3D scene.
+    this._orbit = { enabled: false, az: 0.0, el: 0.35, dist: 4, tx: 0, ty: 0, tz: 0 };
+    this._orbitCam = new THREE.PerspectiveCamera(50, this.width / this.height, 0.01, 500);
     // GPU shader node materials (parity layer): webgl2 fragment -> RawShaderMaterial.
     this._gpuMats = new Map();
     // Temp RT for the two-pass convention bake (flip Y + swap R/B to match server).
@@ -391,9 +395,10 @@ void main(){ f_color = texture(u_texture, vec2(v_uv.x, 1.0 - v_uv.y)).bgra; }`,
     // Background.
     t.scene.background = hexToColor(params.bg_color, '#101014');
 
+    const cam = this._orbit.enabled ? this._getOrbitCam(t.camera.fov) : t.camera;
     this.renderer.setRenderTarget(targetRT);
     this.renderer.clear();
-    this.renderer.render(t.scene, t.camera);
+    this.renderer.render(t.scene, cam);
     this.renderer.setRenderTarget(null);
   }
 
@@ -500,6 +505,17 @@ void main(){ f_color = texture(u_texture, vec2(v_uv.x, 1.0 - v_uv.y)).bgra; }`,
 
     const prog = this.renderer.info.programs?.find(p => p.diagnostics?.programLog);
     if (prog?.diagnostics?.programLog) this._nodeErrors[node.id] = prog.diagnostics.programLog;
+  }
+
+  // Orbit camera positioned by spherical coords around the target (#4a).
+  _getOrbitCam(fov) {
+    const o = this._orbit, c = this._orbitCam;
+    c.fov = fov; c.aspect = this.width / this.height;
+    const ce = Math.cos(o.el), se = Math.sin(o.el), ca = Math.cos(o.az), sa = Math.sin(o.az);
+    c.position.set(o.tx + o.dist * ce * sa, o.ty + o.dist * se, o.tz + o.dist * ce * ca);
+    c.lookAt(o.tx, o.ty, o.tz);
+    c.updateProjectionMatrix();
+    return c;
   }
 
   // ── Composable 3D node family (#3) ──────────────────────────────────────────
@@ -660,8 +676,9 @@ void main(){ f_color = texture(u_texture, vec2(v_uv.x, 1.0 - v_uv.y)).bgra; }`,
     } else {
       scene.add(defLight); added.push(defLight);
     }
-    const cam = (cameraOut && cameraOut.value) || defCam;
+    let cam = (cameraOut && cameraOut.value) || defCam;
     cam.aspect = this.width / this.height; cam.updateProjectionMatrix();
+    if (this._orbit.enabled) cam = this._getOrbitCam(cam.fov || 50);
 
     this.renderer.setRenderTarget(targetRT);
     this.renderer.clear();
@@ -1107,3 +1124,21 @@ export function lastError() { return _executor ? _executor.lastCompileError : nu
 
 /** Per-node error strings (p5 compile/runtime, etc.), keyed by node id. */
 export function getNodeErrors() { return _executor ? { ..._executor._nodeErrors } : {}; }
+
+// ── Orbit viewport controls (#4a) ───────────────────────────────────────────
+export function orbitActive() { return !!(_executor && _executor._orbit.enabled); }
+export function orbitRotate(dAz, dEl) {
+  if (!_executor) return;
+  const o = _executor._orbit;
+  o.enabled = true;
+  o.az += dAz;
+  o.el = Math.max(-1.45, Math.min(1.45, o.el + dEl));
+}
+export function orbitDolly(factor) {
+  if (!_executor) return;
+  const o = _executor._orbit;
+  o.enabled = true;
+  o.dist = Math.max(0.5, Math.min(60, o.dist * factor));
+}
+/** Return to the scene's authored camera. */
+export function orbitReset() { if (_executor) _executor._orbit.enabled = false; }

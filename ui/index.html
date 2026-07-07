@@ -5487,6 +5487,11 @@ function gGetAnimatedParams(node, frame) {
 // ── Client-side render display helper ──────────────────────────
 // Mounts the three.js executor canvas in the main preview, replacing whatever
 // server-fed <img>/<canvas> was there. Used by both client Run and client Live.
+// Graphs with a 3D scene support the orbit viewport (#4a).
+function gGraphHas3DScene() {
+  return gNodes.some(n => n.method_id === '__scene3d__' || n.method_id === '__scene_render__');
+}
+
 function gMountClientCanvas(canvas) {
   if (canvas._mounted && canvas.parentNode === gMainPreview) return;
   gMainPreview.innerHTML = '';
@@ -5497,14 +5502,59 @@ function gMountClientCanvas(canvas) {
   canvas.style.objectFit = 'contain';
   canvas.style.display = 'block';
   canvas.style.margin = 'auto';
+
+  // ── Orbit viewport (#4a): drag to orbit, wheel to dolly — for 3D graphs.
+  // A plain click (no drag) still opens the fullscreen viewer.
+  let dragging = false, moved = false, lastX = 0, lastY = 0;
+  canvas.style.touchAction = 'none';
+  canvas.addEventListener('pointerdown', e => {
+    if (!gGraphHas3DScene()) return;
+    dragging = true; moved = false; lastX = e.clientX; lastY = e.clientY;
+    canvas.setPointerCapture(e.pointerId);
+    canvas.style.cursor = 'grabbing';
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    if (Math.abs(dx) + Math.abs(dy) > 2) moved = true;
+    lastX = e.clientX; lastY = e.clientY;
+    if (_gClient3D && _gClient3D.orbitRotate) _gClient3D.orbitRotate(dx * 0.008, -dy * 0.008);
+    const badge = document.getElementById('orbit-badge'); if (badge) badge.textContent = '⟲ orbiting — dblclick to reset';
+  });
+  canvas.addEventListener('pointerup', e => {
+    dragging = false; canvas.style.cursor = gGraphHas3DScene() ? 'grab' : '';
+    try { canvas.releasePointerCapture(e.pointerId); } catch {}
+  });
+  canvas.addEventListener('wheel', e => {
+    if (!gGraphHas3DScene() || !_gClient3D || !_gClient3D.orbitDolly) return;
+    e.preventDefault();
+    _gClient3D.orbitDolly(e.deltaY > 0 ? 1.08 : 0.926);
+  }, { passive: false });
+  canvas.addEventListener('dblclick', () => {
+    if (_gClient3D && _gClient3D.orbitReset) _gClient3D.orbitReset();
+    const badge = document.getElementById('orbit-badge'); if (badge) badge.textContent = '⟲ drag to orbit · scroll to zoom';
+  });
   canvas.onclick = () => {
+    if (moved) { moved = false; return; } // a drag, not a click — don't fullscreen
     gFsImg.src = canvas.toDataURL('image/png');
     gFsImg.style.display = '';
     document.getElementById('graph-fs-overlay').style.display = 'flex';
   };
+  canvas.style.cursor = gGraphHas3DScene() ? 'grab' : '';
+
   canvas._mounted = true;
   gMainPreview.classList.add('active');
   gMainPreview.appendChild(canvas);
+  // Orbit hint badge (only for 3D graphs).
+  if (gGraphHas3DScene()) {
+    const badge = document.createElement('div');
+    badge.id = 'orbit-badge';
+    badge.textContent = '⟲ drag to orbit · scroll to zoom';
+    badge.style.cssText = 'position:absolute;left:10px;bottom:10px;z-index:5;'
+      + 'font-size:11px;padding:4px 9px;border-radius:10px;pointer-events:none;'
+      + 'background:rgba(20,24,34,.72);color:#9fb4d8;font-weight:600;backdrop-filter:blur(4px);';
+    gMainPreview.appendChild(badge);
+  }
   gPreviewShow();
 }
 
