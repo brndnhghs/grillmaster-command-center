@@ -658,6 +658,12 @@ class GraphExecutor:
                 # the raw frame number for continuous evolution.
                 if "time" not in run_params:
                     run_params["time"] = timeline.phase
+            # Single animation driver: expose the global speed so methods that
+            # read anim_speed (the legacy param) stay in sync with the Timeline
+            # clock instead of defaulting to 1.0. Guarded so an explicit
+            # per-node anim_speed param (or a keyframe) is not clobbered.
+            if "anim_speed" not in run_params:
+                run_params["anim_speed"] = timeline.speed
 
             # ── Per-param keyframe evaluation ────────────────────────────
             # Each param has its own independent keyframe track.
