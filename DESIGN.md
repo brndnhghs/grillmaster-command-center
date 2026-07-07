@@ -102,7 +102,35 @@ Continuous real-time playback rests on **four invariants**. Each was a bug that 
 
 The Architecture-A **sim cache is keyed on the node's *defining* params only** — `_node_params_hash` (`graph.py`) excludes the per-frame clock/context keys (`time`, `frame`, `frame_seed`, `_timeline`, `input_image`), so the live loop's per-frame `time` injection doesn't invalidate the cache every frame. Without that exclusion an Architecture-A sim would re-cook on every live frame and the O(1) benefit would vanish.
 
-The executor instance uses `_GRAPH_SESSION_DIR` for normal runs so cached outputs persist across graph runs; the live loop uses its own `OUTPUT_ROOT / "_live_sim"` executor. Performance: light graphs cook well above 30 fps (throttle-bound); heavy simulation nodes are the bottleneck. The deferred optimisation (a persistent per-session executor with sim-cache reuse, and skipping disk writes during live cooking) is in Planned Extensions — pursue it without touching the four invariants above.
+The executor instance uses `_GRAPH_SESSION_DIR` for normal runs so cached outputs persist across graph runs; the live loop uses its own `OUTPUT_ROOT / "_live_sim"` executor.
+
+### Phase 6: Incremental re-cook (replacing invariant 1)
+
+**Invariant 1 is relaxed** as of Phase 6. The loop no longer forces every node dirty every frame. Instead:
+
+1. **`MethodMeta.is_time_varying: bool = True`** — every registered method declares whether its output depends on the frame clock. Default `True` is the safe fallback. Setting it `False` asserts that, for identical params and upstream outputs, the node produces identical output on every frame.
+
+2. **Selective dirty marking in the live loop**: on each frame, the loop computes the initial dirty set as:
+   - All nodes with `is_time_varying=True`
+   - All Architecture-A nodes (their sim-cache frame index advances)
+   - All nodes whose user params changed since the previous frame
+   - All nodes that have active `paramKeyframes` (output is frame-dependent)
+   
+   The set is then propagated forward through the DAG via `_compute_live_dirty()`: any node downstream of a dirty node is also dirtied (since its inputs may have changed).
+
+3. **`time` injection is selective**: `params["time"] = float(frame)` is only injected into nodes with `is_time_varying=True`, so static nodes' param hashes remain stable across frames.
+
+4. **In-memory dirty skip in executor**: when `in_memory=True` (live mode) and a node is not dirty and no upstream ran, the executor reuses `_prev_outputs[node_id]` instead of re-cooking. This is O(1) — a dict lookup — and requires no disk I/O.
+
+5. **Diagnostics**: `last_frame_stats` now exposes `nodes_cooked` and `nodes_skipped` per frame. The Diagnostics panel shows these live.
+
+**Current `is_time_varying=False` nodes** (audited manually; all are pure image-processing with no time/frame/RNG dependency):
+- `137` Image Blend, `138` Scalar Math, `139` Field Combine, `140` Particle Merge, `141` Apply Mask
+- `__image_to_mask__` Image to Mask, `__transform__` Transform
+
+**Safety contract for `is_time_varying=False`**: The node's function body must not call `params.get("time")`, `params.get("frame_seed")`, `random`, or any per-frame RNG, and must not accumulate any state that changes between frames. If in doubt, leave `is_time_varying=True`.
+
+**Preserved invariants 2–4** (clock advancement, monotonic time injection, throttle) are unchanged. The regression suite in `test_live_regression.py` and `test_incremental_recook.py` guards all of them.
 
 ---
 

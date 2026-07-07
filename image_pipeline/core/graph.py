@@ -280,6 +280,39 @@ def _evaluate_param_track(keyframes: list[dict], frame: int) -> Any | None:
     return None
 
 
+# ── Incremental-recook helpers ────────────────────────────────────────
+
+
+def _compute_live_dirty(
+    nodes: list[dict],
+    edges: list[dict],
+    initially_dirty: set[str],
+) -> set[str]:
+    """Propagate an initial dirty set forward through the topology.
+
+    Returns the full set of node IDs that must re-cook this frame:
+    the initial set PLUS every node that is transitively downstream of
+    any initially-dirty node.  Feedback edges are excluded from cascading
+    (they carry the *previous* frame's output and break the DAG cycle).
+    """
+    dirty = set(initially_dirty)
+    # Build adjacency (non-feedback only)
+    downstream: dict[str, set[str]] = {n["id"]: set() for n in nodes}
+    for e in edges:
+        if not e.get("feedback", False):
+            downstream.setdefault(e["src_node"], set()).add(e["dst_node"])
+
+    # BFS forward
+    queue = list(dirty)
+    while queue:
+        nid = queue.pop()
+        for child in downstream.get(nid, ()):
+            if child not in dirty:
+                dirty.add(child)
+                queue.append(child)
+    return dirty
+
+
 # ── Graph executor ────────────────────────────────────────────────────
 
 class GraphError(Exception):
@@ -393,6 +426,8 @@ class GraphExecutor:
         _diag_disk_edges:   int = 0  # edges written to _input.png
         _diag_gpu_nodes:    int = 0
         _diag_cpu_nodes:    int = 0
+        _diag_nodes_skipped: int = 0
+        _diag_nodes_cooked:  int = 0
         _diag_exec_start = time.monotonic()
 
         for node_id in order:
@@ -421,6 +456,15 @@ class GraphExecutor:
 
             # ── Selective recooking (dirty flag) ──────────────────────────────
             if not node.dirty and not upstream_ran:
+                # Fast path: in-memory live mode — reuse _prev_outputs if available.
+                # This is the main Phase 6 optimisation; disk cache is the fallback
+                # for the single-frame / sequence render paths.
+                if self._in_memory and node_id in self._prev_outputs:
+                    flat_outputs[node_id] = self._prev_outputs[node_id]
+                    ran[node_id] = False
+                    _diag_nodes_skipped += 1
+                    continue
+
                 _cache_dir = self.out_dir / node_id
                 if _cache_dir.exists():
                     _pngs_c = sorted(
@@ -841,6 +885,7 @@ class GraphExecutor:
                 _utils_mod.save = _capturing_save
 
             # ── Call the method ──
+            _diag_nodes_cooked += 1
             _fn_result = None
             _is_gpu = "gpu" in (meta.tags or [])
             if _is_gpu:
@@ -985,6 +1030,8 @@ class GraphExecutor:
             "disk_edges":     _diag_disk_edges,
             "gpu_nodes":      _diag_gpu_nodes,
             "cpu_nodes":      _diag_cpu_nodes,
+            "nodes_cooked":   _diag_nodes_cooked,
+            "nodes_skipped":  _diag_nodes_skipped,
             "node_compute_ms": round(_total_node_ms, 2),
             "overhead_ms":    round(max(0.0, _total_exec_ms - _total_node_ms), 2),
         }

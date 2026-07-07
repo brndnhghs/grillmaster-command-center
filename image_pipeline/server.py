@@ -1076,33 +1076,64 @@ def live_graph_sim(req: GraphRequest):
 
         def _live_loop():
             from image_pipeline.core.utils import set_canvas as _set_canvas
+            from image_pipeline.core.registry import get_meta as _get_meta_ll
+            from image_pipeline.core.graph import _compute_live_dirty as _cld
             _set_canvas(width, height)
             frame = 0
             consecutive_errors = 0
-            # Use a moderate total_frames so the timeline's t cycles through
-            # [0, 1] visibly. The frame counter increments forever — no
-            # wrapping. Methods that use t in sin(t * speed) oscillate
-            # smoothly; the boundary at t=1.0 is seamless because
-            # sin(0) = sin(2π). Methods that use time directly get the
-            # raw frame number for continuous evolution.
+            # Params snapshot for per-node change detection (excludes volatile keys)
+            _last_params: dict[str, dict] = {}
             LIVE_TOTAL_FRAMES = 300
-            # Throttle to ~30fps so the browser can actually display each frame
             _frame_interval = 1.0 / 30.0
             print(f"[live-sim] starting loop, {len(nodes)} nodes, {len(edges)} edges, {_inv_msg}")
             while not cancel.is_set():
                 _tick_start = time.monotonic()
                 try:
-                    # Force all nodes dirty every frame — the executor's dirty-flag
-                    # skip reads cached PNGs from disk, which would return the same
-                    # frame 0 image for every subsequent call.
+                    # ── Phase 6: Selective dirty marking ──────────────────────
+                    # Build the initial set of dirty nodes for this frame:
+                    #   • Time-varying nodes (is_time_varying=True) — always
+                    #   • Arch-A simulation nodes — always (their output changes
+                    #     each frame via the sim cache, frame index advances)
+                    #   • Nodes whose user-facing params changed since last frame
+                    #   • Nodes that have paramKeyframes (keyframe eval is frame-dependent)
+                    # Then cascade that set forward through the DAG.
+                    initially_dirty: set[str] = set()
                     for n in nodes:
-                        n["dirty"] = True
-                        # Inject raw frame as time so methods get a monotonically
-                        # increasing value for continuous evolution, not the
-                        # timeline's normalized t which clamps at 1.0.
+                        nid = n["id"]
                         if "params" not in n:
                             n["params"] = {}
-                        n["params"]["time"] = float(frame)
+
+                        meta = _get_meta_ll(n.get("method_id", ""))
+                        is_tv = True if meta is None else meta.is_time_varying
+                        # Arch-A nodes always re-cook (frame index advances in sim cache)
+                        from image_pipeline.core.arch import detect_architecture as _det_arch
+                        if meta is not None and _det_arch(meta) == "A":
+                            is_tv = True
+
+                        if is_tv:
+                            # Inject time only into time-varying nodes.
+                            # Static nodes keep their last `time` value (or none),
+                            # so their params hash stays stable.
+                            n["params"]["time"] = float(frame)
+                            initially_dirty.add(nid)
+                        else:
+                            # Non-time-varying: check if user params changed
+                            cur = {k: v for k, v in n["params"].items()
+                                   if k not in ("time", "frame", "frame_seed",
+                                                "_timeline", "_input_image", "input_image")}
+                            if cur != _last_params.get(nid):
+                                initially_dirty.add(nid)
+                            _last_params[nid] = dict(cur)
+
+                        # Any node with active paramKeyframes is frame-dependent
+                        if n.get("paramKeyframes"):
+                            initially_dirty.add(nid)
+
+                    # Cascade dirty forward through the topology
+                    dirty_set = _cld(nodes, edges, initially_dirty)
+                    for n in nodes:
+                        n["dirty"] = n["id"] in dirty_set
+
                     flat_outputs, terminal_id, node_errors = executor.execute(
                         nodes, edges, seed, frame=frame % LIVE_TOTAL_FRAMES, frames=LIVE_TOTAL_FRAMES
                     )
@@ -1139,6 +1170,8 @@ def live_graph_sim(req: GraphRequest):
                         _live_stats["cpu_nodes"]      = _fs.get("cpu_nodes", 0)
                         _live_stats["node_compute_ms"]= _fs.get("node_compute_ms", 0.0)
                         _live_stats["overhead_ms"]    = _fs.get("overhead_ms", 0.0)
+                        _live_stats["nodes_cooked"]   = _fs.get("nodes_cooked", 0)
+                        _live_stats["nodes_skipped"]  = _fs.get("nodes_skipped", 0)
                     # Build node_names map from the current node list
                     from image_pipeline.core.registry import get_meta as _get_meta
                     _live_stats["node_names"] = {

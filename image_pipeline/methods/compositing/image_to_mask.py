@@ -31,6 +31,7 @@ from ...core.utils import save, mn, write_scalars, W, H
             ],
         },
     },
+    is_time_varying=False,
 )
 def method_image_to_mask(out_dir: Path, seed: int, params=None):
     if params is None:

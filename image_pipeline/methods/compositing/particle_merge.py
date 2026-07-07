@@ -23,7 +23,8 @@ from ...core.utils import save, mn, write_particles, W, H
             "default": "concat",
             "choices": ["concat", "interleave", "a_only", "b_only"],
         },
-    }
+    },
+    is_time_varying=False,
 )
 def method_particle_merge(out_dir: Path, seed: int, params=None):
     if params is None:

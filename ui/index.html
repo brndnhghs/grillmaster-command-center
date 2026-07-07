@@ -2028,6 +2028,10 @@ try {
         <div class="chip-val" id="dfc-mem">–</div></div>
       <div class="diag-chip disk-chip"><div class="chip-label">Disk edges</div>
         <div class="chip-val" id="dfc-disk">–</div></div>
+      <div class="diag-chip hit"><div class="chip-label">Nodes cooked</div>
+        <div class="chip-val" id="dfc-cooked">–</div></div>
+      <div class="diag-chip miss"><div class="chip-label">Nodes skipped</div>
+        <div class="chip-val" id="dfc-skipped">–</div></div>
     </div>
   </div>
 
@@ -8218,6 +8222,10 @@ function diagRender(d) {
   diagEl('dfc-gpu',    (d.gpu_nodes  || 0) + ' / ' + ((d.gpu_nodes || 0) + (d.cpu_nodes || 0)));
   diagEl('dfc-mem',    d.mem_edges   || 0);
   diagEl('dfc-disk',   d.disk_edges  || 0);
+
+  // Incremental re-cook counters (Phase 6)
+  if (d.nodes_cooked != null) diagEl('dfc-cooked',  d.nodes_cooked);
+  if (d.nodes_skipped != null) diagEl('dfc-skipped', d.nodes_skipped);
 }
 
 // ── Polling ────────────────────────────────────────────────────

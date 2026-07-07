@@ -33,7 +33,8 @@ from ...core.utils import save, mn, write_scalars, W, H
             "default": "add",
             "choices": ["add", "subtract", "multiply", "divide", "min", "max", "average", "pow"],
         },
-    }
+    },
+    is_time_varying=False,
 )
 def method_scalar_math(out_dir: Path, seed: int, params=None):
     if params is None:

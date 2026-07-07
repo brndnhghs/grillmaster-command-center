@@ -141,6 +141,7 @@ from ...core.utils import save, W, H
             "choices": ["nearest", "bilinear", "bicubic", "lanczos"],
         },
     },
+    is_time_varying=False,
 )
 def method_transform(out_dir: Path, seed: int, params=None) -> dict:
     if params is None:

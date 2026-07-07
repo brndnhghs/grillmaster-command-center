@@ -30,7 +30,8 @@ from ...core.utils import save, mn, W, H
             "max": 1.0,
             "default": 0.5,
         },
-    }
+    },
+    is_time_varying=False,
 )
 def method_image_blend(out_dir: Path, seed: int, params=None):
     if params is None:
