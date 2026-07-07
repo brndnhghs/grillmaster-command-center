@@ -49,6 +49,23 @@ def _time_probe(out_dir, seed, params=None):
     return {"image": arr, "echoed_time": tval}
 
 
+# A minimal Architecture-A sim (declares n_frames) that captures `n_frames`
+# visibly-distinct frames, used to test the executor's cache-loop serve for the
+# cook-a-window sims (boids, gray-scott, …) that still use it.
+@method(id="__sim_probe__", name="Sim Probe", category="test", inputs={},
+        params={"n_frames": {"min": 1, "max": 600, "default": 8}})
+def _sim_probe(out_dir, seed, params=None):
+    import numpy as np
+    from image_pipeline.core.animation import capture_frame
+    n = int((params or {}).get("n_frames", 8))
+    last = None
+    for i in range(n):
+        arr = np.full((H, W, 3), (i + 1) / 1000.0, dtype=np.float32)  # each frame distinct
+        capture_frame("__sim_probe__", arr)
+        last = arr
+    return {"image": last}
+
+
 def _tmp() -> Path:
     return Path(tempfile.mkdtemp(prefix="gm_live_"))
 
@@ -89,35 +106,69 @@ def test_executor_preserves_injected_time():
         shutil.rmtree(out, ignore_errors=True)
 
 
-def test_stateful_sim_18_does_not_slow_down():
-    """#18 is a stateful Architecture-A sim: cooked once, then served from the
-    cache at O(1). Per-frame cost must NOT grow as the live timeline advances
-    (the old stateless model ran int(time*60) generations from scratch every
-    frame, so cost climbed without bound)."""
+def test_stateful_sim_18_runs_forever_without_slowing():
+    """#18 is a persistent stateful sim: it keeps the last grid and steps it one
+    generation per frame. Per-frame cost must stay FLAT as the live timeline
+    advances without bound, and the sim must keep evolving forever — never
+    resetting or looping (the old stateless model slowed without bound; the
+    cook-a-window model looped/reset at the window boundary)."""
     import time as _time
-    set_canvas(160, 160)
+    set_canvas(200, 200)
     out = _tmp()
     try:
         ex = GraphExecutor(out, in_memory=True)
-        base = {"rule": "conway", "size": 4, "speed": 1.0, "n_frames": 60,
+        base = {"rule": "seeds", "size": 4, "speed": 1.0,      # 'seeds' never settles
                 "rule_select": -1.0, "init_select": -1.0, "cell_size": -1.0,
                 "age_input": -1.0}
 
-        def cook_ms(f):
+        def live(f):
             nodes = [{"id": "ca", "method_id": "18",
                       "params": {**base, "time": float(f)}, "dirty": True, "render": True}]
             t0 = _time.time()
-            _flat, _t, errs = ex.execute(nodes, [], seed=42, frame=f % LIVE_TOTAL_FRAMES,
-                                         frames=LIVE_TOTAL_FRAMES)
+            flat, _t, errs = ex.execute(nodes, [], seed=42, frame=f % LIVE_TOTAL_FRAMES,
+                                        frames=LIVE_TOTAL_FRAMES)
             assert not errs, errs
-            return (_time.time() - t0) * 1000.0
+            return flat["ca"]["image"].tobytes(), (_time.time() - t0) * 1000.0
 
-        cook_ms(1)                    # first frame pays the one-time cook
-        early = cook_ms(5)            # served from cache
-        late = cook_ms(250)           # far down the timeline — must be just as cheap
-        # A stateless recompute would make `late` many times `early`; cached
-        # serves are flat. Allow generous slack for noise.
-        assert late < early * 4 + 20, f"per-frame cost grew: early={early:.1f}ms late={late:.1f}ms"
+        img0, _ = live(0)
+        _, early = live(50)
+        img300, late300 = live(300)          # past the old window boundary
+        img600, late600 = live(600)          # way past — still cheap, still moving
+
+        # 1. No slowdown: a far-future frame costs about the same as an early one.
+        assert late600 < early * 3 + 25, f"per-frame cost grew: early={early:.1f} late={late600:.1f}"
+        # 2. No reset/loop: it did not snap back to the initial grid at the window.
+        assert img300 != img0, "sim reset to the initial grid at the window boundary"
+        # 3. Still evolving forever.
+        assert img600 != img300, "sim stopped advancing"
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+
+
+def test_arch_a_loops_cache_past_cooked_length():
+    """Cook-a-window Architecture-A sims (which DO use the executor frame cache —
+    boids, gray-scott, …) must LOOP their cached frames when the live window
+    exceeds the cooked count, never re-cooking every frame. Uses a synthetic
+    arch-A probe so the check doesn't depend on a heavy real sim."""
+    set_canvas(64, 64)
+    out = _tmp()
+    try:
+        ex = GraphExecutor(out, in_memory=True)
+        # No n_frames in params -> executor override skipped -> cooks default (8).
+        def run(f):
+            nodes = [{"id": "s", "method_id": "__sim_probe__", "params": {},
+                      "dirty": True, "render": True}]
+            flat, _t, errs = ex.execute(nodes, [], seed=7, frame=f % LIVE_TOTAL_FRAMES,
+                                        frames=LIVE_TOTAL_FRAMES)
+            assert not errs, errs
+            return flat["s"]["image"].tobytes()
+
+        run(0)                                        # cook
+        cooked = len(ex._sim_cache[("s", 7)])
+        assert 0 < cooked < LIVE_TOTAL_FRAMES, f"expected a partial cook, got {cooked}"
+        past = cooked + 3
+        assert run(past) == run(past % cooked), "frame past cook did not loop the cache"
+        assert len(ex._sim_cache[("s", 7)]) == cooked, "cache re-cooked instead of looping"
     finally:
         shutil.rmtree(out, ignore_errors=True)
 
@@ -134,8 +185,8 @@ def _live_execute(ex: GraphExecutor, nodes, edges, seed, frame):
 
 
 def test_cellular_automata_18_animates_live():
-    """#18 (a stateful Architecture-A sim) must yield distinct live frames from
-    a dirty=False (post-Run) start — i.e. the sim actually plays, not frozen."""
+    """#18 (a persistent stateful sim) must yield distinct live frames from a
+    dirty=False (post-Run) start — i.e. the sim actually plays, not frozen."""
     set_canvas(192, 192)
     out = _tmp()
     try:
@@ -161,13 +212,13 @@ def test_cellular_automata_18_animates_live():
 # ── Invariant 3b: #18 UI params are honoured with the -1.0 sentinels set ────
 
 def test_cellular_automata_18_sequence_shows_start():
-    """A rendered sequence must show the sim from its beginning, not clamp the
-    first N frames onto a later still.
+    """A rendered sequence must show the sim from its beginning (frame 0 = the
+    initial grid), not clamp the first frames onto a later still.
 
-    Regression: #18 floored its generation count at 60, so every early frame
-    whose t*60 was below the floor rendered the identical 60-generation state
-    — the opening of the sim was missing and 'picked up' several frames in.
-    The floor now only applies to single stills (total_frames<=1).
+    Regression history: #18 once floored its generation count so early frames
+    rendered an identical later state — the opening of the sim was missing and
+    'picked up' several frames in. The persistent-state model starts frame 0 at
+    the freshly built grid and steps forward one generation per frame.
     """
     set_canvas(160, 160)
     out = _tmp()
@@ -253,13 +304,15 @@ def test_cellular_automata_18_params_honored():
     meta = get_meta("18")
     out = _tmp()
     try:
-        # Small n_frames keeps the direct cook fast while still evolving enough
-        # for different rules/patterns to diverge visibly.
-        base = {"n_frames": 40, "rule_select": -1.0, "init_select": -1.0,
+        base = {"rule_select": -1.0, "init_select": -1.0,
                 "cell_size": -1.0, "age_input": -1.0}
 
         def render(extra):
-            r = meta.fn(out, 42, params={**base, **extra})
+            # Fresh out_dir per call so persistent state never carries across
+            # the different-param renders being compared.
+            d = _tmp()
+            r = meta.fn(d, 42, params={**base, **extra})
+            shutil.rmtree(d, ignore_errors=True)
             return (r["image"] if isinstance(r, dict) else r).tobytes()
 
         assert render({"rule": "conway"}) != render({"rule": "highlife"}), "rule ignored"
