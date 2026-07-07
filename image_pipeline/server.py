@@ -244,6 +244,9 @@ def require_token(request: Request):
 
 app = FastAPI(title="Image Pipeline", lifespan=lifespan)
 app.mount("/output", StaticFiles(directory=str(OUTPUT_ROOT)), name="output")
+# Static UI assets (vendored three.js, client-side executor modules). Additive —
+# purely for serving front-end files; does not touch the render/export pipeline.
+app.mount("/ui", StaticFiles(directory=str(UI_DIR)), name="ui")
 
 # ── Chord Bot sub-application (served at /chordbot/) ─────────────────
 # Guarded import: chord_bot is an independent sibling app. A failure there
