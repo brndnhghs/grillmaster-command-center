@@ -6,3 +6,4 @@ from . import simulations_cellular  # #58 Cellular Automata (Variants) — toroi
 from . import codegen  # package with individual method files
 from . import compositing  # blend, math_merge, field_combine, particle_merge, apply_mask
 from . import system  # Timeline — global animation clock node
+from . import custom_shader  # Custom GLSL Shader — live GLSL editor node

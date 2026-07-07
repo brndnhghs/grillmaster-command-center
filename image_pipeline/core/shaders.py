@@ -884,3 +884,86 @@ def render_filter(shader_name: str, input_image: np.ndarray,
         raise ValueError(f"'{shader_name}' is a procedural shader, use render_procedural() instead")
     h, w = input_image.shape[:2]
     return render_shader(shader_name, (w, h), params, time, input_image)
+
+
+# ── Default starter template exposed to the UI ─────────────────────
+CUSTOM_SHADER_TEMPLATE = '''void main() {
+    vec2 uv = v_uv;
+    float t = u_time * 0.5;
+
+    // u_params.x = p1, u_params.y = p2, u_params.z = p3, u_params.w = p4
+    float v = sin(uv.x * 10.0 + t) * cos(uv.y * 8.0 + t * 0.7);
+    v = v * 0.5 + 0.5;
+
+    f_color = vec4(v, v * 0.5, 1.0 - v, 1.0);
+}'''
+
+
+def render_custom_shader(
+    glsl_body: str,
+    resolution: tuple[int, int] = (512, 512),
+    params: tuple[float, float, float, float] = (0.5, 0.5, 0.5, 0.5),
+    time: float = 0.0,
+    input_image: np.ndarray | None = None,
+) -> Image.Image:
+    """Compile and render a user-supplied GLSL fragment shader.
+
+    `glsl_body` is the full void main(){...} block. The _PROLOGUE (uniforms +
+    helpers) is prepended automatically — the user does not write #version or
+    uniform declarations.
+
+    Raises RuntimeError with a human-readable message on compile failure.
+    """
+    import hashlib
+    frag_src = _PROLOGUE + "\n" + glsl_body
+
+    ctx = _get_ctx()
+    cache = _get_prog_cache()
+
+    # Cache key = SHA-1 of the full fragment source (thread-local per ctx)
+    cache_key = "__custom__:" + hashlib.sha1(frag_src.encode()).hexdigest()
+
+    if cache_key not in cache:
+        try:
+            prog = ctx.program(vertex_shader=_VERTEX_SHADER, fragment_shader=frag_src)
+        except Exception as e:
+            raise RuntimeError(str(e))
+        vao = _create_vao(ctx, prog)
+        cache[cache_key] = (prog, vao)
+    else:
+        prog, vao = cache[cache_key]
+
+    w, h = resolution
+    fbo = ctx.simple_framebuffer((w, h))
+    fbo.use()
+
+    for uniform_name, uniform_value in [
+        ('u_resolution', (float(w), float(h))),
+        ('u_time', time),
+        ('u_params', params),
+    ]:
+        if uniform_name in prog:
+            prog[uniform_name].value = uniform_value
+
+    texture = None
+    if input_image is not None and 'u_texture' in prog:
+        if input_image.dtype != np.uint8:
+            img_u8 = (np.clip(input_image, 0.0, 1.0) * 255).astype(np.uint8)
+        else:
+            img_u8 = input_image
+        tex_data = img_u8[:, :, ::-1].tobytes()
+        texture = ctx.texture((img_u8.shape[1], img_u8.shape[0]), 3, tex_data)
+        texture.use(0)
+        prog['u_texture'].value = 0
+
+    ctx.clear(0.0, 0.0, 0.0)
+    vao.render()
+    data = fbo.read()
+
+    img = Image.frombytes('RGB', (w, h), data, 'raw', 'BGR')
+
+    fbo.release()
+    if texture is not None:
+        texture.release()
+
+    return img

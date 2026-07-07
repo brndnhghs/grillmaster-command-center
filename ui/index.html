@@ -186,6 +186,11 @@ try {
   select.param-input { cursor: pointer; }
   .param-range-wrap { display: flex; gap: 8px; align-items: center; }
   .param-range-wrap input[type=range] { flex: 1; accent-color: var(--accent); }
+  .glsl-editor { width: 100%; box-sizing: border-box; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 8px 10px; font-size: 12px; font-family: var(--font-mono); line-height: 1.5; resize: vertical; outline: none; min-height: 220px; tab-size: 2; }
+  .glsl-editor:focus { border-color: var(--accent); }
+  .glsl-apply-btn { margin-top: 6px; width: 100%; padding: 7px; background: var(--accent); color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .glsl-apply-btn:hover { opacity: 0.85; }
+  .glsl-error { margin-top: 6px; padding: 8px 10px; background: rgba(255,60,60,0.12); border: 1px solid rgba(255,80,80,0.4); border-radius: 6px; font-size: 11px; font-family: var(--font-mono); color: #ff6b6b; white-space: pre-wrap; word-break: break-all; display: none; }
   .param-range-val { font-size: 12px; color: var(--muted); min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; }
   .checkbox-row { display: flex; align-items: center; gap: 8px; }
   .checkbox-row input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; }
@@ -2310,8 +2315,25 @@ function renderParams(method) {
   // Wire auto-generate on any param change (excluding animate checkbox)
   paramsForm.querySelectorAll('.param-ctrl').forEach(el => {
     if (el.id === 'p_animate') return;
+    if (el.tagName === 'TEXTAREA') return; // GLSL editors use Apply button instead
     el.addEventListener('input', scheduleAutoGenerate);
     el.addEventListener('change', scheduleAutoGenerate);
+  });
+
+  // Wire GLSL editor Apply buttons in main params panel
+  paramsForm.querySelectorAll('.glsl-apply-btn').forEach(btn => {
+    const key = btn.id.replace('glsl-apply-', '');
+    const ta  = document.getElementById(`p_${key}`);
+    if (!ta) return;
+    ta.addEventListener('keydown', e => {
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const s = ta.selectionStart, end = ta.selectionEnd;
+        ta.value = ta.value.slice(0, s) + '  ' + ta.value.slice(end);
+        ta.selectionStart = ta.selectionEnd = s + 2;
+      }
+    });
+    btn.addEventListener('click', () => generateBtn.click());
   });
 
   // Wire color picker swatch ↔ text field sync
@@ -2490,6 +2512,20 @@ function renderParamField(key, spec) {
   const colonMatch = searchText.match(/:\s*([\w-]+(?:,\s*[\w-]+){2,})\s*$/);
   if (colonMatch) {
     return makeSelect(colonMatch[1].split(',').map(s => s.trim()).filter(Boolean));
+  }
+
+  // 5a. GLSL code editor — multiline flag or glsl_code key
+  if (spec.multiline || key === 'glsl_code') {
+    const safeVal = escHtml(String(def ?? ''));
+    return `<div class="param-row" id="pr_${escHtml(key)}">
+      <div class="param-label">
+        <span class="param-name">${escHtml(key)}</span>
+        <span class="param-desc">${escHtml(desc)}</span>
+      </div>
+      <textarea class="glsl-editor param-ctrl" id="p_${escHtml(key)}" spellcheck="false">${safeVal}</textarea>
+      <button class="glsl-apply-btn" id="glsl-apply-${escHtml(key)}">Apply Shader</button>
+      <div class="glsl-error" id="glsl-err-${escHtml(key)}"></div>
+    </div>`;
   }
 
   // 5. String fallback — free text
@@ -3144,7 +3180,7 @@ function tlClipAtFrame(timelineFrame) {
   const usableLen = Math.max(1, srcLen - trimIn);
   const raw = timelineFrame - clip.startFrame;
   const localFrame = trimIn + (((raw % usableLen) + usableLen) % usableLen);
-  return { seqName: clip.seqName, localFrame };
+  return { seqName: clip.seqName, localFrame, srcOffset: clip.srcOffset || 0 };
 }
 
 function tlClearPreview() {
@@ -3181,8 +3217,9 @@ function _tlDisplayBlob(blob) {
 function tlLoadFrame(timelineFrame) {
   const hit = tlClipAtFrame(timelineFrame);
   if (!hit) { tlClearPreview(); return; }
-  const { seqName, localFrame } = hit;
-  const cacheKey = `${seqName}:${localFrame}`;
+  const { seqName, localFrame, srcOffset } = hit;
+  const fileFrame = localFrame + (srcOffset || 0);
+  const cacheKey = `${seqName}:${fileFrame}`;
 
   // Check cache first
   const cached = _tlFrameCache.get(cacheKey);
@@ -3190,7 +3227,7 @@ function tlLoadFrame(timelineFrame) {
     _tlDisplayBlob(cached);
     _tlFrameCache.delete(cacheKey);
   } else {
-    fetch(`/api/sequences/${encodeURIComponent(seqName)}/${localFrame}`)
+    fetch(`/api/sequences/${encodeURIComponent(seqName)}/${fileFrame}`)
       .then(r => {
         if (!r.ok) throw new Error('Frame not found');
         return r.blob();
@@ -3206,10 +3243,10 @@ function tlLoadFrame(timelineFrame) {
   }
 
   // Pre-fetch next frame
-  const nextFrame = localFrame + 1;
-  const nextKey = `${seqName}:${nextFrame}`;
+  const nextFileFrame = fileFrame + 1;
+  const nextKey = `${seqName}:${nextFileFrame}`;
   if (!_tlFrameCache.has(nextKey)) {
-    fetch(`/api/sequences/${encodeURIComponent(seqName)}/${nextFrame}`)
+    fetch(`/api/sequences/${encodeURIComponent(seqName)}/${nextFileFrame}`)
       .then(r => r.ok ? r.blob() : null)
       .then(blob => { if (blob) _tlFrameCache.set(nextKey, blob); })
       .catch(() => {});
@@ -4771,6 +4808,25 @@ function gShowNodeParams(node) {
       gDoAutoGen();
     });
   });
+  // Wire GLSL editor Apply buttons
+  gParamsForm.querySelectorAll('.glsl-apply-btn').forEach(btn => {
+    const key = btn.id.replace('glsl-apply-', '');
+    const ta  = document.getElementById(`p_${key}`);
+    if (!ta) return;
+    // Tab key → insert 2 spaces instead of moving focus
+    ta.addEventListener('keydown', e => {
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const s = ta.selectionStart, end = ta.selectionEnd;
+        ta.value = ta.value.slice(0, s) + '  ' + ta.value.slice(end);
+        ta.selectionStart = ta.selectionEnd = s + 2;
+      }
+    });
+    btn.addEventListener('click', () => {
+      gUpdateNodeParam(node.id, key, ta.value);
+      if (gLiveMode) { gDoAutoGen(); } else { gDoRun(); }
+    });
+  });
   // Wire color swatch ↔ text field sync in graph node params
   gParamsForm.querySelectorAll('.color-swatch').forEach(swatch => {
     const textId = swatch.id.replace('_swatch', '');
@@ -5298,6 +5354,20 @@ function _gUpdateLiveMeta(msg) {
   if (_lmrErr) {
     const hasErr = msg.node_errors && Object.keys(msg.node_errors).length > 0;
     _lmrErr.style.display = hasErr ? '' : 'none';
+  }
+  // Surface GLSL compile errors into the selected node's params panel
+  if (msg.node_errors && gSelectedNode) {
+    const rawErr = msg.node_errors[gSelectedNode] || '';
+    const errDiv = document.getElementById('glsl-err-glsl_code');
+    if (errDiv) {
+      // Strip Python traceback — keep only lines that look like GLSL errors
+      const glslLines = rawErr.split('\n').filter(l =>
+        /^\d+:\d+|error:|ERROR:|fragment|0\(/.test(l)
+      );
+      const errText = glslLines.length ? glslLines.join('\n') : (rawErr ? rawErr.split('\n').slice(-3).join('\n') : '');
+      errDiv.textContent = errText;
+      errDiv.style.display = errText ? '' : 'none';
+    }
   }
   // Mini timing bars (one bar per node, height proportional to its share)
   if (_lmrBars && msg.node_timings) {
@@ -6507,6 +6577,7 @@ function tlAddClip(name, seqName, startFrame, endFrame, nodeId, paramKeyframes) 
     srcLength: endFrame - startFrame + 1,
     trimIn: 0,
     looped: false,
+    srcOffset: startFrame,
     _origStart: startFrame, _origEnd: endFrame,
   };
   tlClips.unshift(clip);
