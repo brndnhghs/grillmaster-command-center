@@ -23,3 +23,6 @@ image_pipeline/output/
 # (ui/index.html) and requirements.txt are tracked source. Output text
 # and HTML land under image_pipeline/output/ which is ignored above.
 *.egg-info/
+
+# Node.js dependencies (installed, never committed)
+node_modules/
