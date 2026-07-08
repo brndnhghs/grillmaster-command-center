@@ -18,4 +18,6 @@ from . import (
     sequence,
     suspension,
     passing_chord,
+    planing,
+    neapolitan,
 )

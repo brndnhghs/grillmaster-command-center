@@ -1,0 +1,17 @@
+{
+  "nodes": [
+    {"id": "n1", "type": "tonic",     "x": 0,   "params": {"key": "C", "mode": "major", "duration": 4}},
+    {"id": "n2", "type": "function",  "x": 200, "params": {"target_function": "subdominant", "duration": 4}},
+    {"id": "n3", "type": "planing",   "x": 200, "y": 120, "params": {"direction": "up", "interval": 2, "stack": "quartal", "octave": 4}},
+    {"id": "n4", "type": "function",  "x": 400, "params": {"target_function": "dominant", "duration": 4}},
+    {"id": "n5", "type": "planing",   "x": 400, "y": 120, "params": {"direction": "up", "interval": 2, "stack": "9th", "octave": 4}},
+    {"id": "n6", "type": "cadence",   "x": 600, "params": {"type": "authentic", "duration": 4}}
+  ],
+  "edges": [
+    {"src_node": "n1", "dst_node": "n2"},
+    {"src_node": "n2", "dst_node": "n3"},
+    {"src_node": "n2", "dst_node": "n4"},
+    {"src_node": "n4", "dst_node": "n5"},
+    {"src_node": "n4", "dst_node": "n6"}
+  ]
+}

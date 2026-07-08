@@ -2,7 +2,7 @@
 
 ## Current State
 
-- **19 existing nodes** — 11 horizontal, 8 vertical
+- **21 existing nodes** — 11 horizontal, 10 vertical
 - **20 of 43 skills** have at least one node touching their domain
 - **23 skills** have zero node representation
 - Even "covered" skills are **shallow** — each contains 10–50 sub-concepts, parameters, and data tables that aren't exposed in the node graph
@@ -126,9 +126,39 @@ Each of these sessions audits one existing node against its mapped skill and add
 
 | # | Node | Axis | Skill Source | Key Parameters |
 |---|------|------|-------------|----------------|
-| 4a | **Neapolitan** | V | `chromatic-harmony` | type (Neapolitan, Neapolitan 7, Neapolitan maj7), inversion, strength |
-| 4b | **Planing Chord** | V | `impressionism-early-modern` | direction (up/down/auto), interval (triad/7th/quartal), steps, step_size |
+| 4a | **Neapolitan** | V | `chromatic-harmony` | ✅ DONE — `neapolitan` node (variant, inversion, strength, octave, velocity) |
+| 4b | **Planing Chord** | V | `impressionism-early-modern` | ✅ DONE — `planing` node (direction, interval, stack, invert, octave, velocity) |
 | 4c | **Quartal Chord** | V | `jazz-harmony`, `impressionism-early-modern` | stack (4ths/5ths/2nds), size (3–5 notes), root |
+
+### ✅ Session 4a — Neapolitan Node [DONE 2026-07-07]
+
+| What | From Skill | Deliverable |
+|------|-----------|-------------|
+| New vertical `neapolitan` node | `chromatic-harmony` | `nodes/neapolitan.py` + registered in `nodes/__init__.py` |
+| ♭II major triad (N), ♭II7, ♭IIM7 | Neapolitan family | `variant` param (neapolitan/neapolitan7/neapolitan_maj7) |
+| N⁶ first-inversion voicing | "almost always first inversion (bass on ♭6)" | `inversion` param (0=N, 1=N⁶); numeral `N`/`N⁶` |
+| Pre-dominant function, tension bump | ♭2 pulls to V | `function="pre-dominant"`, `+0.25*strength` tension |
+| Flat-spelled root (Db/Bb/Eb) | ♭II notation | `FLAT_NAMES[root_pc]` instead of default sharp spelling |
+| 11 new tests passing (154 total) | — | `tests/test_neapolitan.py` |
+| UI verified: served by `/api/node-defs` with 5 params | — | Live at port 7861 |
+
+**Note — overlaps with Substitution node:** `substitution` already has a one-line `neapolitan` *type* (plain ♭II triad, numeral "N"). This is the fuller, dedicated node (variant + inversion + strength + maj7) per PLAN Phase 4a. Both coexist; the dedicated node exposes the fuller control surface.
+
+| 4c | **Quartal Chord** | V | `jazz-harmony`, `impressionism-early-modern` | stack (4ths/5ths/2nds), size (3–5 notes), root |
+
+### ✅ Session 4b — Planing Chord Node [DONE 2026-07-07]
+
+| What | From Skill | Deliverable |
+|------|-----------|-------------|
+| New vertical `planing` node | `impressionism-early-modern` | `nodes/planing.py` + registered in `nodes/__init__.py` |
+| Parallel motion by fixed interval (whole-tone planing default) | planing technique | `direction` + `interval` params; `keep` stack preserves shape |
+| Impressionist sonority rebuild | parallel 7th/9th/quartal | `stack` param (triad/7th/9th/quartal); quartal uses stacked 4ths |
+| Parallel 6/3 voicing | *Clair de Lune* style | `invert` param (first-inversion voicing) |
+| Non-functional clears numeral | color-over-function | `numeral` set to `""` after planing |
+| 13 new tests passing (143 total) | — | `tests/test_planing.py` |
+| UI verified: served by `/api/node-defs` with 6 params | — | Live at port 7861 |
+
+**Design notes:** vertical augmenter — produces no sequence entry of its own, modifies the parent horizontal node's state (per `executor.py` augmentation pipeline). `stack="keep"` shifts every voice by the interval; other stacks rebuild the sonority at the planed root, preserving minor/major polarity of the incoming chord. `interval<=0` or empty `voices` → passthrough.
 
 ---
 
