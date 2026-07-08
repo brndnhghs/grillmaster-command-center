@@ -25,7 +25,7 @@ if str(_repo_root) not in sys.path:
     sys.path.insert(0, str(_repo_root))
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -59,6 +59,69 @@ SAVED_GROUPS_DIR.mkdir(exist_ok=True)
 SEQUENCES_DIR = OUTPUT_ROOT / "sequences"
 SEQUENCES_DIR.mkdir(parents=True, exist_ok=True)
 
+# ── Shared graph document store (single source of truth) ───────────
+# Both the browser editor and agents read/write the SAME graph doc here.
+# The live-sim loop keys off this doc, so clearing it (user or agent) stops
+# the render. Persisted to disk so it survives restarts.
+GRAPHS_DIR = OUTPUT_ROOT / "graphs"
+GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
+
+_graph_store_lock = threading.Lock()
+_graph_docs: dict[str, dict] = {}
+
+
+def _graph_path(gid: str) -> Path:
+    gid = re.sub(r'[^a-zA-Z0-9_-]', '_', gid)
+    return GRAPHS_DIR / f"{gid}.json"
+
+
+def _graph_default() -> dict:
+    return {
+        "id": "active",
+        "nodes": [],
+        "edges": [],
+        "canvas": {"w": 768, "h": 512},
+        "meta": {"updated_at": None, "updated_by": None},
+    }
+
+
+def _load_graph_doc(gid: str) -> dict:
+    """Return the graph doc, loading from disk (or creating a default) once."""
+    if gid in _graph_docs:
+        return _graph_docs[gid]
+    p = _graph_path(gid)
+    doc = None
+    if p.exists():
+        try:
+            doc = json.loads(p.read_text())
+        except Exception:
+            doc = None
+    if doc is None:
+        doc = _graph_default()
+        doc["id"] = gid
+    # Normalize shape
+    doc.setdefault("nodes", [])
+    doc.setdefault("edges", [])
+    doc.setdefault("canvas", {"w": 768, "h": 512})
+    doc.setdefault("meta", {})
+    _graph_docs[gid] = doc
+    return doc
+
+
+def _persist_graph_doc(doc: dict) -> None:
+    gid = doc.get("id", "active")
+    _graph_docs[gid] = doc
+    try:
+        _graph_path(gid).write_text(json.dumps(doc, indent=2))
+    except Exception:
+        pass
+
+
+def _touch_graph_meta(doc: dict, by: str | None) -> None:
+    doc["meta"]["updated_at"] = datetime.utcnow().isoformat()
+    if by is not None:
+        doc["meta"]["updated_by"] = by
+
 # ── Live preview buffer (MJPEG streaming) ──────────────────────────────
 _LIVE_FRAME: bytes | None = None
 _LIVE_FRAME_LOCK = threading.Lock()
@@ -68,6 +131,33 @@ _LIVE_FRAME_ID = 0  # monotonic counter so MJPEG can detect new frames
 # ── WebSocket live broadcast ────────────────────────────────────────────
 _WS_CLIENTS: set[WebSocket] = set()
 _WS_LOCK = threading.Lock()
+
+# ── Graph-mutation broadcast (user <-> agent shared doc) ────────────────
+# Separate WS channel so graph edits propagate to all viewers without
+# touching the frame stream.
+_GRAPH_WS_CLIENTS: set[WebSocket] = set()
+_GRAPH_WS_LOCK = threading.Lock()
+
+
+def _broadcast_graph_event(event: str, data: dict) -> None:
+    """Notify all graph-WS subscribers of a mutation (user or agent origin)."""
+    payload = json.dumps({"event": event, **data}, separators=(",", ":"))
+    with _GRAPH_WS_LOCK:
+        dead = []
+        for ws in list(_GRAPH_WS_CLIENTS):
+            try:
+                asyncio.run_coroutine_threadsafe(ws.send_text(payload), _event_loop)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            _GRAPH_WS_CLIENTS.discard(ws)
+    # Also surface over SSE for non-WS clients
+    try:
+        asyncio.run_coroutine_threadsafe(
+            _broadcast_sse("graph", payload), _event_loop
+        )
+    except Exception:
+        pass
 
 
 def _broadcast_ws_frame(jpeg_bytes: bytes, ws_meta: dict | None = None):
@@ -874,9 +964,187 @@ def get_shader_sources():
 
 # ── Graph save / load endpoints ───────────────────────────────────────
 
+# ── Shared graph document API (single source of truth for user + agent) ──
+# Endpoints consume/produce the SAME node/edge shape that /api/graph/execute
+# and /api/graph/live already accept, so no new graph format is introduced.
 
-@app.post("/api/graph/save")
-async def save_graph(payload: dict):
+class GraphPatch(BaseModel):
+    """Fine-grained mutation ops from the agent (or UI)."""
+    ops: list[dict] = []          # list of {op, ...} ops
+    by: str | None = None         # "user" | "agent" | arbitrary tag
+
+
+@app.get("/api/graph/{gid}")
+def get_graph(gid: str = "active"):
+    """Return the shared graph document (nodes, edges, canvas, meta)."""
+    with _graph_store_lock:
+        doc = _load_graph_doc(gid)
+        return json.loads(json.dumps(doc))  # copy
+
+
+@app.put("/api/graph/{gid}")
+async def put_graph(gid: str, payload: dict, by: str | None = None):
+    """Replace the whole graph (wholesale edit). Persists + broadcasts."""
+    with _graph_store_lock:
+        doc = _graph_default()
+        doc["id"] = gid
+        doc["nodes"] = payload.get("nodes", [])
+        doc["edges"] = payload.get("edges", [])
+        if "canvas" in payload:
+            doc["canvas"] = payload["canvas"]
+        _touch_graph_meta(doc, by or "agent")
+        _persist_graph_doc(doc)
+    _broadcast_graph_event("graph:replace", {"gid": gid, "doc": doc, "by": by or "agent"})
+    return {"ok": True, "id": gid}
+
+
+@app.patch("/api/graph/{gid}")
+async def patch_graph(gid: str, patch: GraphPatch):
+    """Apply fine-grained ops: add_node, update_node, remove_node,
+    add_edge, remove_edge, set_canvas, clear. Origin-agnostic."""
+    with _graph_store_lock:
+        doc = _load_graph_doc(gid)
+        nodes = doc["nodes"]
+        edges = doc["edges"]
+        by = patch.by or "agent"
+        applied = []
+        for op in patch.ops:
+            kind = op.get("op")
+            if kind == "add_node":
+                node = op.get("node", {})
+                if "id" not in node:
+                    node["id"] = op.get("id") or f"n{int(time.monotonic()*1000)}"
+                nodes.append(node)
+                applied.append(kind)
+            elif kind == "update_node":
+                nid = op.get("id")
+                for n in nodes:
+                    if n["id"] == nid:
+                        n.update(op.get("params", {}))
+                        if "method_id" in op:
+                            n["method_id"] = op["method_id"]
+                        break
+                applied.append(kind)
+            elif kind == "remove_node":
+                nid = op.get("id")
+                doc["nodes"] = [n for n in nodes if n["id"] != nid]
+                doc["edges"] = [e for e in edges
+                                if e.get("src_node") != nid and e.get("dst_node") != nid]
+                applied.append(kind)
+            elif kind == "add_edge":
+                edges.append(op.get("edge", {}))
+                applied.append(kind)
+            elif kind == "remove_edge":
+                eid = op.get("id")
+                doc["edges"] = [e for e in edges if e.get("id") != eid]
+                applied.append(kind)
+            elif kind == "set_canvas":
+                doc["canvas"] = op.get("canvas", doc["canvas"])
+                applied.append(kind)
+            elif kind == "clear":
+                doc["nodes"] = []
+                doc["edges"] = []
+                applied.append(kind)
+        _touch_graph_meta(doc, by)
+        _persist_graph_doc(doc)
+    _broadcast_graph_event("graph:patch", {"gid": gid, "ops": patch.ops, "by": by, "doc": doc})
+    return {"ok": True, "id": gid, "applied": applied}
+
+
+@app.websocket("/api/graph/ws")
+async def graph_ws(websocket: WebSocket):
+    """Subscribe to graph mutations (user + agent edits). Sends the current
+    doc on connect, then graph:* events as edits arrive."""
+    await websocket.accept()
+    with _graph_store_lock:
+        doc = _load_graph_doc("active")
+        current = json.loads(json.dumps(doc))
+    try:
+        await websocket.send_text(json.dumps({"event": "graph:state", "doc": current}))
+    except Exception:
+        pass
+    with _GRAPH_WS_LOCK:
+        _GRAPH_WS_CLIENTS.add(websocket)
+    try:
+        while True:
+            await websocket.receive_text()  # keepalive
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        with _GRAPH_WS_LOCK:
+            _GRAPH_WS_CLIENTS.discard(websocket)
+
+
+@app.post("/api/graph/{gid}/execute")
+async def execute_graph_by_id(gid: str, req: GraphRequest | None = None):
+    """Execute the shared graph (or an override request) headlessly and
+    return a job. For programmatic/agent use this avoids re-posting the full
+    graph each time — the shared doc is the source of truth."""
+    with _graph_store_lock:
+        doc = _load_graph_doc(gid)
+    if req is not None and (req.nodes or req.edges):
+        nodes, edges = req.nodes, req.edges
+        width, height = req.width, req.height
+    else:
+        # Use the shared doc, but allow execute-time width/height override
+        nodes, edges = doc["nodes"], doc["edges"]
+        width = (req.width if req is not None else 0) or doc["canvas"].get("w", 768)
+        height = (req.height if req is not None else 0) or doc["canvas"].get("h", 512)
+    # Mirror the doc into the live request shape so execute_graph runs it
+    exec_req = GraphRequest(
+        nodes=nodes, edges=edges, seed=42,
+        frames=req.frames if req else 1,
+        frame=req.frame if req else 0,
+        width=width, height=height,
+    )
+    return execute_graph(exec_req)
+
+
+@app.get("/api/graph/{gid}/render")
+def render_graph_bytes(gid: str = "active", frame: int = 0, fmt: str = "png",
+                       width: int = 0, height: int = 0):
+    """Synchronous headless render → raw image bytes (no base64, no job poll).
+    For agent/programmatic use. Reads the shared doc; width/height override the
+    doc's canvas. fmt=png (default) or jpg (quality param)."""
+    import numpy as np
+    from PIL import Image
+    from fastapi import HTTPException
+    from image_pipeline.core.utils import set_canvas as _set_canvas
+    from image_pipeline.core.graph import GraphExecutor
+    with _graph_store_lock:
+        doc = _load_graph_doc(gid)
+        nodes = [dict(n) for n in doc["nodes"]]
+        edges = [dict(e) for e in doc["edges"]]
+        cw = width or doc["canvas"].get("w", 768)
+        ch = height or doc["canvas"].get("h", 512)
+    if not nodes:
+        raise HTTPException(400, "Graph is empty")
+    _set_canvas(cw, ch)
+    ex = GraphExecutor(_GRAPH_SESSION_DIR, in_memory=True)
+    flat, terminal_id, errs = ex.execute(nodes, edges, 42, frame=frame, frames=1)
+    render_id = next((n["id"] for n in nodes if n.get("render")), None)
+    if render_id and render_id in flat:
+        terminal_id = render_id
+    if terminal_id is None:
+        raise HTTPException(400, "No output node")
+    arr = (flat.get(terminal_id) or {}).get("image")
+    if arr is None:
+        raise HTTPException(500, "Render produced no image")
+    if arr.dtype != np.uint8:
+        arr = (arr.clip(0, 1) * 255).astype(np.uint8)
+    img = Image.fromarray(arr).convert("RGB")
+    buf = io.BytesIO()
+    if fmt == "jpg":
+        img.save(buf, format="JPEG", quality=85)
+        mt = "image/jpeg"
+    else:
+        img.save(buf, format="PNG")
+        mt = "image/png"
+    return Response(content=buf.getvalue(), media_type=mt)
+
+
     name = payload.get("name", "untitled").strip() or "untitled"
     name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
     graph_data = payload.get("graph", {})
@@ -976,6 +1244,7 @@ class GraphRequest(BaseModel):
     frame: int = 0
     width: int = 768
     height: int = 512
+    graph_id: str | None = None  # optional shared-doc id; if set, live loop reads this doc each frame
 
 
 @app.post("/api/graph/execute")
@@ -1063,7 +1332,17 @@ def live_graph_sim(req: GraphRequest):
             return {"status": "stopped"}
 
         cancel = threading.Event()
-        nodes, edges, seed = req.nodes, req.edges, req.seed
+        # Graph source of truth: the shared doc. The live loop reads it every
+        # frame, so a clear (user or agent) stops the render. Fall back to the
+        # request payload only if the doc is empty.
+        gid = req.graph_id if getattr(req, "graph_id", None) else "active"
+        with _graph_store_lock:
+            _gdoc = _load_graph_doc(gid)
+            if _gdoc["nodes"]:
+                nodes, edges = _gdoc["nodes"], _gdoc["edges"]
+            else:
+                nodes, edges = req.nodes, req.edges
+        seed = req.seed
         width, height = req.width, req.height
 
         # ── Persistent executor: reuse or create ──────────────────────
@@ -1097,7 +1376,8 @@ def live_graph_sim(req: GraphRequest):
             from image_pipeline.core.utils import set_canvas as _set_canvas
             from image_pipeline.core.registry import get_meta as _get_meta_ll
             from image_pipeline.core.graph import _compute_live_dirty as _cld
-            _set_canvas(width, height)
+            _set_canvas(req.width, req.height)
+            live_w, live_h = req.width, req.height
             frame = 0
             consecutive_errors = 0
             # Params snapshot for per-node change detection (excludes volatile keys)
@@ -1106,6 +1386,22 @@ def live_graph_sim(req: GraphRequest):
             _frame_interval = 1.0 / 30.0
             print(f"[live-sim] starting loop, {len(nodes)} nodes, {len(edges)} edges, {_inv_msg}")
             while not cancel.is_set():
+                # ── Read the shared graph doc every frame (single source of
+                # truth). A clear (user or agent) empties it → stop the render.
+                with _graph_store_lock:
+                    _doc = _load_graph_doc(gid)
+                    if not _doc["nodes"]:
+                        print("[live-sim] shared graph is empty — stopping loop")
+                        break
+                    # Fresh working copy so in-place time injection doesn't
+                    # mutate the persisted doc.
+                    work_nodes = [dict(n) for n in _doc["nodes"]]
+                    work_edges = [dict(e) for e in _doc["edges"]]
+                    cw = _doc["canvas"].get("w", live_w)
+                    ch = _doc["canvas"].get("h", live_h)
+                if (cw, ch) != (live_w, live_h):
+                    live_w, live_h = cw, ch
+                    _set_canvas(live_w, live_h)
                 _tick_start = time.monotonic()
                 try:
                     # ── Phase 6: Selective dirty marking ──────────────────────
@@ -1117,7 +1413,7 @@ def live_graph_sim(req: GraphRequest):
                     #   • Nodes that have paramKeyframes (keyframe eval is frame-dependent)
                     # Then cascade that set forward through the DAG.
                     initially_dirty: set[str] = set()
-                    for n in nodes:
+                    for n in work_nodes:
                         nid = n["id"]
                         if "params" not in n:
                             n["params"] = {}
@@ -1149,12 +1445,12 @@ def live_graph_sim(req: GraphRequest):
                             initially_dirty.add(nid)
 
                     # Cascade dirty forward through the topology
-                    dirty_set = _cld(nodes, edges, initially_dirty)
-                    for n in nodes:
+                    dirty_set = _cld(work_nodes, work_edges, initially_dirty)
+                    for n in work_nodes:
                         n["dirty"] = n["id"] in dirty_set
 
                     flat_outputs, terminal_id, node_errors = executor.execute(
-                        nodes, edges, seed, frame=frame % LIVE_TOTAL_FRAMES, frames=LIVE_TOTAL_FRAMES
+                        work_nodes, work_edges, seed, frame=frame % LIVE_TOTAL_FRAMES, frames=LIVE_TOTAL_FRAMES
                     )
                     for nid, err in node_errors.items():
                         print(f"[live-sim] node {nid} error:\n{err}")
@@ -1200,8 +1496,8 @@ def live_graph_sim(req: GraphRequest):
                     }
                     _live_stats["active_nodes"] = len(nodes)
                     _live_stats["active_edges"] = len(edges)
-                    _live_stats["canvas_w"]     = width
-                    _live_stats["canvas_h"]     = height
+                    _live_stats["canvas_w"]     = live_w
+                    _live_stats["canvas_h"]     = live_h
 
                     # Push frame + per-frame metadata to MJPEG buffer and WS clients
                     if arr is not None:
