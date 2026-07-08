@@ -12,8 +12,21 @@ A **node-based generative image & video editor** that takes the best of Houdini 
 
 ```bash
 uv venv .venv && uv pip install -r requirements.txt --python .venv/bin/python
+
+# Option A — unified dashboard (recommended): one panel to launch & monitor both
+bash scripts/dashboard.sh              # http://localhost:7870  → "Launch Both"
+bash scripts/dashboard.sh --autostart  # also boots both services on startup
+
+# Option B — run each service independently
 .venv/bin/python -m image_pipeline.server            # http://localhost:7860
+.venv/bin/python -m chord_bot.server                 # http://localhost:7861
 ```
+
+**Command Center Dashboard (port 7870)** — a single control panel that launches,
+monitors, and stops the two services, and embeds both UIs behind a tab switcher
+(Image Pipeline / Chord Bot). Status dots poll each service's `/health` every 2s
+and show PID + HTTP status. The dashboard does not itself render either app; it
+spawns each as a child process (repo `.venv`) and reports live state.
 
 The editor is a single-page app served at `/`. Build a graph (Tab or right-click opens the node picker), wire typed ports, hit **Run** for a frame or a sequence, or **📺 Live** for the continuous loop.
 
@@ -36,6 +49,9 @@ image_pipeline/
 ui/index.html  the entire editor frontend (single file)
 chord_bot/     an independent chord-progression node system (music domain),
                mounted at /chordbot
+dashboard/     unified control panel (port 7870) — launches & monitors both
+               services; dashboard/ui/index.html is the frontend
+scripts/       grillmaster-launcher.sh, chord-bot-launcher.sh, dashboard.sh
 tools/         audit_methods.py (contract enforcement, pre-commit), next_id.py
 DESIGN.md      authoritative architecture document — read this first
 AGENT_GUIDE.md the method-file contract for anyone (human or agent) adding nodes

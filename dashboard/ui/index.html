@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Grillmaster Command Center</title>
+<style>
+  :root{
+    --bg:#0c0e14; --panel:#151823; --panel2:#1c2030; --ink:#e8ecf5;
+    --muted:#8b93a7; --line:#2a3043; --accent:#5cc8ff; --green:#3ddc84;
+    --amber:#ffb454; --red:#ff6b6b; --pink:#ff7eb6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  header{padding:16px 22px;border-bottom:1px solid var(--line);
+    display:flex;align-items:center;gap:14px;background:linear-gradient(90deg,#10131c,#161a26)}
+  header h1{font-size:18px;margin:0;letter-spacing:.5px}
+  header .sub{color:var(--muted);font-size:12px}
+  .wrap{display:grid;grid-template-columns:320px 1fr;gap:16px;padding:16px}
+  @media(max-width:860px){.wrap{grid-template-columns:1fr}}
+  .col{display:flex;flex-direction:column;gap:14px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+  .card h2{margin:0 0 12px;font-size:13px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}
+  .svc{border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px;background:var(--panel2)}
+  .svc .top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .svc .name{font-weight:600;font-size:15px}
+  .svc .desc{color:var(--muted);font-size:12px;margin:2px 0 10px}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--red);box-shadow:0 0 8px var(--red)}
+  .dot.up{background:var(--green);box-shadow:0 0 8px var(--green)}
+  .dot.warn{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+  .meta{display:flex;gap:14px;color:var(--muted);font-size:12px;margin:6px 0 10px;flex-wrap:wrap}
+  .meta b{color:var(--ink);font-weight:600}
+  .btns{display:flex;gap:8px}
+  button{cursor:pointer;border:1px solid var(--line);background:var(--panel2);color:var(--ink);
+    padding:8px 12px;border-radius:8px;font-size:13px;transition:.15s}
+  button:hover{border-color:var(--accent)}
+  button.primary{background:var(--accent);color:#06121c;border-color:var(--accent);font-weight:600}
+  button.danger{background:transparent;border-color:var(--red);color:var(--red)}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  .tabs{display:flex;gap:6px;margin-bottom:10px}
+  .tab{padding:7px 14px;border-radius:8px 8px 0 0;border:1px solid var(--line);border-bottom:none;cursor:pointer;color:var(--muted)}
+  .tab.active{background:var(--panel2);color:var(--ink)}
+  iframe{width:100%;height:78vh;border:1px solid var(--line);border-radius:10px;background:#000}
+  .log{font:12px/1.5 ui-monospace,Menlo,monospace;color:var(--muted);
+    max-height:160px;overflow:auto;white-space:pre-wrap;background:#0a0c12;border-radius:8px;padding:10px}
+  .gstack{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  a{color:var(--accent);text-decoration:none}
+  .pill{font-size:11px;padding:2px 8px;border-radius:20px;border:1px solid var(--line);color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>🔥 Grillmaster Command Center</h1>
+    <div class="sub">Launch &amp; monitor the Image Pipeline and Chord Bot from one panel</div>
+  </div>
+  <div class="gstack" style="margin-left:auto">
+    <span class="pill" id="dash-pill">dashboard :7870</span>
+    <button class="primary" id="launch-all">▶ Launch Both</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <!-- LEFT: services -->
+  <div class="col">
+    <div class="card">
+      <h2>Services</h2>
+      <div id="svc-list"></div>
+    </div>
+    <div class="card">
+      <h2>Status Log</h2>
+      <div class="log" id="log">dashboard ready.\n</div>
+    </div>
+  </div>
+
+  <!-- RIGHT: UI switcher -->
+  <div class="col">
+    <div class="card" style="padding-bottom:10px">
+      <div class="tabs" id="tabs">
+        <div class="tab active" data-target="pipeline">Image Pipeline</div>
+        <div class="tab" data-target="chord">Chord Bot</div>
+        <div class="tab" data-target="none">— none —</div>
+      </div>
+      <div class="row" style="margin-bottom:8px">
+        <span class="pill" id="cur-url">no service loaded</span>
+        <a id="open-new" href="#" target="_blank" style="display:none">↗ open in new tab</a>
+      </div>
+      <iframe id="frame" src="about:blank" title="service UI"></iframe>
+    </div>
+  </div>
+</div>
+
+<script>
+const SVC = {
+  pipeline: {name:"Image Pipeline", port:7860, desc:"Generative simulation / shader node graph"},
+  chord:    {name:"Chord Bot",      port:7861, desc:"Harmonic node graph (planing, Neapolitan, …)"}
+};
+
+// Tunnel-aware URLs. When the dashboard is reached through a public tunnel, the
+// embedded backends must also be reached through THEIR public URLs — not
+// 127.0.0.1, which is localhost of the *visitor's* machine and will hang.
+// Populated from /api/tunnel-info (falls back to 127.0.0.1 if absent).
+const TUNNEL = { pipeline: null, chord: null };
+
+const $ = (s)=>document.querySelector(s);
+const log = (m)=>{ const el=$("#log"); el.textContent += m+"\n"; el.scrollTop=el.scrollHeight; };
+
+function svcUrl(k){
+  const t = TUNNEL[k];
+  if(t && t.url) return t.url;
+  return "http://127.0.0.1:" + SVC[k].port;
+}
+
+function render(){
+  const list = $("#svc-list"); list.innerHTML="";
+  for(const [key,cfg] of Object.entries(SVC)){
+    const card=document.createElement("div"); card.className="svc";
+    card.innerHTML=`
+      <div class="top">
+        <div><div class="name">${cfg.name}</div></div>
+        <div class="dot" id="dot-${key}"></div>
+      </div>
+      <div class="desc">${cfg.desc}</div>
+      <div class="meta">
+        <span>port <b>:${cfg.port}</b></span>
+        <span>pid <b id="pid-${key}">—</b></span>
+        <span>health <b id="h-${key}">—</b></span>
+      </div>
+      <div class="btns">
+        <button class="primary" data-launch="${key}">▶ Launch</button>
+        <button class="danger" data-stop="${key}">■ Stop</button>
+        <a class="open-link" data-open="${key}" href="#" target="_blank"><button>↗ Open</button></a>
+      </div>`;
+    list.appendChild(card);
+  }
+  list.querySelectorAll("[data-launch]").forEach(b=>b.onclick=()=>launchOne(b.dataset.launch));
+  list.querySelectorAll("[data-stop]").forEach(b=>b.onclick=()=>stopOne(b.dataset.stop));
+}
+
+async function status(){
+  try{
+    const r=await fetch("/api/status"); const d=await r.json();
+    for(const [key,cfg] of Object.entries(SVC)){
+      const s=d.services[key]||{};
+      const alive=s.process_alive, open=s.port_open, h=s.health;
+      const dot=$("#dot-"+key);
+      dot.className="dot"+(open?" up":alive?" warn":"");
+      $("#pid-"+key).textContent = s.pid ?? "—";
+      $("#h-"+key).textContent = h? ("HTTP "+h) : (open?"open":"down");
+    }
+  }catch(e){ /* dashboard itself down? */ }
+}
+
+async function launchAll(){ log("launching both services…"); await fetch("/api/launch",{method:"POST"}); };
+async function launchOne(k){ log("launching "+SVC[k].name+"…"); await fetch("/api/launch/"+k,{method:"POST"}); loadFrame(k); };
+async function stopOne(k){ log("stopping "+SVC[k].name+"…"); await fetch("/api/stop/"+k,{method:"POST"}); if(currentTab===k) $("#frame").src="about:blank"; };
+
+let currentTab="pipeline";
+function loadFrame(k){
+  currentTab=k;
+  if(k==="none"){ $("#frame").src="about:blank"; $("#cur-url").textContent="no service loaded"; $("#open-new").style.display="none"; return; }
+  const url=svcUrl(k);
+  $("#frame").src=url;
+  $("#cur-url").textContent=url;
+  $("#open-new").href=url; $("#open-new").style.display="inline";
+}
+
+// Open-link rows in the service list: point at the (possibly public) backend URL.
+function wireOpenLinks(){
+  document.querySelectorAll(".open-link").forEach(a=>{
+    a.onclick=(e)=>{ e.preventDefault(); window.open(svcUrl(a.dataset.open), "_blank"); };
+  });
+}
+
+// tab switching
+$("#tabs").querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
+  $("#tabs").querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+  t.classList.add("active");
+  loadFrame(t.dataset.target);
+});
+
+$("#launch-all").onclick=launchAll;
+
+render();
+wireOpenLinks();
+loadFrame("pipeline");
+status();
+setInterval(status, 2000);
+log("tip: click 'Launch Both', wait for dots to turn green, then switch tabs above.");
+
+// Backend (pipeline/chord) URLs are injected server-side into TUNNEL from
+// data/tunnel-info.json, so the embedded iframes + Open links work through a
+// public tunnel with no client-side fetch race. Nothing else to do here.
+</script>
+</body>
+</html>
