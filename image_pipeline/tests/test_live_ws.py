@@ -29,6 +29,13 @@ def _server_available() -> bool:
 
 
 def _start_live(nodes, edges, width=64, height=64, seed=1):
+    # The live loop reads the SHARED graph document (nodes + canvas) as the
+    # single source of truth, so seed the doc first — posting the graph only via
+    # the /api/graph/live request no longer drives what the loop renders. The
+    # request still (re)starts the loop; canvas + nodes come from the doc.
+    requests.put(f"{SERVER}/api/graph/active", json={
+        "nodes": nodes, "edges": edges, "canvas": {"w": width, "h": height},
+    }, timeout=5)
     requests.post(f"{SERVER}/api/graph/live", json={
         "nodes": nodes, "edges": edges,
         "seed": seed, "frames": 1,
@@ -40,6 +47,11 @@ def _stop_live():
     requests.post(f"{SERVER}/api/graph/live", json={
         "nodes": [], "edges": [], "seed": 0, "frames": 0,
         "width": 64, "height": 64,
+    }, timeout=5)
+    # Clear the shared doc so a test's graph/canvas never leaks into the next
+    # test (or into a running editor's live graph).
+    requests.put(f"{SERVER}/api/graph/active", json={
+        "nodes": [], "edges": [], "canvas": {"w": 768, "h": 512},
     }, timeout=5)
 
 
