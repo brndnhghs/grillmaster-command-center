@@ -136,3 +136,44 @@ def test_graph_overlay_is_noninteractive_and_default_off():
     assert "let gOverlayEnabled = false" in html
     # Minimap starts hidden.
     assert 'id="graph-minimap" style="display:none"' in html
+
+
+# ── 6. Per-edge transport telemetry (mem-vs-disk, real not heuristic) ─────────
+
+def test_edge_transport_records_mem_and_disk_per_edge():
+    """The executor records, per edge, whether that transfer used the in-memory
+    ndarray path (new_image_contract node) or wrote a disk PNG (legacy node).
+    Surfaced in last_frame_stats['edge_transport'] keyed 'src->dst' — this is
+    what drives the FX overlay's stream-vs-packets channel from real data."""
+    set_canvas(48, 32)
+    ex = GraphExecutor(Path("/tmp/gm_edge_transport_test"), in_memory=True)
+    gen_glsl = "void main(){ f_color = vec4(v_uv, 0.5, 1.0); }"
+    nodes = [
+        {"id": "gen", "method_id": "__custom_shader__", "params": {"glsl_code": gen_glsl}},
+        # receives an image; new_image_contract=True  → in-memory  → "mem"
+        {"id": "gpu", "method_id": "__custom_shader__",
+         "params": {"glsl_code": "void main(){ f_color = texture(u_texture, v_uv); }"}},
+        # receives an image; legacy (new_image_contract=False) → PNG on disk → "disk"
+        {"id": "cpu", "method_id": "12", "render": True, "params": {}},  # Kaleidoscope
+    ]
+    edges = [
+        {"src_node": "gen", "src_port": "image", "dst_node": "gpu", "dst_port": "image_in"},
+        {"src_node": "gen", "src_port": "image", "dst_node": "cpu", "dst_port": "image_in"},
+    ]
+    ex.execute(nodes, edges, seed=1, frame=0, frames=1)
+    et = ex.last_frame_stats.get("edge_transport")
+    assert et is not None, "edge_transport missing from last_frame_stats"
+    assert et.get("gen->gpu") == "mem", f"GPU (new-contract) edge should be mem: {et}"
+    assert et.get("gen->cpu") == "disk", f"legacy CPU edge should be disk: {et}"
+
+
+def test_edge_transport_surfaced_and_consumed():
+    """edge_transport is plumbed through the WS/diagnostics feed and the overlay
+    reads it (falling back to the category heuristic only when absent)."""
+    # server plumbs it into the live WS payload + diagnostics stats
+    srv = Path("image_pipeline/server.py").read_text()
+    assert 'edge_transport' in srv and 'ws_meta.get("edge_transport"' in srv
+    # overlay consumes the real per-edge value
+    html = Path("ui/index.html").read_text()
+    assert "edgeTransport: d.edge_transport" in html
+    assert "_gOvlTele.edgeTransport" in html

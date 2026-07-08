@@ -425,6 +425,10 @@ class GraphExecutor:
         _diag_cache_misses: int = 0
         _diag_mem_edges:    int = 0  # edges passed as ndarray (no disk write)
         _diag_disk_edges:   int = 0  # edges written to _input.png
+        # Per-edge transport, keyed "src->dst": "mem" (in-memory ndarray) or
+        # "disk" (_input.png written). Surfaced for the FX overlay so it shows
+        # the real transport of each transfer, not a heuristic.
+        _diag_edge_transport: dict[str, str] = {}
         _diag_gpu_nodes:    int = 0
         _diag_cpu_nodes:    int = 0
         _diag_nodes_skipped: int = 0
@@ -704,10 +708,15 @@ class GraphExecutor:
             node_dir.mkdir(parents=True, exist_ok=True)
 
             image_candidates: list[np.ndarray] = []
+            image_edge_keys: list[str] = []  # src->dst of the image edges into this node
 
             for edge in gedges:
                 if edge.dst_node != node_id:
                     continue
+                # Non-image (scalar/field/mask/particles) wires are always
+                # in-memory value passes — record them as "mem" up front.
+                if edge.src_port not in ("image", "field"):
+                    _diag_edge_transport.setdefault(f"{edge.src_node}->{edge.dst_node}", "mem")
 
                 # Fetch upstream slot (feedback → previous frame, else current)
                 if edge.feedback:
@@ -730,6 +739,7 @@ class GraphExecutor:
                 if edge.dst_port == "image_in":
                     if src_img is not None:
                         image_candidates.append(src_img)
+                        image_edge_keys.append(f"{edge.src_node}->{edge.dst_node}")
                     continue
 
                 # ── Named IMAGE port (e.g. seed_image, mask_image) ─────
@@ -857,8 +867,13 @@ class GraphExecutor:
                     _PILpre2.fromarray((upstream_arr * 255).astype(np.uint8)).save(str(upstream_path))
                     run_params["input_image"] = str(upstream_path)
                     _diag_disk_edges += 1
+                    _edge_kind = "disk"
                 else:
                     _diag_mem_edges += 1
+                    _edge_kind = "mem"
+                # Record the real transport for each image edge into this node.
+                for _ek in image_edge_keys:
+                    _diag_edge_transport[_ek] = _edge_kind
                 # Methods whose source param has an "input_image" choice need it selected explicitly
                 src_spec = (meta.params or {}).get("source", {})
                 if isinstance(src_spec, dict) and "input_image" in (src_spec.get("choices") or []):
@@ -1068,6 +1083,7 @@ class GraphExecutor:
             "cache_misses":   _diag_cache_misses,
             "mem_edges":      _diag_mem_edges,
             "disk_edges":     _diag_disk_edges,
+            "edge_transport": _diag_edge_transport,  # {"src->dst": "mem"|"disk"}
             "gpu_nodes":      _diag_gpu_nodes,
             "cpu_nodes":      _diag_cpu_nodes,
             "nodes_cooked":   _diag_nodes_cooked,

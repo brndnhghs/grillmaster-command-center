@@ -100,6 +100,7 @@ def _broadcast_ws_frame(jpeg_bytes: bytes, ws_meta: dict | None = None):
             "cpu_nodes":    ws_meta.get("cpu_nodes", 0),
             "mem_edges":    ws_meta.get("mem_edges", 0),
             "disk_edges":   ws_meta.get("disk_edges", 0),
+            "edge_transport": ws_meta.get("edge_transport", {}),
             "canvas_w":     ws_meta.get("canvas_w", 0),
             "canvas_h":     ws_meta.get("canvas_h", 0),
             "img":          base64.b64encode(jpeg_bytes).decode("ascii"),
@@ -1184,6 +1185,7 @@ def live_graph_sim(req: GraphRequest):
                         _live_stats["total_cache_misses"] += _fs.get("cache_misses", 0)
                         _live_stats["mem_edges"]      = _fs.get("mem_edges", 0)
                         _live_stats["disk_edges"]     = _fs.get("disk_edges", 0)
+                        _live_stats["edge_transport"] = _fs.get("edge_transport", {})
                         _live_stats["gpu_nodes"]      = _fs.get("gpu_nodes", 0)
                         _live_stats["cpu_nodes"]      = _fs.get("cpu_nodes", 0)
                         _live_stats["node_compute_ms"]= _fs.get("node_compute_ms", 0.0)

@@ -8977,6 +8977,7 @@ function gOverlayFeed(d) {
   _gOvlTele = {
     timings: d.node_timings || {}, errors: d.node_errors || {}, names: d.node_names || {},
     running: !!d.running, memEdges: d.mem_edges || 0, diskEdges: d.disk_edges || 0,
+    edgeTransport: d.edge_transport || null,   // {"src->dst":"mem"|"disk"} — real per-edge transport
     fps: d.fps || 0, ts: performance.now(),
   };
   if (gOverlayEnabled && !_gOvlRaf) _gOvlStart();
@@ -9080,7 +9081,15 @@ function _gOvlDraw() {
     const srcNode = nodeById.get(edge.src_node);
     const catKey = srcNode ? _ovlCat(srcNode) : 'cpu';
     const col = _gOvlPal.cat[catKey];
-    const mem = _ovlIsMem(catKey);
+    // Transport: prefer the REAL per-edge value from telemetry (mem/disk);
+    // a present map with no entry for this edge = a value pass (mem). Fall back
+    // to the category heuristic only when the field is absent (older frames).
+    let mem;
+    if (_gOvlTele.edgeTransport) {
+      mem = (_gOvlTele.edgeTransport[edge.src_node + '->' + edge.dst_node] || 'mem') !== 'disk';
+    } else {
+      mem = _ovlIsMem(catKey);
+    }
     const payload = _ovlPayload(s.dataset.ptype);
     const off = Math.max(24, Math.min(120, Math.abs(p1.x - p0.x) * 0.5));
     const c0 = { x: p0.x + off, y: p0.y }, c1 = { x: p1.x - off, y: p1.y };
@@ -9103,14 +9112,15 @@ function _gOvlDraw() {
       }
     } else {
       // DISK: discrete chunky packets — few large rounded blocks, stepped motion.
-      const nPk = 2 + Math.round(payload * 2), steps = 7;
-      const pw = 5 + payload * 6, ph = 3 + payload * 2.5;
+      const nPk = 3 + Math.round(payload * 2), steps = 8;
+      const pw = 8 + payload * 7, ph = 4 + payload * 3;
       for (let i = 0; i < nPk; i++) {
-        const raw = now * spd * 0.75 + i / nPk;
+        const raw = now * spd * 0.7 + i / nPk;
         const f = (Math.floor(raw * steps) / steps) % 1; // quantised → visibly chunky
         const pt = _ovlBez(p0, c0, c1, p1, f);
         _ovlRoundRect(ctx, pt.x - pw/2, pt.y - ph/2, pw, ph, 2);
-        ctx.fillStyle = _ovlRgba(col, 0.34 + 0.40 * load); ctx.fill();
+        ctx.fillStyle = _ovlRgba(col, 0.5 + 0.35 * load); ctx.fill();
+        ctx.lineWidth = 0.8; ctx.strokeStyle = _ovlRgba(_ovlLerp3(col, [255,255,255], 0.3), 0.5 + 0.3 * load); ctx.stroke();
       }
     }
   });
