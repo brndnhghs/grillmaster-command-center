@@ -1061,3 +1061,75 @@ def render_custom_shader(
         texture.release()
 
     return img
+
+
+# ═══════════════════════════════════════════════
+#  P0 client-GPU parity shaders for existing CPU nodes
+# ═══════════════════════════════════════════════
+# Render EXISTING CPU pattern nodes (04 Worley, 02 Quasicrystal) on the browser
+# GPU for the live preview (see methods/gpu_shaders.py CLIENT_GPU_SHIMS). The CPU
+# numpy node stays the authoritative export (two-tier precision).
+#
+# NOTE (determinism): both CPU nodes seed feature-point positions / per-wave
+# phases with numpy PCG64 (np.random.default_rng), which GLSL cannot reproduce.
+# These shaders replicate the STRUCTURE via a GLSL hash, so the live look matches
+# the node's character but not the exact seeded layout. High/exact parity needs a
+# derived-uniforms path (compute the RNG values server-side -> uniforms) - deferred.
+
+_INFERNO = """
+vec3 inferno(float t){ t = clamp(t, 0.0, 1.0);
+  const vec3 c0=vec3(0.00021894,0.00016488,-0.01907227);
+  const vec3 c1=vec3(0.10651034,0.56396050, 3.93279110);
+  const vec3 c2=vec3(11.6028830,-3.9781129,-15.9420510);
+  const vec3 c3=vec3(-41.703996,17.4360890, 44.3541450);
+  const vec3 c4=vec3(77.1629350,-33.402243,-81.8094230);
+  const vec3 c5=vec3(-71.319421,32.6260640, 73.2095190);
+  const vec3 c6=vec3(25.1311300,-12.242810,-23.0709590);
+  return c0+t*(c1+t*(c2+t*(c3+t*(c4+t*(c5+t*c6)))));
+}
+"""
+
+_register("worley_gpu", "Worley/cellular F1 noise (client-GPU twin of node 04)", "procedural", _INFERNO + """
+vec2 h22(vec2 p){ p = fract(p*vec2(123.34,456.21)); p += dot(p,p+45.32); return fract(vec2(p.x*p.y, p.x+p.y)); }
+void main() {
+    // u_params.x = jitter (0..1), u_params.y = cell density scale
+    float jitter = u_params.x;
+    float cells  = 4.0 + u_params.y * 14.0;
+    vec2 st = v_uv * cells;
+    vec2 g = floor(st), f = fract(st);
+    float d = 8.0;
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            vec2 o = vec2(float(x), float(y));
+            vec2 fp = 0.5 + (h22(g + o) - 0.5) * jitter;
+            d = min(d, length(o + fp - f));
+        }
+    }
+    f_color = vec4(inferno(clamp(d, 0.0, 1.0)), 1.0);
+}
+""")
+
+_register("quasicrystal_gpu", "Quasicrystal wave superposition (client-GPU twin of node 02)", "procedural", _INFERNO + """
+float h11(float n){ return fract(sin(n*127.1)*43758.5453); }
+void main() {
+    // u_params.x = frequency, .y = amplitude, .z = rotation, .w = wave count
+    float freq = max(u_params.x, 0.005);
+    float amp  = (u_params.y <= 0.0) ? 1.0 : u_params.y;
+    float rot  = u_params.z;
+    int nwaves = int(clamp(u_params.w, 2.0, 24.0));
+    vec2 p = v_uv * u_resolution - 0.5 * u_resolution;      // centered pixel coords
+    float phi = 3.14159265 * (1.0 + 2.2360679) / 2.0;        // pi*(1+sqrt5)/2 (penrose)
+    float field = 0.0;
+    for (int i = 0; i < 24; i++) {
+        if (i >= nwaves) break;
+        float fi = float(i);
+        float theta = mod(fi * 6.2831853 / phi + rot, 6.2831853);
+        float ph = h11(fi + 1.0) * 6.2831853;                // hash phase (!= numpy RNG)
+        float f  = freq * (0.5 + h11(fi + 100.0));           // hash freq jitter
+        float proj = p.x * cos(theta) + p.y * sin(theta);
+        field += sin(proj * f + ph) * amp;
+    }
+    float result = field / float(nwaves) * 0.5 + 0.5;        // approx of CPU norm()
+    f_color = vec4(inferno(clamp(result, 0.0, 1.0)), 1.0);
+}
+""")

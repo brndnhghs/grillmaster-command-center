@@ -5976,6 +5976,9 @@ async function gGraphClientRenderable() {
   try {
     const C = await gClient3D();
     const { nodes } = _gClientGraphPayload();
+    // Ensure the shader bundle (node_map) is loaded so client-GPU shims of CPU
+    // nodes are recognized before the renderability check.
+    if (C.prepare) await C.prepare(nodes);
     return C.graphClientRenderable(nodes);
   } catch { return false; }
 }

@@ -158,6 +158,23 @@ for _mid, _sname, _mname in _FILT_SHADERS:
     GPU_SHADER_NODE_MAP[_mid] = {"shader": _sname, "type": "filter"}
 
 
+# ── P0 client-GPU shims for EXISTING CPU nodes ───────────────────────────────
+# Route a pre-existing CPU node's LIVE preview to a client-GPU parity shader
+# (see core/shaders.py) without a new node and WITHOUT touching the node's CPU
+# fn — the CPU numpy path stays the authoritative export (two-tier precision).
+# `param_map` translates the node's real params to the shader's u_params slots
+# (p1..p4). Merged into GPU_SHADER_NODE_MAP so the existing /api/shader-sources
+# endpoint serves it; client3d.js renderGpuShader reads `param_map`.
+CLIENT_GPU_SHIMS: dict[str, dict] = {
+    "04": {"shader": "worley_gpu", "type": "procedural",
+           "param_map": {"jitter": "p1", "fractal_gain": "p2"}},
+    "02": {"shader": "quasicrystal_gpu", "type": "procedural",
+           "param_map": {"frequency": "p1", "amplitude": "p2",
+                         "rotation": "p3", "waves": "p4"}},
+}
+GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SHIMS)
+
+
 # ── Legacy combined method #82 (kept for backward compatibility) ──────
 
 SHADER_NAMES = sorted([k for k, v in SHADERS.items() if v["type"] == "procedural"])

@@ -100,8 +100,11 @@ const CLIENT_RENDER_IDS = new Set([
 export async function prepare(nodes) {
   const jobs = [];
   if (nodes.some(n => n.method_id === '__p5sketch__')) jobs.push(loadP5());
-  if (nodes.some(n => _looksLikeGpuShader(n.method_id))) jobs.push(loadShaderBundle());
   if (nodes.some(n => n.method_id === '__gltf__')) jobs.push(loadGltfLoader());
+  // Load the shader bundle for any node that isn't a known client-only node —
+  // it may be a GPU shader (173–219) or a client-GPU shim of a CPU node
+  // (arbitrary id, e.g. 04/02). The bundle's node_map is the authority.
+  if (nodes.some(n => !CLIENT_RENDER_IDS.has(n.method_id))) jobs.push(loadShaderBundle());
   await Promise.all(jobs);
 }
 
@@ -475,7 +478,18 @@ void main(){ f_color = texture(u_texture, vec2(v_uv.x, 1.0 - v_uv.y)).bgra; }`,
     const mat = this._gpuMaterial(info.fragment);
     mat.uniforms.u_resolution.value.set(this.width, this.height);
     mat.uniforms.u_time.value = time * num(params.time_scale, 1);
-    if (entry.type === 'filter') {
+    if (entry.param_map) {
+      // Client-GPU shim for an existing CPU node: translate the node's real
+      // params into u_params slots (p1..p4) per the server-declared param_map.
+      const slot = { p1: 0, p2: 1, p3: 2, p4: 3 };
+      const v = [0.5, 0.5, 0.5, 0.5];
+      for (const k in entry.param_map) {
+        const s = slot[entry.param_map[k]];
+        if (s !== undefined && params[k] !== undefined) v[s] = num(params[k], v[s]);
+      }
+      mat.uniforms.u_params.value.set(v[0], v[1], v[2], v[3]);
+      mat.uniforms.u_texture.value = inputTex || this._blackTex;
+    } else if (entry.type === 'filter') {
       // Server filter param mapping: u_params = (strength, p2, 0.5, 0.5).
       mat.uniforms.u_params.value.set(num(params.strength, 0.5), num(params.p2, 0.5), 0.5, 0.5);
       mat.uniforms.u_texture.value = inputTex || this._blackTex;
