@@ -255,6 +255,77 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "reset_on": ["seed", "param", "loop", "resize"],
         "param_map": {"epsilon": "p1", "q": "p2", "f": "p3", "Du": "p4"},
     },
+    # ── P1.2 RD family (same Laplacian/ping-pong, different reaction term) ──
+    # 118 / 119 Lotka-Volterra RD: p1=alpha, p2=beta, p3=gamma, p4=delta.
+    "118": {
+        "type": "sim",
+        "seed": "rd_seed", "step": "lv_step", "display": "rd_display_composite",
+        "state_channels": 2, "substeps": 6,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"alpha": "p1", "beta": "p2", "gamma": "p3", "delta": "p4"},
+    },
+    "119": {
+        "type": "sim",
+        "seed": "rd_seed", "step": "lv_step", "display": "rd_display_composite",
+        "state_channels": 2, "substeps": 6,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"alpha": "p1", "beta": "p2", "gamma": "p3", "delta": "p4"},
+    },
+    # 120 LV 3-species food web: U,V,W channels. Approx interaction strengths.
+    "120": {
+        "type": "sim",
+        "seed": "lv3_seed", "step": "lv3_step", "display": "lv3_display",
+        "state_channels": 3, "substeps": 4,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"noise_amp": "p1"},
+    },
+    # 121 LV anisotropic: isotropic approximation of the RD step for live preview.
+    "121": {
+        "type": "sim",
+        "seed": "rd_seed", "step": "lv_step", "display": "rd_display_composite",
+        "state_channels": 2, "substeps": 6,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"alpha": "p1", "beta": "p2"},
+    },
+    # 133 FitzHugh-Nagumo: p1=epsilon, p2=param_a, p3=param_b, p4=diff_u.
+    "133": {
+        "type": "sim",
+        "seed": "rd_seed", "step": "fhn_step", "display": "rd_display_u",
+        "state_channels": 2, "substeps": 8,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"epsilon": "p1", "param_a": "p2", "param_b": "p3", "diff_u": "p4"},
+    },
+    # 143 / 160 Bacterial colony: N nutrient (.r), C colony (.g).
+    "143": {
+        "type": "sim",
+        "seed": "colony_seed", "step": "colony_step", "display": "colony_display",
+        "state_channels": 2, "substeps": 4,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"growth_rate": "p1", "diff_c": "p2", "consumption": "p3", "death_rate": "p4"},
+    },
+    "160": {
+        "type": "sim",
+        "seed": "colony_seed", "step": "colony_step", "display": "colony_display",
+        "state_channels": 2, "substeps": 4,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"growth_rate": "p1", "diff_c": "p2", "consumption": "p3", "death_rate": "p4"},
+    },
+    # 168 PM anisotropic RD: p1=b, p2=c, p3=bias (isotropic live approximation).
+    "168": {
+        "type": "sim",
+        "seed": "rd_seed", "step": "turing_step", "display": "rd_display_u",
+        "state_channels": 2, "substeps": 6,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"b": "p1", "c": "p2"},
+    },
+    # 169 Turing morphogenesis (Schnakenberg): p1=a, p2=b, p3=gamma, p4=Du.
+    "169": {
+        "type": "sim",
+        "seed": "rd_seed", "step": "turing_step", "display": "rd_display_u",
+        "state_channels": 2, "substeps": 6,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"a": "p1", "b": "p2", "gamma": "p3", "Du": "p4"},
+    },
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SIMS)
 

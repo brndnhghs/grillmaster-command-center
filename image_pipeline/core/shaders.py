@@ -1352,6 +1352,233 @@ void main() {
 }
 ''')
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  P1.2 — RD family (Lotka-Volterra, FitzHugh-Nagumo, Turing, Colony)
+#  Client-GPU sim twins of nodes 118-121, 133, 143/160, 168, 169.
+#  All share the 5-pt toroidal Laplacian + RGBA-float ping-pong; only the
+#  reaction term differs. CPU numpy nodes stay authoritative export.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Generic seeded RD state: U~1, V~0 with hashed seed blobs in V (node 118/119/133/169).
+_register("rd_seed",
+          "Generic RD seed: U~1, V~0 with hashed seed blobs (P1.2 RD twins)",
+          "procedural", '''
+void main() {
+    float U = 1.0; float V = 0.0;
+    for (int i = 0; i < 18; i++) {
+        float fi = float(i);
+        vec2 c = vec2(hash21(vec2(fi + 0.5, 1.37)), hash21(vec2(fi + 0.5, 7.91)));
+        c = 0.05 + 0.90 * c;
+        float d = distance(v_uv, c);
+        V += 0.5 * exp(-(d * d) / 0.002);
+    }
+    V = clamp(V, 0.0, 1.0);
+    f_color = vec4(U, V, 0.0, 1.0);
+}
+''')
+
+_register("rd_display_u",
+          "RD display: U activator -> grayscale (sqrt stretch)",
+          "procedural", '''
+void main() {
+    float U = clamp(texture(u_texture, v_uv).r, 0.0, 1.0);
+    f_color = vec4(vec3(sqrt(U)), 1.0);
+}
+''')
+
+_register("rd_display_composite",
+          "RD display: U in green, V in red (Lotka-Volterra prey/predator look)",
+          "procedural", '''
+void main() {
+    vec4 s = texture(u_texture, v_uv);
+    float U = clamp(s.r, 0.0, 1.0); float V = clamp(s.g, 0.0, 1.0);
+    vec3 col = vec3(V, U * 0.9 + V * 0.1, U * 0.2);
+    f_color = vec4(col, 1.0);
+}
+''')
+
+# Lotka-Volterra 2-var (nodes 118, 119): du = a*u - b*u*v + Du*Lap(u);
+# dv = d*u*v - g*v + Dv*Lap(v). p1=a, p2=b, p3=g, p4=d. Du/Dv fixed scale.
+_register("lv_step",
+          "Lotka-Volterra RD step (5-pt toroidal Laplacian)",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float U = s.r, V = s.g;
+    float lu = texture(u_texture, v_uv + vec2(-texel.x,0.0)).r
+             + texture(u_texture, v_uv + vec2(texel.x,0.0)).r
+             + texture(u_texture, v_uv + vec2(0.0,texel.y)).r
+             + texture(u_texture, v_uv + vec2(0.0,-texel.y)).r - 4.0*U;
+    float lv = texture(u_texture, v_uv + vec2(-texel.x,0.0)).g
+             + texture(u_texture, v_uv + vec2(texel.x,0.0)).g
+             + texture(u_texture, v_uv + vec2(0.0,texel.y)).g
+             + texture(u_texture, v_uv + vec2(0.0,-texel.y)).g - 4.0*V;
+    float a = u_params.x, b = u_params.y, g = u_params.z, d = u_params.w;
+    float Du = 0.12, Dv = 0.30;
+    float nU = U + 0.2 * (a*U - b*U*V + Du*lu);
+    float nV = V + 0.2 * (d*U*V - g*V + Dv*lv);
+    f_color = vec4(clamp(nU,0.0,1.0), clamp(nV,0.0,1.0), 0.0, 1.0);
+}
+''')
+
+# FitzHugh-Nagumo (node 133): du = (u - u^3/3 - v)/e + Du*Lap(u);
+# dv = e*(u + a - b*v) + Dv*Lap(v). p1=e, p2=a, p3=b, p4=Du.
+_register("fhn_step",
+          "FitzHugh-Nagumo step (5-pt toroidal Laplacian, excitable media)",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float U = s.r, V = s.g;
+    float lu = texture(u_texture, v_uv + vec2(-texel.x,0.0)).r
+             + texture(u_texture, v_uv + vec2(texel.x,0.0)).r
+             + texture(u_texture, v_uv + vec2(0.0,texel.y)).r
+             + texture(u_texture, v_uv + vec2(0.0,-texel.y)).r - 4.0*U;
+    float lv = texture(u_texture, v_uv + vec2(-texel.x,0.0)).g
+             + texture(u_texture, v_uv + vec2(texel.x,0.0)).g
+             + texture(u_texture, v_uv + vec2(0.0,texel.y)).g
+             + texture(u_texture, v_uv + vec2(0.0,-texel.y)).g - 4.0*V;
+    float e = max(u_params.x, 1e-3), a = u_params.y, b = u_params.z, Du = u_params.w;
+    float Dv = 0.0;
+    float nU = U + 0.08 * ((U - U*U*U/3.0 - V)/e + Du*lu);
+    float nV = V + 0.08 * (e*(U + a - b*V) + Dv*lv);
+    f_color = vec4(clamp(nU,-1.0,1.0), clamp(nV,-1.0,1.0), 0.0, 1.0);
+}
+''')
+
+# Turing / Schnakenberg (node 169): ru = g*(a - u + u^2 v); rv = g*(b - u^2 v).
+# Diffusion Du, Dv; p1=a, p2=b, p3=g, p4=Du.
+_register("turing_step",
+          "Schnakenberg/Turing RD step (5-pt toroidal Laplacian)",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float U = s.r, V = s.g;
+    float lu = texture(u_texture, v_uv + vec2(-texel.x,0.0)).r
+             + texture(u_texture, v_uv + vec2(texel.x,0.0)).r
+             + texture(u_texture, v_uv + vec2(0.0,texel.y)).r
+             + texture(u_texture, v_uv + vec2(0.0,-texel.y)).r - 4.0*U;
+    float lv = texture(u_texture, v_uv + vec2(-texel.x,0.0)).g
+             + texture(u_texture, v_uv + vec2(texel.x,0.0)).g
+             + texture(u_texture, v_uv + vec2(0.0,texel.y)).g
+             + texture(u_texture, v_uv + vec2(0.0,-texel.y)).g - 4.0*V;
+    float a = u_params.x, b = u_params.y, g = u_params.z, Du = u_params.w;
+    float Dv = 0.5;
+    float u2v = U*U*V;
+    float nU = U + 0.02 * (g*(a - U + u2v) + Du*lu);
+    float nV = V + 0.02 * (g*(b - u2v) + Dv*lv);
+    f_color = vec4(clamp(nU,0.0,1.0), clamp(nV,0.0,1.0), 0.0, 1.0);
+}
+''')
+
+# 3-species Lotka-Volterra (node 120): U,V,W in r,g,b — cyclic predation.
+# p1,p2,p3,p4 = interaction strengths (live preview approx; CPU authoritative).
+_register("lv3_seed",
+          "3-species LV seed: U~1, V~0.5, W~0.5 with hashed blobs (node 120 twin)",
+          "procedural", '''
+void main() {
+    float U = 1.0, V = 0.5, W = 0.5;
+    for (int i = 0; i < 14; i++) {
+        float fi = float(i);
+        vec2 c = vec2(hash21(vec2(fi+0.5,1.37)), hash21(vec2(fi+0.5,7.91)));
+        c = 0.05 + 0.90*c; float d = distance(v_uv, c);
+        float blob = exp(-(d*d)/0.002);
+        U -= 0.4*blob; V += 0.5*blob; W += 0.3*blob;
+    }
+    f_color = vec4(clamp(U,0.0,1.0), clamp(V,0.0,1.0), clamp(W,0.0,1.0), 1.0);
+}
+''')
+
+_register("lv3_step",
+          "3-species Lotka-Volterra step (5-pt toroidal Laplacian on 3 channels)",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float U = s.r, V = s.g, W = s.b;
+    float lu = texture(u_texture, v_uv + vec2(-texel.x,0.0)).r
+             + texture(u_texture, v_uv + vec2(texel.x,0.0)).r
+             + texture(u_texture, v_uv + vec2(0.0,texel.y)).r
+             + texture(u_texture, v_uv + vec2(0.0,-texel.y)).r - 4.0*U;
+    float lv = texture(u_texture, v_uv + vec2(-texel.x,0.0)).g
+             + texture(u_texture, v_uv + vec2(texel.x,0.0)).g
+             + texture(u_texture, v_uv + vec2(0.0,texel.y)).g
+             + texture(u_texture, v_uv + vec2(0.0,-texel.y)).g - 4.0*V;
+    float lw = texture(u_texture, v_uv + vec2(-texel.x,0.0)).b
+             + texture(u_texture, v_uv + vec2(texel.x,0.0)).b
+             + texture(u_texture, v_uv + vec2(0.0,texel.y)).b
+             + texture(u_texture, v_uv + vec2(0.0,-texel.y)).b - 4.0*W;
+    float k1 = u_params.x, k2 = u_params.y, k3 = u_params.z, k4 = u_params.w;
+    float nU = U + 0.15 * (U - k1*U*V + 0.08*lu);
+    float nV = V + 0.15 * (k2*U*V - k3*V*W + 0.08*lv);
+    float nW = W + 0.15 * (k4*V*W - W + 0.08*lw);
+    f_color = vec4(clamp(nU,0.0,1.0), clamp(nV,0.0,1.0), clamp(nW,0.0,1.0), 1.0);
+}
+''')
+
+_register("lv3_display",
+          "3-species LV display: U green, V red, W blue (cyclic food web)",
+          "procedural", '''
+void main() {
+    vec4 s = texture(u_texture, v_uv);
+    vec3 col = vec3(clamp(s.g,0.0,1.0), clamp(s.r,0.0,1.0), clamp(s.b,0.0,1.0));
+    f_color = vec4(col, 1.0);
+}
+''')
+
+# Bacterial colony (nodes 143, 160): nutrient N (.r), colony C (.g).
+# growth of C where N present; consumption of N by C; diffusion of N.
+# p1=growth, p2=diff_c, p3=consumption, p4=death.
+_register("colony_seed",
+          "Bacterial colony seed: nutrient full, colony disc at center (nodes 143/160 twin)",
+          "procedural", '''
+void main() {
+    float N = 1.0;
+    float d = distance(v_uv, vec2(0.5));
+    float C = d < 0.06 ? 1.0 : 0.0;
+    f_color = vec4(N, C, 0.0, 1.0);
+}
+''')
+
+_register("colony_step",
+          "Bacterial colony step: N nutrient, C colony (5-pt toroidal Laplacian)",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float N = s.r, C = s.g;
+    float ln = texture(u_texture, v_uv + vec2(-texel.x,0.0)).r
+             + texture(u_texture, v_uv + vec2(texel.x,0.0)).r
+             + texture(u_texture, v_uv + vec2(0.0,texel.y)).r
+             + texture(u_texture, v_uv + vec2(0.0,-texel.y)).r - 4.0*N;
+    float lc = texture(u_texture, v_uv + vec2(-texel.x,0.0)).g
+             + texture(u_texture, v_uv + vec2(texel.x,0.0)).g
+             + texture(u_texture, v_uv + vec2(0.0,texel.y)).g
+             + texture(u_texture, v_uv + vec2(0.0,-texel.y)).g - 4.0*C;
+    float growth = u_params.x, diff_c = u_params.y, cons = u_params.z, death = u_params.w;
+    float dC = growth * C * N - cons * C + diff_c * lc;
+    float dN = -cons * C * N + 0.05 * ln;   // nutrient consumed + diffuses in
+    float nC = clamp(C + 0.1 * dC, 0.0, 1.0);
+    float nN = clamp(N + 0.1 * dN, 0.0, 1.0);
+    f_color = vec4(nN, nC, 0.0, 1.0);
+}
+''')
+
+_register("colony_display",
+          "Bacterial colony display: colony white on dark nutrient field",
+          "procedural", '''
+void main() {
+    vec4 s = texture(u_texture, v_uv);
+    float C = clamp(s.g, 0.0, 1.0);
+    float N = clamp(s.r, 0.0, 1.0);
+    vec3 col = mix(vec3(0.05,0.07,0.10), vec3(0.9,0.95,0.85), C);
+    col *= (0.4 + 0.6*N);
+    f_color = vec4(col, 1.0);
+}
+''')
 _register("ca_display",
           "Game of Life display: alive=white, age tints toward warm",
           "procedural", '''
