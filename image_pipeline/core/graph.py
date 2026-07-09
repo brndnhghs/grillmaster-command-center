@@ -471,12 +471,18 @@ _VOLATILE_PARAM_KEYS = frozenset({
 })
 
 
-def _node_params_hash(params: dict) -> str:
-    """Stable digest of a node's defining params for the simulation cache."""
+def _node_params_hash(method_id: str, params: dict) -> str:
+    """Stable digest of a node's identity + defining params for the sim cache.
+
+    `method_id` MUST be part of the key: swapping one sim node for another on
+    the same node_id (same id, often identical default params like
+    {"n_frames": 8}) must never serve the previously cooked node's frames.
+    """
     import json as _json
     return _json.dumps(
-        {k: str(v) for k, v in sorted(params.items())
-         if k not in _VOLATILE_PARAM_KEYS},
+        {"__method_id__": method_id,
+         **{k: str(v) for k, v in sorted(params.items())
+            if k not in _VOLATILE_PARAM_KEYS}},
         sort_keys=True,
     )
 
@@ -688,7 +694,7 @@ class GraphExecutor:
             sim_cache_key = (node_id, seed)
             # Computed unconditionally: the list-result readback below uses it
             # even when the architecture heuristic said "B".
-            params_hash = _node_params_hash(node.params)
+            params_hash = _node_params_hash(node.method_id, node.params)
 
             if arch == "A":
                 # Check if simulation is already cached
@@ -1414,7 +1420,7 @@ class GraphExecutor:
                 self._sim_params_hash.pop(nid, None)
 
         for nid, node in new_map.items():
-            new_hash = _node_params_hash(node.get("params", {}))
+            new_hash = _node_params_hash(node.get("method_id", ""), node.get("params", {}))
             old_hash = self._sim_params_hash.get(nid)
             if old_hash is not None and old_hash != new_hash:
                 if self._sim_cache.pop((nid, seed), None) is not None:

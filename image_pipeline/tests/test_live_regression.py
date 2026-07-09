@@ -324,3 +324,41 @@ def test_cellular_automata_18_params_honored():
         assert render({"rule_select": 0.0}) != render({"rule_select": 0.6}), "wired override broken"
     finally:
         shutil.rmtree(out, ignore_errors=True)
+
+
+def test_sim_cache_key_includes_method_id():
+    """Swapping one Arch-A sim node for another on the SAME node_id must NOT
+    serve the previously-cooked node's frames. The sim cache key historically
+    omitted method_id, so any swap to a sim with identical default params
+    (e.g. both {"n_frames": 8}) kept showing the first node ever loaded —
+    'the exact same image no matter what node is in the graph'."""
+    from image_pipeline.core.registry import get_all as _get_all
+    from image_pipeline.core.graph import GraphExecutor as _GE
+    set_canvas(128, 96)
+    arch_a = [
+        mid for mid, m in _get_all().items()
+        if "n_frames" in (m.params or {})
+    ]
+    assert len(arch_a) >= 2, "need >=2 Arch-A sim nodes to test swap"
+    a_id, b_id = arch_a[0], arch_a[5]
+    out = _tmp()
+    try:
+        ex = _GE(out, in_memory=True, audit_to_disk=False)
+
+        def _run(mid):
+            n = [{"id": "n1", "method_id": mid,
+                  "params": {"n_frames": 8}, "render": True, "dirty": True}]
+            flat, term, errs = ex.execute(n, [], seed=42, frame=10, frames=300)
+            assert not errs, f"{mid} errored: {errs}"
+            return (flat.get(term) or {}).get("image")
+
+        img_a = _run(a_id)[..., :3]
+        img_b = _run(b_id)[..., :3]  # same node_id 'n1', different method
+        assert img_a is not None and img_b is not None
+        diff = float(((img_a - img_b) ** 2).sum())
+        assert diff > 0, (
+            f"swap {a_id}->{b_id} (same node_id) served a stale cached image "
+            f"(diff={diff}) — sim cache key must include method_id"
+        )
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
