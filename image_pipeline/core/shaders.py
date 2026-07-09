@@ -1256,8 +1256,111 @@ _register("grayscott_display",
           "Gray-Scott display: V activator → grayscale (gamma 0.5, matches _render_v)",
           "procedural", '''
 void main() {
+''')
+
+
+# ── BZ Oregonator (client-GPU sim of node 91) ───────────────────────────────
+# Two-variable reaction-diffusion with Oregonator kinetics. State packs U in
+# .r, V in .g (same channel layout as Gray-Scott). CPU node is Arch-A sim; this
+# is the live-preview twin only — server export stays authoritative.
+_register("bz_seed",
+          "BZ Oregonator initial state: U~1, V~0 with hashed seed blobs (node 91 twin)",
+          "procedural", '''
+void main() {
+    float U = 1.0;
+    float V = 0.0;
+    for (int i = 0; i < 16; i++) {
+        float fi = float(i);
+        vec2 c = vec2(hash21(vec2(fi + 0.5, 1.37)),
+                      hash21(vec2(fi + 0.5, 7.91)));
+        c = 0.05 + 0.90 * c;
+        float d = distance(v_uv, c);
+        V += 0.6 * exp(-(d * d) / 0.004);
+    }
+    V = clamp(V, 0.0, 0.9);
+    f_color = vec4(U, V, 0.0, 1.0);
+}
+''')
+
+_register("bz_step",
+          "BZ Oregonator one step (5-pt Laplacian, toroidal) — Oregonator kinetics",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float U = s.r, V = s.g;
+    vec4 sl = texture(u_texture, v_uv + vec2(-texel.x, 0.0));
+    vec4 sr = texture(u_texture, v_uv + vec2( texel.x, 0.0));
+    vec4 su = texture(u_texture, v_uv + vec2(0.0,  texel.y));
+    vec4 sd = texture(u_texture, v_uv + vec2(0.0, -texel.y));
+    float lapU = sl.r + sr.r + su.r + sd.r - 4.0 * U;
+    float lapV = sl.g + sr.g + su.g + sd.g - 4.0 * V;
+    float eps = u_params.x;   // epsilon (timescale separation)
+    float q   = u_params.y;   // q
+    float f   = u_params.z;   // f
+    float Du  = u_params.w;   // diffusion U (Dv ~ 0 for classic BZ)
+    float uvq = (U + q) > 0.0 ? (U * V * (U - q) / (U + q)) : 0.0;
+    float dU = (U - U * U - f * uvq + Du * lapU) / max(eps, 1e-3);
+    float dV = U - V + 0.0 * lapV;   // Dv ~ 0 -> V is reaction-dominated
+    float nU = U + dU * 0.02;
+    float nV = V + dV * 0.02;
+    f_color = vec4(clamp(nU, 0.0, 1.0), clamp(nV, 0.0, 1.0), 0.0, 1.0);
+}
+''')
+
+_register("bz_display",
+          "BZ display: V activator -> grayscale",
+          "procedural", '''
+void main() {
     float V = clamp(texture(u_texture, v_uv).g, 0.0, 1.0);
-    V = sqrt(V);                 // gamma stretch — mirrors CPU _render_v (fld**0.5)
     f_color = vec4(V, V, V, 1.0);
+}
+''')
+
+
+# ── Conway's Game of Life (client-GPU sim of nodes 18 / 58) ─────────────────
+# Single-channel CA: state.r = alive mask (0/1), state.g = age (frames alive).
+# 8-neighbor toroidal count; birth on 3, survival on 2/3 (classic Conway).
+_register("ca_seed",
+          "Game of Life seed: hashed random alive cells at given density (nodes 18/58 twin)",
+          "procedural", '''
+void main() {
+    float dens = clamp(u_params.x, 0.02, 0.9);
+    float h = hash21(floor(v_uv * u_resolution * 0.5));
+    float alive = h < dens ? 1.0 : 0.0;
+    f_color = vec4(alive, 0.0, 0.0, 1.0);
+}
+''')
+
+_register("ca_step",
+          "Game of Life one step: 8-neighbor toroidal count, Conway birth/survival",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    float c = texture(u_texture, v_uv).r;
+    float n = 0.0;
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            if (x == 0 && y == 0) continue;
+            n += texture(u_texture, v_uv + vec2(float(x), float(y)) * texel).r;
+        }
+    }
+    float alive = (n >= 2.5 && n <= 3.5) ? 1.0 : 0.0;  // survive on 2/3
+    alive = (c < 0.5 && n > 2.5 && n < 3.5) ? 1.0 : alive;  // birth on 3
+    float age = c > 0.5 ? texture(u_texture, v_uv).g + 1.0 : 0.0;
+    f_color = vec4(alive, age, 0.0, 1.0);
+}
+''')
+
+_register("ca_display",
+          "Game of Life display: alive=white, age tints toward warm",
+          "procedural", '''
+void main() {
+    vec4 s = texture(u_texture, v_uv);
+    float alive = s.r;
+    float age = s.g;
+    vec3 col = mix(vec3(0.02, 0.02, 0.05), vec3(0.9, 0.95, 1.0), alive);
+    col = mix(col, vec3(1.0, 0.6, 0.2), alive * clamp(age / 12.0, 0.0, 1.0));
+    f_color = vec4(col, 1.0);
 }
 ''')

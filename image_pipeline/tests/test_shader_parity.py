@@ -105,9 +105,9 @@ def test_gpu_shader_node_map_resolves():
     from image_pipeline.methods.gpu_shaders import GPU_SHADER_NODE_MAP
 
     # Stable count guard: 47 GPU shader nodes + 9 P0 CPU-twin shims
-    # (02, 04, 03, 06, 07, 08, 105, 05, 29) + 1 P1 GPU-sim (155) = 57.
-    # Bump this when a new shim/sim is added.
-    assert len(GPU_SHADER_NODE_MAP) == 57, len(GPU_SHADER_NODE_MAP)
+    # (02, 04, 03, 06, 07, 08, 105, 05, 29) + 5 P1 GPU-sims
+    # (155, 32, 18, 58, 91) = 61. Bump this when a new shim/sim is added.
+    assert len(GPU_SHADER_NODE_MAP) == 61, len(GPU_SHADER_NODE_MAP)
     for mid, entry in GPU_SHADER_NODE_MAP.items():
         if entry.get("type") == "sim":
             # P1 ping-pong sim: seed/step/display must all resolve to shaders.

@@ -210,6 +210,51 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "reset_on": ["seed", "param", "loop", "resize"],
         "param_map": {"feed": "p1", "kill": "p2", "diff_u": "p3", "diff_v": "p4"},
     },
+    # ── P1.1 textbook sims (reuse the proven ping-pong machinery) ──
+    # 32 Reaction-Diffusion: same Gray-Scott engine, parametric preset.
+    "32": {
+        "type": "sim",
+        "seed": "grayscott_seed",
+        "step": "grayscott_step",
+        "display": "grayscott_display",
+        "state_channels": 2,
+        "substeps": 8,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"feed_rate": "p1", "kill_rate": "p2",
+                      "diff_u": "p3", "diff_v": "p4"},
+    },
+    # 18 / 58 Cellular Automata (Conway's Game of Life).
+    "18": {
+        "type": "sim",
+        "seed": "ca_seed",
+        "step": "ca_step",
+        "display": "ca_display",
+        "state_channels": 2,          # .r alive mask, .g age
+        "substeps": 1,                # discrete CA: 1 step per rendered frame
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"density": "p1"},
+    },
+    "58": {
+        "type": "sim",
+        "seed": "ca_seed",
+        "step": "ca_step",
+        "display": "ca_display",
+        "state_channels": 2,
+        "substeps": 1,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"density": "p1"},
+    },
+    # 91 BZ Oregonator: 2-var RD, Oregonator kinetics.
+    "91": {
+        "type": "sim",
+        "seed": "bz_seed",
+        "step": "bz_step",
+        "display": "bz_display",
+        "state_channels": 2,          # U in .r, V in .g
+        "substeps": 20,               # small dt -> many steps/frame for live pace
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"epsilon": "p1", "q": "p2", "f": "p3", "Du": "p4"},
+    },
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SIMS)
 
