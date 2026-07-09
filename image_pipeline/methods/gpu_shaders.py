@@ -326,6 +326,33 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "reset_on": ["seed", "param", "loop", "resize"],
         "param_map": {"a": "p1", "b": "p2", "gamma": "p3", "Du": "p4"},
     },
+    # ── P1.3 wave-equation family (leapfrog u/v fields on RGBA-float ping-pong) ──
+    # 100 Wave Equation: p1=speed, p2=damping, p3=source_frequency, p4=source_amplitude.
+    "100": {
+        "type": "sim",
+        "seed": "wave_eq_seed", "step": "wave_eq_step", "display": "wave_eq_display",
+        "state_channels": 2, "substeps": 4,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"wave_speed": "p1", "damping": "p2",
+                      "source_frequency": "p3", "source_amplitude": "p4"},
+    },
+    # 144 Faraday Waves: p1=amplitude, p2=omega0, p3=damping, p4=capillary.
+    "144": {
+        "type": "sim",
+        "seed": "faraday_seed", "step": "faraday_step", "display": "faraday_display",
+        "state_channels": 2, "substeps": 4,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"amplitude": "p1", "omega0": "p2", "damping": "p3", "capillary": "p4"},
+    },
+    # 166 Parametric Oscillator Lattice (Oscillon): p1=epsilon, p2=omega0,
+    # p3=damping, p4=diffusion.
+    "166": {
+        "type": "sim",
+        "seed": "oscillon_seed", "step": "oscillon_step", "display": "oscillon_display",
+        "state_channels": 2, "substeps": 4,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"epsilon": "p1", "omega0": "p2", "damping": "p3", "diffusion": "p4"},
+    },
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SIMS)
 

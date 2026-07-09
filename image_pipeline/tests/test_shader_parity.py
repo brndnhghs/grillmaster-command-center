@@ -106,9 +106,9 @@ def test_gpu_shader_node_map_resolves():
 
     # Stable count guard: 47 GPU shader nodes + 9 P0 CPU-twin shims
     # (02, 04, 03, 06, 07, 08, 105, 05, 29) + 14 P1 GPU-sims
-    # (155, 32, 18, 58, 91, 118, 119, 120, 121, 133, 143, 160, 168, 169) = 70.
+    # (155, 32, 18, 58, 91, 118, 119, 120, 121, 133, 143, 160, 168, 169, 100, 144, 166) = 73.
     # Bump this when a new shim/sim is added.
-    assert len(GPU_SHADER_NODE_MAP) == 70, len(GPU_SHADER_NODE_MAP)
+    assert len(GPU_SHADER_NODE_MAP) == 73, len(GPU_SHADER_NODE_MAP)
     for mid, entry in GPU_SHADER_NODE_MAP.items():
         if entry.get("type") == "sim":
             # P1 ping-pong sim: seed/step/display must all resolve to shaders.

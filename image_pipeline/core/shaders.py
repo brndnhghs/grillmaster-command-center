@@ -1591,3 +1591,173 @@ void main() {
     f_color = vec4(col, 1.0);
 }
 ''')
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  P1.3 — Wave-equation family (client-GPU sim twins of nodes 100, 144, 166)
+#  All three are scalar displacement u + velocity v leapfrog field systems
+#  (plus a pump/drive phase accumulator). State packs R=u, G=v, B=pump_phase
+#  in RGBA-float ping-pong, stepped `substeps` times per rendered frame. The
+#  CPU numpy nodes stay the authoritative export (two-tier precision).
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ── Node 100: Wave Equation ── -------------------------------------------------
+# 2D wave equation u_tt = c^2 laplacian(u) via velocity-Verlet on (u, v).
+# p1=wave_speed, p2=damping, p3=source_frequency, p4=source_amplitude.
+_register("wave_eq_seed",
+          "Wave Equation seed: small hashed noise displacement, zero velocity (node 100 twin)",
+          "procedural", '''
+void main() {
+    float n = noise(v_uv * 9.0) * 0.5 + noise(v_uv * 23.0) * 0.25;
+    f_color = vec4((n - 0.375) * 0.6, 0.0, 0.0, 1.0);  // R=u (small), G=v=0, B=phase=0
+}
+''')
+
+_register("wave_eq_step",
+          "Wave Equation one step (velocity-Verlet, 5-pt toroidal Laplacian)",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float u = s.r, v = s.g, phase = s.b;
+    float lu = texture(u_texture, v_uv + vec2(-texel.x, 0.0)).r
+             + texture(u_texture, v_uv + vec2( texel.x, 0.0)).r
+             + texture(u_texture, v_uv + vec2(0.0, texel.y)).r
+             + texture(u_texture, v_uv + vec2(0.0,-texel.y)).r - 4.0 * u;
+    float c = clamp(u_params.x, 0.3, 2.5);
+    float c2 = 0.20 * c * c;             // stable ( < 0.5 )
+    float damp = clamp(u_params.y, 0.90, 1.0);
+    float freq = clamp(u_params.z, 0.2, 8.0);
+    float amp = clamp(u_params.w, 0.2, 5.0);
+
+    // Source injection: two detuned point sources (mirrors the CPU node).
+    float dphi = 6.2831853 * freq;
+    phase = mod(phase + dphi, 6.2831853);
+    float src = amp * sin(phase);
+    vec2 p0 = vec2(0.33, 0.5), p1v = vec2(0.66, 0.5);
+    float ds0 = distance(v_uv, p0), ds1 = distance(v_uv, p1v);
+    float src_inj = src * (exp(-(ds0*ds0)/0.0008) + exp(-(ds1*ds1)/0.0008) * 0.85);
+
+    float vn = (v + c2 * lu) * damp;       // dv = c2*lap ; velocity damping
+    float un = u + vn + src_inj;           // du = v
+    f_color = vec4(clamp(un, -8.0, 8.0), clamp(vn, -8.0, 8.0), phase, 1.0);
+}
+''')
+
+_register("wave_eq_display",
+          "Wave Equation display: bipolar displacement -> plasma-like palette",
+          "procedural", '''
+void main() {
+    float u = texture(u_texture, v_uv).r;
+    float t = clamp(u * 0.5 + 0.5, 0.0, 1.0);
+    vec3 col = mix(vec3(0.10, 0.10, 0.45), vec3(0.95, 0.40, 0.10), t);
+    col = mix(col, vec3(1.0, 1.0, 0.65), smoothstep(0.62, 1.0, t));
+    f_color = vec4(col, 1.0);
+}
+''')
+
+# ── Node 144: Faraday Waves ── -------------------------------------------------
+# Parametrically-driven damped wave: force = nu*lap - gamma*v - (w0^2 + A*cos p)*u + a*u^3
+# p1=amplitude A, p2=omega0, p3=damping gamma, p4=capillary nu. Alpha fixed 0.5.
+_register("faraday_seed",
+          "Faraday Waves seed: multi-scale hashed noise height field (node 144 twin)",
+          "procedural", '''
+void main() {
+    float n = noise(v_uv * 6.0) * 0.5 + noise(v_uv * 14.0) * 0.3
+            + noise(v_uv * 30.0) * 0.2;
+    f_color = vec4((n - 0.5) * 0.5, 0.0, 0.0, 1.0);  // R=h (small), G=v, B=phase
+}
+''')
+
+_register("faraday_step",
+          "Faraday Waves one step (parametric pump, 5-pt toroidal Laplacian)",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float u = s.r, v = s.g, phase = s.b;
+    float lu = texture(u_texture, v_uv + vec2(-texel.x, 0.0)).r
+             + texture(u_texture, v_uv + vec2( texel.x, 0.0)).r
+             + texture(u_texture, v_uv + vec2(0.0, texel.y)).r
+             + texture(u_texture, v_uv + vec2(0.0,-texel.y)).r - 4.0 * u;
+    float A = u_params.x, w0 = clamp(u_params.y, 0.5, 6.0);
+    float gamma = clamp(u_params.z, 0.02, 1.5);
+    float nu = clamp(u_params.w, 0.05, 4.0);
+    float dt = 0.08;
+    float Omega = 2.0 * w0;                  // drive at 2*omega0 (subharmonic)
+    phase = mod(phase + dt * Omega, 6.2831853);
+    float drive = A * cos(phase);
+    float alpha = 0.5;
+    float force = nu * lu - gamma * v - (w0 * w0 + drive) * u + alpha * u * u * u;
+    float vn = v + dt * force;
+    float un = u + dt * vn;
+    // soft clamp to avoid blowup
+    float peak = max(abs(un), 1.0);
+    if (peak > 8.0) { un *= 8.0 / peak; vn *= 8.0 / peak; }
+    f_color = vec4(un, vn, phase, 1.0);
+}
+''')
+
+_register("faraday_display",
+          "Faraday Waves display: height field sigmoid (grayscale, matches _render_faraday)",
+          "procedural", '''
+void main() {
+    float h = texture(u_texture, v_uv).r;
+    float sig = tanh(clamp(h, -4.0, 4.0) * 2.5);
+    float g = sig * 0.5 + 0.5;
+    f_color = vec4(vec3(g), 1.0);
+}
+''')
+
+# ── Node 166: Parametric Oscillator Lattice (Oscillon Resonance) ── ------------
+# d2u/dt2 = D*lap - gamma*v - w0^2(1 + eps*sin p)*u - beta*u^3
+# p1=epsilon, p2=omega0, p3=damping gamma, p4=diffusion D. Beta fixed 0.3.
+_register("oscillon_seed",
+          "Oscillon Resonance seed: multi-scale hashed noise displacement (node 166 twin)",
+          "procedural", '''
+void main() {
+    float n = noise(v_uv * 5.0) * 0.5 + noise(v_uv * 13.0) * 0.3
+            + noise(v_uv * 28.0) * 0.2;
+    f_color = vec4((n - 0.5) * 0.4, 0.0, 0.0, 1.0);  // R=u (small), G=v, B=phase
+}
+''')
+
+_register("oscillon_step",
+          "Oscillon Resonance one step (parametric Mathieu pump, 5-pt toroidal Laplacian)",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float u = s.r, v = s.g, phase = s.b;
+    float lu = texture(u_texture, v_uv + vec2(-texel.x, 0.0)).r
+             + texture(u_texture, v_uv + vec2( texel.x, 0.0)).r
+             + texture(u_texture, v_uv + vec2(0.0, texel.y)).r
+             + texture(u_texture, v_uv + vec2(0.0,-texel.y)).r - 4.0 * u;
+    float eps = clamp(u_params.x, 0.05, 1.5);
+    float w0 = clamp(u_params.y, 0.5, 6.0);
+    float gamma = clamp(u_params.z, 0.01, 1.0);
+    float D = clamp(u_params.w, 0.05, 4.0);
+    float dt = 0.1;
+    float pump = 2.0 * w0;                   // omega_p = 2*omega0
+    phase = mod(phase + dt * pump, 6.2831853);
+    float stiff = w0 * w0 * (1.0 + eps * sin(phase));
+    float beta = 0.3;
+    float force = D * lu - gamma * v - stiff * u - beta * u * u * u;
+    float vn = v + dt * force;
+    float un = u + dt * vn;
+    float peak = max(abs(un), 1.0);
+    if (peak > 8.0) { un *= 8.0 / peak; vn *= 8.0 / peak; }
+    f_color = vec4(un, vn, phase, 1.0);
+}
+''')
+
+_register("oscillon_display",
+          "Oscillon Resonance display: displacement sigmoid (grayscale, matches _render_displacement)",
+          "procedural", '''
+void main() {
+    float u = texture(u_texture, v_uv).r;
+    float sig = tanh(clamp(u, -4.0, 4.0) * 2.5);
+    float g = sig * 0.5 + 0.5;
+    f_color = vec4(vec3(g), 1.0);
+}
+''')
