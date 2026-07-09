@@ -244,16 +244,19 @@ void main() {
 _register("julia", "Julia set fractal", "procedural", '''
 void main() {
     vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);
-    vec2 c = vec2(-0.7269 + u_params.x * 0.1, 0.1889 + u_params.y * 0.1);
-    vec2 z = uv * exp(u_params.z * 2.0);
+    vec2 c = vec2(-0.7269 + (u_params.x - 0.5) * 0.4, 0.1889 + (u_params.y - 0.5) * 0.4);
+    vec2 z = uv * exp((u_params.z - 0.5) * 3.0) * 3.0;  // 0.5 -> full view (±1.5)
     int n = 0;
-    for (int i = 0; i < 100; i++) {
+    float last2 = 0.0;
+    const float MAXI = 200.0;
+    for (int i = 0; i < 200; i++) {
         z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
-        if (dot(z, z) > 4.0) break;
+        last2 = dot(z, z);
+        if (last2 > 16.0) break;
         n++;
     }
-    float t = float(n) / 100.0;
-    f_color = vec4(0.5 + 0.5 * cos(t * 6.28 + vec3(0, 2, 4)), 1.0);
+    float t = (n >= MAXI - 0.5) ? 0.0 : clamp((n + 1.0 - log(max(log(last2)*0.5, 1.0001))/log(2.0)) / MAXI, 0.0, 1.0);
+    f_color = vec4(0.5 + 0.5 * cos(t * 6.28318 + vec3(0.0, 2.0, 4.0)), 1.0);
 }
 ''')
 
@@ -266,6 +269,152 @@ void main() {
     v += sin((uv.x + uv.y) * 24.0 + t * 0.3) * 0.25;
     v = v * 0.5 + 0.5;
     f_color = vec4(0.5 + 0.5 * cos(v * 6.28 + vec3(0, 2, 4)), 1.0);
+}
+''')
+
+#  P0.3 — Escape-time / deterministic fractal CPU-twin shaders (client-GPU live
+#  preview of nodes 33/51/52/66/67/69). These are ADDITIVE: the server's CPU
+#  numpy path stays the authoritative export; these only drive the browser live
+#  preview. They reuse the prologue helpers (rot/hash21/noise/fbm) and the
+#  inferno colormap where a fire-style look suits the node's default.
+
+# ── Reusable fractal coloring + escape helper (consumed by the twins below) ──
+_FRACTAL_HELPERS = '''
+vec3 fractal_palette(float t) {
+    // Smooth cosine palette (matches the CPU 'sine' color mode's character).
+    return 0.5 + 0.5 * cos(6.28318 * (vec3(1.0, 0.75, 0.5) * t) + vec3(0.0, 2.0, 4.0));
+}
+
+// Smooth iteration count → [0,1] using the standard normalized-iteration trick.
+float smooth_iter(float n, float last_z2, float max_iter) {
+    float nu = n + 1.0 - log(max(log(last_z2) * 0.5, 1.0001)) / log(2.0);
+    return clamp(nu / max(max_iter, 1.0), 0.0, 1.0);
+}
+'''
+
+_register("mandelbrot_gpu", "Mandelbrot set (client-GPU twin of node 33)", "procedural",
+          _FRACTAL_HELPERS + '''
+void main() {
+    vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);
+    // p1 = zoom (0.5 = full view), p2 = color_shift, p3 = center_x, p4 = center_y.
+    float zoom = exp((u_params.x - 0.5) * 6.0);
+    vec2 ctr = vec2(u_params.z, u_params.w);
+    vec2 c = ctr + uv * zoom;
+    vec2 z = vec2(0.0);
+    float n = 0.0;
+    float last2 = 0.0;
+    const float MAXI = 200.0;
+    for (int i = 0; i < 200; i++) {
+        z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
+        last2 = dot(z, z);
+        if (last2 > 16.0) break;
+        n += 1.0;
+    }
+    float t = (n >= MAXI - 0.5) ? 0.0 : smooth_iter(n, last2, MAXI);
+    f_color = vec4(fractal_palette(t + u_params.y), 1.0);
+}
+''')
+
+_register("burning_ship_gpu", "Burning Ship fractal (client-GPU twin of node 51)", "procedural",
+          _FRACTAL_HELPERS + '''
+void main() {
+    vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);
+    // p1 = zoom (0.5 = full view), p2 = color_shift, p3 = center_x, p4 = center_y.
+    float zoom = exp((u_params.x - 0.5) * 6.0);
+    vec2 ctr = vec2(u_params.z, u_params.w);
+    vec2 c = ctr + uv * zoom;
+    vec2 z = vec2(0.0);
+    float n = 0.0;
+    float last2 = 0.0;
+    const float MAXI = 200.0;
+    for (int i = 0; i < 200; i++) {
+        z = vec2(abs(z.x) - 1.0, abs(z.y)) * abs(z.x) + c; // abs-squared ship map
+        z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y);
+        last2 = dot(z, z);
+        if (last2 > 16.0) break;
+        n += 1.0;
+    }
+    float t = (n >= MAXI - 0.5) ? 0.0 : smooth_iter(n, last2, MAXI);
+    f_color = vec4(fractal_palette(t + u_params.y), 1.0);
+}
+''')
+
+_register("newton_gpu", "Newton fractal basins (client-GPU twin of node 52)", "procedural",
+          _FRACTAL_HELPERS + '''
+void main() {
+    vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);
+    // p1 = color_speed, p2 = color_offset, p3 = zoom (0.5 = full view), p4 = unused.
+    vec2 z = uv * exp((u_params.z - 0.5) * 5.0) * 2.2;
+    const float MAXI = 60.0;
+    float n = 0.0;
+    for (int i = 0; i < 60; i++) {
+        // Newton for z^3 - 1: z - (z^3 - 1) / (3 z^2)
+        vec2 z2 = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y);
+        vec2 z3 = vec2(z2.x*z.x - z2.y*z.y, 2.0*z2.x*z.y);
+        vec2 f = z3 - vec2(1.0, 0.0);
+        vec2 dz = 3.0 * z2;
+        float denom = dz.x*dz.x + dz.y*dz.y + 1e-8;
+        vec2 step = vec2(f.x*dz.x + f.y*dz.y, f.y*dz.x - f.x*dz.y) / denom;
+        z -= step;
+        n += 1.0;
+        if (dot(step, step) < 1e-6) break;
+    }
+    // Color by nearest of the 3 cube roots of unity (angle quantization).
+    float ang = atan(z.y, z.x);
+    float root = floor((ang + 3.14159) / (2.0 * 3.14159 / 3.0));
+    float t = mod(root / 3.0 + u_params.y + 0.15 * n / MAXI, 1.0);
+    f_color = vec4(fractal_palette(t * (0.6 + 0.4 * u_params.x)), 1.0);
+}
+''')
+
+_register("sierpinski_gpu", "Sierpinski carpet (client-GPU twin of node 67)", "procedural",
+          _FRACTAL_HELPERS + '''
+void main() {
+    vec2 uv = v_uv;
+    // p1 = depth (subdivisions), p2 = color_shift, p3/p4 unused (reserved).
+    float depth = clamp(floor(u_params.x * 7.0) + 1.0, 1.0, 7.0);
+    // Tiling coordinates in [0,1] space.
+    vec2 p = uv;
+    float hole = 0.0;
+    for (float i = 0.0; i < 7.0; i += 1.0) {
+        if (i >= depth) break;
+        // Carpet rule: remove central third at each scale.
+        vec2 cell = floor(p * 3.0);
+        if (cell.x == 1.0 && cell.y == 1.0) { hole = 1.0; break; }
+        p = fract(p * 3.0);
+    }
+    float t = fract(0.15 * (depth) + u_params.y + 0.3 * uv.x + 0.2 * uv.y);
+    vec3 col = (hole > 0.5) ? vec3(0.04) : fractal_palette(t);
+    f_color = vec4(col, 1.0);
+}
+''')
+
+_register("lyapunov_gpu", "Lyapunov exponent map (client-GPU twin of node 69)", "procedural",
+          _FRACTAL_HELPERS + '''
+void main() {
+    vec2 uv = v_uv;
+    // p1 = r_min, p2 = r_max, p3 = color_mode(0=lyapunov), p4 = color_shift.
+    vec2 rmin = vec2(u_params.x, u_params.x);
+    vec2 rmax = vec2(u_params.y, u_params.y);
+    vec2 r = mix(rmin, rmax, uv);
+    // Logistic-map A/B perturbation (ABAB...), 8 chars.
+    float lambda = 0.0;
+    float x = 0.5;
+    const float WARM = 30.0;
+    const float MEAS = 80.0;
+    for (float i = 0.0; i < (WARM + MEAS); i += 1.0) {
+        int k = int(mod(i, 8.0));
+        float rk = (k == 0 || k == 2 || k == 4 || k == 6) ? r.x : r.y;
+        float deriv = rk * (1.0 - 2.0 * x);
+        x = rk * x * (1.0 - x);
+        if (i >= WARM) {
+            lambda += log(abs(deriv) + 1e-8);
+        }
+    }
+    lambda = lambda / MEAS;
+    float t = clamp(0.5 + 0.5 * lambda / 2.0, 0.0, 1.0);
+    t = (u_params.z > 0.5) ? fract(t + u_params.w) : t;
+    f_color = vec4(fractal_palette(t), 1.0);
 }
 ''')
 

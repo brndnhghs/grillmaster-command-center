@@ -188,6 +188,28 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
            "param_map": {"scale": "p1", "octaves": "p2"}},
     "29": {"shader": "voronoi", "type": "procedural",
            "param_map": {"n_cells": "p1", "jitter": "p2"}},
+    # ── P0.3 escape-time / deterministic fractals ──
+    # 33 Fractal Explorer (mandelbrot default): zoom via p1, color_shift p2,
+    # center p3/p4. Defaults (0.5) map to full view at center (-0.5, 0).
+    "33": {"shader": "mandelbrot_gpu", "type": "procedural",
+           "param_map": {"zoom": "p1", "color_shift": "p2",
+                         "center_x": "p3", "center_y": "p4"}},
+    # 51 Burning Ship: zoom p1, color_offset p2.
+    "51": {"shader": "burning_ship_gpu", "type": "procedural",
+           "param_map": {"zoom": "p1", "color_offset": "p2"}},
+    # 52 Newton: color_speed p1, color_offset p2, zoom p3.
+    "52": {"shader": "newton_gpu", "type": "procedural",
+           "param_map": {"color_speed": "p1", "color_offset": "p2", "zoom": "p3"}},
+    # 66 Julia Set: zoom p3 (default 0.5 = full view). c stays at the shader's
+    # fixed famous Julia constant; constant is a string param and not mapped.
+    "66": {"shader": "julia", "type": "procedural",
+           "param_map": {"zoom": "p3"}},
+    # 67 Sierpinski Carpet: depth p1, color_shift p2.
+    "67": {"shader": "sierpinski_gpu", "type": "procedural",
+           "param_map": {"depth": "p1", "color_shift": "p2"}},
+    # 69 Lyapunov: r_min p1, r_max p2. color_mode/color_shift via p3/p4 if added.
+    "69": {"shader": "lyapunov_gpu", "type": "procedural",
+           "param_map": {"r_min": "p1", "r_max": "p2"}},
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SHIMS)
 
