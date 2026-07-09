@@ -1459,15 +1459,29 @@ def live_graph_sim(req: GraphRequest):
 
         cancel = threading.Event()
         # Graph source of truth: the shared doc. The live loop reads it every
-        # frame, so a clear (user or agent) stops the render. Fall back to the
-        # request payload only if the doc is empty.
+        # frame, so a clear (user or agent) stops the render. The client POSTs
+        # the current graph in the request body on every start/swap (it does
+        # not PUT the doc itself), so the body is authoritative for client
+        # edits — persist it into the doc so the loop re-reads the latest
+        # graph each frame. A cleared (empty) doc still breaks the loop.
         gid = req.graph_id if getattr(req, "graph_id", None) else "active"
-        with _graph_store_lock:
-            _gdoc = _load_graph_doc(gid)
-            if _gdoc["nodes"]:
-                nodes, edges = _gdoc["nodes"], _gdoc["edges"]
-            else:
-                nodes, edges = req.nodes, req.edges
+        if req.nodes:
+            # Client is driving: seed/overwrite the shared doc with the body
+            # graph so the loop has a non-empty, up-to-date source of truth.
+            with _graph_store_lock:
+                doc = _graph_default()
+                doc["id"] = gid
+                doc["nodes"] = req.nodes
+                doc["edges"] = req.edges
+                if req.width and req.height:
+                    doc["canvas"] = {"w": req.width, "h": req.height}
+                _touch_graph_meta(doc, "live-start")
+                _persist_graph_doc(doc)
+            nodes, edges = req.nodes, req.edges
+        else:
+            with _graph_store_lock:
+                _gdoc = _load_graph_doc(gid)
+            nodes, edges = _gdoc["nodes"], _gdoc["edges"]
         seed = req.seed
         width, height = req.width, req.height
 

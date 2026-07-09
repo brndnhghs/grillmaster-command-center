@@ -171,6 +171,23 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     "02": {"shader": "quasicrystal_gpu", "type": "procedural",
            "param_map": {"frequency": "p1", "amplitude": "p2",
                          "rotation": "p3", "waves": "p4"}},
+    # ── P0.1 patterns ──
+    "03": {"shader": "domain_warp", "type": "procedural",
+           "param_map": {"frequency": "p1", "rotation": "p3"}},
+    "06": {"shader": "wallpaper_gpu", "type": "procedural",
+           "param_map": {"scale_variation": "p1", "color_variation": "p2",
+                         "rotation_noise": "p3"}},
+    "07": {"shader": "truchet", "type": "procedural",
+           "param_map": {"tile_size": "p1", "line_width": "p2"}},
+    "08": {"shader": "phyllotaxis_gpu", "type": "procedural",
+           "param_map": {"points": "p1", "angle": "p2", "radius_scale": "p3"}},
+    "105": {"shader": "morph_grid_gpu", "type": "procedural",
+            "param_map": {"warp_strength": "p1", "line_width": "p2"}},
+    # ── P0.2 noise/cellular ──
+    "05": {"shader": "voronoise", "type": "procedural",
+           "param_map": {"scale": "p1", "octaves": "p2"}},
+    "29": {"shader": "voronoi", "type": "procedural",
+           "param_map": {"n_cells": "p1", "jitter": "p2"}},
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SHIMS)
 

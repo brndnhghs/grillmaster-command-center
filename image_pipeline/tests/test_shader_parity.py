@@ -93,15 +93,30 @@ def test_shader_sources_endpoint():
 
 def test_gpu_shader_node_map_resolves():
     """Every GPU shader node id maps to a shader that exists in the parity
-    bundle, so the browser can render that node client-side for live preview."""
+    bundle, so the browser can render that node client-side for live preview.
+
+    Three entry kinds co-exist in one map:
+      • GPU shader nodes (173-219) and P0 CPU-twin shims → top-level `shader`
+        + `type` in {procedural, filter}
+      • P1 GPU-sim nodes → `type: "sim"` with seed/step/display shader names
+        (no single top-level `shader`).
+    """
     import image_pipeline.methods  # noqa: F401
     from image_pipeline.methods.gpu_shaders import GPU_SHADER_NODE_MAP
 
-    assert len(GPU_SHADER_NODE_MAP) == 47
+    # Stable count guard: 47 GPU shader nodes + 9 P0 CPU-twin shims
+    # (02, 04, 03, 06, 07, 08, 105, 05, 29) + 1 P1 GPU-sim (155) = 57.
+    # Bump this when a new shim/sim is added.
+    assert len(GPU_SHADER_NODE_MAP) == 57, len(GPU_SHADER_NODE_MAP)
     for mid, entry in GPU_SHADER_NODE_MAP.items():
+        if entry.get("type") == "sim":
+            # P1 ping-pong sim: seed/step/display must all resolve to shaders.
+            for k in ("seed", "step", "display"):
+                assert entry[k] in S.SHADERS, f"{mid} sim -> unknown {k} {entry.get(k)}"
+                assert S.build_fragment(entry[k], "webgl2").startswith("#version 300 es")
+            continue
         assert entry["type"] in ("procedural", "filter")
         assert entry["shader"] in S.SHADERS, f"{mid} -> unknown shader {entry['shader']}"
-        # The client renders it from this WebGL2 fragment.
         assert S.build_fragment(entry["shader"], "webgl2").startswith("#version 300 es")
 
 
@@ -114,5 +129,10 @@ def test_endpoint_exposes_node_map():
     assert "node_map" in data
     assert data["node_map"]["175"] == {"shader": "plasma", "type": "procedural"}
     # Every mapped shader is present in the shaders bundle.
-    for entry in data["node_map"].values():
-        assert entry["shader"] in data["shaders"]
+    for mid, entry in data["node_map"].items():
+        if entry.get("type") == "sim":
+            # P1 sim entries reference seed/step/display shaders, not one shader.
+            for k in ("seed", "step", "display"):
+                assert entry[k] in data["shaders"], f"{mid} {k} missing"
+            continue
+        assert entry["shader"] in data["shaders"], f"{mid} shader missing"

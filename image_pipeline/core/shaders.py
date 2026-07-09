@@ -1144,6 +1144,65 @@ void main() {
 # The CPU node (methods/simulations/gray_scott.py, id 155) stays the
 # authoritative export — nothing here is rendered server-side.
 
+_register("wallpaper_gpu",
+            "Wallpaper-group tiling (client-GPU twin of node 06)",
+            "procedural", _INFERNO + """
+void main() {
+    // u_params.x = tile size (log-scaled), .y = color variation, .z = rotation noise
+    float ts = mix(8.0, 64.0, clamp(u_params.x, 0.0, 1.0));
+    float cv = u_params.y;
+    vec2 st = v_uv * u_resolution / ts;
+    vec2 g = floor(st), f = fract(st);
+    // per-tile slight rotation + hue offset (echoes rotation_noise/color_variation)
+    float r = (hash21(g) - 0.5) * 6.2831853 * cv;
+    float hue = hash21(g + 3.17) * cv;
+    vec2 p = (f - 0.5) * rot(r);
+    float d = abs(p.x) + abs(p.y);            // diamond motif
+    vec3 col = 0.5 + 0.5 * cos(6.2831853 * (hue + vec3(0.0, 0.33, 0.67)));
+    col *= smoothstep(0.5, 0.45, d);
+    f_color = vec4(inferno(clamp(length(col) * 0.6 + d * 0.4, 0.0, 1.0)), 1.0);
+}
+""")
+
+_register("morph_grid_gpu",
+            "Morphing grid warp (client-GPU twin of node 105)",
+            "procedural", _INFERNO + """
+void main() {
+    // u_params.x = warp strength, .y = line width, .z = palette mix
+    float ws = u_params.x;
+    float lw = clamp(u_params.y, 0.02, 1.0);
+    vec2 p = v_uv * 14.0;
+    vec2 w = vec2(fbm(p + u_time * 0.1), fbm(p.yx - u_time * 0.1));
+    p += (w - 0.5) * ws * 6.0;
+    vec2 g = abs(fract(p) - 0.5);
+    float line = smoothstep(lw, lw * 0.5, min(g.x, g.y));
+    vec3 col = 0.5 + 0.5 * cos(6.2831853 * (u_params.z + vec3(0.0, 0.33, 0.67)) + w.x * 4.0);
+    f_color = vec4(mix(vec3(line), col, line), 1.0);
+}
+""")
+
+_register("phyllotaxis_gpu",
+            "Phyllotaxis spiral field (client-GPU twin of node 08)",
+            "procedural", _INFERNO + """
+void main() {
+    // u_params.x = point density, .y = angle goldenness, .z = radius scale
+    float dens = mix(0.1, 1.0, clamp(u_params.x, 0.0, 1.0));
+    float phi = 2.39996323 + u_params.y * 1.5;        // ~golden angle + jitter
+    vec2 c = (v_uv - 0.5) * u_resolution;
+    float rmax = 0.5 * min(u_resolution.x, u_resolution.y);
+    float acc = 0.0;
+    for (int i = 0; i < 220; i++) {
+        float fi = float(i) * dens * 12.0;
+        float a = fi * phi;
+        float rad = sqrt(fi) * (u_params.z * 0.5 + 0.05) * rmax * 0.06;
+        vec2 pos = rad * vec2(cos(a), sin(a));
+        acc += smoothstep(3.0, 0.0, length(c - pos));
+    }
+    f_color = vec4(inferno(clamp(acc * 0.5, 0.0, 1.0)), 1.0);
+}
+""")
+
+
 _register("grayscott_seed",
           "Gray-Scott initial state: U=1, V=hashed seed blobs (client-GPU sim of node 155)",
           "procedural", '''
