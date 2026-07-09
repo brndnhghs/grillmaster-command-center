@@ -235,7 +235,32 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
             "param_map": {"dot_spacing": "p1", "dot_size": "p2"}},
     # 74 Swirl Displacement → new twin. strength p1 (0.5 = none).
     "74": {"shader": "swirl_gpu", "type": "filter",
-            "param_map": {"strength": "p1"}},
+           "param_map": {"strength": "p1"}},
+    # ── P0.5 LUT / color ──
+    # 11 Gradient: cx/cy are already in [0,1] so they map cleanly onto the
+    # twin's center params (0.5 = middle). `direction` (0-360°) and
+    # `gradient_type` (choice) do NOT fit the 0.5-neutral u_params convention,
+    # so they are left unmapped — the preview shows a default linear gradient
+    # at the wired center. The CPU node stays authoritative for exact geometry.
+    "11": {"shader": "gradient_gpu", "type": "procedural",
+           "param_map": {"cx": "p2", "cy": "p3"}},
+    # 10 Color Palette: only `hue_offset` (0-1), `saturation` and `value`
+    # (-1 = auto, and the twin treats <=0 as auto) map cleanly. `n_colors` is
+    # on a 2-32 count scale that doesn't match the twin's 0-1 ramp, so it is
+    # left unmapped (preview uses the twin's default ~17 swatches).
+    "10": {"shader": "palette_gpu", "type": "procedural",
+           "param_map": {"hue_offset": "p3", "saturation": "p2", "value": "p4"}},
+    # 39 Posterize → existing GPU twin (shader_posterize_gpu, P0.4). `n_colors`
+    # (2-32 forward) is inverted vs the twin's levels = 16 - p1*14 convention,
+    # so it is left unmapped (preview renders the twin's default ~9 levels).
+    # `poster_method` is a choice and not mapped (pitfall #14).
+    "39": {"shader": "shader_posterize_gpu", "type": "filter",
+           "param_map": {}},
+    # 77 False Color IR: `strength` (0-1) maps cleanly onto the twin's blend
+    # factor. `color_scheme` is a choice string (pitfall #14) so it is left
+    # unmapped; the preview defaults to the thermal ramp.
+    "77": {"shader": "false_color_gpu", "type": "filter",
+           "param_map": {"strength": "p1"}},
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SHIMS)
 
