@@ -197,6 +197,19 @@ function hexToColor(hex, fallback) {
 }
 const DEG = Math.PI / 180;
 
+// Gray-Scott named regimes — mirror of the server REGIMES table
+// (methods/simulations/gray_scott.py). When a sim node's anim_mode names a
+// regime, it overrides feed/kill so the live GPU preview matches the CPU node's
+// regime behavior.
+const GS_REGIMES = {
+  spots:   { F: 0.035, k: 0.065 },
+  stripes: { F: 0.030, k: 0.057 },
+  pulses:  { F: 0.025, k: 0.050 },
+  coral:   { F: 0.040, k: 0.065 },
+  worms:   { F: 0.045, k: 0.060 },
+  mitosis: { F: 0.038, k: 0.062 },
+};
+
 // ── GLSL prologue for client-side filter passes (GLSL ES 3.00) ──────────────
 // Provides the same names the server prologue does: v_uv, u_resolution, u_time,
 // u_params, u_texture, f_color, plus rot/hash21/noise/fbm. `glslVersion:GLSL3`
@@ -271,6 +284,11 @@ class ClientExecutor {
     this._gpuMats = new Map();
     // Temp RT for the two-pass convention bake (flip Y + swap R/B to match server).
     this._convRT = null;
+    // P1 — per-node GPU sim state: id -> { a, b (RGBA-float ping-pong RTs), sig,
+    // seeded, lastFrame }. Owns the reaction-diffusion state across frames.
+    this._sims = new Map();
+    // EXT_color_buffer_float availability (needed to render into float RTs); lazy.
+    this._floatOK = null;
     // Per-node p5 instances: id -> { code, inst, container, globals, tex, errBox }.
     this._p5 = new Map();
     // Per-node error strings (p5 compile/runtime, GLSL, …) surfaced to the UI.
@@ -515,6 +533,109 @@ void main(){ f_color = texture(u_texture, vec2(v_uv.x, 1.0 - v_uv.y)).bgra; }`,
     this.renderer.setRenderTarget(targetRT);
     this.renderer.clear();
     this.renderer.render(this._quadScene, this._quadCam);
+    this.renderer.setRenderTarget(null);
+
+    const prog = this.renderer.info.programs?.find(p => p.diagnostics?.programLog);
+    if (prog?.diagnostics?.programLog) this._nodeErrors[node.id] = prog.diagnostics.programLog;
+  }
+
+  // ── GPU simulation node (P1 — WebGL2 ping-pong float state) ─────────────────
+  // Runs an Arch-A sim node's LIVE preview entirely on the GPU: a persistent
+  // {a,b} pair of RGBA-float render targets holds the state (e.g. Gray-Scott U,V
+  // in .r,.g), stepped `substeps` times per rendered frame, then a display shader
+  // maps state → RGB. The CPU numpy node stays the authoritative export.
+  _floatRTOK() {
+    if (this._floatOK === null) {
+      const gl = this.renderer.getContext();
+      this._floatOK = !!(gl && gl.getExtension && gl.getExtension('EXT_color_buffer_float'));
+    }
+    return this._floatOK;
+  }
+
+  _simPair(id) {
+    const mk = () => new THREE.WebGLRenderTarget(this.width, this.height, {
+      minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter,
+      wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping,  // toroidal (matches CPU np.roll)
+      type: THREE.FloatType, format: THREE.RGBAFormat, depthBuffer: false,
+    });
+    let p = this._sims.get(id);
+    if (!p) { p = { a: mk(), b: mk(), sig: null, seeded: false, lastFrame: null }; this._sims.set(id, p); }
+    else if (p.a.width !== this.width || p.a.height !== this.height) {
+      p.a.setSize(this.width, this.height); p.b.setSize(this.width, this.height);
+      p.seeded = false;  // resize → reseed
+    }
+    return p;
+  }
+
+  // Signature whose change forces a reseed (param / seed / resize triggers).
+  _simSig(entry, params) {
+    const pm = entry.param_map || {};
+    const vals = Object.keys(pm).sort().map(k => params[k]);
+    return JSON.stringify([vals, String(params.anim_mode ?? ''),
+      params.seed ?? params._seed ?? 0, this.width, this.height]);
+  }
+
+  renderGpuSim(node, params, time, frame, targetRT) {
+    const entry = _shaderBundle && _shaderBundle.node_map[node.method_id];
+    if (!entry) { this._clearRT(targetRT); return; }
+    if (!this._floatRTOK()) {
+      this._nodeErrors[node.id] = 'GPU sim needs EXT_color_buffer_float (float render targets)';
+      this._clearRT(targetRT); return;
+    }
+    const seedInfo = _shaderBundle.shaders[entry.seed];
+    const stepInfo = _shaderBundle.shaders[entry.step];
+    const dispInfo = _shaderBundle.shaders[entry.display];
+    if (!seedInfo || !stepInfo || !dispInfo) { this._clearRT(targetRT); return; }
+
+    const pair = this._simPair(node.id);
+    const sig = this._simSig(entry, params);
+    const loopWrap = pair.lastFrame !== null && frame < pair.lastFrame;  // frame went back → loop/scrub
+    const resetLoop = (entry.reset_on || []).includes('loop') && loopWrap;
+    if (!pair.seeded || pair.sig !== sig || resetLoop) {
+      const smat = this._gpuMaterial(seedInfo.fragment);
+      smat.uniforms.u_resolution.value.set(this.width, this.height);
+      smat.uniforms.u_time.value = 0;
+      this._quadMesh.material = smat;
+      this.renderer.setRenderTarget(pair.a);
+      this.renderer.clear(); this.renderer.render(this._quadScene, this._quadCam);
+      this.renderer.setRenderTarget(null);
+      pair.seeded = true; pair.sig = sig;
+    }
+    pair.lastFrame = frame;
+
+    // Effective feed/kill from a named regime (mirrors the server REGIMES override).
+    const eff = { ...params };
+    const rg = GS_REGIMES[String(params.anim_mode ?? '')];
+    if (rg) { eff.feed = rg.F; eff.kill = rg.k; }
+    // u_params slots from param_map (feed,kill,diff_u,diff_v).
+    const slot = { p1: 0, p2: 1, p3: 2, p4: 3 };
+    const up = [0.035, 0.065, 0.16, 0.08];  // Gray-Scott defaults
+    for (const key in (entry.param_map || {})) {
+      const s = slot[entry.param_map[key]];
+      if (s !== undefined && eff[key] !== undefined) up[s] = num(eff[key], up[s]);
+    }
+
+    // STEP: substeps ping-pong iterations (a → b, then swap).
+    const stepMat = this._gpuMaterial(stepInfo.fragment);
+    stepMat.uniforms.u_resolution.value.set(this.width, this.height);
+    stepMat.uniforms.u_params.value.set(up[0], up[1], up[2], up[3]);
+    const sub = Math.max(1, (entry.substeps | 0) || 1);
+    for (let i = 0; i < sub; i++) {
+      stepMat.uniforms.u_texture.value = pair.a.texture;
+      this._quadMesh.material = stepMat;
+      this.renderer.setRenderTarget(pair.b);
+      this.renderer.clear(); this.renderer.render(this._quadScene, this._quadCam);
+      this.renderer.setRenderTarget(null);
+      const t = pair.a; pair.a = pair.b; pair.b = t;
+    }
+
+    // DISPLAY: current state → grayscale → node RT.
+    const dmat = this._gpuMaterial(dispInfo.fragment);
+    dmat.uniforms.u_resolution.value.set(this.width, this.height);
+    dmat.uniforms.u_texture.value = pair.a.texture;
+    this._quadMesh.material = dmat;
+    this.renderer.setRenderTarget(targetRT);
+    this.renderer.clear(); this.renderer.render(this._quadScene, this._quadCam);
     this.renderer.setRenderTarget(null);
 
     const prog = this.renderer.info.programs?.find(p => p.diagnostics?.programLog);
@@ -968,7 +1089,9 @@ void main(){ f_color = texture(u_texture, vec2(v_uv.x, 1.0 - v_uv.y)).bgra; }`,
           ? this._readRTToInputCanvas(src.rt) : null;
         this.renderP5(node, params, time, frame, inputCanvas, rt);
       } else if (_isGpuShaderNode(mid)) {
-        this.renderGpuShader(node, params, time, imgTex(node, ['image_in', 'image']), rt);
+        const entry = _shaderBundle.node_map[mid];
+        if (entry && entry.type === 'sim') this.renderGpuSim(node, params, time, frame, rt);
+        else this.renderGpuShader(node, params, time, imgTex(node, ['image_in', 'image']), rt);
       } else {
         const t = imgTex(node, ['image_in', 'image']) || this._blackTex;
         this._blitMat.uniforms.u_texture.value = t;
@@ -995,6 +1118,7 @@ void main(){ f_color = texture(u_texture, vec2(v_uv.x, 1.0 - v_uv.y)).bgra; }`,
     const live = new Set(nodes.map(n => n.id));
     if (this._p5.size) for (const id of [...this._p5.keys()]) if (!live.has(id)) this._destroyP5(id);
     if (this._res3d.size) for (const id of [...this._res3d.keys()]) if (!live.has(id)) this._destroy3d(id);
+    if (this._sims.size) for (const id of [...this._sims.keys()]) if (!live.has(id)) this._destroySim(id);
     return termId;
   }
 
@@ -1003,9 +1127,15 @@ void main(){ f_color = texture(u_texture, vec2(v_uv.x, 1.0 - v_uv.y)).bgra; }`,
     return await new Promise(res => this.canvas.toBlob(res, 'image/png'));
   }
 
+  _destroySim(id) {
+    const p = this._sims.get(id);
+    if (p) { p.a.dispose(); p.b.dispose(); this._sims.delete(id); }
+  }
+
   dispose() {
     for (const id of [...this._p5.keys()]) this._destroyP5(id);
     for (const id of [...this._res3d.keys()]) this._destroy3d(id);
+    for (const id of [...this._sims.keys()]) this._destroySim(id);
     for (const rt of this._rts.values()) rt.dispose();
     this._rts.clear();
     for (const m of this._filterMats.values()) m.dispose();

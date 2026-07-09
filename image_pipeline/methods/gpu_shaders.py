@@ -175,6 +175,28 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SHIMS)
 
 
+# ── P1 client-GPU sim shims for EXISTING Arch-A simulation nodes ─────────────
+# A reaction-diffusion node whose LIVE preview runs on a WebGL2 ping-pong pair of
+# RGBA-float state textures (client3d.js owns the {a,b} pair + substep loop). The
+# entry names the seed/step/display GLSL (core/shaders.py), the state channel
+# count, substeps per rendered frame, and which events force a reseed. As with
+# the P0 shims the CPU numpy path (methods/simulations/gray_scott.py) stays the
+# authoritative export — two-tier precision, nothing here is rendered server-side.
+CLIENT_GPU_SIMS: dict[str, dict] = {
+    "155": {
+        "type": "sim",
+        "seed": "grayscott_seed",
+        "step": "grayscott_step",
+        "display": "grayscott_display",
+        "state_channels": 2,          # U in .r, V in .g
+        "substeps": 8,                # Euler steps per rendered frame (live pace)
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"feed": "p1", "kill": "p2", "diff_u": "p3", "diff_v": "p4"},
+    },
+}
+GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SIMS)
+
+
 # ── Legacy combined method #82 (kept for backward compatibility) ──────
 
 SHADER_NAMES = sorted([k for k, v in SHADERS.items() if v["type"] == "procedural"])

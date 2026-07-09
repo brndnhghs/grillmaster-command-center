@@ -1133,3 +1133,72 @@ void main() {
     f_color = vec4(inferno(clamp(result, 0.0, 1.0)), 1.0);
 }
 """)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  P1 — GPU reaction-diffusion sim shaders (client ping-pong; server untouched)
+# ═══════════════════════════════════════════════════════════════════════════
+# Three-shader set for a WebGL2 ping-pong float-state simulation. The client
+# (client3d.js) owns the {a,b} RGBA-float state pair and the substep loop; these
+# GLSL bodies define seed → step → display. State packs U in .r, V in .g.
+# The CPU node (methods/simulations/gray_scott.py, id 155) stays the
+# authoritative export — nothing here is rendered server-side.
+
+_register("grayscott_seed",
+          "Gray-Scott initial state: U=1, V=hashed seed blobs (client-GPU sim of node 155)",
+          "procedural", '''
+void main() {
+    // U (substrate) starts ~1 everywhere; V (activator) as a few blobs, echoing
+    // the CPU node's n_seeds gaussian patches (positions from a stable hash — the
+    // GPU twin cannot reproduce numpy's PCG64 layout; it just needs live seeds).
+    float U = 1.0;
+    float V = 0.0;
+    for (int i = 0; i < 20; i++) {
+        float fi = float(i);
+        vec2 c = vec2(hash21(vec2(fi + 0.5, 1.37)),
+                      hash21(vec2(fi + 0.5, 7.91)));
+        c = 0.05 + 0.90 * c;                 // keep blobs off the very edge
+        float d = distance(v_uv, c);
+        V += 0.5 * exp(-(d * d) / 0.0016);
+    }
+    V = clamp(V, 0.0, 1.0);
+    f_color = vec4(U, V, 0.0, 1.0);
+}
+''')
+
+_register("grayscott_step",
+          "Gray-Scott one Euler step (5-point Laplacian, toroidal) — reads/writes RG state",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float U = s.r, V = s.g;
+    // 5-point Laplacian; RepeatWrapping on the state texture makes it toroidal,
+    // matching the CPU np.roll boundaries.
+    vec4 sl = texture(u_texture, v_uv + vec2(-texel.x, 0.0));
+    vec4 sr = texture(u_texture, v_uv + vec2( texel.x, 0.0));
+    vec4 su = texture(u_texture, v_uv + vec2(0.0,  texel.y));
+    vec4 sd = texture(u_texture, v_uv + vec2(0.0, -texel.y));
+    float lapU = sl.r + sr.r + su.r + sd.r - 4.0 * U;
+    float lapV = sl.g + sr.g + su.g + sd.g - 4.0 * V;
+    float F  = u_params.x;   // feed
+    float k  = u_params.y;   // kill
+    float Du = u_params.z;   // diffusion U
+    float Dv = u_params.w;   // diffusion V
+    float uvv = U * V * V;
+    const float dt = 1.0;    // CPU default timestep; substeps control pace
+    float nU = U + dt * (Du * lapU - uvv + F * (1.0 - U));
+    float nV = V + dt * (Dv * lapV + uvv - (F + k) * V);
+    f_color = vec4(clamp(nU, 0.0, 1.0), clamp(nV, 0.0, 1.0), 0.0, 1.0);
+}
+''')
+
+_register("grayscott_display",
+          "Gray-Scott display: V activator → grayscale (gamma 0.5, matches _render_v)",
+          "procedural", '''
+void main() {
+    float V = clamp(texture(u_texture, v_uv).g, 0.0, 1.0);
+    V = sqrt(V);                 // gamma stretch — mirrors CPU _render_v (fld**0.5)
+    f_color = vec4(V, V, V, 1.0);
+}
+''')
