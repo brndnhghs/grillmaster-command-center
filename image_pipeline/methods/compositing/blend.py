@@ -38,16 +38,27 @@ def method_image_blend(out_dir: Path, seed: int, params=None):
         params = {}
     mode = params.get("mode", "normal")
     opacity = float(params.get("opacity", 0.5))
-    image_a_path = params.get("image_a_path", "")
-    image_b_path = params.get("image_b_path", "")
 
-    if not image_a_path or not image_b_path:
+    def _get_image(port: str) -> np.ndarray | None:
+        # In-memory wire (executor injects the ndarray directly — no disk
+        # round-trip); temp-file path is the legacy/audit-mode fallback.
+        arr = params.get(port)
+        if isinstance(arr, np.ndarray):
+            if arr.ndim == 2:
+                arr = np.stack([arr] * 3, axis=-1)
+            return arr.astype(np.float32)
+        path = params.get(f"{port}_path", "")
+        if not path:
+            return None
+        return np.array(Image.open(path).convert("RGB"), dtype=np.float32) / 255.0
+
+    a = _get_image("image_a")
+    b = _get_image("image_b")
+
+    if a is None or b is None:
         blank = np.zeros((H, W, 3), dtype=np.float32)
         save(blank, mn(137, "Image Blend"), out_dir)
         return
-
-    a = np.array(Image.open(image_a_path).convert("RGB"), dtype=np.float32) / 255.0
-    b = np.array(Image.open(image_b_path).convert("RGB"), dtype=np.float32) / 255.0
 
     if a.shape != b.shape:
         b_pil = Image.fromarray((b * 255).astype(np.uint8)).resize((W, H), Image.LANCZOS)

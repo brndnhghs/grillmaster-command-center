@@ -33,7 +33,7 @@ from pydantic import BaseModel
 from image_pipeline.core import registry
 from image_pipeline.core.registry import unregister as _unregister_method, get_ids_by_module
 from image_pipeline.core.animation import JobCancelled
-from image_pipeline.core.graph import GraphExecutor, GraphError
+from image_pipeline.core.graph import GraphExecutor, GraphError, _THREEJS_3D_NODE_DEFS, clear_node_defs_cache
 from image_pipeline.core.port_types import all_port_types
 from image_pipeline.core import cache as _cache
 from image_pipeline.core.quality import check as _quality_check
@@ -113,8 +113,8 @@ def _persist_graph_doc(doc: dict) -> None:
     _graph_docs[gid] = doc
     try:
         _graph_path(gid).write_text(json.dumps(doc, indent=2))
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[graph-store] write error for '{gid}': {exc}")
 
 
 def _touch_graph_meta(doc: dict, by: str | None) -> None:
@@ -216,6 +216,49 @@ def _broadcast_ws_frame(jpeg_bytes: bytes, ws_meta: dict | None = None):
             _WS_CLIENTS.discard(ws)
 
 
+def _encode_jpeg(arr, *, quality: int, max_width: int = 0, halve: bool = False) -> bytes:
+    """Encode an image (float [0,1] / uint8 ndarray, or PIL) to JPEG bytes.
+
+    Uses cv2 (libjpeg-turbo; faster encode and a much cheaper INTER_AREA
+    downscale than PIL's LANCZOS) and falls back to PIL if cv2 is missing.
+    """
+    import numpy as np
+    if not isinstance(arr, np.ndarray):
+        arr = np.asarray(arr.convert("RGB"))
+    if arr.dtype != np.uint8:
+        arr = (arr.clip(0, 1) * 255).astype(np.uint8)
+    if arr.ndim == 2:
+        arr = np.stack([arr] * 3, axis=-1)
+    arr = arr[:, :, :3]
+    h, w = arr.shape[:2]
+    try:
+        import cv2
+        if halve:
+            arr = cv2.resize(arr, (max(1, w // 2), max(1, h // 2)),
+                             interpolation=cv2.INTER_AREA)
+        elif max_width and w > max_width:
+            arr = cv2.resize(arr, (max_width, int(h * max_width / w)),
+                             interpolation=cv2.INTER_AREA)
+        ok, enc = cv2.imencode(
+            ".jpg", cv2.cvtColor(arr, cv2.COLOR_RGB2BGR),
+            [int(cv2.IMWRITE_JPEG_QUALITY), quality],
+        )
+        if ok:
+            return enc.tobytes()
+    except Exception:
+        pass
+    # PIL fallback
+    from PIL import Image
+    img = Image.fromarray(arr)
+    if halve:
+        img = img.resize((max(1, w // 2), max(1, h // 2)), Image.BILINEAR)
+    elif max_width and w > max_width:
+        img = img.resize((max_width, int(h * max_width / w)), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=quality)
+    return buf.getvalue()
+
+
 def _push_live_frame(arr, ws_meta: dict | None = None):
     """Encode a numpy array as JPEG, update the MJPEG buffer, broadcast to WS.
 
@@ -224,22 +267,7 @@ def _push_live_frame(arr, ws_meta: dict | None = None):
     receive raw JPEG regardless.
     """
     global _LIVE_FRAME, _LIVE_FRAME_ID
-    from PIL import Image
-    import numpy as np
-    if isinstance(arr, np.ndarray):
-        if arr.dtype != np.uint8:
-            arr = (arr.clip(0, 1) * 255).astype(np.uint8)
-        img = Image.fromarray(arr)
-    else:
-        img = arr
-    img = img.convert("RGB")
-    w, h = img.size
-    if w > 1280:
-        ratio = 1280 / w
-        img = img.resize((1280, int(h * ratio)), Image.LANCZOS)
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=85)
-    jpeg_bytes = buf.getvalue()
+    jpeg_bytes = _encode_jpeg(arr, quality=85, max_width=1280)
     with _LIVE_FRAME_LOCK:
         _LIVE_FRAME = jpeg_bytes
         _LIVE_FRAME_ID += 1
@@ -285,6 +313,7 @@ def _hot_reload_path(filepath: str):
             print(f"[hot-reload] error importing {module_name}: {e}")
             return
     print(f"[hot-reload] reloaded {module_name}")
+    clear_node_defs_cache()
     global _event_loop
     if _event_loop is not None and _event_loop.is_running():
         asyncio.run_coroutine_threadsafe(_broadcast_sse("node-defs-updated"), _event_loop)
@@ -574,22 +603,9 @@ class _QueueWriter:
 
 
 def _encode_frame(arr) -> str:
-    """Encode a numpy array or PIL image as a base64 JPEG string for SSE."""
-    from PIL import Image
-    import numpy as np
-    if isinstance(arr, np.ndarray):
-        if arr.dtype != np.uint8:
-            arr = (arr.clip(0, 1) * 255).astype(np.uint8)
-        img = Image.fromarray(arr)
-    else:
-        img = arr
-    img = img.convert("RGB")
-    # Halve the resolution for a lightweight live preview
-    w, h = img.size
-    img = img.resize((max(1, w // 2), max(1, h // 2)), Image.BILINEAR)
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=65)
-    return base64.b64encode(buf.getvalue()).decode()
+    """Encode a numpy array or PIL image as a base64 JPEG string for SSE.
+    Half resolution for a lightweight preview; cv2-backed encode."""
+    return base64.b64encode(_encode_jpeg(arr, quality=65, halve=True)).decode()
 
 
 def _run_job(job_id, method_id, seed, params, animate, fps, duration, out_dir, filter_spec=None, demo=False, width=768, height=512):
@@ -1077,6 +1093,20 @@ async def graph_ws(websocket: WebSocket):
             _GRAPH_WS_CLIENTS.discard(websocket)
 
 
+# Defined before its first endpoint use — pydantic resolves the annotation
+# at route-registration time, so a later definition breaks module import on
+# eager-resolving pydantic versions.
+class GraphRequest(BaseModel):
+    nodes: list[dict[str, Any]] = []
+    edges: list[dict[str, Any]] = []
+    seed: int = 42
+    frames: int = 1
+    frame: int = 0
+    width: int = 768
+    height: int = 512
+    graph_id: str | None = None  # optional shared-doc id; if set, live loop reads this doc each frame
+
+
 @app.post("/api/graph/{gid}/execute")
 async def execute_graph_by_id(gid: str, req: GraphRequest | None = None):
     """Execute the shared graph (or an override request) headlessly and
@@ -1102,28 +1132,80 @@ async def execute_graph_by_id(gid: str, req: GraphRequest | None = None):
     return execute_graph(exec_req)
 
 
+# 3D node IDs derived from the authoritative defs dict — stays in sync automatically
+_CLIENT_3D_IDS = frozenset(_THREEJS_3D_NODE_DEFS.keys())
+
+_THREEJS_SIDECAR_URL = os.environ.get(
+    'THREEJS_SIDECAR_URL', 'http://127.0.0.1:7862'
+)
+
+
 @app.get("/api/graph/{gid}/render")
 def render_graph_bytes(gid: str = "active", frame: int = 0, fmt: str = "png",
                        width: int = 0, height: int = 0):
     """Synchronous headless render → raw image bytes (no base64, no job poll).
     For agent/programmatic use. Reads the shared doc; width/height override the
-    doc's canvas. fmt=png (default) or jpg (quality param)."""
+    doc's canvas. fmt=png (default) or jpg (quality param).
+
+    If the graph contains three.js 3D nodes, proxies to the Node.js sidecar
+    (image_pipeline/3d/threejs-sidecar.mjs) for headless WebGL rendering."""
     import numpy as np
     from PIL import Image
     from fastapi import HTTPException
     from image_pipeline.core.utils import set_canvas as _set_canvas
-    from image_pipeline.core.graph import GraphExecutor
     with _graph_store_lock:
         doc = _load_graph_doc(gid)
-        nodes = [dict(n) for n in doc["nodes"]]
-        edges = [dict(e) for e in doc["edges"]]
-        cw = width or doc["canvas"].get("w", 768)
-        ch = height or doc["canvas"].get("h", 512)
+    nodes = [dict(n) for n in doc["nodes"]]
+    edges = [dict(e) for e in doc["edges"]]
+    cw = width or doc["canvas"].get("w", 768)
+    ch = height or doc["canvas"].get("h", 512)
     if not nodes:
         raise HTTPException(400, "Graph is empty")
-    _set_canvas(cw, ch)
-    ex = GraphExecutor(_GRAPH_SESSION_DIR, in_memory=True)
-    flat, terminal_id, errs = ex.execute(nodes, edges, 42, frame=frame, frames=1)
+
+    # Proxy 3D graphs to Node.js sidecar
+    has_3d = any(n.get("method_id") in _CLIENT_3D_IDS for n in nodes)
+    if has_3d:
+        import httpx
+        try:
+            resp = httpx.post(
+                f"{_THREEJS_SIDECAR_URL}/render",
+                json={"nodes": nodes, "edges": edges,
+                       "width": cw, "height": ch, "frame": frame},
+                timeout=30,
+            )
+            if resp.status_code == 200:
+                return Response(
+                    content=resp.content,
+                    media_type=resp.headers.get("content-type", "image/png"),
+                    headers={"X-Render-Ms": resp.headers.get("x-render-ms", "")},
+                )
+            raise HTTPException(502, f"3D sidecar returned {resp.status_code}")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(502, f"3D sidecar unavailable: {e}")
+
+    # Persistent shared executor, serialized by a lock. Sync FastAPI endpoints
+    # run on a threadpool — a thread-local executor here meant up to N
+    # executors × unbounded sim caches, and cache hits were a per-thread
+    # lottery. One executor + lock gives every call the warm cache.
+    with _render_exec_lock:
+        _re = _ensure_executor(
+            _render_exec_state.get('executor'),
+            _render_exec_state.get('last_nodes'),
+            _render_exec_state.get('last_edges'),
+            _render_exec_state.get('last_gid', ''),
+            _render_exec_state.get('last_seed', 0),
+            _render_exec_state.get('last_canvas', (0, 0)),
+            gid, 42, (cw, ch), nodes, edges,
+            copy_nodes=False,
+        )
+        (_render_exec_state['executor'], _render_exec_state['last_nodes'],
+         _render_exec_state['last_edges'], _render_exec_state['last_gid'],
+         _render_exec_state['last_seed'], _render_exec_state['last_canvas']) = _re
+        _set_canvas(cw, ch)
+        ex = _render_exec_state['executor']
+        flat, terminal_id, errs = ex.execute(nodes, edges, 42, frame=frame, frames=1)
     render_id = next((n["id"] for n in nodes if n.get("render")), None)
     if render_id and render_id in flat:
         terminal_id = render_id
@@ -1143,16 +1225,6 @@ def render_graph_bytes(gid: str = "active", frame: int = 0, fmt: str = "png",
         img.save(buf, format="PNG")
         mt = "image/png"
     return Response(content=buf.getvalue(), media_type=mt)
-
-
-    name = payload.get("name", "untitled").strip() or "untitled"
-    name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
-    graph_data = payload.get("graph", {})
-    graph_data["name"] = name
-    graph_data["saved_at"] = datetime.utcnow().isoformat()
-    path = SAVED_GRAPHS_DIR / f"{name}.json"
-    path.write_text(json.dumps(graph_data, indent=2))
-    return {"ok": True, "name": name}
 
 
 @app.get("/api/graph/saved")
@@ -1236,17 +1308,6 @@ def delete_group(name: str):
     return {"ok": True}
 
 
-class GraphRequest(BaseModel):
-    nodes: list[dict[str, Any]] = []
-    edges: list[dict[str, Any]] = []
-    seed: int = 42
-    frames: int = 1
-    frame: int = 0
-    width: int = 768
-    height: int = 512
-    graph_id: str | None = None  # optional shared-doc id; if set, live loop reads this doc each frame
-
-
 @app.post("/api/graph/execute")
 def execute_graph(req: GraphRequest):
     _evict_old_jobs()
@@ -1304,8 +1365,73 @@ _live_stats: dict = {
 _live_executor = None          # GraphExecutor | None
 _live_last_nodes: list = []
 _live_last_edges: list = []
+_live_last_gid:   str  = ""
 _live_last_seed:  int  = 0
 _live_last_canvas: tuple = (0, 0)
+
+# Shared render executor for /api/graph/{gid}/render — one executor, one
+# warm cache, serialized by the lock (the executor is not thread-safe).
+_render_exec_state: dict = {}
+_render_exec_lock = threading.Lock()
+
+
+def _ensure_executor(
+    executor, last_nodes, last_edges, last_gid, last_seed, last_canvas,
+    current_gid, current_seed, canvas, nodes, edges, *,
+    session_dir=_GRAPH_SESSION_DIR, copy_nodes=True, stats=None,
+    audit_to_disk=True,
+) -> tuple:
+    """Manage a persistent GraphExecutor with gid-based identity and seed-based flush.
+
+    Args:
+        executor: current GraphExecutor or None
+        last_nodes/edges/gid/seed/canvas: prior-frame state trackers
+        current_gid/seed/canvas: this frame's identity & params
+        nodes/edges: this frame's graph data
+        session_dir: root for Arch-A sim cache files
+        copy_nodes: if True, make fresh [dict(n) for n in nodes] copies for storage
+        stats: optional dict to populate with invalidation info
+
+    Returns (executor, last_nodes, last_edges, last_gid, last_seed, last_canvas).
+    Caller assigns the tuple back to its state.
+    """
+    if executor is None or canvas != last_canvas or current_gid != last_gid:
+        executor = GraphExecutor(session_dir, in_memory=True,
+                                 audit_to_disk=audit_to_disk)
+        last_canvas = canvas
+        last_gid = current_gid
+        last_seed = current_seed
+        last_nodes = None
+        last_edges = None
+        if stats is not None:
+            stats["cache_flush_reason"] = "new_executor"
+            stats["last_invalidated"] = 0
+            stats.setdefault("total_cache_hits", 0)
+            stats.setdefault("total_cache_misses", 0)
+    elif current_seed != last_seed:
+        executor._sim_cache.clear()
+        executor._sim_params_hash.clear()
+        last_seed = current_seed
+        last_nodes = None
+        last_edges = None
+        if stats is not None:
+            stats["cache_flush_reason"] = "seed_changed"
+            stats["last_invalidated"] = 0
+    else:
+        inv_count = executor.selective_invalidate(
+            last_nodes or [], nodes, last_edges or [], edges, current_seed,
+        )
+        last_nodes = [dict(n) for n in nodes] if copy_nodes else nodes
+        last_edges = [dict(e) for e in edges] if copy_nodes else edges
+        if stats is not None:
+            stats["cache_flush_reason"] = "selective"
+            stats["last_invalidated"] = inv_count
+        return executor, last_nodes, last_edges, last_gid, last_seed, last_canvas
+
+    # New executor or full flush — store clean snapshots
+    last_nodes = [dict(n) for n in nodes] if copy_nodes else nodes
+    last_edges = [dict(e) for e in edges] if copy_nodes else edges
+    return executor, last_nodes, last_edges, last_gid, last_seed, last_canvas
 
 
 @app.post("/api/graph/live")
@@ -1321,7 +1447,7 @@ def live_graph_sim(req: GraphRequest):
     are invalidated.
     """
     global _live_sim_cancel, _live_sim_thread
-    global _live_executor, _live_last_nodes, _live_last_edges, _live_last_seed, _live_last_canvas
+    global _live_executor, _live_last_nodes, _live_last_edges, _live_last_gid, _live_last_seed, _live_last_canvas
     with _live_sim_lock:
         # Stop any existing loop (both for stop requests and restarts)
         if _live_sim_thread is not None and _live_sim_thread.is_alive():
@@ -1346,31 +1472,29 @@ def live_graph_sim(req: GraphRequest):
         width, height = req.width, req.height
 
         # ── Persistent executor: reuse or create ──────────────────────
-        from image_pipeline.core.graph import GraphExecutor as _GE
-        canvas = (width, height)
-        _inv_count = 0
-        if _live_executor is None or canvas != _live_last_canvas:
-            _live_executor = _GE(OUTPUT_ROOT / "_live_sim", in_memory=True)
+        _live_executor, _live_last_nodes, _live_last_edges, \
+            _live_last_gid, _live_last_seed, _live_last_canvas = \
+            _ensure_executor(
+                _live_executor, _live_last_nodes, _live_last_edges,
+                _live_last_gid, _live_last_seed, _live_last_canvas,
+                gid, seed, (width, height),
+                nodes, edges,
+                session_dir=OUTPUT_ROOT / "_live_sim",
+                copy_nodes=True,
+                stats=_live_stats,
+                # Live mode is memory-only transport — nothing reads the
+                # _live_sim dir, so skip every per-node PNG/sidecar write.
+                audit_to_disk=False,
+            )
+        executor = _live_executor
+        reason = _live_stats.get("cache_flush_reason", "unknown")
+        inv = _live_stats.get("last_invalidated", 0)
+        if reason == "new_executor":
             _inv_msg = "new executor"
-            # Reset cumulative stats on new executor
-            _live_stats["total_cache_hits"] = 0
-            _live_stats["total_cache_misses"] = 0
-        elif seed != _live_last_seed:
-            _live_executor._sim_cache.clear()
-            _live_executor._sim_params_hash.clear()
+        elif reason == "seed_changed":
             _inv_msg = "seed changed — full flush"
         else:
-            _inv_count = _live_executor.selective_invalidate(
-                _live_last_nodes, nodes, _live_last_edges, edges, seed
-            )
-            _inv_msg = f"selective invalidation: {_inv_count} entries cleared"
-        _live_stats["last_invalidated"] = _inv_count
-
-        _live_last_nodes  = [dict(n) for n in nodes]
-        _live_last_edges  = [dict(e) for e in edges]
-        _live_last_seed   = seed
-        _live_last_canvas = canvas
-        executor = _live_executor
+            _inv_msg = f"selective invalidation: {inv} entries cleared"
 
         def _live_loop():
             from image_pipeline.core.utils import set_canvas as _set_canvas
@@ -1454,7 +1578,9 @@ def live_graph_sim(req: GraphRequest):
                     )
                     for nid, err in node_errors.items():
                         print(f"[live-sim] node {nid} error:\n{err}")
-                    render_id = next((n["id"] for n in nodes if n.get("render")), None)
+                    # Use the per-frame doc snapshot, not the (stale) request
+                    # payload — render-flag/name edits mid-live apply next frame.
+                    render_id = next((n["id"] for n in work_nodes if n.get("render")), None)
                     if render_id and render_id in flat_outputs:
                         terminal_id = render_id
                     arr = (flat_outputs.get(terminal_id) or {}).get("image") if terminal_id else None
@@ -1492,10 +1618,10 @@ def live_graph_sim(req: GraphRequest):
                     from image_pipeline.core.registry import get_meta as _get_meta
                     _live_stats["node_names"] = {
                         n["id"]: (_get_meta(n.get("method_id","")) or type("M",[],{"name":n.get("method_id","?")})()).name
-                        for n in nodes
+                        for n in work_nodes
                     }
-                    _live_stats["active_nodes"] = len(nodes)
-                    _live_stats["active_edges"] = len(edges)
+                    _live_stats["active_nodes"] = len(work_nodes)
+                    _live_stats["active_edges"] = len(work_edges)
                     _live_stats["canvas_w"]     = live_w
                     _live_stats["canvas_h"]     = live_h
 

@@ -40,20 +40,36 @@ from ...core.utils import save, mn, write_field, W, H
 def method_field_combine(out_dir: Path, seed: int, params=None):
     if params is None:
         params = {}
-    field_a_path = params.get("field_a_path", "")
-    field_b_path = params.get("field_b_path", "")
     operation = params.get("operation", "add")
     scale_a = float(params.get("scale_a", 1.0))
     scale_b = float(params.get("scale_b", 1.0))
 
-    if not field_a_path or not field_b_path:
+    def _get_field(port: str) -> np.ndarray | None:
+        # In-memory wire first (no disk round-trip); npy path is the fallback.
+        arr = params.get(port)
+        if isinstance(arr, np.ndarray):
+            if arr.ndim == 3:
+                arr = arr.mean(axis=-1)
+            return arr.astype(np.float32)
+        path = params.get(f"{port}_path", "")
+        if not path:
+            return None
+        arr = np.load(path).astype(np.float32)
+        if arr.ndim == 3:
+            arr = arr.mean(axis=-1)
+        return arr
+
+    a = _get_field("field_a")
+    b = _get_field("field_b")
+
+    if a is None or b is None:
         blank = np.zeros((H, W), dtype=np.float32)
         write_field(out_dir, blank)
         save(np.zeros((H, W, 3), dtype=np.float32), mn(139, "Field Combine"), out_dir)
         return
 
-    a = np.load(field_a_path).astype(np.float32) * scale_a
-    b = np.load(field_b_path).astype(np.float32) * scale_b
+    a = a * scale_a
+    b = b * scale_b
 
     if a.shape != b.shape:
         lo, hi = b.min(), b.max()

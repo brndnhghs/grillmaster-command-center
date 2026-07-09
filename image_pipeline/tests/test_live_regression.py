@@ -256,10 +256,12 @@ def test_sim_cache_survives_unchanged_hotswap():
     out = _tmp()
     try:
         ex = GraphExecutor(out, in_memory=True)
-        base = {"rule": "conway", "size": 4, "speed": 1.0, "n_frames": 10,
-                "rule_select": -1.0, "init_select": -1.0, "cell_size": -1.0,
-                "age_input": -1.0}
-        nodes_v1 = [{"id": "ca", "method_id": "18",
+        # __sim_probe__ is this file's minimal Architecture-A sim. (This test
+        # originally used #18 Cellular Automata, but that method has since
+        # been migrated off the n_frames sim contract and now detects as
+        # Architecture B — no sim cache to guard.)
+        base = {"n_frames": 10}
+        nodes_v1 = [{"id": "ca", "method_id": "__sim_probe__",
                      "params": {**base, "time": 0.0}, "dirty": True}]
 
         # First cook — populates sim cache
@@ -273,7 +275,7 @@ def test_sim_cache_survives_unchanged_hotswap():
         t_warm = (_time.monotonic() - t0) * 1000
 
         # Simulate hot-swap: only the volatile 'time' param changed
-        nodes_v2 = [{"id": "ca", "method_id": "18",
+        nodes_v2 = [{"id": "ca", "method_id": "__sim_probe__",
                      "params": {**base, "time": 7.0}, "dirty": True}]
         inv = ex.selective_invalidate(nodes_v1, nodes_v2, [], [], seed=42)
         assert inv == 0, f"volatile-only change invalidated {inv} cache entries (expected 0)"
@@ -288,7 +290,7 @@ def test_sim_cache_survives_unchanged_hotswap():
             f"post-swap cost {t_post_swap:.1f}ms >> warm {t_warm:.1f}ms — re-cooked when it shouldn't"
 
         # Now hot-swap with a real (non-volatile) param change: n_frames
-        nodes_v3 = [{"id": "ca", "method_id": "18",
+        nodes_v3 = [{"id": "ca", "method_id": "__sim_probe__",
                      "params": {**base, "n_frames": 20, "time": 0.0}, "dirty": True}]
         inv = ex.selective_invalidate(nodes_v2, nodes_v3, [], [], seed=42)
         assert inv == 1, f"non-volatile change should invalidate 1 entry, got {inv}"

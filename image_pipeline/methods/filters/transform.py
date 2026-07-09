@@ -159,9 +159,15 @@ def method_transform(out_dir: Path, seed: int, params=None) -> dict:
             arr = np.array(pil, dtype=np.float32) / 255.0
 
     if arr is None:
-        field_path = params.get("field_a_path", "")
-        if field_path:
-            field = np.load(field_path).astype(np.float32)
+        # In-memory field wire first; npy path is the legacy fallback.
+        field = params.get("field_a")
+        if not isinstance(field, np.ndarray):
+            field_path = params.get("field_a_path", "")
+            field = np.load(field_path).astype(np.float32) if field_path else None
+        if field is not None:
+            field = field.astype(np.float32)
+            if field.ndim == 3:
+                field = field.mean(axis=-1)
             fmin, fmax = field.min(), field.max()
             norm = (field - fmin) / (fmax - fmin + 1e-8)
             arr = np.stack([norm, norm, norm], axis=-1)

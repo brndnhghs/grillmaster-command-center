@@ -110,7 +110,8 @@ def _encode_frame_ms(arr: np.ndarray) -> float:
 
 def run_bench(out: Path) -> dict[str, Any]:
     set_canvas(WIDTH, HEIGHT)
-    ex = GraphExecutor(out, in_memory=True)
+    # Same config as the server's live loop: memory transport, no audit writes.
+    ex = GraphExecutor(out, in_memory=True, audit_to_disk=False)
 
     # Patch the registry to time individual node fn calls
     from image_pipeline.core.registry import get_meta as _get_meta

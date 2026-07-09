@@ -59,6 +59,35 @@ def _is_safe(node: ast.AST) -> bool:
     return all(_is_safe(child) for child in ast.iter_child_nodes(node))
 
 
+# Compiled-code cache: expression string → code object, or None for strings
+# that failed parsing/safety (so bad strings don't re-parse every frame).
+# Parsing + safety-walking + compiling an expression cost ~50-200µs; in live
+# mode every expression param re-ran that per node per frame.
+_COMPILED_CACHE: dict[str, Any] = {}
+_COMPILED_CACHE_MAX = 1024
+
+
+def _compile_expr(expr: str):
+    """Parse, safety-check, and compile an expression. Cached; None = rejected."""
+    if expr in _COMPILED_CACHE:
+        return _COMPILED_CACHE[expr]
+
+    code = None
+    try:
+        tree = ast.parse(expr, mode="eval")
+        if _is_safe(tree):
+            code = compile(tree, "<expr>", "eval")
+        else:
+            logger.warning("expr: unsafe expression rejected: %r", expr)
+    except SyntaxError as exc:
+        logger.warning("expr: syntax error in %r: %s", expr, exc)
+
+    if len(_COMPILED_CACHE) >= _COMPILED_CACHE_MAX:
+        _COMPILED_CACHE.clear()
+    _COMPILED_CACHE[expr] = code
+    return code
+
+
 def eval_param(value: Any, frame: int, seed: int, total_frames: int = 100) -> Any:
     """Evaluate a param value, expanding expression strings per frame.
 
@@ -79,21 +108,15 @@ def eval_param(value: Any, frame: int, seed: int, total_frames: int = 100) -> An
     except (ValueError, TypeError):
         pass
 
+    code = _compile_expr(expr)
+    if code is None:
+        return 0.0
+
     t = frame / max(total_frames, 1)
     ctx = {**_SAFE_NAMES, "frame": frame, "seed": seed, "t": t}
 
     try:
-        tree = ast.parse(expr, mode="eval")
-    except SyntaxError as exc:
-        logger.warning("expr: syntax error in %r: %s", expr, exc)
-        return 0.0
-
-    if not _is_safe(tree):
-        logger.warning("expr: unsafe expression rejected: %r", expr)
-        return 0.0
-
-    try:
-        result = eval(compile(tree, "<expr>", "eval"), {"__builtins__": {}}, ctx)  # noqa: S307
+        result = eval(code, {"__builtins__": {}}, ctx)  # noqa: S307
         return float(result)
     except Exception as exc:
         logger.warning("expr: eval failed for %r: %s", expr, exc)

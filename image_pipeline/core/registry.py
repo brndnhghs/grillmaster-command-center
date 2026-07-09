@@ -222,7 +222,15 @@ def resolve_keys(spec: str) -> list[str]:
         else:
             selected.difference_update(ids)
 
-    return sorted(selected, key=lambda x: (int(x), x))
+    # Numeric ids sort first by value; non-numeric ids (__counter__, …) sort
+    # after, alphabetically — int() on them used to crash `--all` (BUG-7).
+    def _sort_key(x: str):
+        try:
+            return (0, int(x), x)
+        except ValueError:
+            return (1, 0, x)
+
+    return sorted(selected, key=_sort_key)
 
 
 def _resolve_single(spec: str) -> list[str]:

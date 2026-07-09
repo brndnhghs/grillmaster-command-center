@@ -254,6 +254,48 @@ def _sidecar_sink() -> dict | None:
     return getattr(_sidecar_local, "sink", None)
 
 
+# ── Save capture context ─────────────────────────────────────────────
+# The executor used to intercept node images by monkeypatching the module
+# attribute `utils.save`. That never worked for the ~150 method files that do
+# `from ...core.utils import save` at import time — they hold a direct
+# reference to the original function, so every live frame paid a full PNG
+# encode + disk write + PNG decode read-back (~100ms+ per node per frame).
+# This per-thread sink is checked inside save() itself, so it intercepts
+# every call regardless of import style, and it is thread-safe: concurrent
+# jobs (live loop + render job) each install their own sink.
+_save_capture_local = _threading.local()
+
+
+def set_save_capture(sink: dict | None, *, skip_disk: bool = False) -> None:
+    """Install a per-thread sink that captures save() images in memory.
+
+    `sink["image"]` receives the saved image as float32 [0,1] (H,W,3) —
+    exactly what the PNG round-trip would have produced. With skip_disk=True
+    (live mode) the disk write is skipped entirely; with skip_disk=False
+    (render mode) the PNG is still written for the on-disk audit trail.
+    Pass None to uninstall.
+    """
+    _save_capture_local.sink = sink
+    _save_capture_local.skip_disk = bool(skip_disk) and sink is not None
+
+
+def _capture_as_float01(arr: "np.ndarray | Image.Image") -> np.ndarray:
+    """Normalize a save() payload to float32 [0,1], mirroring the PNG round-trip."""
+    if not isinstance(arr, np.ndarray):
+        arr = np.asarray(arr.convert("RGB") if hasattr(arr, "convert") else arr)
+    if arr.dtype == np.uint8:
+        return arr.astype(np.float32) / 255.0
+    if arr.dtype.kind == "f":
+        a = arr.astype(np.float32, copy=True)  # single copy; clip in place
+        if a.max() > 1.0:
+            np.clip(a, 0, 255, out=a)
+            a /= 255.0
+        else:
+            np.clip(a, 0.0, 1.0, out=a)
+        return a
+    return arr.astype(np.float32)
+
+
 # ── Current-method context ───────────────────────────────────────────
 # Nodes call capture_frame("NN", arr) and save(arr, mn(NN, "Name"), out_dir)
 # with a HARDCODED id literal. When a node is renumbered, those literals go
@@ -343,7 +385,17 @@ def write_mask(node_dir: Path, arr: np.ndarray) -> None:
 
 
 def save(arr: np.ndarray | Image.Image, name: str, out_dir: Path):
-    """Save array (float32 [0,1] or uint8) or PIL Image to out_dir/name."""
+    """Save array (float32 [0,1] or uint8) or PIL Image to out_dir/name.
+
+    When a save-capture sink is installed (executor in-memory mode) the image
+    is also captured as float32 [0,1]; with skip_disk the PNG write is
+    skipped entirely — the hot-path transport is the in-memory payload bus.
+    """
+    _sink = getattr(_save_capture_local, "sink", None)
+    if _sink is not None:
+        _sink["image"] = _capture_as_float01(arr)
+        if getattr(_save_capture_local, "skip_disk", False):
+            return
     if isinstance(arr, np.ndarray):
         if arr.max() <= 1 and arr.dtype.kind == "f":
             arr = (arr.clip(0, 1) * 255).astype(np.uint8)

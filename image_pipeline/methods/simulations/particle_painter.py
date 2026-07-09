@@ -19,7 +19,7 @@ from ...core.utils import save, mn, W, H, PALETTES
     id="130",
     name="Particle Painter",
     category="simulations",
-    tags=["particle", "simulation", "consumer"],
+    tags=["particle", "consumer"],
     inputs={"particles": "PARTICLES"},
     outputs={"image": "IMAGE", "luminance": "SCALAR"},
     is_time_varying=False,

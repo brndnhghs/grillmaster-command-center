@@ -1,6 +1,7 @@
 from __future__ import annotations
 import math
 import random
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +13,22 @@ from ...core.animation import capture_frame
 from ...core.utils import PALETTES
 
 _ERROR_IMG = np.zeros((H, W, 3), dtype=np.float32)
+
+
+# Module-level so the cache survives across frames in live mode (defined
+# inside method_noise, the lru_cache was rebuilt on every call). float32:
+# halves fancy-indexing memory traffic in the fbm hot loop.
+@lru_cache(maxsize=64)
+def _grad_table(seed_val: int, table_size: int = 256) -> np.ndarray:
+    rng = np.random.RandomState(seed_val & 0xFFFFFFFF)
+    angles = rng.uniform(0, 2 * np.pi, (table_size, table_size))
+    return np.stack([np.cos(angles), np.sin(angles)], axis=-1).astype(np.float32)
+
+
+@lru_cache(maxsize=64)
+def _value_table(seed_val: int, table_size: int = 256) -> np.ndarray:
+    rng = np.random.RandomState(seed_val & 0xFFFFFFFF)
+    return rng.uniform(-1, 1, (table_size, table_size)).astype(np.float32)
 
 
 @method(id="05", name="Procedural Noise", category="patterns", new_image_contract=True,
@@ -140,63 +157,67 @@ def method_noise(out_dir: Path, seed: int, params=None):
 
         # ── Lattice noise primitives ────────────────────────────────────────
 
-        from functools import lru_cache
-
-        @lru_cache(maxsize=None)
-        def _grad_table(seed_val: int, table_size: int = 256) -> np.ndarray:
-            rng = np.random.RandomState(seed_val & 0xFFFFFFFF)
-            angles = rng.uniform(0, 2 * np.pi, (table_size, table_size))
-            return np.stack([np.cos(angles), np.sin(angles)], axis=-1)
-
-        def _grad_at(x: np.ndarray, y: np.ndarray, table: np.ndarray) -> np.ndarray:
+        def _lattice_gradient_noise(x: np.ndarray, y: np.ndarray, table: np.ndarray) -> np.ndarray:
+            # Classic Perlin: dot each corner gradient with the offset from
+            # that corner, then smoothstep-interpolate the four dot products.
+            # (Interpolating gradients first and dotting with the top-left
+            # offset is discontinuous at cell boundaries.)
             T = table.shape[0]
-            ix = (x % 1).astype(np.int64) % T
-            iy = (y % 1).astype(np.int64) % T
-            fx = x - np.floor(x)
-            fy = y - np.floor(y)
+            xi = np.floor(x)
+            yi = np.floor(y)
+            fx = x - xi
+            fy = y - yi
+            ix = xi.astype(np.int64) % T
+            iy = yi.astype(np.int64) % T
+            ix1 = (ix + 1) % T
+            iy1 = (iy + 1) % T
+            g00 = table[iy, ix]
+            g10 = table[iy, ix1]
+            g01 = table[iy1, ix]
+            g11 = table[iy1, ix1]
+            n00 = g00[..., 0] * fx + g00[..., 1] * fy
+            n10 = g10[..., 0] * (fx - 1) + g10[..., 1] * fy
+            n01 = g01[..., 0] * fx + g01[..., 1] * (fy - 1)
+            n11 = g11[..., 0] * (fx - 1) + g11[..., 1] * (fy - 1)
             sx = fx * fx * (3 - 2 * fx)
             sy = fy * fy * (3 - 2 * fy)
-            tl = table[iy, ix]
-            tr = table[iy, (ix+1)%T]
-            bl = table[(iy+1)%T, ix]
-            br = table[(iy+1)%T, (ix+1)%T]
-            top = tl + (tr - tl) * sx[..., None]
-            bot = bl + (br - bl) * sx[..., None]
-            return top + (bot - top) * sy[..., None]
-
-        def _lattice_gradient_noise(x: np.ndarray, y: np.ndarray, table: np.ndarray) -> np.ndarray:
-            g = _grad_at(x, y, table)
-            dx = x - np.floor(x)
-            dy = y - np.floor(y)
-            return g[:, :, 0] * dx + g[:, :, 1] * dy
+            nx0 = n00 + (n10 - n00) * sx
+            nx1 = n01 + (n11 - n01) * sx
+            return nx0 + (nx1 - nx0) * sy
 
         def _value_noise(x: np.ndarray, y: np.ndarray, table_size: int = 256, seed_val: int = 0) -> np.ndarray:
-            rng = np.random.RandomState(seed_val & 0xFFFFFFFF)
-            vals = rng.uniform(-1, 1, (table_size, table_size))
-            ix = (x % 1).astype(np.int64) % table_size
-            iy = (y % 1).astype(np.int64) % table_size
-            fx = x - np.floor(x)
-            fy = y - np.floor(y)
+            vals = _value_table(seed_val & 0xFFFFFFFF, table_size)
+            xi = np.floor(x)
+            yi = np.floor(y)
+            ix = xi.astype(np.int64) % table_size
+            iy = yi.astype(np.int64) % table_size
+            fx = x - xi
+            fy = y - yi
             sx = fx * fx * (3 - 2 * fx)
             sy = fy * fy * (3 - 2 * fy)
             tl = vals[iy, ix]
             tr = vals[iy, (ix+1)%table_size]
             bl = vals[(iy+1)%table_size, ix]
             br = vals[(iy+1)%table_size, (ix+1)%table_size]
-            return (tl + (tr - tl) * sx + ((bl + (br - bl) * sx) - (tl + (tr - tl) * sx)) * sy)
+            top = tl + (tr - tl) * sx
+            bot = bl + (br - bl) * sx
+            return top + (bot - top) * sy
 
         def _simplex_noise(x: np.ndarray, y: np.ndarray, table: np.ndarray) -> np.ndarray:
-            F2 = 0.5 * (np.sqrt(3) - 1)
-            G2 = (3 - np.sqrt(3)) / 6
+            # math.sqrt (not np.sqrt): a float64 numpy scalar would promote
+            # the whole float32 pipeline to float64.
+            F2 = 0.5 * (math.sqrt(3) - 1)
+            G2 = (3 - math.sqrt(3)) / 6
             s = (x + y) * F2
             i = np.floor(x + s).astype(np.int64)
             j = np.floor(y + s).astype(np.int64)
-            t_simplex = (i + j) * G2
-            x0 = x - (i - t_simplex)
-            y0 = y - (j - t_simplex)
+            t_simplex = ((i + j) * G2).astype(x.dtype)
+            x0 = x - (i.astype(x.dtype) - t_simplex)
+            y0 = y - (j.astype(x.dtype) - t_simplex)
             i1 = np.where(x0 > y0, 1, 0)
-            j1 = np.where(x0 > y0, 0, 1)
-            x1, y1 = x0 - i1 + G2, y0 - j1 + G2
+            j1 = 1 - i1
+            x1 = x0 - i1.astype(x.dtype) + G2
+            y1 = y0 - j1.astype(x.dtype) + G2
             x2, y2 = x0 - 1 + 2 * G2, y0 - 1 + 2 * G2
             T = table.shape[0]
             gi = i.astype(np.int64) % T
@@ -308,17 +329,22 @@ def method_noise(out_dir: Path, seed: int, params=None):
 
         # ── Noise generation ───────────────────────────────────────────────
 
-        # Morph: cross-fade between noise types based on morph param
+        # Morph: cross-fade between noise types based on morph param.
+        # morph <= 0 means "not driven" — honor the noise_type param.
+        # (The old `effective_morph_fade < 0` fallback never fired at the
+        # default morph=0.0, so noise_type was dead and everything rendered
+        # as type_cycle[0].)
         type_cycle = ["perlin", "cloud", "marble", "plasma", "wood", "terrain", "spot", "ring", "brick"]
         n_types = len(type_cycle)
-        raw_idx = morph * n_types
-        idx_a = int(raw_idx) % n_types
-        idx_b = (idx_a + 1) % n_types
-        effective_noise_type = type_cycle[idx_a]
-        effective_next_noise_type = type_cycle[idx_b]
-        effective_morph_fade = raw_idx - int(raw_idx)
-        if effective_morph_fade < 0:
-            effective_morph_fade = 0
+        if morph > 0:
+            raw_idx = morph * n_types
+            idx_a = int(raw_idx) % n_types
+            idx_b = (idx_a + 1) % n_types
+            effective_noise_type = type_cycle[idx_a]
+            effective_next_noise_type = type_cycle[idx_b]
+            effective_morph_fade = raw_idx - int(raw_idx)
+        else:
+            effective_morph_fade = 0.0
             effective_noise_type = noise_type
             effective_next_noise_type = noise_type
 
@@ -557,9 +583,11 @@ def method_noise(out_dir: Path, seed: int, params=None):
             else:
                 cx, cy = float(W) // 2, float(H) // 2
                 r = np.sqrt((np.arange(H, dtype=np.float32)[:, None] - cy) ** 2 + (np.arange(W, dtype=np.float32)[None, :] - cx) ** 2)
+                # theta must enter sin() with an integer coefficient: arctan2 jumps
+                # 2pi at its branch cut, so any non-integer multiple leaves a seam.
                 theta = np.arctan2(np.arange(H)[:, None] - cy, np.arange(W)[None, :] - cx)
                 result = np.stack([
-                    np.sin(no * 6 + theta * 0.5) * 0.5 + 0.5,
+                    np.sin(no * 6 + theta) * 0.5 + 0.5,
                     np.sin(no * 8 + r * 0.02 + 2.0) * 0.5 + 0.5,
                     np.sin(no * 10 + r * 0.03 + 4.0) * 0.5 + 0.5,
                 ], axis=-1)

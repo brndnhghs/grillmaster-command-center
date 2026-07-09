@@ -1,0 +1,29 @@
+{
+  "name": "grillmaster-command-center",
+  "version": "1.0.0",
+  "description": "A **node-based generative image & video editor** that takes the best of Houdini and TouchDesigner and infuses it with LLM agents:",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/brndnhghs/grillmaster-command-center.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/brndnhghs/grillmaster-command-center/issues"
+  },
+  "homepage": "https://github.com/brndnhghs/grillmaster-command-center#readme",
+  "dependencies": {
+    "gl": "^8.1.6",
+    "puppeteer": "^25.3.0",
+    "three": "^0.185.1"
+  }
+}

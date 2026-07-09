@@ -8,6 +8,7 @@ import traceback
 import uuid
 from collections import deque
 from dataclasses import dataclass, field
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -114,9 +115,128 @@ def _make_node_def(meta: registry.MethodMeta) -> NodeDef:
     return NodeDef(method_id=meta.id, inputs=inputs, outputs=outputs, param_ports=param_ports)
 
 
+def _threejs_node_def(method_id: str, name: str, *,
+                      category: str = "client_3d",
+                      tags: list[str] | None = None,
+                      inputs: dict[str, str] | None = None,
+                      outputs: dict[str, str] | None = None,
+                      params: dict[str, dict] | None = None,
+                      description: str = "",
+                      deprecated: bool = False) -> dict:
+    """Build a serialisable NodeDef dict for a three.js 3D node."""
+    return {
+        "method_id": method_id, "name": name,
+        "category": category, "tags": tags or [],
+        "inputs": inputs or {}, "outputs": outputs or {},
+        "param_ports": [], "description": description,
+        "version": 1, "deprecated": deprecated,
+        "start_frame": 0, "end_frame": 0, "prebake": 0,
+        "params": params or {},
+    }
+
+
+_THREEJS_3D_NODE_DEFS: dict[str, dict] = {
+    '__geometry__': _threejs_node_def('__geometry__', '3D Geometry', tags=['3d', 'client'],
+        outputs={"geometry": "geometry"},
+        description='Emits a geometry for a Mesh node.',
+        params={
+            "shape":  {"description": "geometry shape",
+                "choices": ["box","sphere","torus","torusknot","cone","cylinder",
+                            "icosahedron","dodecahedron","plane"],
+                "default": "torusknot"},
+            "size":   {"description": "overall size", "min": 0.1, "max": 3, "default": 1},
+            "detail": {"description": "tessellation detail", "min": 0, "max": 1, "default": 0.5},
+        }),
+    '__material__': _threejs_node_def('__material__', '3D Material', tags=['3d', 'client', 'pbr'],
+        outputs={"material": "material"},
+        description='PBR material for a Mesh node.',
+        params={
+            "color":              {"description": "base color", "default": "#4a9eff"},
+            "metalness":          {"description": "metalness", "min": 0, "max": 1, "default": 0.4},
+            "roughness":          {"description": "roughness", "min": 0, "max": 1, "default": 0.35},
+            "emissive":           {"description": "emissive color", "default": "#000000"},
+            "emissive_intensity": {"description": "emissive intensity", "min": 0, "max": 4, "default": 1},
+            "flat_shading":       {"description": "flat shading (0/1)", "min": 0, "max": 1, "default": 0},
+        }),
+    '__mesh3d__': _threejs_node_def('__mesh3d__', '3D Mesh', tags=['3d', 'client'],
+        inputs={"geometry": "geometry", "material": "material"},
+        outputs={"object": "object3d"},
+        description='Geometry + Material → transformable object (keyframeable).',
+        params={
+            "pos_x": {"description": "position X", "min": -5, "max": 5, "default": 0},
+            "pos_y": {"description": "position Y", "min": -5, "max": 5, "default": 0},
+            "pos_z": {"description": "position Z", "min": -5, "max": 5, "default": 0},
+            "rot_x": {"description": "rotation X (deg)", "min": -180, "max": 180, "default": 0},
+            "rot_y": {"description": "rotation Y (deg)", "min": -180, "max": 180, "default": 0},
+            "rot_z": {"description": "rotation Z (deg)", "min": -180, "max": 180, "default": 0},
+            "spin_speed": {"description": "auto Y-spin (rad/s)", "min": 0, "max": 4, "default": 0.6},
+            "scale": {"description": "uniform scale", "min": 0.1, "max": 3, "default": 1},
+        }),
+    '__group3d__': _threejs_node_def('__group3d__', '3D Group', tags=['3d', 'client'],
+        inputs={"object_a": "object3d", "object_b": "object3d"},
+        outputs={"object": "object3d"},
+        description='Combine two objects into one.'),
+    '__light3d__': _threejs_node_def('__light3d__', '3D Light', tags=['3d', 'client'],
+        outputs={"light": "light"},
+        description='Light for a Scene Render node.',
+        params={
+            "type":      {"description": "light type",
+                "choices": ["point","directional","spot"], "default": "point"},
+            "pos_x":     {"description": "position X", "min": -10, "max": 10, "default": 3},
+            "pos_y":     {"description": "position Y", "min": -10, "max": 10, "default": 4},
+            "pos_z":     {"description": "position Z", "min": -10, "max": 10, "default": 5},
+            "color":     {"description": "light color", "default": "#ffffff"},
+            "intensity": {"description": "intensity", "min": 0, "max": 500, "default": 60},
+        }),
+    '__camera3d__': _threejs_node_def('__camera3d__', '3D Camera', tags=['3d', 'client'],
+        outputs={"camera": "camera"},
+        description='Camera for a Scene Render node.',
+        params={
+            "pos_x": {"description": "camera X", "min": -12, "max": 12, "default": 0},
+            "pos_y": {"description": "camera Y", "min": -12, "max": 12, "default": 0},
+            "pos_z": {"description": "camera Z (dolly)", "min": 0.5, "max": 16, "default": 4},
+            "look_x": {"description": "look-at X", "min": -5, "max": 5, "default": 0},
+            "look_y": {"description": "look-at Y", "min": -5, "max": 5, "default": 0},
+            "look_z": {"description": "look-at Z", "min": -5, "max": 5, "default": 0},
+            "fov":    {"description": "field of view", "min": 15, "max": 110, "default": 50},
+        }),
+    '__scene_render__': _threejs_node_def('__scene_render__', '3D Scene Render',
+        tags=['3d', 'client', 'render'],
+        inputs={"object": "object3d", "light": "light", "camera": "camera"},
+        outputs={"image": "image", "luminance": "field"},
+        description='Assemble object(s) + light + camera → rendered image.',
+        params={
+            "bg_color": {"description": "background color", "default": "#0a0e18"},
+            "ambient":  {"description": "ambient light", "min": 0, "max": 1, "default": 0.35},
+        }),
+    '__scene3d__': _threejs_node_def('__scene3d__', '3D Scene (legacy)',
+        tags=['3d', 'client', 'deprecated'],
+        inputs={"object": "object3d", "light": "light", "camera": "camera"},
+        outputs={"image": "image", "luminance": "field"},
+        description='Legacy 3D scene node (deprecated, use Scene Render).',
+        deprecated=True,
+        params={
+            "bg_color": {"description": "background color", "default": "#0a0e18"},
+            "ambient":  {"description": "ambient light", "min": 0, "max": 1, "default": 0.35},
+        }),
+    '__gltf__': _threejs_node_def('__gltf__', '3D Model (GLTF)',
+        tags=['3d', 'client', 'gltf'],
+        outputs={"object": "object3d"},
+        description='Load a .gltf/.glb model as an object.',
+        params={
+            "url":        {"description": "model URL (.gltf/.glb)",
+                "default": "https://raw.githubusercontent.com/mrdoob/three.js/r160/examples/models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf"},
+            "scale":      {"description": "uniform scale", "min": 0.05, "max": 5, "default": 1},
+            "spin_speed": {"description": "auto Y-spin (rad/s)", "min": 0, "max": 4, "default": 0.6},
+        }),
+}
+
+@cache
 def get_all_node_defs() -> dict[str, dict]:
-    """Return serialisable NodeDef dict keyed by method_id."""
-    result = {}
+    """Return serialisable NodeDef dict keyed by method_id.
+    Merges Python-registered methods with three.js 3D node definitions.
+    Cached for performance — call clear_node_defs_cache() after hot-reload."""
+    result = {**_THREEJS_3D_NODE_DEFS}
     for mid, meta in registry.get_all().items():
         nd = _make_node_def(meta)
         result[mid] = {
@@ -136,6 +256,12 @@ def get_all_node_defs() -> dict[str, dict]:
             "prebake":     0,
         }
     return result
+
+
+def clear_node_defs_cache() -> None:
+    """Invalidate the cached node defs after hot-reload so the next request
+    rebuilds from the updated registry."""
+    get_all_node_defs.cache_clear()
 
 
 # ── Var-injection helpers ─────────────────────────────────────────────
@@ -214,9 +340,14 @@ def _inject_typed(
         if orig is None or isinstance(orig, (int, float)):
             val = round(float(value)) if isinstance(orig, int) else float(value)
             run_params[param] = val
-            # Also inject as uniform field for FIELD-input methods
-            from image_pipeline.core.utils import W as _W, H as _H
-            run_params[f"_field_{param}"] = np.full((_H, _W), val, dtype=np.float32)
+            # Also inject as uniform field for FIELD-input methods.
+            # broadcast_to is a zero-copy read-only view — a np.full here
+            # allocated ~1.5 MB per scalar per node per frame whether or not
+            # the method ever read _field_<param>. Consumers only use these
+            # in arithmetic; anything needing a writable buffer must copy.
+            run_params[f"_field_{param}"] = np.broadcast_to(
+                np.float32(val), (int(H), int(W))
+            )
         else:
             logging.warning(
                 "graph: SCALAR→%s type mismatch for param %r, skipping",
@@ -350,28 +481,60 @@ def _node_params_hash(params: dict) -> str:
     )
 
 
-def _write_error_placeholder(node_dir: Path) -> np.ndarray:
-    """Write a dark-red W×H placeholder PNG; return as float32 ndarray [0,1]."""
-    from PIL import Image as _PILe
+def _write_error_placeholder(node_dir: Path, write: bool = True) -> np.ndarray:
+    """Dark-red W×H placeholder as float32 ndarray [0,1]; PNG written only when
+    `write` is set (render/audit mode) — live mode keeps the hot path disk-free."""
     arr_u8 = np.full((H, W, 3), [58, 0, 0], dtype=np.uint8)
-    _PILe.fromarray(arr_u8).save(str(node_dir / "0000_error.png"))
+    if write:
+        from PIL import Image as _PILe
+        _PILe.fromarray(arr_u8).save(str(node_dir / "0000_error.png"))
     return arr_u8.astype(np.float32) / 255.0
 
 
 class GraphExecutor:
     """Execute a node graph for one or more frames."""
 
-    def __init__(self, out_dir: Path, fps: int = 24, in_memory: bool = False):
+    # Byte budget for the Arch-A simulation cache. A 300-frame sim at 768×512
+    # float32 RGB is ~1.4 GB per node; without a cap the process grows without
+    # bound (BUG-8a). Oldest entries are evicted first.
+    SIM_CACHE_MAX_BYTES = 1_500_000_000
+
+    def __init__(self, out_dir: Path, fps: int = 24, in_memory: bool = False,
+                 audit_to_disk: bool = True):
         self.out_dir = out_dir
         self._fps = fps
         self._in_memory = in_memory
+        # audit_to_disk=False (live mode) skips every per-node PNG/sidecar
+        # write — the in-memory payload bus is the only transport. Render
+        # jobs keep the default True so the on-disk audit trail survives.
+        self.audit_to_disk = audit_to_disk
         # Keyed by node_id → {"image": ndarray | None, "luminance": float}
         self._prev_outputs: dict[str, dict[str, Any]] = {}
         # Simulation state cache: keyed by (node_id, seed) → list of ndarray frames
         self._sim_cache: dict[tuple[str, int], list] = {}
         self._sim_params_hash: dict[str, int] = {}
+        # Cached sub-executors for group nodes, keyed by group node id.
+        # A fresh executor per frame would lose feedback state and re-run
+        # Arch-A sims inside groups from scratch every frame (BUG-6).
+        self._group_executors: dict[str, "GraphExecutor"] = {}
         # Diagnostics for the last completed frame — written by execute(), read by server
         self.last_frame_stats: dict = {}
+
+    def _evict_sim_cache(self) -> None:
+        """Drop oldest sim-cache entries until under the byte budget."""
+        def _entry_bytes(frames: list) -> int:
+            total = 0
+            for f in frames:
+                a = f.get("image") if isinstance(f, dict) else f
+                if isinstance(a, np.ndarray):
+                    total += a.nbytes
+            return total
+
+        total = sum(_entry_bytes(v) for v in self._sim_cache.values())
+        while total > self.SIM_CACHE_MAX_BYTES and len(self._sim_cache) > 1:
+            oldest_key = next(iter(self._sim_cache))
+            total -= _entry_bytes(self._sim_cache.pop(oldest_key))
+            self._sim_params_hash.pop(oldest_key[0], None)
 
     def execute(
         self,
@@ -538,13 +701,24 @@ class GraphExecutor:
                         # cooked frame count; without the modulo, frames past the
                         # end fell through to a full re-cook every frame (~2 fps
                         # after the first few seconds of smooth playback).
-                        arr = cached[frame % len(cached)]
+                        entry = cached[frame % len(cached)]
+                        # List-returning methods cache dicts per frame, the
+                        # capture path caches bare ndarrays — handle both.
+                        if isinstance(entry, dict):
+                            arr = entry.get("image")
+                            extra = {k: v for k, v in entry.items()
+                                     if k not in ("image", "luminance")}
+                        else:
+                            arr = entry
+                            extra = {}
                         flat_outputs[node_id] = {
                             "image": arr,
-                            "luminance": np.mean(arr, axis=-1),
-                            "field": arr,
-                            "particles": None,
-                            "mask": None,
+                            "luminance": np.mean(arr, axis=-1) if arr is not None else 0.0,
+                            "field": extra.get("field", arr),
+                            "particles": extra.get("particles"),
+                            "mask": extra.get("mask"),
+                            **{k: v for k, v in extra.items()
+                               if k not in ("field", "particles", "mask")},
                         }
                         ran[node_id] = True
                         _diag_cache_hits += 1
@@ -621,6 +795,7 @@ class GraphExecutor:
                 if sim_frames:
                     self._sim_cache[sim_cache_key] = sim_frames
                     self._sim_params_hash[node_id] = params_hash
+                    self._evict_sim_cache()
 
                     # Loop the cooked frames (matches the cache-hit path above).
                     arr = sim_frames[frame % len(sim_frames)]
@@ -755,31 +930,48 @@ class GraphExecutor:
                         pass  # no upstream image — leave as None
                     continue
 
-                # ── Named merge-port injection (writes temp file, injects _path param) ──
+                # ── Named merge-port injection ─────────────────────────
+                # The ndarray is always passed in-memory via run_params
+                # (the compositing methods prefer it); the temp file is only
+                # written in audit mode as a legacy/back-compat fallback.
                 if edge.dst_port in ("image_a", "image_b"):
                     if src_img is not None:
-                        _p = node_dir / f"_{edge.dst_port}.png"
-                        from PIL import Image as _PILmi
-                        _PILmi.fromarray(
-                            (np.clip(src_img, 0.0, 1.0) * 255).astype(np.uint8)
-                        ).save(str(_p))
-                        run_params[f"{edge.dst_port}_path"] = str(_p)
+                        run_params[edge.dst_port] = src_img
+                        _mp_key = f"{edge.src_node}->{edge.dst_node}"
+                        if self.audit_to_disk:
+                            _p = node_dir / f"_{edge.dst_port}.png"
+                            from PIL import Image as _PILmi
+                            _PILmi.fromarray(
+                                (np.clip(src_img, 0.0, 1.0) * 255).astype(np.uint8)
+                            ).save(str(_p))
+                            run_params[f"{edge.dst_port}_path"] = str(_p)
+                            _diag_edge_transport[_mp_key] = "disk"
+                            _diag_disk_edges += 1
+                        else:
+                            _diag_edge_transport[_mp_key] = "mem"
+                            _diag_mem_edges += 1
                     continue
 
                 if edge.dst_port in ("field_a", "field_b"):
-                    _farr = slot.get("field") or src_img
+                    _farr = slot.get("field")
+                    if _farr is None:
+                        _farr = src_img
                     if _farr is not None:
-                        _p = node_dir / f"_{edge.dst_port}.npy"
-                        np.save(str(_p), np.asarray(_farr, dtype=np.float32))
-                        run_params[f"{edge.dst_port}_path"] = str(_p)
+                        run_params[edge.dst_port] = _farr
+                        if self.audit_to_disk:
+                            _p = node_dir / f"_{edge.dst_port}.npy"
+                            np.save(str(_p), np.asarray(_farr, dtype=np.float32))
+                            run_params[f"{edge.dst_port}_path"] = str(_p)
                     continue
 
                 if edge.dst_port in ("particles_a", "particles_b"):
                     _parr = slot.get("particles")
                     if _parr is not None:
-                        _p = node_dir / f"_{edge.dst_port}.npy"
-                        np.save(str(_p), np.asarray(_parr, dtype=np.float32))
-                        run_params[f"{edge.dst_port}_path"] = str(_p)
+                        run_params[edge.dst_port] = _parr
+                        if self.audit_to_disk:
+                            _p = node_dir / f"_{edge.dst_port}.npy"
+                            np.save(str(_p), np.asarray(_parr, dtype=np.float32))
+                            run_params[f"{edge.dst_port}_path"] = str(_p)
                     continue
 
                 # ── PARTICLES wire ────────────────────────────────────
@@ -864,7 +1056,11 @@ class GraphExecutor:
                 if not (self._in_memory and meta.new_image_contract):
                     upstream_path = node_dir / "_input.png"
                     from PIL import Image as _PILpre2
-                    _PILpre2.fromarray((upstream_arr * 255).astype(np.uint8)).save(str(upstream_path))
+                    # compress_level=1: this is a transient transport file for
+                    # legacy load_input() readers, not the audit trail — fast
+                    # encode beats small size on the hot path (~10× faster).
+                    _PILpre2.fromarray((upstream_arr * 255).astype(np.uint8)).save(
+                        str(upstream_path), compress_level=1)
                     run_params["input_image"] = str(upstream_path)
                     _diag_disk_edges += 1
                     _edge_kind = "disk"
@@ -898,24 +1094,20 @@ class GraphExecutor:
                     run_params[_pk] = _evaled
 
             # ── In-memory output capture ────────────────────────────
-            _captured_output = getattr(self, '_captured_output', {})
+            # save() checks a per-thread sink internally (utils.set_save_capture),
+            # so capture works for every method regardless of import style. The
+            # old module-attribute monkeypatch missed `from utils import save`
+            # callers — most methods — so live frames silently paid a full PNG
+            # encode + write + decode read-back per node. It was also process-
+            # global (BUG-5); the sink is per-thread, so concurrent jobs can't
+            # capture each other's frames.
+            _node_capture: dict = {}
             _captured_sidecars = {}
-            _original_save_fn = None
             from image_pipeline.core import utils as _utils_mod
             if self._in_memory:
-                _original_save_fn = _utils_mod.save
-                _skip_disk = meta.new_image_contract  # True → skip disk write entirely
-                def _capturing_save(arr_to_save, name, out_dir_cap,
-                                    _skip=_skip_disk, _orig=_original_save_fn):
-                    _captured_output[node_id] = (
-                        arr_to_save.copy()
-                        if isinstance(arr_to_save, np.ndarray)
-                        else np.array(arr_to_save)
-                    )
-                    if not _skip:
-                        # Legacy methods may read the PNG back via load_input; keep writing.
-                        _orig(arr_to_save, name, out_dir_cap)
-                _utils_mod.save = _capturing_save
+                _utils_mod.set_save_capture(
+                    _node_capture, skip_disk=not self.audit_to_disk
+                )
                 # Collect sidecars (field/particles/mask/scalars) in memory too,
                 # so live mode does zero disk writes — see utils.set_sidecar_context.
                 _utils_mod.set_sidecar_context(_captured_sidecars)
@@ -941,7 +1133,7 @@ class GraphExecutor:
                 from image_pipeline.core import utils as _core_utils
                 _core_utils.set_method_id(None)
                 err_text = traceback.format_exc(limit=8)
-                err_img = _write_error_placeholder(node_dir)
+                err_img = _write_error_placeholder(node_dir, write=self.audit_to_disk)
                 node_errors[node_id] = err_text
                 print(f"[node-error] {node_id}: {exc}")
                 flat_outputs[node_id] = {
@@ -954,10 +1146,9 @@ class GraphExecutor:
                 ran[node_id] = True
                 _diag_node_timings[node_id] = (time.monotonic() - _t0_node) * 1000.0
                 _diag_cache_misses += 1
-                if self._in_memory and _original_save_fn is not None:
-                    _utils_mod.save = _original_save_fn
+                if self._in_memory:
+                    _utils_mod.set_save_capture(None)
                     _utils_mod.set_sidecar_context(None)
-                self._captured_output = _captured_output
                 continue
             _diag_node_timings[node_id] = (time.monotonic() - _t0_node) * 1000.0
             _diag_cache_misses += 1
@@ -985,9 +1176,8 @@ class GraphExecutor:
                 # Legacy: PIL Image → treat as image
                 arr = np.array(_fn_result, dtype=np.float32) / 255.0
             else:
-                # Legacy: None → fall back to disk read-back
-                if self._in_memory:
-                    arr = _captured_output.get(node_id)
+                # Legacy: None → in-memory capture, then disk read-back fallback
+                arr = _node_capture.get("image")
                 if arr is None:
                     pngs = sorted(p for p in node_dir.glob("*.png") if not p.name.startswith("_"))
                     if pngs:
@@ -1015,10 +1205,17 @@ class GraphExecutor:
                 if _path.exists() and _key not in extra_outputs:
                     extra_outputs[_key] = np.load(str(_path))
 
-            # ── Write to disk (for timeline playback) ──
-            # New-contract methods in live (in_memory) mode skip this; the in-memory ndarray
-            # is already in flat_outputs and timeline playback uses separate non-live renders.
-            if arr is not None and not (self._in_memory and meta.new_image_contract):
+            # ── Write to disk (audit trail / timeline playback) ──
+            # Skipped entirely in live mode (audit_to_disk=False). In render
+            # mode, skipped when the method already wrote the same file via
+            # its own save() call (the capture sink tells us it fired), and —
+            # as before — for new-contract methods running in-memory, whose
+            # output lives on the payload bus.
+            _saved_by_method = self._in_memory and _node_capture.get("image") is not None \
+                and self.audit_to_disk
+            _mem_new_contract = self._in_memory and meta.new_image_contract
+            if arr is not None and self.audit_to_disk and not _saved_by_method \
+                    and not _mem_new_contract:
                 from PIL import Image as _PIL_write
                 arr_u8 = (np.clip(arr, 0, 1) * 255).astype(np.uint8) if arr.dtype != np.uint8 else arr
                 _PIL_write.fromarray(arr_u8).save(str(node_dir / f"{meta.filename()}"))
@@ -1039,12 +1236,11 @@ class GraphExecutor:
                     import json
                     (node_dir / "scalars.json").write_text(json.dumps(_scalars))
 
-            if self._in_memory and _original_save_fn is not None:
-                _utils_mod.save = _original_save_fn
+            if self._in_memory:
+                _utils_mod.set_save_capture(None)
                 _utils_mod.set_sidecar_context(None)
             from image_pipeline.core import utils as _core_utils
             _core_utils.set_method_id(None)
-            self._captured_output = _captured_output
 
             # ── Build flat_outputs ──
             # luminance is always computed as per-pixel grayscale (H,W) float32
@@ -1140,16 +1336,26 @@ class GraphExecutor:
                 if img_arr is not None:
                     from PIL import Image as _PILinj
                     inp_path = group_dir / f"_inject_{inner_nid}.png"
+                    # Transient transport file — fast encode, not audit.
                     _PILinj.fromarray(
                         (np.clip(img_arr, 0, 1) * 255).astype(np.uint8)
-                    ).save(str(inp_path))
+                    ).save(str(inp_path), compress_level=1)
                     inner_node["params"]["input_image"] = str(inp_path)
             else:
                 val = src_slot.get(inner_param, src_slot.get("luminance", 0.0))
                 if isinstance(val, (int, float)):
                     inner_node["params"][inner_param] = val
 
-        sub_executor = GraphExecutor(group_dir, fps=self._fps)
+        # Reuse the sub-executor across frames — a fresh one per frame loses
+        # feedback state and re-runs Arch-A sims inside the group from
+        # scratch every frame (BUG-6). Inherits live-mode transport flags.
+        sub_executor = self._group_executors.get(group_id)
+        if sub_executor is None:
+            sub_executor = GraphExecutor(
+                group_dir, fps=self._fps,
+                in_memory=self._in_memory, audit_to_disk=self.audit_to_disk,
+            )
+            self._group_executors[group_id] = sub_executor
         sub_outputs, terminal_id, sub_errors = sub_executor.execute(
             inner_nodes, inner_edges, seed, frame=frame, frames=frames
         )

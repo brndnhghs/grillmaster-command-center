@@ -12,10 +12,22 @@ from pathlib import Path
 import numpy as np
 import shutil
 
+import pytest
+
 import image_pipeline.methods  # noqa: F401 — trigger @method registration
 from image_pipeline.core.graph import GraphExecutor
 from image_pipeline.core.arch import detect_architecture
 from image_pipeline.core.registry import get_all
+from image_pipeline.core.utils import set_canvas
+
+
+@pytest.fixture(autouse=True)
+def _pin_canvas():
+    """Pin the canvas per test — earlier test files (server imports etc.)
+    leave an arbitrary canvas behind, which made the Arch-A sim here
+    degenerate to frozen near-black frames."""
+    set_canvas(768, 512)
+    yield
 
 
 def _cleanup(path: Path):

@@ -29,20 +29,20 @@ from ...core.utils import save, mn, write_particles, W, H
 def method_particle_merge(out_dir: Path, seed: int, params=None):
     if params is None:
         params = {}
-    particles_a_path = params.get("particles_a_path", "")
-    particles_b_path = params.get("particles_b_path", "")
     mode = params.get("mode", "concat")
 
-    parts_a = (
-        np.load(particles_a_path).astype(np.float32)
-        if particles_a_path and os.path.exists(particles_a_path)
-        else None
-    )
-    parts_b = (
-        np.load(particles_b_path).astype(np.float32)
-        if particles_b_path and os.path.exists(particles_b_path)
-        else None
-    )
+    def _get_particles(port: str) -> np.ndarray | None:
+        # In-memory wire first (no disk round-trip); npy path is the fallback.
+        arr = params.get(port)
+        if isinstance(arr, np.ndarray):
+            return arr.astype(np.float32)
+        path = params.get(f"{port}_path", "")
+        if path and os.path.exists(path):
+            return np.load(path).astype(np.float32)
+        return None
+
+    parts_a = _get_particles("particles_a")
+    parts_b = _get_particles("particles_b")
 
     if mode == "a_only":
         merged = parts_a
