@@ -261,6 +261,22 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # unmapped; the preview defaults to the thermal ramp.
     "77": {"shader": "false_color_gpu", "type": "filter",
            "param_map": {"strength": "p1"}},
+    # ── P0.6 field-eval ──
+    # 125 Chladni: `m_start`/`n_start` map onto the twin's m/n mode slots
+    # (0.5 -> 3.0 neutral); `rotation_speed` -> plate spin, `phase_speed_x` ->
+    # shimmer. `m_end`/`n_end` are morph endpoints (used only in anim_mode !=
+    # none) and are left unmapped — the live preview shows the start mode. The
+    # twin is an exact closed-form preview of the per-pixel displacement field.
+    "125": {"shader": "chladni_gpu", "type": "procedural",
+            "param_map": {"m_start": "p1", "n_start": "p2",
+                          "rotation_speed": "p3", "phase_speed_x": "p4"}},
+    # 164 Moiré: `mode` (radial/linear/spiral/hex -> 0..3) maps onto p1,
+    # `speed1` -> p2, `speed2` -> p3, `frequency` -> p4. `grid_div` is a choice
+    # integer and the twin renders at full res, so it is left unmapped. The twin
+    # is an exact parity preview (closed-form function of uv, t).
+    "164": {"shader": "moire_gpu", "type": "procedural",
+            "param_map": {"mode": "p1", "speed1": "p2",
+                          "speed2": "p3", "frequency": "p4"}},
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SHIMS)
 

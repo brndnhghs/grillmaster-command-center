@@ -1036,6 +1036,98 @@ void main() {
 ''')
 
 
+
+
+# ── P0.6 field-eval client-GPU twins (client-GPU live preview of nodes
+# 125/164) ──────────────────────────────────────────────────────────────────
+# Additive: the server's CPU numpy nodes stay the authoritative export (two-tier
+# precision). These bodies only drive the browser live preview. They reuse the
+# prologue helpers so they are auto-covered by test_webgl2_transform_is_valid +
+# the gl330 legacy-equivalence parametrized tests. Both nodes render a pure
+# per-frame field that is a closed-form function of (uv, t), so the twin is an
+# exact preview (no seeded-layout divergence, unlike pattern/generative nodes).
+#
+# IMPORTANT (pitfall #15): encode 0.5 as NEUTRAL so the default u_params
+# (0.5,0.5,0.5,0.5) yields the node's canonical full view, not an extreme.
+
+_register("chladni_gpu",
+          "Chladni eigenmode field (client-GPU twin of node 125)",
+          "procedural", '''
+void main() {
+    // u_params.x = m-mode (0.5 -> 3.0 canonical start, range 0.5..11.5),
+    // u_params.y = n-mode (0.5 -> 3.0),
+    // u_params.z = rotation (0.5 -> 0 rad, range -PI..PI),
+    // u_params.w = phase shimmer (0.5 -> 0 rad, range -PI..PI).
+    float m = 0.5 + u_params.x * 11.0;
+    float n = 0.5 + u_params.y * 11.0;
+    float rot_ang = (u_params.z - 0.5) * 6.2831853;
+    float ph = (u_params.w - 0.5) * 6.2831853;
+
+    // Centered, normalized coords in [-1, 1] (matches node: xn = X/(W/2)).
+    vec2 p = (v_uv - 0.5) * 2.0;
+    // Coordinate rotation (plate spin).
+    vec2 pr = rot(rot_ang) * p;
+
+    // u_mn(x,y) = sin(m*PI*(x+1)/2 + φx) * sin(n*PI*(y+1)/2 + φy)
+    float u = sin(m * 3.14159265 * (pr.x + 1.0) * 0.5 + ph)
+            * sin(n * 3.14159265 * (pr.y + 1.0) * 0.5 + ph);
+
+    // Centered, sharp sigmoid emphasis of zero-crossings (nodal lines).
+    float sig = tanh(clamp(u, -4.0, 4.0) * 3.5);
+    float gray = (sig + 1.0) * 0.5;
+    // Nodal-line bright highlight: gaussian bell centered at u=0.
+    float nodal = exp(-u * u * 8.0);
+    gray = clamp(gray + nodal * 0.35, 0.0, 1.0);
+    f_color = vec4(vec3(gray), 1.0);
+}
+''')
+
+_register("moire_gpu",
+          "Moiré interference (client-GPU twin of node 164)",
+          "procedural", '''
+void main() {
+    // u_params.x = mode (0=radial,1=linear,2=spiral,3=hex),
+    // u_params.y = speed1 (0.5 -> ~1.0), u_params.z = speed2 (0.5 -> ~1.28),
+    // u_params.w = frequency (0.5 -> 20).
+    int mode = int(floor(u_params.x * 3.999));
+    float s1 = 0.1 + u_params.y * 1.9;      // ~1.0 at default
+    float s2 = 0.1 + u_params.z * 1.9;      // ~1.28 at default
+    float freq = 5.0 + u_params.w * 45.0;   // 20 at default
+    float t = u_time * 0.05;               // matches node: t = fr*0.05
+
+    vec2 res = u_resolution;
+    vec2 p = (v_uv - 0.5) * res;           // pixel-centered coords
+    float scale = 1.0 / max(res.x, res.y) * 2.0 * 3.14159265;
+
+    float g1, g2;
+    float a1 = s1 * t, a2 = s2 * t;
+    if (mode == 1) {                       // linear gratings
+        g1 = 0.5 + 0.5 * sin(freq * (p.x * cos(a1) + p.y * sin(a1)) * scale);
+        g2 = 0.5 + 0.5 * sin(freq * (p.x * cos(a2) + p.y * sin(a2)) * scale);
+    } else if (mode == 2) {                // spiral
+        float r = length(p);
+        float th = atan(p.y, p.x);
+        g1 = 0.5 + 0.5 * sin(freq * (r * scale + th / 6.2831853) * 6.2831853 + a1);
+        g2 = 0.5 + 0.5 * sin(freq * (r * scale + th / 6.2831853) * 6.2831853 + a2);
+    } else if (mode == 3) {                // hex (3-grating sum)
+        float acc = 0.0;
+        acc += 0.5 + 0.5 * sin(freq * (p.x) * scale + s1 * t);
+        acc += 0.5 + 0.5 * sin(freq * (p.x * cos(1.0471975) + p.y * sin(1.0471975)) * scale + (s1 + 0.3) * t);
+        acc += 0.5 + 0.5 * sin(freq * (p.x * cos(2.0943951) + p.y * sin(2.0943951)) * scale + (s1 + 0.6) * t);
+        acc = clamp(acc / 3.0, 0.0, 1.0);
+        f_color = vec4(vec3(acc), 1.0);
+        return;
+    } else {                               // radial (default)
+        float r = length(p);
+        g1 = 0.5 + 0.5 * sin(freq * r * scale);
+        g2 = 0.5 + 0.5 * sin(freq * r * scale + a2);
+    }
+    float g = clamp(g1 * g2 * 2.0, 0.0, 1.0);
+    f_color = vec4(vec3(g), 1.0);
+}
+''')
+
+
 _register("shader_oil_gpu", "GPU oil painting simulation", "filter", _filter_shader('''
     float radius = 2.0 + u_params.x * 4.0;
     vec3 sum = vec3(0.0); float total = 0.0;
