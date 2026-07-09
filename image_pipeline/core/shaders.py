@@ -981,6 +981,81 @@ _register("shader_motion_blur_gpu", "GPU directional motion blur", "filter", _fi
     f_color = vec4(col / 3.5, 1.0);
 '''))
 
+# ── P0.4 client-GPU twin shaders for existing CPU filter nodes ──
+# Each maps a pre-existing CPU filter node's LIVE preview onto a GLSL twin.
+# The CPU numpy path stays the authoritative export (two-tier precision).
+
+# 42 Fake HDR — contrast / saturation / vignette / bloom (GPU live twin)
+_register("hdr_gpu", "GPU fake-HDR tonemap (contrast/sat/vignette/bloom)", "filter", _filter_shader('''
+    float gray = dot(orig.rgb, vec3(0.299, 0.587, 0.114));
+    // contrast around mid-gray
+    vec3 c = (orig.rgb - 0.5) * (0.5 + u_params.x * 3.0) + 0.5;
+    // saturation toward/away from luma
+    c = mix(vec3(gray), c, 0.5 + u_params.y * 2.0);
+    // bloom: cheap bright-area lift
+    float bright = max(0.0, gray - 0.6) * u_params.w * 2.0;
+    c += bright;
+    // vignette
+    vec2 d = uv - 0.5;
+    float vig = 1.0 - dot(d, d) * u_params.z * 2.5;
+    c *= clamp(vig, 0.0, 1.0);
+    f_color = vec4(clamp(c, 0.0, 1.0), 1.0);
+'''))
+
+# 63 Cross Stitch — grid of stitches on a fabric backdrop (GPU live twin)
+_register("cross_stitch_gpu", "GPU cross-stitch embroidery", "filter", _filter_shader('''
+    float gstep = max(4.0, 32.0 - u_params.x * 28.0);   // thread_step -> p1
+    float lw = 1.0 + u_params.y * 6.0;                  // line_width -> p2
+    vec2 cell = floor(uv * u_resolution / gstep);
+    vec2 cell_uv = (cell + 0.5) * gstep / u_resolution;
+    vec3 src = texture(u_texture, cell_uv).rgb;
+    // fabric base
+    vec3 fabric = vec3(0.95, 0.92, 0.88);
+    vec2 q = fract(uv * u_resolution / gstep) - 0.5;
+    // cross: two diagonal strokes
+    float d1 = abs(q.x + q.y);
+    float d2 = abs(q.x - q.y);
+    float stroke = min(d1, d2);
+    float stitch = 1.0 - smoothstep(lw * 0.35, lw * 0.45, stroke);
+    vec3 col = mix(fabric, src, stitch);
+    f_color = vec4(col, 1.0);
+'''))
+
+# 64 Edge Halftone — Sobel-magnitude-weighted dots (GPU live twin)
+_register("edge_halftone_gpu", "GPU edge-weighted halftone dots", "filter", _filter_shader('''
+    float tl = dot(texture(u_texture, uv + vec2(-step.x, -step.y)).rgb, vec3(0.299,0.587,0.114));
+    float t  = dot(texture(u_texture, uv + vec2(0, -step.y)).rgb, vec3(0.299,0.587,0.114));
+    float tr = dot(texture(u_texture, uv + vec2(step.x, -step.y)).rgb, vec3(0.299,0.587,0.114));
+    float l  = dot(texture(u_texture, uv + vec2(-step.x, 0)).rgb, vec3(0.299,0.587,0.114));
+    float r  = dot(texture(u_texture, uv + vec2(step.x, 0)).rgb, vec3(0.299,0.587,0.114));
+    float bl = dot(texture(u_texture, uv + vec2(-step.x, step.y)).rgb, vec3(0.299,0.587,0.114));
+    float b  = dot(texture(u_texture, uv + vec2(0, step.y)).rgb, vec3(0.299,0.587,0.114));
+    float br = dot(texture(u_texture, uv + vec2(step.x, step.y)).rgb, vec3(0.299,0.587,0.114));
+    float gx = -tl - 2.0*l - bl + tr + 2.0*r + br;
+    float gy = -tl - 2.0*t - tr + bl + 2.0*b + br;
+    float edge = clamp(sqrt(gx*gx + gy*gy), 0.0, 1.0);
+    float cell = 4.0 + u_params.x * 16.0;               // dot_spacing -> p1
+    float base = (1.0 - edge) * 0.5 * (0.5 + u_params.y * 0.5); // dot_size -> p2
+    vec2 q = fract(uv * u_resolution / cell) - 0.5;
+    float d = length(q);
+    float dot_r = clamp(base, 0.02, 0.5);
+    float v = d < dot_r ? 0.0 : 1.0;
+    vec3 bg = vec3(0.05, 0.05, 0.08);
+    f_color = vec4(mix(bg, vec3(1.0), v), 1.0);
+'''))
+
+# 74 Swirl Displacement — polar swirl remap (GPU live twin)
+_register("swirl_gpu", "GPU swirl/pinch displacement", "filter", _filter_shader('''
+    vec2 p = uv - 0.5;
+    float r = length(p);
+    float a = atan(p.y, p.x);
+    float strength = (u_params.x - 0.5) * 6.0;          // 0.5 -> none
+    float swirl = strength * (1.0 - r);
+    float ca = cos(a + swirl), sa = sin(a + swirl);
+    vec2 q = vec2(ca, sa) * r + 0.5;
+    f_color = texture(u_texture, q);
+'''))
+
 
 # ═══════════════════════════════════════════════
 #  RENDER ENGINE

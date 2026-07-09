@@ -210,6 +210,32 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # 69 Lyapunov: r_min p1, r_max p2. color_mode/color_shift via p3/p4 if added.
     "69": {"shader": "lyapunov_gpu", "type": "procedural",
            "param_map": {"r_min": "p1", "r_max": "p2"}},
+    # ── P0.4 per-pixel filters ──
+    # 12 Kaleidoscope → existing GPU twin (200). segments p1.
+    "12": {"shader": "shader_kaleidoscope", "type": "filter",
+            "param_map": {"segments": "p1"}},
+    # 17 Glitch Art → existing GPU twin (214). intensity p1.
+    "17": {"shader": "shader_glitch_gpu", "type": "filter",
+            "param_map": {"intensity": "p1"}},
+    # 41 Oil Paint → existing GPU twin (216). radius p1.
+    "41": {"shader": "shader_oil_gpu", "type": "filter",
+            "param_map": {"radius": "p1"}},
+    # 80 Pixel Mosaic → existing GPU twin (208). tile_size p1.
+    "80": {"shader": "shader_mosaic_gpu", "type": "filter",
+            "param_map": {"tile_size": "p1"}},
+    # 42 Fake HDR → new twin. contrast p1, saturation p2, vignette p3, bloom p4.
+    "42": {"shader": "hdr_gpu", "type": "filter",
+            "param_map": {"contrast": "p1", "saturation": "p2",
+                        "vignette": "p3", "bloom": "p4"}},
+    # 63 Cross Stitch → new twin. thread_step p1, line_width p2.
+    "63": {"shader": "cross_stitch_gpu", "type": "filter",
+            "param_map": {"thread_step": "p1", "line_width": "p2"}},
+    # 64 Edge Halftone → new twin. dot_spacing p1, dot_size p2.
+    "64": {"shader": "edge_halftone_gpu", "type": "filter",
+            "param_map": {"dot_spacing": "p1", "dot_size": "p2"}},
+    # 74 Swirl Displacement → new twin. strength p1 (0.5 = none).
+    "74": {"shader": "swirl_gpu", "type": "filter",
+            "param_map": {"strength": "p1"}},
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SHIMS)
 
