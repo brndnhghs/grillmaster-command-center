@@ -438,6 +438,15 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "reset_on": ["seed", "param", "loop", "resize"],
         "param_map": {"a": "p1", "b": "p2", "gamma": "p3", "Du": "p4"},
     },
+    # 146 AC + PM Diffusion: single scalar field, Allen-Cahn reaction +
+    # Perona-Malik anisotropic diffusion. p1=alpha, p2=K, p3=bias, p4=dt.
+    "146": {
+        "type": "sim",
+        "seed": "acpm_seed", "step": "acpm_step", "display": "acpm_display",
+        "state_channels": 1, "substeps": 4,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"alpha": "p1", "K": "p2", "bias": "p3", "dt": "p4"},
+    },
     # ── P1.3 wave-equation family (leapfrog u/v fields on RGBA-float ping-pong) ──
     # 100 Wave Equation: p1=speed, p2=damping, p3=source_frequency, p4=source_amplitude.
     "100": {

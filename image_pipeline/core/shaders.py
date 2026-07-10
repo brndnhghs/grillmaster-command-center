@@ -2091,6 +2091,67 @@ void main() {
 }
 ''')
 
+# Allen-Cahn + Perona-Malik anisotropic diffusion (node 146 "AC + PM Diffusion" twin).
+# Single scalar field c in [-1,1], packed in .r. p1=alpha (diffusion strength),
+# p2=K (PM edge sensitivity), p3=bias (constant double-well shift), p4=dt.
+# Live-preview approximation of the CPU sim: omits per-frame noise + the time
+# ramp on bias (CPU authoritative for export). Resuses the 5-pt ping-pong template.
+_register("acpm_seed",
+          "AC+PM seed: signed +/-1 blobs in .r (node 146 twin)",
+          "procedural", '''
+void main() {
+    float c = 0.0;
+    for (int i = 0; i < 24; i++) {
+        float fi = float(i);
+        vec2 ctr = vec2(hash21(vec2(fi + 0.5, 1.37)), hash21(vec2(fi + 0.5, 7.91)));
+        ctr = 0.05 + 0.90 * ctr;
+        float r = 0.03 + 0.05 * hash21(vec2(fi + 2.3, 4.1));
+        float d = distance(v_uv, ctr);
+        float signv = (mod(fi, 2.0) < 0.5) ? 1.0 : -1.0;
+        c += signv * exp(-(d * d) / (r * r));
+    }
+    c = clamp(c, -1.0, 1.0);
+    f_color = vec4(c, 0.0, 0.0, 1.0);
+}
+''')
+
+_register("acpm_step",
+          "AC+PM step: Allen-Cahn reaction + Perona-Malik anisotropic diffusion (5-pt)",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float c = s.r;
+    float cl = texture(u_texture, v_uv + vec2(-texel.x,0.0)).r;
+    float cr = texture(u_texture, v_uv + vec2(texel.x,0.0)).r;
+    float cd = texture(u_texture, v_uv + vec2(0.0,texel.y)).r;
+    float cu = texture(u_texture, v_uv + vec2(0.0,-texel.y)).r;
+    // Perona-Malik anisotropic diffusion (4-neighbour, edge-preserving)
+    float K2 = max(u_params.y * u_params.y, 1e-4);
+    float gx = (cr - c) / (1.0 + (cr - c) * (cr - c) / K2);
+    float gy = (cu - c) / (1.0 + (cu - c) * (cu - c) / K2);
+    float gxl = (c - cl) / (1.0 + (c - cl) * (c - cl) / K2);
+    float gyl = (c - cd) / (1.0 + (c - cd) * (c - cd) / K2);
+    float diff = (gx - gxl) + (gy - gyl);
+    // Allen-Cahn double-well reaction + constant bias
+    float ac = c - c * c * c + u_params.z;
+    float dt = u_params.w;
+    float alpha = u_params.x;
+    float nc = c + dt * (ac + alpha * diff);
+    f_color = vec4(clamp(nc, -1.5, 1.5), 0.0, 0.0, 1.0);
+}
+''')
+
+_register("acpm_display",
+          "AC+PM display: map signed field .r to grayscale",
+          "procedural", '''
+void main() {
+    float c = clamp(texture(u_texture, v_uv).r, -1.0, 1.0);
+    float g = c * 0.5 + 0.5;
+    f_color = vec4(vec3(g), 1.0);
+}
+''')
+
 # 3-species Lotka-Volterra (node 120): U,V,W in r,g,b — cyclic predation.
 # p1,p2,p3,p4 = interaction strengths (live preview approx; CPU authoritative).
 _register("lv3_seed",
