@@ -230,6 +230,15 @@ _TYPED_SHADER_NODES = [
     ("274", "fourier_circles_typed", "GPU Fourier Circles"),
     ("275", "waveform_typed",        "GPU Waveform"),
     ("276", "strange_attractor_typed", "GPU Strange Attractor"),
+    # Categorical coverage pt.8 (2026): closed-form patterns with NAMED typed
+    # controls — phyllotaxis dots, guilloché engraving, Lissajous trace, radial
+    # wave interference, curl-noise flow field, kaleidoscopic petal bloom.
+    ("277", "phyllotaxis_typed",   "GPU Phyllotaxis"),
+    ("278", "guilloche_typed",     "GPU Guilloché"),
+    ("279", "lissajous_typed",     "GPU Lissajous"),
+    ("280", "interference_typed",  "GPU Wave Interference"),
+    ("281", "flow_field_typed",    "GPU Flow Field"),
+    ("282", "kaleido_bloom_typed", "GPU Kaleido Bloom"),
 ]
 
 _TIME_SCALE_PARAM = {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0}

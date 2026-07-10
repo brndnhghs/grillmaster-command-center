@@ -5503,3 +5503,188 @@ _register("strange_attractor_typed", "Strange-attractor bands: Clifford map dens
     "speed":{"glsl": "float", "min": 0.0, "max": 6.0, "default": 1.0,
              "description": "animation speed"},
 })
+
+# ── Categorical coverage pt.8 (typed closed-form patterns, nodes 277-282) ──
+# phyllotaxis dots, guilloché engraving, Lissajous trace, radial wave
+# interference, curl-noise flow field, kaleidoscopic petal bloom. Each is a
+# pure f(uv, t) → exact CPU/GPU parity (P0.6). Continuous-time motion only.
+
+_register("phyllotaxis_typed", "Phyllotaxis: golden-angle sunflower dot spiral (typed, node 277)",
+          "procedural", _INFERNO_GPU + '''void main() {
+    vec2 uv = (v_uv - 0.5);
+    uv.x *= u_resolution.x / u_resolution.y;
+    float t = u_time * 0.05 * u_speed;
+    float ga = 2.39996323;
+    float best = 1e9;
+    float bestk = 0.0;
+    int N = int(u_count);
+    for (int i = 0; i < 512; i++) {
+        if (i >= N) break;
+        float fi = float(i);
+        float r = u_spread * sqrt(fi) / sqrt(float(N));
+        float ang = fi * ga + t;
+        vec2 pc = vec2(cos(ang), sin(ang)) * r;
+        float d = length(uv - pc);
+        if (d < best) { best = d; bestk = fi / float(N); }
+    }
+    float dot = smoothstep(u_dotsize, u_dotsize * 0.4, best);
+    vec3 col = mix(u_bg, inferno(bestk), dot);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "count":   {"glsl": "int", "min": 16, "max": 512, "default": 240,
+                "description": "seed count"},
+    "spread":  {"glsl": "float", "min": 0.2, "max": 1.2, "default": 0.85,
+                "description": "spiral radius"},
+    "dotsize": {"glsl": "float", "min": 0.004, "max": 0.06, "default": 0.02,
+                "description": "dot radius"},
+    "speed":   {"glsl": "float", "min": 0.0, "max": 6.0, "default": 1.0,
+                "description": "rotation speed"},
+    "bg":      {"glsl": "color", "default": "#05070e", "description": "background"},
+})
+
+_register("guilloche_typed", "Guilloché: rose-curve engraving lattice (typed, node 278)",
+          "procedural", '''void main() {
+    vec2 p = (v_uv - 0.5);
+    p.x *= u_resolution.x / u_resolution.y;
+    float t = u_time * 0.06 * u_speed;
+    float r = length(p);
+    float a = atan(p.y, p.x);
+    float rose = cos(a * u_petals + t) * u_amp;
+    float bands = sin((r - rose) * u_freq * 6.28318530);
+    float line = smoothstep(1.0 - u_sharp, 1.0, abs(bands));
+    vec3 col = mix(u_bg, u_ink, line);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "petals": {"glsl": "float", "min": 2.0, "max": 24.0, "default": 7.0,
+               "description": "rose petal count"},
+    "amp":    {"glsl": "float", "min": 0.0, "max": 0.3, "default": 0.08,
+               "description": "rose amplitude"},
+    "freq":   {"glsl": "float", "min": 4.0, "max": 60.0, "default": 24.0,
+               "description": "ring frequency"},
+    "sharp":  {"glsl": "float", "min": 0.05, "max": 0.9, "default": 0.4,
+               "description": "line sharpness"},
+    "speed":  {"glsl": "float", "min": 0.0, "max": 6.0, "default": 1.0,
+               "description": "animation speed"},
+    "bg":     {"glsl": "color", "default": "#060a10", "description": "background"},
+    "ink":    {"glsl": "color", "default": "#7cf0ff", "description": "engraving"},
+})
+
+_register("lissajous_typed", "Lissajous: traced harmonic figure (typed, node 279)",
+          "procedural", '''void main() {
+    vec2 p = (v_uv - 0.5) * 2.0;
+    p.x *= u_resolution.x / u_resolution.y;
+    float t = u_time * 0.1 * u_speed;
+    float best = 1e9;
+    for (int i = 0; i < 240; i++) {
+        float s = float(i) / 240.0 * 6.28318530;
+        vec2 q = vec2(sin(u_fx * s + u_phase + t), sin(u_fy * s)) * u_scale;
+        best = min(best, length(p - q));
+    }
+    float line = smoothstep(u_thick, u_thick * 0.3, best);
+    vec3 col = mix(u_bg, u_fg, line);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "fx":    {"glsl": "float", "min": 1.0, "max": 12.0, "default": 3.0,
+              "description": "x frequency"},
+    "fy":    {"glsl": "float", "min": 1.0, "max": 12.0, "default": 2.0,
+              "description": "y frequency"},
+    "phase": {"glsl": "float", "min": 0.0, "max": 6.28, "default": 1.57,
+              "description": "phase offset"},
+    "scale": {"glsl": "float", "min": 0.3, "max": 0.95, "default": 0.8,
+              "description": "figure size"},
+    "thick": {"glsl": "float", "min": 0.01, "max": 0.12, "default": 0.04,
+              "description": "trace thickness"},
+    "speed": {"glsl": "float", "min": 0.0, "max": 6.0, "default": 1.0,
+              "description": "drift speed"},
+    "bg":    {"glsl": "color", "default": "#04060c", "description": "background"},
+    "fg":    {"glsl": "color", "default": "#ffe66b", "description": "trace color"},
+})
+
+_register("interference_typed", "Radial wave interference from N sources (typed, node 280)",
+          "procedural", _INFERNO_GPU + '''void main() {
+    vec2 p = (v_uv - 0.5);
+    p.x *= u_resolution.x / u_resolution.y;
+    float t = u_time * 0.5 * u_speed;
+    float acc = 0.0;
+    int N = int(u_sources);
+    for (int i = 0; i < 8; i++) {
+        if (i >= N) break;
+        float ang = float(i) / float(N) * 6.28318530;
+        vec2 src = vec2(cos(ang), sin(ang)) * u_radius;
+        float d = length(p - src);
+        acc += sin(d * u_freq * 6.28318530 - t);
+    }
+    float v = 0.5 + 0.5 * acc / float(N);
+    v = clamp(pow(v, u_contrast), 0.0, 1.0);
+    vec3 col = inferno(v);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "sources":  {"glsl": "int", "min": 2, "max": 8, "default": 4,
+                 "description": "wave source count"},
+    "radius":   {"glsl": "float", "min": 0.1, "max": 0.6, "default": 0.35,
+                 "description": "source ring radius"},
+    "freq":     {"glsl": "float", "min": 2.0, "max": 40.0, "default": 14.0,
+                 "description": "wave frequency"},
+    "contrast": {"glsl": "float", "min": 0.3, "max": 4.0, "default": 1.4,
+                 "description": "contrast gamma"},
+    "speed":    {"glsl": "float", "min": 0.0, "max": 6.0, "default": 1.0,
+                 "description": "wave speed"},
+})
+
+_register("flow_field_typed", "Curl-noise flow field streamlines (typed, node 281)",
+          "procedural", '''void main() {
+    vec2 p = (v_uv - 0.5);
+    p.x *= u_resolution.x / u_resolution.y;
+    float t = u_time * 0.1 * u_speed;
+    vec2 q = p * u_zoom;
+    float ang = fbm(q + vec2(t, -t)) * 6.28318530 * u_swirl;
+    vec2 dir = vec2(cos(ang), sin(ang));
+    float stripe = sin(dot(p, dir) * u_freq * 6.28318530 + t * 4.0);
+    float line = smoothstep(1.0 - u_density, 1.0, abs(stripe));
+    vec3 col = mix(u_bg, u_fg, line);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "zoom":    {"glsl": "float", "min": 0.5, "max": 6.0, "default": 2.5,
+                "description": "noise zoom"},
+    "swirl":   {"glsl": "float", "min": 0.2, "max": 3.0, "default": 1.0,
+                "description": "flow curl amount"},
+    "freq":    {"glsl": "float", "min": 4.0, "max": 40.0, "default": 16.0,
+                "description": "streamline density"},
+    "density": {"glsl": "float", "min": 0.05, "max": 0.8, "default": 0.35,
+                "description": "line coverage"},
+    "speed":   {"glsl": "float", "min": 0.0, "max": 6.0, "default": 1.0,
+                "description": "animation speed"},
+    "bg":      {"glsl": "color", "default": "#070510", "description": "background"},
+    "fg":      {"glsl": "color", "default": "#8affc1", "description": "streamlines"},
+})
+
+_register("kaleido_bloom_typed", "Kaleidoscopic petal bloom (typed, node 282)",
+          "procedural", _INFERNO_GPU + '''void main() {
+    vec2 p = (v_uv - 0.5);
+    p.x *= u_resolution.x / u_resolution.y;
+    float t = u_time * 0.15 * u_speed;
+    float r = length(p);
+    float a = atan(p.y, p.x);
+    float seg = 6.28318530 / u_slices;
+    a = mod(a + t, seg);
+    a = abs(a - seg * 0.5);
+    float petal = cos(a * u_slices * 0.5) * sin(r * u_rings * 6.28318530 - t * 2.0);
+    float v = clamp(0.5 + 0.5 * petal * u_gain, 0.0, 1.0);
+    vec3 col = inferno(v);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "slices": {"glsl": "float", "min": 3.0, "max": 24.0, "default": 8.0,
+               "description": "mirror slices"},
+    "rings":  {"glsl": "float", "min": 1.0, "max": 20.0, "default": 6.0,
+               "description": "radial rings"},
+    "gain":   {"glsl": "float", "min": 0.3, "max": 3.0, "default": 1.3,
+               "description": "intensity gain"},
+    "speed":  {"glsl": "float", "min": 0.0, "max": 6.0, "default": 1.0,
+               "description": "rotation speed"},
+})

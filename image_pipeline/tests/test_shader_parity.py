@@ -133,7 +133,7 @@ def test_gpu_shader_node_map_resolves():
     # 2026-07-11 pt.8. Total = 168.
     # + 5 P1.3b scalar-PDE ping-pong sim twins (127 KS, 128 SH, 157 SH,
     # 162 Rössler array, 170 PFC) added 2026-07-12. Total = 173.
-    assert len(GPU_SHADER_NODE_MAP) == 173, len(GPU_SHADER_NODE_MAP)
+    assert len(GPU_SHADER_NODE_MAP) == 179, len(GPU_SHADER_NODE_MAP)
     for mid, entry in GPU_SHADER_NODE_MAP.items():
         if entry.get("type") == "sim":
             # P1 ping-pong sim: seed/step/display must all resolve to shaders.
