@@ -142,6 +142,35 @@ def test_ml_node_runs_and_writes_contracted_outputs(node_id: str, tmp_path: Path
 
 
 @pytest.mark.skipif(_skip_ml, reason=_skip_reason)
+def test_sam_score_clamped_to_unit_interval(tmp_path: Path):
+    """Pitfall #18 contract: SAM SCALAR score must stay within [0,1].
+
+    The point/box prompt paths call ``predictor.predict()`` whose raw scores
+    can exceed 1.0 (observed sam_iou=1.008). This must be clamped before it is
+    written to scalars.json, or any downstream SCALAR consumer breaks. Exercises
+    the point mode specifically (the path that was historically unclamped).
+    """
+    h, w = 256, 256
+    img = _disk(h, w)
+    Image.fromarray((img * 255).astype(np.uint8)).save(tmp_path / "_input.png")
+    params = {
+        "input_image": str(tmp_path / "_input.png"),
+        "mode": "point",
+        "point_x": 0.5,
+        "point_y": 0.5,
+        "checkpoint": "vit_b",
+        "device": "cpu",
+    }
+    _call("__sam_segment__", tmp_path, params, (h, w))
+    scalars = tmp_path / "scalars.json"
+    assert scalars.exists(), "__sam_segment__: no scalars.json (SCALAR missing)"
+    sc = json.loads(scalars.read_text())
+    assert "score" in sc, "__sam_segment__: 'score' scalar missing"
+    s = float(sc["score"])
+    assert 0.0 <= s <= 1.0, f"__sam_segment__: score {s} outside [0,1] (Pitfall #18)"
+
+
+@pytest.mark.skipif(_skip_ml, reason=_skip_reason)
 def test_clip_score_writes_field(tmp_path: Path):
     """CLIP Score must emit a FIELD broadcast of per-label probabilities."""
     h, w = 256, 256

@@ -573,7 +573,9 @@ def method_sam_segment(out_dir: Path, seed: int, params=None):
                     masks, scores, _ = predictor.predict(box=input_box, multimask_output=True)
                     idx = int(_np.argmax(scores))
                     out_mask = masks[idx].astype(_np.float32)
-                    out_score = float(scores[idx])
+                    # predictor.predict() scores are raw mask-decoder logits and
+                    # can exceed 1.0; clamp to the advertised SCALAR [0,1] contract.
+                    out_score = float(min(1.0, max(0.0, float(scores[idx]))))
             else:  # point mode (or fallback to point when coordinates valid)
                 if 0.0 <= px <= 1.0 and 0.0 <= py <= 1.0:
                     input_point = _np.array([[px * float(W), py * float(H)]], dtype=_np.float32)
@@ -582,7 +584,8 @@ def method_sam_segment(out_dir: Path, seed: int, params=None):
                         point_coords=input_point, point_labels=input_label, multimask_output=True)
                     idx = int(_np.argmax(scores))
                     out_mask = masks[idx].astype(_np.float32)
-                    out_score = float(scores[idx])
+                    # predictor.predict() scores are raw logits; clamp to [0,1].
+                    out_score = float(min(1.0, max(0.0, float(scores[idx]))))
 
         print(f"  ✓ SAM Segment: mode={mode} score={out_score:.3f} "
               f"coverage={out_mask.mean():.3f}")
@@ -809,7 +812,9 @@ def method_clip_sam(out_dir: Path, seed: int, params=None):
                 best_i = int(probs.argmax())
                 best = valid[best_i]
                 out_mask = best["segmentation"].astype(_np.float32)
-                out_score = float(probs[best_i])
+                # CLIP softmax prob is already in [0,1]; clamp defensively so the
+                # advertised SCALAR [0,1] contract holds for any downstream consumer.
+                out_score = float(min(1.0, max(0.0, float(probs[best_i]))))
                 print(f"  ✓ CLIP-SAM: mask {best_i}/{len(valid)} "
                       f"clip_p={out_score:.3f} sam_iou={float(best.get('predicted_iou', 0)):.3f} "
                       f"cov={out_mask.mean():.3f}")
