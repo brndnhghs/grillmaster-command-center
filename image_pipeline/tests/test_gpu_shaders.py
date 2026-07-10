@@ -21,6 +21,48 @@ from image_pipeline.core.registry import get_meta
 from image_pipeline.core.shaders import render_shader, SHADERS
 from image_pipeline.core.graph import GraphExecutor
 from image_pipeline.core.utils import set_canvas
+from image_pipeline.core.registry import get_meta
+
+
+# ── 6. param_map integrity (silent-param-drop guard) ─────────────────
+#
+# Every CLIENT_GPU_SHIMS / CLIENT_GPU_SIMS entry carries a `param_map` that
+# translates the node's REAL params onto the shader's u_params slots. A stale
+# key here is a silent bug: the client resolver silently drops the binding and
+# the live preview ignores a control the user sees in the UI. This guard fails
+# the build whenever a mapped key is not a real param of the node (caught 5
+# such bugs on nodes 51/52/66/67/132 during the 2026-07-11 audit).
+
+def test_gpu_param_map_resolves():
+    """Every shim/sim param_map key must be a real param of the node."""
+    import image_pipeline.methods  # noqa: F401 — ensure registration
+    from image_pipeline.methods.gpu_shaders import (
+        CLIENT_GPU_SHIMS, CLIENT_GPU_SIMS, GPU_SHADER_NODE_MAP,
+    )
+    # The node_map serves every entry; merge shims+sims from the source dicts
+    # so the sim entries (which carry the same param_map shape) are covered.
+    entries = {}
+    entries.update(CLIENT_GPU_SHIMS)
+    entries.update(CLIENT_GPU_SIMS)
+    assert entries, "no GPU shim/sim entries registered"
+
+    bad = []
+    for mid_str, entry in entries.items():
+        pm = entry.get("param_map")
+        if not pm:
+            continue  # empty map is allowed (choice/string-only nodes)
+        meta = get_meta(str(mid_str).zfill(2))
+        real = set(meta.params.keys()) if meta and meta.params else set()
+        for key in pm.keys():
+            if key not in real:
+                bad.append((mid_str, key, sorted(real)[:8]))
+    assert not bad, "param_map keys not present in node params:\n" + "\n".join(
+        f"  node {m}: '{k}' not a real param (have {r})" for m, k, r in bad
+    )
+
+    # The merged map must still expose the full node_map (no entry lost).
+    assert set(GPU_SHADER_NODE_MAP) >= set(entries), \
+        "GPU_SHADER_NODE_MAP missing shim/sim entries"
 
 
 def _tmp() -> Path:

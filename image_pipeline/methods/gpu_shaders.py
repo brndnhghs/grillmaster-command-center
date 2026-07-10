@@ -356,19 +356,29 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     "33": {"shader": "mandelbrot_gpu", "type": "procedural",
            "param_map": {"zoom": "p1", "color_shift": "p2",
                          "center_x": "p3", "center_y": "p4"}},
-    # 51 Burning Ship: zoom p1, color_offset p2.
+    # 51 Burning Ship: color_speed p1 (palette rotation), color_offset p2 (hue
+    # shift). The shader has no zoom uniform (it renders a fixed view), so zoom
+    # is intentionally NOT mapped. color_speed/color_offset are real params.
     "51": {"shader": "burning_ship_gpu", "type": "procedural",
-           "param_map": {"zoom": "p1", "color_offset": "p2"}},
-    # 52 Newton: color_speed p1, color_offset p2, zoom p3.
+           "param_map": {"color_speed": "p1", "color_offset": "p2"}},
+    # 52 Newton: color_speed p1 (palette rotation), color_offset p2 (hue
+    # shift). The shader's p3 slot is the internal zoom exp term with no
+    # corresponding user param (fixed view), so zoom is intentionally NOT
+    # mapped. color_speed/color_offset are real params.
     "52": {"shader": "newton_gpu", "type": "procedural",
-           "param_map": {"color_speed": "p1", "color_offset": "p2", "zoom": "p3"}},
-    # 66 Julia Set: zoom p3 (default 0.5 = full view). c stays at the shader's
-    # fixed famous Julia constant; constant is a string param and not mapped.
+           "param_map": {"color_speed": "p1", "color_offset": "p2"}},
+    # 66 Julia Set: p3 drives the shader's internal zoom exp term (0.5 = full
+    # view). No real "zoom" param exists (fixed view), so it is intentionally
+    # left unmapped. The Julia constant is a string param (pitfall #14) and is
+    # not mapped; the shader uses its own famous constant.
     "66": {"shader": "julia", "type": "procedural",
-           "param_map": {"zoom": "p3"}},
-    # 67 Sierpinski Carpet: depth p1, color_shift p2.
+           "param_map": {}},
+    # 67 Sierpinski Carpet: depth p1 (1-7 detail). color_shift p2 was a stale
+    # key — the shader's p2 slot is a hue/color-offset term with no matching
+    # "color_shift" param; color_mode/palette_name are choice strings (pitfall
+    # #14) left unmapped. depth is the sole real numeric param.
     "67": {"shader": "sierpinski_gpu", "type": "procedural",
-           "param_map": {"depth": "p1", "color_shift": "p2"}},
+           "param_map": {"depth": "p1"}},
     # 69 Lyapunov: r_min p1, r_max p2. color_mode/color_shift via p3/p4 if added.
     "69": {"shader": "lyapunov_gpu", "type": "procedural",
            "param_map": {"r_min": "p1", "r_max": "p2"}},
@@ -643,7 +653,11 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "seed": "sw_seed", "step": "sw_step", "display": "sw_display",
         "state_channels": 3, "substeps": 4,
         "reset_on": ["seed", "param", "loop", "resize"],
-        "param_map": {"gravity": "p1", "base_depth": "p2", "nu": "p3", "amplitude": "p4"},
+        # gravity p1, base_depth p2, amplitude p4 are real numeric params.
+        # "nu" was a stale key (node 132 has no such param); the shader's p3
+        # slot is unused by the display/step kernels, so p3 is intentionally
+        # left unmapped.
+        "param_map": {"gravity": "p1", "base_depth": "p2", "amplitude": "p4"},
     },
     # 135 KPZ Surface Growth: p1=nu, p2=lambda, p3=noise_amplitude, p4=dt.
     "135": {
