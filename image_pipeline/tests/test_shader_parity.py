@@ -127,8 +127,11 @@ def test_gpu_shader_node_map_resolves():
     # 7 typed derivative-field filter nodes (258-264: sobel_mag/sobel_dir/
     # laplacian/scharr/normal_map/gradient_orient/emboss) added 2026-07-11 pt.6;
     # 6 typed closed-form pattern nodes (265-270: spirograph/truchet_maze/
-    # reaction_waves/hex_grid/starfield/concentric_rings) added 2026-07-11 pt.7.
-    assert len(GPU_SHADER_NODE_MAP) == 162, len(GPU_SHADER_NODE_MAP)
+    # reaction_waves/hex_grid/starfield/concentric_rings) added 2026-07-11 pt.7;
+    # 6 typed closed-form math_art nodes (271-276: ulam_spiral/maze/
+    # circle_packing/fourier_circles/waveform/strange_attractor) added
+    # 2026-07-11 pt.8. Total = 168.
+    assert len(GPU_SHADER_NODE_MAP) == 168, len(GPU_SHADER_NODE_MAP)
     for mid, entry in GPU_SHADER_NODE_MAP.items():
         if entry.get("type") == "sim":
             # P1 ping-pong sim: seed/step/display must all resolve to shaders.

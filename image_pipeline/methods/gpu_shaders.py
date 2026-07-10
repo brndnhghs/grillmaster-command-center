@@ -221,6 +221,15 @@ _TYPED_SHADER_NODES = [
     ("268", "hex_grid_typed",      "GPU Hex Grid"),
     ("269", "starfield_typed",     "GPU Starfield"),
     ("270", "concentric_rings_typed", "GPU Concentric Rings"),
+    # Categorical coverage pt.8 (2026-07-11): closed-form math_art patterns
+    # with NAMED typed controls — Ulam-spiral homage, hash maze, circle
+    # packing, Fourier epicycles, summed waveform, Clifford strange-attractor.
+    ("271", "ulam_spiral_typed",     "GPU Ulam Spiral"),
+    ("272", "maze_typed",            "GPU Hash Maze"),
+    ("273", "circle_packing_typed",  "GPU Circle Packing"),
+    ("274", "fourier_circles_typed", "GPU Fourier Circles"),
+    ("275", "waveform_typed",        "GPU Waveform"),
+    ("276", "strange_attractor_typed", "GPU Strange Attractor"),
 ]
 
 _TIME_SCALE_PARAM = {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0}

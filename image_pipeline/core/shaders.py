@@ -5017,3 +5017,206 @@ _register("concentric_rings_typed", "Smooth concentric rings / ripples (typed, n
     "center_y":    {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5,
                     "description": "center y"},
 })
+
+# ── Typed math_art pattern nodes (ids 271-276) ───────────────────────────
+# Categorical coverage for the math_art family: closed-form visual patterns
+# (Ulam-spiral homage, hash maze, circle packing, Fourier epicycles, summed
+# waveform, Clifford strange-attractor bands). Each exposes NAMED typed
+# controls + wireable SCALAR ports (the _make_typed factory derives them from
+# `uniforms`). CPU fns stay authoritative; these are an additive typed-uniform
+# live-preview layer. No per-frame seeds — every frame is a pure function of
+# (uv, t), so GPU/CPU parity is exact (no seeded-layout divergence).
+_register("ulam_spiral_typed", "Ulam-spiral homage: sparse glowing dots along a number spiral (typed, node 271)",
+          "procedural", _INFERNO_GPU + '''void main() {
+    vec2 uv = (v_uv - 0.5);
+    uv.x *= u_resolution.x / u_resolution.y;
+    float rad = length(uv);
+    float ang = atan(uv.y, uv.x);
+    float turns = max(u_turns, 0.5);
+    float idx = rad * turns * 6.28318530;
+    vec2 cell = vec2(floor(idx / max(u_cells, 1.0)),
+                     floor((ang + 3.14159265) / (6.28318530 / max(u_arms, 1.0))));
+    float h = hash21(cell + 0.5);
+    float isPrime = step(1.0 - u_density, h);
+    float t = u_time * 0.03 * u_speed;
+    float glow = 0.5 + 0.5 * sin(idx * 0.25 - t * 6.28318530);
+    float v = max(isPrime, glow * 0.22);
+    vec3 col = mix(u_bg, u_fg, v);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "turns":   {"glsl": "float", "min": 1.0, "max": 40.0, "default": 12.0,
+                "description": "spiral turns"},
+    "cells":   {"glsl": "float", "min": 4.0, "max": 80.0, "default": 24.0,
+                "description": "cells per turn"},
+    "arms":    {"glsl": "float", "min": 1.0, "max": 16.0, "default": 6.0,
+                "description": "radial arms"},
+    "density": {"glsl": "float", "min": 0.02, "max": 0.6, "default": 0.18,
+                "description": "prime-dot density"},
+    "speed":   {"glsl": "float", "min": 0.0, "max": 6.0, "default": 1.0,
+                "description": "animation speed"},
+    "bg":      {"glsl": "color", "default": "#05060f", "description": "background"},
+    "fg":      {"glsl": "color", "default": "#ffcf5c", "description": "dot color"},
+})
+
+_register("maze_typed", "Hash maze: procedural wall grid (typed, node 272)",
+          "procedural", '''void main() {
+    vec2 uv = v_uv * max(u_scale, 1.0);
+    uv += vec2(u_time * u_drift * 0.05, 0.0);
+    vec2 g = floor(uv);
+    vec2 f = fract(uv);
+    float hw = max(u_wall, 0.02) * 0.5;
+    float h1 = hash21(g);
+    float h2 = hash21(g + 17.3);
+    float vwall = step(1.0 - u_density, h1) * step(f.x, hw);
+    float hwall = step(1.0 - u_density, h2) * step(f.y, hw);
+    float wall = clamp(vwall + hwall, 0.0, 1.0);
+    vec3 col = mix(u_bg, u_fg, wall);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "scale":   {"glsl": "float", "min": 4.0, "max": 60.0, "default": 18.0,
+                "description": "grid density"},
+    "wall":    {"glsl": "float", "min": 0.04, "max": 0.5, "default": 0.18,
+                "description": "wall thickness"},
+    "density": {"glsl": "float", "min": 0.02, "max": 0.6, "default": 0.25,
+                "description": "wall probability"},
+    "drift":   {"glsl": "float", "min": 0.0, "max": 4.0, "default": 0.0,
+                "description": "scroll drift"},
+    "bg":      {"glsl": "color", "default": "#0a0a14", "description": "background"},
+    "fg":      {"glsl": "color", "default": "#9be7ff", "description": "wall color"},
+})
+
+_register("circle_packing_typed", "Circle packing: grid of disks with hashed radii (typed, node 273)",
+          "procedural", _INFERNO_GPU + '''void main() {
+    vec2 uv = v_uv * max(u_scale, 1.0);
+    vec2 g = floor(uv);
+    vec2 f = fract(uv) - 0.5;
+    float h = hash21(g + 3.1);
+    float rad = u_min_r + h * (u_max_r - u_min_r);
+    float d = length(f);
+    float disk = smoothstep(rad, rad - 0.05, d) * step(d, rad);
+    float t = u_time * 0.05 * u_speed;
+    vec3 tint = inferno(h);
+    vec3 col = mix(u_bg, tint, disk);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "scale":  {"glsl": "float", "min": 2.0, "max": 40.0, "default": 10.0,
+               "description": "pack density"},
+    "min_r":  {"glsl": "float", "min": 0.05, "max": 0.6, "default": 0.15,
+               "description": "min disk radius"},
+    "max_r":  {"glsl": "float", "min": 0.1, "max": 0.95, "default": 0.5,
+               "description": "max disk radius"},
+    "speed":  {"glsl": "float", "min": 0.0, "max": 6.0, "default": 1.0,
+               "description": "animation speed"},
+    "bg":     {"glsl": "color", "default": "#04060d", "description": "background"},
+})
+
+_register("fourier_circles_typed", "Fourier epicycles: traced harmonic curve (typed, node 274)",
+          "procedural", '''void main() {
+    vec2 p = (v_uv - 0.5);
+    p.x *= u_resolution.x / u_resolution.y;
+    float t = u_time * 0.1 * u_speed;
+    float best = 1e9;
+    for (int i = 0; i < 128; i++) {
+        float s = float(i) / 127.0;
+        float ph = s * 6.28318530 + t;
+        vec2 q = vec2(0.0);
+        q.x += sin(ph * u_freq1 + u_phase1) * (0.32 / max(u_freq1, 1.0));
+        q.y += cos(ph * u_freq2 + u_phase2) * (0.32 / max(u_freq2, 1.0));
+        q += 0.22 * vec2(sin(ph * u_freq3), cos(ph * u_freq3));
+        best = min(best, length(p - q));
+    }
+    float line = smoothstep(u_thick, 0.0, best);
+    vec3 col = mix(u_bg, u_fg, line);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "freq1":  {"glsl": "float", "min": 1.0, "max": 12.0, "default": 3.0,
+               "description": "harmonic 1 freq"},
+    "freq2":  {"glsl": "float", "min": 1.0, "max": 12.0, "default": 5.0,
+               "description": "harmonic 2 freq"},
+    "freq3":  {"glsl": "float", "min": 1.0, "max": 12.0, "default": 2.0,
+               "description": "harmonic 3 freq"},
+    "phase1": {"glsl": "float", "min": 0.0, "max": 6.2831853, "default": 0.0,
+               "description": "harmonic 1 phase"},
+    "phase2": {"glsl": "float", "min": 0.0, "max": 6.2831853, "default": 1.2,
+               "description": "harmonic 2 phase"},
+    "thick":  {"glsl": "float", "min": 0.005, "max": 0.08, "default": 0.02,
+               "description": "line thickness"},
+    "speed":  {"glsl": "float", "min": 0.0, "max": 6.0, "default": 1.0,
+               "description": "animation speed"},
+    "bg":     {"glsl": "color", "default": "#05070f", "description": "background"},
+    "fg":     {"glsl": "color", "default": "#62f0c8", "description": "curve color"},
+})
+
+_register("waveform_typed", "Waveform: summed sine oscillators (typed, node 275)",
+          "procedural", '''void main() {
+    vec2 p = (v_uv - 0.5);
+    p.x *= u_resolution.x / u_resolution.y;
+    float t = u_time * 0.08 * u_speed;
+    float y = 0.0;
+    y += sin(p.x * u_k1 * 6.28318530 + t);
+    y += 0.5 * sin(p.x * u_k2 * 6.28318530 + t * 1.3);
+    y += 0.3 * sin(p.x * u_k3 * 6.28318530 + t * 0.7);
+    y *= u_amp * 0.25;
+    float line = smoothstep(u_thick, 0.0, abs(p.y - y));
+    vec3 col = mix(u_bg, u_fg, line);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "k1":    {"glsl": "float", "min": 0.5, "max": 16.0, "default": 3.0,
+              "description": "osc 1 wavenumber"},
+    "k2":    {"glsl": "float", "min": 0.5, "max": 16.0, "default": 6.0,
+              "description": "osc 2 wavenumber"},
+    "k3":    {"glsl": "float", "min": 0.5, "max": 16.0, "default": 9.0,
+              "description": "osc 3 wavenumber"},
+    "amp":   {"glsl": "float", "min": 0.2, "max": 2.0, "default": 1.0,
+              "description": "amplitude"},
+    "thick": {"glsl": "float", "min": 0.005, "max": 0.08, "default": 0.02,
+              "description": "trace thickness"},
+    "speed": {"glsl": "float", "min": 0.0, "max": 6.0, "default": 1.0,
+              "description": "scroll speed"},
+    "bg":    {"glsl": "color", "default": "#04060d", "description": "background"},
+    "fg":    {"glsl": "color", "default": "#ff6bd6", "description": "trace color"},
+})
+
+_register("strange_attractor_typed", "Strange-attractor bands: Clifford map density (typed, node 276)",
+          "procedural", _INFERNO_GPU + '''void main() {
+    vec2 uv = (v_uv - 0.5);
+    uv.x *= u_resolution.x / u_resolution.y;
+    vec2 p = uv * 2.6;
+    float t = u_time * 0.05 * u_speed;
+    float a = u_a + 0.12 * sin(t);
+    float b = u_b + 0.12 * cos(t);
+    float c = u_c;
+    float d = u_d;
+    vec2 q = p;
+    float acc = 0.0;
+    for (int i = 0; i < 16; i++) {
+        vec2 nx = vec2(sin(a * q.y) + c * cos(a * q.x),
+                       sin(b * q.x) + d * cos(b * q.y));
+        acc += exp(-dot(nx - p, nx - p) * u_band);
+        q = nx;
+    }
+    float v = clamp(acc * u_gain, 0.0, 1.0);
+    vec3 col = inferno(v);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "a":    {"glsl": "float", "min": -2.5, "max": 2.5, "default": -1.4,
+             "description": "Clifford a"},
+    "b":    {"glsl": "float", "min": -2.5, "max": 2.5, "default": 1.6,
+             "description": "Clifford b"},
+    "c":    {"glsl": "float", "min": -2.0, "max": 2.0, "default": 1.0,
+             "description": "Clifford c"},
+    "d":    {"glsl": "float", "min": -2.0, "max": 2.0, "default": 0.7,
+             "description": "Clifford d"},
+    "band": {"glsl": "float", "min": 1.0, "max": 60.0, "default": 18.0,
+             "description": "band tightness"},
+    "gain": {"glsl": "float", "min": 0.1, "max": 3.0, "default": 1.0,
+             "description": "density gain"},
+    "speed":{"glsl": "float", "min": 0.0, "max": 6.0, "default": 1.0,
+             "description": "animation speed"},
+})
