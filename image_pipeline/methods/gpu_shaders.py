@@ -212,6 +212,15 @@ _TYPED_SHADER_NODES = [
     ("262", "normal_map_typed",   "GPU Normal Map"),
     ("263", "gradient_orient_typed", "GPU Gradient Flow"),
     ("264", "emboss_typed",       "GPU Emboss"),
+    # Categorical coverage pt.7 (2026-07-11): closed-form pattern generators
+    # with NAMED typed controls — spirograph, truchet maze, reaction waves,
+    # hex grid, starfield, concentric rings.
+    ("265", "spirograph_typed",    "GPU Spirograph"),
+    ("266", "truchet_maze_typed",  "GPU Truchet Maze"),
+    ("267", "reaction_waves_typed", "GPU Reaction Waves"),
+    ("268", "hex_grid_typed",      "GPU Hex Grid"),
+    ("269", "starfield_typed",     "GPU Starfield"),
+    ("270", "concentric_rings_typed", "GPU Concentric Rings"),
 ]
 
 _TIME_SCALE_PARAM = {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0}

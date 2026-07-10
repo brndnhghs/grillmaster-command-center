@@ -125,8 +125,10 @@ def test_gpu_shader_node_map_resolves():
     # 8 typed closed-form field-eval nodes (250-257: moire/chladni/dunes/
     # quasicrystal/metaballs/nebula/wood_grain/ripples) added 2026-07-11 pt.5;
     # 7 typed derivative-field filter nodes (258-264: sobel_mag/sobel_dir/
-    # laplacian/scharr/normal_map/gradient_orient/emboss) added 2026-07-11 pt.6.
-    assert len(GPU_SHADER_NODE_MAP) == 156, len(GPU_SHADER_NODE_MAP)
+    # laplacian/scharr/normal_map/gradient_orient/emboss) added 2026-07-11 pt.6;
+    # 6 typed closed-form pattern nodes (265-270: spirograph/truchet_maze/
+    # reaction_waves/hex_grid/starfield/concentric_rings) added 2026-07-11 pt.7.
+    assert len(GPU_SHADER_NODE_MAP) == 162, len(GPU_SHADER_NODE_MAP)
     for mid, entry in GPU_SHADER_NODE_MAP.items():
         if entry.get("type") == "sim":
             # P1 ping-pong sim: seed/step/display must all resolve to shaders.

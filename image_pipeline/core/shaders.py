@@ -4782,3 +4782,238 @@ _register("emboss_typed", "Directional emboss (relief) of the input (typed, node
     "dark":  {"glsl": "color", "default": "#161a2a", "description": "shadow color"},
     "light": {"glsl": "color", "default": "#f3f0e6", "description": "highlight color"},
 })
+
+# ── Typed-uniform pattern expansions (ids 265–270, 2026-07-11) ───────────────
+# Closed-form f(uv,t) pattern generators — every frame a pure function of the
+# fragment coordinate and the animation clock, so the CPU-vs-GPU live preview is
+# EXACTLY reproducible (no seeded-layout divergence). Additive GPU live path;
+# no CPU fn is touched. Each declares NAMED typed uniforms that the factory
+# turns into node params + wireable SCALAR ports.
+
+_register("spirograph_typed", "Hypotrochoid/epitrochoid spirograph ribbons (typed, node 265)",
+          "procedural", '''void main() {
+    float R = max(u_ring_radius, 0.01);
+    float r = max(u_wheel_radius, 0.001);
+    float d = u_pen_offset;
+    int np = int(clamp(u_petals, 1.0, 60.0));
+    float speed = u_time * 0.02 * max(u_spin, 0.0);
+    vec2 ctr = (vec2(u_center_x, u_center_y) - 0.5) * 2.0;
+    vec2 p = (v_uv - 0.5) * 2.0 - ctr;
+    float best = 1e9;
+    for (int i = 0; i < 60; i++) {
+        if (i >= np) break;
+        float a = (float(i) / float(np)) * 6.2831853 + speed;
+        float ca = cos(a), sa = sin(a);
+        // hypotrochoid point for this phase
+        vec2 q = (R - r) * vec2(ca, sa) + d * vec2(cos(((R - r) / r) * a), sin(((R - r) / r) * a));
+        best = min(best, distance(p, q));
+    }
+    float rib = smoothstep(u_line_width, u_line_width * 0.25, best);
+    f_color = vec4(mix(u_bg, u_ink, rib), 1.0);
+}
+''', uniforms={
+    "ring_radius":  {"glsl": "float", "min": 0.1, "max": 1.0, "default": 0.7,
+                     "description": "fixed ring radius R"},
+    "wheel_radius": {"glsl": "float", "min": 0.02, "max": 0.9, "default": 0.27,
+                     "description": "rolling wheel radius r"},
+    "pen_offset":   {"glsl": "float", "min": 0.0, "max": 0.9, "default": 0.45,
+                     "description": "pen distance from wheel center"},
+    "petals":       {"glsl": "float", "min": 1.0, "max": 60.0, "default": 24.0,
+                     "description": "number of lobes"},
+    "spin":         {"glsl": "float", "min": 0.0, "max": 8.0, "default": 1.0,
+                     "description": "rotation animation speed"},
+    "center_x":     {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5,
+                     "description": "rosette center x"},
+    "center_y":     {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5,
+                     "description": "rosette center y"},
+    "line_width":   {"glsl": "float", "min": 0.005, "max": 0.08, "default": 0.02,
+                     "description": "ribbon thickness"},
+    "bg":   {"glsl": "color", "default": "#0c0e1a", "description": "background"},
+    "ink":  {"glsl": "color", "default": "#5ef2c0", "description": "ribbon color"},
+})
+
+_register("truchet_maze_typed", "Random-rotated Truchet arc/maze tiling (typed, node 266)",
+          "procedural", '''float _truchet_hash(vec2 p) {
+    p = fract(p * vec2(123.34, 345.45));
+    p += dot(p, p + 34.345);
+    return fract(p.x * p.y);
+}
+void main() {
+    int cells = int(clamp(u_cells, 1.0, 40.0));
+    float cellSize = 1.0 / float(cells);
+    // Continuous rotation of the whole tiling with time -> every frame differs
+    // and the maze appears to spin/re-tile as it animates.
+    float ang = u_time * 0.15 * max(u_anim_speed, 0.0);
+    mat2 R = mat2(cos(ang), -sin(ang), sin(ang), cos(ang));
+    vec2 uv = R * (v_uv - 0.5) / cellSize + 0.5;
+    vec2 id = floor(uv);
+    vec2 f = fract(uv) - 0.5;
+    float h = _truchet_hash(id);
+    bool flip = h > 0.5;
+    if (flip) f = vec2(f.y, f.x);
+    float r = u_arc_radius;
+    float d1 = abs(distance(f, vec2(-0.5 + r, -0.5 + r)) - r);
+    float d2 = abs(distance(f, vec2( 0.5 - r,  0.5 - r)) - r);
+    float d = min(d1, d2);
+    float line = smoothstep(u_line_width, u_line_width * 0.4, d);
+    vec3 col = mix(u_bg, u_ink, line);
+    if (u_show_nodes > 0.5) {
+        float dn = min(distance(f, vec2(-0.5, -0.5)), distance(f, vec2(0.5, 0.5)));
+        col = mix(col, u_node_color, smoothstep(0.06, 0.02, dn));
+    }
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "cells":       {"glsl": "float", "min": 1.0, "max": 40.0, "default": 8.0,
+                    "description": "tiles per axis"},
+    "line_width":  {"glsl": "float", "min": 0.01, "max": 0.25, "default": 0.09,
+                    "description": "stroke width"},
+    "arc_radius":  {"glsl": "float", "min": 0.1, "max": 0.5, "default": 0.5,
+                    "description": "arc radius (1=semicircle)"},
+    "anim_speed":  {"glsl": "float", "min": 0.0, "max": 6.0, "default": 1.0,
+                    "description": "tile rotation animation speed"},
+    "show_nodes":  {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.0,
+                    "description": "draw connection nodes (0/1)"},
+    "bg":          {"glsl": "color", "default": "#10131f", "description": "background"},
+    "ink":         {"glsl": "color", "default": "#e8d9a0", "description": "stroke color"},
+    "node_color":  {"glsl": "color", "default": "#ff6b6b", "description": "node color"},
+})
+
+_register("reaction_waves_typed", "Autonomous reaction-diffusion wave pattern (typed, node 267)",
+          "procedural", _INFERNO_GPU + '''void main() {
+    vec2 res = u_resolution;
+    vec2 p = (v_uv - 0.5) * res;
+    float t = u_time * 0.05;
+    float v = 0.0;
+    // Layered concentric reaction fronts from jittered seed centers.
+    for (int i = 0; i < 8; i++) {
+        float fi = float(i);
+        vec2 seed = (vec2(hash21(vec2(fi, 3.1)), hash21(vec2(fi, 7.7))) - 0.5) * res;
+        float d = distance(p, seed);
+        float k = (u_wavelength * (1.0 + 0.25 * sin(fi * 1.7)));
+        float ph = (d / k) - t * (u_speed * (1.0 + 0.15 * cos(fi * 2.3)));
+        v += (0.5 + 0.5 * sin(ph * 6.2831853));
+    }
+    v = (v / 8.0 - 0.5) * u_contrast + 0.5;
+    v = clamp(v, 0.0, 1.0);
+    f_color = vec4(inferno(v), 1.0);
+}
+''', uniforms={
+    "speed":       {"glsl": "float", "min": 0.0, "max": 6.0, "default": 1.0,
+                    "description": "wave propagation speed"},
+    "wavelength":  {"glsl": "float", "min": 4.0, "max": 120.0, "default": 38.0,
+                    "description": "front spacing (px)"},
+    "contrast":    {"glsl": "float", "min": 0.2, "max": 4.0, "default": 1.0,
+                    "description": "band sharpness"},
+})
+
+_register("hex_grid_typed", "Hexagonal lattice with tri-planar cell tinting (typed, node 268)",
+          "procedural", '''vec4 _hexDist(vec2 p) {
+    // p in hex-tile space (unit cell). Returns vec4(r, g, b, minDist) where
+    // the first three components carry the three edge distances of the hexagon.
+    vec2 q = abs(p);
+    float c = dot(q, normalize(vec2(1.0, 1.7320508)));
+    float a = max(c, q.x);
+    float b = max(c, q.y);
+    // distance to the two relevant edge orientations + vertical edge
+    vec2 r = vec2(max(a, b), max(q.x * 0.8660254 + q.y * 0.5, q.y));
+    return vec4(a, b, q.y, min(a, r.y));
+}
+void main() {
+    float sc = max(u_scale, 0.5);
+    vec2 p = (v_uv - 0.5) * u_resolution / sc * 2.0;
+    p += vec2(u_offset_x, u_offset_y) * u_resolution / sc * 2.0;
+    p.y += u_time * u_flow * 0.5;
+    const vec2 s = vec2(1.0, 1.7320508);
+    vec2 a = mod(p, s) - s * 0.5;
+    vec2 b = mod(p + s * 0.5, s) - s * 0.5;
+    vec4 ha = _hexDist(a);
+    vec4 hb = _hexDist(b);
+    float d = (length(a) < length(b)) ? ha.w : hb.w;
+    // thickness is in CELL units (0..0.5); convert so 0.1 reads as a thin wall.
+    float th = max(u_thickness * 0.1, 0.001);
+    float edge = smoothstep(th, th * 0.4, d);
+    vec2 cell = (length(a) < length(b)) ? floor(p / s) : floor((p + s * 0.5) / s);
+    float idh = fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);
+    vec3 fill = mix(u_fill_a, u_fill_b, idh);
+    f_color = vec4(mix(fill, u_line, edge), 1.0);
+}
+''', uniforms={
+    "scale":       {"glsl": "float", "min": 4.0, "max": 120.0, "default": 24.0,
+                    "description": "hex cell size (px)"},
+    "thickness":   {"glsl": "float", "min": 0.5, "max": 8.0, "default": 2.0,
+                    "description": "wall thickness (px)"},
+    "flow":        {"glsl": "float", "min": 0.0, "max": 6.0, "default": 1.0,
+                    "description": "downward drift speed"},
+    "offset_x":    {"glsl": "float", "min": -0.5, "max": 0.5, "default": 0.0,
+                    "description": "horizontal offset"},
+    "offset_y":    {"glsl": "float", "min": -0.5, "max": 0.5, "default": 0.0,
+                    "description": "vertical offset"},
+    "fill_a":      {"glsl": "color", "default": "#14233f", "description": "cell tint A"},
+    "fill_b":      {"glsl": "color", "default": "#2a4d6e", "description": "cell tint B"},
+    "line":        {"glsl": "color", "default": "#9fe3ff", "description": "wall color"},
+})
+
+_register("starfield_typed", "Parallax starfield with twinkling (typed, node 269)",
+          "procedural", '''float _sfield(vec2 uv, float seed) {
+    vec2 g = floor(uv);
+    vec2 f = fract(uv);
+    float h = hash21(g + seed);
+    float star = smoothstep(0.5 - u_star_size, 0.5 - u_star_size * 0.4,
+                            distance(f, vec2(h, fract(h * 13.3))));
+    return star;
+}
+void main() {
+    vec2 uv = v_uv * u_density;
+    float t = u_time * 0.1 * u_twinkle;
+    float total = 0.0;
+    vec3 col = u_bg_color;
+    for (int i = 1; i <= 4; i++) {
+        float fi = float(i);
+        float depth = fi / 4.0;
+        vec2 suv = (uv * depth) + vec2(t * depth, t * depth * 0.3) + fi * 17.0;
+        float s = _sfield(suv, fi * 3.7);
+        float tw = 0.6 + 0.4 * sin(t * (2.0 + fi) + hash21(suv) * 6.2831);
+        total += s * tw * (1.0 - depth * 0.4);
+        col += u_star_color * s * tw * (1.0 - depth * 0.5);
+    }
+    col = max(col, u_bg_color);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "density":     {"glsl": "float", "min": 4.0, "max": 80.0, "default": 30.0,
+                    "description": "stars per screen"},
+    "star_size":   {"glsl": "float", "min": 0.01, "max": 0.2, "default": 0.06,
+                    "description": "star radius"},
+    "twinkle":     {"glsl": "float", "min": 0.0, "max": 6.0, "default": 1.0,
+                    "description": "twinkle animation speed"},
+    "bg_color":    {"glsl": "color", "default": "#03040a", "description": "sky color"},
+    "star_color":  {"glsl": "color", "default": "#ffffff", "description": "star color"},
+})
+
+_register("concentric_rings_typed", "Smooth concentric rings / ripples (typed, node 270)",
+          "procedural", _INFERNO_GPU + '''void main() {
+    vec2 res = u_resolution;
+    vec2 p = (v_uv - 0.5) * res;
+    p += (vec2(u_center_x, u_center_y) - 0.5) * res;
+    p = rot(u_skew) * p;
+    float r = length(p);
+    float t = u_time * 0.05 * u_speed;
+    float rings = 0.5 + 0.5 * sin(r / max(u_spacing, 1.0) * 6.2831853 - t * 6.2831853);
+    rings = pow(rings, u_sharpness);
+    f_color = vec4(inferno(clamp(rings, 0.0, 1.0)), 1.0);
+}
+''', uniforms={
+    "spacing":     {"glsl": "float", "min": 4.0, "max": 120.0, "default": 28.0,
+                    "description": "ring spacing (px)"},
+    "speed":       {"glsl": "float", "min": 0.0, "max": 6.0, "default": 1.0,
+                    "description": "ripple expansion speed"},
+    "sharpness":   {"glsl": "float", "min": 0.3, "max": 6.0, "default": 1.0,
+                    "description": "band sharpness"},
+    "skew":        {"glsl": "float", "min": -1.5707963, "max": 1.5707963, "default": 0.0,
+                    "description": "ellipse skew (rad)"},
+    "center_x":    {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5,
+                    "description": "center x"},
+    "center_y":    {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5,
+                    "description": "center y"},
+})
