@@ -15,7 +15,7 @@ import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -118,7 +118,7 @@ def _persist_graph_doc(doc: dict) -> None:
 
 
 def _touch_graph_meta(doc: dict, by: str | None) -> None:
-    doc["meta"]["updated_at"] = datetime.utcnow().isoformat()
+    doc["meta"]["updated_at"] = datetime.now(timezone.utc).isoformat()
     if by is not None:
         doc["meta"]["updated_by"] = by
 
@@ -1007,7 +1007,7 @@ async def save_graph(payload: dict):
     name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
     graph_data = payload.get("graph", {})
     graph_data["name"] = name
-    graph_data["saved_at"] = datetime.utcnow().isoformat()
+    graph_data["saved_at"] = datetime.now(timezone.utc).isoformat()
     path = SAVED_GRAPHS_DIR / f"{name}.json"
     path.write_text(json.dumps(graph_data, indent=2))
     return {"ok": True, "name": name}
@@ -1336,7 +1336,7 @@ async def save_group(payload: dict):
         "subgraph": payload.get("subgraph", {}),
         "exposed_inputs": payload.get("exposed_inputs", []),
         "exposed_outputs": payload.get("exposed_outputs", []),
-        "saved_at": datetime.utcnow().isoformat(),
+        "saved_at": datetime.now(timezone.utc).isoformat(),
     }
     path = SAVED_GROUPS_DIR / f"{name}.json"
     path.write_text(json.dumps(group_data, indent=2))
