@@ -142,3 +142,99 @@ def test_connection_error_when_blender_down_is_clear():
             br._BLENDER_HOST, br._BLENDER_PORT = orig_host, orig_port
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ── Model-file import (NEW) ────────────────────────────────────────────────
+
+def _write_cube_obj(path: Path) -> None:
+    """Write a minimal unit cube OBJ for import testing."""
+    verts = [
+        (-1, -1, -1), (-1, -1, 1), (-1, 1, -1), (-1, 1, 1),
+        (1, -1, -1), (1, -1, 1), (1, 1, -1), (1, 1, 1),
+    ]
+    faces = [
+        (0, 1, 3, 2), (4, 6, 7, 5), (0, 4, 5, 1),
+        (2, 3, 7, 6), (0, 2, 6, 4), (1, 5, 7, 3),
+    ]
+    lines = ["# unit cube"]
+    for v in verts:
+        lines.append(f"v {v[0]} {v[1]} {v[2]}")
+    for f in faces:
+        lines.append("f " + " ".join(str(i + 1) for i in f))
+    path.write_text("\n".join(lines) + "\n")
+
+
+def test_model_file_obj_renders_with_applied_material():
+    """source=model_file with an OBJ imports and renders the mesh.
+
+    Exercises the Python-side OBJ parser (no Blender addon required) plus the
+    apply_material path.  We assert (a) the imported geometry renders as a
+    brighter central region over the dark background, and (b) applying the
+    node's PBR material produces a *different* tint than keeping the model's
+    own materials — proving the material override actually took effect.
+    """
+    tmp = Path(tempfile.mkdtemp(prefix="blender_obj_"))
+    obj = Path(tempfile.mkdtemp(prefix="blender_objsrc_")) / "cube.obj"
+    _write_cube_obj(obj)
+    try:
+        res_applied = _run(
+            tmp, source="model_file", model_path=str(obj),
+            apply_material=True, color="#ff5577",
+        )
+        res_kept = _run(
+            tmp, source="model_file", model_path=str(obj), apply_material=False,
+        )
+        img = res_applied["image"]
+        assert img.ndim == 3 and img.shape[2] == 3
+        assert img.dtype == np.float32
+        assert img.std() > 0.02, "imported OBJ render appears blank"
+
+        # The imported mesh is lit (its brightest pixels sit well above the
+        # dark background mean).  Compare the 95th percentile of the rendered
+        # frame against the darkest corner to prove geometry was drawn.
+        lit = np.quantile(img, 0.95)
+        dark = img[5:40, 5:40].mean()
+        assert lit > dark + 0.02, "imported mesh not visibly lit above background"
+
+        # apply_material changes the render versus keeping the model's material.
+        delta = float(np.mean(np.abs(res_applied["image"] - res_kept["image"])))
+        assert delta > 0.01, "apply_material had no visible effect"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+        shutil.rmtree(obj.parent, ignore_errors=True)
+
+
+def test_model_file_obj_without_material():
+    """Imported mesh keeps its own (default) materials when apply_material=False."""
+    tmp = Path(tempfile.mkdtemp(prefix="blender_obj_nom_"))
+    obj = Path(tempfile.mkdtemp(prefix="blender_objsrc2_")) / "cube.obj"
+    _write_cube_obj(obj)
+    try:
+        res = _run(tmp, source="model_file", model_path=str(obj), apply_material=False)
+        assert res["image"].std() > 0.02
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+        shutil.rmtree(obj.parent, ignore_errors=True)
+
+
+def test_model_file_missing_path_raises():
+    """An empty / nonexistent model_path must surface a clear error."""
+    tmp = Path(tempfile.mkdtemp(prefix="blender_obj_missing_"))
+    try:
+        with pytest.raises((ValueError, FileNotFoundError)):
+            _run(tmp, source="model_file", model_path="/no/such/model.obj")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_model_file_unsupported_extension_raises():
+    """An unsupported model extension must raise a clear error, not crash Blender."""
+    tmp = Path(tempfile.mkdtemp(prefix="blender_obj_bad_"))
+    bad = Path(tempfile.mkdtemp(prefix="blender_badsrc_")) / "model.xyz"
+    bad.write_text("nonsense")
+    try:
+        with pytest.raises(RuntimeError):
+            _run(tmp, source="model_file", model_path=str(bad))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+        shutil.rmtree(bad.parent, ignore_errors=True)
