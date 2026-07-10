@@ -135,6 +135,17 @@ def _threejs_node_def(method_id: str, name: str, *,
     }
 
 
+# Shared placement params for model nodes (__gltf__ / __usd__) — lets the 3D
+# viewport editor's transform gizmo write positions/rotations back to them.
+_MODEL_PLACEMENT_PARAMS: dict[str, dict] = {
+    "pos_x": {"description": "position X", "min": -5, "max": 5, "default": 0},
+    "pos_y": {"description": "position Y", "min": -5, "max": 5, "default": 0},
+    "pos_z": {"description": "position Z", "min": -5, "max": 5, "default": 0},
+    "rot_x": {"description": "rotation X (deg)", "min": -180, "max": 180, "default": 0},
+    "rot_y": {"description": "rotation Y (deg)", "min": -180, "max": 180, "default": 0},
+    "rot_z": {"description": "rotation Z (deg)", "min": -180, "max": 180, "default": 0},
+}
+
 _THREEJS_3D_NODE_DEFS: dict[str, dict] = {
     '__geometry__': _threejs_node_def('__geometry__', '3D Geometry', tags=['3d', 'client'],
         outputs={"geometry": "geometry"},
@@ -248,6 +259,20 @@ _THREEJS_3D_NODE_DEFS: dict[str, dict] = {
         params={
             "url":        {"description": "model URL (.gltf/.glb)",
                 "default": "https://raw.githubusercontent.com/mrdoob/three.js/r160/examples/models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf"},
+            **_MODEL_PLACEMENT_PARAMS,
+            "scale":      {"description": "uniform scale", "min": 0.05, "max": 5, "default": 1},
+            "spin_speed": {"description": "auto Y-spin (rad/s)", "min": 0, "max": 4, "default": 0.6},
+        }),
+    '__usd__': _threejs_node_def('__usd__', '3D Model (USD)',
+        tags=['3d', 'client', 'usd'],
+        outputs={"object": "object3d"},
+        description='Load a Universal Scene Description model (.usdz or ASCII '
+                    '.usda/.usd; binary .usdc crate files are not supported). '
+                    'Upload via the node panel or reference a URL.',
+        params={
+            "url":        {"description": "model URL (.usdz/.usda/.usd — upload via node panel)",
+                "default": ""},
+            **_MODEL_PLACEMENT_PARAMS,
             "scale":      {"description": "uniform scale", "min": 0.05, "max": 5, "default": 1},
             "spin_speed": {"description": "auto Y-spin (rad/s)", "min": 0, "max": 4, "default": 0.6},
         }),

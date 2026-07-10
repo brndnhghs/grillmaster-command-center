@@ -14,6 +14,13 @@
       "runtimeArgs": ["-m", "chord_bot.server"],
       "port": 7861,
       "autoPort": false
+    },
+    {
+      "name": "image-pipeline-verify",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": ["-m", "image_pipeline.server", "--port", "7871"],
+      "port": 7871,
+      "autoPort": false
     }
   ]
 }

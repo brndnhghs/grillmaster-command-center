@@ -367,6 +367,10 @@ app.mount("/output", StaticFiles(directory=str(OUTPUT_ROOT)), name="output")
 # Static UI assets (vendored three.js, client-side executor modules). Additive —
 # purely for serving front-end files; does not touch the render/export pipeline.
 app.mount("/ui", StaticFiles(directory=str(UI_DIR)), name="ui")
+# User-uploaded model/texture assets (USD, GLTF, images) — see /api/assets/upload.
+ASSETS_DIR = OUTPUT_ROOT / "assets"
+ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
 
 # ── Chord Bot sub-application (served at /chordbot/) ─────────────────
 # Guarded import: chord_bot is an independent sibling app. A failure there
@@ -990,6 +994,63 @@ class GraphPatch(BaseModel):
     by: str | None = None         # "user" | "agent" | arbitrary tag
 
 
+# NOTE: every static /api/graph/<literal> route MUST be registered before the
+# dynamic /api/graph/{gid} routes below — FastAPI matches in registration
+# order, so a later "/api/graph/saved" would be captured as gid="saved".
+# (That exact shadowing silently broke the saved-graphs list and the
+# diagnostics endpoint when the shared-doc store landed.)
+
+@app.post("/api/graph/save")
+async def save_graph(payload: dict):
+    """Save a named graph snapshot (the UI's Save button)."""
+    name = (payload.get("name", "untitled") or "untitled").strip() or "untitled"
+    name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+    graph_data = payload.get("graph", {})
+    graph_data["name"] = name
+    graph_data["saved_at"] = datetime.utcnow().isoformat()
+    path = SAVED_GRAPHS_DIR / f"{name}.json"
+    path.write_text(json.dumps(graph_data, indent=2))
+    return {"ok": True, "name": name}
+
+
+@app.get("/api/graph/saved")
+def list_saved_graphs():
+    graphs = []
+    for f in sorted(SAVED_GRAPHS_DIR.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
+        try:
+            data = json.loads(f.read_text())
+            graphs.append({"name": data.get("name", f.stem), "saved_at": data.get("saved_at", "")})
+        except Exception:
+            pass
+    return graphs
+
+
+@app.get("/api/graph/saved/{name}")
+def load_saved_graph(name: str):
+    name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+    path = SAVED_GRAPHS_DIR / f"{name}.json"
+    if not path.exists():
+        raise HTTPException(404, f"Graph '{name}' not found")
+    return json.loads(path.read_text())
+
+
+@app.delete("/api/graph/saved/{name}")
+def delete_saved_graph(name: str):
+    name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+    path = SAVED_GRAPHS_DIR / f"{name}.json"
+    if path.exists():
+        path.unlink()
+    return {"ok": True}
+
+
+@app.get("/api/graph/diagnostics")
+def live_graph_diagnostics():
+    """Full diagnostics snapshot — superset of /api/graph/live/status."""
+    running = _live_sim_thread is not None and _live_sim_thread.is_alive()
+    sim_cache_size = len(_live_executor._sim_cache) if _live_executor is not None else 0
+    return {"running": running, "sim_cache_entries": sim_cache_size, **_live_stats}
+
+
 @app.get("/api/graph/{gid}")
 def get_graph(gid: str = "active"):
     """Return the shared graph document (nodes, edges, canvas, meta)."""
@@ -1227,35 +1288,40 @@ def render_graph_bytes(gid: str = "active", frame: int = 0, fmt: str = "png",
     return Response(content=buf.getvalue(), media_type=mt)
 
 
-@app.get("/api/graph/saved")
-def list_saved_graphs():
-    graphs = []
-    for f in sorted(SAVED_GRAPHS_DIR.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
-        try:
-            data = json.loads(f.read_text())
-            graphs.append({"name": data.get("name", f.stem), "saved_at": data.get("saved_at", "")})
-        except Exception:
-            pass
-    return graphs
+# ── Asset uploads (USD/GLTF models, textures) ─────────────────────────
+# Raw-body upload (no python-multipart dependency): the client PUTs the file
+# bytes with ?name=<filename>; the file is served back at /assets/<name>.
+
+_ASSET_MAX_BYTES = 512 * 1024 * 1024  # 512 MB — local tool, generous cap
 
 
-@app.get("/api/graph/saved/{name}")
-def load_saved_graph(name: str):
-    name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
-    path = SAVED_GRAPHS_DIR / f"{name}.json"
-    if not path.exists():
-        from fastapi import HTTPException
-        raise HTTPException(404, f"Graph '{name}' not found")
-    return json.loads(path.read_text())
+@app.post("/api/assets/upload")
+async def upload_asset(request: Request, name: str = "asset.bin"):
+    safe = re.sub(r'[^a-zA-Z0-9._-]', '_', Path(name).name) or "asset.bin"
+    raw = await request.body()
+    if not raw:
+        raise HTTPException(400, "Empty upload body")
+    if len(raw) > _ASSET_MAX_BYTES:
+        raise HTTPException(413, f"Asset exceeds {_ASSET_MAX_BYTES // (1024*1024)} MB cap")
+    path = ASSETS_DIR / safe
+    if path.exists() and path.read_bytes() != raw:
+        # Same name, different content — version the filename instead of clobbering.
+        stem, suffix = path.stem, path.suffix
+        i = 1
+        while (ASSETS_DIR / f"{stem}-{i}{suffix}").exists():
+            i += 1
+        path = ASSETS_DIR / f"{stem}-{i}{suffix}"
+    path.write_bytes(raw)
+    return {"ok": True, "url": f"/assets/{path.name}", "name": path.name, "bytes": len(raw)}
 
 
-@app.delete("/api/graph/saved/{name}")
-def delete_saved_graph(name: str):
-    name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
-    path = SAVED_GRAPHS_DIR / f"{name}.json"
-    if path.exists():
-        path.unlink()
-    return {"ok": True}
+@app.get("/api/assets")
+def list_assets():
+    out = []
+    for p in sorted(ASSETS_DIR.iterdir()):
+        if p.is_file() and not p.name.startswith("."):
+            out.append({"name": p.name, "url": f"/assets/{p.name}", "bytes": p.stat().st_size})
+    return out
 
 
 # ── Group node preset endpoints ───────────────────────────────────────
@@ -1666,14 +1732,6 @@ def live_graph_sim(req: GraphRequest):
 def live_graph_status():
     running = _live_sim_thread is not None and _live_sim_thread.is_alive()
     return {"running": running, **_live_stats}
-
-
-@app.get("/api/graph/diagnostics")
-def live_graph_diagnostics():
-    """Full diagnostics snapshot — superset of /api/graph/live/status."""
-    running = _live_sim_thread is not None and _live_sim_thread.is_alive()
-    sim_cache_size = len(_live_executor._sim_cache) if _live_executor is not None else 0
-    return {"running": running, "sim_cache_entries": sim_cache_size, **_live_stats}
 
 
 def _run_graph_job(job_id, nodes, edges, seed, frames, start_frame, out_dir, width=768, height=512):

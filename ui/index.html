@@ -1603,6 +1603,7 @@ try {
       <button id="graph-load-btn" class="g-loadbtn">📂</button>
       <button id="graph-auto-btn" class="g-autobtn" title="Auto-generate on param change">⏺ Auto</button>
 <button id="graph-live-btn" class="g-autobtn" title="Live MJPEG preview">📺 Live</button>
+      <button id="graph-edit3d-btn" class="g-autobtn" title="3D viewport editor">🧊 3D Edit</button>
       <button id="graph-overlay-btn" class="g-autobtn" title="Visual FX overlay (decorative)">✨ FX</button>
       <button id="graph-settings-btn-mob" class="g-autobtn" title="Settings">⚙</button>
       <select id="graph-canvas-preset-mob" title="Canvas size" style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:2px 6px;font-size:12px;cursor:pointer;flex-shrink:0">
@@ -1654,6 +1655,7 @@ try {
       <button id="graph-auto-btn-desk" class="g-autobtn" title="Auto-generate on param change">⏺ Auto</button>
       <button id="graph-test-btn-desk" class="g-autobtn" title="Test all nodes">🧪 Test</button>
 <button id="graph-live-btn-desk" class="g-autobtn" title="Live MJPEG preview">📺 Live</button>
+      <button id="graph-edit3d-btn-desk" class="g-autobtn" title="3D viewport editor">🧊 3D Edit</button>
       <button id="graph-overlay-btn-desk" class="g-autobtn" title="Visual FX overlay (decorative)">✨ FX</button>
       <select id="graph-canvas-preset" title="Canvas size" style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:2px 6px;font-size:12px;cursor:pointer">
         <option value="768x512">768×512</option>
@@ -3595,6 +3597,29 @@ function draw(p, g) {
     version: 1, deprecated: false, start_frame: 0, end_frame: 0, prebake: 0,
     params: {
       url:        { description: 'model URL (.gltf/.glb)', default: 'https://raw.githubusercontent.com/mrdoob/three.js/r160/examples/models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf' },
+      pos_x:      { description: 'position X', min: -5, max: 5, default: 0 },
+      pos_y:      { description: 'position Y', min: -5, max: 5, default: 0 },
+      pos_z:      { description: 'position Z', min: -5, max: 5, default: 0 },
+      rot_x:      { description: 'rotation X (deg)', min: -180, max: 180, default: 0 },
+      rot_y:      { description: 'rotation Y (deg)', min: -180, max: 180, default: 0 },
+      rot_z:      { description: 'rotation Z (deg)', min: -180, max: 180, default: 0 },
+      scale:      { description: 'uniform scale', min: 0.05, max: 5, default: 1 },
+      spin_speed: { description: 'auto Y-spin (rad/s)', min: 0, max: 4, default: 0.6 },
+    },
+  },
+  '__usd__': {
+    method_id: '__usd__', name: '3D Model (USD)', category: 'client_3d', clientExec: true,
+    tags: ['3d', 'client', 'usd'], inputs: {}, outputs: { object: 'object3d' }, param_ports: [],
+    description: 'Universal Scene Description model (.usdz or ASCII .usda/.usd; binary .usdc not supported). Upload a file or reference a URL.',
+    version: 1, deprecated: false, start_frame: 0, end_frame: 0, prebake: 0,
+    params: {
+      url:        { description: 'model URL (.usdz/.usda/.usd)', default: '', upload: '.usdz,.usda,.usd' },
+      pos_x:      { description: 'position X', min: -5, max: 5, default: 0 },
+      pos_y:      { description: 'position Y', min: -5, max: 5, default: 0 },
+      pos_z:      { description: 'position Z', min: -5, max: 5, default: 0 },
+      rot_x:      { description: 'rotation X (deg)', min: -180, max: 180, default: 0 },
+      rot_y:      { description: 'rotation Y (deg)', min: -180, max: 180, default: 0 },
+      rot_z:      { description: 'rotation Z (deg)', min: -180, max: 180, default: 0 },
       scale:      { description: 'uniform scale', min: 0.05, max: 5, default: 1 },
       spin_speed: { description: 'auto Y-spin (rad/s)', min: 0, max: 4, default: 0.6 },
     },
@@ -4960,6 +4985,9 @@ function gSelectNode(id) {
   gShowNodeParams(node);
   renderTimelineRuler();   // Phase 5: refresh node KF lanes
   if (isMobile()) gParamsSheetOpen();
+  // Sync selection into the 3D viewport editor when it's open.
+  if (window._gEditor3D && window._gEditor3D.isOpen() && !window._gEditor3DSelecting)
+    window._gEditor3D.selectNode(id);
 }
 
 function gShowNodeParams(node) {
@@ -4994,6 +5022,49 @@ function gShowNodeParams(node) {
     reportDiv.innerHTML = '<div class="section-label">Test Report</div><div id="tn-report-body" style="font-size:11px;color:var(--muted)">Run the graph to generate a report.</div>';
     gParamsForm.appendChild(reportDiv);
     gLoadTestNodeReport(node.id);
+  }
+
+  // ── Upload button for params that accept a file (spec.upload = accept list).
+  // Uploads to /api/assets/upload (raw body) and writes the served URL back
+  // into the param — used by the USD/GLTF model nodes.
+  for (const [key, spec] of entries) {
+    if (!spec || !spec.upload) continue;
+    const el = document.getElementById(`p_${key}`);
+    const row = el && el.closest('.param-row');
+    if (!row) continue;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'asset-upload-btn';
+    btn.textContent = '⬆ Upload file…';
+    btn.style.cssText = 'margin-top:5px;width:100%;padding:6px;background:var(--bg3);'
+      + 'border:1px solid var(--border);border-radius:6px;color:var(--text);cursor:pointer;font-size:12px;';
+    const picker = document.createElement('input');
+    picker.type = 'file';
+    picker.accept = String(spec.upload);
+    picker.style.display = 'none';
+    picker.addEventListener('change', async () => {
+      const f = picker.files && picker.files[0];
+      if (!f) return;
+      btn.textContent = '⬆ Uploading…'; btn.disabled = true;
+      try {
+        const r = await fetch('/api/assets/upload?name=' + encodeURIComponent(f.name),
+                              { method: 'POST', body: f });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const j = await r.json();
+        el.value = j.url;
+        gUpdateNodeParam(node.id, key, j.url);
+        gShowToast('Uploaded ' + j.name + ' (' + Math.round(j.bytes / 1024) + ' KB)');
+        gDoAutoGen();
+      } catch (e) {
+        gShowToast('Upload failed: ' + (e && e.message || e), true);
+      } finally {
+        btn.textContent = '⬆ Upload file…'; btn.disabled = false;
+        picker.value = '';
+      }
+    });
+    btn.addEventListener('click', () => picker.click());
+    row.appendChild(btn);
+    row.appendChild(picker);
   }
 
   if (!node.animParams) node.animParams = {};
@@ -5398,6 +5469,9 @@ function openPerParamKfEditor(node, pname, idx, kf) {
 }
 function gUpdateNodeParam(nodeId, key, val) {
   const n = gNodes.find(n => n.id===nodeId); if (n) { n.params[key]=val; n.dirty=true; gSave(); }
+  // Keep the 3D viewport editor in sync with slider edits.
+  if (window._gEditor3D && window._gEditor3D.isOpen() && !window._gEditor3DWriting)
+    window._gEditor3D.refresh();
 }
 
 // ── Context menus ──────────────────────────────────────────────
@@ -5702,6 +5776,68 @@ function gToggleAutoGen() {
 try { if (localStorage.getItem('graph-auto-gen') === '1') gToggleAutoGen(); } catch {}
 gAutoBtn.addEventListener('click', gToggleAutoGen);
 gAutoBtnDesk.addEventListener('click', gToggleAutoGen);
+
+// ── 3D viewport editor (ui/js/editor3d.js) ─────────────────────
+// Scene-editor view over the graph's 3D element nodes: orbit camera,
+// click-select, transform gizmos. Gizmo edits write straight back into node
+// params (single source of truth); slider edits flow back via gUpdateNodeParam.
+window._gEditor3D = null;          // module handle while open
+window._gEditor3DWriting = false;  // re-entrancy guard: gizmo → params → refresh
+window._gEditor3DSelecting = false;
+
+async function gToggleEditor3D() {
+  const btns = [document.getElementById('graph-edit3d-btn'),
+                document.getElementById('graph-edit3d-btn-desk')].filter(Boolean);
+  if (window._gEditor3D && window._gEditor3D.isOpen()) {
+    window._gEditor3D.close();
+    window._gEditor3D = null;
+    btns.forEach(b => b.classList.remove('active'));
+    gMainPreview.innerHTML = '';
+    gMainPreview.classList.remove('active');
+    gSetStatus('3D editor closed');
+    return;
+  }
+  const has3d = gNodes.some(n => ['__mesh3d__','__gltf__','__usd__','__light3d__','__camera3d__',
+                                  '__scene_render__','__scene3d__'].includes(n.method_id));
+  if (!has3d) { gShowToast('Add 3D nodes first (Mesh, Model, Light, Camera…)', true); return; }
+  const ED = await import('/ui/js/editor3d.js');
+  _gStopClientLive();
+  if (gLiveMode) gToggleLive();          // stop server live stream if running
+  gMainPreview.innerHTML = '';
+  gMainPreview.classList.add('active');
+  gPreviewShow();
+  await ED.open({
+    container: gMainPreview,
+    getGraph: () => ({ nodes: gNodes, edges: gEdges }),
+    onParamChange: (nodeId, patch) => {
+      window._gEditor3DWriting = true;
+      try {
+        for (const [k, v] of Object.entries(patch)) gUpdateNodeParam(nodeId, k, v);
+        gClientLiveRefresh();
+      } finally {
+        window._gEditor3DWriting = false;
+      }
+      // Refresh the param panel so sliders track the gizmo — debounced,
+      // because objectChange fires per mousemove during a drag.
+      clearTimeout(window._gEditor3DPanelT);
+      window._gEditor3DPanelT = setTimeout(() => {
+        if (gSelectedNode === nodeId) {
+          const node = gNodes.find(n => n.id === nodeId);
+          if (node) gShowNodeParams(node);
+        }
+      }, 150);
+    },
+    onSelectNode: (nodeId) => {
+      window._gEditor3DSelecting = true;
+      try { gSelectNode(nodeId); } finally { window._gEditor3DSelecting = false; }
+    },
+  });
+  window._gEditor3D = ED;
+  btns.forEach(b => b.classList.add('active'));
+  gSetStatus('3D editor — click to select · W/E/R gizmo modes · F frame');
+}
+document.getElementById('graph-edit3d-btn')?.addEventListener('click', gToggleEditor3D);
+document.getElementById('graph-edit3d-btn-desk')?.addEventListener('click', gToggleEditor3D);
 
 // ── Live mode (WebSocket primary / MJPEG fallback) ─────────────
 const gLiveBtn = document.getElementById('graph-live-btn');

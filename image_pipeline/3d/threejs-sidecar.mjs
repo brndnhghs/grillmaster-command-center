@@ -428,18 +428,29 @@ function buildScene(nodes, edges, frame = 0) {
         break;
       }
 
-      case '__gltf__': {
-        // GLTFLoader is async — we can't load it in a sync build.
-        // Return a placeholder mesh for now; async path TBD.
+      case '__gltf__':
+      case '__usd__': {
+        // Model loaders are async — we can't load them in this sync build
+        // path. Return a placeholder mesh; the browser client is the
+        // authoritative renderer for model nodes.
         const scale = resolveParam(node, 'scale', 1);
         const placeholder = new THREE.Mesh(
           new THREE.BoxGeometry(0.5, 0.5, 0.5),
           new THREE.MeshStandardMaterial({ color: 0x888888, wireframe: true })
         );
-        placeholder.position.y = 0.25;
+        placeholder.position.set(
+          resolveParam(node, 'pos_x', 0),
+          resolveParam(node, 'pos_y', 0),
+          resolveParam(node, 'pos_z', 0)
+        );
         placeholder.scale.setScalar(scale);
-        const spin = resolveParam(node, 'spin_speed', 0);
-        if (spin) placeholder.rotation.y = spin * frame / 60;
+        const d = Math.PI / 180;
+        placeholder.rotation.set(
+          resolveParam(node, 'rot_x', 0) * d,
+          resolveParam(node, 'rot_y', 0) * d
+            + resolveParam(node, 'spin_speed', 0) * frame / 60,
+          resolveParam(node, 'rot_z', 0) * d
+        );
         result = placeholder;
         break;
       }

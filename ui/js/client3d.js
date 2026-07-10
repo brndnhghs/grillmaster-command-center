@@ -89,11 +89,49 @@ function loadGltfLoader() {
   return _gltfLoaderPromise;
 }
 
+// Lazy USDZLoader + fflate (vendored three addon). fflate is needed both by
+// the loader (unzip) and by our USDA wrapper (zip a bare text file so the
+// zip-only loader can consume it).
+let _usdLoaderPromise = null;
+function loadUsdModules() {
+  if (_usdLoaderPromise) return _usdLoaderPromise;
+  _usdLoaderPromise = Promise.all([
+    import('/ui/vendor/USDZLoader.js'),
+    import('/ui/vendor/fflate.module.js'),
+  ]).then(([m, fflate]) => ({ USDZLoader: m.USDZLoader, fflate }))
+    .catch(e => { _usdLoaderPromise = null; throw e; });
+  return _usdLoaderPromise;
+}
+
+/**
+ * Load a USD model from `url`; resolves to a THREE.Group.
+ * Handles: .usdz (zip archive — loader native), ASCII .usda/.usd (wrapped
+ * into an in-memory zip), and rejects binary crate .usdc with a clear error.
+ */
+export async function loadUsdModel(url) {
+  const { USDZLoader, fflate } = await loadUsdModules();
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`fetch ${resp.status} for ${url}`);
+  const buffer = await resp.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  const isZip = bytes[0] === 0x50 && bytes[1] === 0x4B;   // "PK"
+  const isCrate = String.fromCharCode(...bytes.slice(0, 8)) === 'PXR-USDC';
+  if (isCrate) {
+    throw new Error('binary .usdc crate files are not supported — export as .usdz or ASCII .usda');
+  }
+  const loader = new USDZLoader();
+  if (isZip) return loader.parse(buffer);
+  // Bare ASCII USDA: wrap in a single-entry zip so the zip-only parser
+  // takes its normal path (first entry = UsdStage root layer).
+  const wrapped = fflate.zipSync({ 'root.usda': bytes });
+  return loader.parse(wrapped.buffer);
+}
+
 // Client-renderable node ids (the spine can execute these fully in-browser).
 const CLIENT_RENDER_IDS = new Set([
   '__scene3d__', '__p5sketch__', '__custom_shader__',
   '__geometry__', '__material__', '__mesh3d__', '__group3d__',
-  '__light3d__', '__camera3d__', '__scene_render__', '__gltf__',
+  '__light3d__', '__camera3d__', '__scene_render__', '__gltf__', '__usd__',
 ]);
 
 /** Preload any heavy libs a graph needs before its first synchronous execute(). */
@@ -101,6 +139,7 @@ export async function prepare(nodes) {
   const jobs = [];
   if (nodes.some(n => n.method_id === '__p5sketch__')) jobs.push(loadP5());
   if (nodes.some(n => n.method_id === '__gltf__')) jobs.push(loadGltfLoader());
+  if (nodes.some(n => n.method_id === '__usd__')) jobs.push(loadUsdModules());
   // Load the shader bundle for any node that isn't a known client-only node —
   // it may be a GPU shader (173–219) or a client-GPU shim of a CPU node
   // (arbitrary id, e.g. 04/02). The bundle's node_map is the authority.
@@ -783,9 +822,46 @@ void main(){ f_color = texture(u_texture, vec2(v_uv.x, 1.0 - v_uv.y)).bgra; }`,
         r.loading = false;
       }).catch(e => { r.loading = false; this._nodeErrors[node.id] = 'gltf: ' + (e && e.message || e); });
     }
-    // Transform the holder each frame (keyframeable).
-    const s = num(params.scale, 1); r.holder.scale.set(s, s, s);
-    r.holder.rotation.y = num(params.spin_speed, 0) * time;
+    this._applyModelTransform(r.holder, params, time);
+    return r;
+  }
+
+  // Shared placement for model nodes (__gltf__ / __usd__): position, rotation
+  // (deg, keyframeable/editor-driven), uniform scale, plus spin_speed Y motion.
+  _applyModelTransform(holder, params, time) {
+    holder.position.set(num(params.pos_x, 0), num(params.pos_y, 0), num(params.pos_z, 0));
+    const spin = num(params.spin_speed, 0) * time;
+    holder.rotation.set(
+      num(params.rot_x, 0) * DEG,
+      num(params.rot_y, 0) * DEG + spin,
+      num(params.rot_z, 0) * DEG,
+    );
+    const s = num(params.scale, 1);
+    holder.scale.set(s, s, s);
+  }
+
+  buildUsd(node, params, time) {
+    let r = this._res3d.get(node.id);
+    const url = String(params.url || '');
+    if (!r || r.kind !== 'object3d' || r.url !== url) {
+      // (Re)start an async load; until it resolves the output is an empty group.
+      const holder = new THREE.Group();
+      r = { kind: 'object3d', url, holder, model: null, value: holder, loading: !!url };
+      this._res3d.set(node.id, r);
+      if (url) {
+        loadUsdModel(url).then(model => {
+          if (this._res3d.get(node.id) !== r) return; // superseded
+          r.model = model;
+          if (r.model) holder.add(r.model);
+          r.loading = false;
+          delete this._nodeErrors[node.id];
+        }).catch(e => {
+          r.loading = false;
+          this._nodeErrors[node.id] = 'usd: ' + (e && e.message || e);
+        });
+      }
+    }
+    this._applyModelTransform(r.holder, params, time);
     return r;
   }
 
@@ -1076,6 +1152,7 @@ void main(){ f_color = texture(u_texture, vec2(v_uv.x, 1.0 - v_uv.y)).bgra; }`,
         continue;
       }
       if (mid === '__gltf__') { outputs.set(node.id, this.buildGltf(node, params, time)); continue; }
+      if (mid === '__usd__')  { outputs.set(node.id, this.buildUsd(node, params, time)); continue; }
 
       // ── Image nodes (render into an RT) ──
       const rt = this._rtFor(node.id);
