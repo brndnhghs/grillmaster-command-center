@@ -556,7 +556,10 @@ def method_sam_segment(out_dir: Path, seed: int, params=None):
                 pool = fg if fg else masks
                 best = max(pool, key=lambda m: m.get("predicted_iou", 0.0))
                 out_mask = best["segmentation"].astype(_np.float32)
-                out_score = float(best.get("predicted_iou", out_mask.mean()))
+                # predicted_iou is SAM's sigmoid output; clamp to [0,1] so the
+                # advertised SCALAR contract (score in [0,1]) holds even when the
+                # model emits a value numerically >1 (e.g. 1.007).
+                out_score = float(min(1.0, max(0.0, best.get("predicted_iou", out_mask.mean()))))
         else:
             predictor = SamPredictor(sam)
             predictor.set_image(rgb)
