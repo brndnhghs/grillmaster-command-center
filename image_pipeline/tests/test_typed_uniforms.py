@@ -384,3 +384,64 @@ def test_threshold_two_tone():
     assert uniq <= 4, f"threshold should be near-binary, got {uniq} distinct values"
 
 
+# ── 9. Typed derivative-field filter nodes (258-264) ───────────────────
+# Single-input IMAGE filters that derive a FIELD from the upstream frame.
+
+NEW_TYPED_DERIV = [s for _, s, _ in [
+    ("258", "sobel_mag_typed",   "GPU Sobel Magnitude"),
+    ("259", "sobel_dir_typed",   "GPU Sobel Direction"),
+    ("260", "laplacian_typed",   "GPU Laplacian"),
+    ("261", "scharr_typed",      "GPU Scharr"),
+    ("262", "normal_map_typed",  "GPU Normal Map"),
+    ("263", "gradient_orient_typed", "GPU Gradient Flow"),
+    ("264", "emboss_typed",      "GPU Emboss"),
+]]
+
+
+@needs_gpu
+@pytest.mark.parametrize("sname", NEW_TYPED_DERIV)
+def test_typed_deriv_renders_and_responds(sname):
+    """Each derivative-field filter renders non-black WITH input and responds
+    to a numeric/color sweep."""
+    assert SHADERS[sname]["type"] == "filter", f"{sname} should be a filter"
+    inp = _synthetic_input()
+    uspec = SHADERS[sname]["uniforms"]
+    named = {u: s.get("default") for u, s in uspec.items()}
+    base = np.asarray(render_shader(sname, (96, 64),
+                      input_image=inp, named_params=named), dtype=float)
+    assert base.std() > 0.02, f"{sname}: render flat with input (std={base.std():.3f})"
+    # Perturb one numeric uniform and confirm the frame changes.
+    probe = next((u for u, s in uspec.items()
+                  if s["glsl"] in ("float", "int")), None)
+    if probe is not None:
+        spec = uspec[probe]
+        lo, hi = spec.get("min", 0), spec.get("max", 1)
+        dft = spec.get("default", 0)
+        cand = lo + (hi - lo) * 0.7
+        if abs(cand - dft) < 1e-6:
+            cand = lo + (hi - lo) * 0.3
+        alt_named = dict(named)
+        alt_named[probe] = cand
+        alt = np.asarray(render_shader(sname, (96, 64),
+                      input_image=inp, named_params=alt_named), dtype=float)
+        dpix = np.abs(alt - base).mean()
+        assert dpix > 0.05, f"{sname}: {probe} sweep produced no visible change (Δ={dpix:.3f})"
+
+
+@needs_gpu
+def test_normal_map_swizzle_is_blue_dominant_flat():
+    """A flat input → normal points +Z. The shader emits blue=1.0 (Z), but
+    the render path applies a BGR swap on readback, so the Z channel lands in
+    the read-back RED channel. Assert the Z-direction channel is saturated and
+    the frame is uniform (no spurious variation on a flat input)."""
+    flat = np.full((64, 96, 3), 0.5, dtype=np.float32)
+    out = np.asarray(render_shader("normal_map_typed", (96, 64),
+                  input_image=flat,
+                  named_params={"strength": 2.0, "texel": 1.5}), dtype=float) / 255.0
+    # shader blue (Z) → readback red; must be saturated (~1.0).
+    assert abs(out[..., 0].mean() - 1.0) < 0.02, "flat input should yield Z-normal in R"
+    # flat input → no variation; all channels nearly constant.
+    assert out[..., 1].std() < 0.02 and out[..., 2].std() < 0.02, \
+        "flat input should have no spatial variation"
+
+

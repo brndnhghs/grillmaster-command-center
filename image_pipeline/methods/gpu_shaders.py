@@ -199,8 +199,19 @@ _TYPED_SHADER_NODES = [
     ("253", "quasicrystal_typed",  "GPU Quasicrystal"),
     ("254", "metaballs_typed",     "GPU Metaballs"),
     ("255", "nebula_typed",        "GPU Nebula"),
-    ("256", "wood_grain_typed",    "GPU Wood Grain"),
-    ("257", "ripples_typed",       "GPU Ripples"),
+    ("256", "wood_grain_typed",   "GPU Wood Grain"),
+    ("257", "ripples_typed",      "GPU Ripples"),
+    # Categorical coverage pt.6 (2026-07-11): derivative-field filters that
+    # derive a FIELD from the upstream image — Sobel magnitude / direction,
+    # Laplacian, Scharr, normal map, gradient orientation flow, emboss. Single
+    # image_in: IMAGE; every numeric variable is a wireable SCALAR port.
+    ("258", "sobel_mag_typed",    "GPU Sobel Magnitude"),
+    ("259", "sobel_dir_typed",    "GPU Sobel Direction"),
+    ("260", "laplacian_typed",    "GPU Laplacian"),
+    ("261", "scharr_typed",       "GPU Scharr"),
+    ("262", "normal_map_typed",   "GPU Normal Map"),
+    ("263", "gradient_orient_typed", "GPU Gradient Flow"),
+    ("264", "emboss_typed",       "GPU Emboss"),
 ]
 
 _TIME_SCALE_PARAM = {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0}

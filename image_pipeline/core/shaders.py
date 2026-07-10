@@ -4572,3 +4572,213 @@ _register("ripples_typed", "Concentric color ripples with typed freq/speed/color
     "color_a": {"glsl": "color", "default": "#10071f", "description": "inner color"},
     "color_b": {"glsl": "color", "default": "#4affd0", "description": "outer color"},
 })
+
+# ── Typed-uniform derivative-field nodes (258-264, 2026-07-11) ───────────────
+# Single-input IMAGE filters that derive a FIELD from the upstream frame:
+# Sobel magnitude / direction, Laplacian, Scharr, normal map, gradient
+# orientation flow, emboss. Every variable is a real node param + wireable
+# SCALAR port; filters take image_in: IMAGE (same contract as 244-249).
+# Bodies stay in the GL330/ES300 parity subset. NOTE: the pixel-step uniform is
+# named `u_texel` (NOT `step`, which is reserved in every filter twin — pitfall
+# #15b). The 3x3 stencil is shared via _DERIV_GPU.
+
+_DERIV_GPU = '''
+float _dlum(vec2 uv) {
+    return dot(texture(u_texture, uv).rgb, vec3(0.299, 0.587, 0.114));
+}
+vec3 _dfetch(vec2 uv) { return texture(u_texture, uv).rgb; }
+'''
+
+_register("sobel_mag_typed", "Sobel gradient magnitude of the input (typed, node 258)",
+          "filter", _DERIV_GPU + '''void main() {
+    vec2 px = u_texel / u_resolution;
+    float tl = _dlum(v_uv + px * vec2(-1.0,  1.0));
+    float  l = _dlum(v_uv + px * vec2(-1.0,  0.0));
+    float bl = _dlum(v_uv + px * vec2(-1.0, -1.0));
+    float  t = _dlum(v_uv + px * vec2( 0.0,  1.0));
+    float  b = _dlum(v_uv + px * vec2( 0.0, -1.0));
+    float tr = _dlum(v_uv + px * vec2( 1.0,  1.0));
+    float  r = _dlum(v_uv + px * vec2( 1.0,  0.0));
+    float br = _dlum(v_uv + px * vec2( 1.0, -1.0));
+    float gx = -tl - 2.0*l - bl + tr + 2.0*r + br;
+    float gy =  tl + 2.0*t + tr - bl - 2.0*b - br;
+    float m = clamp(length(vec2(gx, gy)) * u_gain * 0.25, 0.0, 1.0);
+    vec3 col = mix(u_low, u_high, m);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "gain":    {"glsl": "float", "min": 0.2, "max": 4.0, "default": 1.5,
+                "description": "magnitude gain"},
+    "texel":   {"glsl": "float", "min": 0.5, "max": 6.0, "default": 1.5,
+                "description": "kernel thickness (px)"},
+    "low":     {"glsl": "color", "default": "#000814", "description": "low (flat) color"},
+    "high":    {"glsl": "color", "default": "#39ff88", "description": "edge (high) color"},
+})
+
+_register("sobel_dir_typed", "Sobel gradient direction (HSL flow) of the input (typed, node 259)",
+          "filter", _DERIV_GPU + '''vec3 _hue2rgb(float h) {
+    float k = mod(h * 6.0, 6.0);
+    float x = clamp(abs(mod(k, 2.0) - 1.0), 0.0, 1.0);
+    if (k < 1.0) return vec3(1.0, x, 0.0);
+    if (k < 2.0) return vec3(x, 1.0, 0.0);
+    if (k < 3.0) return vec3(0.0, 1.0, x);
+    if (k < 4.0) return vec3(0.0, x, 1.0);
+    if (k < 5.0) return vec3(x, 0.0, 1.0);
+    return vec3(1.0, 0.0, x);
+}
+void main() {
+    vec2 px = u_texel / u_resolution;
+    float tl = _dlum(v_uv + px * vec2(-1.0,  1.0));
+    float  l = _dlum(v_uv + px * vec2(-1.0,  0.0));
+    float bl = _dlum(v_uv + px * vec2(-1.0, -1.0));
+    float  t = _dlum(v_uv + px * vec2( 0.0,  1.0));
+    float  b = _dlum(v_uv + px * vec2( 0.0, -1.0));
+    float tr = _dlum(v_uv + px * vec2( 1.0,  1.0));
+    float  r = _dlum(v_uv + px * vec2( 1.0,  0.0));
+    float br = _dlum(v_uv + px * vec2( 1.0, -1.0));
+    float gx = -tl - 2.0*l - bl + tr + 2.0*r + br;
+    float gy =  tl + 2.0*t + tr - bl - 2.0*b - br;
+    float ang = atan(gy, gx);                 // [-pi, pi]
+    float hue = (ang + 3.14159265) / 6.2831853;
+    float mag = clamp(length(vec2(gx, gy)) * u_gain * 0.25, 0.0, 1.0);
+    vec3 col = mix(vec3(u_flat), _hue2rgb(hue), mag);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "gain":  {"glsl": "float", "min": 0.2, "max": 4.0, "default": 1.5,
+              "description": "direction gain"},
+    "texel": {"glsl": "float", "min": 0.5, "max": 6.0, "default": 1.5,
+              "description": "kernel thickness (px)"},
+    "flat":  {"glsl": "color", "default": "#101018", "description": "flat-region color"},
+})
+
+_register("laplacian_typed", "Laplacian zero-crossing / edge field of the input (typed, node 260)",
+          "filter", _DERIV_GPU + '''void main() {
+    vec2 px = u_texel / u_resolution;
+    float c  = _dlum(v_uv);
+    float l  = _dlum(v_uv + px * vec2(-1.0,  0.0));
+    float r  = _dlum(v_uv + px * vec2( 1.0,  0.0));
+    float t  = _dlum(v_uv + px * vec2( 0.0,  1.0));
+    float b  = _dlum(v_uv + px * vec2( 0.0, -1.0));
+    float lap = (l + r + t + b - 4.0 * c);
+    float e = clamp(abs(lap) * u_gain * 0.5, 0.0, 1.0);
+    vec3 col = mix(u_flat, u_edge, e);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "gain":  {"glsl": "float", "min": 0.2, "max": 6.0, "default": 2.0,
+              "description": "laplacian gain"},
+    "texel": {"glsl": "float", "min": 0.5, "max": 6.0, "default": 1.5,
+              "description": "kernel spacing (px)"},
+    "flat":  {"glsl": "color", "default": "#080810", "description": "flat color"},
+    "edge":  {"glsl": "color", "default": "#ff5cf0", "description": "edge color"},
+})
+
+_register("scharr_typed", "Scharr operator (sharper Sobel) magnitude (typed, node 261)",
+          "filter", _DERIV_GPU + '''void main() {
+    vec2 px = u_texel / u_resolution;
+    float tl = _dlum(v_uv + px * vec2(-1.0,  1.0));
+    float  l = _dlum(v_uv + px * vec2(-1.0,  0.0));
+    float bl = _dlum(v_uv + px * vec2(-1.0, -1.0));
+    float  t = _dlum(v_uv + px * vec2( 0.0,  1.0));
+    float  b = _dlum(v_uv + px * vec2( 0.0, -1.0));
+    float tr = _dlum(v_uv + px * vec2( 1.0,  1.0));
+    float  r = _dlum(v_uv + px * vec2( 1.0,  0.0));
+    float br = _dlum(v_uv + px * vec2( 1.0, -1.0));
+    float gx = -3.0*tl - 10.0*l - 3.0*bl + 3.0*tr + 10.0*r + 3.0*br;
+    float gy =  3.0*tl + 10.0*t + 3.0*tr - 3.0*bl - 10.0*b - 3.0*br;
+    float m = clamp(length(vec2(gx, gy)) * u_gain * 0.0625, 0.0, 1.0);
+    vec3 col = mix(u_low, u_high, m);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "gain":  {"glsl": "float", "min": 0.2, "max": 4.0, "default": 1.6,
+              "description": "magnitude gain"},
+    "texel": {"glsl": "float", "min": 0.5, "max": 6.0, "default": 1.5,
+              "description": "kernel thickness (px)"},
+    "low":   {"glsl": "color", "default": "#001018", "description": "low color"},
+    "high":  {"glsl": "color", "default": "#4dffd0", "description": "edge color"},
+})
+
+_register("normal_map_typed", "Normal map (bump) from luminance gradient (typed, node 262)",
+          "filter", _DERIV_GPU + '''void main() {
+    vec2 px = u_texel / u_resolution;
+    float l = _dlum(v_uv + px * vec2(-1.0,  0.0));
+    float r = _dlum(v_uv + px * vec2( 1.0,  0.0));
+    float t = _dlum(v_uv + px * vec2( 0.0,  1.0));
+    float b = _dlum(v_uv + px * vec2( 0.0, -1.0));
+    float dx = (r - l) * u_strength;
+    float dy = (t - b) * u_strength;
+    vec3 n = normalize(vec3(-dx, -dy, 1.0));
+    vec3 col = n * 0.5 + 0.5;
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "strength": {"glsl": "float", "min": 0.1, "max": 8.0, "default": 2.0,
+                 "description": "surface bumpiness"},
+    "texel":    {"glsl": "float", "min": 0.5, "max": 6.0, "default": 1.5,
+                 "description": "sample spacing (px)"},
+})
+
+_register("gradient_orient_typed", "Gradient orientation flow field (typed, node 263)",
+          "filter", _DERIV_GPU + '''void main() {
+    vec2 px = u_texel / u_resolution;
+    float tl = _dlum(v_uv + px * vec2(-1.0,  1.0));
+    float  l = _dlum(v_uv + px * vec2(-1.0,  0.0));
+    float bl = _dlum(v_uv + px * vec2(-1.0, -1.0));
+    float  t = _dlum(v_uv + px * vec2( 0.0,  1.0));
+    float  b = _dlum(v_uv + px * vec2( 0.0, -1.0));
+    float tr = _dlum(v_uv + px * vec2( 1.0,  1.0));
+    float  r = _dlum(v_uv + px * vec2( 1.0,  0.0));
+    float br = _dlum(v_uv + px * vec2( 1.0, -1.0));
+    float gx = -tl - 2.0*l - bl + tr + 2.0*r + br;
+    float gy =  tl + 2.0*t + tr - bl - 2.0*b - br;
+    vec2 dir = (abs(gx) + abs(gy) < 1e-4) ? vec2(1.0, 0.0) : normalize(vec2(gx, gy));
+    // rotate the orientation vector by the wind angle and tint by strength
+    float ang = u_wind + u_time * u_spin;
+    vec2 d = rot(ang) * dir;
+    float mag = clamp(length(vec2(gx, gy)) * u_gain * 0.25, 0.0, 1.0);
+    vec3 col = mix(vec3(u_flat), vec3(d * 0.5 + 0.5, 0.5), mag);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "gain":  {"glsl": "float", "min": 0.2, "max": 4.0, "default": 1.5,
+              "description": "flow strength"},
+    "wind":  {"glsl": "float", "min": -3.14159, "max": 3.14159, "default": 0.0,
+              "description": "flow rotation (rad)"},
+    "spin":  {"glsl": "float", "min": 0.0, "max": 3.0, "default": 0.0,
+              "description": "animated spin speed"},
+    "texel": {"glsl": "float", "min": 0.5, "max": 6.0, "default": 1.5,
+              "description": "kernel thickness (px)"},
+    "flat":  {"glsl": "color", "default": "#0a0a12", "description": "flat color"},
+})
+
+_register("emboss_typed", "Directional emboss (relief) of the input (typed, node 264)",
+          "filter", _DERIV_GPU + '''void main() {
+    vec2 px = u_texel / u_resolution;
+    // 3x3 emboss kernel rotated by u_angle
+    float tl = _dlum(v_uv + px * vec2(-1.0,  1.0));
+    float  l = _dlum(v_uv + px * vec2(-1.0,  0.0));
+    float bl = _dlum(v_uv + px * vec2(-1.0, -1.0));
+    float  t = _dlum(v_uv + px * vec2( 0.0,  1.0));
+    float  b = _dlum(v_uv + px * vec2( 0.0, -1.0));
+    float tr = _dlum(v_uv + px * vec2( 1.0,  1.0));
+    float  r = _dlum(v_uv + px * vec2( 1.0,  0.0));
+    float br = _dlum(v_uv + px * vec2( 1.0, -1.0));
+    float gx = -tl - 2.0*l - bl + tr + 2.0*r + br;
+    float gy =  tl + 2.0*t + tr - bl - 2.0*b - br;
+    float relief = gx * cos(u_angle) + gy * sin(u_angle);
+    float e = clamp(0.5 + relief * u_gain * 0.25, 0.0, 1.0);
+    vec3 col = mix(u_dark, u_light, e);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "gain":  {"glsl": "float", "min": 0.2, "max": 4.0, "default": 1.5,
+              "description": "relief strength"},
+    "angle": {"glsl": "float", "min": 0.0, "max": 6.2831853, "default": 2.3561945,
+              "description": "light direction (rad)"},
+    "texel": {"glsl": "float", "min": 0.5, "max": 6.0, "default": 1.5,
+              "description": "kernel thickness (px)"},
+    "dark":  {"glsl": "color", "default": "#161a2a", "description": "shadow color"},
+    "light": {"glsl": "color", "default": "#f3f0e6", "description": "highlight color"},
+})
