@@ -67,9 +67,10 @@ function loadShaderBundle() {
 function _isGpuShaderNode(mid) {
   return !!(_shaderBundle && _shaderBundle.node_map && _shaderBundle.node_map[mid]);
 }
-/** Heuristic (pre-bundle): numeric GPU shader ids 173–219. */
+/** Heuristic (pre-bundle): numeric GPU shader ids 173–219 + typed 220–225.
+    Once the bundle arrives, node_map is the authority (_isGpuShaderNode). */
 function _looksLikeGpuShader(mid) {
-  return /^\d+$/.test(mid) && +mid >= 173 && +mid <= 219;
+  return /^\d+$/.test(mid) && +mid >= 173 && +mid <= 225;
 }
 // Client node ids that emit an IMAGE (vs 3D-data like geometry/light).
 const _IMAGE_CLIENT_IDS = new Set([
@@ -507,20 +508,28 @@ void main(){ f_color = texture(u_texture, vec2(v_uv.x, 1.0 - v_uv.y)).bgra; }`,
   // fragment. Two passes: (1) the parity fragment into a temp RT, (2) a
   // convention blit (flip Y + swap R/B) into the node RT so the client output
   // matches the server's authoritative render pixel-for-pixel.
-  _gpuMaterial(fragment) {
+  _gpuMaterial(fragment, uspec) {
     let mat = this._gpuMats.get(fragment);
     if (mat) return mat;
     const bundle = _shaderBundle;
     const vert = (bundle && bundle.vertex ? bundle.vertex : ('#version 300 es\n' + FILTER_VERT))
       .replace(/^#version 300 es\n?/, '');
+    const uniforms = {
+      u_resolution: { value: new THREE.Vector2(this.width, this.height) },
+      u_time: { value: 0 },
+      u_params: { value: new THREE.Vector4(0.5, 0.5, 0.5, 0.5) },
+      u_texture: { value: this._blackTex },
+    };
+    // Typed-uniform shaders: one named slot per declared variable
+    // (u_<name>; float/int/choice → number, color → Vector3).
+    for (const [uname, spec] of Object.entries(uspec || {})) {
+      uniforms['u_' + uname] = {
+        value: (spec.glsl === 'color') ? new THREE.Vector3() : 0,
+      };
+    }
     mat = new THREE.RawShaderMaterial({
       glslVersion: THREE.GLSL3,
-      uniforms: {
-        u_resolution: { value: new THREE.Vector2(this.width, this.height) },
-        u_time: { value: 0 },
-        u_params: { value: new THREE.Vector4(0.5, 0.5, 0.5, 0.5) },
-        u_texture: { value: this._blackTex },
-      },
+      uniforms,
       vertexShader: vert,
       fragmentShader: fragment.replace(/^#version 300 es\n?/, ''),
     });
@@ -528,14 +537,48 @@ void main(){ f_color = texture(u_texture, vec2(v_uv.x, 1.0 - v_uv.y)).bgra; }`,
     return mat;
   }
 
+  // Mirror of core/shaders.py coerce_uniform — server and client MUST agree.
+  // Colors are pre-swapped to BGR because both render paths swap R/B at
+  // display time (server: BGR FBO read; client: the convention blit's .bgra).
+  _coerceUniform(spec, value) {
+    const g = spec.glsl || 'float';
+    if (value === undefined || value === null) value = spec.default;
+    if (g === 'float') return num(value, num(spec.default, 0));
+    if (g === 'int') return Math.round(num(value, num(spec.default, 0)));
+    if (g === 'choice') {
+      const choices = spec.choices || [];
+      if (typeof value === 'string') {
+        const i = choices.indexOf(value);
+        return i >= 0 ? i : 0;
+      }
+      return Math.max(0, Math.min(choices.length - 1, Math.round(num(value, 0))));
+    }
+    if (g === 'color') {
+      const c = hexToColor(String(value || '#000000'), '#000000');
+      return new THREE.Vector3(c.b, c.g, c.r);   // BGR pre-swap (see above)
+    }
+    return num(value, 0);
+  }
+
   renderGpuShader(node, params, time, inputTex, targetRT) {
     const entry = _shaderBundle && _shaderBundle.node_map[node.method_id];
     const info = entry && _shaderBundle.shaders[entry.shader];
     if (!info) { this._clearRT(targetRT); return; }
-    const mat = this._gpuMaterial(info.fragment);
+    const uspec = info.uniforms && Object.keys(info.uniforms).length ? info.uniforms : null;
+    const mat = this._gpuMaterial(info.fragment, uspec);
     mat.uniforms.u_resolution.value.set(this.width, this.height);
     mat.uniforms.u_time.value = time * num(params.time_scale, 1);
-    if (entry.param_map) {
+    if (uspec) {
+      // Typed-uniform shader: set u_<name> per declared spec from node params
+      // (falling back to each variable's declared default).
+      for (const [uname, spec] of Object.entries(uspec)) {
+        const u = mat.uniforms['u_' + uname];
+        if (!u) continue;
+        const v = this._coerceUniform(spec, params[uname]);
+        if (spec.glsl === 'color') u.value.copy(v); else u.value = v;
+      }
+      mat.uniforms.u_texture.value = inputTex || this._blackTex;
+    } else if (entry.param_map) {
       // Client-GPU shim for an existing CPU node: translate the node's real
       // params into u_params slots (p1..p4) per the server-declared param_map.
       const slot = { p1: 0, p2: 1, p3: 2, p4: 3 };

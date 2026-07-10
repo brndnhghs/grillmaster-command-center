@@ -73,12 +73,97 @@ void main() {
 
 SHADERS = {}
 
-def _register(name: str, description: str, shader_type: str, source: str):
+# ── Typed uniform specs ───────────────────────────────────────────────
+# A shader may declare named, typed uniforms instead of (or alongside) the
+# legacy generic u_params vec4. Each entry maps a variable name to a spec:
+#
+#   {"glsl": "float",  "min": 0, "max": 10, "default": 4.0, "description": …}
+#   {"glsl": "int",    "min": 1, "max": 8,  "default": 5,   "description": …}
+#   {"glsl": "color",  "default": "#ff2266",                "description": …}
+#   {"glsl": "choice", "choices": ["linear", …], "default": "linear", … }
+#
+# The variable is exposed in GLSL as `uniform <type> u_<name>` (color → vec3,
+# choice → int index into `choices`). The node factory in methods/gpu_shaders.py
+# turns each spec into a real node param (slider / color picker / dropdown) and
+# a wireable SCALAR input port for numeric ones — no more cryptic p1..p4.
+# Specs travel to the browser via shader_sources_for_client(), so the client
+# parity renderer sets the same uniforms from the same node params.
+
+_UNIFORM_GLSL_TYPES = {"float": "float", "int": "int", "color": "vec3", "choice": "int"}
+
+
+def uniform_glsl_decls(uniforms: dict) -> str:
+    """GLSL declaration block for a shader's typed uniforms."""
+    lines = []
+    for uname, spec in (uniforms or {}).items():
+        gtype = _UNIFORM_GLSL_TYPES.get(spec.get("glsl", "float"), "float")
+        desc = spec.get("description", "")
+        lines.append(f"uniform {gtype} u_{uname};" + (f"  // {desc}" if desc else ""))
+    return ("\n".join(lines) + "\n") if lines else ""
+
+
+def _parse_color(value) -> tuple[float, float, float]:
+    """'#rrggbb' | 'r,g,b' (0-1 or 0-255) | sequence → (r, g, b) floats in [0,1]."""
+    if isinstance(value, (tuple, list)) and len(value) >= 3:
+        vals = [float(v) for v in value[:3]]
+        return tuple(v / 255.0 for v in vals) if max(vals) > 1.0 else tuple(vals)
+    s = str(value or "#000000").strip()
+    if s.startswith("#") and len(s) >= 7:
+        return (int(s[1:3], 16) / 255.0, int(s[3:5], 16) / 255.0, int(s[5:7], 16) / 255.0)
+    if "," in s:
+        try:
+            vals = [float(p) for p in s.split(",")[:3]]
+            return tuple(v / 255.0 for v in vals) if max(vals) > 1.0 else tuple(vals)
+        except ValueError:
+            pass
+    return (0.0, 0.0, 0.0)
+
+
+def coerce_uniform(spec: dict, value) -> float | int | tuple:
+    """Coerce a node-param value to the GL-settable value for a typed uniform.
+
+    Mirrors coerceUniform() in ui/js/client3d.js — server and client must agree.
+    """
+    gtype = spec.get("glsl", "float")
+    if value is None:
+        value = spec.get("default")
+    if gtype == "float":
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return float(spec.get("default", 0.0))
+    if gtype == "int":
+        try:
+            return int(round(float(value)))
+        except (TypeError, ValueError):
+            return int(spec.get("default", 0))
+    if gtype == "choice":
+        choices = spec.get("choices", [])
+        if isinstance(value, str):
+            return choices.index(value) if value in choices else 0
+        try:
+            return max(0, min(len(choices) - 1, int(round(float(value)))))
+        except (TypeError, ValueError):
+            return 0
+    if gtype == "color":
+        # Pre-swap to BGR: both render paths swap R/B at display time (the
+        # server decodes its FBO read as BGR; the client's convention blit
+        # swizzles .bgra to match). Feeding B,G,R here means the user's picked
+        # color survives the swap and lands on screen as picked — on both
+        # targets. The JS mirror (coerceUniform in client3d.js) does the same.
+        r, g, b = _parse_color(value)
+        return (b, g, r)
+    return float(value)
+
+
+def _register(name: str, description: str, shader_type: str, source: str,
+              uniforms: dict | None = None):
     SHADERS[name] = {
         "name": name,
         "description": description,
         "type": shader_type,
         "source": source,
+        "uniforms": uniforms or {},
     }
 
 
@@ -156,10 +241,18 @@ void main() {
 
 
 def _assemble_gl330(info: dict) -> str:
-    """Exactly how render_shader() builds the fragment source today."""
-    if info["type"] == "filter":
-        return info["source"]            # filter sources already embed the prologue
-    return _PROLOGUE + info["source"]    # procedural: prologue + body
+    """Exactly how render_shader() builds the fragment source.
+
+    Typed-uniform shaders get their `uniform <type> u_<name>;` declarations
+    injected between the shared prologue and the body, so the body references
+    them like any other uniform. Legacy filter sources embed the prologue
+    themselves; typed-uniform filters use the standard prologue (it already
+    carries u_texture) so the decl injection applies uniformly.
+    """
+    decls = uniform_glsl_decls(info.get("uniforms") or {})
+    if info["type"] == "filter" and not decls:
+        return info["source"]            # legacy filter: source embeds the prologue
+    return _PROLOGUE + decls + info["source"]
 
 
 def _to_webgl2(frag_gl330: str) -> str:
@@ -212,7 +305,13 @@ def shader_sources_for_client() -> dict:
         # so the client live preview matches the server's authoritative export.
         "convention": {"flip_y": True, "swap_rb": True},
         "shaders": {
-            name: {"type": info["type"], "fragment": build_fragment(name, "webgl2")}
+            name: {
+                "type": info["type"],
+                "fragment": build_fragment(name, "webgl2"),
+                # Typed uniform specs — client sets u_<name> from node params
+                # with the same coercion the server uses (coerce_uniform).
+                "uniforms": info.get("uniforms") or {},
+            }
             for name, info in SHADERS.items()
         },
     }
@@ -1481,16 +1580,19 @@ def _create_vao(ctx, prog):
 def render_shader(shader_name: str, resolution: tuple[int, int] = (512, 512),
                    params: tuple[float, float, float, float] = (0.5, 0.5, 0.5, 0.5),
                    time: float = 0.0,
-                   input_image: np.ndarray | None = None) -> Image.Image:
+                   input_image: np.ndarray | None = None,
+                   named_params: dict | None = None) -> Image.Image:
     """Render a shader to an image.
 
     Args:
         shader_name: Name in SHADERS dict
         resolution: (width, height) output size
-        params: 4 float uniforms mapped to u_params
+        params: 4 float uniforms mapped to u_params (legacy shaders)
         time: Time value for u_time animation
         input_image: Optional numpy array (H,W,3) float32 [0,1] or uint8,
                      for filter shaders
+        named_params: values for the shader's typed uniforms, keyed by the
+                      declared name (set as u_<name>; coerced per spec)
 
     Returns: PIL Image
     """
@@ -1503,11 +1605,9 @@ def render_shader(shader_name: str, resolution: tuple[int, int] = (512, 512),
 
     w, h = resolution
 
-    # Build fragment shader source
-    if info["type"] == "filter":
-        frag_src = info["source"]
-    else:
-        frag_src = _PROLOGUE + info["source"]
+    # Build fragment shader source (single assembly path — shared with the
+    # parity layer so build_fragment('gl330') is exactly what compiles here).
+    frag_src = _assemble_gl330(info)
 
     # Cache program + VAO per shader name (recompile on first use per thread)
     if shader_name not in cache:
@@ -1530,6 +1630,15 @@ def render_shader(shader_name: str, resolution: tuple[int, int] = (512, 512),
                                          ('u_params', params)]:
         if uniform_name in prog:
             prog[uniform_name].value = uniform_value
+
+    # Typed uniforms: u_<name> per the shader's declared spec.
+    uspec = info.get("uniforms") or {}
+    if uspec:
+        vals = named_params or {}
+        for uname, spec in uspec.items():
+            gl_name = f"u_{uname}"
+            if gl_name in prog:
+                prog[gl_name].value = coerce_uniform(spec, vals.get(uname))
 
     # Handle input texture — accept float32 [0,1] or uint8 [0,255]
     texture = None
@@ -3256,3 +3365,224 @@ void main() {
     f_color = vec4(col * (0.35 + 0.65 * amp), 1.0);
 }
 ''')
+
+
+# ═══════════════════════════════════════════════
+#  TYPED-UNIFORM SHADERS (named vars, no p1..p4)
+# ═══════════════════════════════════════════════
+#
+# Each declares its variables via `uniforms=` — the node factory exposes them
+# as real params (sliders / color pickers / dropdowns) AND wireable SCALAR
+# ports. Bodies stay in the GL330/ES300-compatible parity subset.
+
+_register("gradient_gpu2", "Gradient with typed controls (linear/radial/conic/diamond)",
+          "procedural", '''
+void main() {
+    vec2 uv = v_uv;
+    vec2 ctr = vec2(u_center_x, u_center_y);
+    float a = radians(u_angle);
+    vec2 dir = vec2(cos(a), sin(a));
+    float t;
+    if (u_mode == 1) {                       // radial
+        t = length(uv - ctr) * 1.41421356;
+    } else if (u_mode == 2) {                // conic
+        vec2 d = uv - ctr;
+        t = fract((atan(d.y, d.x) - a) / 6.28318530 + 1.0);
+    } else if (u_mode == 3) {                // diamond
+        vec2 d = abs(uv - ctr);
+        t = (d.x + d.y) * 1.2;
+    } else {                                 // linear
+        t = dot(uv - ctr, dir) + 0.5;
+    }
+    t = clamp(t, 0.0, 1.0);
+    if (u_bands > 1.5) t = floor(t * u_bands) / max(u_bands - 1.0, 1.0);  // posterized bands
+    // Ordered-dither the ramp to hide 8-bit banding on smooth gradients.
+    float dth = (hash21(gl_FragCoord.xy) - 0.5) * u_dither * 0.02;
+    t = clamp(t + dth, 0.0, 1.0);
+    f_color = vec4(mix(u_color_a, u_color_b, t), 1.0);
+}
+''', uniforms={
+    "mode":     {"glsl": "choice", "choices": ["linear", "radial", "conic", "diamond"],
+                 "default": "linear", "description": "gradient geometry"},
+    "angle":    {"glsl": "float", "min": 0.0, "max": 360.0, "default": 0.0,
+                 "description": "gradient angle (deg)"},
+    "center_x": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5,
+                 "description": "center X"},
+    "center_y": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5,
+                 "description": "center Y"},
+    "color_a":  {"glsl": "color", "default": "#0b1026", "description": "start color"},
+    "color_b":  {"glsl": "color", "default": "#4a9eff", "description": "end color"},
+    "bands":    {"glsl": "float", "min": 0.0, "max": 32.0, "default": 0.0,
+                 "description": "posterize bands (0 = smooth)"},
+    "dither":   {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.25,
+                 "description": "dither strength (hides banding)"},
+})
+
+_register("ascii_art_gpu", "ASCII-art the input image with a procedural bitmap font",
+          "filter", '''
+// 4x5 glyphs bit-packed in floats (movAX13h encoding): brightness ramp
+// . : * o & 8 @ # — classic, WebGL-safe (float exp2/mod, no int precision).
+float glyph_px(float n, vec2 p) {
+    p = floor(p * vec2(-4.0, 4.0) + 2.5);
+    if (clamp(p.x, 0.0, 4.0) == p.x && clamp(p.y, 0.0, 4.0) == p.y) {
+        float k = p.x + 5.0 * p.y;
+        if (int(mod(n / exp2(k), 2.0)) == 1) return 1.0;
+    }
+    return 0.0;
+}
+
+float glyph_for(float g) {
+    float n = 0.0;                        // ' '
+    if (g > 0.1) n = 4096.0;              // .
+    if (g > 0.2) n = 65600.0;             // :
+    if (g > 0.3) n = 332772.0;            // *
+    if (g > 0.4) n = 15255086.0;          // o
+    if (g > 0.5) n = 23385164.0;          // &
+    if (g > 0.6) n = 15252014.0;          // 8
+    if (g > 0.7) n = 13199452.0;          // @
+    if (g > 0.8) n = 11512810.0;          // #
+    return n;
+}
+
+void main() {
+    float cell = max(u_cell_size, 4.0);
+    vec2 cellOrigin = floor(gl_FragCoord.xy / cell) * cell;
+    vec2 cellCenterUV = (cellOrigin + 0.5 * cell) / u_resolution;
+    vec3 src = texture(u_texture, cellCenterUV).rgb;
+    float g = dot(src, vec3(0.299, 0.587, 0.114));
+    g = pow(clamp(g, 0.0, 1.0), max(u_gamma, 0.05));
+    if (u_invert == 1) g = 1.0 - g;
+    vec2 p = (gl_FragCoord.xy - cellOrigin) / cell * 2.0 - 1.0;   // [-1,1] in cell
+    float px = glyph_px(glyph_for(g), p);
+    vec3 col;
+    if (u_mode == 1)      col = mix(u_bg_color, src, px);                    // colored
+    else if (u_mode == 2) col = mix(vec3(0.0, 0.05, 0.0), vec3(0.2, 1.0, 0.3) * (0.4 + 0.6 * g), px); // terminal
+    else                  col = mix(u_bg_color, u_fg_color, px);             // mono
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "cell_size": {"glsl": "float", "min": 4.0, "max": 32.0, "default": 8.0,
+                  "description": "character cell size (px)"},
+    "mode":      {"glsl": "choice", "choices": ["mono", "colored", "terminal"],
+                  "default": "colored", "description": "coloring mode"},
+    "fg_color":  {"glsl": "color", "default": "#e8e8e8", "description": "glyph color (mono mode)"},
+    "bg_color":  {"glsl": "color", "default": "#0a0a10", "description": "background color"},
+    "invert":    {"glsl": "int", "min": 0, "max": 1, "default": 0,
+                  "description": "invert brightness ramp"},
+    "gamma":     {"glsl": "float", "min": 0.2, "max": 3.0, "default": 1.0,
+                  "description": "brightness gamma before ramp"},
+})
+
+_register("solid_color_gpu", "Solid color fill (typed color picker)",
+          "procedural", '''
+void main() {
+    f_color = vec4(u_color, 1.0);
+}
+''', uniforms={
+    "color": {"glsl": "color", "default": "#4a9eff", "description": "fill color"},
+})
+
+_register("checker_gpu2", "Checkerboard with typed tile counts, colors, rotation",
+          "procedural", '''
+void main() {
+    vec2 uv = v_uv - 0.5;
+    float a = radians(u_angle);
+    uv = rot(a) * uv + 0.5;
+    vec2 tiles = vec2(max(u_tiles_x, 1.0), max(u_tiles_y, 1.0));
+    vec2 cellPos = fract(uv * tiles);
+    float chk = mod(floor(uv.x * tiles.x) + floor(uv.y * tiles.y), 2.0);
+    vec3 col = mix(u_color_a, u_color_b, chk);
+    // Optional grid lines between tiles.
+    if (u_line_width > 0.001) {
+        vec2 edge = min(cellPos, 1.0 - cellPos);
+        float line = step(min(edge.x, edge.y), u_line_width * 0.5);
+        col = mix(col, u_line_color, line);
+    }
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "tiles_x":    {"glsl": "float", "min": 1.0, "max": 64.0, "default": 8.0,
+                   "description": "tiles across"},
+    "tiles_y":    {"glsl": "float", "min": 1.0, "max": 64.0, "default": 8.0,
+                   "description": "tiles down"},
+    "angle":      {"glsl": "float", "min": 0.0, "max": 360.0, "default": 0.0,
+                   "description": "rotation (deg)"},
+    "color_a":    {"glsl": "color", "default": "#101018", "description": "tile color A"},
+    "color_b":    {"glsl": "color", "default": "#e8e4d8", "description": "tile color B"},
+    "line_width": {"glsl": "float", "min": 0.0, "max": 0.3, "default": 0.0,
+                   "description": "grid line width (0 = none)"},
+    "line_color": {"glsl": "color", "default": "#4a9eff", "description": "grid line color"},
+})
+
+_register("wave_pattern_gpu", "Periodic wave stripes: sine/triangle/square/saw, typed controls",
+          "procedural", '''
+void main() {
+    vec2 uv = v_uv - 0.5;
+    float a = radians(u_angle);
+    float x = dot(uv, vec2(cos(a), sin(a))) * u_frequency + u_time * u_phase_speed;
+    float ph = fract(x);
+    float w;
+    if (u_waveform == 1)      w = 1.0 - abs(ph * 2.0 - 1.0);          // triangle
+    else if (u_waveform == 2) w = step(ph, clamp(u_duty, 0.01, 0.99)); // square
+    else if (u_waveform == 3) w = ph;                                  // saw
+    else                      w = 0.5 + 0.5 * sin(ph * 6.28318530);    // sine
+    f_color = vec4(mix(u_color_a, u_color_b, w), 1.0);
+}
+''', uniforms={
+    "waveform":    {"glsl": "choice", "choices": ["sine", "triangle", "square", "saw"],
+                    "default": "sine", "description": "wave shape"},
+    "frequency":   {"glsl": "float", "min": 0.5, "max": 64.0, "default": 8.0,
+                    "description": "stripe frequency"},
+    "angle":       {"glsl": "float", "min": 0.0, "max": 360.0, "default": 45.0,
+                    "description": "stripe angle (deg)"},
+    "phase_speed": {"glsl": "float", "min": -4.0, "max": 4.0, "default": 0.5,
+                    "description": "phase drift speed (per second)"},
+    "duty":        {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5,
+                    "description": "duty cycle (square wave)"},
+    "color_a":     {"glsl": "color", "default": "#0b1026", "description": "trough color"},
+    "color_b":     {"glsl": "color", "default": "#ff9d2e", "description": "crest color"},
+})
+
+_register("fbm_noise_gpu", "Fractal Brownian motion noise with typed octave controls",
+          "procedural", '''
+float fbm_typed(vec2 p) {
+    float v = 0.0, amp = 0.5, freq = 1.0, norm = 0.0;
+    for (int i = 0; i < 10; i++) {
+        if (i >= u_octaves) break;
+        v += amp * noise(p * freq);
+        norm += amp;
+        freq *= u_lacunarity;
+        amp *= u_gain;
+    }
+    return norm > 0.0 ? v / norm : 0.0;
+}
+
+void main() {
+    vec2 p = (v_uv - 0.5) * u_scale;
+    p += u_time * u_drift * vec2(0.31, 0.17);
+    if (u_warp > 0.001) {
+        vec2 q = vec2(fbm_typed(p + vec2(5.2, 1.3)), fbm_typed(p + vec2(8.3, 2.8)));
+        p += u_warp * 4.0 * (q - 0.5);
+    }
+    float t = clamp(fbm_typed(p), 0.0, 1.0);
+    t = pow(t, max(u_contrast, 0.05));
+    f_color = vec4(mix(u_color_a, u_color_b, t), 1.0);
+}
+''', uniforms={
+    "scale":      {"glsl": "float", "min": 0.5, "max": 32.0, "default": 6.0,
+                   "description": "noise scale"},
+    "octaves":    {"glsl": "int", "min": 1, "max": 10, "default": 5,
+                   "description": "fbm octaves"},
+    "gain":       {"glsl": "float", "min": 0.1, "max": 0.9, "default": 0.5,
+                   "description": "per-octave gain"},
+    "lacunarity": {"glsl": "float", "min": 1.2, "max": 4.0, "default": 2.0,
+                   "description": "per-octave frequency multiplier"},
+    "warp":       {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.0,
+                   "description": "domain warp amount"},
+    "drift":      {"glsl": "float", "min": 0.0, "max": 2.0, "default": 0.2,
+                   "description": "animation drift speed"},
+    "contrast":   {"glsl": "float", "min": 0.2, "max": 3.0, "default": 1.0,
+                   "description": "output contrast (gamma)"},
+    "color_a":    {"glsl": "color", "default": "#06080f", "description": "low color"},
+    "color_b":    {"glsl": "color", "default": "#d8e8ff", "description": "high color"},
+})

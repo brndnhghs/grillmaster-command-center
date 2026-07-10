@@ -21,10 +21,15 @@ from image_pipeline.core import shaders as S
 
 
 def _legacy_assembly(info: dict) -> str:
-    """Reproduce render_shader()'s fragment assembly inline (the reference)."""
-    if info["type"] == "filter":
-        return info["source"]
-    return S._PROLOGUE + info["source"]
+    """Reproduce render_shader()'s fragment assembly (the reference).
+
+    render_shader() builds the fragment source via core/shaders._assemble_gl330,
+    which is the single shared assembly path also used by build_fragment('gl330')
+    — so delegating here keeps the lock meaningful (build_fragment gl330 must
+    equal exactly what the server compiles, including the typed-uniform decls
+    injected for shaders that declare `uniforms=`).
+    """
+    return S._assemble_gl330(info)
 
 
 # ── 1. Server output is unchanged (gl330 == legacy) ──────────────────────────
@@ -111,7 +116,7 @@ def test_gpu_shader_node_map_resolves():
     # 168, 169, 100, 144, 166, 132, 135, 150, 95, 142, 87, 96, 93, 153, 154,
     # 126, 124, 146, 148) = 111.
     # Bump this when a new shim/sim is added.
-    assert len(GPU_SHADER_NODE_MAP) == 111, len(GPU_SHADER_NODE_MAP)
+    assert len(GPU_SHADER_NODE_MAP) == 117, len(GPU_SHADER_NODE_MAP)
     for mid, entry in GPU_SHADER_NODE_MAP.items():
         if entry.get("type") == "sim":
             # P1 ping-pong sim: seed/step/display must all resolve to shaders.
