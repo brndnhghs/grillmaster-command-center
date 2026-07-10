@@ -752,6 +752,49 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "reset_on": ["seed", "param", "loop", "resize"],
         "param_map": {"g": "p1", "stir_speed": "p2", "alpha": "p3", "stir_amp": "p4"},
     },
+    # ── P1.3b scalar-PDE twins (single/3-channel ping-pong, 5-pt operators) ──
+    # 127 Kuramoto-Sivashinsky: nu=p1, dt=p2, noise_amp=p3, aniso_ratio=p4.
+    "127": {
+        "type": "sim",
+        "seed": "ks_seed", "step": "ks_step", "display": "ks_display",
+        "state_channels": 1, "substeps": 3,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"nu": "p1", "dt": "p2", "noise_amp": "p3", "aniso_ratio": "p4"},
+    },
+    # 128 Swift-Hohenberg (ε·u − u³ − (1+∇²)²u): epsilon=p1, dt=p2,
+    # noise_amp=p3, linear_gain=p4 (preview of (1+∇²) weight).
+    "128": {
+        "type": "sim",
+        "seed": "sh128_seed", "step": "sh128_step", "display": "sh128_display",
+        "state_channels": 1, "substeps": 5,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"epsilon": "p1", "dt": "p2", "noise_amp": "p3"},
+    },
+    # 157 Swift-Hohenberg (r·u − (∇²+q0²)²u − u³): r=p1, q0=p2, dt=p3, noise=p4.
+    "157": {
+        "type": "sim",
+        "seed": "sh157_seed", "step": "sh157_step", "display": "sh157_display",
+        "state_channels": 1, "substeps": 5,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"r": "p1", "q0": "p2", "dt": "p3", "noise": "p4"},
+    },
+    # 162 Coupled Rössler Oscillator Array (3-var): a=p1, b=p2, c_ross=p3,
+    # omega=p4. coupling D fixed in the twin (CPU authoritative for export).
+    "162": {
+        "type": "sim",
+        "seed": "ross_seed", "step": "ross_step", "display": "ross_display",
+        "state_channels": 3, "substeps": 2,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"a": "p1", "b": "p2", "c_ross": "p3", "omega": "p4"},
+    },
+    # 170 Phase Field Crystal: epsilon=p1, dt=p2, noise=p3, r2(=r/2)=p4.
+    "170": {
+        "type": "sim",
+        "seed": "pfc_seed", "step": "pfc_step", "display": "pfc_display",
+        "state_channels": 1, "substeps": 4,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"epsilon": "p1", "dt": "p2", "noise": "p3"},
+    },
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SIMS)
 

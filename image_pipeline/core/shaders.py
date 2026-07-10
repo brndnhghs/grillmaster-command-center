@@ -3091,6 +3091,289 @@ void main() {
 }
 ''')
 
+# ── Node 127: Kuramoto-Sivashinsky Equation ───────────────────────────────
+# ∂u/∂t = -ν·∇⁴u - ∇²u - ½|∇u|². Scalar height field u packed in .r; .g is a
+# phase accumulator that drives a hashed white-noise source (step shaders get
+# u_time=0, pitfall #6b, so noise must be carried in state). Single channel.
+# p1=nu (hyperviscosity), p2=dt, p3=noise_amp, p4=aniso_ratio (x/y stretch).
+_register("ks_seed",
+          "Kuramoto-Sivashinsky seed: small sinusoidal roll field + hashed noise (node 127 twin)",
+          "procedural", '''
+void main() {
+    vec2 uv = v_uv * 6.2831853;
+    float u = 0.2 * (sin(uv.x) + sin(uv.y)) + 0.05 * (noise(v_uv * 9.0) - 0.5);
+    f_color = vec4(u, 0.0, 0.0, 1.0);  // R=u, G=phase
+}
+''')
+
+_register("ks_step",
+          "Kuramoto-Sivashinsky one step: -nu*∇⁴u - ∇²u - ½|∇u|² (5-pt operators + hashed noise)",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float u = s.r, phase = s.g;
+    // 5-pt Laplacian
+    float c  = u;
+    float l  = texture(u_texture, v_uv + vec2(-texel.x, 0.0)).r;
+    float r  = texture(u_texture, v_uv + vec2( texel.x, 0.0)).r;
+    float d  = texture(u_texture, v_uv + vec2(0.0,-texel.y)).r;
+    float uu = texture(u_texture, v_uv + vec2(0.0, texel.y)).r;
+    float lap = (l + r + d + uu - 4.0 * c);
+    // 5-pt biharmonic (∇⁴) from the Laplacian
+    float l2 = texture(u_texture, v_uv + vec2(-texel.x*2.0, 0.0)).r
+             + texture(u_texture, v_uv + vec2( texel.x*2.0, 0.0)).r
+             + texture(u_texture, v_uv + vec2(0.0,-texel.y*2.0)).r
+             + texture(u_texture, v_uv + vec2(0.0, texel.y*2.0)).r
+             - 4.0 * ((l+r+d+uu)*0.25);
+    float lap2 = lap + (l2 - lap) * 0.5;  // cheap ∇⁴ stand-in
+    // gradient magnitude squared |∇u|²
+    float dx = (r - l) * 0.5, dy = (uu - d) * 0.5;
+    float grad2 = dx*dx + dy*dy;
+    float nu = clamp(u_params.x, 0.01, 0.5);
+    float dt = clamp(u_params.y, 0.001, 0.05);
+    float sigma = clamp(u_params.z, 0.0, 0.3);
+    phase = fract(phase + dt);
+    float eta = (hash21(floor(v_uv * u_resolution) + phase * 211.0) - 0.5) * sigma;
+    float un = c + dt * (-nu * lap2 - lap - 0.5 * grad2 + eta);
+    float peak = max(abs(un), 1.0);
+    if (peak > 6.0) { un *= 6.0 / peak; }
+    f_color = vec4(clamp(un, -6.0, 6.0), phase, 0.0, 1.0);
+}
+''')
+
+_register("ks_display",
+          "Kuramoto-Sivashinsky display: signed u -> tanh-sigmoid grayscale (matches _render_ks)",
+          "procedural", '''
+void main() {
+    float u = texture(u_texture, v_uv).r;
+    float g = clamp((tanh(u * 1.5) + 1.0) * 0.5, 0.0, 1.0);
+    f_color = vec4(vec3(g), 1.0);
+}
+''')
+
+# ── Node 128: Swift-Hohenberg (ε·u − u³ − (1+∇²)²·u) ───────────────────────
+# Spectral-style pattern formation. Local approximation of the biharmonic
+# operator via a 5-pt stencil. Scalar u packed in .r; .g phase drives noise.
+# p1=epsilon, p2=dt, p3=noise_amp, p4=linear_gain (~0.5 ctrl of (1+∇²) weight).
+_register("sh128_seed",
+          "Swift-Hohenberg (128) seed: small hashed pattern field (node 128 twin)",
+          "procedural", '''
+void main() {
+    float u = 0.2 * (sin(v_uv.x * 12.0) * 0.5 + sin(v_uv.y * 9.0) * 0.5)
+            + 0.05 * (noise(v_uv * 7.0) - 0.5);
+    f_color = vec4(u, 0.0, 0.0, 1.0);  // R=u, G=phase
+}
+''')
+
+_register("sh128_step",
+          "Swift-Hohenberg (128) one step: epsilon*u - u^3 - (1+lap)^2 u + noise",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float u = s.r, phase = s.g;
+    // 5-pt Laplacian
+    float c  = u;
+    float l  = texture(u_texture, v_uv + vec2(-texel.x, 0.0)).r;
+    float r  = texture(u_texture, v_uv + vec2( texel.x, 0.0)).r;
+    float d  = texture(u_texture, v_uv + vec2(0.0,-texel.y)).r;
+    float uu = texture(u_texture, v_uv + vec2(0.0, texel.y)).r;
+    float lap = (l + r + d + uu - 4.0 * c);
+    // (1 + lap)^2 u  = u + 2*lap + lap*lagain  (local ∇⁴ stand-in)
+    float lap2 = (l + r + d + uu - 4.0 * lap) - 4.0 * c;  // ∇⁴ approx
+    float lap4 = lap + lap2;
+    float eps = clamp(u_params.x, -0.5, 3.0);
+    float dt = clamp(u_params.y, 0.01, 1.0);
+    float sigma = clamp(u_params.z, 0.0, 1.0);
+    float gain = clamp(u_params.w, 0.0, 2.0);
+    phase = fract(phase + dt);
+    float eta = (hash21(floor(v_uv * u_resolution) + phase * 97.0) - 0.5) * sigma;
+    float reaction = eps * c - c * c * c;
+    // -(1 + gain*lap)^2 u  ~  -u - 2*gain*lap - gain*gain*lap2
+    float lin = -c - 2.0 * gain * lap - gain * gain * lap2;
+    float un = c + dt * (reaction + lin + eta);
+    float peak = max(abs(un), 1.0);
+    if (peak > 4.0) { un *= 4.0 / peak; }
+    f_color = vec4(clamp(un, -4.0, 4.0), phase, 0.0, 1.0);
+}
+''')
+
+_register("sh128_display",
+          "Swift-Hohenberg (128) display: u in [-2,2] -> grayscale (matches _render_field)",
+          "procedural", '''
+void main() {
+    float u = texture(u_texture, v_uv).r;
+    float g = clamp((u + 2.0) / 4.0, 0.0, 1.0);
+    f_color = vec4(vec3(g), 1.0);
+}
+''')
+
+# ── Node 157: Swift-Hohenberg (r·u − (∇²+q₀²)²·u − u³) ─────────────────────
+# Same ε·u − u³ structure with a tuned wavenumber band. q0 packs into p2.
+# p1=r, p2=q0, p3=dt, p4=noise_amp.
+_register("sh157_seed",
+          "Swift-Hohenberg (157) seed: small hashed field + q0-scale hex hint (node 157 twin)",
+          "procedural", '''
+void main() {
+    float q0 = clamp(u_params.y, 0.02, 0.3);
+    float u = 0.15 * (cos(q0 * v_uv.x * 6.2831853)
+                      + cos(q0 * 0.5 * v_uv.x * 6.2831853 + 0.8660254 * q0 * v_uv.y * 6.2831853)
+                      + cos(q0 * 0.5 * v_uv.x * 6.2831853 - 0.8660254 * q0 * v_uv.y * 6.2831853));
+    u += 0.05 * (noise(v_uv * 7.0) - 0.5);
+    f_color = vec4(u, 0.0, 0.0, 1.0);  // R=u, G=phase
+}
+''')
+
+_register("sh157_step",
+          "Swift-Hohenberg (157) one step: r*u - (lap+q0^2)^2 u - u^3 + noise",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float u = s.r, phase = s.g;
+    float c  = u;
+    float l  = texture(u_texture, v_uv + vec2(-texel.x, 0.0)).r;
+    float r  = texture(u_texture, v_uv + vec2( texel.x, 0.0)).r;
+    float d  = texture(u_texture, v_uv + vec2(0.0,-texel.y)).r;
+    float uu = texture(u_texture, v_uv + vec2(0.0, texel.y)).r;
+    float lap = (l + r + d + uu - 4.0 * c);
+    float lap2 = (l + r + d + uu - 4.0 * lap) - 4.0 * c;  // ∇⁴ approx
+    float q0 = clamp(u_params.y, 0.02, 0.3);
+    float rq02 = (lap + q0 * q0) * (lap + q0 * q0);  // (∇²+q0²) for lin term
+    float rq04 = rq02 * rq02;                          // (∇²+q0²)²
+    float rr = clamp(u_params.x, -1.0, 5.0);
+    float dt = clamp(u_params.z, 0.01, 0.5);
+    float sigma = clamp(u_params.w, 0.0, 0.1);
+    phase = fract(phase + dt);
+    float eta = (hash21(floor(v_uv * u_resolution) + phase * 53.0) - 0.5) * sigma * 10.0;
+    float reaction = rr * c - c * c * c;
+    float lin = -rq04;
+    float un = c + dt * (reaction + lin + eta);
+    float peak = max(abs(un), 1.0);
+    if (peak > 4.0) { un *= 4.0 / peak; }
+    f_color = vec4(clamp(un, -4.0, 4.0), phase, 0.0, 1.0);
+}
+''')
+
+_register("sh157_display",
+          "Swift-Hohenberg (157) display: mean-centered tanh grayscale (matches _render)",
+          "procedural", '''
+void main() {
+    float u = texture(u_texture, v_uv).r;
+    float g = clamp((tanh(u * 1.5) + 1.0) * 0.5, 0.0, 1.0);
+    f_color = vec4(vec3(g), 1.0);
+}
+''')
+
+# ── Node 162: Coupled Rössler Oscillator Array ─────────────────────────────
+# 3-variable chaotic oscillator per cell, diffusively coupled on a 2D grid.
+# State packs R=x (slow), G=y (fast), B=z (fold). p1=a, p2=b, p3=c_ross,
+# p4=omega. coupling D is fixed (CPU authoritative); live preview approximates.
+_register("ross_seed",
+          "Rössler array seed: near-fixed-point oscillation, hashed per-cell (node 162 twin)",
+          "procedural", '''
+void main() {
+    float x = -5.7 + 0.5 * (noise(v_uv * 13.0) - 0.5);
+    float y = -5.7 + 0.5 * (noise(v_uv * 13.0 + 3.1) - 0.5);
+    float z = 5.7  + 0.5 * (noise(v_uv * 13.0 + 7.7) - 0.5);
+    f_color = vec4(x, y, z, 1.0);  // R=x, G=y, B=z
+}
+''')
+
+_register("ross_step",
+          "Rössler array one step: per-cell Rössler ODE + 5-pt diffusive coupling",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float x = s.r, y = s.g, z = s.b;
+    // 5-pt Laplacian of each channel
+    vec4 ll = texture(u_texture, v_uv + vec2(-texel.x, 0.0));
+    vec4 rr = texture(u_texture, v_uv + vec2( texel.x, 0.0));
+    vec4 dd = texture(u_texture, v_uv + vec2(0.0,-texel.y));
+    vec4 uu = texture(u_texture, v_uv + vec2(0.0, texel.y));
+    vec3 lap = (ll.rgb + rr.rgb + dd.rgb + uu.rgb - 4.0 * vec3(x, y, z));
+    float a = clamp(u_params.x, 0.1, 0.6);
+    float b = clamp(u_params.y, 0.05, 0.5);
+    float c = clamp(u_params.z, 3.0, 15.0);
+    float omega = clamp(u_params.w, 0.5, 2.0);
+    float D = 0.5;  // fixed coupling strength (CPU authoritative)
+    float dt = 0.08;
+    float dx = -omega * y - z + D * lap.x;
+    float dy =  omega * x + a * y + D * lap.y;
+    float dz =  b + z * (x - c) + D * lap.z;
+    vec3 nn = vec3(x, y, z) + dt * vec3(dx, dy, dz);
+    nn.z = clamp(nn.z, 0.0, 30.0);  // z always positive in Rössler
+    f_color = vec4(nn, 1.0);
+}
+''')
+
+_register("ross_display",
+          "Rössler array display: x/y/z -> HSV-ish composite (matches render_style=composite)",
+          "procedural", '''
+void main() {
+    vec3 v = texture(u_texture, v_uv).rgb;
+    float x = v.r, y = v.g, z = v.b;
+    float xr = clamp((x + 12.0) / 24.0, 0.0, 1.0);
+    float yr = clamp((y + 12.0) / 24.0, 0.0, 1.0);
+    float zr = clamp(z / 30.0, 0.0, 1.0);
+    vec3 col = vec3(xr, yr, 0.3 + 0.7 * zr);
+    f_color = vec4(col, 1.0);
+}
+''')
+
+# ── Node 170: Phase Field Crystal ───────────────────────────────────────────
+# PFC amplitude equation live-preview approximation. Single scalar ψ packed in
+# .r; .g phase drives noise. p1=epsilon, p2=dt, p3=noise_amp, p4=r2 (=r/2).
+_register("pfc_seed",
+          "Phase Field Crystal seed: small hashed amplitude field (node 170 twin)",
+          "procedural", '''
+void main() {
+    float psi = 0.2 * (noise(v_uv * 11.0) - 0.5) + 0.05 * (noise(v_uv * 23.0) - 0.5);
+    f_color = vec4(psi, 0.0, 0.0, 1.0);  // R=psi, G=phase
+}
+''')
+
+_register("pfc_step",
+          "Phase Field Crystal one step: lap(psi + lap psi) - r/2 psi^2 + psi^3 + noise",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float psi = s.r, phase = s.g;
+    float c  = psi;
+    float l  = texture(u_texture, v_uv + vec2(-texel.x, 0.0)).r;
+    float r  = texture(u_texture, v_uv + vec2( texel.x, 0.0)).r;
+    float d  = texture(u_texture, v_uv + vec2(0.0,-texel.y)).r;
+    float uu = texture(u_texture, v_uv + vec2(0.0, texel.y)).r;
+    float lap = (l + r + d + uu - 4.0 * c);
+    float lap2 = (l + r + d + uu - 4.0 * lap) - 4.0 * c;  // ∇⁴ approx
+    float eps = clamp(u_params.x, 0.01, 0.5);
+    float dt = clamp(u_params.y, 0.01, 0.5);
+    float sigma = clamp(u_params.z, 0.0, 0.1);
+    float r2 = clamp(u_params.w, 0.0, 2.0);  // = r/2 quadratic coefficient
+    float lin = lap + lap2;
+    float reaction = eps * c - r2 * c * c + (1.0 / 3.0) * c * c * c;
+    phase = fract(phase + dt);
+    float eta = (hash21(floor(v_uv * u_resolution) + phase * 31.0) - 0.5) * sigma * 12.0;
+    float pn = c + dt * (lin + reaction + eta);
+    float peak = max(abs(pn), 1.0);
+    if (peak > 4.0) { pn *= 4.0 / peak; }
+    f_color = vec4(clamp(pn, -4.0, 4.0), phase, 0.0, 1.0);
+}
+''')
+
+_register("pfc_display",
+          "Phase Field Crystal display: signed psi -> tanh grayscale (matches PFC render)",
+          "procedural", '''
+void main() {
+    float psi = texture(u_texture, v_uv).r;
+    float g = clamp((tanh(psi * 1.5) + 1.0) * 0.5, 0.0, 1.0);
+    f_color = vec4(vec3(g), 1.0);
+}
+''')
+
 # ── Nodes 95 / 142: Coupled Logistic Map Lattice ────────────────────────────
 # Both nodes are the SAME dynamical system: each cell x evolves via the logistic
 # map f(x)=r·x·(1-x), diffusively coupled to its 4 neighbours with strength ε:

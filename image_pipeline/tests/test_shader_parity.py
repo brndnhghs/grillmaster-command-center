@@ -131,7 +131,9 @@ def test_gpu_shader_node_map_resolves():
     # 6 typed closed-form math_art nodes (271-276: ulam_spiral/maze/
     # circle_packing/fourier_circles/waveform/strange_attractor) added
     # 2026-07-11 pt.8. Total = 168.
-    assert len(GPU_SHADER_NODE_MAP) == 168, len(GPU_SHADER_NODE_MAP)
+    # + 5 P1.3b scalar-PDE ping-pong sim twins (127 KS, 128 SH, 157 SH,
+    # 162 Rössler array, 170 PFC) added 2026-07-12. Total = 173.
+    assert len(GPU_SHADER_NODE_MAP) == 173, len(GPU_SHADER_NODE_MAP)
     for mid, entry in GPU_SHADER_NODE_MAP.items():
         if entry.get("type") == "sim":
             # P1 ping-pong sim: seed/step/display must all resolve to shaders.
