@@ -861,6 +861,19 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "reset_on": ["seed", "param", "loop", "resize"],
         "param_map": {"epsilon": "p1", "dt": "p2", "noise": "p3"},
     },
+    # ── P1.5 phase-field solidification ──
+    # 122 Dendritic Solidification: Allen-Cahn φ (.r) + passive thermal u (.g).
+    # undercooling=p1, anisotropy=p2, symmetry=p3, dt=p4. n_seeds/impurity/
+    # anim_mode are count/choice params (pitfall #14) left unmapped — the twin
+    # renders the default single-seed "evolve" nucleus. CPU node authoritative.
+    "122": {
+        "type": "sim",
+        "seed": "dendrite_seed", "step": "dendrite_step", "display": "dendrite_display",
+        "state_channels": 2, "substeps": 3,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"undercooling": "p1", "anisotropy": "p2",
+                      "symmetry": "p3", "dt": "p4"},
+    },
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SIMS)
 

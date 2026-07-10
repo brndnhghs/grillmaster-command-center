@@ -6377,3 +6377,88 @@ void main() {
                 "description": "saturation"},
     "bg":       {"glsl": "color", "default": "#06121a", "description": "background"},
 })
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  P1.5 — Dendritic Solidification (node 122) phase-field ping-pong twin
+# ═══════════════════════════════════════════════════════════════════════════
+# Allen-Cahn phase field φ (.r) coupled to a passive thermal field u (.g).
+# Anisotropic interface width W(θ)=W0(1+ε cos(kθ)) gives the 4-fold dendrite
+# branching. Faithful to the CPU node's ACTUAL (simplified) update — it uses the
+# W²∇²φ diffusion form, constant driving force, double-well f'(φ). The CPU numpy
+# node stays the authoritative export; every param is clamped to its documented
+# range so the twin is robust to the client's neutral u_params fallback.
+_register("dendrite_seed",
+          "Dendritic seed: single tanh nucleus at center + thermal bump (node 122 twin)",
+          "procedural", '''
+void main() {
+    vec2 res = u_resolution;
+    vec2 p = v_uv * res;
+    float dist = length(p - 0.5 * res);
+    float W0 = 0.5, seedR = 12.0;
+    float phi = tanh((seedR - dist) / (W0 * 1.41421356));   // φ=+1 solid core → −1 liquid
+    float u0 = clamp(u_params.x, -1.0, -0.1);               // undercooling
+    float u  = clamp(u0 + 0.3 * exp(-(dist * dist) / 100.0), -1.0, 1.0);
+    f_color = vec4(phi, u, 0.0, 1.0);
+}
+''')
+
+_register("dendrite_step",
+          "Dendritic Allen-Cahn step: anisotropic W(θ)²∇²φ + double-well + thermal (node 122)",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s  = texture(u_texture, v_uv);
+    float phi = s.r, uu = s.g;
+    vec4 sl = texture(u_texture, v_uv + vec2(-texel.x, 0.0));
+    vec4 sr = texture(u_texture, v_uv + vec2( texel.x, 0.0));
+    vec4 st = texture(u_texture, v_uv + vec2(0.0,  texel.y));
+    vec4 sb = texture(u_texture, v_uv + vec2(0.0, -texel.y));
+    float lapPhi = sl.r + sr.r + st.r + sb.r - 4.0 * phi;
+    float lapU   = sl.g + sr.g + st.g + sb.g - 4.0 * uu;
+    float phix = (sr.r - sl.r) * 0.5;
+    float phiy = (st.r - sb.r) * 0.5;
+    float theta = atan(phiy, phix);
+    float eps = clamp(u_params.y, 0.0, 0.1);                 // anisotropy
+    float k   = floor(clamp(u_params.z, 3.0, 8.0) + 0.5);    // symmetry (int fold)
+    float W0 = 0.5;
+    float w  = W0 * (1.0 + eps * cos(k * theta));
+    float aniso = (w * w) * lapPhi;
+    float fp    = 4.0 * phi * (phi * phi - 1.0);             // f'(φ)=(φ²−1)²'
+    float drive = 4.0 * (1.0 - phi * phi);                   // D_DRIVE=4
+    float M  = 50.0;
+    // Cap the step for explicit-scheme stability (M·dt·w² must stay <~0.25, else
+    // the interior checkerboards). The CPU node masks this with a periodic
+    // Gaussian blur; the twin caps dt + lightly smooths in display instead.
+    float dt = min(clamp(u_params.w, 0.005, 0.2), 0.02);
+    float dphi = M * (aniso - fp + drive);
+    float phiN = clamp(phi + dt * dphi, -1.0, 1.0);
+    float du   = 6.0 * lapU + 0.3 * max(dphi, 0.0);          // D_THERMAL=6 + latent heat
+    float uN   = clamp(uu + dt * du, -1.0, 1.0);
+    f_color = vec4(phiN, uN, 0.0, 1.0);
+}
+''')
+
+_register("dendrite_display",
+          "Dendritic display: φ → grayscale + thin interface outline (node 122)",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    float phi = texture(u_texture, v_uv).r;
+    float pl = texture(u_texture, v_uv + vec2(-texel.x, 0.0)).r;
+    float pr = texture(u_texture, v_uv + vec2( texel.x, 0.0)).r;
+    float pt = texture(u_texture, v_uv + vec2(0.0,  texel.y)).r;
+    float pb = texture(u_texture, v_uv + vec2(0.0, -texel.y)).r;
+    float pa = texture(u_texture, v_uv + vec2(-texel.x,  texel.y)).r;
+    float pc = texture(u_texture, v_uv + vec2( texel.x,  texel.y)).r;
+    float pe = texture(u_texture, v_uv + vec2(-texel.x, -texel.y)).r;
+    float pf = texture(u_texture, v_uv + vec2( texel.x, -texel.y)).r;
+    // 3×3 Gaussian-ish smooth of φ (suppresses the explicit-scheme checkerboard,
+    // mirroring the CPU node's light periodic blur).
+    float phiS = (phi * 4.0 + (pl + pr + pt + pb) * 2.0 + (pa + pc + pe + pf)) / 16.0;
+    float gray = (phiS + 1.0) * 0.5;
+    float gmag = length(vec2((pr - pl) * 0.5, (pt - pb) * 0.5));
+    if (abs(phi) < 0.2 && gmag > 0.15) gray = 1.0;   // thin interface outline
+    f_color = vec4(gray, gray, gray, 1.0);
+}
+''')
