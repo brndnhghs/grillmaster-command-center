@@ -467,6 +467,22 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "reset_on": ["seed", "param", "loop", "resize"],
         "param_map": {"k2": "p1", "k3": "p2", "k4": "p3", "dt": "p4"},
     },
+    # 95 Coupled Logistic: p1=r, p2=eps, p3=decay(trail). Magma colormap display.
+    "95": {
+        "type": "sim",
+        "seed": "cml_seed", "step": "cml_step", "display": "cml95_display",
+        "state_channels": 2, "substeps": 2,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"r": "p1", "eps": "p2"},
+    },
+    # 142 Coupled Map Lattice: p1=r, p2=epsilon, p3=decay(trail). Grayscale display.
+    "142": {
+        "type": "sim",
+        "seed": "cml_seed", "step": "cml_step", "display": "cml142_display",
+        "state_channels": 2, "substeps": 2,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"r": "p1", "epsilon": "p2", "decay": "p3"},
+    },
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SIMS)
 

@@ -2378,3 +2378,74 @@ void main() {
     f_color = vec4(col, 1.0);
 }
 ''')
+
+# ── Nodes 95 / 142: Coupled Logistic Map Lattice ────────────────────────────
+# Both nodes are the SAME dynamical system: each cell x evolves via the logistic
+# map f(x)=r·x·(1-x), diffusively coupled to its 4 neighbours with strength ε:
+#   x' = (1-ε)·f(x) + (ε/4)·Σ f(x_neighbour)
+# Discrete-time recurrence ⇒ raw state strobes, so an EMA trail (decay) is packed
+# alongside the raw lattice: state R=raw x, G=accum (trail). display reads accum.
+# p1=r (3.5–4.0), p2=ε coupling (0.05–0.5), p3=decay trail (0.5–0.99).
+_register("cml_seed",
+          "Coupled logistic seed: hashed uniform lattice in [0,1] (nodes 95/142 twin)",
+          "procedural", '''
+void main() {
+    float x = hash21(v_uv * u_resolution + 0.123);
+    f_color = vec4(x, x, 0.0, 1.0);  // R=raw x, G=accum(trail)
+}
+''')
+
+_register("cml_step",
+          "Coupled logistic one step: logistic map + diffusive coupling + EMA trail",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float x = s.r, accum = s.g;
+    float r = clamp(u_params.x, 3.5, 4.0);
+    float eps = clamp(u_params.y, 0.05, 0.5);
+    float decay = clamp(u_params.z, 0.5, 0.99);
+    // f(x) at this cell and its 4 toroidal neighbours
+    float fx  = r * x * (1.0 - x);
+    float xu  = texture(u_texture, v_uv + vec2(0.0, -texel.y)).r;
+    float xd  = texture(u_texture, v_uv + vec2(0.0,  texel.y)).r;
+    float xl  = texture(u_texture, v_uv + vec2(-texel.x, 0.0)).r;
+    float xr  = texture(u_texture, v_uv + vec2( texel.x, 0.0)).r;
+    float fsum = r*xu*(1.0-xu) + r*xd*(1.0-xd) + r*xl*(1.0-xl) + r*xr*(1.0-xr);
+    float xn = (1.0 - eps) * fx + (eps * 0.25) * fsum;
+    xn = clamp(xn, 0.0, 1.0);
+    // Exponential moving-average trail to suppress discrete-time strobing
+    float an = decay * accum + (1.0 - decay) * xn;
+    f_color = vec4(xn, clamp(an, 0.0, 1.0), 0.0, 1.0);
+}
+''')
+
+_register("cml95_display",
+          "Coupled logistic display (node 95): trail -> magma-inspired colormap",
+          "procedural", '''
+void main() {
+    float t = clamp(texture(u_texture, v_uv).g, 0.0, 1.0);
+    // Piecewise magma-inspired ramp matching _COLORMAP_256 (dark→purple→orange→gold)
+    vec3 c0 = vec3(0.016, 0.016, 0.063);
+    vec3 c1 = vec3(0.314, 0.0,   0.314);
+    vec3 c2 = vec3(0.706, 0.157, 0.471);
+    vec3 c3 = vec3(0.941, 0.471, 0.157);
+    vec3 c4 = vec3(1.0,   0.863, 0.235);
+    vec3 col;
+    if (t < 0.25)      col = mix(c0, c1, t / 0.25);
+    else if (t < 0.50) col = mix(c1, c2, (t - 0.25) / 0.25);
+    else if (t < 0.75) col = mix(c2, c3, (t - 0.50) / 0.25);
+    else               col = mix(c3, c4, (t - 0.75) / 0.25);
+    f_color = vec4(col, 1.0);
+}
+''')
+
+_register("cml142_display",
+          "Coupled logistic display (node 142): trail -> grayscale (matches CML render)",
+          "procedural", '''
+void main() {
+    float g = clamp(texture(u_texture, v_uv).g, 0.0, 1.0);
+    f_color = vec4(vec3(g), 1.0);
+}
+''')
+
