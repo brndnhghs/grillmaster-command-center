@@ -31,7 +31,7 @@ from image_pipeline.core.shaders import SHADERS
 from image_pipeline.methods.gpu_shaders import GPU_SHADER_NODE_MAP
 
 # Stable count guard — bump when the GPU mirror grows (one logical chunk per run).
-EXPECTED_MAP_ENTRIES = 202
+EXPECTED_MAP_ENTRIES = 203
 
 # Simulations-category CPU nodes that are intentionally NOT GPU-mirrored yet.
 # These are Architecture-A stateful sims (discrete CA, agent/particle systems,
@@ -41,7 +41,7 @@ EXPECTED_MAP_ENTRIES = 202
 DEFERRED_SIM_IDS = set(
     "20 34 35 36 55 79 83 84 86 88 89 90 92 94 97 98 101 102 103 "
     "106 107 109 110 111 112 113 114 116 117 123 129 130 131 134 "
-    "136 145 147 149 151 152 156 158 159 161 167".split()
+    "136 145 147 149 151 152 158 159 161 167".split()
 )
 
 # CPU categories that MUST have a GPU mirror (coverage by category).

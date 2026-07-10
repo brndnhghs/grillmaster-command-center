@@ -144,7 +144,8 @@ def test_gpu_shader_node_map_resolves():
     # +1 P1.5 phase-field sim twin (122 Dendritic Solidification) = 200.
     # +1 P1.5 fractional-RD sim twin (163) = 201.
     # +1 P1.6 field-PDE sim twin (99 Active Nematic) = 202.
-    assert len(GPU_SHADER_NODE_MAP) == 202, len(GPU_SHADER_NODE_MAP)
+    # +1 P1.6 3-field terrain sim twin (156 Hydraulic Erosion) = 203.
+    assert len(GPU_SHADER_NODE_MAP) == 203, len(GPU_SHADER_NODE_MAP)
     for mid, entry in GPU_SHADER_NODE_MAP.items():
         if entry.get("type") == "sim":
             # P1 ping-pong sim: seed/step/display must all resolve to shaders.

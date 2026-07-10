@@ -899,6 +899,18 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "param_map": {"activity": "p1", "elastic_d": "p2",
                       "A_landau": "p3", "noise_amp": "p4"},
     },
+    # 156 Hydraulic Erosion: 3-field terrain (height=.r, water=.g, sediment=.b).
+    # rain_rate=p1, K_e=p2, K_d=p3, theta=p4. Local surface-gradient water flow
+    # (CPU authoritative for exact steepest-descent routing). anim_mode/grid_div/
+    # render_water are choice params (pitfall #14) left unmapped — twin renders
+    # the default hydraulic regime with water channels shown.
+    "156": {
+        "type": "sim",
+        "seed": "erosion_seed", "step": "erosion_step", "display": "erosion_display",
+        "state_channels": 3, "substeps": 4,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"rain_rate": "p1", "K_e": "p2", "K_d": "p3", "theta": "p4"},
+    },
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SIMS)
 
