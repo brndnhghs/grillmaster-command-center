@@ -606,20 +606,27 @@ const server = http.createServer((req, res) => {
 // ── Minimal PNG encoder (no dependencies beyond Node stdlib) ───────────────
 
 function encodePNG(pixels, width, height) {
-  // Raw RGBA pixels (flipped top-left), encode as PNG with zlib deflate
+  // Raw RGBA pixels (flipped top-left), encode as PNG with zlib deflate.
+  // NOTE: we write a true RGBA PNG (color type 6) — not just RGB — so the
+  // alpha channel the renderer captured (e.g. for bg_mode:'transparent') is
+  // preserved in the exported file instead of being silently dropped. The
+  // renderer is created with alpha:true and readPixels reads gl.RGBA, so
+  // `pixels` already carries alpha; dropping it made transparent renders
+  // export as opaque-on-black, which is wrong for every compositing use.
   const zlib = require('zlib');
 
-  // Build IDAT rows: filter byte (0=no filter) + RGB bytes
-  const raw = Buffer.alloc(height * (1 + width * 3));
+  // Build IDAT rows: filter byte (0=no filter) + RGBA bytes
+  const raw = Buffer.alloc(height * (1 + width * 4));
   for (let y = 0; y < height; y++) {
-    const rowOff = y * (1 + width * 3);
+    const rowOff = y * (1 + width * 4);
     raw[rowOff] = 0; // filter byte
     for (let x = 0; x < width; x++) {
       const pxOff = (y * width + x) * 4;
-      const destOff = rowOff + 1 + x * 3;
+      const destOff = rowOff + 1 + x * 4;
       raw[destOff] = pixels[pxOff];       // R
       raw[destOff + 1] = pixels[pxOff + 1]; // G
       raw[destOff + 2] = pixels[pxOff + 2]; // B
+      raw[destOff + 3] = pixels[pxOff + 3]; // A (preserve transparency)
     }
   }
 
@@ -633,7 +640,7 @@ function encodePNG(pixels, width, height) {
   ihdrData.writeUInt32BE(width, 0);
   ihdrData.writeUInt32BE(height, 4);
   ihdrData[8] = 8;  // bit depth
-  ihdrData[9] = 2;  // color type: RGB
+  ihdrData[9] = 6;  // color type: RGBA
   ihdrData[10] = 0; // compression
   ihdrData[11] = 0; // filter
   ihdrData[12] = 0; // interlace
