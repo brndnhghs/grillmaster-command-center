@@ -2088,6 +2088,202 @@ void main() {
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  P1.4 — Discrete cellular automata / statistical-mechanics twins
+#  Client-GPU sim twins of nodes 87 (Cyclic CA), 96 (Forest Fire), 93 (Ising).
+#  All use RGBA-float ping-pong: a single-channel integer CA state in .r,
+#  an auxiliary channel for age/aux data in .g, and a per-cell RNG carry in .b
+#  (advanced each step via hash21 so the live sim does not require u_time).
+#  CPU numpy nodes stay authoritative for export (two-tier precision).
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ── Node 87: Cyclic (Rock-Paper-Scissors) CA ──
+# State in .r ∈ [0,1) encodes state index = floor(.r * n_states); n_states from
+# u_params.x (3-8). .b carries the per-cell RNG seed, advanced each step.
+_register("cyclic_ca_seed",
+          "Cyclic CA seed: hashed random state in [0,n_states), RNG carry in .b (node 87 twin)",
+          "procedural", '''
+void main() {
+    float ns = clamp(floor(u_params.x + 0.5), 3.0, 8.0);
+    float h = hash21(floor(v_uv * u_resolution * 0.5));
+    float s = floor(h * ns) / ns;   // quantize into n_states buckets
+    float rng = hash21(v_uv * u_resolution + 7.13);
+    f_color = vec4(s, 0.0, rng, 1.0);
+}
+''')
+
+_register("cyclic_ca_step",
+          "Cyclic CA one step: convert to predator state when >= threshold neighbours match (node 87 twin)",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float ns = clamp(floor(u_params.x + 0.5), 3.0, 8.0);
+    float thr = clamp(floor(u_params.y + 0.5), 1.0, 5.0);
+    float my = floor(s.r * ns + 0.5);
+    float pred = mod(my + 1.0, ns);          // predator state index
+    float predF = (pred + 0.5) / ns;         // predator state in [0,1)
+    float cnt = 0.0;
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            if (x == 0 && y == 0) continue;
+            float sn = texture(u_texture, v_uv + vec2(float(x), float(y)) * texel).r;
+            float nidx = floor(sn * ns + 0.5);
+            if (abs(nidx - pred) < 0.5) cnt += 1.0;
+        }
+    }
+    float alive_pred = cnt >= thr ? 1.0 : 0.0;
+    float next = alive_pred > 0.5 ? predF : s.r;
+    // advance per-cell RNG carry
+    float rng = fract(s.b * 1.4567 + 0.137);
+    f_color = vec4(next, 0.0, rng, 1.0);
+}
+''')
+
+_register("cyclic_ca_display",
+          "Cyclic CA display: 8-state cyclic palette (red/green/blue/gold/cyan/magenta/orange/silver)",
+          "procedural", '''
+void main() {
+    vec4 s = texture(u_texture, v_uv);
+    float ns = clamp(floor(u_params.x + 0.5), 3.0, 8.0);
+    float st = floor(s.r * ns + 0.5);
+    // 8 distinct hues around the wheel
+    float a = st / ns * 6.2831853;
+    vec3 col = 0.5 + 0.5 * cos(a + vec3(0.0, 2.094, 4.188));
+    col = mix(vec3(0.05, 0.05, 0.07), col, 0.9);
+    f_color = vec4(col, 1.0);
+}
+''')
+
+# ── Node 96: Drossel-Schwabl Forest Fire ──
+# 3-state CA: .r encodes state (0 empty, 1 tree, 2 burning); .g = fire_age (0-3);
+# .b = per-cell RNG carry. p=growth in u_params.x, f=lightning in u_params.y.
+_register("forest_fire_seed",
+          "Forest Fire seed: random trees at initial fraction, RNG carry in .b (node 96 twin)",
+          "procedural", '''
+void main() {
+    float init = clamp(u_params.z, 0.1, 0.9);
+    float h = hash21(floor(v_uv * u_resolution * 0.5));
+    float state = h < init ? 1.0 : 0.0;   // 1 = tree
+    float rng = hash21(v_uv * u_resolution + 3.71);
+    f_color = vec4(state, 0.0, rng, 1.0);
+}
+''')
+
+_register("forest_fire_step",
+          "Forest Fire one step: growth, neighbour/lightning ignition, fire aging (node 96 twin)",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float p = clamp(u_params.x, 0.001, 0.05);
+    float f = clamp(u_params.y, 0.00001, 0.001);
+    float state = s.r;
+    float age = s.g;
+    float rng = fract(s.b * 1.731 + 0.211);
+
+    // count burning neighbours (Moore)
+    float burn = 0.0;
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            if (x == 0 && y == 0) continue;
+            float sn = texture(u_texture, v_uv + vec2(float(x), float(y)) * texel).r;
+            if (sn > 1.5) burn += 1.0;   // state == 2 (burning)
+        }
+    }
+
+    float next_state = state;
+    float next_age = age;
+
+    if (state > 1.5) {
+        // currently burning: age it down; age 0 -> empty
+        if (age <= 0.5) { next_state = 0.0; next_age = 0.0; }
+        else { next_age = age - 1.0; }
+    } else if (state > 0.5) {
+        // tree: ignite if neighbour burning or lightning
+        float lightning = rng < f ? 1.0 : 0.0;
+        if (burn > 0.5 || lightning > 0.5) { next_state = 2.0; next_age = 3.0; }
+    } else {
+        // empty: grow a tree
+        if (rng < p) { next_state = 1.0; }
+    }
+    f_color = vec4(next_state, next_age, rng, 1.0);
+}
+''')
+
+_register("forest_fire_display",
+          "Forest Fire display: earth/tree/fire_age colormap (node 96 twin)",
+          "procedural", '''
+void main() {
+    vec4 s = texture(u_texture, v_uv);
+    float state = s.r;
+    float age = s.g;
+    vec3 col = vec3(0.16, 0.10, 0.06);          // dark brown earth
+    if (state > 0.5 && state < 1.5) {
+        col = vec3(0.12, 0.55, 0.20);           // green tree
+    } else if (state > 1.5) {
+        // fire_age 1-3: dark red -> orange -> bright orange
+        vec3 fire = mix(vec3(0.63, 0.12, 0.04), vec3(1.0, 0.63, 0.08),
+                        clamp(age / 3.0, 0.0, 1.0));
+        col = fire;
+    }
+    f_color = vec4(col, 1.0);
+}
+''')
+
+# ── Node 93: 2D Ising Model (Glauber live approximation of Wolff) ──
+# Spins σ=±1 packed as .r in {0,1} (0=-1, 1=+1) to survive fp32; .b = RNG carry.
+# Coupling J (period 1) in u_params.x, T/Tc in u_params.y (Glauber p below Tc).
+_register("ising_seed",
+          "Ising seed: hashed random spin config, RNG carry in .b (node 93 twin)",
+          "procedural", '''
+void main() {
+    float h = hash21(floor(v_uv * u_resolution * 0.5));
+    float spin = h < 0.5 ? 0.0 : 1.0;   // 0 = down, 1 = up
+    float rng = hash21(v_uv * u_resolution + 11.7);
+    f_color = vec4(spin, 0.0, rng, 1.0);
+}
+''')
+
+_register("ising_step",
+          "Ising one Glauber step: flip spin by Metropolis-like prob from 4-neighbour sum (node 93 twin)",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float J = clamp(u_params.x, 0.5, 2.0);
+    float T = clamp(u_params.y, 0.5, 3.0);
+    float beta = 1.0 / (T * 2.2691853);     // Tc(Tc-scaled) = 2.269*J, J folded out
+    float spin = s.r > 0.5 ? 1.0 : -1.0;
+    float rng = fract(s.b * 1.824 + 0.317);
+
+    // 4-neighbour von Neumann sum (+1/-1 each)
+    float nsum = 0.0;
+    nsum += (texture(u_texture, v_uv + vec2(-texel.x, 0.0)).r > 0.5 ? 1.0 : -1.0);
+    nsum += (texture(u_texture, v_uv + vec2( texel.x, 0.0)).r > 0.5 ? 1.0 : -1.0);
+    nsum += (texture(u_texture, v_uv + vec2(0.0, texel.y)).r > 0.5 ? 1.0 : -1.0);
+    nsum += (texture(u_texture, v_uv + vec2(0.0,-texel.y)).r > 0.5 ? 1.0 : -1.0);
+
+    float dE = 2.0 * J * spin * nsum;        // energy cost of flipping
+    float p_flip = dE > 0.0 ? exp(-beta * dE) : 1.0;
+    float nspin = (rng < p_flip) ? -spin : spin;
+    f_color = vec4(nspin > 0.5 ? 1.0 : 0.0, 0.0, rng, 1.0);
+}
+''')
+
+_register("ising_display",
+          "Ising display: blue-white-red diverging map of spin (+1 white-ish, -1 blue)",
+          "procedural", '''
+void main() {
+    vec4 s = texture(u_texture, v_uv);
+    float spin = s.r > 0.5 ? 1.0 : -1.0;
+    // diverging: -1 -> blue, +1 -> red, with soft mid-grey
+    vec3 col = mix(vec3(0.20, 0.35, 0.85), vec3(0.90, 0.30, 0.25), (spin + 1.0) * 0.5);
+    f_color = vec4(col, 1.0);
+}
+''')
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  P1.3 — Wave-equation family (client-GPU sim twins of nodes 100, 144, 166)
 #  All three are scalar displacement u + velocity v leapfrog field systems
 #  (plus a pump/drive phase accumulator). State packs R=u, G=v, B=pump_phase

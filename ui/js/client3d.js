@@ -591,10 +591,25 @@ void main(){ f_color = texture(u_texture, vec2(v_uv.x, 1.0 - v_uv.y)).bgra; }`,
     const sig = this._simSig(entry, params);
     const loopWrap = pair.lastFrame !== null && frame < pair.lastFrame;  // frame went back → loop/scrub
     const resetLoop = (entry.reset_on || []).includes('loop') && loopWrap;
+
+    // u_params slots from param_map — computed up-front so seed + step share them.
+    const eff = { ...params };
+    const rg = GS_REGIMES[String(params.anim_mode ?? '')];
+    if (rg) { eff.feed = rg.F; eff.kill = rg.k; }
+    const slot = { p1: 0, p2: 1, p3: 2, p4: 3 };
+    const up = [0.035, 0.065, 0.16, 0.08];  // Gray-Scott defaults
+    for (const key in (entry.param_map || {})) {
+      const s = slot[entry.param_map[key]];
+      if (s !== undefined && eff[key] !== undefined) up[s] = num(eff[key], up[s]);
+    }
+
     if (!pair.seeded || pair.sig !== sig || resetLoop) {
       const smat = this._gpuMaterial(seedInfo.fragment);
       smat.uniforms.u_resolution.value.set(this.width, this.height);
       smat.uniforms.u_time.value = 0;
+      // Seed shaders read u_params for initial conditions (states/params), so
+      // push the same mapped slots used by the step pass.
+      smat.uniforms.u_params.value.set(up[0], up[1], up[2], up[3]);
       this._quadMesh.material = smat;
       this.renderer.setRenderTarget(pair.a);
       this.renderer.clear(); this.renderer.render(this._quadScene, this._quadCam);
@@ -602,18 +617,6 @@ void main(){ f_color = texture(u_texture, vec2(v_uv.x, 1.0 - v_uv.y)).bgra; }`,
       pair.seeded = true; pair.sig = sig;
     }
     pair.lastFrame = frame;
-
-    // Effective feed/kill from a named regime (mirrors the server REGIMES override).
-    const eff = { ...params };
-    const rg = GS_REGIMES[String(params.anim_mode ?? '')];
-    if (rg) { eff.feed = rg.F; eff.kill = rg.k; }
-    // u_params slots from param_map (feed,kill,diff_u,diff_v).
-    const slot = { p1: 0, p2: 1, p3: 2, p4: 3 };
-    const up = [0.035, 0.065, 0.16, 0.08];  // Gray-Scott defaults
-    for (const key in (entry.param_map || {})) {
-      const s = slot[entry.param_map[key]];
-      if (s !== undefined && eff[key] !== undefined) up[s] = num(eff[key], up[s]);
-    }
 
     // STEP: substeps ping-pong iterations (a → b, then swap).
     const stepMat = this._gpuMaterial(stepInfo.fragment);

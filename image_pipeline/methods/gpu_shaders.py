@@ -490,6 +490,32 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "reset_on": ["seed", "param", "loop", "resize"],
         "param_map": {"r": "p1", "epsilon": "p2", "decay": "p3"},
     },
+    # ── P1.4 discrete CA / stat-mech twins (clean per-frame ping-pong CAs) ──
+    # 87 Cyclic (RPS) CA: p1=n_states, p2=threshold. 1 step per frame.
+    "87": {
+        "type": "sim",
+        "seed": "cyclic_ca_seed", "step": "cyclic_ca_step", "display": "cyclic_ca_display",
+        "state_channels": 3, "substeps": 1,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"n_states": "p1", "threshold": "p2"},
+    },
+    # 96 Forest Fire: p1=p(growth), p2=f(lightning), p3=initial_trees. 1 step/frame.
+    "96": {
+        "type": "sim",
+        "seed": "forest_fire_seed", "step": "forest_fire_step", "display": "forest_fire_display",
+        "state_channels": 3, "substeps": 1,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"p": "p1", "f": "p2", "initial_trees": "p3"},
+    },
+    # 93 Ising Model (Glauber live approx of Wolff): p1=J, p2=T/Tc. Many Glauber
+    # sweeps per frame for a smooth live magnetization wander; below Tc -> domains.
+    "93": {
+        "type": "sim",
+        "seed": "ising_seed", "step": "ising_step", "display": "ising_display",
+        "state_channels": 3, "substeps": 6,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"J": "p1", "T_max": "p2"},
+    },
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SIMS)
 
