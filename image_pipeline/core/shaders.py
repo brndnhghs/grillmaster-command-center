@@ -4161,3 +4161,154 @@ void main() {
     "color_b":     {"glsl": "color", "default": "#ffd166",
                     "description": "color B (grayscale)"},
 })
+
+# ── Typed filter / color-grade nodes (ids 244-249) ──────────────────────
+# Categorical coverage pt.4 (2026-07-11): the per-pixel filter / color-grade
+# family with NAMED typed controls + wireable SCALAR ports — box blur, unsharp
+# sharpen, vignette, luminance threshold, hue rotate, and ordered dither.
+# Filters take image_in: IMAGE. CPU fns stay authoritative; additive layer.
+
+_register("box_blur_gpu", "Box blur of the input (typed radius/samples)",
+          "filter", '''
+void main() {
+    vec2 px = u_radius / u_resolution;
+    int n = int(clamp(float(u_samples), 1.0, 6.0));
+    vec3 acc = vec3(0.0); float wsum = 0.0;
+    for (int j = -6; j <= 6; j++) {
+        if (j < -n || j > n) continue;
+        for (int i = -6; i <= 6; i++) {
+            if (i < -n || i > n) continue;
+            acc += texture(u_texture, v_uv + px * vec2(float(i), float(j))).rgb;
+            wsum += 1.0;
+        }
+    }
+    vec3 blurred = acc / max(wsum, 1.0);
+    vec3 src = texture(u_texture, v_uv).rgb;
+    f_color = vec4(mix(src, blurred, clamp(u_amount, 0.0, 1.0)), 1.0);
+}
+''', uniforms={
+    "radius":  {"glsl": "float", "min": 0.5, "max": 12.0, "default": 2.0,
+                "description": "sample spacing (px)"},
+    "samples": {"glsl": "int", "min": 1, "max": 6, "default": 3,
+                "description": "kernel half-width"},
+    "amount":  {"glsl": "float", "min": 0.0, "max": 1.0, "default": 1.0,
+                "description": "blend amount"},
+})
+
+_register("sharpen_gpu", "Unsharp-mask sharpen of the input (typed)",
+          "filter", '''
+void main() {
+    vec2 px = u_radius / u_resolution;
+    vec3 c  = texture(u_texture, v_uv).rgb;
+    vec3 nb = texture(u_texture, v_uv + px * vec2( 0.0,  1.0)).rgb
+            + texture(u_texture, v_uv + px * vec2( 0.0, -1.0)).rgb
+            + texture(u_texture, v_uv + px * vec2( 1.0,  0.0)).rgb
+            + texture(u_texture, v_uv + px * vec2(-1.0,  0.0)).rgb;
+    vec3 blur = nb * 0.25;
+    vec3 sharp = c + (c - blur) * u_strength;
+    f_color = vec4(clamp(sharp, 0.0, 1.0), 1.0);
+}
+''', uniforms={
+    "strength": {"glsl": "float", "min": 0.0, "max": 5.0, "default": 1.5,
+                 "description": "sharpen strength"},
+    "radius":   {"glsl": "float", "min": 0.5, "max": 6.0, "default": 1.0,
+                 "description": "sample radius (px)"},
+})
+
+_register("vignette_gpu", "Vignette darkening of the input (typed)",
+          "filter", '''
+void main() {
+    vec3 src = texture(u_texture, v_uv).rgb;
+    vec2 d = v_uv - 0.5;
+    d.x *= u_resolution.x / u_resolution.y;
+    float r = length(d) * 1.41421356;
+    float v = smoothstep(u_outer, u_inner, r);
+    v = mix(1.0, v, clamp(u_amount, 0.0, 1.0));
+    f_color = vec4(mix(u_color, src, v), 1.0);
+}
+''', uniforms={
+    "inner":  {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.3,
+               "description": "inner (bright) radius"},
+    "outer":  {"glsl": "float", "min": 0.2, "max": 1.6, "default": 1.0,
+               "description": "outer (dark) radius"},
+    "amount": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.8,
+               "description": "vignette amount"},
+    "color":  {"glsl": "color", "default": "#000000", "description": "vignette color"},
+})
+
+_register("threshold_gpu", "Luminance threshold / two-tone of the input (typed)",
+          "filter", '''
+void main() {
+    vec3 src = texture(u_texture, v_uv).rgb;
+    float l = dot(src, vec3(0.299, 0.587, 0.114));
+    float e = smoothstep(u_threshold - u_softness, u_threshold + u_softness, l);
+    vec3 col = mix(u_low, u_high, e);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "threshold": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5,
+                  "description": "luminance cutoff"},
+    "softness":  {"glsl": "float", "min": 0.0, "max": 0.5, "default": 0.05,
+                  "description": "edge softness"},
+    "low":       {"glsl": "color", "default": "#0a0a12", "description": "below-threshold color"},
+    "high":      {"glsl": "color", "default": "#ffffff", "description": "above-threshold color"},
+})
+
+_register("hue_shift_gpu", "Hue rotate + saturation of the input (typed)",
+          "filter", '''
+vec3 _rgb2hsv(vec3 c) {
+    vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
+    vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+    vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+    float d = q.x - min(q.w, q.y);
+    float e = 1.0e-10;
+    return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+}
+vec3 _hsv2rgb(vec3 c) {
+    vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+void main() {
+    vec3 src = texture(u_texture, v_uv).rgb;
+    vec3 hsv = _rgb2hsv(src);
+    hsv.x = fract(hsv.x + u_hue);
+    hsv.y = clamp(hsv.y * u_saturation, 0.0, 1.0);
+    hsv.z = clamp(hsv.z * u_value, 0.0, 1.0);
+    f_color = vec4(_hsv2rgb(hsv), 1.0);
+}
+''', uniforms={
+    "hue":        {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.0,
+                   "description": "hue rotation (0..1)"},
+    "saturation": {"glsl": "float", "min": 0.0, "max": 3.0, "default": 1.0,
+                   "description": "saturation gain"},
+    "value":      {"glsl": "float", "min": 0.0, "max": 3.0, "default": 1.0,
+                   "description": "brightness gain"},
+})
+
+_register("dither_gpu", "Ordered (Bayer 4x4) dither of the input (typed)",
+          "filter", '''
+void main() {
+    vec3 src = texture(u_texture, v_uv).rgb;
+    vec2 gp = mod(floor(v_uv * u_resolution / max(u_scale, 1.0)), 4.0);
+    int ix = int(gp.x); int iy = int(gp.y);
+    float bayer[16];
+    bayer[0]=0.0;  bayer[1]=8.0;  bayer[2]=2.0;  bayer[3]=10.0;
+    bayer[4]=12.0; bayer[5]=4.0;  bayer[6]=14.0; bayer[7]=6.0;
+    bayer[8]=3.0;  bayer[9]=11.0; bayer[10]=1.0; bayer[11]=9.0;
+    bayer[12]=15.0;bayer[13]=7.0; bayer[14]=13.0;bayer[15]=5.0;
+    int bi = iy * 4 + ix;
+    float thr = (bayer[bi] + 0.5) / 16.0;
+    float lv = max(float(u_levels), 2.0);
+    vec3 dithered = floor(src * lv + (thr - 0.5)) / (lv - 1.0);
+    dithered = clamp(dithered, 0.0, 1.0);
+    f_color = vec4(mix(src, dithered, clamp(u_amount, 0.0, 1.0)), 1.0);
+}
+''', uniforms={
+    "levels": {"glsl": "int", "min": 2, "max": 16, "default": 3,
+               "description": "output levels per channel"},
+    "scale":  {"glsl": "float", "min": 1.0, "max": 8.0, "default": 1.0,
+               "description": "dither pattern scale (px)"},
+    "amount": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 1.0,
+               "description": "effect amount"},
+})

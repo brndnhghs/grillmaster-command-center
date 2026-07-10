@@ -325,3 +325,62 @@ def test_mandelbrot_zoom_and_palette_live():
     # inferno is darker/warmer than the default sine palette at the same zoom.
     assert abs(c.mean() - a.mean()) > 0.5, "palette choice had no visible effect"
 
+
+# ── 8. Typed filter / color-grade nodes (244-249) ──────────────────────
+
+NEW_TYPED_FILTERS = [s for _, s, _ in [
+    ("244", "box_blur_gpu", "GPU Box Blur"),
+    ("245", "sharpen_gpu", "GPU Sharpen"),
+    ("246", "vignette_gpu", "GPU Vignette"),
+    ("247", "threshold_gpu", "GPU Threshold"),
+    ("248", "hue_shift_gpu", "GPU Hue Shift"),
+    ("249", "dither_gpu", "GPU Dither"),
+]]
+
+
+def _synthetic_input(w=96, h=64):
+    yy, xx = np.mgrid[0:h, 0:w]
+    return np.stack(
+        [(xx / w * 255), (yy / h * 255),
+         (np.sin(xx * 0.1) * np.cos(yy * 0.1) * 127 + 128)], -1
+    ).astype(np.float32) / 255.0
+
+
+@needs_gpu
+@pytest.mark.parametrize("sname", NEW_TYPED_FILTERS)
+def test_typed_filter_renders_and_responds(sname):
+    """Each typed filter renders non-black WITH input and responds to a sweep."""
+    assert SHADERS[sname]["type"] == "filter", f"{sname} should be a filter"
+    inp = _synthetic_input()
+    uspec = SHADERS[sname]["uniforms"]
+    named = {u: s.get("default") for u, s in uspec.items()}
+    base = np.asarray(render_shader(sname, (96, 64),
+                      input_image=inp, named_params=named), dtype=float)
+    assert base.std() > 0.02, f"{sname}: render flat with input (std={base.std():.3f})"
+    # Perturb one numeric/choice uniform and confirm the frame changes.
+    probe = next(u for u, s in uspec.items() if s["glsl"] in ("float", "int", "choice"))
+    spec = uspec[probe]
+    lo, hi = spec.get("min", 0), spec.get("max", 1)
+    dft = spec.get("default", 0)
+    cand = lo + (hi - lo) * 0.7
+    if abs(cand - dft) < 1e-6:
+        cand = lo + (hi - lo) * 0.3
+    alt_named = dict(named)
+    alt_named[probe] = cand
+    alt = np.asarray(render_shader(sname, (96, 64),
+                      input_image=inp, named_params=alt_named), dtype=float)
+    dpix = np.abs(alt - base).mean()
+    assert dpix > 0.05, f"{sname}: {probe} sweep produced no visible change (Δ={dpix:.3f})"
+
+
+@needs_gpu
+def test_threshold_two_tone():
+    """threshold_gpu with softness 0 produces essentially two colors."""
+    inp = _synthetic_input()
+    out = np.asarray(render_shader("threshold_gpu", (96, 64), input_image=inp,
+                     named_params={"threshold": 0.5, "softness": 0.0,
+                                   "low": "#000000", "high": "#ffffff"}), dtype=float)
+    uniq = len(np.unique(np.round(out[..., 0].ravel(), 1)))
+    assert uniq <= 4, f"threshold should be near-binary, got {uniq} distinct values"
+
+

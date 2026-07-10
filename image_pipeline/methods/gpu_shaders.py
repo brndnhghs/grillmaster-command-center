@@ -182,6 +182,15 @@ _TYPED_SHADER_NODES = [
     ("241", "newton_typed",       "GPU Newton"),
     ("242", "sierpinski_typed",   "GPU Sierpinski"),
     ("243", "lyapunov_typed",     "GPU Lyapunov"),
+    # Categorical coverage pt.4 (2026-07-11): per-pixel filter / color-grade
+    # family with NAMED typed controls — box blur, unsharp sharpen, vignette,
+    # luminance threshold, hue rotate, ordered (Bayer) dither.
+    ("244", "box_blur_gpu",       "GPU Box Blur"),
+    ("245", "sharpen_gpu",        "GPU Sharpen"),
+    ("246", "vignette_gpu",       "GPU Vignette"),
+    ("247", "threshold_gpu",      "GPU Threshold"),
+    ("248", "hue_shift_gpu",      "GPU Hue Shift"),
+    ("249", "dither_gpu",         "GPU Dither"),
 ]
 
 _TIME_SCALE_PARAM = {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0}
