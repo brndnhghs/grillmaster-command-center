@@ -25,7 +25,7 @@ Run:
 import numpy as np
 import pytest
 
-from image_pipeline.core.shaders import render_shader, build_fragment
+from image_pipeline.core.shaders import render_shader, build_fragment, SHADERS
 from image_pipeline.methods.gpu_shaders import (
     GPU_SHADER_NODE_MAP,
     CLIENT_GPU_SHIMS,
@@ -49,6 +49,10 @@ _PROBES = [
 
 def _std(img):
     return float(np.array(img, dtype=np.float64).std())
+
+
+def _mad(a, b):
+    return float(np.mean(np.abs(np.array(a, np.float64) - np.array(b, np.float64))))
 
 
 def _compile_ok(name):
@@ -157,4 +161,96 @@ def test_sim_shaders_compile_and_seed_renders(mid):
     assert s >= 0.02, (
         f"{mid} sim seed shader ({entry['seed']}) renders flat-black "
         f"standalone (std={s:.3f}) — seed logic broken"
+    )
+
+
+# ── Typed-uniform wiring (silent-no-op-twin guard) ──────────────────────────
+# Every typed-uniform node advertises named uniforms (u_<name>) that the UI
+# sliders drive. A twin whose GLSL body ignores those uniforms (e.g. it reads
+# the legacy u_params instead, or a helper macro shadows them) is a silent
+# no-op: the live preview ignores every control the user sees. This guard fails
+# the build if NO declared uniform visibly affects the rendered output.
+#
+# Robustness: a uniform may be legitimately gated (e.g. fractal color_a/b only
+# apply under palette=grayscale, animation uniforms only matter at u_time>0), so
+# instead of asserting every single uniform must change output (which would
+# false-flag correct gated designs), we assert that at least ONE uniform —
+# perturbed to a LARGE, valid extreme (not a tiny delta) with u_time=1.0 — moves
+# the output beyond a threshold. A fully-static twin (all uniforms dead) fails;
+# a correctly-wired twin passes even if some uniforms are gated.
+
+
+def _extreme_value(spec):
+    """A large, clearly-visible value for a uniform (not a tiny delta)."""
+    g = spec.get("glsl", "float")
+    if g == "int":
+        return int(spec.get("max", 99))
+    if g == "choice":
+        ch = spec.get("choices", [])
+        if len(ch) < 2:
+            return spec.get("default", 0)
+        return ch[-1]  # maximally different from the default (usually index 0)
+    if g == "color":
+        return (0.95, 0.05, 0.05)
+    lo = float(spec.get("min", 0.0))
+    hi = float(spec.get("max", 1.0))
+    d = float(spec.get("default", (lo + hi) / 2))
+    # pick the extreme farther from the default so the visual change is large
+    return hi if abs(hi - d) >= abs(d - lo) else lo
+
+
+def _synthetic():
+    yy, xx = np.mgrid[0:SIZE[1], 0:SIZE[0]]
+    r = (xx / SIZE[0] * 255).astype(np.float32)
+    g = (yy / SIZE[1] * 255).astype(np.float32)
+    b = ((np.sin(xx * 0.1) * np.cos(yy * 0.1)) * 127 + 128).astype(np.float32)
+    return np.stack([r, g, b], -1) / 255.0
+
+
+@pytest.mark.parametrize("mid", sorted(
+    (m for m, e in GPU_SHADER_NODE_MAP.items()
+     if e.get("typed") and e.get("shader") in SHADERS),
+    key=lambda x: int(x) if x.isdigit() else 1e9,
+))
+def test_typed_uniforms_drive_output(mid):
+    """At least one declared typed uniform must visibly change the render.
+
+    Perturb each uniform to a large valid extreme at u_time=1.0 (so animation
+    uniforms are active) and render; require the best single-uniform delta to be
+    non-trivial. Filters get a synthetic input so they are not uniformly black.
+    """
+    entry = GPU_SHADER_NODE_MAP[mid]
+    name = entry["shader"]
+    stype = SHADERS[name].get("type")
+    uspec = SHADERS[name].get("uniforms") or {}
+    if not uspec:
+        pytest.skip(f"{mid} {name} has no typed uniforms")
+
+    base = {u: spec.get("default") for u, spec in uspec.items()}
+    kwargs = dict(named_params=base, time=1.0)
+    if stype == "filter":
+        kwargs["input_image"] = _synthetic()
+
+    try:
+        img_base = render_shader(name, SIZE, (0.5,) * 4, **kwargs)
+    except Exception as e:  # pragma: no cover - shader authoring error
+        pytest.fail(f"{mid} {name} base render raised: {e}")
+
+    best = 0.0
+    for u, spec in uspec.items():
+        single = dict(base)
+        single[u] = _extreme_value(spec)
+        kw = dict(named_params=single, time=1.0)
+        if stype == "filter":
+            kw["input_image"] = _synthetic()
+        try:
+            img = render_shader(name, SIZE, (0.5,) * 4, **kw)
+        except Exception as e:  # pragma: no cover
+            pytest.fail(f"{mid} {name} uniform '{u}' render raised: {e}")
+        best = max(best, _mad(img_base, img))
+
+    assert best >= 1.0, (
+        f"{mid} {name}: no declared typed uniform visibly affects the output "
+        f"(best large-sweep MAD={best:.3f}). The twin may be reading u_params "
+        f"instead of its u_<name> uniforms — a silent no-op live preview."
     )
