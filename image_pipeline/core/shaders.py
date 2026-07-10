@@ -6512,3 +6512,85 @@ void main() {
     f_color = vec4(r, g, b, 1.0);            // dark → red → orange → yellow → white
 }
 ''')
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  P1.6 — Active Nematic Liquid Crystals (node 99) Q-tensor field twin
+# ═══════════════════════════════════════════════════════════════════════════
+# Simplified Landau-de Gennes Q-tensor model. State packs the two independent
+# components of the traceless symmetric 2×2 tensor: Qxx in .r, Qxy in .g. Explicit
+# Euler: ∂Q/∂t = Γ·H + α·Q + D·∇²Q + noise, with H = -(A·Q + C·Tr(Q²)·Q). Thermal
+# noise (which nucleates the ±½ defects) is reproduced as state-dependent hash
+# noise that varies each substep. Display = schlieren texture (director hue,
+# order-parameter brightness) + defect glow. CPU numpy node authoritative.
+_register("nematic_seed",
+          "Active-nematic seed: small random Q-tensor (Qxx=.r, Qxy=.g) (node 99)",
+          "procedural", '''
+void main() {
+    float a = hash21(v_uv * 311.0 + 1.7) - 0.5;
+    float b = hash21(v_uv * 517.0 + 9.3) - 0.5;
+    f_color = vec4(a * 0.12, b * 0.12, 0.0, 1.0);   // ~N(0,0.05) initial order
+}
+''')
+
+_register("nematic_step",
+          "Active-nematic step: Landau-de Gennes + activity + elastic ∇²Q + hash noise (node 99)",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s  = texture(u_texture, v_uv);
+    float Qxx = s.r, Qxy = s.g;
+    vec4 sl = texture(u_texture, v_uv + vec2(-texel.x, 0.0));
+    vec4 sr = texture(u_texture, v_uv + vec2( texel.x, 0.0));
+    vec4 st = texture(u_texture, v_uv + vec2(0.0,  texel.y));
+    vec4 sb = texture(u_texture, v_uv + vec2(0.0, -texel.y));
+    float Lxx = sl.r + sr.r + st.r + sb.r - 4.0 * Qxx;
+    float Lxy = sl.g + sr.g + st.g + sb.g - 4.0 * Qxy;
+    float alpha = clamp(u_params.x, -0.2, 0.2);      // activity α
+    float D     = clamp(u_params.y, 0.01, 2.0);      // elastic constant
+    float A     = clamp(u_params.z, -0.5, 0.1);      // Landau A
+    float noise = clamp(u_params.w, 0.0, 0.15);      // thermal noise amplitude
+    const float C = 1.0, G = 1.0, dt = 0.05;
+    float S2 = 2.0 * (Qxx * Qxx + Qxy * Qxy);        // Tr(Q²)
+    float Hxx = -(A * Qxx + C * S2 * Qxx);
+    float Hxy = -(A * Qxy + C * S2 * Qxy);
+    float dQxx = dt * (G * Hxx + alpha * Qxx + D * Lxx);
+    float dQxy = dt * (G * Hxy + alpha * Qxy + D * Lxy);
+    // Thermal noise (nucleates defects) — state-dependent so it varies per substep.
+    float n1 = hash21(v_uv * 512.0 + vec2(Qxx, Qxy) * 813.0 + 2.3) - 0.5;
+    float n2 = hash21(v_uv * 727.0 + vec2(Qxy, Qxx) * 611.0 + 7.1) - 0.5;
+    dQxx += noise * n1 * 2.0 * 0.2236;               // 2·(hash−0.5)·√dt
+    dQxy += noise * n2 * 2.0 * 0.2236;
+    f_color = vec4(clamp(Qxx + dQxx, -2.0, 2.0),
+                   clamp(Qxy + dQxy, -2.0, 2.0), 0.0, 1.0);
+}
+''')
+
+_register("nematic_display",
+          "Active-nematic display: director-hue schlieren + order brightness + defect glow (node 99)",
+          "procedural", '''
+float _dir(vec4 q) { return 0.5 * atan(2.0 * q.g, q.r + 1e-6); }
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float Qxx = s.r, Qxy = s.g;
+    float S = 2.0 * sqrt(Qxx * Qxx + Qxy * Qxy);
+    float theta = _dir(s);
+    float hue = fract(theta / 3.14159265 * 2.0);     // 2 cycles per π (nematic)
+    float val = clamp(abs(S) * 1.5 + 0.2, 0.2, 1.0);
+    float sat = clamp(abs(S) * 2.0 + 0.2, 0.2, 1.0);
+    float phi = hue * 6.2831853;
+    vec3 col = 0.5 + 0.5 * vec3(cos(phi), cos(phi - 2.094), cos(phi + 2.094));
+    col = (1.0 - sat) * 0.3 + sat * col;
+    col *= val;
+    // Defect glow: wrapped director-gradient magnitude (bend) → warm cores.
+    float tl = _dir(texture(u_texture, v_uv + vec2(-texel.x, 0.0)));
+    float tr = _dir(texture(u_texture, v_uv + vec2( texel.x, 0.0)));
+    float tt = _dir(texture(u_texture, v_uv + vec2(0.0,  texel.y)));
+    float tb = _dir(texture(u_texture, v_uv + vec2(0.0, -texel.y)));
+    float bend = sqrt(sin(tr - tl) * sin(tr - tl) + sin(tt - tb) * sin(tt - tb));
+    float glow = clamp((bend - 0.3) * 2.0, 0.0, 1.0);
+    col = clamp(col + glow * vec3(1.0, 0.85, 0.3) * 0.5, 0.0, 1.0);
+    f_color = vec4(col, 1.0);
+}
+''')

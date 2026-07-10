@@ -886,6 +886,19 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "reset_on": ["seed", "param", "loop", "resize"],
         "param_map": {"feed": "p1", "kill": "p2", "alpha": "p3", "diff_v": "p4"},
     },
+    # ── P1.6 continuously-evolving field-PDE twins ──
+    # 99 Active Nematic: Landau-de Gennes Q-tensor (Qxx=.r, Qxy=.g). activity=p1,
+    # elastic_d=p2, A_landau=p3, noise_amp=p4. Thermal noise (defect nucleation)
+    # reproduced as state-dependent hash noise. anim_mode is a choice string
+    # (pitfall #14) left unmapped — twin renders the default "evolve" turbulence.
+    "99": {
+        "type": "sim",
+        "seed": "nematic_seed", "step": "nematic_step", "display": "nematic_display",
+        "state_channels": 2, "substeps": 10,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"activity": "p1", "elastic_d": "p2",
+                      "A_landau": "p3", "noise_amp": "p4"},
+    },
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SIMS)
 
