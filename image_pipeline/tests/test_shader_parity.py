@@ -142,7 +142,8 @@ def test_gpu_shader_node_map_resolves():
     # +1 P0.7 compositing twin (__image_to_mask__ luminance mask) = 198.
     # +1 P0.4 filter twin (13 Dithering, Bayer-8 ordered) = 199.
     # +1 P1.5 phase-field sim twin (122 Dendritic Solidification) = 200.
-    assert len(GPU_SHADER_NODE_MAP) == 200, len(GPU_SHADER_NODE_MAP)
+    # +1 P1.5 fractional-RD sim twin (163) = 201.
+    assert len(GPU_SHADER_NODE_MAP) == 201, len(GPU_SHADER_NODE_MAP)
     for mid, entry in GPU_SHADER_NODE_MAP.items():
         if entry.get("type") == "sim":
             # P1 ping-pong sim: seed/step/display must all resolve to shaders.

@@ -874,6 +874,18 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "param_map": {"undercooling": "p1", "anisotropy": "p2",
                       "symmetry": "p3", "dt": "p4"},
     },
+    # 163 Fractional Laplacian RD: Gray-Scott reaction + α-modulated diffusion
+    # breadth (local proxy for the Fourier fractional operator; CPU authoritative
+    # for the exact (-∇²)^(α/2)). feed=p1, kill=p2, alpha=p3, diff_v=p4. Reuses
+    # grayscott_seed; fire-colormap display. anim_mode/render_style are choice
+    # strings (pitfall #14) left unmapped — twin renders the default fire mitosis.
+    "163": {
+        "type": "sim",
+        "seed": "grayscott_seed", "step": "frac_rd_step", "display": "frac_rd_display",
+        "state_channels": 2, "substeps": 8,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"feed": "p1", "kill": "p2", "alpha": "p3", "diff_v": "p4"},
+    },
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SIMS)
 
