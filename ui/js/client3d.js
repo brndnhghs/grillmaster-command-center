@@ -67,10 +67,10 @@ function loadShaderBundle() {
 function _isGpuShaderNode(mid) {
   return !!(_shaderBundle && _shaderBundle.node_map && _shaderBundle.node_map[mid]);
 }
-/** Heuristic (pre-bundle): numeric GPU shader ids 173–219 + typed 220–231.
+/** Heuristic (pre-bundle): numeric GPU shader ids 173–219 + typed 220–237.
     Once the bundle arrives, node_map is the authority (_isGpuShaderNode). */
 function _looksLikeGpuShader(mid) {
-  return /^\d+$/.test(mid) && +mid >= 173 && +mid <= 231;
+  return /^\d+$/.test(mid) && +mid >= 173 && +mid <= 237;
 }
 // Client node ids that emit an IMAGE (vs 3D-data like geometry/light).
 const _IMAGE_CLIENT_IDS = new Set([

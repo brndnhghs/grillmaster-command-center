@@ -3779,3 +3779,145 @@ void main() {
     "bg":         {"glsl": "color", "default": "#000000", "description": "background color"},
     "edge":       {"glsl": "color", "default": "#39ff88", "description": "edge color"},
 })
+
+# ── Typed-uniform nodes 232-237 (categorical coverage expansion, 2026-07-10) ──
+# swirl displacement, chromatic aberration, halftone, concentric rings,
+# truchet tiles, pixelate/mosaic. Same typed-uniform contract as 226-231:
+# every variable is a real node param + wireable SCALAR port; filters take
+# image_in: IMAGE. Bodies stay in the GL330/ES300 parity subset.
+
+_register("swirl_gpu", "Swirl / vortex displacement of the input (typed)",
+          "filter", '''
+void main() {
+    vec2 uv = v_uv - 0.5;
+    float r = length(uv);
+    float amt = (u_strength) * smoothstep(u_radius, 0.0, r);
+    float a = amt + u_time * u_spin;
+    uv = rot(a) * uv;
+    vec3 src = texture(u_texture, fract(uv + 0.5)).rgb;
+    f_color = vec4(src, 1.0);
+}
+''', uniforms={
+    "strength": {"glsl": "float", "min": -6.0, "max": 6.0, "default": 3.0,
+                 "description": "swirl strength (signed)"},
+    "radius":   {"glsl": "float", "min": 0.1, "max": 1.2, "default": 0.6,
+                 "description": "swirl falloff radius"},
+    "spin":     {"glsl": "float", "min": 0.0, "max": 3.0, "default": 0.0,
+                 "description": "animated spin speed"},
+})
+
+_register("chromatic_gpu", "Chromatic aberration RGB split of the input (typed)",
+          "filter", '''
+void main() {
+    vec2 uv = v_uv;
+    vec2 dir = (uv - 0.5);
+    float amt = u_amount * 0.05;
+    float ph = u_time * u_pulse;
+    float k = amt * (1.0 + 0.3 * sin(ph));
+    float rC = texture(u_texture, uv + dir * k).r;
+    float gC = texture(u_texture, uv).g;
+    float bC = texture(u_texture, uv - dir * k).b;
+    f_color = vec4(rC, gC, bC, 1.0);
+}
+''', uniforms={
+    "amount": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.4,
+               "description": "aberration amount"},
+    "pulse":  {"glsl": "float", "min": 0.0, "max": 4.0, "default": 0.0,
+               "description": "animated pulse speed"},
+})
+
+_register("halftone_gpu", "Halftone dot-screen of the input (typed)",
+          "filter", '''
+void main() {
+    vec2 uv = v_uv;
+    float ang = radians(u_angle);
+    vec2 rp = rot(ang) * (uv - 0.5) + 0.5;
+    float scale = max(u_scale, 4.0);
+    vec2 cell = fract(rp * scale) - 0.5;
+    float d = length(cell);
+    float lum = dot(texture(u_texture, uv).rgb, vec3(0.299, 0.587, 0.114));
+    float radius = (1.0 - lum) * 0.7 * u_dot;
+    float dot_ = smoothstep(radius, radius - 0.08, d);
+    vec3 col = mix(u_bg, u_ink, dot_);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "scale": {"glsl": "float", "min": 8.0, "max": 120.0, "default": 48.0,
+              "description": "dot grid density"},
+    "angle": {"glsl": "float", "min": 0.0, "max": 90.0, "default": 15.0,
+              "description": "screen angle (deg)"},
+    "dot":   {"glsl": "float", "min": 0.2, "max": 2.0, "default": 1.0,
+              "description": "dot size multiplier"},
+    "bg":    {"glsl": "color", "default": "#ffffff", "description": "paper color"},
+    "ink":   {"glsl": "color", "default": "#101010", "description": "ink color"},
+})
+
+_register("rings_gpu", "Concentric animated rings (typed procedural)",
+          "procedural", '''
+void main() {
+    vec2 uv = (v_uv - 0.5);
+    uv.x *= u_resolution.x / u_resolution.y;
+    float r = length(uv) * u_freq;
+    float t = u_time * u_speed;
+    float w = 0.5 + 0.5 * sin(r * 6.28318530 - t * 2.0);
+    w = pow(w, max(u_sharp, 0.05));
+    vec3 col = mix(u_color_a, u_color_b, w);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "freq":  {"glsl": "float", "min": 1.0, "max": 40.0, "default": 10.0,
+              "description": "ring frequency"},
+    "speed": {"glsl": "float", "min": 0.0, "max": 4.0, "default": 1.0,
+              "description": "animation speed"},
+    "sharp": {"glsl": "float", "min": 0.2, "max": 6.0, "default": 1.0,
+              "description": "ring edge sharpness"},
+    "color_a": {"glsl": "color", "default": "#05070f", "description": "trough color"},
+    "color_b": {"glsl": "color", "default": "#4de0ff", "description": "crest color"},
+})
+
+_register("truchet_gpu", "Truchet arc tiling (typed procedural)",
+          "procedural", '''
+void main() {
+    vec2 uv = v_uv * max(u_scale, 1.0);
+    uv += u_time * u_drift * vec2(0.1, 0.06);
+    vec2 g = floor(uv), f = fract(uv);
+    float flip = step(0.5, hash21(g));
+    if (flip > 0.5) f.x = 1.0 - f.x;
+    float d1 = length(f - vec2(0.0, 0.0));
+    float d2 = length(f - vec2(1.0, 1.0));
+    float lw = u_width * 0.5;
+    float arc = min(abs(d1 - 0.5), abs(d2 - 0.5));
+    float line = smoothstep(lw, lw - 0.06, arc);
+    vec3 col = mix(u_bg, u_fg, line);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "scale": {"glsl": "float", "min": 2.0, "max": 40.0, "default": 10.0,
+              "description": "tile density"},
+    "width": {"glsl": "float", "min": 0.05, "max": 0.6, "default": 0.25,
+              "description": "arc line width"},
+    "drift": {"glsl": "float", "min": 0.0, "max": 2.0, "default": 0.0,
+              "description": "animated drift"},
+    "bg":    {"glsl": "color", "default": "#0a0a14", "description": "background"},
+    "fg":    {"glsl": "color", "default": "#ffd166", "description": "arc color"},
+})
+
+_register("pixelate_gpu", "Pixelate / mosaic of the input (typed)",
+          "filter", '''
+void main() {
+    float cells = max(float(u_cells), 2.0);
+    vec2 grid = vec2(cells, cells * u_resolution.y / u_resolution.x);
+    vec2 uv = (floor(v_uv * grid) + 0.5) / grid;
+    vec3 src = texture(u_texture, uv).rgb;
+    if (u_levels > 1.5) {
+        float lv = float(u_levels);
+        src = floor(src * lv + 0.5) / lv;
+    }
+    f_color = vec4(src, 1.0);
+}
+''', uniforms={
+    "cells":  {"glsl": "float", "min": 4.0, "max": 200.0, "default": 48.0,
+               "description": "mosaic cell count (x)"},
+    "levels": {"glsl": "int", "min": 1, "max": 32, "default": 1,
+               "description": "color quantize levels (1=off)"},
+})

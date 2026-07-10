@@ -164,6 +164,14 @@ _TYPED_SHADER_NODES = [
     ("229", "bloom_gpu",          "GPU Bloom"),
     ("230", "posterize_gpu",      "GPU Posterize"),
     ("231", "edge_gpu",           "GPU Edge Detect"),
+    # Categorical coverage expansion (2026-07-10 pt.2): displacement, RGB split,
+    # halftone screen, concentric rings, truchet tiling, pixelate/mosaic.
+    ("232", "swirl_gpu",          "GPU Swirl"),
+    ("233", "chromatic_gpu",      "GPU Chromatic Aberration"),
+    ("234", "halftone_gpu",       "GPU Halftone"),
+    ("235", "rings_gpu",          "GPU Rings"),
+    ("236", "truchet_gpu",        "GPU Truchet"),
+    ("237", "pixelate_gpu",       "GPU Pixelate"),
 ]
 
 _TIME_SCALE_PARAM = {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0}
