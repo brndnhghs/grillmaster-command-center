@@ -709,8 +709,14 @@ class GraphExecutor:
                 # This is the main Phase 6 optimisation; disk cache is the fallback
                 # for the single-frame / sequence render paths.
                 if self._in_memory and node_id in self._prev_outputs:
+                    _t0_skip = time.monotonic()
                     flat_outputs[node_id] = self._prev_outputs[node_id]
                     ran[node_id] = False
+                    # Record the (tiny) reuse cost so node_timings stays
+                    # complete for every node that produced output this frame.
+                    # Without this, a reused node is silently absent from
+                    # node_timings (live-mode phase-6 optimisation path).
+                    _diag_node_timings[node_id] = (time.monotonic() - _t0_skip) * 1000.0
                     _diag_nodes_skipped += 1
                     continue
 

@@ -100,9 +100,18 @@ class _DynDim:
     # numpy's dtype-detection code (nd_grid, result_type, …) calls np.asarray()
     # on unknown objects.  Returning a 0-d int64 array makes numpy treat us as
     # an integer scalar without affecting shape or broadcasting semantics.
-    def __array__(self, dtype=None):
+    # NumPy 2.0 changed __array__ to be called as __array__(dtype, copy=False);
+    # older numpy omits `copy`.  We ignore `copy` (a plain Python int always
+    # yields a fresh scalar array, so there is nothing to share) and route
+    # through np.asarray, which accepts `copy` in 2.x and is copy-tolerant —
+    # unlike np.array(..., copy=False), which hard-raises when it cannot avoid
+    # a copy.  This keeps the method working on both numpy generations without
+    # a DeprecationWarning.
+    def __array__(self, dtype=None, copy=None):
         v = self._val()
-        return np.array(v, dtype=dtype) if dtype is not None else np.array(v, dtype=np.intp)
+        if dtype is not None:
+            return np.asarray(v, dtype=dtype)
+        return np.asarray(v, dtype=np.intp)
 
 
 def set_canvas(w: int, h: int) -> "_cv.Token":
