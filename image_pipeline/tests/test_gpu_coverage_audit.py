@@ -31,7 +31,7 @@ from image_pipeline.core.shaders import SHADERS
 from image_pipeline.methods.gpu_shaders import GPU_SHADER_NODE_MAP
 
 # Stable count guard — bump when the GPU mirror grows (one logical chunk per run).
-EXPECTED_MAP_ENTRIES = 197
+EXPECTED_MAP_ENTRIES = 198
 
 # Simulations-category CPU nodes that are intentionally NOT GPU-mirrored yet.
 # These are Architecture-A stateful sims (discrete CA, agent/particle systems,
@@ -50,12 +50,14 @@ DEFERRED_SIM_IDS = set(
 # only for the closed-form subset; the rest are deferred ping-pong sims.
 MIRRORED_CATEGORIES = {
     "patterns", "fractals", "filters", "math_art", "codegen", "simulations",
+    "compositing",
 }
-# `channels` + `compositing` are intentionally NOT yet mirrored — they are
-# per-pixel data transforms (blend/merge/apply-mask; channel packing) whose
-# honest GPU twin is a small filter/utility shader. Treat them like the
-# deferred sims: a known, documented gap, not a regression.
-DEFERRED_CATEGORIES = {"channels", "compositing"}
+# `channels` is intentionally NOT mirrored — its nodes are pure SCALAR control
+# signals (LFO / envelope / math / logic), not per-pixel image operations, so a
+# GPU pixel-shader twin does not apply. `compositing` gained its first GPU
+# mirror (P0.7: __image_to_mask__ luminance mask twin), so it moved up to
+# MIRRORED_CATEGORIES. Treat `channels` like the deferred sims: a documented gap.
+DEFERRED_CATEGORIES = {"channels"}
 
 
 def _norm(mid: str) -> str:

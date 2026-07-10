@@ -469,6 +469,14 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # unmapped; the preview defaults to the thermal ramp.
     "77": {"shader": "false_color_gpu", "type": "filter",
            "param_map": {"strength": "p1"}},
+    # ── P0.7 compositing (per-pixel utility) ──
+    # __image_to_mask__: converts an IMAGE wire to a MASK. `mode` is a STRING
+    # choice param (luminance/red/green/blue/alpha_from_white/invert_luminance)
+    # so per pitfall #14 it is NOT mapped — the twin renders the DEFAULT
+    # `luminance` extraction. The CPU fn stays authoritative for all six modes.
+    # This gives the `compositing` category its first GPU source-of-truth mirror.
+    "__image_to_mask__": {"shader": "image_to_mask_gpu", "type": "filter",
+                          "param_map": {}},
     # ── P0.6 field-eval ──
     # 125 Chladni: `m_start`/`n_start` map onto the twin's m/n mode slots
     # (0.5 -> 3.0 neutral); `rotation_speed` -> plate spin, `phase_speed_x` ->

@@ -139,7 +139,8 @@ def test_gpu_shader_node_map_resolves():
     # vortex/weave/contour/hatch/gridwarp) added 2026-07-11 pt.10; 6 typed
     # closed-form pattern nodes (295-300: domainwarp/caustics/prism/sdfscene/
     # burst/foam) added 2026-07-11 pt.11. Total = 191 + 6 = 197.
-    assert len(GPU_SHADER_NODE_MAP) == 197, len(GPU_SHADER_NODE_MAP)
+    # +1 P0.7 compositing twin (__image_to_mask__ luminance mask) = 198.
+    assert len(GPU_SHADER_NODE_MAP) == 198, len(GPU_SHADER_NODE_MAP)
     for mid, entry in GPU_SHADER_NODE_MAP.items():
         if entry.get("type") == "sim":
             # P1 ping-pong sim: seed/step/display must all resolve to shaders.
