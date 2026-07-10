@@ -402,6 +402,24 @@ function buildScene(nodes, edges, frame = 0) {
           scene.add(ground);
         }
 
+        // Post-processing stack parameters (Route 3). These are read by the
+        // render dispatcher; all neutral defaults ⇒ direct (unchanged) render.
+        scene._gmPostFX = {
+          bloom:           resolveParam(node, 'bloom', 0),
+          bloom_threshold: resolveParam(node, 'bloom_threshold', 0.8),
+          bloom_knee:      resolveParam(node, 'bloom_knee', 0.2),
+          bloom_intensity: resolveParam(node, 'bloom_intensity', 0.6),
+          bloom_radius:    resolveParam(node, 'bloom_radius', 1.0),
+          bloom_passes:    resolveParam(node, 'bloom_passes', 4),
+          brightness:      resolveParam(node, 'fx_brightness', 1.0),
+          contrast:        resolveParam(node, 'fx_contrast', 1.0),
+          saturation:      resolveParam(node, 'fx_saturation', 1.0),
+          vignette:        resolveParam(node, 'vignette', 0),
+          vignette_radius: resolveParam(node, 'vignette_radius', 0.85),
+          vignette_softness: resolveParam(node, 'vignette_softness', 0.5),
+          fxaa:            resolveParam(node, 'fxaa', 0),
+        };
+
         for (const [port, obj] of Object.entries(wired)) {
           if (!obj) continue;
           if (port === 'camera') {
@@ -483,6 +501,236 @@ function buildScene(nodes, edges, frame = 0) {
   return { scene, camera: new THREE.PerspectiveCamera(50, 1, 0.1, 100) };
 }
 
+// ── Post-processing (core three.js only — no addons vendored) ──────────────
+//
+// The headless `gl` backend exposes WebGL1, and the vendored three.module.js (r160)
+// ships WITHOUT the postprocessing addons (EffectComposer/UnrealBloomPass/OutputPass),
+// so we build the stack by hand with a fullscreen-quad pipeline rendered into
+// RGBA8 render targets (no float-texture extension required):
+//
+//   scene ─▶ sceneRT (sRGB-encoded, tone-mapped)
+//          ├─ bloom:  bright-pass ─▶ separable Gaussian blur (ping-pong)
+//          └─ composite: scene + bloom*intensity + grade (brightness/contrast/
+//                        saturation) + vignette  ─▶ compositeRT
+//   compositeRT ─▶ FXAA pass ─▶ canvas
+//
+// Everything is gated behind the scene node's post-FX params. When none are
+// engaged (all defaults) the renderer takes the byte-identical default direct
+// path, so this is purely additive.
+
+const _fsScene = new THREE.Scene();
+const _fsCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const _fsGeo = new THREE.PlaneGeometry(2, 2);
+const _fsMesh = new THREE.Mesh(_fsGeo, new THREE.MeshBasicMaterial());
+_fsScene.add(_fsMesh);
+
+const _FS_VS = `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = vec4(position.xy, 0.0, 1.0);
+}
+`;
+
+function _fsMat(frag, uniforms) {
+  return new THREE.ShaderMaterial({
+    vertexShader: _FS_VS,
+    fragmentShader: frag,
+    uniforms,
+    depthTest: false,
+    depthWrite: false,
+  });
+}
+
+function _fsRender(renderer, target, material) {
+  _fsMesh.material = material;
+  renderer.setRenderTarget(target);
+  renderer.render(_fsScene, _fsCam);
+}
+
+const _BLOOM_BRIGHT = `
+uniform sampler2D tDiffuse;
+uniform float threshold;
+uniform float knee;
+varying vec2 vUv;
+void main() {
+  vec4 c = texture2D(tDiffuse, vUv);
+  float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+  float w = smoothstep(threshold, threshold + max(knee, 0.0001), l);
+  gl_FragColor = vec4(c.rgb * w, c.a);
+}
+`;
+
+const _BLUR = `
+uniform sampler2D tDiffuse;
+uniform vec2 uDir;
+uniform float uRadius;
+varying vec2 vUv;
+void main() {
+  vec2 texel = uDir * uRadius;
+  vec4 sum = texture2D(tDiffuse, vUv) * 0.227027;
+  sum += texture2D(tDiffuse, vUv + texel * 1.3846) * 0.316216;
+  sum += texture2D(tDiffuse, vUv - texel * 1.3846) * 0.316216;
+  sum += texture2D(tDiffuse, vUv + texel * 3.2307) * 0.070270;
+  sum += texture2D(tDiffuse, vUv - texel * 3.2307) * 0.070270;
+  gl_FragColor = sum;
+}
+`;
+
+const _COMPOSITE = `
+uniform sampler2D tDiffuse;
+uniform sampler2D tBloom;
+uniform float hasBloom;
+uniform float bloomIntensity;
+uniform float brightness;
+uniform float contrast;
+uniform float saturation;
+uniform float vignette;
+uniform float vignette_radius;
+uniform float vignette_softness;
+varying vec2 vUv;
+void main() {
+  vec4 base = texture2D(tDiffuse, vUv);
+  vec3 col = base.rgb;
+  if (hasBloom > 0.5) {
+    col += texture2D(tBloom, vUv).rgb * bloomIntensity;
+  }
+  col *= brightness;
+  col = (col - 0.5) * contrast + 0.5;
+  float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+  col = mix(vec3(l), col, saturation);
+  if (vignette > 0.0) {
+    float dist = length(vUv - 0.5) * 1.41421356;
+    float v = smoothstep(vignette_radius, vignette_radius - vignette_softness, dist);
+    col *= mix(1.0, v, vignette);
+  }
+  gl_FragColor = vec4(clamp(col, 0.0, 1.0), base.a);
+}
+`;
+
+// Compact FXAA 3.11-style edge anti-alias (works in WebGL1 GLSL).
+const _FXAA = `
+uniform sampler2D tDiffuse;
+uniform vec2 uResolution;
+varying vec2 vUv;
+float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+void main() {
+  vec2 texel = 1.0 / uResolution;
+  vec3 nw = texture2D(tDiffuse, vUv + texel * vec2(-1.0, -1.0)).rgb;
+  vec3 ne = texture2D(tDiffuse, vUv + texel * vec2( 1.0, -1.0)).rgb;
+  vec3 sw = texture2D(tDiffuse, vUv + texel * vec2(-1.0,  1.0)).rgb;
+  vec3 se = texture2D(tDiffuse, vUv + texel * vec2( 1.0,  1.0)).rgb;
+  vec3 m  = texture2D(tDiffuse, vUv).rgb;
+  float lNW = luma(nw), lNE = luma(ne), lSW = luma(sw), lSE = luma(se), lM = luma(m);
+  float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE)));
+  float lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));
+  vec2 dir;
+  dir.x = -((lNW + lNE) - (lSW + lSE));
+  dir.y =  ((lNW + lSW) - (lNE + lSE));
+  float dirReduce = max((lNW + lNE + lSW + lSE) * 0.03125, 0.0078125);
+  float rcpDirMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + dirReduce);
+  dir = min(vec2(8.0), max(vec2(-8.0), dir * rcpDirMin)) * texel;
+  vec3 rgbA = 0.5 * (
+    texture2D(tDiffuse, vUv + dir * (1.0 / 3.0 - 0.5)).rgb +
+    texture2D(tDiffuse, vUv + dir * (2.0 / 3.0 - 0.5)).rgb);
+  vec3 rgbB = rgbA * 0.5 + 0.25 * (
+    texture2D(tDiffuse, vUv + dir * -0.5).rgb +
+    texture2D(tDiffuse, vUv + dir * 0.5).rgb);
+  float lB = luma(rgbB);
+  float a = texture2D(tDiffuse, vUv).a;
+  if (lB < lMin || lB > lMax) gl_FragColor = vec4(rgbA, a);
+  else gl_FragColor = vec4(rgbB, a);
+}
+`;
+
+function renderWithPostFX(renderer, scene, camera, w, h, fx) {
+  const rtOpts = {
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    format: THREE.RGBAFormat,
+    type: THREE.UnsignedByteType,
+    stencilBuffer: false,
+  };
+
+  const sceneRT = new THREE.WebGLRenderTarget(w, h, { ...rtOpts, depthBuffer: true });
+  // Store already tone-mapped + sRGB-encoded color (matches what the default
+  // direct path writes to the canvas) so the post passes operate in display
+  // space — no double tone-mapping / color-management surprises.
+  sceneRT.texture.colorSpace = THREE.SRGBColorSpace;
+  renderer.setRenderTarget(sceneRT);
+  renderer.render(scene, camera);
+
+  let bloomTex = null;
+  let bloomRTs = null;
+  if (fx.bloom > 0) {
+    const a = new THREE.WebGLRenderTarget(w, h, { ...rtOpts, depthBuffer: false });
+    const b = new THREE.WebGLRenderTarget(w, h, { ...rtOpts, depthBuffer: false });
+    const bright = _fsMat(_BLOOM_BRIGHT, {
+      tDiffuse: { value: sceneRT.texture },
+      threshold: { value: fx.bloom_threshold },
+      knee: { value: fx.bloom_knee },
+    });
+    _fsRender(renderer, a, bright);
+    const blur = _fsMat(_BLUR, {
+      tDiffuse: { value: null },
+      uDir: { value: new THREE.Vector2() },
+      uRadius: { value: fx.bloom_radius },
+    });
+    let src = a, dst = b;
+    const passes = Math.max(1, Math.min(16, fx.bloom_passes | 0));
+    for (let i = 0; i < passes; i++) {
+      const horiz = (i % 2 === 0);
+      blur.uniforms.tDiffuse.value = src.texture;
+      blur.uniforms.uDir.value.set(horiz ? 1.0 / w : 0, horiz ? 0 : 1.0 / h);
+      _fsRender(renderer, dst, blur);
+      let t = src; src = dst; dst = t;
+      blur.uniforms.tDiffuse.value = src.texture;
+      blur.uniforms.uDir.value.set(horiz ? 0 : 1.0 / w, horiz ? 1.0 / h : 0);
+      _fsRender(renderer, dst, blur);
+      t = src; src = dst; dst = t;
+    }
+    bloomTex = src.texture;
+    bloomRTs = [a, b];
+  }
+
+  const compositeTarget = fx.fxaa > 0
+    ? new THREE.WebGLRenderTarget(w, h, { ...rtOpts, depthBuffer: false })
+    : null;
+
+  const comp = _fsMat(_COMPOSITE, {
+    tDiffuse: { value: sceneRT.texture },
+    tBloom: { value: bloomTex },
+    hasBloom: { value: bloomTex ? 1 : 0 },
+    bloomIntensity: { value: fx.bloom },
+    brightness: { value: fx.brightness },
+    contrast: { value: fx.contrast },
+    saturation: { value: fx.saturation },
+    vignette: { value: fx.vignette },
+    vignette_radius: { value: fx.vignette_radius },
+    vignette_softness: { value: fx.vignette_softness },
+  });
+  _fsRender(renderer, compositeTarget, comp);
+
+  if (fx.fxaa > 0) {
+    const fxaa = _fsMat(_FXAA, {
+      tDiffuse: { value: compositeTarget.texture },
+      uResolution: { value: new THREE.Vector2(w, h) },
+    });
+    _fsRender(renderer, null, fxaa);
+  } else if (compositeTarget) {
+    // blit composite RT → canvas (FXAA off but composite went through a RT)
+    const blit = _fsMat(`uniform sampler2D tDiffuse; varying vec2 vUv;
+      void main(){ gl_FragColor = texture2D(tDiffuse, vUv); }`,
+      { tDiffuse: { value: compositeTarget.texture } });
+    _fsRender(renderer, null, blit);
+  }
+
+  sceneRT.dispose();
+  if (bloomRTs) bloomRTs.forEach(rt => rt.dispose());
+  if (compositeTarget) compositeTarget.dispose();
+  renderer.setRenderTarget(null);
+}
+
 // ── Render function ─────────────────────────────────────────────────────────
 
 function renderSceneToPng(graphNodes, graphEdges, width, height, frame) {
@@ -519,7 +767,19 @@ function renderSceneToPng(graphNodes, graphEdges, width, height, frame) {
     camera.updateProjectionMatrix();
   }
 
-  renderer.render(scene, camera);
+  // Post-processing stack (Route 3 improvement). The default path is taken
+  // when every post-FX param is at its neutral default — that branch is the
+  // unchanged direct render, so this feature is purely additive. Any
+  // non-default value engages the render-target pipeline.
+  const fx = scene._gmPostFX || {};
+  const fxEngaged = !!(fx.bloom || fx.vignette || fx.fxaa ||
+      fx.brightness !== 1 || fx.contrast !== 1 || fx.saturation !== 1);
+
+  if (fxEngaged) {
+    renderWithPostFX(renderer, scene, camera, w, h, fx);
+  } else {
+    renderer.render(scene, camera);
+  }
 
   // Read pixels
   const pixels = new Uint8Array(w * h * 4);

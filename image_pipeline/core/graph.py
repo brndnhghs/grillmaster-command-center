@@ -146,6 +146,26 @@ _MODEL_PLACEMENT_PARAMS: dict[str, dict] = {
     "rot_z": {"description": "rotation Z (deg)", "min": -180, "max": 180, "default": 0},
 }
 
+# Shared post-processing params for the 3D Scene Render / Scene (legacy) nodes.
+# The headless sidecar runs a core-three.js-only multi-pass stack (bloom +
+# grade + vignette + FXAA); all values sit at their neutral default so the
+# default render path is unchanged unless the user opts in.
+_THREEJS_POSTFX_PARAMS: dict[str, dict] = {
+    "bloom":            {"description": "bloom glow strength (0 = off)", "min": 0, "max": 2, "default": 0},
+    "bloom_threshold":  {"description": "bloom luminance threshold", "min": 0, "max": 2, "default": 0.8},
+    "bloom_knee":       {"description": "bloom knee softness", "min": 0, "max": 1, "default": 0.2},
+    "bloom_intensity":  {"description": "bloom additive intensity", "min": 0, "max": 3, "default": 0.6},
+    "bloom_radius":     {"description": "bloom blur radius (px)", "min": 0.25, "max": 4, "default": 1.0},
+    "bloom_passes":     {"description": "bloom blur passes", "min": 1, "max": 16, "default": 4},
+    "fx_brightness":    {"description": "grade brightness", "min": 0, "max": 2, "default": 1.0},
+    "fx_contrast":      {"description": "grade contrast", "min": 0, "max": 2, "default": 1.0},
+    "fx_saturation":    {"description": "grade saturation", "min": 0, "max": 2, "default": 1.0},
+    "vignette":         {"description": "vignette strength (0 = off)", "min": 0, "max": 1, "default": 0},
+    "vignette_radius":  {"description": "vignette radius", "min": 0.2, "max": 1.2, "default": 0.85},
+    "vignette_softness":{"description": "vignette edge softness", "min": 0.05, "max": 1, "default": 0.5},
+    "fxaa":             {"description": "FXAA edge anti-alias (0 = off)", "min": 0, "max": 1, "default": 0},
+}
+
 _THREEJS_3D_NODE_DEFS: dict[str, dict] = {
     '__geometry__': _threejs_node_def('__geometry__', '3D Geometry', tags=['3d', 'client'],
         outputs={"geometry": "geometry"},
@@ -230,6 +250,7 @@ _THREEJS_3D_NODE_DEFS: dict[str, dict] = {
             "env_intensity": {"description": "environment/reflection strength",
                 "min": 0, "max": 3, "default": 1.0},
             "shadows": {"description": "cast render shadows (0/1)", "min": 0, "max": 1, "default": 0},
+            **_THREEJS_POSTFX_PARAMS,
         }),
     '__scene3d__': _threejs_node_def('__scene3d__', '3D Scene (legacy)',
         tags=['3d', 'client', 'deprecated'],
@@ -251,6 +272,7 @@ _THREEJS_3D_NODE_DEFS: dict[str, dict] = {
             "env_intensity": {"description": "environment/reflection strength",
                 "min": 0, "max": 3, "default": 1.0},
             "shadows": {"description": "cast render shadows (0/1)", "min": 0, "max": 1, "default": 0},
+            **_THREEJS_POSTFX_PARAMS,
         }),
     '__gltf__': _threejs_node_def('__gltf__', '3D Model (GLTF)',
         tags=['3d', 'client', 'gltf'],
