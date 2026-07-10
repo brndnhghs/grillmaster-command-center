@@ -12,6 +12,13 @@
  *     → 200 image/png (raw bytes)
  *
  *   GET /health → 200 { ok: true, version: three_revision }
+ *
+ * Quality notes (2026-07-09 upgrade):
+ *   - Procedural PMREM studio environment gives metals/roughness something to
+ *     reflect, so PBR materials no longer render near-black.
+ *   - ACES Filmic tone mapping + sRGB output color space give a correct,
+ *     filmic exposure curve instead of clipped linear values.
+ *   - Optional shadow-casting key light + ground catcher for grounded renders.
  */
 
 import { createRequire } from 'module';
@@ -29,6 +36,12 @@ globalThis.OffscreenCanvas = class {
     this.width = w;
     this.height = h;
     this._gl = makeContext(w, h, { preserveDrawingBuffer: true });
+    // three.js r160's WebGLRenderer.dispose() calls context.cancelAnimationFrame.
+    // The `gl` package's context lacks request/cancelAnimationFrame, so add no-ops.
+    if (!this._gl.cancelAnimationFrame) {
+      this._gl.requestAnimationFrame = () => 0;
+      this._gl.cancelAnimationFrame = () => {};
+    }
     this._listeners = {};
     this.style = {};
   }
@@ -43,7 +56,13 @@ globalThis.OffscreenCanvas = class {
   getBoundingClientRect() { return { left: 0, top: 0, width: this.width, height: this.height }; }
 };
 
-// ── Scene builder ─────────────────────────────────────────────────────────
+// Keep a reference to the active WebGLRenderer so we can dispose between renders.
+let _activeRenderer = null;
+
+// Status of the procedural environment map for the most recent render.
+let _resDebugEnv = 'n/a';
+
+// ── Maps ─────────────────────────────────────────────────────────────────
 
 const SHAPE_MAP = {
   box:       THREE.BoxGeometry,
@@ -62,6 +81,80 @@ const LIGHT_TYPE_MAP = {
   directional: THREE.DirectionalLight,
   spot:       THREE.SpotLight,
 };
+
+const TONE_MAP_MAP = {
+  none:      THREE.NoToneMapping,
+  linear:    THREE.LinearToneMapping,
+  reinhard:  THREE.ReinhardToneMapping,
+  cineon:    THREE.CineonToneMapping,
+  aces:      THREE.ACESFilmicToneMapping,
+  agx:       THREE.AgXToneMapping,
+  neutral:   THREE.NeutralToneMapping,
+};
+
+/**
+ * Build a small procedural "studio" environment map and feed it through
+ * PMREMGenerator. This gives PBR materials (especially metals) something to
+ * reflect, which is what makes the scene read as lit instead of near-black.
+ *
+ * Uses only core three.js (no addons) so it works with the vendored r160 build.
+ *
+ * @param {THREE.WebGLRenderer} renderer
+ * @param {'studio'|'warm'|'cool'|'none'} preset
+ * @param {number} intensity multiplier on env intensity
+ * @returns {THREE.Texture|null}
+ */
+function buildEnvironment(renderer, preset, intensity) {
+  if (preset === 'none') return null;
+
+  // A tiny scene: a dark room with a few emissive "softbox" planes.
+  const envScene = new THREE.Scene();
+  envScene.background = new THREE.Color(0x101218);
+
+  // Base ambient gradient via hemisphere-ish fills.
+  const base = new THREE.Mesh(
+    new THREE.SphereGeometry(50, 24, 16),
+    new THREE.MeshBasicMaterial({ side: THREE.BackSide, color: 0x0b0e14 })
+  );
+  envScene.add(base);
+
+  const tone = preset === 'warm'
+    ? { a: 0xffd9a0, b: 0xfff2e0, c: 0x3a2e22 }
+    : preset === 'cool'
+      ? { a: 0xbfd8ff, b: 0xe8f1ff, c: 0x223044 }
+      : { a: 0xffffff, b: 0xdfe8ff, c: 0x2a3142 }; // studio
+
+  // A few large soft emitter panels arranged around the sphere.
+  const panelDefs = [
+    { pos: [0, 18, 0],  size: [22, 10], color: tone.b, power: 3.0 },
+    { pos: [-16, 6, 8], size: [12, 16], color: tone.a, power: 1.6 },
+    { pos: [16, 2, -6], size: [12, 14], color: tone.b, power: 1.2 },
+    { pos: [0, -8, 14], size: [16, 8],  color: tone.c, power: 0.7 },
+  ];
+  for (const p of panelDefs) {
+    const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(p.color).multiplyScalar(p.power) });
+    const panel = new THREE.Mesh(new THREE.PlaneGeometry(p.size[0], p.size[1]), mat);
+    panel.position.set(...p.pos);
+    panel.lookAt(0, 0, 0);
+    envScene.add(panel);
+  }
+
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  pmrem.compileEquirectangularShader();
+  let envRT;
+  try {
+    envRT = pmrem.fromScene(envScene, 0.04);
+  } catch (e) {
+    return null;
+  }
+  // NOTE: do NOT call pmrem.dispose() — on the headless `gl` backend it
+  // invalidates the returned PMREM render target, leaving scene.environment a
+  // dead (black) texture. The PMREM render target is small and short-lived;
+  // it is GC'd with the renderer.
+  return envRT ? envRT.texture : null;
+}
+
+// ── Scene builder ─────────────────────────────────────────────────────────
 
 /**
  * Build a three.js scene from a Grillmaster graph.
@@ -143,6 +236,7 @@ function buildScene(nodes, edges, frame = 0) {
           emissive: new THREE.Color(emissive),
           emissiveIntensity: emissive_intensity,
           flatShading: !!flat_shading,
+          envMapIntensity: resolveParam(node, 'env_intensity', 1.0),
         });
         break;
       }
@@ -151,6 +245,8 @@ function buildScene(nodes, edges, frame = 0) {
         const geo = wired.geometry || new THREE.BoxGeometry(0.5, 0.5, 0.5);
         const mat = wired.material || new THREE.MeshStandardMaterial({ color: 0x4a9eff });
         const mesh = new THREE.Mesh(geo, mat);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
         mesh.position.set(
           resolveParam(node, 'pos_x', 0),
           resolveParam(node, 'pos_y', 0),
@@ -167,8 +263,6 @@ function buildScene(nodes, edges, frame = 0) {
 
       case '__group3d__': {
         const group = new THREE.Group();
-        // wired.object_a, wired.object_b may come from auto-inserted group
-        // or from multiple OBJECT3D edges in the scene render
         for (const [port, obj] of Object.entries(wired)) {
           if (obj && typeof obj === 'object' && obj.isObject3D) {
             group.add(obj);
@@ -189,6 +283,19 @@ function buildScene(nodes, edges, frame = 0) {
           resolveParam(node, 'pos_y', 4),
           resolveParam(node, 'pos_z', 5)
         );
+        if (type === 'directional' || type === 'spot') {
+          light.castShadow = true;
+          light.shadow.mapSize.set(1024, 1024);
+          light.shadow.camera.near = 0.5;
+          light.shadow.camera.far = 50;
+          if (light.shadow.camera.left !== undefined) {
+            light.shadow.camera.left = -8;
+            light.shadow.camera.right = 8;
+            light.shadow.camera.top = 8;
+            light.shadow.camera.bottom = -8;
+          }
+          light.shadow.bias = -0.0005;
+        }
         result = light;
         break;
       }
@@ -217,19 +324,98 @@ function buildScene(nodes, edges, frame = 0) {
         let mainCamera = null;
         const ambient = resolveParam(node, 'ambient', 0.35);
         const bgColor = resolveParam(node, 'bg_color', '#0a0e18');
-        scene.background = new THREE.Color(bgColor);
+        const bgMode = resolveParam(node, 'bg_mode', 'color');
+        const exposure = resolveParam(node, 'exposure', 1.0);
+        const toneMap = resolveParam(node, 'tone_map', 'aces');
+        const envPreset = resolveParam(node, 'env_preset', 'studio');
+        const envIntensity = resolveParam(node, 'env_intensity', 1.0);
+        const shadows = resolveParam(node, 'shadows', 0);
 
-        // Add ambient light
+        const bg = new THREE.Color(bgColor);
+        if (bgMode === 'transparent') {
+          scene.background = null;
+        } else {
+          scene.background = bg;
+        }
+
+        // Tone mapping + sRGB output color space (the big quality fix).
+        const toneEnum = TONE_MAP_MAP[toneMap] ?? THREE.ACESFilmicToneMapping;
+        scene._gmToneMapping = toneEnum;
+        scene._gmExposure = exposure;
+
+        // Procedural PMREM studio environment — gives PBR materials something
+        // to reflect. Best-effort: if PMREM fails on the headless backend the
+        // scene still renders via the explicit light rig below.
+        if (_activeRenderer && envPreset !== 'none') {
+          try {
+            const envTex = buildEnvironment(_activeRenderer, envPreset, envIntensity);
+            if (envTex) {
+              scene.environment = envTex;
+              scene.environmentIntensity = envIntensity;
+              _resDebugEnv = `applied:${envPreset}@${envIntensity}`;
+            } else {
+              _resDebugEnv = `build-failed:${envPreset}`;
+            }
+          } catch (e) {
+            _resDebugEnv = `error:${e.message?.substring(0, 60)}`;
+          }
+        } else {
+          _resDebugEnv = 'disabled';
+        }
+
+        // Ambient light
         scene.add(new THREE.AmbientLight(0x404060, ambient));
+
+        // Default 3-point light rig. A single point light leaves metals nearly
+        // black (nothing to reflect / weak specular); the rig guarantees PBR
+        // surfaces are reliably lit and read as three-dimensional. Users can
+        // still wire their own __light3d__ nodes (added after this).
+        const rig = resolveParam(node, 'lighting', 1.0);
+        if (rig > 0) {
+          const key = new THREE.DirectionalLight(0xffffff, 2.4 * rig);
+          key.position.set(4, 6, 5);
+          const fill = new THREE.DirectionalLight(0xbfd4ff, 0.9 * rig);
+          fill.position.set(-6, 1, 3);
+          const rim = new THREE.DirectionalLight(0xffe6c0, 1.3 * rig);
+          rim.position.set(-2, 3, -6);
+          if (shadows) {
+            key.castShadow = true;
+            key.shadow.mapSize.set(1024, 1024);
+            key.shadow.camera.near = 0.5;
+            key.shadow.camera.far = 40;
+            key.shadow.camera.left = -8; key.shadow.camera.right = 8;
+            key.shadow.camera.top = 8; key.shadow.camera.bottom = -8;
+            key.shadow.bias = -0.0005;
+          }
+          scene.add(key, fill, rim);
+        }
+
+        // Optional ground shadow catcher.
+        if (shadows) {
+          const ground = new THREE.Mesh(
+            new THREE.PlaneGeometry(40, 40),
+            new THREE.ShadowMaterial({ opacity: 0.35 })
+          );
+          ground.rotation.x = -Math.PI / 2;
+          ground.position.y = -1.6;
+          ground.receiveShadow = true;
+          scene.add(ground);
+        }
 
         for (const [port, obj] of Object.entries(wired)) {
           if (!obj) continue;
           if (port === 'camera') {
             mainCamera = obj;
           } else if (port === 'object' || port === 'object_a' || port === 'object_b') {
-            if (obj.isObject3D) scene.add(obj);
+            if (obj.isObject3D) {
+              scene.add(obj);
+              obj.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+            }
           } else if (port === 'light') {
-            if (obj.isLight) scene.add(obj);
+            if (obj.isLight) {
+              obj.castShadow = shadows ? true : obj.castShadow;
+              scene.add(obj);
+            }
           }
         }
 
@@ -286,31 +472,45 @@ function buildScene(nodes, edges, frame = 0) {
   return { scene, camera: new THREE.PerspectiveCamera(50, 1, 0.1, 100) };
 }
 
-// ── Render function ────────────────────────────────────────────────────────
+// ── Render function ─────────────────────────────────────────────────────────
 
 function renderSceneToPng(graphNodes, graphEdges, width, height, frame) {
-  const canvas = new OffscreenCanvas(width || 512, height || 512);
+  const w = width || 512;
+  const h = height || 512;
+  _resDebugEnv = 'n/a';
+
+  const canvas = new OffscreenCanvas(w, h);
   const renderer = new THREE.WebGLRenderer({
     canvas,
     antialias: true,
     preserveDrawingBuffer: true,
+    alpha: true,
   });
-  renderer.setSize(width || 512, height || 512);
+  renderer.setSize(w, h);
   renderer.setPixelRatio(1);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  _activeRenderer = renderer;
 
   const { scene, camera } = buildScene(graphNodes, graphEdges, frame || 0);
+  if (scene._gmToneMapping !== undefined) {
+    renderer.toneMapping = scene._gmToneMapping;
+    renderer.toneMappingExposure = scene._gmExposure ?? 1.0;
+  } else {
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+  }
 
   // Fix camera aspect ratio to match render size
   if (camera.aspect) {
-    camera.aspect = (width || 512) / (height || 512);
+    camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }
 
   renderer.render(scene, camera);
 
   // Read pixels
-  const w = width || 512;
-  const h = height || 512;
   const pixels = new Uint8Array(w * h * 4);
   const gl = canvas._gl;
   gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
@@ -323,7 +523,13 @@ function renderSceneToPng(graphNodes, graphEdges, width, height, frame) {
     flipped.set(pixels.subarray(srcOff, srcOff + w * 4), dstOff);
   }
 
-  return { pixels: flipped, width: w, height: h };
+  // NOTE: we intentionally do NOT call renderer.dispose() — three.js r160's
+  // dispose() invokes context.cancelAnimationFrame, but the headless `gl`
+  // context exposes no animation-frame methods (and no-opping them doesn't
+  // help because the renderer's internal context ref is null here). The
+  // process is short-lived per request, so the per-request context is GC'd.
+
+  return { pixels: flipped, width: w, height: h, envApplied: _resDebugEnv };
 }
 
 // ── HTTP Server ────────────────────────────────────────────────────────────
@@ -361,7 +567,7 @@ const server = http.createServer((req, res) => {
         }
 
         const start = Date.now();
-        const { pixels, width: w, height: h } = renderSceneToPng(nodes, edges, width, height, frame);
+        const { pixels, width: w, height: h, envApplied } = renderSceneToPng(nodes, edges, width, height, frame);
         const renderMs = Date.now() - start;
 
         // Convert raw RGBA to PNG using a minimal png encoder
@@ -370,6 +576,7 @@ const server = http.createServer((req, res) => {
         res.writeHead(200, {
           'Content-Type': 'image/png',
           'X-Render-Ms': String(renderMs),
+          'X-Env-Applied': String(envApplied),
           'Content-Length': String(png.length),
         });
         res.end(png);
@@ -429,7 +636,6 @@ function encodePNG(pixels, width, height) {
 
   return Buffer.concat([sig, ihdr, idat, iend]);
 }
-
 function makeChunk(type, data) {
   const len = Buffer.alloc(4);
   len.writeUInt32BE(data.length, 0);
@@ -440,7 +646,6 @@ function makeChunk(type, data) {
   crcB.writeUInt32BE(crc, 0);
   return Buffer.concat([len, typeB, data, crcB]);
 }
-
 function crc32(buf) {
   let crc = 0xFFFFFFFF;
   for (let i = 0; i < buf.length; i++) {
