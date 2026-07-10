@@ -544,8 +544,17 @@ def method_sam_segment(out_dir: Path, seed: int, params=None):
             )
             masks = generator.generate(rgb)
             if masks:
-                # Largest mask by area
-                best = max(masks, key=lambda m: m["area"])
+                # Prefer a foreground mask. SAM's automatic mode tends to emit a
+                # near-full-frame mask that represents the background; naive
+                # "largest by area" selection returns that and makes the node
+                # useless (it segments "everything"). Drop masks that cover more
+                # than half the canvas, then pick the highest-quality remaining
+                # mask by predicted IoU. Fall back to the best-overall mask only
+                # if every mask is background-sized.
+                total_px = float(rgb.shape[0] * rgb.shape[1])
+                fg = [m for m in masks if m["segmentation"].sum() / total_px < 0.5]
+                pool = fg if fg else masks
+                best = max(pool, key=lambda m: m.get("predicted_iou", 0.0))
                 out_mask = best["segmentation"].astype(_np.float32)
                 out_score = float(best.get("predicted_iou", out_mask.mean()))
         else:
