@@ -6090,3 +6090,246 @@ _register("gridwarp_typed", "Domain-warped grid lattice with typed warp/cells/wi
     "bg":     {"glsl": "color", "default": "#0a0a12", "description": "background"},
     "line":   {"glsl": "color", "default": "#43e8d8", "description": "grid line"},
 })
+
+# ── Typed-uniform closed-form pattern batch (2026-07-11, nodes 295-300) ──
+# Extended family of single-output procedural nodes with NAMED typed controls.
+# Each is a pure function of (uv, t) — exact parity live preview, no seeded
+# layout divergence. Reuses the prologue helpers (fbm/noise/hash21/rot) and an
+# inlined hsv2rgb (no dependency on the late _INFERNO_GPU helper).
+
+_register("domainwarp_typed", "Domain-warped fractal flow field (typed, node 295)",
+          "procedural", '''vec3 _hsv(float h, float s, float v) {
+    vec3 k = vec3(1.0, 2.0/3.0, 1.0/3.0);
+    vec3 p = abs(fract(vec3(h) + k) * 6.0 - 3.0);
+    return v * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), s);
+}
+void main() {
+    vec2 p = (v_uv - 0.5) * 2.0;
+    p.x *= u_resolution.x / u_resolution.y;
+    float t = u_time * 0.05 * u_speed;
+    vec2 q = vec2(fbm(p * u_scale + t), fbm(p * u_scale + 5.2 - t));
+    vec2 r = vec2(fbm(p * u_scale + u_warp * q + 1.7),
+                  fbm(p * u_scale + u_warp * q + 9.2));
+    float v = fbm(p * u_scale + u_warp * r);
+    float hue = fract(v * u_hue_spread + u_hue_shift);
+    vec3 col = _hsv(hue, u_sat, 0.35 + 0.65 * v);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "speed":        {"glsl": "float", "min": 0.0, "max": 4.0, "default": 1.0,
+                    "description": "flow speed"},
+    "scale":        {"glsl": "float", "min": 1.0, "max": 12.0, "default": 3.5,
+                    "description": "noise frequency"},
+    "warp":         {"glsl": "float", "min": 0.0, "max": 6.0, "default": 3.0,
+                    "description": "domain-warp iterations"},
+    "hue_shift":    {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.6,
+                    "description": "base hue"},
+    "hue_spread":   {"glsl": "float", "min": 0.0, "max": 1.5, "default": 0.7,
+                    "description": "hue range across field"},
+    "sat":          {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.8,
+                    "description": "saturation"},
+})
+
+_register("caustics_typed", "Animated water caustics (typed, node 296)",
+          "procedural", '''vec3 _hsv(float h, float s, float v) {
+    vec3 k = vec3(1.0, 2.0/3.0, 1.0/3.0);
+    vec3 p = abs(fract(vec3(h) + k) * 6.0 - 3.0);
+    return v * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), s);
+}
+void main() {
+    vec2 p = v_uv * u_scale;
+    p.x *= u_resolution.x / u_resolution.y;
+    float t = u_time * 0.1 * u_speed;
+    vec2 w = vec2(0.0);
+    for (int i = 0; i < 5; i++) {
+        float fi = float(i);
+        w += vec2(sin(p.y * (1.0 + fi * 0.3) + t + fi),
+                  cos(p.x * (1.0 + fi * 0.3) - t * 1.1 + fi * 1.7));
+        p *= 1.4;
+    }
+    float c = 1.0 - abs(sin(w.x + w.y) * 0.5 + 0.5);
+    c = pow(c, u_sharp);
+    vec3 col = mix(u_deep, u_shallow, c);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "speed":    {"glsl": "float", "min": 0.0, "max": 4.0, "default": 1.0,
+                "description": "ripple speed"},
+    "scale":    {"glsl": "float", "min": 1.0, "max": 16.0, "default": 6.0,
+                "description": "ripple density"},
+    "sharp":    {"glsl": "float", "min": 1.0, "max": 12.0, "default": 4.0,
+                "description": "caustic sharpness"},
+    "deep":     {"glsl": "color", "default": "#02121f", "description": "deep water"},
+    "shallow":  {"glsl": "color", "default": "#4fd6ff", "description": "lit water"},
+})
+
+_register("prism_typed", "Spectral prism / diffraction grating (typed, node 297)",
+          "procedural", '''vec3 _hsv(float h, float s, float v) {
+    vec3 k = vec3(1.0, 2.0/3.0, 1.0/3.0);
+    vec3 p = abs(fract(vec3(h) + k) * 6.0 - 3.0);
+    return v * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), s);
+}
+void main() {
+    vec2 p = (v_uv - 0.5) * 2.0;
+    p.x *= u_resolution.x / u_resolution.y;
+    float t = u_time * 0.03 * u_speed;
+    float d = dot(p, vec2(cos(u_angle), sin(u_angle)));
+    float spec = sin(d * u_freq + t) * 0.5 + 0.5;
+    float bands = spec * u_rainbow;
+    vec3 col = _hsv(fract(bands + u_hue_shift), u_sat, 1.0);
+    float vig = smoothstep(u_falloff, 0.0, length(p));
+    col *= mix(1.0, vig, u_darken);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "speed":     {"glsl": "float", "min": 0.0, "max": 4.0, "default": 1.0,
+                "description": "phase drift"},
+    "freq":      {"glsl": "float", "min": 2.0, "max": 60.0, "default": 22.0,
+                "description": "grating frequency"},
+    "angle":     {"glsl": "float", "min": 0.0, "max": 360.0, "default": 30.0,
+                "description": "grating angle (deg)"},
+    "rainbow":   {"glsl": "float", "min": 0.2, "max": 3.0, "default": 1.2,
+                "description": "hue spread"},
+    "hue_shift": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.0,
+                "description": "hue offset"},
+    "sat":       {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.9,
+                "description": "saturation"},
+    "falloff":   {"glsl": "float", "min": 0.2, "max": 2.0, "default": 1.0,
+                "description": "edge falloff"},
+    "darken":    {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5,
+                "description": "edge darkening"},
+})
+
+_register("sdfscene_typed", "Minimal signed-distance scene (typed, node 298)",
+          "procedural", '''vec3 _hsv(float h, float s, float v) {
+    vec3 k = vec3(1.0, 2.0/3.0, 1.0/3.0);
+    vec3 p = abs(fract(vec3(h) + k) * 6.0 - 3.0);
+    return v * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), s);
+}
+float _sdCircle(vec2 p, float r) { return length(p) - r; }
+float _sdBox(vec2 p, vec2 b) {
+    vec2 d = abs(p) - b;
+    return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+}
+void main() {
+    vec2 p = (v_uv - 0.5) * 2.0;
+    p.x *= u_resolution.x / u_resolution.y;
+    float t = u_time * 0.2 * u_speed;
+    p *= u_zoom;
+    vec2 c = vec2(cos(t), sin(t * 0.7)) * u_orbit;
+    float d = min(_sdCircle(p - c, u_rad),
+                  _sdBox(rot(t * u_spin) * p, vec2(u_box)));
+    float aa = fwidth(d) + 0.002;
+    float mask = 1.0 - smoothstep(0.0, aa, d);
+    float rim = smoothstep(0.0, aa, abs(d) - u_rim);
+    vec3 col = mix(u_bg, u_fill, mask);
+    col = mix(col, u_rimc, rim * (1.0 - mask));
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "speed":   {"glsl": "float", "min": 0.0, "max": 4.0, "default": 1.0,
+                "description": "scene spin speed"},
+    "zoom":    {"glsl": "float", "min": 0.3, "max": 3.0, "default": 1.0,
+                "description": "camera zoom"},
+    "orbit":   {"glsl": "float", "min": 0.0, "max": 1.5, "default": 0.45,
+                "description": "circle orbit radius"},
+    "rad":     {"glsl": "float", "min": 0.05, "max": 1.0, "default": 0.3,
+                "description": "circle radius"},
+    "box":     {"glsl": "float", "min": 0.05, "max": 1.0, "default": 0.28,
+                "description": "box half-size"},
+    "spin":    {"glsl": "float", "min": -3.0, "max": 3.0, "default": 0.6,
+                "description": "box spin rate"},
+    "rim":     {"glsl": "float", "min": 0.0, "max": 0.1, "default": 0.04,
+                "description": "rim width"},
+    "bg":      {"glsl": "color", "default": "#0b0b14", "description": "background"},
+    "fill":    {"glsl": "color", "default": "#ff5d73", "description": "shape fill"},
+    "rimc":    {"glsl": "color", "default": "#ffe66d", "description": "rim color"},
+})
+
+_register("burst_typed", "Radial energy burst / shockwave (typed, node 299)",
+          "procedural", '''vec3 _hsv(float h, float s, float v) {
+    vec3 k = vec3(1.0, 2.0/3.0, 1.0/3.0);
+    vec3 p = abs(fract(vec3(h) + k) * 6.0 - 3.0);
+    return v * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), s);
+}
+void main() {
+    vec2 p = (v_uv - 0.5) * 2.0;
+    p.x *= u_resolution.x / u_resolution.y;
+    float t = u_time * 0.1 * u_speed;
+    float r = length(p);
+    float a = atan(p.y, p.x);
+    float wave = sin(r * u_freq - t * u_velocity) * 0.5 + 0.5;
+    float spokes = pow(abs(cos(a * u_spokes * 0.5 + t * 0.2)), u_sharpness);
+    float ring = smoothstep(u_thick, 0.0, abs(r - fract(t * u_velocity * 0.05) * u_reach)) * u_intensity;
+    float energy = (wave * 0.4 + spokes * 0.4 + ring * 0.8);
+    energy *= smoothstep(u_reach, 0.0, r);
+    vec3 col = mix(u_bg, u_hot, clamp(energy, 0.0, 1.0));
+    col = mix(col, u_core, smoothstep(0.6, 1.0, energy));
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "speed":      {"glsl": "float", "min": 0.0, "max": 4.0, "default": 1.0,
+                "description": "animation speed"},
+    "freq":       {"glsl": "float", "min": 2.0, "max": 40.0, "default": 12.0,
+                "description": "radial wave frequency"},
+    "velocity":   {"glsl": "float", "min": 1.0, "max": 20.0, "default": 6.0,
+                "description": "shockwave speed"},
+    "spokes":     {"glsl": "float", "min": 1.0, "max": 24.0, "default": 8.0,
+                "description": "spoke count"},
+    "sharpness":  {"glsl": "float", "min": 1.0, "max": 12.0, "default": 4.0,
+                "description": "spoke sharpness"},
+    "thick":      {"glsl": "float", "min": 0.01, "max": 0.3, "default": 0.06,
+                "description": "ring thickness"},
+    "reach":      {"glsl": "float", "min": 0.4, "max": 2.0, "default": 1.4,
+                "description": "burst reach"},
+    "intensity":  {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.8,
+                "description": "ring intensity"},
+    "bg":         {"glsl": "color", "default": "#05060f", "description": "background"},
+    "hot":        {"glsl": "color", "default": "#ff7a18", "description": "hot ring"},
+    "core":       {"glsl": "color", "default": "#fff2c4", "description": "core flash"},
+})
+
+_register("foam_typed", "Procedural bubble foam / Voronoi cell membrane (typed, node 300)",
+          "procedural", '''vec3 _hsv(float h, float s, float v) {
+    vec3 k = vec3(1.0, 2.0/3.0, 1.0/3.0);
+    vec3 p = abs(fract(vec3(h) + k) * 6.0 - 3.0);
+    return v * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), s);
+}
+void main() {
+    vec2 uv = v_uv * u_cells;
+    uv.x *= u_resolution.x / u_resolution.y;
+    float t = u_time * 0.05 * u_speed;
+    vec2 g = floor(uv); vec2 f = fract(uv);
+    float md = 1e9; vec2 mp = vec2(0.0);
+    for (int j = -1; j <= 1; j++) {
+        for (int i = -1; i <= 1; i++) {
+            vec2 o = vec2(float(i), float(j));
+            vec2 cell = g + o;
+            vec2 off = vec2(hash21(cell), hash21(cell + 3.3));
+            off = 0.5 + 0.45 * sin(t + 6.2831 * off);
+            vec2 r = o + off - f;
+            float dd = dot(r, r);
+            if (dd < md) { md = dd; mp = r; }
+        }
+    }
+    float dist = sqrt(md);
+    float edge = smoothstep(u_thick, 0.0, dist);
+    float irid = fract(dist * u_irid + u_hue_shift);
+    vec3 col = mix(u_bg, _hsv(irid, u_sat, 1.0), edge);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "speed":    {"glsl": "float", "min": 0.0, "max": 4.0, "default": 1.0,
+                "description": "cell jitter speed"},
+    "cells":    {"glsl": "float", "min": 2.0, "max": 40.0, "default": 12.0,
+                "description": "cell count"},
+    "thick":    {"glsl": "float", "min": 0.01, "max": 0.4, "default": 0.12,
+                "description": "membrane thickness"},
+    "irid":     {"glsl": "float", "min": 0.0, "max": 4.0, "default": 1.5,
+                "description": "iridescence bands"},
+    "hue_shift":{"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.55,
+                "description": "hue offset"},
+    "sat":      {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.7,
+                "description": "saturation"},
+    "bg":       {"glsl": "color", "default": "#06121a", "description": "background"},
+})

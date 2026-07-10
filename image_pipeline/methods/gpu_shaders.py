@@ -257,6 +257,15 @@ _TYPED_SHADER_NODES = [
     ("292", "contour_typed",   "GPU Contour Map"),
     ("293", "hatch_typed",     "GPU Cross-Hatch"),
     ("294", "gridwarp_typed",  "GPU Warp Grid"),
+    # Categorical coverage pt.11 (2026-07-11): extended closed-form procedural
+    # family with NAMED typed controls — domain-warped flow, animated caustics,
+    # spectral prism, SDF scene, radial energy burst, iridescent bubble foam.
+    ("295", "domainwarp_typed", "GPU Domain Warp"),
+    ("296", "caustics_typed",   "GPU Caustics"),
+    ("297", "prism_typed",      "GPU Spectral Prism"),
+    ("298", "sdfscene_typed",   "GPU SDF Scene"),
+    ("299", "burst_typed",      "GPU Energy Burst"),
+    ("300", "foam_typed",       "GPU Bubble Foam"),
 ]
 
 _TIME_SCALE_PARAM = {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0}
