@@ -132,8 +132,8 @@ def _render_nlse(psi: np.ndarray, render_style: str = "density", phase_strength:
 
 def _build_k_grid() -> tuple[np.ndarray, np.ndarray]:
     """Return kx, ky grids for Fourier-space operations."""
-    kx = np.fft.fftfreq(W) * 2.0 * math.pi
-    ky = np.fft.fftfreq(H) * 2.0 * math.pi
+    kx = np.fft.fftfreq(int(W)) * 2.0 * math.pi
+    ky = np.fft.fftfreq(int(H)) * 2.0 * math.pi
     return kx[np.newaxis, :], ky[:, np.newaxis]
 
 

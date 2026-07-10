@@ -140,8 +140,8 @@ def method_swift_hohenberg(out_dir: Path, seed: int, params=None):
     gh = max(36, int(gw * H / W))
 
     # ── Fourier operators ──
-    kx = np.fft.fftfreq(gw).astype(np.float32) * 2.0 * math.pi
-    ky = np.fft.fftfreq(gh).astype(np.float32) * 2.0 * math.pi
+    kx = np.fft.fftfreq(int(gw)).astype(np.float32) * 2.0 * math.pi
+    ky = np.fft.fftfreq(int(gh)).astype(np.float32) * 2.0 * math.pi
     KX, KY = np.meshgrid(kx, ky)
     L_op = _operator_lin(KX, KY)
 

@@ -43,8 +43,8 @@ ANISO_RATIO = 1.5 # x/y wavenumber anisotropy
 
 def _build_k_grid() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Return kx, ky, k2, k4 grids."""
-    kx = np.fft.fftfreq(W) * 2.0 * math.pi
-    ky = np.fft.fftfreq(H) * 2.0 * math.pi
+    kx = np.fft.fftfreq(int(W)) * 2.0 * math.pi
+    ky = np.fft.fftfreq(int(H)) * 2.0 * math.pi
     kx_g = kx[np.newaxis, :]
     ky_g = ky[:, np.newaxis]
     k2 = kx_g ** 2 + ky_g ** 2

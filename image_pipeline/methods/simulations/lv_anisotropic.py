@@ -243,8 +243,8 @@ def method_lv_aniso(out_dir: Path, seed: int, params=None):
     else:
         # evolve: smooth noise patches
         raw_u = rng.normal(0, 1.0, (H, W))
-        kx = np.fft.fftfreq(W) * 2.0 * math.pi
-        ky = np.fft.fftfreq(H) * 2.0 * math.pi
+        kx = np.fft.fftfreq(int(W)) * 2.0 * math.pi
+        ky = np.fft.fftfreq(int(H)) * 2.0 * math.pi
         k2 = kx[np.newaxis, :]**2 + ky[:, np.newaxis]**2
         filt = np.exp(-k2 * 8.0)
         smooth_u = np.real(np.fft.ifft2(np.fft.fft2(raw_u) * filt))

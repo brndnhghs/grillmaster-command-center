@@ -200,8 +200,8 @@ def method_lotka_volterra(out_dir: Path, seed: int, params=None):
         # Create smooth patches of varying prey/predator density
         raw_u = rng.normal(0, 1.0, (H, W))
         # FFT smooth to create patches
-        kx = np.fft.fftfreq(W) * 2.0 * math.pi
-        ky = np.fft.fftfreq(H) * 2.0 * math.pi
+        kx = np.fft.fftfreq(int(W)) * 2.0 * math.pi
+        ky = np.fft.fftfreq(int(H)) * 2.0 * math.pi
         k2g = kx[np.newaxis, :] ** 2 + ky[:, np.newaxis] ** 2
         filt = np.exp(-k2g * 8.0)
         smooth_u = np.real(np.fft.ifft2(np.fft.fft2(raw_u) * filt))

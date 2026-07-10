@@ -315,14 +315,14 @@ def method_multilayer_rt(out_dir: Path, seed: int, params=None):
         )
 
     # ── FFT helpers ──
-    kx_1d_f = np.fft.fftfreq(GX) * 2.0 * PI
-    ky_1d_f = np.fft.fftfreq(GY) * 2.0 * PI
+    kx_1d_f = np.fft.fftfreq(int(GX)) * 2.0 * PI
+    ky_1d_f = np.fft.fftfreq(int(GY)) * 2.0 * PI
     kx2_f, ky2_f = np.meshgrid(kx_1d_f, ky_1d_f)
     k_sq_f = kx2_f * kx2_f + ky2_f * ky2_f
     k_sq_f[0, 0] = 1.0
 
-    kx_1d_s = np.fft.fftfreq(GX_sim) * 2.0 * PI
-    ky_1d_s = np.fft.fftfreq(GY_sim) * 2.0 * PI
+    kx_1d_s = np.fft.fftfreq(int(GX_sim)) * 2.0 * PI
+    ky_1d_s = np.fft.fftfreq(int(GY_sim)) * 2.0 * PI
     kx2_s, ky2_s = np.meshgrid(kx_1d_s, ky_1d_s)
     k_sq_s = kx2_s * kx2_s + ky2_s * ky2_s
     k_sq_s[0, 0] = 1.0

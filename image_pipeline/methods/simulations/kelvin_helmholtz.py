@@ -84,8 +84,8 @@ def _poisson_2d(rhs: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     ny, nx = rhs.shape
     # Wavenumber grids
-    kx = np.fft.fftfreq(nx) * 2.0 * PI
-    ky = np.fft.fftfreq(ny) * 2.0 * PI
+    kx = np.fft.fftfreq(int(nx)) * 2.0 * PI
+    ky = np.fft.fftfreq(int(ny)) * 2.0 * PI
     kx2, ky2 = np.meshgrid(kx, ky)
     k_sq = kx2 * kx2 + ky2 * ky2
     k_sq[0, 0] = 1.0  # avoid division by zero
@@ -383,8 +383,8 @@ def method_kelvin_helmholtz(out_dir: Path, seed: int, params=None):
     vorticity[1:-1, :] = -(u_init[2:, :] - u_init[:-2, :]) / 2.0  # central diff in y
 
     # ── FFT helpers (sim grid) ──
-    kx_1d = np.fft.fftfreq(GX_sim) * 2.0 * PI
-    ky_1d = np.fft.fftfreq(GY_sim) * 2.0 * PI
+    kx_1d = np.fft.fftfreq(int(GX_sim)) * 2.0 * PI
+    ky_1d = np.fft.fftfreq(int(GY_sim)) * 2.0 * PI
     kx2_s, ky2_s = np.meshgrid(kx_1d, ky_1d)
     k_sq_s = kx2_s * kx2_s + ky2_s * ky2_s
     k_sq_s[0, 0] = 1.0
@@ -393,8 +393,8 @@ def method_kelvin_helmholtz(out_dir: Path, seed: int, params=None):
     lp_mask = (kx2_s**2 + ky2_s**2) < k_cutoff**2
 
     # ── Full-res FFT helpers for Poisson solve ──
-    kx_1d_f = np.fft.fftfreq(GX) * 2.0 * PI
-    ky_1d_f = np.fft.fftfreq(GY) * 2.0 * PI
+    kx_1d_f = np.fft.fftfreq(int(GX)) * 2.0 * PI
+    ky_1d_f = np.fft.fftfreq(int(GY)) * 2.0 * PI
     kx2_f, ky2_f = np.meshgrid(kx_1d_f, ky_1d_f)
     k_sq_f = kx2_f * kx2_f + ky2_f * ky2_f
     k_sq_f[0, 0] = 1.0

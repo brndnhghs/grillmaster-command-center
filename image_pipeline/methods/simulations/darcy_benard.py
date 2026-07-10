@@ -92,8 +92,8 @@ def db(out_dir, seed, params=None):
     fh, fw = H, W
 
     # Fourier operators
-    kx = np.fft.fftfreq(sw) * 2 * math.pi
-    ky = np.fft.fftfreq(sh) * 2 * math.pi
+    kx = np.fft.fftfreq(int(sw)) * 2 * math.pi
+    ky = np.fft.fftfreq(int(sh)) * 2 * math.pi
     k2 = kx[np.newaxis, :]**2 + ky[:, np.newaxis]**2
     k2[0, 0] = 1.0
 

@@ -117,8 +117,8 @@ def method_gpe(out_dir: Path, seed: int, params=None):
     fh, fw = H, W
     
     # ── Precompute k-space ──
-    kx = np.fft.fftfreq(fw).reshape(1, -1) * 2 * math.pi
-    ky = np.fft.fftfreq(fh).reshape(-1, 1) * 2 * math.pi
+    kx = np.fft.fftfreq(int(fw)).reshape(1, -1) * 2 * math.pi
+    ky = np.fft.fftfreq(int(fh)).reshape(-1, 1) * 2 * math.pi
     k2 = kx**2 + ky**2
     
     # ── Grid and trap ──

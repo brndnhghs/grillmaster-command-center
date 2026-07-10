@@ -265,8 +265,8 @@ def method_lv_3species(out_dir: Path, seed: int, params=None):
         # evolve: uniform noise, all three species intermingled
         # Smooth spatial heterogeneities for natural patches
         raw = rng.normal(0, 1, (H, W))
-        kx = np.fft.fftfreq(W) * 2.0 * math.pi
-        ky = np.fft.fftfreq(H) * 2.0 * math.pi
+        kx = np.fft.fftfreq(int(W)) * 2.0 * math.pi
+        ky = np.fft.fftfreq(int(H)) * 2.0 * math.pi
         k2 = kx[np.newaxis, :]**2 + ky[:, np.newaxis]**2
         filt = np.exp(-k2 * 12.0)
         smooth = np.real(np.fft.ifft2(np.fft.fft2(raw) * filt))

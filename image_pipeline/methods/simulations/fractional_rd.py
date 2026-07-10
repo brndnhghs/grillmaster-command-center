@@ -275,8 +275,8 @@ def method_fractional_rd(out_dir: Path, seed: int, params=None):
 
     # ── Fractional Laplacian operator in Fourier space ──
     # (-∇²)^(α/2) = Fourier multiplier |k|^α
-    kx = np.fft.fftfreq(sw) * 2 * math.pi
-    ky = np.fft.fftfreq(sh) * 2 * math.pi
+    kx = np.fft.fftfreq(int(sw)) * 2 * math.pi
+    ky = np.fft.fftfreq(int(sh)) * 2 * math.pi
     k2 = kx[np.newaxis, :]**2 + ky[:, np.newaxis]**2
     k_alpha = k2 ** (alpha / 2.0)  # |k|^α for fractional Laplacian
     

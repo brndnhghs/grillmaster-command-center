@@ -127,8 +127,8 @@ def method_aggregation(out_dir: Path, seed: int, params=None):
     dt = 0.5  # fixed timestep
 
     # ── Fourier setup ──
-    kx = np.fft.fftfreq(gw).astype(np.float64) * 2 * math.pi
-    ky = np.fft.fftfreq(gh).astype(np.float64) * 2 * math.pi
+    kx = np.fft.fftfreq(int(gw)).astype(np.float64) * 2 * math.pi
+    ky = np.fft.fftfreq(int(gh)).astype(np.float64) * 2 * math.pi
     k2 = (kx[np.newaxis, :] ** 2 + ky[:, np.newaxis] ** 2).astype(np.float32)
 
     # Gaussian kernel in Fourier space

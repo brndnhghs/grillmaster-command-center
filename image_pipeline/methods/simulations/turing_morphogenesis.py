@@ -47,8 +47,8 @@ def turing_morphogenesis(out_dir, seed, params=None):
     seed_all(seed); rng = np.random.default_rng(seed)
     sh, sw = H // gd, W // gd; fh, fw = H, W
 
-    kx = np.fft.fftfreq(sw)[None, :] * 2 * np.pi * sw
-    ky = np.fft.fftfreq(sh)[:, None] * 2 * np.pi * sh
+    kx = np.fft.fftfreq(int(sw))[None, :] * 2 * np.pi * sw
+    ky = np.fft.fftfreq(int(sh))[:, None] * 2 * np.pi * sh
     k2 = kx**2 + ky**2
     denom_u = 1.0 + Du * dt * k2
     denom_v = 1.0 + Dv * dt * k2

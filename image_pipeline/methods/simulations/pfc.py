@@ -41,8 +41,8 @@ def pfc(out_dir, seed, params=None):
     sh, sw = H // gd, W // gd; fh, fw = H, W
 
     # ── Spectral operators ──
-    kx = np.fft.fftfreq(sw)[None, :] * 2 * np.pi * sw
-    ky = np.fft.fftfreq(sh)[:, None] * 2 * np.pi * sh
+    kx = np.fft.fftfreq(int(sw))[None, :] * 2 * np.pi * sw
+    ky = np.fft.fftfreq(int(sh))[:, None] * 2 * np.pi * sh
     k2 = kx**2 + ky**2
     k4 = k2**2
     # Semi-implicit denominator: 1 + dt·k⁶

@@ -218,8 +218,8 @@ def method_ocean_spectral(out_dir: Path, seed: int, params=None):
     Ly = sh * scale_mpp
 
     # ── Wave number grid ──
-    kx = 2.0 * math.pi * np.fft.fftfreq(sw, d=scale_mpp)
-    ky = 2.0 * math.pi * np.fft.fftfreq(sh, d=scale_mpp)
+    kx = 2.0 * math.pi * np.fft.fftfreq(int(sw), d=scale_mpp)
+    ky = 2.0 * math.pi * np.fft.fftfreq(int(sh), d=scale_mpp)
     kxx, kyy = np.meshgrid(kx, ky)
     k_mag = np.sqrt(kxx**2 + kyy**2)
     omega = np.sqrt(g * k_mag)  # deep-water dispersion
