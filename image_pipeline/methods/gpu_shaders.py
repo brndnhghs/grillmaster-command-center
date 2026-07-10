@@ -560,6 +560,16 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "reset_on": ["seed", "param", "loop", "resize"],
         "param_map": {"alpha": "p1", "beta": "p2", "dt": "p3"},
     },
+    # P1.3 complex-field PDE — Nonlinear Schrödinger (node 124). Same R/G complex
+    # field packing as CGL. beta/g/dt are numeric node params → map cleanly to
+    # p1..p3; trap_strength → p4 (harmonic confining potential for live preview).
+    "124": {
+        "type": "sim",
+        "seed": "nls_seed", "step": "nls_step", "display": "nls_display",
+        "state_channels": 2, "substeps": 4,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"beta": "p1", "g": "p2", "dt": "p3", "trap_strength": "p4"},
+    },
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SIMS)
 

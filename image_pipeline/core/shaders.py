@@ -3051,3 +3051,67 @@ void main() {
     f_color = vec4(col * (0.35 + 0.65 * amp), 1.0);
 }
 ''')
+
+# ── P1.3 complex-field PDE — Nonlinear Schrödinger (node 124). Same R/G complex
+# field packing as CGL. NLSE in real space: ψ=a+ib, ∂ψ/∂t = i(β∇²ψ − g|ψ|²ψ + Vψ)
+#   → ∂a/∂t = −β·∇²b + g·|ψ|²·b − V·b ;  ∂b/∂t = β·∇²a − g|ψ|²·a + V·a
+# Explicit Euler on the 5-pt (toroidal) Laplacian. CPU node is a split-step
+# Fourier Arch-A sim; this is the live-preview twin only — server export stays
+# authoritative (seeded layout differs, as expected for this PDE family).
+_register("nls_seed",
+          "NLSE initial state: small random complex noise in RG (node 124 twin)",
+          "procedural", '''
+void main() {
+    vec2 p = v_uv * u_resolution;
+    float a = (hash21(p + 0.19) - 0.5) * 0.3;
+    float b = (hash21(p + 7.31) - 0.5) * 0.3;
+    f_color = vec4(a, b, 0.0, 1.0);
+}
+''')
+
+_register("nls_step",
+          "NLSE one Euler step (5-pt Laplacian, toroidal) — complex field in RG",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float a = s.r, b = s.g;
+    vec4 sl = texture(u_texture, v_uv + vec2(-texel.x, 0.0));
+    vec4 sr = texture(u_texture, v_uv + vec2( texel.x, 0.0));
+    vec4 su = texture(u_texture, v_uv + vec2(0.0,  texel.y));
+    vec4 sd = texture(u_texture, v_uv + vec2(0.0, -texel.y));
+    float lapR = sl.r + sr.r + su.r + sd.r - 4.0 * a;
+    float lapI = sl.g + sr.g + su.g + sd.g - 4.0 * b;
+    float beta = clamp(u_params.x, -2.0, 2.0);   // p1: node dispersion β
+    float gnl  = clamp(u_params.y, -3.0, 3.0);   // p2: node nonlinearity g (+focus)
+    float dt   = clamp(u_params.z, 0.002, 0.1);  // p3: node dt
+    float trap = u_params.w;                      // p4: node trap_strength
+    float r2 = (v_uv.x - 0.5) * (v_uv.x - 0.5)
+             + (v_uv.y - 0.5) * (v_uv.y - 0.5);
+    float V = trap * 400.0 * r2;                  // harmonic trap (live scale)
+    float m = a * a + b * b;
+    // ∂a/∂t = -β·lapI + g·m·b - V·b ;  ∂b/∂t = β·lapR - g·m·a + V·a
+    float da = -beta * lapI + gnl * m * b - V * b;
+    float db =  beta * lapR - gnl * m * a + V * a;
+    float na = a + dt * da;
+    float nb = b + dt * db;
+    // clamp amplitude to avoid blowup in the live preview
+    float mag = sqrt(na * na + nb * nb);
+    if (mag > 4.0) { na *= 4.0 / mag; nb *= 4.0 / mag; }
+    f_color = vec4(na, nb, 0.0, 1.0);
+}
+''')
+
+_register("nls_display",
+          "NLSE display: phase -> hue, amplitude -> brightness (combined style)",
+          "procedural", '''
+void main() {
+    vec4 s = texture(u_texture, v_uv);
+    float a = s.r, b = s.g;
+    float amp = clamp(sqrt(a * a + b * b), 0.0, 1.0);
+    float phase = atan(b, a);              // -pi..pi
+    float hue = (phase + 3.14159265) / 6.28318530;
+    vec3 col = clamp(abs(fract(hue + vec3(0.0, 0.6667, 0.3333)) * 6.0 - 3.0) - 1.0, 0.0, 1.0);
+    f_color = vec4(col * (0.35 + 0.65 * amp), 1.0);
+}
+''')
