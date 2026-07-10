@@ -8,3 +8,4 @@ from . import compositing  # blend, math_merge, field_combine, particle_merge, a
 from . import system  # Timeline — global animation clock node
 from . import custom_shader  # Custom GLSL Shader — live GLSL editor node
 from . import io_nodes  # Image Import / Video Import — file source nodes
+from . import blender_render  # Blender Render — live Blender MCP 3D source node
