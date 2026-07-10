@@ -5688,3 +5688,233 @@ _register("kaleido_bloom_typed", "Kaleidoscopic petal bloom (typed, node 282)",
     "speed":  {"glsl": "float", "min": 0.0, "max": 6.0, "default": 1.0,
                "description": "rotation speed"},
 })
+
+# ── Categorical coverage pt.9 (typed closed-form patterns, nodes 283-288) ──
+# superformula, harmonograph, Maurer rose, magnetic dipole field, star polygon,
+# torus-knot ribbon. Each is a pure f(uv, t) → exact CPU/GPU parity (P0.6),
+# continuous-time motion only. Six more distinct math_art generators in the
+# same family as 265-282.
+
+_register("superformula_typed", "Superformula: Gielis radial curve sweep (typed, node 283)",
+          "procedural", _INFERNO_GPU + '''void main() {
+    vec2 p = (v_uv - 0.5);
+    p.x *= u_resolution.x / u_resolution.y;
+    float t = u_time * 0.1 * u_speed;
+    float r = length(p);
+    float a = atan(p.y, p.x);
+    // Superformula radius for normalized angle a (continuous t rotation).
+    float aa = a + t;
+    float ca = cos(u_m * aa / 4.0);
+    float sa = sin(u_n * aa / 4.0);
+    float ra = pow(abs(ca), u_b) + pow(abs(sa), u_c);
+    ra = pow(max(ra, 1e-4), -1.0 / u_p);
+    float rr = ra * u_scale;
+    float d = abs(r - rr);
+    float line = smoothstep(u_thick, u_thick * 0.3, d);
+    vec3 col = mix(u_bg, inferno(clamp(r / max(u_scale, 1e-3), 0.0, 1.0)), line);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "m":     {"glsl": "float", "min": 1.0, "max": 20.0, "default": 6.0,
+              "description": "superformula m (symmetry)"},
+    "n":     {"glsl": "float", "min": 1.0, "max": 20.0, "default": 8.0,
+              "description": "superformula n"},
+    "b":     {"glsl": "float", "min": 0.2, "max": 6.0, "default": 1.0,
+              "description": "exponent b"},
+    "c":     {"glsl": "float", "min": 0.2, "max": 6.0, "default": 1.0,
+              "description": "exponent c"},
+    "p":     {"glsl": "float", "min": 0.2, "max": 6.0, "default": 1.0,
+              "description": "exponent p"},
+    "scale": {"glsl": "float", "min": 0.3, "max": 1.2, "default": 0.85,
+              "description": "curve radius"},
+    "thick": {"glsl": "float", "min": 0.006, "max": 0.08, "default": 0.02,
+              "description": "line thickness"},
+    "speed": {"glsl": "float", "min": 0.0, "max": 6.0, "default": 1.0,
+              "description": "rotation speed"},
+    "bg":    {"glsl": "color", "default": "#04060c", "description": "background"},
+})
+
+_register("harmonograph_typed", "Harmonograph: decaying Lissajous trace (typed, node 284)",
+          "procedural", '''void main() {
+    vec2 p = (v_uv - 0.5) * 2.0;
+    p.x *= u_resolution.x / u_resolution.y;
+    float t = u_time * 0.3 * u_speed;
+    float best = 1e9;
+    int N = int(u_steps);
+    for (int i = 0; i < 400; i++) {
+        if (i >= N) break;
+        float s = float(i) / float(N) * 6.28318530 * u_turns;
+        float env = exp(-u_decay * float(i) / float(N));
+        vec2 q = vec2(
+            sin(u_fx * s + u_px + t) * env,
+            sin(u_fy * s + u_py) * env
+        ) * u_scale;
+        best = min(best, length(p - q));
+    }
+    float line = smoothstep(u_thick, u_thick * 0.3, best);
+    vec3 col = mix(u_bg, u_fg, line);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "fx":    {"glsl": "float", "min": 1.0, "max": 12.0, "default": 2.0,
+              "description": "x frequency"},
+    "fy":    {"glsl": "float", "min": 1.0, "max": 12.0, "default": 3.0,
+              "description": "y frequency"},
+    "px":    {"glsl": "float", "min": 0.0, "max": 6.28, "default": 0.0,
+              "description": "x phase"},
+    "py":    {"glsl": "float", "min": 0.0, "max": 6.28, "default": 1.57,
+              "description": "y phase"},
+    "decay": {"glsl": "float", "min": 0.0, "max": 4.0, "default": 1.2,
+              "description": "amplitude decay"},
+    "turns": {"glsl": "float", "min": 1.0, "max": 12.0, "default": 6.0,
+              "description": "number of turns"},
+    "steps": {"glsl": "int", "min": 60, "max": 400, "default": 300,
+              "description": "trace resolution"},
+    "scale": {"glsl": "float", "min": 0.3, "max": 0.95, "default": 0.8,
+              "description": "figure size"},
+    "thick": {"glsl": "float", "min": 0.01, "max": 0.12, "default": 0.04,
+              "description": "trace thickness"},
+    "speed": {"glsl": "float", "min": 0.0, "max": 6.0, "default": 1.0,
+              "description": "drift speed"},
+    "bg":    {"glsl": "color", "default": "#05070e", "description": "background"},
+    "fg":    {"glsl": "color", "default": "#7ad7ff", "description": "trace color"},
+})
+
+_register("maurer_rose_typed", "Maurer rose: polygonal line sculpture (typed, node 285)",
+          "procedural", _INFERNO_GPU + '''void main() {
+    vec2 p = (v_uv - 0.5);
+    p.x *= u_resolution.x / u_resolution.y;
+    float t = u_time * 0.08 * u_speed;
+    float best = 1e9;
+    int N = int(u_steps);
+    float d = 3.14159265 / 180.0 * u_deg;
+    for (int i = 0; i < 720; i++) {
+        if (i >= N) break;
+        float k = float(i);
+        float ang = k * d + t;
+        float rr = u_scale * sin(u_petals * ang);
+        vec2 q = vec2(cos(ang), sin(ang)) * rr;
+        best = min(best, length(p - q));
+    }
+    float line = smoothstep(u_thick, u_thick * 0.3, best);
+    vec3 col = mix(u_bg, inferno(clamp(length(p) / max(u_scale,1e-3), 0.0, 1.0)), line);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "petals": {"glsl": "float", "min": 2.0, "max": 20.0, "default": 6.0,
+               "description": "rose petal count"},
+    "deg":    {"glsl": "float", "min": 1.0, "max": 180.0, "default": 29.0,
+               "description": "connector angle (deg)"},
+    "steps":  {"glsl": "int", "min": 60, "max": 720, "default": 360,
+               "description": "vertex count"},
+    "scale":  {"glsl": "float", "min": 0.3, "max": 1.2, "default": 0.9,
+               "description": "flower radius"},
+    "thick":  {"glsl": "float", "min": 0.004, "max": 0.06, "default": 0.015,
+               "description": "line thickness"},
+    "speed":  {"glsl": "float", "min": 0.0, "max": 6.0, "default": 1.0,
+               "description": "rotation speed"},
+    "bg":     {"glsl": "color", "default": "#05060c", "description": "background"},
+})
+
+_register("magnetic_typed", "Magnetic dipole field: field-line ribbons (typed, node 286)",
+          "procedural", _INFERNO_GPU + '''void main() {
+    vec2 p = (v_uv - 0.5);
+    p.x *= u_resolution.x / u_resolution.y;
+    float t = u_time * 0.1 * u_speed;
+    // Distance to a dipole at origin; field strength falls as 1/r^3 inside.
+    float r = max(length(p), 0.04);
+    float pa = atan(p.y, p.x) + t;
+    // Dipole potential ~ cos^2(theta) - 0.5 ; draw iso-lines of it.
+    float pot = cos(pa) * cos(pa) - 0.5;
+    float bands = sin(pot * u_lines * 6.28318530 / max(r, 0.04) * u_tight);
+    float line = smoothstep(1.0 - u_sharp, 1.0, abs(bands));
+    vec3 col = mix(u_bg, inferno(clamp(1.0 - r / (u_scale + 1e-3), 0.0, 1.0)), line);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "lines":  {"glsl": "float", "min": 2.0, "max": 40.0, "default": 14.0,
+               "description": "field-line count"},
+    "tight":  {"glsl": "float", "min": 0.2, "max": 3.0, "default": 1.0,
+               "description": "line tightness"},
+    "sharp":  {"glsl": "float", "min": 0.05, "max": 0.9, "default": 0.4,
+               "description": "line sharpness"},
+    "scale":  {"glsl": "float", "min": 0.3, "max": 1.2, "default": 0.9,
+               "description": "field radius"},
+    "speed":  {"glsl": "float", "min": 0.0, "max": 6.0, "default": 1.0,
+               "description": "rotation speed"},
+    "bg":     {"glsl": "color", "default": "#04060c", "description": "background"},
+})
+
+_register("star_polygon_typed", "Star polygon {n/k}: connected vertex rosette (typed, node 287)",
+          "procedural", _INFERNO_GPU + '''void main() {
+    vec2 p = (v_uv - 0.5);
+    p.x *= u_resolution.x / u_resolution.y;
+    float t = u_time * 0.12 * u_speed;
+    int N = int(u_points);
+    int K = int(clamp(u_skip, 1.0, float(N) - 1.0));
+    float best = 1e9;
+    for (int i = 0; i < 240; i++) {
+        if (i >= N) break;
+        float a0 = (float(i) / float(N)) * 6.28318530 + t;
+        float a1 = (float((i + K) % N) / float(N)) * 6.28318530 + t;
+        vec2 v0 = vec2(cos(a0), sin(a0)) * u_scale;
+        vec2 v1 = vec2(cos(a1), sin(a1)) * u_scale;
+        vec2 d = v1 - v0;
+        float l2 = max(dot(d, d), 1e-6);
+        float h = clamp(dot(p - v0, d) / l2, 0.0, 1.0);
+        best = min(best, length(p - (v0 + d * h)));
+    }
+    float line = smoothstep(u_thick, u_thick * 0.3, best);
+    vec3 col = mix(u_bg, inferno(clamp(length(p) / max(u_scale,1e-3), 0.0, 1.0)), line);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "points": {"glsl": "int", "min": 5, "max": 40, "default": 12,
+               "description": "vertex count n"},
+    "skip":   {"glsl": "int", "min": 2, "max": 20, "default": 5,
+               "description": "step k ({n/k})"},
+    "scale":  {"glsl": "float", "min": 0.3, "max": 1.2, "default": 0.9,
+               "description": "polygon radius"},
+    "thick":  {"glsl": "float", "min": 0.004, "max": 0.06, "default": 0.012,
+               "description": "line thickness"},
+    "speed":  {"glsl": "float", "min": 0.0, "max": 6.0, "default": 1.0,
+               "description": "rotation speed"},
+    "bg":     {"glsl": "color", "default": "#05060c", "description": "background"},
+})
+
+_register("torusknot_typed", "Torus knot ribbon: parametric (p,q) knot (typed, node 288)",
+          "procedural", _INFERNO_GPU + '''void main() {
+    vec2 p = (v_uv - 0.5) * 2.0;
+    p.x *= u_resolution.x / u_resolution.y;
+    float t = u_time * 0.2 * u_speed;
+    float best = 1e9;
+    int N = int(u_steps);
+    for (int i = 0; i < 600; i++) {
+        if (i >= N) break;
+        float s = float(i) / float(N) * 6.28318530;
+        float r = cos(u_q * s) + u_rad;
+        vec2 q = vec2(sin(u_p * s + t) * r, cos(u_p * s + t) * r) * u_scale;
+        best = min(best, length(p - q));
+    }
+    float line = smoothstep(u_thick, u_thick * 0.3, best);
+    float hue = clamp(atan(p.y, p.x) / 6.28318530 + 0.5, 0.0, 1.0);
+    vec3 col = mix(u_bg, inferno(hue), line);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "p":     {"glsl": "float", "min": 1.0, "max": 12.0, "default": 2.0,
+              "description": "knot winding p"},
+    "q":     {"glsl": "float", "min": 1.0, "max": 12.0, "default": 3.0,
+              "description": "knot winding q"},
+    "rad":   {"glsl": "float", "min": 0.0, "max": 2.0, "default": 0.8,
+              "description": "tube offset"},
+    "steps": {"glsl": "int", "min": 120, "max": 600, "default": 400,
+              "description": "curve resolution"},
+    "scale": {"glsl": "float", "min": 0.2, "max": 0.8, "default": 0.45,
+              "description": "knot size"},
+    "thick": {"glsl": "float", "min": 0.01, "max": 0.12, "default": 0.035,
+              "description": "ribbon thickness"},
+    "speed": {"glsl": "float", "min": 0.0, "max": 6.0, "default": 1.0,
+              "description": "rotation speed"},
+    "bg":    {"glsl": "color", "default": "#04060c", "description": "background"},
+})

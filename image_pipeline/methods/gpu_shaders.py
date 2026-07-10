@@ -239,6 +239,15 @@ _TYPED_SHADER_NODES = [
     ("280", "interference_typed",  "GPU Wave Interference"),
     ("281", "flow_field_typed",    "GPU Flow Field"),
     ("282", "kaleido_bloom_typed", "GPU Kaleido Bloom"),
+    # Categorical coverage pt.9 (2026-07-11): closed-form math_art patterns
+    # with NAMED typed controls — superformula, harmonograph, Maurer rose,
+    # magnetic dipole field, star polygon {n/k}, torus-knot ribbon.
+    ("283", "superformula_typed",  "GPU Superformula"),
+    ("284", "harmonograph_typed",  "GPU Harmonograph"),
+    ("285", "maurer_rose_typed",   "GPU Maurer Rose"),
+    ("286", "magnetic_typed",      "GPU Magnetic Field"),
+    ("287", "star_polygon_typed",  "GPU Star Polygon"),
+    ("288", "torusknot_typed",     "GPU Torus Knot"),
 ]
 
 _TIME_SCALE_PARAM = {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0}
