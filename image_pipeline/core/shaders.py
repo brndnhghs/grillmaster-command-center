@@ -5918,3 +5918,175 @@ _register("torusknot_typed", "Torus knot ribbon: parametric (p,q) knot (typed, n
               "description": "rotation speed"},
     "bg":    {"glsl": "color", "default": "#04060c", "description": "background"},
 })
+
+# ── Typed closed-form patterns pt.10 (ids 289-294) ─────────────────────────
+# Categorical coverage continuation (2026-07-11): classic generative-art
+# patterns with NAMED typed controls — infinite zoom tunnel, vortex/galaxy
+# field, woven fabric, topographic contour map, cross-hatch engraving, and a
+# domain-warped grid lattice. All closed-form f(uv,t); additive live-preview
+# twins. CPU fns stay authoritative; these are a convenience layer.
+
+_register("tunnel_typed", "Infinite zoom tunnel: polar depth-warp with typed arms/freq/falloff (node 289)",
+          "procedural", _INFERNO_GPU + '''void main() {
+    vec2 p = (v_uv - 0.5) * 2.0;
+    p.x *= u_resolution.x / u_resolution.y;
+    float r = max(length(p), 1e-3);
+    float a = atan(p.y, p.x);
+    float t = u_time * u_speed;
+    float depth = u_scale / r + t * 0.5;
+    float rings = 0.5 + 0.5 * sin(depth * u_freq);
+    float spokes = 0.5 + 0.5 * sin(a * u_arms + depth * 0.5);
+    float v = rings * 0.6 + spokes * 0.4;
+    vec3 col = inferno(fract(depth) * 0.9 + 0.05);
+    col = mix(u_bg, col, smoothstep(0.0, u_falloff, r));
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "speed":   {"glsl": "float", "min": 0.0, "max": 4.0, "default": 1.0,
+                "description": "zoom speed"},
+    "scale":   {"glsl": "float", "min": 0.05, "max": 1.5, "default": 0.35,
+                "description": "tunnel depth scale"},
+    "freq":    {"glsl": "float", "min": 1.0, "max": 40.0, "default": 12.0,
+                "description": "ring frequency"},
+    "arms":    {"glsl": "float", "min": 1.0, "max": 16.0, "default": 6.0,
+                "description": "spoke count"},
+    "falloff": {"glsl": "float", "min": 0.1, "max": 1.5, "default": 0.55,
+                "description": "edge fade"},
+    "bg":      {"glsl": "color", "default": "#040610", "description": "vanishing point"},
+})
+
+_register("vortex_typed", "Spiral vortex / galaxy field with typed arms/twist/falloff (node 290)",
+          "procedural", '''void main() {
+    vec2 p = (v_uv - 0.5) * 2.0;
+    p.x *= u_resolution.x / u_resolution.y;
+    float r = length(p);
+    float a = atan(p.y, p.x);
+    float t = u_time * u_speed;
+    float swirl = a + r * u_twist - t;
+    float bands = 0.5 + 0.5 * sin(swirl * u_arms);
+    float density = exp(-r * u_falloff);
+    vec3 col = mix(u_bg, mix(u_color_a, u_color_b, bands), density);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "speed":   {"glsl": "float", "min": 0.0, "max": 4.0, "default": 0.8,
+                "description": "spin speed"},
+    "arms":    {"glsl": "float", "min": 1.0, "max": 24.0, "default": 4.0,
+                "description": "spiral arm count"},
+    "twist":   {"glsl": "float", "min": -8.0, "max": 8.0, "default": 3.0,
+                "description": "winding tightness"},
+    "falloff": {"glsl": "float", "min": 0.5, "max": 8.0, "default": 2.6,
+                "description": "core brightness falloff"},
+    "color_a": {"glsl": "color", "default": "#1b2a6b", "description": "arm color A"},
+    "color_b": {"glsl": "color", "default": "#ffd27a", "description": "arm color B"},
+    "bg":      {"glsl": "color", "default": "#050308", "description": "background"},
+})
+
+_register("weave_typed", "Woven fabric: over/under threads on a typed checker grid (node 291)",
+          "procedural", '''void main() {
+    vec2 uv = v_uv * u_scale;
+    uv += u_time * u_speed * 0.05;
+    vec2 g = floor(uv);
+    vec2 fv = fract(uv);
+    float parity = mod(g.x + g.y, 2.0);
+    float bulge;
+    float along;
+    if (parity < 0.5) { bulge = sin(fv.y * 3.14159265); along = fv.x; }
+    else              { bulge = sin(fv.x * 3.14159265); along = fv.y; }
+    float thread = smoothstep(0.0, 0.5, bulge) * smoothstep(1.0, 0.5, bulge);
+    float shade = 0.5 + 0.5 * sin(along * 3.14159265);
+    vec3 base = (parity < 0.5) ? u_color_a : u_color_b;
+    vec3 col = base * (0.45 + 0.6 * shade);
+    col *= (0.35 + 0.65 * thread);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "scale":   {"glsl": "float", "min": 2.0, "max": 40.0, "default": 12.0,
+                "description": "thread count"},
+    "speed":   {"glsl": "float", "min": 0.0, "max": 4.0, "default": 1.0,
+                "description": "drift speed"},
+    "color_a": {"glsl": "color", "default": "#b3421f", "description": "weft color"},
+    "color_b": {"glsl": "color", "default": "#1f5ab3", "description": "warp color"},
+})
+
+_register("contour_typed", "Topographic contour map of FBM terrain with typed levels/thickness (node 292)",
+          "procedural", '''void main() {
+    vec2 p = (v_uv - 0.5) * 2.0;
+    p.x *= u_resolution.x / u_resolution.y;
+    float n = fbm(p * u_freq + u_time * 0.03 * u_speed);
+    vec3 col = mix(u_color_a, u_color_b, clamp(n, 0.0, 1.0));
+    float c = n * u_levels;
+    float d = abs(fract(c) - 0.5) * 2.0;
+    float line = smoothstep(u_thick, u_thick * 0.3, d);
+    col = mix(col, u_line, line);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "speed":  {"glsl": "float", "min": 0.0, "max": 4.0, "default": 1.0,
+               "description": "terrain drift"},
+    "freq":   {"glsl": "float", "min": 1.0, "max": 12.0, "default": 3.5,
+               "description": "terrain feature size"},
+    "levels": {"glsl": "float", "min": 2.0, "max": 40.0, "default": 14.0,
+               "description": "contour line count"},
+    "thick":  {"glsl": "float", "min": 0.02, "max": 0.4, "default": 0.12,
+               "description": "line thickness"},
+    "color_a": {"glsl": "color", "default": "#0d3b2e", "description": "low elevation"},
+    "color_b": {"glsl": "color", "default": "#e8d8a0", "description": "high elevation"},
+    "line":   {"glsl": "color", "default": "#1a1208", "description": "contour ink"},
+})
+
+_register("hatch_typed", "Cross-hatch engraving shading over procedural luminance (node 293)",
+          "procedural", '''void main() {
+    vec2 p = (v_uv - 0.5) * 2.0;
+    p.x *= u_resolution.x / u_resolution.y;
+    float lum = fbm(p * u_freq + u_time * 0.04 * u_speed);
+    float ang = radians(u_angle);
+    vec2 dir = vec2(cos(ang), sin(ang));
+    float h1 = step(0.5, fract(dot(p, dir) * u_density));
+    vec2 dir2 = vec2(cos(ang + 1.5707963), sin(ang + 1.5707963));
+    float h2 = step(0.5, fract(dot(p, dir2) * u_density));
+    float ink = (1.0 - lum) * h1;
+    ink = max(ink, (1.0 - lum * 0.5) * h2 * step(0.5, lum));
+    vec3 col = mix(u_paper, u_ink, clamp(ink, 0.0, 1.0));
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "speed":   {"glsl": "float", "min": 0.0, "max": 4.0, "default": 1.0,
+                "description": "luminance drift"},
+    "freq":    {"glsl": "float", "min": 1.0, "max": 12.0, "default": 3.0,
+                "description": "shading feature size"},
+    "angle":   {"glsl": "float", "min": 0.0, "max": 90.0, "default": 35.0,
+                "description": "hatch angle (deg)"},
+    "density": {"glsl": "float", "min": 4.0, "max": 80.0, "default": 28.0,
+                "description": "line density"},
+    "paper":   {"glsl": "color", "default": "#f2efe2", "description": "paper"},
+    "ink":     {"glsl": "color", "default": "#15110c", "description": "ink"},
+})
+
+_register("gridwarp_typed", "Domain-warped grid lattice with typed warp/cells/width (node 294)",
+          "procedural", '''void main() {
+    vec2 g = v_uv * u_cells;
+    vec2 w = vec2(
+        fbm(g * 0.5 + u_time * 0.05 * u_speed),
+        fbm(g * 0.5 + 7.3 - u_time * 0.05 * u_speed)
+    ) - 0.5;
+    g += w * u_warp;
+    vec2 f = fract(g);
+    float lx = smoothstep(u_width, 0.0, min(f.x, 1.0 - f.x));
+    float ly = smoothstep(u_width, 0.0, min(f.y, 1.0 - f.y));
+    float line = max(lx, ly);
+    vec3 col = mix(u_bg, u_line, line);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "speed":  {"glsl": "float", "min": 0.0, "max": 4.0, "default": 1.0,
+               "description": "warp flow speed"},
+    "cells":  {"glsl": "float", "min": 2.0, "max": 60.0, "default": 14.0,
+               "description": "grid cell count"},
+    "width":  {"glsl": "float", "min": 0.02, "max": 0.4, "default": 0.12,
+               "description": "line width"},
+    "warp":   {"glsl": "float", "min": 0.0, "max": 2.0, "default": 0.7,
+               "description": "domain warp strength"},
+    "bg":     {"glsl": "color", "default": "#0a0a12", "description": "background"},
+    "line":   {"glsl": "color", "default": "#43e8d8", "description": "grid line"},
+})

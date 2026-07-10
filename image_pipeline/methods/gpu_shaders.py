@@ -247,7 +247,16 @@ _TYPED_SHADER_NODES = [
     ("285", "maurer_rose_typed",   "GPU Maurer Rose"),
     ("286", "magnetic_typed",      "GPU Magnetic Field"),
     ("287", "star_polygon_typed",  "GPU Star Polygon"),
-    ("288", "torusknot_typed",     "GPU Torus Knot"),
+    ("288", "torusknot_typed",   "GPU Torus Knot"),
+    # Categorical coverage pt.10 (2026-07-11): closed-form pattern nodes with
+    # NAMED typed controls — infinite tunnel, vortex/galaxy field, woven fabric,
+    # topographic contour map, cross-hatch engraving, domain-warped grid.
+    ("289", "tunnel_typed",    "GPU Tunnel"),
+    ("290", "vortex_typed",    "GPU Vortex"),
+    ("291", "weave_typed",     "GPU Weave"),
+    ("292", "contour_typed",   "GPU Contour Map"),
+    ("293", "hatch_typed",     "GPU Cross-Hatch"),
+    ("294", "gridwarp_typed",  "GPU Warp Grid"),
 ]
 
 _TIME_SCALE_PARAM = {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0}
