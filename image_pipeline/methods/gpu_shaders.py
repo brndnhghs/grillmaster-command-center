@@ -442,6 +442,31 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "reset_on": ["seed", "param", "loop", "resize"],
         "param_map": {"epsilon": "p1", "omega0": "p2", "damping": "p3", "diffusion": "p4"},
     },
+    # ── P1.3b — Fluid / surface-growth / lattice sim twins ──
+    # 132 Shallow Water Waves: p1=gravity, p2=base_depth, p3=viscosity, p4=amplitude.
+    "132": {
+        "type": "sim",
+        "seed": "sw_seed", "step": "sw_step", "display": "sw_display",
+        "state_channels": 3, "substeps": 4,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"gravity": "p1", "base_depth": "p2", "nu": "p3", "amplitude": "p4"},
+    },
+    # 135 KPZ Surface Growth: p1=nu, p2=lambda, p3=noise_amplitude, p4=dt.
+    "135": {
+        "type": "sim",
+        "seed": "kpz_seed", "step": "kpz_step", "display": "kpz_display",
+        "state_channels": 2, "substeps": 6,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"nu": "p1", "lam": "p2", "noise_amplitude": "p3", "dt": "p4"},
+    },
+    # 150 FPU Chain Lattice: p1=k2, p2=k3, p3=k4, p4=dt.
+    "150": {
+        "type": "sim",
+        "seed": "fpu_seed", "step": "fpu_step", "display": "fpu_display",
+        "state_channels": 2, "substeps": 6,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"k2": "p1", "k3": "p2", "k4": "p3", "dt": "p4"},
+    },
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SIMS)
 

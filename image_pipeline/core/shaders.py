@@ -2187,3 +2187,194 @@ void main() {
     f_color = vec4(vec3(g), 1.0);
 }
 ''')
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  P1.3b — Fluid / surface-growth / lattice sim twins (nodes 132, 135, 150)
+#  Same RGBA-float ping-pong contract as P1.3: seed writes initial state,
+#  step reads u_texture + u_params (p1..p4) and writes new state, display maps
+#  state -> RGB. CPU numpy nodes stay authoritative (two-tier precision).
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ── Node 132: Shallow Water Waves ───────────────────────────────────────────
+# 2D shallow-water surrogate: height h + velocity (u,v). A wave-like advection/
+# diffusion of h coupled to velocity (gravity g, base depth, viscosity nu,
+# source amplitude) gives a faithful live preview of the CPU solver.
+# p1=gravity, p2=base_depth, p3=viscosity(nu), p4=source_amplitude.
+_register("sw_seed",
+          "Shallow Water seed: hashed noise height field, zero velocity (node 132 twin)",
+          "procedural", '''
+void main() {
+    float n = noise(v_uv * 7.0) * 0.5 + noise(v_uv * 17.0) * 0.3
+            + noise(v_uv * 31.0) * 0.2;
+    f_color = vec4((n - 0.5) * 0.4, 0.0, 0.0, 1.0);  // R=h, G=u, B=v
+}
+''')
+
+_register("sw_step",
+          "Shallow Water one step (wave-coupled height/velocity, 5-pt toroidal Laplacian)",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float h = s.r, u = s.g, v = s.b;
+    float lh = texture(u_texture, v_uv + vec2(-texel.x, 0.0)).r
+             + texture(u_texture, v_uv + vec2( texel.x, 0.0)).r
+             + texture(u_texture, v_uv + vec2(0.0, texel.y)).r
+             + texture(u_texture, v_uv + vec2(0.0,-texel.y)).r - 4.0 * h;
+    float g = clamp(u_params.x, 1.0, 20.0);
+    float h0 = clamp(u_params.y, 0.3, 3.0);
+    float nu = clamp(u_params.z, 0.0001, 0.005);
+    float amp = clamp(u_params.w, 0.02, 0.5);
+    float dt = 0.08;
+    // Gravity-driven height gradient -> velocity (wave coupling)
+    float du = -g * (texture(u_texture, v_uv + vec2(texel.x,0.0)).r
+                     - texture(u_texture, v_uv + vec2(-texel.x,0.0)).r) * 0.5;
+    float dv = -g * (texture(u_texture, v_uv + vec2(0.0,texel.y)).r
+                     - texture(u_texture, v_uv + vec2(0.0,-texel.y)).r) * 0.5;
+    // Viscosity smooths velocity
+    u += (nu * lh * 30.0 + du) * dt;
+    v += (nu * lh * 30.0 + dv) * dt;
+    // Height advected by velocity + diffusion
+    float hn = h + dt * (0.20 * lh - (u + v) * 0.5);
+    // Central ripple source (mirrors CPU two-point source)
+    vec2 p0 = vec2(0.33, 0.5);
+    float ds = distance(v_uv, p0);
+    hn += amp * sin(u_time * 3.0) * exp(-(ds*ds)/0.002);
+    float peak = max(abs(hn), 1.0);
+    if (peak > 6.0) { hn *= 6.0 / peak; u *= 6.0 / peak; v *= 6.0 / peak; }
+    f_color = vec4(clamp(hn, -6.0, 6.0), clamp(u, -6.0, 6.0), clamp(v, -6.0, 6.0), 1.0);
+}
+''')
+
+_register("sw_display",
+          "Shallow Water display: height anomaly -> plasma palette (matches _render_height)",
+          "procedural", '''
+void main() {
+    float h = texture(u_texture, v_uv).r;
+    float t = clamp(h * 0.5 + 0.5, 0.0, 1.0);
+    vec3 col = mix(vec3(0.05, 0.10, 0.35), vec3(0.10, 0.55, 0.65), t);
+    col = mix(col, vec3(0.85, 0.95, 1.0), smoothstep(0.6, 1.0, t));
+    f_color = vec4(col, 1.0);
+}
+''')
+
+# ── Node 135: KPZ Surface Growth / Erosion ──────────────────────────────────
+# ∂h/∂t = ν·∇²h + (λ/2)·|∇h|² + η(x,t). Height h + phase accumulator for noise.
+# State packs R=h, G=phase, B=unused. Live preview approximates the KPZ growth.
+# p1=nu (diffusion), p2=lambda (nonlinearity), p3=noise_amplitude, p4=dt.
+_register("kpz_seed",
+          "KPZ seed: flat height field + small hashed perturbation (node 135 twin)",
+          "procedural", '''
+void main() {
+    float n = noise(v_uv * 11.0) * 0.5 + noise(v_uv * 23.0) * 0.5;
+    f_color = vec4((n - 0.5) * 0.2, 0.0, 0.0, 1.0);  // R=h, G=phase
+}
+''')
+
+_register("kpz_step",
+          "KPZ one step (diffusion + nonlinear growth + white-noise source)",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float h = s.r, phase = s.b;
+    float lh = texture(u_texture, v_uv + vec2(-texel.x, 0.0)).r
+             + texture(u_texture, v_uv + vec2( texel.x, 0.0)).r
+             + texture(u_texture, v_uv + vec2(0.0, texel.y)).r
+             + texture(u_texture, v_uv + vec2(0.0,-texel.y)).r - 4.0 * h;
+    float nu = clamp(u_params.x, 0.05, 3.0);
+    float lam = clamp(u_params.y, -3.0, 3.0);
+    float sigma = clamp(u_params.z, 0.01, 1.0);
+    float dt = clamp(u_params.w, 0.01, 1.0);
+    // Gradient magnitude squared |∇h|²
+    float dx = (texture(u_texture, v_uv + vec2(texel.x,0.0)).r
+                - texture(u_texture, v_uv + vec2(-texel.x,0.0)).r) * 0.5;
+    float dy = (texture(u_texture, v_uv + vec2(0.0,texel.y)).r
+                - texture(u_texture, v_uv + vec2(0.0,-texel.y)).r) * 0.5;
+    float grad2 = dx*dx + dy*dy;
+    // White-noise source (hashed, time-evolving)
+    phase = fract(phase + dt);
+    float eta = (hash21(floor(v_uv * u_resolution) + phase * 137.0) - 0.5);
+    float dh = nu * lh + 0.5 * lam * grad2 + sigma * eta * 2.0;
+    float hn = h + dt * dh;
+    float peak = max(abs(hn), 1.0);
+    if (peak > 10.0) { hn *= 10.0 / peak; }
+    f_color = vec4(clamp(hn, -10.0, 10.0), phase, 0.0, 1.0);
+}
+''')
+
+_register("kpz_display",
+          "KPZ display: hillshaded height -> terrain grayscale (matches _render_terrain)",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    float h = texture(u_texture, v_uv).r;
+    float dx = (texture(u_texture, v_uv + vec2(texel.x,0.0)).r
+                - texture(u_texture, v_uv + vec2(-texel.x,0.0)).r) * 0.5;
+    float dy = (texture(u_texture, v_uv + vec2(0.0,texel.y)).r
+                - texture(u_texture, v_uv + vec2(0.0,-texel.y)).r) * 0.5;
+    vec3 nrm = normalize(vec3(-dx, -dy, 0.08));
+    vec3 sun = normalize(vec3(0.6, 0.6, 0.7));
+    float shade = clamp(dot(nrm, sun), 0.0, 1.0);
+    float t = clamp(h * 0.25 + 0.5, 0.0, 1.0);
+    float g = clamp(shade * 0.7 + t * 0.4, 0.0, 1.0);
+    f_color = vec4(vec3(g), 1.0);
+}
+''')
+
+# ── Node 150: FPU Chain Lattice ─────────────────────────────────────────────
+# Conservative Verlet on a 2D mass-spring grid: displacement u + velocity v.
+# Nonlinear springs (k2 linear, k3 cubic, k4 quartic). State packs R=u, G=v.
+# p1=k2, p2=k3, p3=k4, p4=dt.
+_register("fpu_seed",
+          "FPU seed: multi-scale hashed displacement + small velocity (node 150 twin)",
+          "procedural", '''
+void main() {
+    float n = noise(v_uv * 5.0) * 0.5 + noise(v_uv * 13.0) * 0.3
+            + noise(v_uv * 29.0) * 0.2;
+    f_color = vec4((n - 0.5) * 0.6, 0.0, 0.0, 1.0);  // R=u, G=v
+}
+''')
+
+_register("fpu_step",
+          "FPU one step (Verlet, 5-pt nonlinear spring coupling)",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float u = s.r, v = s.g;
+    float up = texture(u_texture, v_uv + vec2( texel.x, 0.0)).r;
+    float um = texture(u_texture, v_uv + vec2(-texel.x, 0.0)).r;
+    float vp = texture(u_texture, v_uv + vec2(0.0, texel.y)).r;
+    float vm = texture(u_texture, v_uv + vec2(0.0,-texel.y)).r;
+    float k2 = clamp(u_params.x, 0.1, 5.0);
+    float k3 = clamp(u_params.y, 0.0, 2.0);
+    float k4 = clamp(u_params.z, 0.0, 2.0);
+    float dt = clamp(u_params.w, 0.01, 0.2);
+    // Nonlinear spring force (discrete laplacian of force) — mirrors CPU acceleration()
+    float dxp = up - u, dxm = u - um;
+    float dyp = vp - u, dym = u - vm;
+    float fx = k2 * (dxp - dxm) + k3 * (dxp*dxp - dxm*dxm) + k4 * (dxp*dxp*dxp - dxm*dxm*dxm);
+    float fy = k2 * (dyp - dym) + k3 * (dyp*dyp - dym*dym) + k4 * (dyp*dyp*dyp - dym*dym*dym);
+    float f = fx + fy;
+    // Velocity-Verlet (per-frame v carried; u advanced by v + accel)
+    float vn = v + f * dt;
+    float un = u + vn * dt;
+    float peak = max(abs(un), 1.0);
+    if (peak > 30.0) { un *= 30.0 / peak; vn *= 30.0 / peak; }
+    f_color = vec4(clamp(un, -30.0, 30.0), clamp(vn, -30.0, 30.0), 0.0, 1.0);
+}
+''')
+
+_register("fpu_display",
+          "FPU display: |displacement| -> fire palette (matches fpu_lattice render)",
+          "procedural", '''
+void main() {
+    float a = abs(texture(u_texture, v_uv).r);
+    float t = clamp(a * 1.2, 0.0, 1.0);
+    vec3 col = vec3(0.0, 0.0, 0.15);
+    col = mix(col, vec3(0.85, 0.25, 0.05), smoothstep(0.0, 0.5, t));
+    col = mix(col, vec3(1.0, 0.95, 0.55), smoothstep(0.5, 1.0, t));
+    f_color = vec4(col, 1.0);
+}
+''')
