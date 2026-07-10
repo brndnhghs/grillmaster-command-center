@@ -287,20 +287,26 @@ def get_all_node_defs() -> dict[str, dict]:
     for mid, meta in registry.get_all().items():
         nd = _make_node_def(meta)
         result[mid] = {
-            "method_id":   nd.method_id,
-            "name":        meta.name,
-            "category":    meta.category,
-            "tags":        meta.tags,
-            "params":      meta.params,
-            "inputs":      dict(nd.inputs),
-            "outputs":     dict(nd.outputs),
-            "param_ports": list(nd.param_ports),
-            "description": meta.description,
-            "version":     meta.version,
-            "deprecated":  meta.deprecated,
-            "start_frame": 0,
-            "end_frame":   0,
-            "prebake":     0,
+            "method_id":       nd.method_id,
+            "name":            meta.name,
+            "category":        meta.category,
+            "tags":            meta.tags,
+            "params":          meta.params,
+            "inputs":          dict(nd.inputs),
+            "outputs":         dict(nd.outputs),
+            "param_ports":     list(nd.param_ports),
+            "description":     meta.description,
+            "version":         meta.version,
+            "deprecated":      meta.deprecated,
+            # Surface time-variance so the graph editor / external agents can
+            # reason about whether a node advances per frame. The live loop
+            # already reads this from the registry; this just exposes it in
+            # the serialised contract (e.g. Blender Render needs is_time_varying
+            # True to re-cook the spin animation each frame).
+            "is_time_varying": meta.is_time_varying,
+            "start_frame":     0,
+            "end_frame":       0,
+            "prebake":         0,
         }
     return result
 
