@@ -550,6 +550,16 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "reset_on": ["seed", "param", "loop", "resize"],
         "param_map": {"temptation": "p1", "reward": "p2", "sucker_payoff": "p3", "punishment": "p4"},
     },
+    # P1.3 complex-field PDE — Complex Ginzburg-Landau (node 126). Complex field
+    # A packed as R=Re(A), G=Im(A); explicit Euler + 5-pt Laplacian, toroidal.
+    # alpha/beta/dt are numeric node params → map cleanly to p1..p3.
+    "126": {
+        "type": "sim",
+        "seed": "cgl_seed", "step": "cgl_step", "display": "cgl_display",
+        "state_channels": 2, "substeps": 4,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"alpha": "p1", "beta": "p2", "dt": "p3"},
+    },
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SIMS)
 
