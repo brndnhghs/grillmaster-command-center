@@ -3176,3 +3176,83 @@ void main() {
     f_color = vec4(col * (0.35 + 0.65 * amp), 1.0);
 }
 ''')
+
+# ── P1.3 complex-field PDE — Gross-Pitaevskii (node 148). Same R/G complex
+# field packing as CGL/NLSE. ψ=a+ib, split-step symplectic Euler: half-step
+# nonlinear (kinetic in k-space via a precomputed k² texture) + half-step
+# potential. The live twin approximates the spectral kinetic step with a 5-pt
+# Laplacian proxy (lapR, lapI) which carries the same smoothing dynamics; the
+# CPU node stays authoritative for frame-accurate export (seeded layout +
+# full split-step Fourier differ, as expected for this PDE family).
+#   Re(k²ψ) = lapR, Im(k²ψ) = lapI ; D = (g·m + V) is real potential.
+#   half-nonlin: a' = a·cos(D·dt/2) - b·sin(D·dt/2)
+#                b' = b·cos(D·dt/2) + a·sin(D·dt/2)
+#   kinetic:     a'' = a' + α·lapI·dt ;  b'' = b' - α·lapR·dt
+#                (∂a/∂t = +α·∇²b, ∂b/∂t = -α·∇²a → curl-free rotation)
+_register("gpe_seed",
+          "GPE initial state: small random complex Gaussian bump in RG (node 148 twin)",
+          "procedural", '''
+void main() {
+    vec2 p = v_uv * u_resolution;
+    vec2 d = v_uv - 0.5;
+    float bump = exp(-dot(d, d) * 8.0);                 // central condensate
+    float a = bump * (1.0 + (hash21(p + 0.19) - 0.5) * 0.06);
+    float b = bump * (hash21(p + 7.31) - 0.5) * 0.06;
+    f_color = vec4(a, b, 0.0, 1.0);                     // .b = accumulated sim-time (0)
+}
+''')
+
+_register("gpe_step",
+          "GPE one symplectic Euler step (5-pt Laplacian proxy for kinetic) — complex field in RG",
+          "procedural", '''
+void main() {
+    // NOTE: u_time is 0 here (renderGpuSim passes no time to step shaders,
+    // pitfall #6b). We carry an accumulating sim-time in the .b state channel
+    // so the stirrer orbits and the live preview actually moves frame to frame.
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float a = s.r, b = s.g;
+    float tt = s.b;                            // accumulated sim-time (advances each step)
+    vec4 sl = texture(u_texture, v_uv + vec2(-texel.x, 0.0));
+    vec4 sr = texture(u_texture, v_uv + vec2( texel.x, 0.0));
+    vec4 su = texture(u_texture, v_uv + vec2(0.0,  texel.y));
+    vec4 sd = texture(u_texture, v_uv + vec2(0.0, -texel.y));
+    float lapR = sl.r + sr.r + su.r + sd.r - 4.0 * a;
+    float lapI = sl.g + sr.g + su.g + sd.g - 4.0 * b;
+    float gnl  = clamp(u_params.x, 0.0, 4.0);    // p1: node nonlinearity g (0.2..4.0)
+    float ss   = clamp(u_params.y, 0.02, 1.5);   // p2: node stir_speed (0.05..1.5)
+    float alpha = clamp(u_params.z, 0.02, 2.0);  // p3: node alpha / kinetic coeff (0.05..2.0)
+    float stp  = clamp(u_params.w, 0.0, 20.0);   // p4: node stir_amp (1..20)
+    float dt = 0.05;                             // fixed live-preview timestep
+    // Moving repulsive stirrer (single gaussian, orbits via accumulated time)
+    vec2 ctr = vec2(0.5 + 0.18 * sin(tt * 0.6 * ss), 0.5 + 0.14 * cos(tt * 0.5 * ss));
+    vec2 dd = v_uv - ctr;
+    float V = stp * 6.0 * exp(-dot(dd, dd) * 30.0);
+    float m = a * a + b * b;
+    float D = 0.5 * (gnl * m + V) * dt;          // half-step potential phase
+    float c = cos(D), sn = sin(D);
+    float a1 = a * c - b * sn;
+    float b1 = b * c + a * sn;
+    // kinetic step (5-pt Laplacian proxy for spectral k²)
+    float a2 = a1 + alpha * lapI * dt;
+    float b2 = b1 - alpha * lapR * dt;
+    float mag = sqrt(a2 * a2 + b2 * b2);
+    if (mag > 4.0) { a2 *= 4.0 / mag; b2 *= 4.0 / mag; }
+    f_color = vec4(a2, b2, tt + dt, 1.0);        // .b carries the advancing sim-time
+}
+''')
+
+_register("gpe_display",
+          "GPE display: phase -> hue, amplitude -> brightness (phase render style)",
+          "procedural", '''
+void main() {
+    vec4 s = texture(u_texture, v_uv);
+    float a = s.r, b = s.g;
+    float amp = clamp(sqrt(a * a + b * b), 0.0, 1.0);
+    float phase = atan(b, a);              // -pi..pi
+    float hue = (phase + 3.14159265) / 6.28318530;
+    vec3 col = clamp(abs(fract(hue + vec3(0.0, 0.6667, 0.3333)) * 6.0 - 3.0) - 1.0, 0.0, 1.0);
+    // density-weighted value: bright at moderate density, dark at vortex cores
+    f_color = vec4(col * (0.35 + 0.65 * amp), 1.0);
+}
+''')

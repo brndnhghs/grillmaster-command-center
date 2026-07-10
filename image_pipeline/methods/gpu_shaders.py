@@ -579,6 +579,17 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "reset_on": ["seed", "param", "loop", "resize"],
         "param_map": {"beta": "p1", "g": "p2", "dt": "p3", "trap_strength": "p4"},
     },
+    # P1.3 complex-field PDE — Gross-Pitaevskii (node 148). Same R/G complex
+    # field packing as CGL/NLSE. g/stir_speed/alpha/stir_amp are all numeric
+    # node params → map cleanly to p1..p4. Sim-time for the orbiting stirrer is
+    # carried in the .b state channel (step shaders get u_time=0, pitfall #6b).
+    "148": {
+        "type": "sim",
+        "seed": "gpe_seed", "step": "gpe_step", "display": "gpe_display",
+        "state_channels": 3, "substeps": 3,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"g": "p1", "stir_speed": "p2", "alpha": "p3", "stir_amp": "p4"},
+    },
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SIMS)
 
