@@ -3921,3 +3921,243 @@ void main() {
     "levels": {"glsl": "int", "min": 1, "max": 32, "default": 1,
                "description": "color quantize levels (1=off)"},
 })
+
+# ── Typed escape-time fractal nodes (ids 238-243) ───────────────────────
+# Categorical coverage for the signature fractal family (Mandelbrot / Julia /
+# Burning Ship / Newton / Sierpinski / Lyapunov). These expose NAMED, typed
+# controls (zoom, center, iteration count, palette, colors) + wireable SCALAR
+# ports, replacing the opaque p1..p4 shims for these nodes. CPU fns stay
+# authoritative; these are an additive typed-uniform convenience layer.
+_TYPED_FRACTAL_HELPERS = _FRACTAL_HELPERS + '''
+vec3 inferno_l(float t){
+    t = clamp(t, 0.0, 1.0);
+    const vec3 c0 = vec3(0.00021894, 0.00016488, -0.01907227);
+    const vec3 c1 = vec3(0.10651034, 0.56396050, 3.93279110);
+    const vec3 c2 = vec3(11.6028830, -3.9781129, -15.9420510);
+    const vec3 c3 = vec3(-41.703996, 17.4360890, 44.3541450);
+    const vec3 c4 = vec3(77.1629350, -33.402243, -81.8094230);
+    const vec3 c5 = vec3(-71.319421, 32.6260640, 73.2095190);
+    const vec3 c6 = vec3(25.1311300, -12.242810, -23.0709590);
+    return c0 + t*(c1 + t*(c2 + t*(c3 + t*(c4 + t*(c5 + t*c6)))));
+}
+vec3 _fractalColor(float t, int mode, vec3 ca, vec3 cb, float shift){
+    if (mode == 1) return inferno_l(t);
+    if (mode == 2) return mix(ca, cb, clamp(t, 0.0, 1.0));
+    return fractal_palette(t + shift);
+}
+'''
+
+_register("mandelbrot_typed", "Mandelbrot set with typed zoom/center/iter/palette (node 238)",
+          "procedural", _TYPED_FRACTAL_HELPERS + '''
+void main() {
+    vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);
+    vec2 c = vec2(u_center_x, u_center_y) + uv * (3.0 / max(u_zoom, 0.001));
+    vec2 z = vec2(0.0);
+    float n = 0.0; float last2 = 0.0;
+    const int CAP = 500;
+    for (int i = 0; i < CAP; i++) {
+        z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
+        last2 = dot(z, z); n += 1.0;
+        if (last2 > 16.0 || n >= float(u_max_iter)) break;
+    }
+    float t = (n >= float(u_max_iter) - 0.5) ? 1.0 : smooth_iter(n, last2, float(u_max_iter));
+    f_color = vec4(_fractalColor(t, u_palette, u_color_a, u_color_b, u_color_shift), 1.0);
+}
+''', uniforms={
+    "zoom":       {"glsl": "float", "min": 0.01, "max": 8.0, "default": 1.0,
+                   "description": "zoom (1 = full view)"},
+    "center_x":   {"glsl": "float", "min": -2.0, "max": 0.5, "default": -0.5,
+                   "description": "center X"},
+    "center_y":   {"glsl": "float", "min": -1.5, "max": 1.5, "default": 0.0,
+                   "description": "center Y"},
+    "max_iter":   {"glsl": "int", "min": 20, "max": 500, "default": 200,
+                   "description": "max iterations"},
+    "palette":    {"glsl": "choice", "choices": ["sine", "inferno", "grayscale"],
+                   "default": "sine", "description": "color palette"},
+    "color_shift": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.0,
+                    "description": "palette shift"},
+    "color_a":    {"glsl": "color", "default": "#05010a",
+                   "description": "color A (grayscale / holes)"},
+    "color_b":    {"glsl": "color", "default": "#ffd166",
+                   "description": "color B (grayscale)"},
+})
+
+_register("julia_typed", "Julia set with typed c/zoom/iter/palette (node 239)",
+          "procedural", _TYPED_FRACTAL_HELPERS + '''
+void main() {
+    vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);
+    vec2 c = vec2(u_cx, u_cy);
+    vec2 z = uv * (3.0 / max(u_zoom, 0.001));
+    float n = 0.0; float last2 = 0.0;
+    const int CAP = 500;
+    for (int i = 0; i < CAP; i++) {
+        z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
+        last2 = dot(z, z); n += 1.0;
+        if (last2 > 16.0 || n >= float(u_max_iter)) break;
+    }
+    float t = (n >= float(u_max_iter) - 0.5) ? 1.0 : smooth_iter(n, last2, float(u_max_iter));
+    f_color = vec4(_fractalColor(t, u_palette, u_color_a, u_color_b, u_color_shift), 1.0);
+}
+''', uniforms={
+    "cx":         {"glsl": "float", "min": -1.0, "max": 1.0, "default": -0.7269,
+                   "description": "Julia c (real)"},
+    "cy":         {"glsl": "float", "min": -1.0, "max": 1.0, "default": 0.1889,
+                   "description": "Julia c (imag)"},
+    "zoom":       {"glsl": "float", "min": 0.01, "max": 8.0, "default": 1.0,
+                   "description": "zoom (1 = full view)"},
+    "max_iter":   {"glsl": "int", "min": 20, "max": 500, "default": 200,
+                   "description": "max iterations"},
+    "palette":    {"glsl": "choice", "choices": ["sine", "inferno", "grayscale"],
+                   "default": "sine", "description": "color palette"},
+    "color_shift": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.0,
+                    "description": "palette shift"},
+    "color_a":    {"glsl": "color", "default": "#05010a",
+                   "description": "color A (grayscale / holes)"},
+    "color_b":    {"glsl": "color", "default": "#ffd166",
+                   "description": "color B (grayscale)"},
+})
+
+_register("burning_ship_typed", "Burning Ship set with typed zoom/center/iter/palette (node 240)",
+          "procedural", _TYPED_FRACTAL_HELPERS + '''
+void main() {
+    vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);
+    uv.y = -uv.y;
+    vec2 c = vec2(u_center_x, u_center_y) + uv * (3.0 / max(u_zoom, 0.001));
+    vec2 z = vec2(0.0);
+    float n = 0.0; float last2 = 0.0;
+    const int CAP = 500;
+    for (int i = 0; i < CAP; i++) {
+        z = vec2(abs(z.x), abs(z.y));
+        z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
+        last2 = dot(z, z); n += 1.0;
+        if (last2 > 16.0 || n >= float(u_max_iter)) break;
+    }
+    float t = (n >= float(u_max_iter) - 0.5) ? 1.0 : smooth_iter(n, last2, float(u_max_iter));
+    f_color = vec4(_fractalColor(t, u_palette, u_color_a, u_color_b, u_color_shift), 1.0);
+}
+''', uniforms={
+    "zoom":       {"glsl": "float", "min": 0.01, "max": 8.0, "default": 1.0,
+                   "description": "zoom (1 = full view)"},
+    "center_x":   {"glsl": "float", "min": -2.0, "max": 0.5, "default": -0.5,
+                   "description": "center X"},
+    "center_y":   {"glsl": "float", "min": -2.0, "max": 0.5, "default": -0.5,
+                   "description": "center Y"},
+    "max_iter":   {"glsl": "int", "min": 20, "max": 500, "default": 200,
+                   "description": "max iterations"},
+    "palette":    {"glsl": "choice", "choices": ["sine", "inferno", "grayscale"],
+                   "default": "sine", "description": "color palette"},
+    "color_shift": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.0,
+                    "description": "palette shift"},
+    "color_a":    {"glsl": "color", "default": "#05010a",
+                   "description": "color A (grayscale / holes)"},
+    "color_b":    {"glsl": "color", "default": "#ffd166",
+                   "description": "color B (grayscale)"},
+})
+
+_register("newton_typed", "Newton fractal (z^3-1) basins with typed zoom/palette (node 241)",
+          "procedural", _TYPED_FRACTAL_HELPERS + '''
+void main() {
+    vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);
+    vec2 z = uv * (2.2 / max(u_zoom, 0.001));
+    float n = 0.0;
+    const int CAP = 80;
+    for (int i = 0; i < CAP; i++) {
+        vec2 z2 = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y);
+        vec2 z3 = vec2(z2.x*z.x - z2.y*z.y, 2.0*z2.x*z.y);
+        vec2 f = z3 - vec2(1.0, 0.0);
+        vec2 dz = 3.0 * z2;
+        float denom = dz.x*dz.x + dz.y*dz.y + 1e-8;
+        vec2 stp = vec2(f.x*dz.x + f.y*dz.y, f.y*dz.x - f.x*dz.y) / denom;
+        z -= stp; n += 1.0;
+        if (dot(stp, stp) < 1e-6) break;
+    }
+    float ang = atan(z.y, z.x);
+    float root = floor((ang + 3.14159) / (2.0 * 3.14159 / 3.0));
+    float t = mod(root / 3.0 + u_color_offset + 0.15 * n / 80.0, 1.0);
+    vec3 col = (u_palette == 1) ? inferno_l(t * (0.6 + 0.4 * u_color_speed))
+              : (u_palette == 2) ? mix(u_color_a, u_color_b, clamp(t, 0.0, 1.0))
+              : fractal_palette(t * (0.6 + 0.4 * u_color_speed));
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "zoom":         {"glsl": "float", "min": 0.01, "max": 8.0, "default": 1.0,
+                     "description": "zoom (1 = full view)"},
+    "color_speed":  {"glsl": "float", "min": 0.0, "max": 2.0, "default": 1.0,
+                     "description": "color cycling speed"},
+    "color_offset": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.0,
+                     "description": "color offset"},
+    "palette":      {"glsl": "choice", "choices": ["sine", "inferno", "grayscale"],
+                     "default": "sine", "description": "color palette"},
+    "color_a":      {"glsl": "color", "default": "#05010a",
+                     "description": "color A (grayscale)"},
+    "color_b":      {"glsl": "color", "default": "#ffd166",
+                     "description": "color B (grayscale)"},
+})
+
+_register("sierpinski_typed", "Sierpinski carpet with typed depth/palette (node 242)",
+          "procedural", _TYPED_FRACTAL_HELPERS + '''
+void main() {
+    vec2 p = v_uv;
+    float depth = clamp(floor(u_depth), 1.0, 7.0);
+    float hole = 0.0;
+    for (float i = 0.0; i < 7.0; i += 1.0) {
+        if (i >= depth) break;
+        vec2 cell = floor(p * 3.0);
+        if (cell.x == 1.0 && cell.y == 1.0) { hole = 1.0; break; }
+        p = fract(p * 3.0);
+    }
+    float t = fract(0.15 * depth + u_color_shift + 0.3 * v_uv.x + 0.2 * v_uv.y);
+    vec3 col = (hole > 0.5) ? u_color_a
+             : _fractalColor(t, u_palette, u_color_a, u_color_b, u_color_shift);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "depth":       {"glsl": "int", "min": 1, "max": 7, "default": 4,
+                    "description": "subdivision depth"},
+    "palette":     {"glsl": "choice", "choices": ["sine", "inferno", "grayscale"],
+                    "default": "sine", "description": "color palette"},
+    "color_shift": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.0,
+                    "description": "palette shift"},
+    "color_a":     {"glsl": "color", "default": "#0a0a12",
+                    "description": "hole color"},
+    "color_b":     {"glsl": "color", "default": "#ffd166",
+                    "description": "color B (grayscale)"},
+})
+
+_register("lyapunov_typed", "Lyapunov exponent map with typed r-range/palette (node 243)",
+          "procedural", _TYPED_FRACTAL_HELPERS + '''
+void main() {
+    vec2 uv = v_uv;
+    float rx = mix(u_r_min, u_r_max, uv.x);
+    float ry = mix(u_r_min, u_r_max, uv.y);
+    float lambda = 0.0; float x = 0.5;
+    const float WARM = 30.0; const float MEAS = 120.0;
+    for (float i = 0.0; i < (WARM + MEAS); i += 1.0) {
+        int k = int(mod(i, 8.0));
+        float rk = (k == 0 || k == 2 || k == 4 || k == 6) ? rx : ry;
+        float deriv = rk * (1.0 - 2.0 * x);
+        x = rk * x * (1.0 - x);
+        if (i >= WARM) lambda += log(abs(deriv) + 1e-8);
+    }
+    lambda /= MEAS;
+    float t = clamp(0.5 + 0.5 * lambda / 2.0, 0.0, 1.0);
+    t = fract(t + u_color_shift);
+    vec3 col = (u_palette == 2) ? mix(u_color_a, u_color_b, t)
+              : (u_palette == 1) ? inferno_l(t)
+              : fractal_palette(t);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "r_min":       {"glsl": "float", "min": 0.0, "max": 4.0, "default": 2.5,
+                    "description": "r min (AB row)"},
+    "r_max":       {"glsl": "float", "min": 0.0, "max": 4.0, "default": 4.0,
+                    "description": "r max (AB row)"},
+    "palette":     {"glsl": "choice", "choices": ["sine", "inferno", "grayscale"],
+                    "default": "sine", "description": "color palette"},
+    "color_shift": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.0,
+                    "description": "palette shift"},
+    "color_a":     {"glsl": "color", "default": "#05010a",
+                    "description": "color A (grayscale)"},
+    "color_b":     {"glsl": "color", "default": "#ffd166",
+                    "description": "color B (grayscale)"},
+})

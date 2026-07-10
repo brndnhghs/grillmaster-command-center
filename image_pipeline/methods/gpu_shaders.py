@@ -170,8 +170,18 @@ _TYPED_SHADER_NODES = [
     ("233", "chromatic_gpu",      "GPU Chromatic Aberration"),
     ("234", "halftone_gpu",       "GPU Halftone"),
     ("235", "rings_gpu",          "GPU Rings"),
-    ("236", "truchet_gpu",        "GPU Truchet"),
+    ("236", "truchet_gpu",       "GPU Truchet"),
     ("237", "pixelate_gpu",       "GPU Pixelate"),
+    # Categorical coverage pt.3 (2026-07-10): signature escape-time fractals
+    # with NAMED typed controls (zoom/center/iterations/palette/colors) replacing
+    # the opaque p1..p4 shims — Mandelbrot, Julia, Burning Ship, Newton,
+    # Sierpinski, Lyapunov.
+    ("238", "mandelbrot_typed",   "GPU Mandelbrot"),
+    ("239", "julia_typed",        "GPU Julia"),
+    ("240", "burning_ship_typed", "GPU Burning Ship"),
+    ("241", "newton_typed",       "GPU Newton"),
+    ("242", "sierpinski_typed",   "GPU Sierpinski"),
+    ("243", "lyapunov_typed",     "GPU Lyapunov"),
 ]
 
 _TIME_SCALE_PARAM = {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0}

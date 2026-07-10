@@ -266,3 +266,62 @@ def test_edge_detect_finds_structure():
                   input_image=src, named_params={"edge": "#39ff88"}), dtype=float)
     # Strong edges → bright (green) pixels somewhere.
     assert out[:, :, 1].max() > 120, "edge detect should mark bright edges"
+
+
+# ── 7. Typed escape-time fractals (238-243) ────────────────────────────
+
+NEW_TYPED_FRACTALS = [s for _, s, _ in [
+    ("238", "mandelbrot_typed", "GPU Mandelbrot"),
+    ("239", "julia_typed", "GPU Julia"),
+    ("240", "burning_ship_typed", "GPU Burning Ship"),
+    ("241", "newton_typed", "GPU Newton"),
+    ("242", "sierpinski_typed", "GPU Sierpinski"),
+    ("243", "lyapunov_typed", "GPU Lyapunov"),
+]]
+
+
+@needs_gpu
+@pytest.mark.parametrize("sname", NEW_TYPED_FRACTALS)
+def test_typed_fractal_renders_and_responds(sname):
+    """Each typed fractal renders non-black and responds to a numeric/choice sweep."""
+    uspec = SHADERS[sname]["uniforms"]
+    kw = {"named_params": {u: s.get("default")
+                           for u, s in uspec.items()}}
+    base = np.asarray(render_shader(sname, (96, 64), **kw), dtype=float)
+    assert base.std() > 0.02, f"{sname}: neutral render flat-black (std={base.std():.3f})"
+    # Perturb one numeric/choice uniform away from its default and confirm the
+    # rendered frame actually changes.
+    probe = None
+    for u, s in uspec.items():
+        if s["glsl"] in ("float", "int", "choice"):
+            probe = u
+            break
+    spec = uspec[probe]
+    dft = spec.get("default", 0)
+    if spec["glsl"] == "choice":
+        alt_val = spec["choices"][-1] if spec["choices"][0] == dft else spec["choices"][0]
+    else:
+        lo, hi = spec.get("min", 0), spec.get("max", 1)
+        cand = lo + (hi - lo) * 0.7
+        alt_val = cand if abs(cand - dft) > 1e-6 else lo + (hi - lo) * 0.3
+    alt_named = dict(kw["named_params"])
+    alt_named[probe] = alt_val
+    alt = np.asarray(render_shader(sname, (96, 64),
+                    named_params=alt_named), dtype=float)
+    dpix = np.abs(alt - base).mean()
+    assert dpix > 0.05, f"{sname}: {probe} sweep produced no visible change (Δ={dpix:.3f})"
+
+
+@needs_gpu
+def test_mandelbrot_zoom_and_palette_live():
+    """Mandelbrot zoom-in must reveal interior detail; palette switch must recolor."""
+    a = np.asarray(render_shader("mandelbrot_typed", (96, 64),
+                  named_params={"zoom": 1.0, "palette": "sine"}), dtype=float)
+    b = np.asarray(render_shader("mandelbrot_typed", (96, 64),
+                  named_params={"zoom": 4.0, "palette": "sine"}), dtype=float)
+    assert np.abs(a.mean() - b.mean()) > 1.0, "zoom sweep had no visible effect"
+    c = np.asarray(render_shader("mandelbrot_typed", (96, 64),
+                  named_params={"zoom": 1.0, "palette": "inferno"}), dtype=float)
+    # inferno is darker/warmer than the default sine palette at the same zoom.
+    assert abs(c.mean() - a.mean()) > 0.5, "palette choice had no visible effect"
+
