@@ -2284,6 +2284,159 @@ void main() {
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  P1.4b — Spatial Prisoner's Dilemma (nodes 153 / 154 twins)
+#  #153 is a BINARY strategy lattice (cooperate/defect) → same family as the
+#  Ising twin: per-cell RNG carry in .b, probabilistic Fermi imitation update.
+#  #154 is the CONTINUOUS replicator PDE (s ∈ [0,1]) → same family as the CML
+#  / wave twins: packed R=raw field, G=EMA trail, smoothed by PDE + diffusion.
+#  CPU numpy nodes stay authoritative (two-tier precision contract).
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ── Node 153: Spatial Prisoner's Dilemma — binary lattice ──
+_register("spd125_seed",
+          "SPD #153 seed: hashed random cooperate/defect lattice, RNG carry in .b",
+          "procedural", '''
+void main() {
+    float h = hash21(floor(v_uv * u_resolution * 0.5));
+    float strat = h < 0.5 ? 0.0 : 1.0;   // 0=defect, 1=coop
+    float rng = hash21(v_uv * u_resolution + 19.3);
+    f_color = vec4(strat, 0.0, rng, 1.0);  // R=strat, G=payoff, B=rng
+}
+''')
+
+_register("spd125_step",
+          "SPD #153 one Fermi-imitation step: probabilistic strategy switch from neighbors (snowdrift matrix)",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float my = s.r;
+    float rng = fract(s.b * 1.4567 + 0.137);
+
+    // Moore neighborhood (8 cells)
+    float n00 = texture(u_texture, v_uv + vec2(-texel.x,-texel.y)).r;
+    float n01 = texture(u_texture, v_uv + vec2(0.0,-texel.y)).r;
+    float n02 = texture(u_texture, v_uv + vec2(texel.x,-texel.y)).r;
+    float n10 = texture(u_texture, v_uv + vec2(-texel.x,0.0)).r;
+    float n12 = texture(u_texture, v_uv + vec2(texel.x,0.0)).r;
+    float n20 = texture(u_texture, v_uv + vec2(-texel.x,texel.y)).r;
+    float n21 = texture(u_texture, v_uv + vec2(0.0,texel.y)).r;
+    float n22 = texture(u_texture, v_uv + vec2(texel.x,texel.y)).r;
+    float nc = n00+n01+n02+n10+n12+n20+n21+n22;  // #coop neighbors
+    float nn = 8.0 - nc;                         // #defect neighbors
+
+    float T = clamp(u_params.x, 1.0, 2.0);     // temptation payoff
+    float S = clamp(u_params.y, -1.0, 1.0);    // sucker payoff
+    float K = clamp(u_params.z, 0.01, 2.0);    // Fermi stochasticity
+
+    // Snowdrift payoffs: coop reward R=1.0, defect gets T vs coop / S vs defect
+    float my_pay  = (my < 0.5) ? (nc * 1.0 + nn * S) : (nc * T);
+    float r2 = fract(rng * 2.137 + 0.71);
+    float nbr = step(0.5, r2);                  // a random neighbor strategy
+    float nbr_pay = (nbr < 0.5) ? (nc * 1.0 + nn * S) : (nc * T);
+
+    float prob = 1.0 / (1.0 + exp((my_pay - nbr_pay) / K));
+    float r3 = fract(rng * 3.11 + 0.43);
+    float nstrat = (r3 < prob) ? nbr : my;
+
+    // rough normalized payoff for display brightness
+    float pay = clamp(my_pay / (8.0 * max(T, 1.0)), 0.0, 1.0);
+    f_color = vec4(nstrat, pay, rng, 1.0);
+}
+''')
+
+_register("spd125_display",
+          "SPD #153 display: diverging amber(defect)→blue(coop) by strategy, brightness by payoff",
+          "procedural", '''
+void main() {
+    vec4 s = texture(u_texture, v_uv);
+    float strat = s.r;
+    vec3 defect_col = vec3(0.86, 0.39, 0.16);  // amber
+    vec3 coop_col   = vec3(0.235, 0.55, 0.86); // blue
+    vec3 col = mix(defect_col, coop_col, strat);
+    float bright = 0.65 + 0.35 * clamp(s.g, 0.0, 1.0);
+    f_color = vec4(col * bright, 1.0);
+}
+''')
+
+# ── Node 154: Continuous Spatial PD (replicator dynamics) — PDE field ──
+_register("spd154_seed",
+          "CSPD #154 seed: hashed continuous strategy field s∈[0,1] (R=raw, G=trail)",
+          "procedural", '''
+void main() {
+    float x = hash21(v_uv * u_resolution + 0.321);
+    f_color = vec4(x * 0.6, x * 0.6, 0.0, 1.0);  // R=s, G=accum trail
+}
+''')
+
+_register("spd154_step",
+          "CSPD #154 one Euler step: replicator reaction + diffusion + mutation drift + noise",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float s0 = s.r;
+    float accum = s.g;
+    float rng = fract(s.b * 1.245 + 0.371);
+
+    float T = u_params.x;   // temptation
+    float R = u_params.y;   // reward (mutual coop)
+    float S = u_params.z;   // sucker
+    float P = u_params.w;   // punishment
+
+    // 8-neighbour sum for replicator payoff fields
+    float sum_s = 0.0;
+    sum_s += texture(u_texture, v_uv + vec2(-texel.x,-texel.y)).r;
+    sum_s += texture(u_texture, v_uv + vec2(0.0,-texel.y)).r;
+    sum_s += texture(u_texture, v_uv + vec2(texel.x,-texel.y)).r;
+    sum_s += texture(u_texture, v_uv + vec2(-texel.x,0.0)).r;
+    sum_s += texture(u_texture, v_uv + vec2(texel.x,0.0)).r;
+    sum_s += texture(u_texture, v_uv + vec2(-texel.x,texel.y)).r;
+    sum_s += texture(u_texture, v_uv + vec2(0.0,texel.y)).r;
+    sum_s += texture(u_texture, v_uv + vec2(texel.x,texel.y)).r;
+
+    float coop_sum = R * sum_s + S * (8.0 - sum_s);
+    float def_sum  = T * sum_s + P * (8.0 - sum_s);
+    float replicator = s0 * (1.0 - s0) * (coop_sum - def_sum);
+
+    float mutation = 0.025;
+    float mutation_drift = mutation * (0.5 - s0);
+
+    // 5-point Laplacian for diffusion
+    float lap = texture(u_texture, v_uv + vec2(-texel.x,0.0)).r
+              + texture(u_texture, v_uv + vec2(texel.x,0.0)).r
+              + texture(u_texture, v_uv + vec2(0.0,texel.y)).r
+              + texture(u_texture, v_uv + vec2(0.0,-texel.y)).r
+              - 4.0 * s0;
+    float D = 0.12;
+    float diffusion = D * lap;
+
+    // cheap pseudo-Gaussian noise (sum of 3 uniforms, variance-normalized)
+    float gnoise = (fract(rng * 1.7 + 0.13) + fract(rng * 2.3 + 0.57)
+                    + fract(rng * 3.1 + 0.91) - 1.5) * 0.5773502;
+    float noise_amp = 0.008;
+    float DT = 0.2;
+    float ds = DT * (replicator + mutation_drift + diffusion)
+               + noise_amp * gnoise * sqrt(DT);
+    float sn = clamp(s0 + ds, 0.0, 1.0);
+
+    float decay = 0.9;
+    float an = decay * accum + (1.0 - decay) * sn;
+    f_color = vec4(sn, clamp(an, 0.0, 1.0), rng, 1.0);
+}
+''')
+
+_register("spd154_display",
+          "CSPD #154 display: grayscale cooperation-probability field (matches CPU render)",
+          "procedural", '''
+void main() {
+    float v = clamp(texture(u_texture, v_uv).g, 0.0, 1.0);
+    f_color = vec4(vec3(v), 1.0);
+}
+''')
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  P1.3 — Wave-equation family (client-GPU sim twins of nodes 100, 144, 166)
 #  All three are scalar displacement u + velocity v leapfrog field systems
 #  (plus a pump/drive phase accumulator). State packs R=u, G=v, B=pump_phase

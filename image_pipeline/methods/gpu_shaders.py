@@ -516,6 +516,24 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "reset_on": ["seed", "param", "loop", "resize"],
         "param_map": {"J": "p1", "T_max": "p2"},
     },
+    # 153 Spatial Prisoner's Dilemma: binary coop/defect lattice, Fermi imitation.
+    # p1=temptation T, p2=sucker_payoff S, p3=fermi_K. 1 step/frame; RNG carried in .b.
+    "153": {
+        "type": "sim",
+        "seed": "spd125_seed", "step": "spd125_step", "display": "spd125_display",
+        "state_channels": 3, "substeps": 2,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"temptation": "p1", "sucker_payoff": "p2", "fermi_K": "p3"},
+    },
+    # 154 Continuous Spatial PD (replicator dynamics): continuous field s∈[0,1]
+    # PDE. p1=temptation, p2=reward, p3=sucker, p4=punishment. R=raw s, G=EMA trail.
+    "154": {
+        "type": "sim",
+        "seed": "spd154_seed", "step": "spd154_step", "display": "spd154_display",
+        "state_channels": 3, "substeps": 3,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"temptation": "p1", "reward": "p2", "sucker_payoff": "p3", "punishment": "p4"},
+    },
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SIMS)
 
