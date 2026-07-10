@@ -3588,3 +3588,194 @@ void main() {
     "color_a":    {"glsl": "color", "default": "#06080f", "description": "low color"},
     "color_b":    {"glsl": "color", "default": "#d8e8ff", "description": "high color"},
 })
+
+# ── Typed-uniform nodes 226-231 (categorical coverage expansion) ──────
+# Each declares its variables via `uniforms=` so the node factory exposes them
+# as real params (sliders / color pickers / dropdowns) AND wireable SCALAR
+# input ports, with data-typed outputs (image: IMAGE, luminance: FIELD). Bodies
+# stay in the GL330/ES300-compatible parity subset (prologue helpers + no
+# forbidden tokens).
+
+_register("plasma_gpu2", "Animated plasma with typed scale/colors/warp",
+          "procedural", '''
+void main() {
+    vec2 uv = v_uv;
+    vec2 p = (uv - 0.5) * u_scale;
+    // Slow, smooth multi-octave drift (no discrete cusps).
+    float t = u_time * u_speed * 0.25;
+    float v = sin(p.x * 6.0 + t) * cos(p.y * 4.0 + t * 0.7);
+    v += sin(p.x * 11.0 - t * 1.2) * cos(p.y * 9.0 + t * 0.5) * 0.6;
+    v += sin((p.x + p.y) * 16.0 + t * 0.3) * 0.3;
+    if (u_warp > 0.001) {
+        v += 0.4 * sin(length(p) * u_warp * 8.0 - t * 1.5);
+    }
+    v = v * 0.5 + 0.5;
+    v = clamp(pow(v, max(u_contrast, 0.05)), 0.0, 1.0);
+    f_color = vec4(mix(u_color_a, u_color_b, v), 1.0);
+}
+''', uniforms={
+    "scale":    {"glsl": "float", "min": 0.5, "max": 16.0, "default": 4.0,
+                 "description": "plasma spatial scale"},
+    "speed":    {"glsl": "float", "min": 0.0, "max": 4.0, "default": 1.0,
+                 "description": "animation speed"},
+    "warp":     {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.0,
+                 "description": "radial warp amount"},
+    "contrast": {"glsl": "float", "min": 0.2, "max": 3.0, "default": 1.0,
+                 "description": "output contrast (gamma)"},
+    "color_a":  {"glsl": "color", "default": "#10071f", "description": "low color"},
+    "color_b":  {"glsl": "color", "default": "#ffcf4d", "description": "high color"},
+})
+
+_register("voronoi_gpu2", "Voronoi/worley cellular cells with typed controls",
+          "procedural", '''
+vec2 _cell(vec2 g, float seed) {
+    return g + 0.5 + 0.5 * vec2(
+        sin(seed + 3.1 * g.x + 1.7 * g.y),
+        cos(seed + 2.3 * g.x - 4.1 * g.y));
+}
+void main() {
+    vec2 uv = v_uv * max(u_scale, 0.5);
+    uv += u_time * u_drift * vec2(0.13, 0.07);
+    float seed = u_seed * 6.2831;
+    vec2 g = floor(uv), f = fract(uv);
+    float d1 = 1e9, d2 = 1e9;
+    for (int j = -1; j <= 1; j++)
+    for (int i = -1; i <= 1; i++) {
+        vec2 off = vec2(float(i), float(j));
+        vec2 c = _cell(g + off, seed);
+        float d = length(c - f);
+        if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) { d2 = d; }
+    }
+    float t = (u_metric == 1) ? (d2 - d1) : d1;   // F2-F1 edges vs nearest
+    t = clamp(t * 1.6, 0.0, 1.0);
+    if (u_cells > 0.5) t = step(0.5, t);           // hard cell regions
+    vec3 col = mix(u_color_a, u_color_b, t);
+    if (u_edge > 0.001) {
+        float e = smoothstep(0.0, u_edge, abs(d1 - 0.5 * u_scale * 0.04));
+        col = mix(u_edge_color, col, e);
+    }
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "scale":     {"glsl": "float", "min": 1.0, "max": 32.0, "default": 8.0,
+                  "description": "cell density"},
+    "seed":      {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5,
+                  "description": "cell layout seed"},
+    "drift":     {"glsl": "float", "min": 0.0, "max": 2.0, "default": 0.1,
+                  "description": "animation drift speed"},
+    "metric":    {"glsl": "choice", "choices": ["nearest", "edges"],
+                  "default": "nearest", "description": "distance metric"},
+    "cells":     {"glsl": "int", "min": 0, "max": 1, "default": 0,
+                  "description": "hard cell regions (0=smooth)"},
+    "edge":      {"glsl": "float", "min": 0.0, "max": 0.5, "default": 0.0,
+                  "description": "cell boundary line width"},
+    "color_a":   {"glsl": "color", "default": "#0a0a12", "description": "cell color A"},
+    "color_b":   {"glsl": "color", "default": "#37e0c8", "description": "cell color B"},
+    "edge_color":{"glsl": "color", "default": "#ffffff", "description": "boundary color"},
+})
+
+_register("kaleidoscope_gpu", "Kaleidoscope mirror of the input image (typed)",
+          "filter", '''
+void main() {
+    vec2 uv = v_uv - 0.5;
+    float a = radians(u_angle) + u_time * u_spin;
+    uv = rot(a) * uv;
+    float seg = max(float(u_segments), 2.0);
+    float ang = atan(uv.y, uv.x);
+    float rad = length(uv);
+    // Fold angle into one wedge, then mirror within the wedge.
+    float wedge = 6.28318530 / seg;
+    ang = mod(ang, wedge);
+    ang = abs(ang - wedge * 0.5);
+    vec2 p = vec2(cos(ang), sin(ang)) * rad + 0.5;
+    vec3 src = texture(u_texture, fract(p)).rgb;
+    f_color = vec4(mix(src, src * (0.6 + 0.8 * u_zoom), u_zoom), 1.0);
+}
+''', uniforms={
+    "segments": {"glsl": "int", "min": 2, "max": 24, "default": 6,
+                 "description": "mirror segments"},
+    "angle":    {"glsl": "float", "min": 0.0, "max": 360.0, "default": 0.0,
+                 "description": "base rotation (deg)"},
+    "spin":     {"glsl": "float", "min": -2.0, "max": 2.0, "default": 0.0,
+                 "description": "auto-rotation speed"},
+    "zoom":     {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.0,
+                 "description": "center zoom"},
+})
+
+_register("bloom_gpu", "Soft additive bloom / glow on the input (typed)",
+          "filter", '''
+vec3 _bloom_sample(vec2 uv, float r) {
+    vec3 s = vec3(0.0);
+    for (int k = 0; k < 8; k++) {
+        float a = float(k) / 7.0 * 6.28318530;
+        s += texture(u_texture, uv + vec2(cos(a), sin(a)) * r).rgb;
+    }
+    return s / 8.0;
+}
+void main() {
+    vec2 uv = v_uv;
+    vec3 src = texture(u_texture, uv).rgb;
+    float r = u_radius * 0.03;
+    // Two-pass cheap bloom (wide + tight) for a soft halo.
+    vec3 glow = _bloom_sample(uv, r) * 0.6 + _bloom_sample(uv, r * 0.4) * 0.4;
+    glow = pow(glow, vec3(max(u_threshold, 0.01)));   // emphasize bright areas
+    vec3 col = mix(src, src + glow * u_strength * 1.6, clamp(u_strength, 0.0, 1.0));
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "strength": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.6,
+                 "description": "glow strength"},
+    "radius":   {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.4,
+                 "description": "glow radius"},
+    "threshold":{"glsl": "float", "min": 0.1, "max": 2.0, "default": 1.0,
+                 "description": "brightness threshold (gamma)"},
+})
+
+_register("posterize_gpu", "Posterize / reduce color levels of input (typed)",
+          "filter", '''
+void main() {
+    vec3 src = texture(u_texture, v_uv).rgb;
+    float levels = max(float(u_levels), 2.0);
+    vec3 q = floor(src * levels + 0.5) / levels;
+    if (u_gamma != 1.0) q = pow(clamp(q, 0.0, 1.0), vec3(u_gamma));
+    q = mix(src, q, clamp(u_amount, 0.0, 1.0));
+    f_color = vec4(q, 1.0);
+}
+''', uniforms={
+    "levels": {"glsl": "int", "min": 2, "max": 32, "default": 5,
+               "description": "color levels per channel"},
+    "amount": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 1.0,
+               "description": "effect amount"},
+    "gamma":  {"glsl": "float", "min": 0.3, "max": 3.0, "default": 1.0,
+               "description": "post-posterize gamma"},
+})
+
+_register("edge_gpu", "Sobel edge detection on the input (typed)",
+          "filter", '''
+float _lum(vec2 uv) {
+    return dot(texture(u_texture, uv).rgb, vec3(0.299, 0.587, 0.114));
+}
+void main() {
+    vec2 px = u_thickness / u_resolution;
+    float tl = _lum(v_uv + px * vec2(-1.0,  1.0));
+    float  l = _lum(v_uv + px * vec2(-1.0,  0.0));
+    float bl = _lum(v_uv + px * vec2(-1.0, -1.0));
+    float  t = _lum(v_uv + px * vec2( 0.0,  1.0));
+    float  b = _lum(v_uv + px * vec2( 0.0, -1.0));
+    float tr = _lum(v_uv + px * vec2( 1.0,  1.0));
+    float  r = _lum(v_uv + px * vec2( 1.0,  0.0));
+    float br = _lum(v_uv + px * vec2( 1.0, -1.0));
+    float gx = -tl - 2.0 * l - bl + tr + 2.0 * r + br;
+    float gy =  tl + 2.0 * t + tr - bl - 2.0 * b - br;
+    float e = clamp(length(vec2(gx, gy)) * u_strength, 0.0, 1.0);
+    vec3 col = mix(u_bg, u_edge, e);   // edges in u_edge over u_bg
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "strength":   {"glsl": "float", "min": 0.2, "max": 4.0, "default": 1.5,
+                   "description": "edge gain"},
+    "thickness":  {"glsl": "float", "min": 0.5, "max": 6.0, "default": 1.5,
+                   "description": "edge kernel thickness (px)"},
+    "bg":         {"glsl": "color", "default": "#000000", "description": "background color"},
+    "edge":       {"glsl": "color", "default": "#39ff88", "description": "edge color"},
+})

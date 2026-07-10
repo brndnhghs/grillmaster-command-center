@@ -183,3 +183,86 @@ def test_gradient_into_ascii_chain():
         assert img[:, :, 1].mean() > img[:, :, 0].mean(), "terminal mode should be green"
     finally:
         shutil.rmtree(out, ignore_errors=True)
+
+
+# ── 6. New typed-uniform nodes (226-231) categorical coverage ─────────
+
+NEW_TYPED = [s for _, s, _ in [
+    ("226", "plasma_gpu2", "GPU Plasma 2"),
+    ("227", "voronoi_gpu2", "GPU Voronoi 2"),
+    ("228", "kaleidoscope_gpu", "GPU Kaleidoscope"),
+    ("229", "bloom_gpu", "GPU Bloom"),
+    ("230", "posterize_gpu", "GPU Posterize"),
+    ("231", "edge_gpu", "GPU Edge Detect"),
+]]
+
+
+@needs_gpu
+@pytest.mark.parametrize("sname", NEW_TYPED)
+def test_new_typed_renders_and_responds(sname):
+    """Each new typed shader renders non-black and responds to a param sweep."""
+    is_filter = SHADERS[sname]["type"] == "filter"
+    kw = {"named_params": {u: s.get("default")
+                           for u, s in SHADERS[sname]["uniforms"].items()}}
+    if is_filter:
+        yy, xx = np.mgrid[0:64, 0:96]
+        kw["input_image"] = np.stack(
+            [(xx / 96 * 255), (yy / 64 * 255),
+             (np.sin(xx * 0.1) * np.cos(yy * 0.1) * 127 + 128)], -1
+        ).astype(np.float32) / 255.0
+    base = np.asarray(render_shader(sname, (96, 64), **kw), dtype=float)
+    assert base.std() > 0.02, f"{sname}: neutral render flat-black (std={base.std():.3f})"
+    # Perturb one uniform to a value clearly offset from its default and check
+    # the rendered frame actually changes (per-pixel diff, robust to mean shift).
+    uspec = SHADERS[sname]["uniforms"]
+    probe = None
+    for u, s in uspec.items():
+        if s["glsl"] in ("float", "int", "choice"):
+            probe = u
+            break
+    if probe is not None:
+        spec = uspec[probe]
+        lo, hi = spec.get("min", 0), spec.get("max", 1)
+        dft = spec.get("default", 0)
+        # Aim for a value ~30% along the range, but guarantee it differs from
+        # the default (avoids wrap-around traps like angle 0→360 == 0).
+        cand = lo + (hi - lo) * 0.3
+        if abs(cand - dft) < 1e-6:
+            cand = lo + (hi - lo) * 0.7
+        alt_named = dict(kw["named_params"])
+        alt_named[probe] = cand
+        alt = np.asarray(render_shader(sname, (96, 64),
+                          input_image=kw.get("input_image"),
+                          named_params=alt_named), dtype=float)
+        dpix = np.abs(alt - base).mean()
+        assert dpix > 0.05, f"{sname}: {probe} sweep produced no visible change (Δ={dpix:.3f})"
+
+
+@needs_gpu
+def test_voronoi_metric_choice_live():
+    a = np.asarray(render_shader("voronoi_gpu2", (96, 64),
+                  named_params={"metric": "nearest"}), dtype=float)
+    b = np.asarray(render_shader("voronoi_gpu2", (96, 64),
+                  named_params={"metric": "edges"}), dtype=float)
+    assert abs(a.mean() - b.mean()) > 2.0, "voronoi metric choice had no visible effect"
+
+
+@needs_gpu
+def test_posterize_reduces_levels():
+    yy, xx = np.mgrid[0:64, 0:96]
+    src = np.stack([(xx / 96), (yy / 64), (np.sin(xx * 0.05) * 0.5 + 0.5)], -1).astype(np.float32)
+    full = np.asarray(render_shader("posterize_gpu", (96, 64),
+                  input_image=src, named_params={"levels": 2}), dtype=float)
+    # 2 levels → very few distinct values per channel.
+    uniq = len(np.unique(np.round(full[..., 0].ravel(), 2)))
+    assert uniq <= 4, f"levels=2 should yield ≤4 distinct red values, got {uniq}"
+
+
+@needs_gpu
+def test_edge_detect_finds_structure():
+    yy, xx = np.mgrid[0:64, 0:96]
+    src = np.stack([(xx / 96), (yy / 64), (xx / 96)], -1).astype(np.float32)
+    out = np.asarray(render_shader("edge_gpu", (96, 64),
+                  input_image=src, named_params={"edge": "#39ff88"}), dtype=float)
+    # Strong edges → bright (green) pixels somewhere.
+    assert out[:, :, 1].max() > 120, "edge detect should mark bright edges"

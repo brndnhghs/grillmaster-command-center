@@ -156,6 +156,14 @@ _TYPED_SHADER_NODES = [
     ("223", "checker_gpu2",     "GPU Checkerboard"),
     ("224", "wave_pattern_gpu", "GPU Wave Pattern"),
     ("225", "fbm_noise_gpu",    "GPU FBM Noise"),
+    # Categorical coverage expansion (2026-07-10): animated plasma, voronoi
+    # cells, and the filter family — kaleidoscope / bloom / posterize / edge.
+    ("226", "plasma_gpu2",        "GPU Plasma 2"),
+    ("227", "voronoi_gpu2",       "GPU Voronoi 2"),
+    ("228", "kaleidoscope_gpu",   "GPU Kaleidoscope"),
+    ("229", "bloom_gpu",          "GPU Bloom"),
+    ("230", "posterize_gpu",      "GPU Posterize"),
+    ("231", "edge_gpu",           "GPU Edge Detect"),
 ]
 
 _TIME_SCALE_PARAM = {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0}
