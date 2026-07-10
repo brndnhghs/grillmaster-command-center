@@ -444,6 +444,14 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # 74 Swirl Displacement → new twin. strength p1 (0.5 = none).
     "74": {"shader": "swirl_gpu", "type": "filter",
            "param_map": {"strength": "p1"}},
+    # 13 Dithering → new twin (Bayer-8 ordered path). `levels` p1 (2..8),
+    # `contrast` p2. The CPU node's default `fs` and other error-diffusion
+    # algorithms are serial scans that cannot be reproduced per-pixel, so the
+    # twin renders the ORDERED (Bayer) approximation and the CPU fn stays
+    # authoritative. `algorithm`/`palette`/`noise_type` are string choices
+    # (pitfall #14) and are left unmapped. Gives `filters` another GPU mirror.
+    "13": {"shader": "dither13_gpu", "type": "filter",
+           "param_map": {"levels": "p1", "contrast": "p2"}},
     # ── P0.5 LUT / color ──
     # 11 Gradient: cx/cy are already in [0,1] so they map cleanly onto the
     # twin's center params (0.5 = middle). `direction` (0-360°) and
