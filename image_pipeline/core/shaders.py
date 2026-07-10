@@ -1632,13 +1632,15 @@ def render_shader(shader_name: str, resolution: tuple[int, int] = (512, 512),
             prog[uniform_name].value = uniform_value
 
     # Typed uniforms: u_<name> per the shader's declared spec.
+    # Missing values fall back to the spec default (NOT 0.5) so a variable left
+    # unwired still renders at its authored neutral instead of going black.
     uspec = info.get("uniforms") or {}
     if uspec:
         vals = named_params or {}
         for uname, spec in uspec.items():
             gl_name = f"u_{uname}"
             if gl_name in prog:
-                prog[gl_name].value = coerce_uniform(spec, vals.get(uname))
+                prog[gl_name].value = coerce_uniform(spec, vals.get(uname, spec.get("default")))
 
     # Handle input texture — accept float32 [0,1] or uint8 [0,255]
     texture = None
