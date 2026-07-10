@@ -277,6 +277,13 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     "164": {"shader": "moire_gpu", "type": "procedural",
             "param_map": {"mode": "p1", "speed1": "p2",
                           "speed2": "p3", "frequency": "p4"}},
+    # 172 Sand Dune Migration: `wind_strength` -> p1, `sediment_supply` -> p2.
+    # `anim_mode`/`render_style` are choice strings (pitfall #14) so they are
+    # left unmapped — the live preview renders the closed-form "evolve"+
+    # hypsometric-height default. Exact parity preview (closed-form function of
+    # uv, t); CPU numpy node stays the authoritative export.
+    "172": {"shader": "dunes_gpu", "type": "procedural",
+            "param_map": {"wind_strength": "p1", "sediment_supply": "p2"}},
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SHIMS)
 
