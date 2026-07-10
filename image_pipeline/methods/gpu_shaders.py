@@ -284,6 +284,22 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # uv, t); CPU numpy node stays the authoritative export.
     "172": {"shader": "dunes_gpu", "type": "procedural",
             "param_map": {"wind_strength": "p1", "sediment_supply": "p2"}},
+    # ── P0.6 field-eval (closed-form f(uv,t) twins, same family as 125/164) ──
+    # 53 Metaballs: isovalue -> p1, ball_speed -> p2. behavior/field_fn/style
+    # are choice strings (pitfall #14) left unmapped; preview shows orbiting
+    # soft-metaball field at the node's default isovalue. Exact parity preview.
+    "53": {"shader": "metaballs_gpu", "type": "procedural",
+           "param_map": {"isovalue": "p1", "ball_speed": "p2"}},
+    # 43 Density Heatmap: sigma -> p1, colormap_shift -> p3. source/style/cmap
+    # are choice strings (pitfall #14) left unmapped; preview is a drifting KDE
+    # inferno field. Exact parity preview (no seeded point layout divergence).
+    "43": {"shader": "heatmap_gpu", "type": "procedural",
+           "param_map": {"sigma": "p1", "colormap_shift": "p3"}},
+    # 57 Slit Scan: amplitude -> p1, frequency -> p2, slit_type -> p3. source/
+    # waveform/style/color_mode are choice strings (pitfall #14) left unmapped;
+    # preview is a procedural noise+rainbow displacement. Exact parity preview.
+    "57": {"shader": "slitscan_gpu", "type": "procedural",
+           "param_map": {"amplitude": "p1", "frequency": "p2", "slit_type": "p3"}},
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SHIMS)
 

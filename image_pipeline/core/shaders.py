@@ -1196,6 +1196,129 @@ void main() {
 }
 ''')
 
+# ── P0.6 field-eval client-GPU twins (continued) ──────────────────────────
+# Nodes 53 / 43 / 57 are closed-form functions of (uv, t) — exact parity
+# previews (no seeded-layout divergence), same family as 125/164/172. The
+# CPU numpy nodes stay the authoritative export (two-tier precision). Placed
+# here (before the _INFERNO block) so they only use the prologue helpers
+# (hash21/fbm/rot) plus a self-contained inline colormap. pitfall #15: encode
+# 0.5 as NEUTRAL so the default u_params yields each node's canonical view.
+
+def _inferno_local(t):
+    # Compact inferno polynomial (duplicated locally; each twin is a separate
+    # shader program so no symbol collision). Kept as a Python string so it can
+    # be inlined into the twin bodies below.
+    return '''vec3 inferno(float t){
+    t = clamp(t, 0.0, 1.0);
+    const vec3 c0=vec3(0.00021894,0.00016488,-0.01907227);
+    const vec3 c1=vec3(0.10651034,0.56396050,3.93279110);
+    const vec3 c2=vec3(11.6028830,-3.9781129,-15.9420510);
+    const vec3 c3=vec3(-41.703996,17.4360890,44.3541450);
+    const vec3 c4=vec3(77.1629350,-33.402243,-81.8094230);
+    const vec3 c5=vec3(-71.319421,32.6260640,73.2095190);
+    const vec3 c6=vec3(25.1311300,-12.242810,-23.0709590);
+    return c0+t*(c1+t*(c2+t*(c3+t*(c4+t*(c5+t*c6)))));
+}'''
+
+_register("metaballs_gpu",
+          "Metaballs isosurface field (client-GPU twin of node 53)",
+          "procedural", _inferno_local('') + '''
+void main() {
+    // u_params.x = isovalue (0.5 -> ~0.425), u_params.y = ball_speed (0.5 -> ~2.55).
+    float iso   = 0.05 + u_params.x * 0.75;
+    float speed = 0.1  + u_params.y * 4.9;
+    float t = u_time * 0.05 * speed;
+
+    // Closed-form soft metaball field from N orbiting balls (pure f(uv, t)).
+    vec2 p = v_uv;
+    float field = 0.0;
+    const int N = 14;
+    for (int i = 0; i < N; i++) {
+        float fi = float(i);
+        float ang = fi * 2.399963;                 // golden-angle spread
+        float orbit = 0.18 + 0.16 * hash21(vec2(fi, 1.7));
+        float wx = 0.5 + orbit * cos(t * (0.6 + 0.05 * fi) + ang);
+        float wy = 0.5 + orbit * sin(t * (0.6 + 0.05 * fi) + ang * 1.3);
+        vec2 c = vec2(wx, wy);
+        float ri = 0.06 + 0.05 * hash21(vec2(fi, 9.1));
+        float d2 = dot(p - c, p - c);
+        field += (ri * ri) / (ri * ri + d2 + 1e-4);
+    }
+    float f = clamp(field * 0.5, 0.0, 1.0);
+    vec3 col = inferno(f);
+    // Bright isosurface edge near the threshold.
+    float edge = smoothstep(iso - 0.04, iso, field * (iso + 0.2))
+               * (1.0 - smoothstep(iso, iso + 0.04, field * (iso + 0.2)));
+    col += edge * 0.35;
+    f_color = vec4(clamp(col, 0.0, 1.0), 1.0);
+}
+''')
+
+_register("heatmap_gpu",
+          "Density heatmap (client-GPU twin of node 43)",
+          "procedural", _inferno_local('') + '''
+void main() {
+    // u_params.x = sigma proxy (0.5 -> ~0.06), u_params.z = colormap_shift.
+    float sigma = 0.01 + u_params.x * 0.10;
+    float shift = u_params.z;
+    float t = u_time * 0.04;
+
+    // Closed-form kernel-density estimate from K drifting gaussian clusters.
+    vec2 p = v_uv;
+    float dens = 0.0;
+    const int K = 18;
+    for (int i = 0; i < K; i++) {
+        float fi = float(i);
+        vec2 c = vec2(0.15 + 0.7 * hash21(vec2(fi, 3.3)),
+                      0.15 + 0.7 * hash21(vec2(fi, 7.7)));
+        c += 0.04 * vec2(sin(t + fi), cos(t * 1.1 + fi * 1.7));
+        float d2 = dot(p - c, p - c);
+        dens += exp(-d2 / (2.0 * sigma * sigma + 1e-4));
+    }
+    dens = clamp(dens * 0.18, 0.0, 1.0);
+    dens = fract(dens + shift);
+    f_color = vec4(inferno(dens), 1.0);
+}
+''')
+
+_register("slitscan_gpu",
+          "Slit-scan displacement (client-GPU twin of node 57)",
+          "procedural", '''
+vec3 hsv2rgb(vec3 c) {
+    vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+void main() {
+    // u_params.x = amplitude (0.5 -> ~0.275), u_params.y = frequency
+    // (0.5 -> ~0.25), u_params.z = slit_type (0=vertical,1=horizontal,
+    // 2=radial,3=spiral,4=angular,5=diagonal).
+    int mode = int(floor(u_params.z * 6.999));
+    float amp  = 0.05 + u_params.x * 0.45;
+    float freq = 0.005 + u_params.y * 0.495;
+    float t = u_time * 0.05;
+
+    vec2 uv = v_uv;
+    vec2 c = uv - 0.5;
+    float r = length(c);
+    float a = atan(c.y, c.x);
+
+    float disp;
+    if (mode == 1)      disp = sin(freq * uv.y * 40.0 + t);
+    else if (mode == 2) disp = sin(freq * r * 40.0 - t);
+    else if (mode == 3) disp = sin(freq * r * 40.0 + a * 4.0 + t);
+    else if (mode == 4) disp = sin(freq * a * 6.0 + t);
+    else if (mode == 5) disp = sin(freq * (uv.x + uv.y) * 40.0 + t);
+    else                disp = sin(freq * uv.x * 40.0 + t);
+
+    vec2 suv = fract(uv + amp * disp);
+    float n = fbm(suv * 5.0);
+    float hue = fract(n + t * 0.1);
+    vec3 col = mix(vec3(n), hsv2rgb(vec3(hue, 0.7, 0.9)), 0.5);
+    f_color = vec4(col, 1.0);
+}
+''')
+
 _register("shader_oil_gpu", "GPU oil painting simulation", "filter", _filter_shader('''
     float radius = 2.0 + u_params.x * 4.0;
     vec3 sum = vec3(0.0); float total = 0.0;
