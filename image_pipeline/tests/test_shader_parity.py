@@ -121,8 +121,10 @@ def test_gpu_shader_node_map_resolves():
     # pixelate) added 2026-07-10 pt.2; 6 typed escape-time fractals
     # (238-243: mandelbrot/julia/burning_ship/newton/sierpinski/lyapunov) added
     # 2026-07-10 pt.3; 6 typed filter/color-grade nodes (244-249: box_blur/
-    # sharpen/vignette/threshold/hue_shift/dither) added 2026-07-11 pt.4.
-    assert len(GPU_SHADER_NODE_MAP) == 141, len(GPU_SHADER_NODE_MAP)
+    # sharpen/vignette/threshold/hue_shift/dither) added 2026-07-11 pt.4;
+    # 8 typed closed-form field-eval nodes (250-257: moire/chladni/dunes/
+    # quasicrystal/metaballs/nebula/wood_grain/ripples) added 2026-07-11 pt.5.
+    assert len(GPU_SHADER_NODE_MAP) == 149, len(GPU_SHADER_NODE_MAP)
     for mid, entry in GPU_SHADER_NODE_MAP.items():
         if entry.get("type") == "sim":
             # P1 ping-pong sim: seed/step/display must all resolve to shaders.

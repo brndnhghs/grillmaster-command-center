@@ -191,6 +191,16 @@ _TYPED_SHADER_NODES = [
     ("247", "threshold_gpu",      "GPU Threshold"),
     ("248", "hue_shift_gpu",      "GPU Hue Shift"),
     ("249", "dither_gpu",         "GPU Dither"),
+    # Categorical coverage expansion (2026-07-11): closed-form field-eval twins
+    # moire / chladni / dunes / quasicrystal / metaballs / nebula / wood / ripples.
+    ("250", "moire_typed",         "GPU Moiré"),
+    ("251", "chladni_typed",       "GPU Chladni"),
+    ("252", "dunes_typed",         "GPU Dunes"),
+    ("253", "quasicrystal_typed",  "GPU Quasicrystal"),
+    ("254", "metaballs_typed",     "GPU Metaballs"),
+    ("255", "nebula_typed",        "GPU Nebula"),
+    ("256", "wood_grain_typed",    "GPU Wood Grain"),
+    ("257", "ripples_typed",       "GPU Ripples"),
 ]
 
 _TIME_SCALE_PARAM = {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0}

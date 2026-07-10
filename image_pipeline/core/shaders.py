@@ -4312,3 +4312,263 @@ void main() {
     "amount": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 1.0,
                "description": "effect amount"},
 })
+
+# ── Typed-uniform closed-form field-eval twins (250-257) ──────────────────────
+# Each exposes its key visual parameters as named u_* uniforms so the GPU node
+# is fully editable AND wireable (data-typed SCALAR inputs) per the typed-uniform
+# contract. All are pure functions of (uv, t) -> exact parity preview, no seeded
+# layout divergence (same family as 125 Chladni / 164 Moiré / 172 Dunes).
+
+# Shared inferno colormap (each _register is a separate program).
+_INFERNO_GPU = '''
+vec3 inferno(float t){
+    t = clamp(t, 0.0, 1.0);
+    const vec3 c0=vec3(0.00021894,0.00016488,-0.01907227);
+    const vec3 c1=vec3(0.10651034,0.56396050,3.93279110);
+    const vec3 c2=vec3(11.6028830,-3.9781129,-15.9420510);
+    const vec3 c3=vec3(-41.703996,17.4360890,44.3541450);
+    const vec3 c4=vec3(77.1629350,-33.402243,-81.8094230);
+    const vec3 c5=vec3(-71.319421,32.6260640,73.2095190);
+    const vec3 c6=vec3(25.1311300,-12.242810,-23.0709590);
+    return c0+t*(c1+t*(c2+t*(c3+t*(c4+t*(c5+t*c6)))));
+}
+'''
+
+_register("moire_typed", "Moiré interference gratings with typed mode/speed/freq (node 250)",
+          "procedural", '''void main() {
+    int mode = int(clamp(floor(u_mode + 0.5), 0.0, 3.0));
+    float s1 = max(u_speed1, 0.05);
+    float s2 = max(u_speed2, 0.05);
+    float freq = max(u_freq, 1.0);
+    float t = u_time * 0.05;
+    vec2 res = u_resolution;
+    vec2 p = (v_uv - 0.5) * res;
+    float scale = 1.0 / max(res.x, res.y) * 2.0 * 3.14159265;
+    float a1 = s1 * t, a2 = s2 * t;
+    float g1, g2;
+    if (mode == 1) {            // linear
+        g1 = 0.5 + 0.5 * sin(freq * (p.x * cos(a1) + p.y * sin(a1)) * scale);
+        g2 = 0.5 + 0.5 * sin(freq * (p.x * cos(a2) + p.y * sin(a2)) * scale);
+    } else if (mode == 2) {     // spiral
+        float r = length(p);
+        g1 = 0.5 + 0.5 * sin(freq * r * scale + a1 * 4.0);
+        g2 = 0.5 + 0.5 * sin(freq * r * scale + a2 * 4.0);
+    } else if (mode == 3) {     // hex
+        vec2 h = vec2(p.x, abs(fract(p.y * 0.5) - 0.25)) * scale;
+        g1 = 0.5 + 0.5 * sin(freq * (h.x + a1));
+        g2 = 0.5 + 0.5 * sin(freq * (h.y + a2));
+    } else {                    // radial
+        float r = length(p);
+        g1 = 0.5 + 0.5 * sin(freq * r * scale + a1 * 4.0);
+        g2 = 0.5 + 0.5 * sin(freq * r * scale + a2 * 4.0 + 1.57);
+    }
+    float v = clamp(0.5 + 0.5 * sin((g1 - g2) * 3.14159), 0.0, 1.0);
+    f_color = vec4(mix(u_color_a, u_color_b, v), 1.0);
+}
+''', uniforms={
+    "mode":   {"glsl": "choice", "choices": ["radial", "linear", "spiral", "hex"],
+               "default": "radial", "description": "interference geometry"},
+    "speed1": {"glsl": "float", "min": 0.0, "max": 4.0, "default": 1.0,
+               "description": "grating 1 speed"},
+    "speed2": {"glsl": "float", "min": 0.0, "max": 4.0, "default": 1.28,
+               "description": "grating 2 speed"},
+    "freq":   {"glsl": "float", "min": 1.0, "max": 60.0, "default": 20.0,
+               "description": "grating frequency"},
+    "color_a": {"glsl": "color", "default": "#0b1026", "description": "low color"},
+    "color_b": {"glsl": "color", "default": "#ffcf4d", "description": "high color"},
+})
+
+_register("chladni_typed", "Chladni nodal plate with typed mode/rotation/phase (node 251)",
+          "procedural", _INFERNO_GPU + '''void main() {
+    float m = max(u_m_mode, 0.5);
+    float n = max(u_n_mode, 0.5);
+    float rot_ang = u_rotation;
+    float ph = u_phase;
+    vec2 p = (v_uv - 0.5) * 2.0;
+    vec2 pr = rot(rot_ang) * p;
+    float u = sin(m * 3.14159265 * (pr.x + 1.0) * 0.5 + ph)
+            * sin(n * 3.14159265 * (pr.y + 1.0) * 0.5 + ph);
+    float sig = tanh(u * u_contrast * 4.0);
+    float v = 0.5 + 0.5 * sig;
+    f_color = vec4(inferno(v), 1.0);
+}
+''', uniforms={
+    "m_mode":    {"glsl": "float", "min": 1.0, "max": 12.0, "default": 3.0,
+                  "description": "x mode number"},
+    "n_mode":    {"glsl": "float", "min": 1.0, "max": 12.0, "default": 3.0,
+                  "description": "y mode number"},
+    "rotation":  {"glsl": "float", "min": -3.14159, "max": 3.14159, "default": 0.0,
+                  "description": "plate rotation (rad)"},
+    "phase":     {"glsl": "float", "min": -3.14159, "max": 3.14159, "default": 0.0,
+                  "description": "phase shimmer (rad)"},
+    "contrast":  {"glsl": "float", "min": 0.2, "max": 4.0, "default": 1.0,
+                  "description": "nodal-line sharpness"},
+})
+
+_register("dunes_typed", "Sand dune migration with typed wind/sediment (node 252)",
+          "procedural", '''void main() {
+    float wind = max(u_wind_strength, 0.0);
+    float sed = max(u_sediment, 0.0);
+    float t = u_time * 0.05;
+    float windAngle = t * 0.15;
+    vec2 res = u_resolution;
+    vec2 p = (v_uv - 0.5) * res;
+    float h = 0.0;
+    // Layered wave superposition -> migrating dune field.
+    // wind_strength scales the wave amplitude (stronger wind -> taller, higher-contrast
+    // dunes); sediment controls wavelength (more sediment -> finer ripples).
+    float amp_scale = 0.2 + 1.5 * clamp(wind, 0.0, 1.5);   // height grows with wind
+    float wlen_base = mix(60.0, 8.0, clamp(sed, 0.0, 1.0)); // finesse with sediment
+    for (int i = 0; i < 5; i++) {
+        float fi = float(i);
+        float ang = windAngle + fi * 0.7;
+        vec2 dir = vec2(cos(ang), sin(ang));
+        float wlen = wlen_base * (1.0 - fi / 8.0);
+        float amp = amp_scale * (1.0 - fi / 6.0);
+        h += amp * sin(dot(p, dir) / wlen + t * (1.0 + fi * 0.2));
+    }
+    // Fixed normalization (independent of wind) so wind_strength changes contrast.
+    float v = clamp(0.5 + 0.5 * (h / 5.0), 0.0, 1.0);
+    vec3 col = mix(u_sand_low, u_sand_high, v);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "wind_strength": {"glsl": "float", "min": 0.0, "max": 1.5, "default": 0.6,
+                      "description": "wind strength (dune height)"},
+    "sediment":      {"glsl": "float", "min": 0.0, "max": 1.5, "default": 0.8,
+                      "description": "sediment supply (ripple fineness)"},
+    "sand_low":  {"glsl": "color", "default": "#5a3a1a", "description": "shadow sand"},
+    "sand_high": {"glsl": "color", "default": "#e8c89a", "description": "lit sand"},
+})
+
+_register("quasicrystal_typed", "Quasicrystal interference with typed freq/rot/waves (node 253)",
+          "procedural", _INFERNO_GPU + '''void main() {
+    float freq = max(u_frequency, 0.005);
+    float amp  = max(u_amplitude, 0.01);
+    float rot  = u_rotation;
+    int nwaves = int(clamp(u_waves, 2.0, 24.0));
+    vec2 p = (v_uv - 0.5) * u_resolution;
+    float t = u_time * 0.05;
+    float sum = 0.0;
+    for (int i = 0; i < 24; i++) {
+        if (i >= nwaves) break;
+        float fi = float(i);
+        float a = rot + fi * 2.3999632 + t * 0.1;
+        vec2 dir = vec2(cos(a), sin(a));
+        sum += amp * sin(dot(p, dir) * freq * 0.01 + fi * 1.7);
+    }
+    float v = clamp(0.5 + 0.5 * (sum / float(max(nwaves, 1))), 0.0, 1.0);
+    f_color = vec4(inferno(v), 1.0);
+}
+''', uniforms={
+    "frequency": {"glsl": "float", "min": 0.5, "max": 10.0, "default": 3.0,
+                  "description": "wave frequency"},
+    "amplitude": {"glsl": "float", "min": 0.1, "max": 3.0, "default": 1.0,
+                  "description": "wave amplitude"},
+    "rotation":  {"glsl": "float", "min": 0.0, "max": 6.2831853, "default": 0.0,
+                  "description": "global rotation (rad)"},
+    "waves":     {"glsl": "int", "min": 2, "max": 24, "default": 12,
+                  "description": "number of interfering waves"},
+})
+
+_register("metaballs_typed", "Metaballs isosurface field with typed isovalue/speed/colors (node 254)",
+          "procedural", _INFERNO_GPU + '''void main() {
+    float iso   = 0.05 + u_isovalue * 0.75;
+    float speed = 0.1  + u_ball_speed * 4.9;
+    float t = u_time * 0.05 * speed;
+    vec2 p = v_uv;
+    float field = 0.0;
+    const int N = 14;
+    for (int i = 0; i < N; i++) {
+        float fi = float(i);
+        float ang = fi * 2.399963;
+        float orbit = 0.18 + 0.16 * hash21(vec2(fi, 1.7));
+        float wx = 0.5 + orbit * cos(t * (0.6 + 0.05 * fi) + ang);
+        float wy = 0.5 + orbit * sin(t * (0.6 + 0.05 * fi) + ang * 1.3);
+        vec2 c = vec2(wx, wy);
+        float ri = 0.06 + 0.05 * hash21(vec2(fi, 9.1));
+        float d2 = dot(p - c, p - c);
+        field += (ri * ri) / (ri * ri + d2 + 1e-4);
+    }
+    float f = clamp(field * 0.5, 0.0, 1.0);
+    vec3 col = inferno(f);
+    float edge = smoothstep(iso - 0.04, iso, field * (iso + 0.2))
+               * (1.0 - smoothstep(iso, iso + 0.04, field * (iso + 0.2)));
+    col += edge * 0.35;
+    col = mix(col, u_tint, u_tint_strength);
+    f_color = vec4(clamp(col, 0.0, 1.0), 1.0);
+}
+''', uniforms={
+    "isovalue":   {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5,
+                   "description": "iso threshold"},
+    "ball_speed": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5,
+                   "description": "orbit speed"},
+    "tint":       {"glsl": "color", "default": "#ffffff", "description": "edge tint"},
+    "tint_strength": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.0,
+                      "description": "edge tint strength"},
+})
+
+_register("nebula_typed", "Procedural nebula with typed scale/warp/colors (node 255)",
+          "procedural", '''void main() {
+    vec2 uv = v_uv * max(u_scale, 0.5);
+    float t = u_time * 0.03 * max(u_warp, 0.1);
+    vec2 q = vec2(fbm(uv + t), fbm(uv + vec2(5.2, 1.3) + t * 0.7));
+    vec2 r = vec2(fbm(uv + 3.0 * q + vec2(1.7, 9.2) + t * 0.3),
+                  fbm(uv + 3.0 * q + vec2(8.3, 2.8) + t * 0.4));
+    float v = fbm(uv + 3.0 * r);
+    float mask = 1.0 - abs(v_uv.y - 0.5) * 2.0 * u_vignette;
+    vec3 col = u_shadow + (u_highlight - u_shadow) * (0.5 + 0.5 * cos(v * 4.0 + vec3(0, 1, 2)));
+    col *= mask;
+    f_color = vec4(clamp(col, 0.0, 1.0), 1.0);
+}
+''', uniforms={
+    "scale":     {"glsl": "float", "min": 0.5, "max": 6.0, "default": 2.0,
+                  "description": "turbulence scale"},
+    "warp":      {"glsl": "float", "min": 0.1, "max": 3.0, "default": 1.0,
+                  "description": "domain-warp / drift speed"},
+    "vignette":  {"glsl": "float", "min": 0.0, "max": 1.0, "default": 1.0,
+                  "description": "vertical vignette"},
+    "shadow":    {"glsl": "color", "default": "#0a0a1f", "description": "dark cloud"},
+    "highlight": {"glsl": "color", "default": "#5aa0ff", "description": "nebula glow"},
+})
+
+_register("wood_grain_typed", "Wood grain rings with typed rings/scale/colors (node 256)",
+          "procedural", '''void main() {
+    vec2 uv = v_uv - 0.5;
+    float d = length(uv) * max(u_scale, 1.0);
+    float grain = sin(d * max(u_rings, 1.0) + fbm(uv * 10.0) * u_turb) * 0.5 + 0.5;
+    vec3 col = mix(u_dark, u_light, grain);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "rings": {"glsl": "float", "min": 1.0, "max": 40.0, "default": 8.0,
+              "description": "ring frequency"},
+    "scale": {"glsl": "float", "min": 1.0, "max": 30.0, "default": 10.0,
+              "description": "ring spread"},
+    "turb":  {"glsl": "float", "min": 0.0, "max": 2.0, "default": 0.5,
+              "description": "grain turbulence"},
+    "dark":  {"glsl": "color", "default": "#3a1d0a", "description": "dark wood"},
+    "light": {"glsl": "color", "default": "#9a5a2a", "description": "light wood"},
+})
+
+_register("ripples_typed", "Concentric color ripples with typed freq/speed/colors (node 257)",
+          "procedural", '''void main() {
+    vec2 uv = v_uv - 0.5;
+    float d = length(uv);
+    float ph = u_time * max(u_speed, 0.1) - d * max(u_freq, 1.0);
+    float r = 0.5 + 0.5 * sin(ph);
+    float g = 0.5 + 0.5 * sin(ph + 2.0);
+    float b = 0.5 + 0.5 * sin(ph + 4.0);
+    vec3 col = mix(u_color_a, u_color_b, d);
+    col *= vec3(r, g, b);
+    col *= (1.0 - d);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "freq":  {"glsl": "float", "min": 1.0, "max": 40.0, "default": 30.0,
+              "description": "ripple frequency"},
+    "speed": {"glsl": "float", "min": 0.1, "max": 4.0, "default": 2.0,
+              "description": "ripple speed"},
+    "color_a": {"glsl": "color", "default": "#10071f", "description": "inner color"},
+    "color_b": {"glsl": "color", "default": "#4affd0", "description": "outer color"},
+})
