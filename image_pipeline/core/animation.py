@@ -155,10 +155,22 @@ def capture_frame(method_id: str, arr: np.ndarray):
 
 
 def get_frames(method_id: str) -> list[np.ndarray]:
-    """Retrieve captured frames and clear slot."""
-    slots = getattr(_thread_local, "slots", None)
-    if slots is not None:
-        return slots.pop(method_id, [])
+    """Retrieve captured frames and clear slot.
+
+    Mirrors the write path in ``capture_frame``: frames are stored in the
+    thread-local slot only when a server-path context is active (i.e. a
+    ``cancel_event`` was installed via ``set_job_context``). Otherwise they
+    live in the module-level CLI slot. ``clear_job_context`` leaves the
+    thread-local ``slots`` attribute present (an empty dict), so we must
+    test for the *context* rather than the mere presence of the attribute —
+    otherwise a CLI capture that ran after any server-path test would be
+    silently read from the wrong (empty) dict.
+    """
+    cancel_event = getattr(_thread_local, "cancel_event", None)
+    if cancel_event is not None:
+        slots = getattr(_thread_local, "slots", None)
+        if slots is not None:
+            return slots.pop(method_id, [])
     return _METHOD_FRAME_SLOTS.pop(method_id, [])
 
 
