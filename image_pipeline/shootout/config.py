@@ -1,7 +1,14 @@
-"""Shootout config knobs — one place, plain dataclass."""
+"""Shootout config knobs — one place, plain dataclass.
+
+User-tunable knobs can be overridden at runtime through the /shootout
+settings menu; overrides persist in shootout/data/config.json and are
+merged over the dataclass defaults by effective_config().
+"""
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
+import json
+from dataclasses import dataclass, field, asdict, fields
+from pathlib import Path
 
 
 @dataclass
@@ -79,3 +86,117 @@ class ShootoutConfig:
 
 
 DEFAULT_CONFIG = ShootoutConfig()
+
+
+# ── Runtime overrides (the /shootout settings menu) ───────────────────
+
+_OVERRIDES_PATH = Path(__file__).resolve().parent / "data" / "config.json"
+
+# name → (help text, min, max). Curated: only knobs that make sense to
+# tweak from the UI; everything else stays a code-level default.
+TUNABLE_FIELDS: dict[str, tuple[str, float | None, float | None]] = {
+    "show_n":            ("Clips shown per generation", 1, 12),
+    "render_pool":       ("Candidates rendered per generation — dead clips are culled, so render more than you show", 1, 64),
+    "frames":            ("Frames per clip (96 ≈ 4 s @ 24 fps)", 8, 600),
+    "fps":               ("Clip frame rate", 4, 60),
+    "width":             ("Render width (px)", 64, 2048),
+    "height":            ("Render height (px)", 64, 2048),
+    "max_depth":         ("Initial graph-size budget — evolution can grow past this, there is no hard cap", 1, 64),
+    "explore_ratio":     ("Fraction of each bred generation that is fresh random graphs (keeps variety)", 0.0, 1.0),
+    "elitism":           ("Top-rated clips carried into the next round unchanged", 0, 3),
+    "crossover_ratio":   ("Of bred offspring, fraction made by splicing two parents (rest are mutations)", 0.0, 1.0),
+    "min_rating_to_parent": ("Clips rated below this never breed", 1, 5),
+    "render_timeout_s":  ("Per-clip render budget (seconds) — slower graphs are culled as 'timeout'", 10, 3600),
+    "render_concurrency": ("Clips rendered in parallel", 1, 8),
+    "advisor_enabled":   ("Interpret your pros/cons notes with the LLM advisor to steer breeding", None, None),
+    "temporal_var_min":  ("Liveness: minimum motion required — lower lets calmer clips through", 0.0, 0.5),
+    "spatial_var_min":   ("Liveness: minimum spatial detail — lower lets flatter clips through", 0.0, 0.5),
+}
+
+
+def load_overrides() -> dict:
+    if not _OVERRIDES_PATH.exists():
+        return {}
+    try:
+        d = json.loads(_OVERRIDES_PATH.read_text())
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def _coerce(name: str, value):
+    """Coerce+clamp an override to its field type; None = reject."""
+    spec = TUNABLE_FIELDS.get(name)
+    if spec is None:
+        return None
+    fld = next((f for f in fields(ShootoutConfig) if f.name == name), None)
+    if fld is None:
+        return None
+    default = getattr(DEFAULT_CONFIG, name)
+    try:
+        if isinstance(default, bool):
+            return bool(value)
+        if isinstance(default, int):
+            v = int(round(float(value)))
+        elif isinstance(default, float):
+            v = float(value)
+        else:
+            return None
+    except (TypeError, ValueError):
+        return None
+    _, lo, hi = spec
+    if lo is not None:
+        v = max(type(v)(lo), v)
+    if hi is not None:
+        v = min(type(v)(hi), v)
+    return v
+
+
+def save_overrides(overrides: dict) -> dict:
+    """Validate, persist, and return the accepted overrides. Unknown keys
+    and un-coercible values are dropped silently; values equal to the
+    default are dropped too, so 'overridden' always means 'differs from
+    the code default' (and typing the default back removes the override)."""
+    accepted = {}
+    for k, v in (overrides or {}).items():
+        cv = _coerce(k, v)
+        if cv is not None and cv != getattr(DEFAULT_CONFIG, k):
+            accepted[k] = cv
+    _OVERRIDES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _OVERRIDES_PATH.write_text(json.dumps(accepted, indent=1))
+    return accepted
+
+
+def reset_overrides() -> None:
+    if _OVERRIDES_PATH.exists():
+        _OVERRIDES_PATH.unlink()
+
+
+def effective_config() -> ShootoutConfig:
+    """Dataclass defaults + persisted overrides."""
+    cfg = ShootoutConfig()
+    for k, v in load_overrides().items():
+        cv = _coerce(k, v)
+        if cv is not None:
+            setattr(cfg, k, cv)
+    return cfg
+
+
+def config_info() -> dict:
+    """Everything the settings UI needs: per-field value/default/help."""
+    cfg = effective_config()
+    overrides = load_overrides()
+    out = []
+    for name, (help_text, lo, hi) in TUNABLE_FIELDS.items():
+        default = getattr(DEFAULT_CONFIG, name)
+        out.append({
+            "name": name,
+            "value": getattr(cfg, name),
+            "default": default,
+            "type": "bool" if isinstance(default, bool)
+                    else "int" if isinstance(default, int) else "float",
+            "min": lo, "max": hi,
+            "overridden": name in overrides,
+            "help": help_text,
+        })
+    return {"fields": out}

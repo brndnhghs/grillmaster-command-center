@@ -34,12 +34,14 @@ POOL = build_gene_pool(CFG)
 @pytest.fixture()
 def tmp_store(tmp_path, monkeypatch):
     """Redirect the shootout data dir into tmp so tests never touch the
-    real ratings dataset."""
+    real ratings dataset or settings overrides."""
+    from image_pipeline.shootout import config as cfg_mod
     monkeypatch.setattr(store, "DATA_DIR", tmp_path)
     monkeypatch.setattr(store, "GENOMES_DIR", tmp_path / "genomes")
     monkeypatch.setattr(store, "SESSIONS_DIR", tmp_path / "sessions")
     monkeypatch.setattr(store, "RATINGS_PATH", tmp_path / "ratings.jsonl")
     monkeypatch.setattr(store, "MODEL_PATH", tmp_path / "taste_model.json")
+    monkeypatch.setattr(cfg_mod, "_OVERRIDES_PATH", tmp_path / "config.json")
     return tmp_path
 
 
@@ -472,6 +474,52 @@ def test_complexity_bias_shifts_sizes():
     grow = mean_size(SamplingBias(complexity=0.8))
     shrink = mean_size(SamplingBias(complexity=-0.8))
     assert grow > shrink + 0.5, (grow, shrink)
+
+
+# ── Settings (config overrides) ───────────────────────────────────────
+
+
+def test_config_endpoint_roundtrip(client, tmp_store):
+    from image_pipeline.shootout import config as cfg_mod
+
+    r = client.get("/api/shootout/config")
+    assert r.status_code == 200
+    fields = {f["name"]: f for f in r.json()["fields"]}
+    assert fields["show_n"]["value"] == cfg_mod.DEFAULT_CONFIG.show_n
+    assert not fields["show_n"]["overridden"]
+
+    # save: coercion (float→int), clamping, unknown keys dropped
+    r = client.post("/api/shootout/config", json={"overrides": {
+        "show_n": 4.7,               # → int 5
+        "render_pool": 9999,         # clamped to max 64
+        "advisor_enabled": False,
+        "exclude_methods": ["hack"],  # not tunable — dropped
+        "temporal_var_min": 0.001,
+    }})
+    fields = {f["name"]: f for f in r.json()["fields"]}
+    assert fields["show_n"]["value"] == 5 and fields["show_n"]["overridden"]
+    assert fields["render_pool"]["value"] == 64
+    assert fields["advisor_enabled"]["value"] is False
+    assert fields["temporal_var_min"]["value"] == 0.001
+
+    eff = cfg_mod.effective_config()
+    assert eff.show_n == 5 and eff.render_pool == 64
+    assert eff.advisor_enabled is False
+    assert eff.exclude_methods == cfg_mod.DEFAULT_CONFIG.exclude_methods
+
+    # overrides persist across a fresh read
+    assert cfg_mod.load_overrides()["show_n"] == 5
+
+    # partial update merges with existing overrides
+    client.post("/api/shootout/config", json={"overrides": {"show_n": 3}})
+    eff = cfg_mod.effective_config()
+    assert eff.show_n == 3 and eff.render_pool == 64
+
+    # reset restores defaults
+    r = client.post("/api/shootout/config", json={"reset": True})
+    fields = {f["name"]: f for f in r.json()["fields"]}
+    assert fields["show_n"]["value"] == cfg_mod.DEFAULT_CONFIG.show_n
+    assert not any(f["overridden"] for f in r.json()["fields"])
 
 
 # ── E2E render smoke (slow — needs ffmpeg) ────────────────────────────

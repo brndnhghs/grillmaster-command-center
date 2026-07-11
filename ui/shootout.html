@@ -130,6 +130,43 @@ try {
     text-align: center; color: var(--muted); padding: 80px 20px; font-size: 14px;
   }
   #empty .big { font-size: 40px; margin-bottom: 12px; }
+
+  /* ── About / Settings modal ─────────────────────────────────── */
+  #modal-overlay {
+    display: none; position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,0.6); align-items: flex-start; justify-content: center;
+    overflow-y: auto; padding: 40px 16px;
+  }
+  #modal-overlay.visible { display: flex; }
+  #modal {
+    background: var(--bg1); border: 1px solid var(--border-strong);
+    border-radius: var(--radius-l); box-shadow: var(--shadow-2);
+    max-width: 720px; width: 100%; padding: 22px 26px;
+  }
+  #modal h2 { font-size: 15px; margin-bottom: 10px; }
+  #modal h3 { font-size: 13px; margin: 18px 0 8px; color: var(--accent2);
+    text-transform: uppercase; letter-spacing: 0.06em; }
+  #modal .about p { font-size: 13px; color: var(--text); line-height: 1.55;
+    margin-bottom: 8px; }
+  #modal .about b { color: var(--accent2); }
+  #modal .about .dim { color: var(--muted); }
+  .cfg-grid { display: grid; grid-template-columns: 1fr 110px; gap: 8px 14px;
+    align-items: center; }
+  .cfg-label { font-size: 12.5px; }
+  .cfg-label .hint { display: block; font-size: 11px; color: var(--muted2);
+    line-height: 1.35; margin-top: 1px; }
+  .cfg-label .name { font-family: var(--font-mono); font-size: 11px;
+    color: var(--muted); }
+  .cfg-grid input[type="number"] {
+    width: 100%; background: var(--bg2); color: var(--text);
+    border: 1px solid var(--border); border-radius: var(--radius-s);
+    padding: 5px 8px; font-size: 12.5px; font-family: var(--font-mono);
+  }
+  .cfg-grid input:focus { outline: none; border-color: var(--accent); }
+  .cfg-grid input.overridden { border-color: var(--warn); }
+  .cfg-grid input[type="checkbox"] { justify-self: start; width: 16px; height: 16px; }
+  #modal-actions { display: flex; gap: 10px; margin-top: 18px; align-items: center; }
+  #modal-status { font-size: 12px; color: var(--muted); flex: 1; }
 </style>
 </head>
 <body>
@@ -141,6 +178,7 @@ try {
   <span class="meta">generation <b id="h-gen">—</b></span>
   <span class="meta" id="h-taste" title="Taste-model held-out metrics (log+train only in v1)">taste: —</span>
   <span class="spacer"></span>
+  <button id="btn-about" class="small" title="How the shootout works + settings">ⓘ About / Settings</button>
   <button id="btn-train" class="small" title="Retrain the taste model from all ratings">Train taste</button>
   <button id="btn-new">New session</button>
   <button id="btn-go" class="primary" disabled>Generate</button>
@@ -148,6 +186,48 @@ try {
 
 <div id="status-bar">idle</div>
 <div id="guidance-bar"></div>
+
+<div id="modal-overlay">
+  <div id="modal">
+    <h2>🎬 Shootout — evolutionary nodegraph generator</h2>
+
+    <div class="about">
+      <h3>How it works</h3>
+      <p><b>1 · Generate.</b> The system samples a batch of wild-but-valid node
+        graphs (every connection is port-type-legal), renders each to a short
+        looping clip, and culls the dead ones — black, frozen, pure flicker,
+        or too slow to render. The survivors land in the grid.</p>
+      <p><b>2 · Rate & annotate.</b> Give each clip 1–5 stars and, optionally,
+        write pros/cons in its notes box — what works, what to change.
+        Unrated clips are simply skipped.</p>
+      <p><b>3 · Evolve.</b> Stars pick the parents (4–5★ dominate; the best
+        clip carries over unchanged). Offspring are made by mutating one
+        parent or splicing two together, plus a share of fresh random
+        "explorers" so it never goes stale. Your notes are interpreted by the
+        LLM advisor and steer the breeding: favor/avoid certain nodes, grow
+        or simplify graphs, protect or drop specific clips — watch the 🧭
+        line for what it understood.</p>
+      <p><b>4 · Taste model.</b> Every rating is logged to a permanent
+        dataset. <b>Train taste</b> fits a model that predicts your stars
+        (shown as ~n★ on new clips); it compounds across sessions.</p>
+      <p><b>5 · Keepers.</b> <b>Open in editor</b> loads a genome into the
+        node editor; <b>Save</b> puts it in the graph library. Both survive
+        outside the loop.</p>
+      <p class="dim">Clips render server-side; a generation takes a few
+        minutes depending on pool size, clip length, and render budget.</p>
+    </div>
+
+    <h3>Settings</h3>
+    <div class="cfg-grid" id="cfg-grid"></div>
+
+    <div id="modal-actions">
+      <span id="modal-status"></span>
+      <button id="cfg-reset" class="small" title="Back to code defaults">Reset defaults</button>
+      <button id="cfg-save" class="small">Save settings</button>
+      <button id="modal-close" class="small">Close</button>
+    </div>
+  </div>
+</div>
 
 <div id="empty">
   <div class="big">🧬</div>
@@ -432,6 +512,86 @@ async function trainTaste() {
     setStatus(d.note || 'not enough ratings yet');
   }
 }
+
+// ── About / Settings modal ─────────────────────────────────────
+let CFG_FIELDS = [];   // last-fetched field specs
+
+function cfgInputId(name) { return `cfg-${name}`; }
+
+async function openModal() {
+  const r = await fetch('/api/shootout/config');
+  CFG_FIELDS = (await r.json()).fields;
+  const grid = $('cfg-grid');
+  grid.innerHTML = '';
+  for (const f of CFG_FIELDS) {
+    const label = document.createElement('label');
+    label.className = 'cfg-label';
+    label.htmlFor = cfgInputId(f.name);
+    label.innerHTML = `<span class="name">${f.name}</span>` +
+      `<span class="hint">${f.help}</span>`;
+    grid.appendChild(label);
+
+    const input = document.createElement('input');
+    input.id = cfgInputId(f.name);
+    if (f.type === 'bool') {
+      input.type = 'checkbox';
+      input.checked = !!f.value;
+    } else {
+      input.type = 'number';
+      input.value = f.value;
+      if (f.min != null) input.min = f.min;
+      if (f.max != null) input.max = f.max;
+      input.step = f.type === 'int' ? 1 : 'any';
+    }
+    if (f.overridden) input.classList.add('overridden');
+    input.title = `default: ${f.default}`;
+    grid.appendChild(input);
+  }
+  $('modal-status').textContent = '';
+  $('modal-overlay').classList.add('visible');
+}
+
+async function saveConfig(reset) {
+  let body;
+  if (reset) {
+    body = {reset: true};
+  } else {
+    const overrides = {};
+    for (const f of CFG_FIELDS) {
+      const el = $(cfgInputId(f.name));
+      overrides[f.name] = f.type === 'bool' ? el.checked : Number(el.value);
+    }
+    body = {overrides};
+  }
+  const r = await fetch('/api/shootout/config', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    $('modal-status').textContent = `save failed (${r.status})`;
+    return;
+  }
+  $('modal-status').textContent = reset
+    ? 'defaults restored — applies to the next generation'
+    : 'saved — applies to the next generation';
+  // re-render the form with the accepted (coerced/clamped) values
+  const fields = (await r.json()).fields;
+  CFG_FIELDS = fields;
+  for (const f of fields) {
+    const el = $(cfgInputId(f.name));
+    if (!el) continue;
+    if (f.type === 'bool') el.checked = !!f.value; else el.value = f.value;
+    el.classList.toggle('overridden', f.overridden);
+  }
+}
+
+$('btn-about').onclick = openModal;
+$('modal-close').onclick = () => $('modal-overlay').classList.remove('visible');
+$('cfg-save').onclick = () => saveConfig(false);
+$('cfg-reset').onclick = () => saveConfig(true);
+$('modal-overlay').onclick = (e) => {
+  if (e.target === $('modal-overlay')) $('modal-overlay').classList.remove('visible');
+};
 
 // ── boot ───────────────────────────────────────────────────────
 $('btn-new').onclick = newSession;

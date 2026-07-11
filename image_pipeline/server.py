@@ -1063,7 +1063,7 @@ def live_graph_diagnostics():
 from image_pipeline.shootout import session as _shootout_session
 from image_pipeline.shootout import store as _shootout_store
 from image_pipeline.shootout import taste as _shootout_taste
-from image_pipeline.shootout.config import DEFAULT_CONFIG as _SHOOTOUT_CFG
+from image_pipeline.shootout import config as _shootout_config
 
 
 class ShootoutSessionRequest(BaseModel):
@@ -1076,10 +1076,34 @@ class ShootoutRunRequest(BaseModel):
     notes: dict[str, str] | None = None    # per-genome pros/cons free text
 
 
+class ShootoutConfigRequest(BaseModel):
+    overrides: dict[str, Any] | None = None
+    reset: bool = False
+
+
+@app.get("/api/shootout/config")
+def shootout_get_config():
+    """Tunable settings + current values for the /shootout settings menu."""
+    return _shootout_config.config_info()
+
+
+@app.post("/api/shootout/config")
+def shootout_set_config(req: ShootoutConfigRequest):
+    """Persist settings overrides (or reset to defaults). Applies to the
+    next generation run — an in-flight render keeps its old config."""
+    if req.reset:
+        _shootout_config.reset_overrides()
+    elif req.overrides:
+        _shootout_config.save_overrides({
+            **_shootout_config.load_overrides(), **req.overrides})
+    return _shootout_config.config_info()
+
+
 @app.post("/api/shootout/session")
 def shootout_session(req: ShootoutSessionRequest):
     """Start a new shootout session, or resume one by id."""
-    session = _shootout_session.start_session(req.session_id)
+    session = _shootout_session.start_session(
+        req.session_id, _shootout_config.effective_config())
     return _shootout_session.session_state(session["session_id"])
 
 
@@ -1112,7 +1136,7 @@ def _shootout_launch_job(session_id: str) -> dict:
         q = job["q"]
         try:
             result = _shootout_session.run_generation(
-                session_id, _SHOOTOUT_CFG,
+                session_id, _shootout_config.effective_config(),
                 progress_cb=lambda m: q.put(("progress", m)))
             q.put(("done", result))
         except Exception as exc:
@@ -1138,7 +1162,8 @@ def shootout_rate(req: ShootoutRunRequest):
         raise HTTPException(400, "ratings or notes required")
     try:
         return _shootout_session.rate(req.session_id, req.ratings or {},
-                                      _SHOOTOUT_CFG, notes=req.notes)
+                                      _shootout_config.effective_config(),
+                                      notes=req.notes)
     except ValueError as exc:
         raise HTTPException(404, str(exc))
 
@@ -1150,7 +1175,8 @@ def shootout_evolve(req: ShootoutRunRequest):
     if req.ratings or req.notes:
         try:
             _shootout_session.rate(req.session_id, req.ratings or {},
-                                   _SHOOTOUT_CFG, notes=req.notes)
+                                   _shootout_config.effective_config(),
+                                   notes=req.notes)
         except ValueError as exc:
             raise HTTPException(404, str(exc))
     return _shootout_launch_job(req.session_id)
