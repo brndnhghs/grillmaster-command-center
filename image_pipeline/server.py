@@ -498,6 +498,11 @@ def serve_ui():
     return FileResponse(str(UI_DIR / "index.html"))
 
 
+@app.get("/shootout")
+def serve_shootout_ui():
+    return FileResponse(str(UI_DIR / "shootout.html"))
+
+
 @app.get("/health")
 def health():
     return {"ok": True}
@@ -1049,6 +1054,119 @@ def live_graph_diagnostics():
     running = _live_sim_thread is not None and _live_sim_thread.is_alive()
     sim_cache_size = len(_live_executor._sim_cache) if _live_executor is not None else 0
     return {"running": running, "sim_cache_entries": sim_cache_size, **_live_stats}
+
+
+# ── Shootout — evolutionary generator (see image_pipeline/shootout/) ──
+# NOTE: these static routes MUST stay registered before the dynamic
+# /api/graph/{gid} routes below (FastAPI matches in registration order).
+
+from image_pipeline.shootout import session as _shootout_session
+from image_pipeline.shootout import store as _shootout_store
+from image_pipeline.shootout import taste as _shootout_taste
+from image_pipeline.shootout.config import DEFAULT_CONFIG as _SHOOTOUT_CFG
+
+
+class ShootoutSessionRequest(BaseModel):
+    session_id: str | None = None
+
+
+class ShootoutRunRequest(BaseModel):
+    session_id: str
+    ratings: dict[str, int] | None = None  # /evolve: rate-if-not-already
+
+
+@app.post("/api/shootout/session")
+def shootout_session(req: ShootoutSessionRequest):
+    """Start a new shootout session, or resume one by id."""
+    session = _shootout_session.start_session(req.session_id)
+    return _shootout_session.session_state(session["session_id"])
+
+
+@app.get("/api/shootout/sessions")
+def shootout_sessions():
+    return _shootout_store.list_sessions()
+
+
+@app.get("/api/shootout/session/{session_id}")
+def shootout_session_state(session_id: str):
+    state = _shootout_session.session_state(session_id)
+    if state is None:
+        raise HTTPException(404, f"Session '{session_id}' not found")
+    return state
+
+
+def _shootout_launch_job(session_id: str) -> dict:
+    """Run one generation in a background job; progress + result stream via
+    the existing /api/jobs/{id}/stream SSE."""
+    _evict_old_jobs()
+    job_id = uuid.uuid4().hex[:8]
+    job = {
+        "id": job_id, "status": "running", "q": queue.Queue(),
+        "output_path": None, "type": "shootout", "start": time.time(),
+        "cancel_event": threading.Event(),
+    }
+    _jobs[job_id] = job
+
+    def _worker():
+        q = job["q"]
+        try:
+            result = _shootout_session.run_generation(
+                session_id, _SHOOTOUT_CFG,
+                progress_cb=lambda m: q.put(("progress", m)))
+            q.put(("done", result))
+        except Exception as exc:
+            q.put(("error", str(exc)))
+        finally:
+            job["status"] = "done"
+            q.put(None)
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return {"job_id": job_id, "session_id": session_id}
+
+
+@app.post("/api/shootout/generate")
+def shootout_generate(req: ShootoutRunRequest):
+    """Generate + repair + render + reject one generation (async job)."""
+    return _shootout_launch_job(req.session_id)
+
+
+@app.post("/api/shootout/rate")
+def shootout_rate(req: ShootoutRunRequest):
+    """Persist star ratings for the latest generation."""
+    if not req.ratings:
+        raise HTTPException(400, "ratings map required")
+    try:
+        return _shootout_session.rate(req.session_id, req.ratings, _SHOOTOUT_CFG)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc))
+
+
+@app.post("/api/shootout/evolve")
+def shootout_evolve(req: ShootoutRunRequest):
+    """Rate (if ratings included) then breed + render the next generation."""
+    if req.ratings:
+        try:
+            _shootout_session.rate(req.session_id, req.ratings, _SHOOTOUT_CFG)
+        except ValueError as exc:
+            raise HTTPException(404, str(exc))
+    return _shootout_launch_job(req.session_id)
+
+
+@app.get("/api/shootout/genome/{genome_id}")
+def shootout_genome(genome_id: str):
+    """Full genome envelope — graph is loadable in the normal editor."""
+    genome = _shootout_store.load_genome(genome_id)
+    if genome is None:
+        raise HTTPException(404, f"Genome '{genome_id}' not found")
+    return genome
+
+
+@app.post("/api/shootout/train")
+def shootout_train():
+    """Retrain the taste model from the ratings dataset; returns metrics."""
+    artifact = _shootout_taste.train()
+    return {k: v for k, v in artifact.items()
+            if k in ("trained", "n_samples", "metrics", "note", "model")}
 
 
 @app.get("/api/graph/{gid}")

@@ -1,0 +1,344 @@
+"""Shootout test plan (docs/plans/2026-07-10-shootout-evolutionary-generator-plan.md §15).
+
+Fast suite: generator/repair fuzz (subset), evaluator synthetic stacks,
+evolve validity + selection, features determinism, taste-vs-baseline,
+endpoint lifecycle + route order. The 1000-genome fuzz and a real render
+smoke are marked slow.
+"""
+from __future__ import annotations
+
+import json
+import random
+import shutil
+
+import numpy as np
+import pytest
+
+import image_pipeline.methods  # noqa: F401
+from image_pipeline.shootout.config import ShootoutConfig
+from image_pipeline.shootout.generator import build_gene_pool, random_genome
+from image_pipeline.shootout.repair import (
+    repair_genome, sample_valid_genome, validate_graph,
+)
+from image_pipeline.shootout.evaluator import evaluate_frames
+from image_pipeline.shootout.evolve import (
+    crossover, mutate, next_generation, select_parents,
+)
+from image_pipeline.shootout.features import genome_features
+from image_pipeline.shootout import taste, store
+
+CFG = ShootoutConfig()
+POOL = build_gene_pool(CFG)
+
+
+@pytest.fixture()
+def tmp_store(tmp_path, monkeypatch):
+    """Redirect the shootout data dir into tmp so tests never touch the
+    real ratings dataset."""
+    monkeypatch.setattr(store, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(store, "GENOMES_DIR", tmp_path / "genomes")
+    monkeypatch.setattr(store, "SESSIONS_DIR", tmp_path / "sessions")
+    monkeypatch.setattr(store, "RATINGS_PATH", tmp_path / "ratings.jsonl")
+    monkeypatch.setattr(store, "MODEL_PATH", tmp_path / "taste_model.json")
+    return tmp_path
+
+
+# ── Generator + repair ────────────────────────────────────────────────
+
+
+def test_fuzz_generator_repair_fast():
+    rng = random.Random(42)
+    for _ in range(150):
+        g = sample_valid_genome(POOL, CFG, rng)
+        issues = validate_graph(g["graph"], POOL, CFG)
+        assert not issues, issues
+        # executor-level structural checks: topo sort + terminal resolution
+        from image_pipeline.core.graph import GraphExecutor, GraphNode, GraphEdge
+        nodes = [GraphNode(**{k: v for k, v in n.items()
+                              if k in GraphNode.__dataclass_fields__})
+                 for n in g["graph"]["nodes"]]
+        edges = [GraphEdge(**{k: v for k, v in e.items()
+                              if k in GraphEdge.__dataclass_fields__})
+                 for e in g["graph"]["edges"]]
+        ex = GraphExecutor.__new__(GraphExecutor)
+        order = ex._topo_sort(nodes, edges)   # raises GraphError on a cycle
+        assert len(order) == len(nodes)
+        terminal = ex._find_terminal(nodes, edges, order)
+        assert terminal is not None
+
+
+@pytest.mark.slow
+def test_fuzz_generator_repair_1000():
+    rng = random.Random(1)
+    for _ in range(1000):
+        g = sample_valid_genome(POOL, CFG, rng)
+        assert not validate_graph(g["graph"], POOL, CFG)
+
+
+def test_repair_fixes_broken_graphs():
+    rng = random.Random(7)
+    g = random_genome(POOL, CFG, rng)
+    graph = g["graph"]
+    # break it: cycle, double render flag, illegal edge, out-of-range param
+    if len(graph["nodes"]) >= 2:
+        a, b = graph["nodes"][0]["id"], graph["nodes"][1]["id"]
+        graph["edges"].append({"src_node": a, "src_port": "image",
+                               "dst_node": b, "dst_port": "image_in"})
+        graph["edges"].append({"src_node": b, "src_port": "image",
+                               "dst_node": a, "dst_port": "image_in"})
+    for n in graph["nodes"]:
+        n["render"] = True
+        for k, spec in (POOL.defs[n["method_id"]].get("params") or {}).items():
+            if isinstance(spec, dict) and spec.get("max") is not None:
+                n["params"][k] = spec["max"] * 100
+    graph["edges"].append({"src_node": "ghost", "src_port": "image",
+                           "dst_node": graph["nodes"][0]["id"],
+                           "dst_port": "image_in"})
+    fixed = repair_genome(g, POOL, CFG)
+    assert fixed is not None
+    assert not validate_graph(fixed["graph"], POOL, CFG)
+
+
+def test_repair_discards_unrenderable():
+    genome = {
+        "genome_id": "g-test", "generation": 0, "parents": [],
+        "origin": "random", "seed": 1,
+        "graph": {"version": 1, "name": "x",
+                  "nodes": [{"id": "n1", "method_id": "__lfo__",
+                             "params": {}, "render": False}],
+                  "edges": []},
+    }
+    assert repair_genome(genome, POOL, CFG) is None
+
+
+# ── Evaluator (synthetic frame stacks) ────────────────────────────────
+
+
+def _stack(fn, n=24, h=64, w=96):
+    return [fn(i) for i in range(n)]
+
+
+def test_evaluator_black_is_flat():
+    frames = _stack(lambda i: np.zeros((64, 96, 3), np.float32))
+    s = evaluate_frames(frames, CFG)
+    assert not s["alive"] and s["reason"] == "flat"
+
+
+def test_evaluator_static_is_dead():
+    rng = np.random.default_rng(0)
+    img = rng.random((64, 96, 3), dtype=np.float32)
+    s = evaluate_frames(_stack(lambda i: img), CFG)
+    assert not s["alive"] and s["reason"] == "static"
+
+
+def test_evaluator_nan_is_dead():
+    def f(i):
+        a = np.ones((64, 96, 3), np.float32) * (i / 24)
+        a[0, 0, 0] = np.nan
+        return a
+    s = evaluate_frames(_stack(f), CFG)
+    assert not s["alive"] and s["reason"] == "nan"
+
+
+def test_evaluator_moving_is_alive():
+    def f(i):
+        a = np.zeros((64, 96, 3), np.float32)
+        a[:, (i * 4) % 96: (i * 4) % 96 + 12] = 1.0
+        return a
+    s = evaluate_frames(_stack(f), CFG)
+    assert s["alive"], s
+
+
+def test_evaluator_flicker_is_dead():
+    rng = np.random.default_rng(3)
+    s = evaluate_frames(
+        _stack(lambda i: rng.random((64, 96, 3)).astype(np.float32)), CFG)
+    assert not s["alive"] and s["reason"] == "flicker", s
+
+
+def test_evaluator_missing_frames_dead():
+    s = evaluate_frames([None] * 24, CFG)
+    assert not s["alive"] and s["reason"] == "no-output"
+
+
+# ── Evolve ────────────────────────────────────────────────────────────
+
+
+def _rated_generation(rng, ratings):
+    out = []
+    for r in ratings:
+        g = sample_valid_genome(POOL, CFG, rng)
+        g["rating"] = r
+        out.append(g)
+    return out
+
+
+def test_offspring_are_valid():
+    rng = random.Random(5)
+    prev = _rated_generation(rng, [5, 4, 3, 2])
+    for _ in range(30):
+        child = mutate(rng.choice(prev[:2]), POOL, CFG, rng, 1)
+        assert child is None or not validate_graph(child["graph"], POOL, CFG)
+        cx = crossover(prev[0], prev[1], POOL, CFG, rng, 1)
+        assert cx is None or not validate_graph(cx["graph"], POOL, CFG)
+
+
+def test_selection_favors_high_stars():
+    rng = random.Random(9)
+    prev = _rated_generation(rng, [5, 4, 2, 1, None])
+    parents, weights = select_parents(prev, CFG)
+    assert len(parents) == 3          # 1★ and unrated never breed
+    by_rating = {p["rating"]: w for p, w in zip(parents, weights)}
+    assert by_rating[5] > by_rating[4] > by_rating[2]
+
+
+def test_generation_composition():
+    rng = random.Random(11)
+    prev = _rated_generation(rng, [5, 4, 4, 3, 2, 1])
+    gen = next_generation(prev, 1, POOL, CFG, rng)
+    assert len(gen) == CFG.render_pool
+    origins = [g["origin"] for g in gen]
+    n_explore = origins.count("explorer")
+    assert n_explore == max(1, round(CFG.explore_ratio * CFG.render_pool))
+    assert all(not validate_graph(g["graph"], POOL, CFG) for g in gen)
+    for g in gen:
+        if g["origin"] in ("mutation", "crossover"):
+            assert g["parents"], "bred offspring must record parents"
+
+
+def test_no_parents_means_all_random():
+    rng = random.Random(13)
+    prev = _rated_generation(rng, [1, 1, None])
+    gen = next_generation(prev, 1, POOL, CFG, rng)
+    assert all(g["origin"] in ("random", "explorer") for g in gen)
+
+
+# ── Features + taste ──────────────────────────────────────────────────
+
+
+def test_features_deterministic():
+    rng = random.Random(17)
+    g = sample_valid_genome(POOL, CFG, rng)
+    assert genome_features(g, POOL, CFG) == genome_features(g, POOL, CFG)
+    f = genome_features(g, POOL, CFG)
+    assert f["n_nodes"] == len(g["graph"]["nodes"])
+    assert f["origin_random"] == 1.0
+
+
+def test_taste_beats_baseline(tmp_store):
+    rng = random.Random(19)
+    rng_np = np.random.default_rng(19)
+    recs = []
+    for _ in range(60):
+        g = sample_valid_genome(POOL, CFG, rng)
+        f = genome_features(g, POOL, CFG)
+        score = 1 + 1.2 * f["depth"] + 1.5 * (f["n_drivers"] > 0) \
+            + rng_np.normal(0, 0.3)
+        recs.append({"features": f,
+                     "rating": float(np.clip(round(score), 1, 5))})
+    art = taste.train(recs)
+    assert art["trained"]
+    assert art["metrics"]["beats_baseline"]
+    assert art["metrics"]["cv_corr"] > 0.5
+    pred = taste.predict(recs[0]["features"], art)
+    assert 1.0 <= pred <= 5.0
+
+
+def test_taste_needs_min_samples(tmp_store):
+    art = taste.train([{"features": {"n_nodes": 1}, "rating": 3}] * 3)
+    assert not art["trained"]
+
+
+# ── Endpoints ─────────────────────────────────────────────────────────
+
+
+@pytest.fixture()
+def client(tmp_store):
+    from fastapi.testclient import TestClient
+    from image_pipeline.server import app
+    return TestClient(app)
+
+
+def test_session_lifecycle_and_route_order(client):
+    r = client.post("/api/shootout/session", json={})
+    assert r.status_code == 200
+    sid = r.json()["session_id"]
+    assert r.json()["generations"] == []
+
+    # resume returns the same session
+    r2 = client.post("/api/shootout/session", json={"session_id": sid})
+    assert r2.json()["session_id"] == sid
+
+    # static shootout routes must not be captured by /api/graph/{gid}
+    # (route-order trap, plan §12): a genome miss must be OUR 404, not a
+    # graph-doc response.
+    r3 = client.get("/api/shootout/genome/does-not-exist")
+    assert r3.status_code == 404
+    assert "Genome" in r3.json()["detail"]
+
+    r4 = client.get("/api/shootout/session/nope")
+    assert r4.status_code == 404
+
+
+def test_rating_persistence_roundtrip(client, tmp_store):
+    from image_pipeline.shootout import session as sess
+    rng = random.Random(23)
+    s = sess.start_session()
+    sid = s["session_id"]
+
+    # fabricate a completed generation (no rendering needed for persistence)
+    genomes = [sample_valid_genome(POOL, CFG, rng) for _ in range(3)]
+    for g in genomes:
+        store.save_genome(g)
+    s = store.load_session(sid)
+    s["generations"].append({
+        "gen": 0, "shown": [g["genome_id"] for g in genomes],
+        "pool": [g["genome_id"] for g in genomes],
+        "ratings": {}, "rated_logged": [],
+    })
+    store.save_session(s)
+
+    gids = [g["genome_id"] for g in genomes]
+    r = client.post("/api/shootout/rate", json={
+        "session_id": sid,
+        "ratings": {gids[0]: 5, gids[1]: 2, "not-shown": 4},
+    })
+    assert r.status_code == 200
+    assert r.json()["appended"] == 2   # not-shown is ignored
+
+    # dataset round-trip
+    lines = [json.loads(l) for l in
+             (tmp_store / "ratings.jsonl").read_text().splitlines()]
+    assert {l["genome_id"]: l["rating"] for l in lines} == {gids[0]: 5, gids[1]: 2}
+    assert all("features" in l and l["session_id"] == sid for l in lines)
+
+    # re-rating updates the session but does not double-append
+    r = client.post("/api/shootout/rate", json={
+        "session_id": sid, "ratings": {gids[0]: 3}})
+    assert r.json()["appended"] == 0
+    s = store.load_session(sid)
+    assert s["generations"][-1]["ratings"][gids[0]] == 3
+
+    # genome file carries the rating (session_state view)
+    state = client.get(f"/api/shootout/session/{sid}").json()
+    ratings = {sv["genome_id"]: sv["rating"] for sv in state["survivors"]}
+    assert ratings[gids[0]] == 3 and ratings[gids[1]] == 2
+
+
+# ── E2E render smoke (slow — needs ffmpeg) ────────────────────────────
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg required")
+def test_e2e_one_tiny_generation(tmp_store, monkeypatch):
+    from image_pipeline.shootout import session as sess
+    cfg = ShootoutConfig(show_n=2, render_pool=3, frames=12,
+                         render_concurrency=2, max_attempts_factor=2)
+    s = sess.start_session(cfg=cfg)
+    result = sess.run_generation(s["session_id"], cfg,
+                                 rng=random.Random(31))
+    assert result["generation"] == 0
+    assert result["rendered"] >= 3
+    for sv in result["survivors"]:
+        assert sv["mp4_url"].startswith("/api/sequences/shootout-")
+        assert sv["liveness"]["alive"]

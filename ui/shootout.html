@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shootout — Grillmaster</title>
+<script>
+// Theme bootstrap — same convention as index.html (gm-theme, no flash).
+try {
+  var _t = localStorage.getItem('gm-theme');
+  if (_t && _t !== 'slate') document.documentElement.dataset.theme = _t;
+} catch (e) {}
+</script>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Cpath%20d='M8%201l2%204.3%204.7.5-3.5%203.2%201%204.6L8%2011.3%203.8%2013.6l1-4.6L1.3%205.8%206%205.3z'%20fill='%23fbbf24'/%3E%3C/svg%3E">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg0: #0f1012; --bg1: #141517; --bg2: #1a1c1f; --bg3: #232529;
+    --border: #2a2d33; --border-strong: #3d4048;
+    --accent: #64748b; --accent2: #94a3b8;
+    --success: #34d399; --warn: #fbbf24; --err: #f87171;
+    --text: #e7e9ec; --muted: #8f939c; --muted2: #5f636c;
+    --tag-bg: #24272c; --tag-fg: #9aa4b2;
+    --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'Menlo', 'Consolas', monospace;
+    --radius-s: 4px; --radius-m: 7px; --radius-l: 10px;
+    --shadow-2: 0 4px 16px rgba(0,0,0,0.45);
+  }
+  html[data-theme="graphite"] {
+    --bg0: #0d0d0c; --bg1: #121211; --bg2: #181816; --bg3: #21211e;
+    --border: #2a2a26; --border-strong: #3e3d37;
+    --accent: #c2622d; --accent2: #d98e4a;
+    --text: #e8e6e1; --muted: #94918a; --muted2: #605e57;
+    --tag-bg: #262420; --tag-fg: #c9a37a;
+  }
+  html[data-theme="midnight"] {
+    --bg0: #0b0d12; --bg1: #10131a; --bg2: #161a24; --bg3: #1f2432;
+    --border: #262c3d; --border-strong: #3a4258;
+    --accent: #6c8ef5; --accent2: #a78bfa;
+    --text: #e6ebf4; --muted: #8b93a7; --muted2: #5c6478;
+    --tag-bg: #1e2640; --tag-fg: #818cf8;
+  }
+
+  html, body { height: 100%; background: var(--bg0); color: var(--text);
+    font-family: system-ui, -apple-system, sans-serif; font-size: 14px; }
+
+  header {
+    display: flex; align-items: center; gap: 14px; padding: 10px 18px;
+    background: var(--bg1); border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  header h1 { font-size: 15px; font-weight: 700; letter-spacing: 0.03em; }
+  header a { color: var(--muted); text-decoration: none; font-size: 12px; }
+  header a:hover { color: var(--text); }
+  .meta { font-size: 12px; color: var(--muted); font-family: var(--font-mono); }
+  .meta b { color: var(--text); font-weight: 600; }
+  .spacer { flex: 1; }
+
+  button {
+    background: var(--bg3); color: var(--text); border: 1px solid var(--border-strong);
+    border-radius: var(--radius-m); padding: 7px 14px; font-size: 13px;
+    font-weight: 600; cursor: pointer; transition: background 0.12s, border-color 0.12s;
+  }
+  button:hover:not(:disabled) { background: var(--bg2); border-color: var(--accent); }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover:not(:disabled) { background: var(--accent2); }
+  button.small { padding: 3px 9px; font-size: 11px; font-weight: 500; }
+
+  #status-bar {
+    padding: 6px 18px; font-size: 12px; color: var(--muted);
+    font-family: var(--font-mono); background: var(--bg1);
+    border-bottom: 1px solid var(--border); min-height: 28px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #status-bar.busy { color: var(--warn); }
+  #status-bar.error { color: var(--err); }
+
+  #grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+    padding: 18px; max-width: 1500px; margin: 0 auto;
+  }
+  @media (max-width: 1100px) { #grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 700px)  { #grid { grid-template-columns: 1fr; } }
+
+  .clip {
+    background: var(--bg1); border: 1px solid var(--border);
+    border-radius: var(--radius-l); overflow: hidden; box-shadow: var(--shadow-2);
+    display: flex; flex-direction: column;
+  }
+  .clip video { width: 100%; aspect-ratio: 3/2; background: #000; display: block; }
+  .clip-body { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+  .clip-row { display: flex; align-items: center; gap: 8px; }
+  .clip-id { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+  .tag {
+    font-size: 10px; padding: 2px 7px; border-radius: 99px;
+    background: var(--tag-bg); color: var(--tag-fg); font-weight: 600;
+    letter-spacing: 0.04em; text-transform: uppercase;
+  }
+  .tag.origin-crossover { color: var(--success); }
+  .tag.origin-mutation { color: var(--warn); }
+  .methods { font-family: var(--font-mono); font-size: 11px; color: var(--muted2);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pred { font-size: 11px; color: var(--muted); }
+
+  .stars { display: flex; gap: 2px; }
+  .stars span {
+    font-size: 22px; cursor: pointer; color: var(--muted2);
+    transition: color 0.08s, transform 0.08s; user-select: none; line-height: 1;
+  }
+  .stars span:hover { transform: scale(1.15); }
+  .stars span.lit { color: var(--warn); }
+
+  #empty {
+    text-align: center; color: var(--muted); padding: 80px 20px; font-size: 14px;
+  }
+  #empty .big { font-size: 40px; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+
+<header>
+  <a href="/" title="Back to the node editor">←</a>
+  <h1>🎬 Shootout</h1>
+  <span class="meta">session <b id="h-session">—</b></span>
+  <span class="meta">generation <b id="h-gen">—</b></span>
+  <span class="meta" id="h-taste" title="Taste-model held-out metrics (log+train only in v1)">taste: —</span>
+  <span class="spacer"></span>
+  <button id="btn-train" class="small" title="Retrain the taste model from all ratings">Train taste</button>
+  <button id="btn-new">New session</button>
+  <button id="btn-go" class="primary" disabled>Generate</button>
+</header>
+
+<div id="status-bar">idle</div>
+
+<div id="empty">
+  <div class="big">🧬</div>
+  Start a session, generate a batch of random nodegraphs,<br>
+  rate what you like, and evolve. Ratings feed the persistent taste model.
+</div>
+<div id="grid"></div>
+
+<script>
+'use strict';
+
+const $ = (id) => document.getElementById(id);
+let SESSION = null;      // session_id
+let SURVIVORS = [];      // latest generation's clips
+let RATINGS = {};        // genome_id -> stars (this generation)
+let GENERATION = null;
+let BUSY = false;
+
+// ── status helpers ─────────────────────────────────────────────
+function setStatus(msg, cls) {
+  const el = $('status-bar');
+  el.textContent = msg;
+  el.className = cls || '';
+}
+
+function refreshHeader() {
+  $('h-session').textContent = SESSION || '—';
+  $('h-gen').textContent = GENERATION === null ? '—' : GENERATION;
+  const go = $('btn-go');
+  go.disabled = BUSY || !SESSION;
+  go.textContent = (SURVIVORS.length && GENERATION !== null) ? 'Evolve →' : 'Generate';
+}
+
+function setTaste(metrics, nTotal) {
+  const el = $('h-taste');
+  if (metrics && metrics.cv_corr !== undefined) {
+    el.textContent = `taste: r=${metrics.cv_corr} mae=${metrics.cv_mae}`
+      + (nTotal ? ` (${nTotal}★)` : '');
+  } else {
+    el.textContent = nTotal ? `taste: untrained (${nTotal}★)` : 'taste: —';
+  }
+}
+
+// ── rendering the grid ─────────────────────────────────────────
+function starWidget(gid, current) {
+  const wrap = document.createElement('div');
+  wrap.className = 'stars';
+  for (let i = 1; i <= 5; i++) {
+    const s = document.createElement('span');
+    s.textContent = '★';
+    s.dataset.v = i;
+    if (current >= i) s.classList.add('lit');
+    s.onclick = () => {
+      RATINGS[gid] = i;
+      [...wrap.children].forEach((c, j) => c.classList.toggle('lit', j < i));
+    };
+    wrap.appendChild(s);
+  }
+  return wrap;
+}
+
+function renderGrid() {
+  const grid = $('grid');
+  grid.innerHTML = '';
+  $('empty').style.display = SURVIVORS.length ? 'none' : '';
+  for (const sv of SURVIVORS) {
+    const card = document.createElement('div');
+    card.className = 'clip';
+
+    const video = document.createElement('video');
+    video.src = sv.mp4_url;
+    video.autoplay = true; video.loop = true; video.muted = true;
+    video.playsInline = true;
+    card.appendChild(video);
+
+    const body = document.createElement('div');
+    body.className = 'clip-body';
+
+    const row1 = document.createElement('div');
+    row1.className = 'clip-row';
+    const tag = document.createElement('span');
+    tag.className = `tag origin-${sv.origin}`;
+    tag.textContent = sv.origin;
+    row1.appendChild(tag);
+    const id = document.createElement('span');
+    id.className = 'clip-id';
+    id.textContent = sv.genome_id;
+    row1.appendChild(id);
+    if (sv.predicted_rating != null) {
+      const pred = document.createElement('span');
+      pred.className = 'pred';
+      pred.title = 'taste-model prediction (informational)';
+      pred.textContent = `~${sv.predicted_rating}★`;
+      row1.appendChild(pred);
+    }
+    body.appendChild(row1);
+
+    const methods = document.createElement('div');
+    methods.className = 'methods';
+    methods.title = (sv.methods || []).join(' ← ');
+    methods.textContent = `${sv.node_count} nodes: ` + (sv.methods || []).join(' ← ');
+    body.appendChild(methods);
+
+    const row2 = document.createElement('div');
+    row2.className = 'clip-row';
+    row2.appendChild(starWidget(sv.genome_id, RATINGS[sv.genome_id] || sv.rating || 0));
+    const spacer = document.createElement('span');
+    spacer.style.flex = '1';
+    row2.appendChild(spacer);
+    const openBtn = document.createElement('button');
+    openBtn.className = 'small';
+    openBtn.textContent = 'Open in editor';
+    openBtn.onclick = () => openInEditor(sv.genome_id);
+    row2.appendChild(openBtn);
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'small';
+    saveBtn.textContent = 'Save';
+    saveBtn.title = 'Save to the graph library';
+    saveBtn.onclick = () => saveGenome(sv.genome_id, saveBtn);
+    row2.appendChild(saveBtn);
+    body.appendChild(row2);
+
+    card.appendChild(body);
+    grid.appendChild(card);
+  }
+}
+
+// ── genome escape hatches ──────────────────────────────────────
+async function fetchGenome(gid) {
+  const r = await fetch(`/api/shootout/genome/${gid}`);
+  if (!r.ok) throw new Error(`genome ${gid}: ${r.status}`);
+  return r.json();
+}
+
+async function openInEditor(gid) {
+  // Load into the shared 'active' graph doc — the editor follows it.
+  const genome = await fetchGenome(gid);
+  const ok = confirm('Replace the current editor graph with this genome?');
+  if (!ok) return;
+  await fetch('/api/graph/active?by=shootout', {
+    method: 'PUT', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({nodes: genome.graph.nodes, edges: genome.graph.edges}),
+  });
+  window.open('/', '_blank');
+}
+
+async function saveGenome(gid, btn) {
+  const genome = await fetchGenome(gid);
+  await fetch('/api/graph/save', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name: `shootout-${gid}`, graph: genome.graph}),
+  });
+  if (btn) { btn.textContent = 'Saved ✓'; btn.disabled = true; }
+}
+
+// ── session lifecycle ──────────────────────────────────────────
+async function newSession() {
+  const r = await fetch('/api/shootout/session', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}',
+  });
+  const s = await r.json();
+  SESSION = s.session_id;
+  GENERATION = null;
+  SURVIVORS = [];
+  RATINGS = {};
+  localStorage.setItem('shootout-session', SESSION);
+  setTaste(s.taste, s.n_ratings_total);
+  setStatus('session ready — hit Generate');
+  renderGrid();
+  refreshHeader();
+}
+
+async function resumeSession(sid) {
+  const r = await fetch(`/api/shootout/session/${sid}`);
+  if (!r.ok) return false;
+  const s = await r.json();
+  SESSION = s.session_id;
+  SURVIVORS = s.survivors || [];
+  GENERATION = s.generations.length ? s.generation : null;
+  RATINGS = {};
+  for (const sv of SURVIVORS) if (sv.rating) RATINGS[sv.genome_id] = sv.rating;
+  setTaste(s.taste, s.n_ratings_total);
+  setStatus(SURVIVORS.length ? 'session resumed' : 'session resumed — hit Generate');
+  renderGrid();
+  refreshHeader();
+  return true;
+}
+
+// ── generation runs (SSE progress) ─────────────────────────────
+function watchJob(jobId) {
+  return new Promise((resolve, reject) => {
+    const es = new EventSource(`/api/jobs/${jobId}/stream`);
+    es.addEventListener('progress', (e) => {
+      const d = JSON.parse(e.data);
+      setStatus(`⏳ ${d.message}  (${d.elapsed}s)`, 'busy');
+    });
+    es.addEventListener('done', (e) => { es.close(); resolve(JSON.parse(e.data)); });
+    es.addEventListener('error', (e) => {
+      es.close();
+      let msg = 'stream error';
+      try { msg = JSON.parse(e.data).message; } catch (_) {}
+      reject(new Error(msg));
+    });
+  });
+}
+
+async function runGeneration() {
+  if (!SESSION || BUSY) return;
+  BUSY = true;
+  refreshHeader();
+  const isEvolve = SURVIVORS.length > 0;
+  const body = {session_id: SESSION};
+  if (isEvolve) body.ratings = RATINGS;   // unrated clips are skipped
+  setStatus(isEvolve ? 'breeding next generation…' : 'generating…', 'busy');
+  try {
+    const r = await fetch(`/api/shootout/${isEvolve ? 'evolve' : 'generate'}`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(`${r.status}: ${await r.text()}`);
+    const {job_id} = await r.json();
+    const result = await watchJob(job_id);
+    SURVIVORS = result.survivors || [];
+    GENERATION = result.generation;
+    RATINGS = {};
+    for (const sv of SURVIVORS) if (sv.rating) RATINGS[sv.genome_id] = sv.rating;
+    setStatus(`generation ${result.generation}: ${SURVIVORS.length} alive`
+      + ` (${result.rendered} rendered, ${result.dead} dead) — rate & evolve`);
+    renderGrid();
+  } catch (err) {
+    setStatus(`✗ ${err.message}`, 'error');
+  } finally {
+    BUSY = false;
+    refreshHeader();
+  }
+}
+
+async function trainTaste() {
+  setStatus('training taste model…', 'busy');
+  const r = await fetch('/api/shootout/train', {method: 'POST'});
+  const d = await r.json();
+  if (d.trained) {
+    setTaste(d.metrics, d.n_samples);
+    setStatus(`taste model trained on ${d.n_samples} ratings — `
+      + `cv_corr=${d.metrics.cv_corr}, mae=${d.metrics.cv_mae}`
+      + ` (baseline ${d.metrics.baseline_mae})`);
+  } else {
+    setStatus(d.note || 'not enough ratings yet');
+  }
+}
+
+// ── boot ───────────────────────────────────────────────────────
+$('btn-new').onclick = newSession;
+$('btn-go').onclick = runGeneration;
+$('btn-train').onclick = trainTaste;
+
+(async () => {
+  const prev = localStorage.getItem('shootout-session');
+  if (prev && await resumeSession(prev)) return;
+  setStatus('no session — hit New session');
+  refreshHeader();
+})();
+</script>
+</body>
+</html>
