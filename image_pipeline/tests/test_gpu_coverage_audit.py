@@ -38,7 +38,8 @@ from image_pipeline.methods.gpu_shaders import GPU_SHADER_NODE_MAP
 # 208 -> 209: P0.7 + node 350 FXAA twin added.
 # 209 -> 210: node 399 CMYK halftone client-GPU twin added by e7997c8 (commit
 #             msg said "node_map count 210" but the guard was left at 208 — fixed.
-EXPECTED_MAP_ENTRIES = 211
+# 210 -> 217: +6 closed-form typed-uniform pattern nodes (302-307 pt.13).
+EXPECTED_MAP_ENTRIES = 217
 
 # Simulations-category CPU nodes that are intentionally NOT GPU-mirrored yet.
 # These are Architecture-A stateful sims (discrete CA, agent/particle systems,

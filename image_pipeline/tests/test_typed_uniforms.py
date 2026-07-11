@@ -268,6 +268,56 @@ def test_edge_detect_finds_structure():
     assert out[:, :, 1].max() > 120, "edge detect should mark bright edges"
 
 
+# ── 11. Typed closed-form pattern nodes (302-307, pt.13) ─────────────────
+# Pure f(uv,t) field-eval twins: each renders non-black and responds to a
+# numeric/color sweep; time also advances the animation.
+
+NEW_TYPED_PT13 = [s for _, s, _ in [
+    ("302", "schotter_typed",    "GPU Schotter"),
+    ("303", "thue_morse_typed",  "GPU Thue-Morse"),
+    ("304", "crystal_typed",     "GPU Crystal Diffraction"),
+    ("305", "apollonian_typed",  "GPU Apollonian Gasket"),
+    ("306", "parabola_typed",    "GPU Parabola Family"),
+    ("307", "hyperbolic_typed",  "GPU Hyperbolic Tiling"),
+]]
+
+
+@needs_gpu
+@pytest.mark.parametrize("sname", NEW_TYPED_PT13)
+def test_pt13_typed_renders_and_responds(sname):
+    """Each pt.13 typed shader renders non-black and responds to a sweep."""
+    uspec = SHADERS[sname]["uniforms"]
+    named = {u: s.get("default") for u, s in uspec.items()}
+    base = np.asarray(render_shader(sname, (96, 64), named_params=named), dtype=float)
+    assert base.std() > 0.02, f"{sname}: neutral render flat-black (std={base.std():.3f})"
+    # Perturb one numeric uniform away from its default; confirm the frame changes.
+    probe = next((u for u, s in uspec.items() if s["glsl"] in ("float", "int")), None)
+    if probe is not None:
+        spec = uspec[probe]
+        lo, hi = spec.get("min", 0), spec.get("max", 1)
+        dft = spec.get("default", 0)
+        cand = lo + (hi - lo) * 0.7
+        if abs(cand - dft) < 1e-6:
+            cand = lo + (hi - lo) * 0.3
+        alt = dict(named); alt[probe] = cand
+        other = np.asarray(render_shader(sname, (96, 64), named_params=alt), dtype=float)
+        dpix = np.abs(other - base).mean()
+        assert dpix > 0.05, f"{sname}: {probe} sweep produced no change (Δ={dpix:.3f})"
+
+
+@needs_gpu
+@pytest.mark.parametrize("sname", NEW_TYPED_PT13)
+def test_pt13_typed_animates(sname):
+    """With a nonzero speed default, time=0 vs time=π must differ."""
+    uspec = SHADERS[sname]["uniforms"]
+    if abs(uspec.get("speed", {}).get("default", 0)) < 1e-6:
+        pytest.skip(f"{sname}: speed default is 0 (static by design)")
+    named = {u: s.get("default") for u, s in uspec.items()}
+    a = np.asarray(render_shader(sname, (96, 64), named_params=named, time=0.0), dtype=float)
+    b = np.asarray(render_shader(sname, (96, 64), named_params=named, time=3.14159265), dtype=float)
+    assert np.abs(a - b).mean() > 0.05, f"{sname}: no animation between t=0 and t=π (Δ={np.abs(a-b).mean():.3f})"
+
+
 # ── 7. Typed escape-time fractals (238-243) ────────────────────────────
 
 NEW_TYPED_FRACTALS = [s for _, s, _ in [

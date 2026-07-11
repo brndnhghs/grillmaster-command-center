@@ -7778,3 +7778,207 @@ _register("smoke_gpu", 'Rising smoke / steam', "procedural", '\nvoid main() {\n 
   }
 })
 
+
+# ═══════════════════════════════════════════════
+#  CLOSED-FORM TYPED-UNIFORM NODES — pt.13 (nodes 302-307)
+#  Pure f(uv,t) field-eval twins: each variable is a named, typed uniform
+#  wired through _make_typed (real param + wireable SCALAR port). No ping-pong
+#  state, exact server/browser parity. Additive — CPU/fp64 export untouched.
+# ═══════════════════════════════════════════════
+
+# 302 — Schotter (Georg Nees, 1968): a rigid grid of squares whose jitter and
+# rotation grow with distance from the centre. The canonical generative-art
+# "ordered disorder" piece.
+_register("schotter_typed", "Schotter — Georg Nees generative grid of jittered squares (typed, node 302)",
+          "procedural", '''void main() {
+    float N = max(u_cells, 2.0);
+    vec2 g = v_uv * N;
+    vec2 id = floor(g);
+    vec2 f = fract(g) - 0.5;
+    vec2 ctr = (id + 0.5) / N - 0.5;
+    float d = length(ctr);
+    float amt = u_jitter * smoothstep(0.0, 0.7, d);
+    float r1 = hash21(id + 1.3);
+    float r2 = hash21(id + 7.7);
+    float r3 = hash21(id + 3.1);
+    float ang = (r1 - 0.5) * amt * 1.5 + u_time * u_speed * (r2 - 0.5) * 0.3;
+    vec2 disp = (vec2(r2 - 0.5, r3 - 0.5)) * amt * 0.6;
+    vec2 q = f - disp;
+    q = rot(ang) * q;
+    float s = 0.5 * u_square;
+    vec2 a = abs(q);
+    float inside = step(max(a.x, a.y), s);
+    vec3 col = mix(u_bg, u_fg, inside);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "cells":  {"glsl": "float", "min": 2.0, "max": 24.0, "default": 11.0, "description": "grid cells per axis"},
+    "jitter": {"glsl": "float", "min": 0.0, "max": 1.5, "default": 0.85, "description": "displacement (grows outward)"},
+    "square": {"glsl": "float", "min": 0.3, "max": 0.95, "default": 0.72, "description": "square fill fraction"},
+    "speed":  {"glsl": "float", "min": 0.0, "max": 3.0, "default": 0.5, "description": "animation speed"},
+    "fg":     {"glsl": "color", "default": "#f4c020", "description": "square color"},
+    "bg":     {"glsl": "color", "default": "#0e0e16", "description": "background color"},
+})
+
+# 303 — Thue-Morse recursive binary fractal: cell parity = popcount(x) XOR
+# popcount(y) over a 2^depth grid. Static structure; animation sweeps the
+# two-colour palette so the node still responds to time.
+_register("thue_morse_typed", "Thue-Morse recursive binary fractal (typed, node 303)",
+          "procedural", '''void main() {
+    float depth = max(u_depth, 1.0);
+    float scale = exp2(depth);
+    vec2 cell = floor(v_uv * scale);
+    // Popcount parity via floating extraction (no integer bit ops — portable).
+    float ix = cell.x + 1.0;
+    float iy = cell.y + 1.0;
+    float cnt = 0.0;
+    for (int b = 0; b < 9; b++) {
+        float fb = float(b);
+        cnt += mod(floor(ix / exp2(fb)), 2.0);
+        cnt += mod(floor(iy / exp2(fb)), 2.0);
+    }
+    float v = mod(cnt, 2.0);
+    // Animation: a global brightness pulse that shifts the two colours over time
+    // (independent of the binary value, so it is never a no-op at t=0 vs t=pi).
+    float pulse = 0.5 + 0.5 * sin(u_time * u_speed * 0.6);
+    vec3 colA = u_color_a * (0.6 + 0.4 * pulse);
+    vec3 colB = u_color_b * (1.4 - 0.4 * pulse);
+    vec3 col = mix(colA, colB, step(0.5, v));
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "depth":   {"glsl": "float", "min": 1.0, "max": 8.0, "default": 5.0, "description": "recursion depth (2^depth cells)"},
+    "speed":   {"glsl": "float", "min": 0.0, "max": 3.0, "default": 0.6, "description": "palette animation speed"},
+    "color_a": {"glsl": "color", "default": "#101830", "description": "even parity color"},
+    "color_b": {"glsl": "color", "default": "#f0603c", "description": "odd parity color"},
+})
+
+# 304 — Crystal diffraction: sum of N cosinusoidal gratings evenly fanned around
+# the circle, coloured with the inferno map. Rotating the fan gives the
+# classic X-ray-diffraction look.
+_register("crystal_typed", "Crystal diffraction — sum of N sinusoidal gratings (typed, node 304)",
+          "procedural", _INFERNO_GPU + '''void main() {
+    vec2 p = (v_uv - 0.5) * u_scale;
+    float t = u_time * u_speed;
+    int N = int(max(u_arms, 1.0));
+    float acc = 0.0;
+    for (int k = 0; k < 64; k++) {
+        if (k >= N) break;
+        float a = (float(k) / float(N)) * 6.2831853 + u_rotation + t * 0.15;
+        vec2 dir = vec2(cos(a), sin(a));
+        acc += cos(dot(p, dir) * u_freq);
+    }
+    acc /= float(N);
+    float v = 0.5 + 0.5 * acc;
+    vec3 col = inferno(clamp(v, 0.0, 1.0));
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "arms":     {"glsl": "float", "min": 2.0, "max": 24.0, "default": 6.0, "description": "grating directions"},
+    "freq":     {"glsl": "float", "min": 1.0, "max": 40.0, "default": 12.0, "description": "grating frequency"},
+    "scale":    {"glsl": "float", "min": 2.0, "max": 12.0, "default": 6.0, "description": "spatial scale"},
+    "rotation": {"glsl": "float", "min": 0.0, "max": 6.2831853, "default": 0.0, "description": "base rotation"},
+    "speed":    {"glsl": "float", "min": 0.0, "max": 3.0, "default": 0.5, "description": "animation speed"},
+})
+
+# 305 — Apollonian gasket: iterate circle inversions in three mutually tangent
+# circles inscribed in the unit disk. The limit set is the gasket.
+_register("apollonian_typed", "Apollonian gasket via circle inversions (typed, node 305)",
+          "procedural", _INFERNO_GPU + '''void main() {
+    vec2 p = (v_uv - 0.5) * u_scale;
+    float t = u_time * u_speed;
+    p = rot(t * 0.4) * p;
+    // three mutually-tangent unit-ish circles in the disk
+    vec2 c0 = vec2(-0.5, 0.0);
+    vec2 c1 = vec2( 0.5, 0.0);
+    vec2 c2 = vec2( 0.0, 0.8660254);
+    float r = 0.5;
+    for (int i = 0; i < 6; i++) {
+        vec2 c = (i % 3 == 0) ? c0 : (i % 3 == 1) ? c1 : c2;
+        vec2 d = p - c;
+        float d2 = max(dot(d, d), 1e-6);
+        p = c + (r * r / d2) * d;
+    }
+    float v = clamp(length(p) * 0.5, 0.0, 1.0);
+    vec3 col = inferno(v);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "scale": {"glsl": "float", "min": 2.0, "max": 12.0, "default": 5.0, "description": "view scale"},
+    "speed": {"glsl": "float", "min": 0.0, "max": 3.0, "default": 0.5, "description": "rotation speed"},
+})
+
+# 306 — Confocal parabola family (op-art): sum of parabolas f(s^2/c) over N
+# directions, coloured with inferno. Distinct from the domain-warp grid.
+_register("parabola_typed", "Confocal parabola family — op-art interference (typed, node 306)",
+          "procedural", _INFERNO_GPU + '''void main() {
+    vec2 p = (v_uv - 0.5) * u_scale;
+    float t = u_time * u_speed;
+    int N = int(max(u_arms, 1.0));
+    float acc = 0.0;
+    for (int k = 0; k < 48; k++) {
+        if (k >= N) break;
+        float a = (float(k) / float(N)) * 3.14159265;
+        vec2 dir = vec2(cos(a), sin(a));
+        float s = dot(p, dir);
+        float c = dot(p, vec2(-dir.y, dir.x));
+        acc += cos((s * s / max(abs(c), 0.05)) * u_freq + t);
+    }
+    acc /= float(N);
+    vec3 col = inferno(0.5 + 0.5 * acc);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "arms":  {"glsl": "float", "min": 2.0, "max": 24.0, "default": 8.0, "description": "parabola directions"},
+    "freq":  {"glsl": "float", "min": 1.0, "max": 30.0, "default": 8.0, "description": "curvature frequency"},
+    "scale": {"glsl": "float", "min": 2.0, "max": 12.0, "default": 6.0, "description": "spatial scale"},
+    "speed": {"glsl": "float", "min": 0.0, "max": 3.0, "default": 0.5, "description": "animation speed"},
+})
+
+# 307 — Poincaré-disk hyperbolic {p,q} tiling via repeated inversion in the
+# edge-circles of the central regular p-gon. Edges glow; interior fills with
+# inferno by inversion depth.
+_register("hyperbolic_typed", "Poincaré-disk hyperbolic {p,q} tiling (typed, node 307)",
+          "procedural", _INFERNO_GPU + '''void main() {
+    int p = int(clamp(u_sides, 3.0, 12.0));
+    int q = int(clamp(u_verts, 3.0, 12.0));
+    float cp = cos(3.14159265 / float(p));
+    float cq = cos(3.14159265 / float(q));
+    float R0 = cq / cp;
+    float dm = (R0 * R0 + 1.0) / (2.0 * R0 * cp);
+    float rho = sqrt(max(dm * dm - 1.0, 1e-4));
+    vec2 uv = (v_uv - 0.5) * 2.0;
+    float t = u_time * u_speed;
+    uv = rot(t * 0.25) * uv;
+    vec3 col = u_bg;
+    if (length(uv) < 1.0) {
+        vec2 pnt = uv;
+        float it = 0.0;
+        for (int i = 0; i < 6; i++) {
+            float best = 1e9;
+            vec2 bc = vec2(0.0);
+            for (int j = 0; j < 12; j++) {
+                if (j >= p) break;
+                float th = (float(j) + 0.5) * 6.2831853 / float(p);
+                vec2 c = vec2(cos(th), sin(th)) * dm;
+                float d2 = dot(pnt - c, pnt - c);
+                if (d2 < best) { best = d2; bc = c; }
+            }
+            vec2 d = pnt - bc;
+            float d2 = max(dot(d, d), 1e-6);
+            pnt = bc + (rho * rho / d2) * d;
+            it += 1.0;
+        }
+        col = mix(u_bg, inferno(clamp(0.2 + 0.6 * fract(it * 0.25), 0.0, 1.0)), 0.85);
+        col = mix(col, u_edge, smoothstep(0.05, 0.0, abs(length(pnt) - rho)));
+    }
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "sides": {"glsl": "float", "min": 3.0, "max": 12.0, "default": 5.0, "description": "p — polygon sides"},
+    "verts": {"glsl": "float", "min": 3.0, "max": 12.0, "default": 4.0, "description": "q — polygons at a vertex"},
+    "speed": {"glsl": "float", "min": 0.0, "max": 3.0, "default": 0.4, "description": "rotation speed"},
+    "bg":    {"glsl": "color", "default": "#05060f", "description": "background"},
+    "edge":  {"glsl": "color", "default": "#39e0ff", "description": "edge glow color"},
+})
+

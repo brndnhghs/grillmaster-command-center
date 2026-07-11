@@ -270,6 +270,16 @@ _TYPED_SHADER_NODES = [
     # Gyroid / triply-periodic minimal-surface slice (animation by in-plane
     # spin + slice advance through the 3D field).
     ("301", "gyroid_typed", "GPU Gyroid"),
+    # Categorical coverage pt.13 (2026-07-11): closed-form generative-art
+    # patterns with NAMED typed controls — Schotter grid, Thue-Morse fractal,
+    # crystal diffraction, Apollonian gasket, confocal parabola family,
+    # Poincaré-disk hyperbolic tiling.
+    ("302", "schotter_typed",    "GPU Schotter"),
+    ("303", "thue_morse_typed",  "GPU Thue-Morse"),
+    ("304", "crystal_typed",     "GPU Crystal Diffraction"),
+    ("305", "apollonian_typed",  "GPU Apollonian Gasket"),
+    ("306", "parabola_typed",    "GPU Parabola Family"),
+    ("307", "hyperbolic_typed",  "GPU Hyperbolic Tiling"),
 ]
 
 _TIME_SCALE_PARAM = {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0}
