@@ -35,7 +35,10 @@ from image_pipeline.methods.gpu_shaders import GPU_SHADER_NODE_MAP
 # 204 -> 205: typed closed-form pattern node (301 gyroid_typed) added.
 # 205 -> 208: P0.6 closed-form twins (311 Domain Warping, 312 Water Caustics,
 #             314 Curl-Noise) added by f7bc584/1c397e2 without bumping the guard.
-EXPECTED_MAP_ENTRIES = 208
+# 208 -> 209: P0.7 + node 350 FXAA twin added.
+# 209 -> 210: node 399 CMYK halftone client-GPU twin added by e7997c8 (commit
+#             msg said "node_map count 210" but the guard was left at 208 — fixed.
+EXPECTED_MAP_ENTRIES = 210
 
 # Simulations-category CPU nodes that are intentionally NOT GPU-mirrored yet.
 # These are Architecture-A stateful sims (discrete CA, agent/particle systems,
