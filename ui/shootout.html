@@ -124,6 +124,15 @@ try {
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pred { font-size: 11px; color: var(--muted); }
 
+  .render-cost { gap: 6px; flex-wrap: wrap; }
+  .cost-tag {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+    padding: 2px 7px; border-radius: 99px;
+    background: #1d2128; color: var(--success);
+    border: 1px solid #2c333d; letter-spacing: 0.02em;
+  }
+  .cost-tag:last-child { color: var(--warn); border-color: #3a3424; background: #211d12; }
+
   .notes {
     width: 100%; min-height: 44px; resize: vertical;
     background: var(--bg2); color: var(--text);
@@ -499,6 +508,24 @@ function renderGrid() {
       row1.appendChild(pred);
     }
     body.appendChild(row1);
+
+    // ── render-cost readout: how long + slowest node ──
+    if (sv.render_s != null || (sv.slowest_node && sv.slowest_node.ms > 0)) {
+      const cost = document.createElement('div');
+      cost.className = 'clip-row render-cost';
+      const parts = [];
+      if (sv.render_s != null) {
+        parts.push(`⏱ ${sv.render_s}s render`);
+      }
+      if (sv.slowest_node && sv.slowest_node.ms > 0) {
+        const nm = (sv.method_names && sv.slowest_node.method_id)
+          ? (sv.method_names[sv.slowest_node.method_id] || sv.slowest_node.method_id)
+          : sv.slowest_node.node_id;
+        parts.push(`${nm} ${sv.slowest_node.ms}ms (${(sv.slowest_node.pct||0)}%)`);
+      }
+      cost.innerHTML = parts.map(p => `<span class="cost-tag">${p}</span>`).join('');
+      body.appendChild(cost);
+    }
 
     // ── "what it's going for" blurb ──
     if (sv.blurb) {

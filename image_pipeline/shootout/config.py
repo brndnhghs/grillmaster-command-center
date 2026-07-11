@@ -81,6 +81,15 @@ class ShootoutConfig:
     # Params never sampled or jittered (executor-owned / identity-level).
     frozen_params: tuple[str, ...] = ("n_frames", "anim_speed")
 
+    # ── Contribution diagnostics (per-node ablation) ──────────────
+    # Ablation re-renders the graph once per node with that node bypassed
+    # or removed, then compares against a baseline. It renders short probe
+    # clips (not the full clip) since only the *relative* pixel delta
+    # matters, and skips the render pass entirely on very large graphs.
+    contrib_frames: int = 12            # frames per ablation probe render
+    contrib_silent_delta: float = 0.01  # normalized pixel Δ below this → node is silent
+    contrib_max_nodes: int = 24         # above this, structural pass only (no re-renders)
+
     # ── Advisor (user notes → breeding guidance via the Hermes LLM) ──
     advisor_enabled: bool = True
     advisor_timeout_s: float = 90.0

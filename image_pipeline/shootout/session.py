@@ -59,12 +59,28 @@ def _survivor_view(genome: dict, predicted: float | None = None,
     graph = genome.get("graph", {})
     pool = pool or build_gene_pool(DEFAULT_CONFIG)
     desc = _describe.describe_clip(graph, pool)
+    render = genome.get("render") or {}
+    node_timings = render.get("node_timings") or {}
+    # Name of the single node that cost the most compute across all frames,
+    # plus its share of the total in-frame node compute. Used by the card
+    # to point at the bottleneck. Tied to method_names by node_id.
+    slowest = None
+    if node_timings:
+        total_ms = sum(node_timings.values())
+        sid = max(node_timings, key=lambda k: node_timings[k])
+        slowest = {
+            "node_id": sid,
+            "method_id": next((n.get("method_id") for n in graph.get("nodes", [])
+                               if n.get("id") == sid), None),
+            "ms": round(node_timings[sid], 1),
+            "pct": round(100.0 * node_timings[sid] / total_ms, 0) if total_ms else 0,
+        }
     return {
         "genome_id": genome["genome_id"],
         "generation": genome.get("generation", 0),
         "origin": genome.get("origin", "random"),
         "parents": genome.get("parents", []),
-        "mp4_url": (genome.get("render") or {}).get("mp4"),
+        "mp4_url": render.get("mp4"),
         "liveness": genome.get("liveness"),
         "rating": genome.get("rating"),
         "notes": genome.get("notes"),
@@ -78,6 +94,10 @@ def _survivor_view(genome: dict, predicted: float | None = None,
         "motifs": desc["motifs"],
         "n_drivers": desc["n_drivers"],
         "deviation": genome.get("deviation"),
+        # ── render-cost readout (per-card) ──
+        "render_s": render.get("wall_s"),
+        "node_timings": node_timings,   # node_id → total ms across frames
+        "slowest_node": slowest,        # {node_id, method_id, ms, pct}
     }
 
 

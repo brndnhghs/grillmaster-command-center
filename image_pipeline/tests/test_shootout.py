@@ -747,3 +747,105 @@ def test_survivor_view_carries_explainer_fields():
     assert view["deviation"] is None  # no evolution yet → no deviation
     # names match the describe module directly
     assert view["method_names"] == d.node_names(g["graph"], POOL)
+
+
+# ── Phase 4: per-node contribution (ablation) ───────────────────────
+
+
+def test_contribution_reachability_flags_orphan():
+    from image_pipeline.shootout import contribution as contrib
+    rng = random.Random(3)
+    g = sample_valid_genome(POOL, CFG, rng)
+    graph = g["graph"]
+    term = contrib._terminal_node_id(graph)
+    assert term is not None and term in contrib.reachable_from_terminal(graph)
+    # An orphan node with no edges can never reach the output.
+    graph["nodes"].append({"id": "orphan1", "params": {},
+                           "method_id": POOL.scalar_drivers[0], "render": False})
+    reach = contrib.reachable_from_terminal(graph)
+    assert "orphan1" not in reach
+    assert term in reach  # terminal still reaches itself
+
+
+def test_contribution_ablate_remove_severs_node():
+    from image_pipeline.shootout import contribution as contrib
+    rng = random.Random(5)
+    g = sample_valid_genome(POOL, CFG, rng)
+    graph = g["graph"]
+    term = contrib._terminal_node_id(graph)
+    victim = next((n["id"] for n in graph["nodes"] if n["id"] != term
+                   and any(e["src_node"] == n["id"] or e["dst_node"] == n["id"]
+                           for e in graph["edges"])), None)
+    if victim is None:
+        pytest.skip("sampled graph has no ablatable interior node")
+    nodes, edges, mode = contrib.ablate(graph, victim, POOL)
+    assert all(n["id"] != victim for n in nodes)   # node dropped
+    assert mode in ("bypass", "remove")
+    if mode == "remove":
+        assert all(e["src_node"] != victim and e["dst_node"] != victim
+                   for e in edges)
+    else:  # bypass: victim's inputs are gone, nothing still sources from it
+        assert all(e["dst_node"] != victim for e in edges)
+        assert all(e["src_node"] != victim for e in edges)
+    # original graph is untouched
+    assert any(n["id"] == victim for n in graph["nodes"])
+
+
+def test_contribution_delta_and_stack_helpers():
+    from image_pipeline.shootout import contribution as contrib
+    import numpy as np
+    a = np.zeros((4, 6, 6), dtype=np.float32)
+    assert contrib._delta(a, a) == 0.0            # identical → no contribution
+    b = a.copy()
+    b[:] = 1.0
+    assert contrib._delta(a, b) == pytest.approx(1.0)  # full-range change
+    assert contrib._delta(a, None) is None        # a variant that produced nothing
+
+
+def test_contribution_structural_only_on_large_graph():
+    from image_pipeline.shootout import contribution as contrib
+    rng = random.Random(9)
+    g = sample_valid_genome(POOL, CFG, rng)
+    cfg = ShootoutConfig(contrib_max_nodes=0)     # force the no-render path
+    report = contrib.analyze_contribution(g, cfg, POOL)
+    assert report["rendered"] is False
+    assert report["n_nodes"] == len(g["graph"]["nodes"])
+    verdicts = {r["verdict"] for r in report["per_node"]}
+    assert verdicts <= {"terminal", "disconnected", "unprobed"}
+    assert contrib.summarize(report)
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg required")
+def test_contribution_analyze_real_render():
+    """End-to-end ablation on a controlled light graph: an animated source
+    feeds a filter (render node), plus a driver wired to nothing. Removing
+    the source must visibly change the output (contributes); the orphan
+    driver must be flagged disconnected. A hand-built graph keeps this fast
+    and deterministic — a random genome could sample a heavy sim node whose
+    per-probe re-render dominates the run."""
+    from image_pipeline.shootout import contribution as contrib
+    cfg = ShootoutConfig(width=128, height=96, contrib_frames=6)
+    drv = POOL.scalar_drivers[0]
+    graph = {"version": 1, "name": "t", "nodes": [
+        {"id": "src", "method_id": "312", "params": {}, "render": False},   # Water Caustics
+        {"id": "flt", "method_id": "408", "params": {}, "render": True},    # Bloom / Glow
+        {"id": "orphan", "method_id": drv, "params": {}, "render": False},  # wired to nothing
+    ], "edges": [
+        {"src_node": "src", "src_port": "image",
+         "dst_node": "flt", "dst_port": "image_in"},
+    ]}
+    genome = {"genome_id": "gt", "seed": 7, "graph": graph}
+
+    report = contrib.analyze_contribution(genome, cfg, POOL)
+    assert report["rendered"] is True
+    assert report["terminal"] == "flt"
+    verdict = {r["node_id"]: r["verdict"] for r in report["per_node"]}
+    assert verdict["flt"] == "terminal"
+    assert verdict["orphan"] == "disconnected"   # never reaches the output
+    assert verdict["src"] == "contributes"       # removing it changed the frames
+    assert [r for r in report["per_node"] if r["node_id"] == "src"][0]["delta"] > 0.05
+    # dead_weight is exactly disconnected ∪ silent, and the orphan is in it
+    assert set(report["dead_weight"]) == set(report["disconnected"]) | set(report["silent"])
+    assert "orphan" in report["dead_weight"]
+    assert contrib.summarize(report)

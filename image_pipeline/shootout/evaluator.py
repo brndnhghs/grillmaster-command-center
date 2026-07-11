@@ -114,6 +114,76 @@ def evaluate_frames(frames: list[np.ndarray | None],
     return acc.stats()
 
 
+# ── Executor plumbing shared by render + ablation ─────────────────────
+
+
+def _pin_n_frames(nodes: list[dict], n_frames: int) -> list[dict]:
+    """Pin every node that declares an n_frames param to the clip budget.
+
+    Sims default to their own (often 300+ frame) length; without this a
+    short clip cooks the sim's full run. Mutates node dicts in place and
+    returns them. Kept as a shared helper so the render path and the
+    contribution ablation pin identically (they must, to stay comparable)."""
+    from image_pipeline.core.graph import get_all_node_defs
+    defs = get_all_node_defs()
+    for n in nodes:
+        schema = (defs.get(n.get("method_id"), {}).get("params") or {})
+        if "n_frames" in schema:
+            n["params"] = {**(n.get("params") or {}), "n_frames": n_frames}
+    return nodes
+
+
+def _terminal_image(flat: dict, terminal_id, nodes: list[dict]):
+    """The output frame for a cooked graph: the render-flagged node if one
+    produced output this frame, else the executor's resolved terminal."""
+    render_id = next((n["id"] for n in nodes if n.get("render")), None)
+    if render_id and render_id in flat:
+        terminal_id = render_id
+    return (flat.get(terminal_id) or {}).get("image") if terminal_id else None
+
+
+def render_stack(nodes: list[dict], edges: list[dict], seed: int,
+                 cfg: ShootoutConfig, frames: int,
+                 progress_cb: Callable[[str], None] | None = None
+                 ) -> LivenessAccumulator:
+    """Render (nodes, edges) into a LivenessAccumulator of downsampled
+    frames — no mp4, no disk artifact. Node/edge lists are copied, so the
+    caller's graph is never mutated. Node failures become dropped frames
+    (never raises), same as the full render path.
+
+    Shared by contribution ablation: baseline and every ablated variant go
+    through here so their frame stacks are directly comparable."""
+    import tempfile
+    import shutil
+    from image_pipeline.core.utils import set_canvas
+    set_canvas(cfg.width, cfg.height)
+
+    nodes = _pin_n_frames([dict(n, dirty=True) for n in nodes], frames)
+    edges = [dict(e) for e in edges]
+
+    work_dir = Path(tempfile.mkdtemp(prefix="shootout-contrib-"))
+    executor = GraphExecutor(work_dir, fps=cfg.fps, in_memory=True,
+                             audit_to_disk=False)
+    acc = LivenessAccumulator(cfg)
+    t0 = time.time()
+    try:
+        for frame in range(frames):
+            if time.time() - t0 > cfg.render_timeout_s:
+                break
+            arr = None
+            try:
+                flat, terminal_id, _errs = executor.execute(
+                    nodes, edges, seed, frame=frame, frames=frames)
+                arr = _terminal_image(flat, terminal_id, nodes)
+            except Exception as exc:  # cycle / unknown method — dropped frame
+                if progress_cb:
+                    progress_cb(f"ablation frame {frame} error: {exc}")
+            acc.add(arr)
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+    return acc
+
+
 # ── Rendering ─────────────────────────────────────────────────────────
 
 
@@ -140,12 +210,7 @@ def render_genome(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
     # n_frames when the param is present on the node; the sampler leaves it
     # off (frozen), so without this an Arch-A sim cooks its full default
     # (often 300+ frames) for a 96-frame clip.
-    from image_pipeline.core.graph import get_all_node_defs
-    defs = get_all_node_defs()
-    for n in nodes:
-        schema = (defs.get(n.get("method_id"), {}).get("params") or {})
-        if "n_frames" in schema:
-            n["params"] = {**(n.get("params") or {}), "n_frames": cfg.frames}
+    _pin_n_frames(nodes, cfg.frames)
     seed = int(genome.get("seed", 42))
 
     executor = GraphExecutor(work_dir, fps=cfg.fps, in_memory=True,
@@ -153,6 +218,10 @@ def render_genome(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
     acc = LivenessAccumulator(cfg)
     t0 = time.time()
     timed_out = False
+    # Per-node compute, summed across every rendered frame. The executor
+    # reports ms-per-node for the *last* frame only (last_frame_stats), so
+    # we fold each frame's timings in here to get total compute per node.
+    node_ms: dict[str, float] = {}
 
     def _frame_gen():
         nonlocal timed_out
@@ -166,10 +235,10 @@ def render_genome(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
             try:
                 flat, terminal_id, _errs = executor.execute(
                     nodes, edges, seed, frame=frame, frames=cfg.frames)
-                render_id = next((n["id"] for n in nodes if n.get("render")), None)
-                if render_id and render_id in flat:
-                    terminal_id = render_id
-                arr = (flat.get(terminal_id) or {}).get("image") if terminal_id else None
+                # Fold this frame's per-node compute into the running total.
+                for nid, ms in (executor.last_frame_stats.get("node_timings") or {}).items():
+                    node_ms[nid] = node_ms.get(nid, 0.0) + ms
+                arr = _terminal_image(flat, terminal_id, nodes)
             except Exception as exc:  # cycle / unknown method — dead clip
                 if progress_cb:
                     progress_cb(f"{gid}: frame {frame} error: {exc}")
@@ -209,6 +278,9 @@ def render_genome(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
             "w": cfg.width,
             "h": cfg.height,
             "wall_s": round(time.time() - t0, 1),
+            # {node_id: total_ms across all frames} — drives the
+            # "slowest node" readout on the shootout card.
+            "node_timings": {nid: round(ms, 1) for nid, ms in node_ms.items()},
         },
         "liveness": liveness,
     }

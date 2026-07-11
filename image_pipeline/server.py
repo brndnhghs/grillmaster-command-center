@@ -1203,6 +1203,26 @@ def shootout_train():
             if k in ("trained", "n_samples", "metrics", "note", "model")}
 
 
+@app.post("/api/shootout/contribution/{genome_id}")
+def shootout_contribution(genome_id: str):
+    """Per-node contribution diagnosis for one genome (node ablation).
+
+    Renders a short baseline + one probe per node with that node
+    bypassed/removed, and classifies each node: terminal, essential,
+    contributes, silent (wired in but no visible effect), or disconnected
+    (never reaches the output). The union silent+disconnected is the
+    'not contributing' set the UI can surface on the graph.
+    """
+    from image_pipeline.shootout import contribution as _shootout_contrib
+    from image_pipeline.shootout.generator import build_gene_pool
+    genome = _shootout_store.load_genome(genome_id)
+    if genome is None:
+        raise HTTPException(404, f"Genome '{genome_id}' not found")
+    cfg = _shootout_config.effective_config()
+    pool = build_gene_pool(cfg)
+    return _shootout_contrib.analyze_contribution(genome, cfg, pool)
+
+
 @app.get("/api/shootout/utilization")
 def shootout_utilization(session_id: str | None = None):
     """Gene-pool utilization audit (phase 2).
