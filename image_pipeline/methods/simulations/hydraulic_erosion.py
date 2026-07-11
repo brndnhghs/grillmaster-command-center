@@ -1,508 +1,323 @@
-"""
-#137 — Hydraulic Erosion / River Network Terrain
-
-Couples water flow, sediment transport, and terrain evolution on a 2D
-height field. Water falls as rain, flows downhill via steepest-descent
-routing, erodes sediment proportional to stream power, and deposits
-when transport capacity drops. Thermal weathering smooths steep slopes.
-
-Physics (per timestep):
-  w += rain * gw * gh * dt          — rainfall (total volume per cell)
-  w[i] → downhill neighbor           — steepest-descent routing
-  s += K_e * w * slope * dt          — entrainment (stream power law)
-  s = min(s, K_d * w)                — capacity-limited deposition
-  h -= (s - s_prev) / (dx*dx)        — height change from erosion/deposition
-  h → smoothed if slope > tan(φ)     — angle-of-repose relaxation
-
-Drainage networks form spontaneously — rills deepen into tributaries,
-meanders develop, and the terrain evolves toward a characteristic
-dissected landscape with Horton's law scaling.
-
-Animation modes:
-  hydraulic:  rainfall + flowing water erosion (default)
-  thermal:    slope-dependent thermal smoothing only, no water
-  combined:   both active simultaneously
-  tectonic:   continuous uplift + hydraulic erosion → persistent incision
-  coastal:    wave erosion along left edge + beach deposition on right
-
-Architecture A — internal simulation with capture_frame().
-"""
 from __future__ import annotations
+
 import math
-from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
 from ...core.registry import method
-from ...core.utils import (
-    save, mn, seed_all, W, H,
-    write_scalars, write_field,
-)
+from ...core.utils import save, mn, seed_all, W, H, write_scalars, write_field
 from ...core.animation import capture_frame
 
 
-# ── Defaults ──
-
-RAIN_DEFAULT = 0.02           # rainfall per cell per frame (higher = more runoff)
-KE_DEFAULT = 0.15              # erosion coefficient (stream power)
-KD_DEFAULT = 0.5               # deposition coefficient
-THETA_DEFAULT = 0.08           # angle of repose (smoothness threshold)
-DT_DEFAULT = 2.0               # timestep
-N_FRAMES_DEFAULT = 600         # default frame count
-GRID_DIV_DEFAULT = 2           # coarse grid factor (256×192 @ div=2)
-UPLIFT_DEFAULT = 0.003         # tectonic uplift rate per frame
-WAVE_AMP_DEFAULT = 0.006       # coastal wave erosion amplitude
+# ── Lattice hash value noise (deterministic, seed-stable, vectorized) ─────
+def _hash_arr(ix: np.ndarray, iy: np.ndarray, seed: int) -> np.ndarray:
+    n = (ix.astype(np.int64) * 73856093) ^ (iy.astype(np.int64) * 19349663) ^ (np.int64(seed) * 83492791)
+    n = n & 0x7FFFFFFF
+    n = (n ^ 61) ^ (n >> 16)
+    n = n * 9
+    n = n & 0x7FFFFFFF
+    return (n & 0xFFFF).astype(np.float64) / 65535.0
 
 
-# ── Finite-difference helpers ──
-
-def _lap(f: np.ndarray) -> np.ndarray:
-    """5-point Laplacian with reflective boundaries."""
-    return (np.roll(f, 1, 0) + np.roll(f, -1, 0) +
-            np.roll(f, 1, 1) + np.roll(f, -1, 1) - 4 * f)
-
-
-def _grad_norm(f: np.ndarray) -> np.ndarray:
-    """Gradient magnitude |∇f| via central differences."""
-    dy = (np.roll(f, -1, 0) - np.roll(f, 1, 0)) * 0.5
-    dx = (np.roll(f, -1, 1) - np.roll(f, 1, 1)) * 0.5
-    return np.sqrt(dx * dx + dy * dy)
-
-
-def _upsample(arr: np.ndarray, th: int, tw: int,
-              method=Image.BILINEAR) -> np.ndarray:
-    """Upsample a 2D float array to target resolution."""
-    lo, hi = arr.min(), arr.max()
-    span = max(hi - lo, 1e-10)
-    img = Image.fromarray(((arr - lo) / span * 255).astype(np.uint8), mode="L")
-    img = img.resize((tw, th), method)
-    return np.array(img, dtype=np.float64) / 255.0 * span + lo
+def _vnoise(x: np.ndarray, y: np.ndarray, seed: int) -> np.ndarray:
+    xi = np.floor(x).astype(np.int64); yi = np.floor(y).astype(np.int64)
+    xf = x - xi; yf = y - yi
+    u = xf * xf * (3.0 - 2.0 * xf)
+    v = yf * yf * (3.0 - 2.0 * yf)
+    h00 = _hash_arr(xi, yi, seed)
+    h10 = _hash_arr(xi + 1, yi, seed)
+    h01 = _hash_arr(xi, yi + 1, seed)
+    h11 = _hash_arr(xi + 1, yi + 1, seed)
+    a = h00 + (h10 - h00) * u
+    b = h01 + (h11 - h01) * u
+    return a + (b - a) * v  # in [0,1]
 
 
-# ── Steepest-descent water routing (vectorized) ──
-
-def _route_water(w: np.ndarray, h: np.ndarray,
-                 gw: int, gh: int) -> tuple[np.ndarray, np.ndarray]:
-    """Route water downhill and return updated water + erosion flux.
-
-    For each cell, finds the lowest neighbor and routes all water there.
-    Also computes the water-height product (stream power proxy) for
-    erosion weighting. All vectorized via np.roll.
-    """
-    # Height of each neighbor
-    h_u = np.roll(h, 1, 0)    # up
-    h_d = np.roll(h, -1, 0)   # down
-    h_l = np.roll(h, 1, 1)    # left
-    h_r = np.roll(h, -1, 1)   # right
-
-    # Minimum neighbor height
-    h_min = np.minimum.reduce([h_u, h_d, h_l, h_r])
-
-    # Which cells have a downhill neighbor (not a local pit)
-    downhill = h_min < h - 1e-10
-
-    # Flux: water * height drop = stream power proxy
-    flux = np.zeros_like(w)
-    flux[downhill] = w[downhill] * (h[downhill] - h_min[downhill])
-
-    # Route water: accumulate incoming from uphill neighbors
-    w_out = np.zeros_like(w)
-    # For each direction, transfer water if that neighbor drains here
-    for roll_dir, neighbor_roll in [
-        (1, lambda a: np.roll(a, -1, 0)),   # water from above
-        (-1, lambda a: np.roll(a, 1, 0)),   # water from below
-        (1, lambda a: np.roll(a, -1, 1)),   # water from left
-        (-1, lambda a: np.roll(a, 1, 1)),   # water from right
-    ]:
-        pass  # We'll use the simpler approach below
-
-    # Simpler approach: route water by donation
-    # For each direction, water in cell goes to lowest neighbor
-    w_new = w.copy()
-
-    # Determine flow direction for each cell
-    dirs = np.stack([h_u, h_d, h_l, h_r], axis=-1)  # (gh, gw, 4)
-    min_idx = np.argmin(dirs, axis=-1)  # (gh, gw)
-
-    # Create accumulation arrays
-    w_recv = np.zeros_like(w)
-    h_recv = np.zeros_like(h)
-
-    # Donate from each cell
-    for d_idx, (dy, dx) in enumerate([(1, 0), (-1, 0), (0, 1), (0, -1)]):
-        donor_mask = (min_idx == d_idx) & downhill
-        # Water donation
-        recv_y = (np.arange(gh)[:, None] + dy) % gh
-        recv_x = (np.arange(gw)[None, :] + dx) % gw
-        for i in range(gh):
-            for j in range(gw):
-                if donor_mask[i, j]:
-                    ri = (i + dy) % gh
-                    rj = (j + dx) % gw
-                    w_new[i, j] = 0.0  # all water moves out
-                    w_recv[ri, rj] += w[i, j]
-
-    w_new += w_recv
-
-    return w_new, flux
+# ── Procedural fractal terrain (fBm) ─────────────────────────────────────
+def _build_terrain(n: int, rng: np.random.Generator, octaves: int,
+                   roughness: float, height_scale: float) -> np.ndarray:
+    yy, xx = np.mgrid[0:n, 0:n].astype(np.float64)
+    h = np.zeros((n, n), dtype=np.float64)
+    amp = 1.0
+    freq = 1.0
+    total = 0.0
+    for o in range(octaves):
+        s = freq * 3.0
+        seed = int(rng.integers(0, 1 << 30)) ^ (o * 2654435761)
+        h += amp * _vnoise(xx / n * s, yy / n * s, seed)
+        total += amp
+        amp *= roughness
+        freq *= 2.0
+    h /= max(1e-6, total)
+    # soft radial falloff -> landmass-in-ocean look
+    cy = cx = (n - 1) / 2.0
+    r = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2) / (n * 0.5)
+    falloff = np.clip(1.0 - r ** 2.2, 0.0, 1.0)
+    h = (h - 0.5) * 0.9 + 0.5
+    h *= falloff
+    return h * height_scale
 
 
-# ── Rendering ──
-
-def _render_terrain(h: np.ndarray, water: np.ndarray | None = None,
-                    az: float = 315.0, alt: float = 45.0) -> np.ndarray:
-    """Render height field as grayscale with hillshading + water overlay.
-
-    Hillshade gives terrain character. Water depth adds bright channels.
-    Percentile contrast stretch ensures full [0, 255] dynamic range.
-    Returns uint8 grayscale array.
-    """
-    h = np.nan_to_num(h, nan=0.0)
-    az_rad = math.radians(az)
-    alt_rad = math.radians(alt)
-
-    # Gradients
-    dy = (np.roll(h, -1, 0) - np.roll(h, 1, 0)) * 0.5
-    dx = (np.roll(h, -1, 1) - np.roll(h, 1, 1)) * 0.5
-
-    # Hillshade
-    slope = np.arctan(np.sqrt(dx * dx + dy * dy))
-    aspect = np.arctan2(dy, -dx)
-    shade = (np.sin(alt_rad) * np.cos(slope) +
-             np.cos(alt_rad) * np.sin(slope) *
-             np.cos(az_rad - aspect))
-    shade = np.clip(shade, 0.0, 1.0)
-
-    # Elevation component
-    h_range = h.max() - h.min()
-    if h_range > 1e-10:
-        h_norm = (h - h.min()) / h_range
-    else:
-        h_norm = np.zeros_like(h)
-
-    combined = 0.55 * shade + 0.35 * h_norm
-
-    # Water overlay: bright channels
-    if water is not None:
-        w_norm = water / max(water.max(), 1e-10)
-        combined = np.maximum(combined, w_norm * 0.3)
-        combined = np.clip(combined + w_norm * 0.15, 0, 1)
-
-    # Contrast stretch
-    lo, hi = np.percentile(combined, [2, 98])
-    if hi - lo > 0.01:
-        combined = np.clip((combined - lo) / (hi - lo), 0, 1)
-
-    return (combined * 255).astype(np.uint8)
+def _sample_height(h: np.ndarray, x: float, y: float):
+    n = h.shape[0]
+    xi = int(math.floor(x)); yi = int(math.floor(y))
+    xf = x - xi; yf = y - yi
+    xi0 = min(max(xi, 0), n - 1); yi0 = min(max(yi, 0), n - 1)
+    xi1 = min(xi0 + 1, n - 1); yi1 = min(yi0 + 1, n - 1)
+    h00 = h[yi0, xi0]; h10 = h[yi0, xi1]; h01 = h[yi1, xi0]; h11 = h[yi1, xi1]
+    u = xf * xf * (3.0 - 2.0 * xf)
+    v = yf * yf * (3.0 - 2.0 * yf)
+    a = h00 + (h10 - h00) * u
+    b = h01 + (h11 - h01) * u
+    height = a + (b - a) * v
+    # gradient (approx) wrt the cell
+    gx = (h10 - h00) * (1.0 - v) + (h11 - h01) * v
+    gy = (h01 - h00) * (1.0 - u) + (h11 - h10) * u
+    return height, gx, gy
 
 
-# ══════════════════════════════════════════════════════════════════════
-#  Method
-# ══════════════════════════════════════════════════════════════════════
+def _deposit_bilinear(h: np.ndarray, x: float, y: float, amount: float) -> None:
+    n = h.shape[0]
+    xi = int(math.floor(x)); yi = int(math.floor(y))
+    xf = x - xi; yf = y - yi
+    xi0 = min(max(xi, 0), n - 1); yi0 = min(max(yi, 0), n - 1)
+    xi1 = min(xi0 + 1, n - 1); yi1 = min(yi0 + 1, n - 1)
+    u = xf * xf * (3.0 - 2.0 * xf)
+    v = yf * yf * (3.0 - 2.0 * yf)
+    h[yi0, xi0] += amount * (1.0 - u) * (1.0 - v)
+    h[yi0, xi1] += amount * u * (1.0 - v)
+    h[yi1, xi0] += amount * (1.0 - u) * v
+    h[yi1, xi1] += amount * u * v
 
 
-@method(
-    id="156",
-    name="Hydraulic Erosion / River Network",
-    category="simulations",
-    tags=["physics", "terrain", "erosion", "rivers",
-          "landscapes", "animation"],
-    outputs={
-        "image": "IMAGE",
-        "luminance": "SCALAR",
-        "field": "FIELD",
-        "max_erosion": "SCALAR",
-        "total_sediment": "SCALAR",
-        "drainage_density": "SCALAR",
-    },
-    timeout=300,
-    params={
-        "rain_rate": {
-            "description": "rainfall per cell per frame — higher = more runoff",
-            "min": 0.0, "max": 0.05, "default": 0.008,
-        },
-        "K_e": {
-            "description": "erosion coefficient (stream power) — higher = faster incision",
-            "min": 0.001, "max": 0.5, "default": 0.05,
-        },
-        "K_d": {
-            "description": "deposition coefficient — higher = more sediment settles",
-            "min": 0.01, "max": 1.0, "default": 0.1,
-        },
-        "theta": {
-            "description": "angle of repose for thermal weathering — lower = flatter slopes",
-            "min": 0.02, "max": 0.5, "default": 0.1,
-        },
-        "n_frames": {
-            "description": "number of simulation frames",
-            "min": 50, "max": 2000, "default": 300,
-        },
-        "grid_div": {
-            "description": "coarse grid factor (higher = faster but blockier)",
-            "min": 1, "max": 4, "default": 2,
-        },
-        "dt": {
-            "description": "simulation timestep multiplier",
-            "min": 0.1, "max": 5.0, "default": 1.0,
-        },
-        "uplift_rate": {
-            "description": "tectonic uplift per frame (for tectonic mode)",
-            "min": 0.0001, "max": 0.01, "default": 0.001,
-        },
-        "wave_amplitude": {
-            "description": "coastal wave erosion amplitude",
-            "min": 0.0, "max": 0.01, "default": 0.002,
-        },
-        "noise_amplitude": {
-            "description": "initial topographic noise amplitude",
-            "min": 0.01, "max": 1.0, "default": 0.3,
-        },
-        "render_water": {
-            "description": "show water channels as bright overlay",
-            "choices": ["true", "false"],
-            "default": "true",
-        },
-        "anim_mode": {
-            "description": "erosion regime",
-            "choices": ["none", "hydraulic", "thermal", "combined",
-                        "tectonic", "coastal"],
-            "default": "hydraulic",
-        },
-        "anim_speed": {
-            "description": "animation speed multiplier",
-            "min": 0.1, "max": 5.0, "default": 1.0,
-        },
-    }
-)
-def method_hydraulic_erosion(out_dir: Path, seed: int, params=None):
-    """Hydraulic Erosion / River Network Terrain.
+def _build_brush(radius: int):
+    if radius <= 0:
+        return [(0, 0, 1.0)]
+    weights = []
+    total = 0.0
+    for dy in range(-radius, radius + 1):
+        for dx in range(-radius, radius + 1):
+            d = math.hypot(dx, dy)
+            if d <= radius:
+                w = 1.0 - d / (radius + 1.0)
+                weights.append((dx, dy, w))
+                total += w
+    return [(dx, dy, w / max(1e-6, total)) for dx, dy, w in weights]
 
-    Couples water flow, sediment transport, and topography on a 2D
-    grid to produce continuously evolving drainage networks and
-    dissected terrain.
 
-    Animation modes:
-        none:       static snapshot of initial terrain
-        hydraulic:  rainfall + flowing water erosion (default)
-        thermal:    slope-dependent smoothing only, no water
-        combined:   both hydraulic and thermal active
-        tectonic:   continuous uplift + hydraulic erosion → persistent incision
-        coastal:    wave erosion along left edge, beach deposition on right
+def _erode_brush(h: np.ndarray, x: float, y: float, amount: float, brush) -> None:
+    n = h.shape[0]
+    xi = int(math.floor(x)); yi = int(math.floor(y))
+    for dx, dy, w in brush:
+        cx = min(max(xi + dx, 0), n - 1)
+        cy = min(max(yi + dy, 0), n - 1)
+        h[cy, cx] -= amount * w
 
-    Architecture A — internal simulation loop with capture_frame().
+
+# ── Small palette lerps (no matplotlib dependency) ───────────────────────
+def _palette(c: np.ndarray, name: str) -> np.ndarray:
+    c = np.clip(c, 0.0, 1.0)
+    if name == "grayscale":
+        return np.stack([c, c, c], axis=-1)
+    if name == "earth":
+        # deep -> sand -> grass -> rock -> snow
+        pts = np.array([
+            [0.10, 0.20, 0.35],  # water-ish lowland
+            [0.45, 0.55, 0.30],  # grass
+            [0.55, 0.45, 0.30],  # sand/rock
+            [0.85, 0.85, 0.85],  # snow
+        ])
+        f = c * 3.0
+        i0 = np.clip(f.astype(int), 0, 2)
+        t = np.clip(f - i0, 0, 1)
+        lo = pts[i0]; hi = pts[i0 + 1]
+        return lo + (hi - lo) * t[..., None]
+    if name == "viridis":
+        pts = np.array([
+            [0.267, 0.005, 0.329],
+            [0.275, 0.196, 0.497],
+            [0.127, 0.567, 0.551],
+            [0.369, 0.789, 0.383],
+            [0.993, 0.906, 0.144],
+        ])
+    else:  # inferno
+        pts = np.array([
+            [0.001, 0.000, 0.014],
+            [0.341, 0.062, 0.429],
+            [0.736, 0.216, 0.330],
+            [0.978, 0.557, 0.176],
+            [0.988, 0.998, 0.645],
+        ])
+    f = c * 4.0
+    i0 = np.clip(f.astype(int), 0, 3)
+    t = np.clip(f - i0, 0, 1)
+    lo = pts[i0]; hi = pts[i0 + 1]
+    return lo + (hi - lo) * t[..., None]
+
+
+@method(id="348", name="Droplet Erosion", category="simulations",
+        tags=["terrain", "erosion", "hydraulic", "simulation", "relief", "procedural", "expanded"],
+        inputs={},
+        outputs={"image": "IMAGE", "luminance": "FIELD", "height": "FIELD"},
+        params={
+    "grid": {"description": "terrain resolution (cells per side)", "min": 64, "max": 512, "default": 256},
+    "octaves": {"description": "fBm terrain octaves", "min": 1, "max": 8, "default": 6},
+    "roughness": {"description": "fBm amplitude gain per octave", "min": 0.25, "max": 0.85, "default": 0.5},
+    "height_scale": {"description": "vertical scale of base terrain", "min": 0.2, "max": 3.0, "default": 1.2},
+    "droplets": {"description": "number of erosion droplets", "min": 2000, "max": 200000, "default": 30000},
+    "lifetime": {"description": "max steps per droplet", "min": 16, "max": 96, "default": 40},
+    "inertia": {"description": "droplet direction inertia (0=instant turn)", "min": 0.0, "max": 0.99, "default": 0.05},
+    "capacity": {"description": "sediment capacity factor", "min": 1.0, "max": 12.0, "default": 4.0},
+    "deposition": {"description": "deposition rate", "min": 0.0, "max": 1.0, "default": 0.3},
+    "erosion_rate": {"description": "erosion rate", "min": 0.0, "max": 1.0, "default": 0.3},
+    "evaporation": {"description": "water evaporation per step", "min": 0.0, "max": 0.2, "default": 0.01},
+    "gravity": {"description": "gravity (drives flow speed)", "min": 1.0, "max": 12.0, "default": 4.0},
+    "radius": {"description": "erosion brush radius (cells)", "min": 0, "max": 5, "default": 2},
+    "min_slope": {"description": "minimum slope before deposition kicks in", "min": 0.0, "max": 0.2, "default": 0.01},
+    "colormap": {"description": "height color mapping", "default": "earth"},
+    "hillshade": {"description": "apply Lambertian relief shading", "default": True},
+    "light_angle": {"description": "light azimuth (degrees)", "min": 0, "max": 360, "default": 135},
+})
+def method_hydraulic_erosion(out_dir, seed: int, params=None):
+    """Hydraulic (droplet) erosion of a procedural fractal height-field.
+
+    Technique: particle-based hydraulic erosion as popularised by
+    Hans Beyer (2017 Master's thesis, "Implementation of a method for
+    hydraulic erosion") and Sebastian Lague (2018). A population of virtual
+    water droplets is dropped onto a terrain height-map. Each droplet flows
+    downhill along the surface gradient, carrying and depositing sediment
+    according to a capacity model:
+
+        capacity = max(-dHeight, min_slope) * speed * water * capacity_factor
+
+    When the droplet's sediment load exceeds capacity (or it climbs uphill)
+    sediment is deposited; otherwise the terrain is eroded around the droplet
+    (a small brush radius spreads the cut so gullies have finite width). The
+    result is ridged valleys, alluvial fans and carved channels — the visual
+    signature of real hydraulic erosion, far beyond plain shading.
+
+    The base terrain is fractal Brownian motion (fBm) value noise with a soft
+    radial falloff so erosion reads as a landmass. Final render is a hillshaded
+    relief map (optional Lambertian shading of the surface normal) colored by
+    height. Pure CPU/NumPy; no state carried between frames, so a single
+    static frame is produced.
     """
     try:
         if params is None:
             params = {}
-
-        # ── Parameters ──
-        t = float(params.get("time", 0.0))
-        anim_mode = str(params.get("anim_mode", "hydraulic"))
-        anim_speed = float(params.get("anim_speed", 1.0))
-
-        rain_rate = float(params.get("rain_rate", RAIN_DEFAULT))
-        K_e = float(params.get("K_e", KE_DEFAULT))
-        K_d = float(params.get("K_d", KD_DEFAULT))
-        theta = float(params.get("theta", THETA_DEFAULT))
-        n_frames = int(params.get("n_frames", N_FRAMES_DEFAULT))
-        grid_div = int(params.get("grid_div", GRID_DIV_DEFAULT))
-        dt = float(params.get("dt", DT_DEFAULT))
-        uplift_rate = float(params.get("uplift_rate", UPLIFT_DEFAULT))
-        wave_amp = float(params.get("wave_amplitude", WAVE_AMP_DEFAULT))
-        noise_amp = float(params.get("noise_amplitude", 0.3))
-        render_water = str(params.get("render_water", "true")).lower() == "true"
-
-        _t = t * anim_speed
-
-        # ── Seed wiring ──
         seed_all(seed)
-        rng = np.random.default_rng(seed + 999)
+        rng = np.random.default_rng(seed)
 
-        # ── Grid setup ──
-        gh = H // grid_div
-        gw = W // grid_div
+        n = int(params.get("grid", 256))
+        n = max(64, min(512, n))
+        octaves = int(params.get("octaves", 6))
+        roughness = float(params.get("roughness", 0.5))
+        height_scale = float(params.get("height_scale", 1.2))
+        n_drop = int(params.get("droplets", 30000))
+        lifetime = int(params.get("lifetime", 40))
+        inertia = float(params.get("inertia", 0.05))
+        cap_factor = float(params.get("capacity", 4.0))
+        deposit_rate = float(params.get("deposition", 0.3))
+        erode_rate = float(params.get("erosion_rate", 0.3))
+        evap = float(params.get("evaporation", 0.01))
+        gravity = float(params.get("gravity", 4.0))
+        radius = int(params.get("radius", 2))
+        min_slope = float(params.get("min_slope", 0.01))
+        cmode = params.get("colormap", "earth")
+        hillshade = params.get("hillshade", True)
+        if isinstance(hillshade, str):
+            hillshade = hillshade.lower() in ("true", "1", "yes")
+        light_az = math.radians(float(params.get("light_angle", 135)))
 
-        # Initial terrain: very broad fractal noise landscape (zoomed in)
-        h = np.zeros((gh, gw), dtype=np.float64)
-        # Broad scales only — avoids high-frequency "TV static" terrain
-        for scale, amp in [(48, 1.0), (24, 0.5), (12, 0.25)]:
-            sh = max(4, gh // scale)
-            sw = max(4, gw // scale)
-            coarse = rng.random((sh, sw)) * 2.0 - 1.0
-            coarse_img = Image.fromarray(
-                ((coarse - coarse.min()) / max(coarse.max() - coarse.min(), 1e-10) * 255)
-                .astype(np.uint8), mode="L"
-            )
-            coarse_img = coarse_img.resize((gw, gh), Image.BILINEAR)
-            h += np.array(coarse_img, dtype=np.float64) / 255.0 * amp * 2 - amp
+        # ── Build base terrain ──
+        h = _build_terrain(n, rng, octaves, roughness, height_scale)
+        base_h = h.copy()
+        brush = _build_brush(radius)
 
-        h = h * noise_amp
-        h0 = h.copy()
+        # ── Droplet erosion ──
+        starts = rng.random((n_drop, 2)) * (n - 1)
+        for d in range(n_drop):
+            px = float(starts[d, 0]); py = float(starts[d, 1])
+            dirx = 0.0; diry = 0.0
+            speed = 1.0
+            water = 1.0
+            sediment = 0.0
+            for _ in range(lifetime):
+                old_h, gx, gy = _sample_height(h, px, py)
+                # update direction
+                dirx = dirx * inertia - gx * (1.0 - inertia)
+                diry = diry * inertia - gy * (1.0 - inertia)
+                len_ = math.hypot(dirx, diry)
+                if len_ > 1e-6:
+                    dirx /= len_; diry /= len_
+                else:
+                    ang = rng.random() * 2.0 * math.pi
+                    dirx = math.cos(ang); diry = math.sin(ang)
+                # step
+                nx = px + dirx
+                ny = py + diry
+                if nx < 0 or ny < 0 or nx >= n - 1 or ny >= n - 1:
+                    break
+                new_h, _, _ = _sample_height(h, nx, ny)
+                dH = new_h - old_h  # negative when flowing downhill
+                # sediment capacity
+                cap = max(-dH, min_slope) * speed * water * cap_factor
+                if sediment > cap or dH > 0.0:
+                    # going uphill OR overloaded -> deposit
+                    amt = (dH > 0.0) * min(dH, sediment) + \
+                          (dH <= 0.0) * ((sediment - cap) * deposit_rate)
+                    amt = max(0.0, amt)
+                    _deposit_bilinear(h, px, py, amt)
+                    sediment -= amt
+                else:
+                    # erode
+                    amt = min((cap - sediment) * erode_rate, -dH)
+                    amt = max(0.0, amt)
+                    _erode_brush(h, px, py, amt, brush)
+                    sediment += amt
+                # advance
+                speed = math.sqrt(max(0.0, speed * speed + dH * gravity))
+                water *= (1.0 - evap)
+                px = nx; py = ny
+                if water < 1e-4:
+                    break
 
-        # State variables
-        w = np.zeros((gh, gw), dtype=np.float64)  # water volume
-        s = np.zeros((gh, gw), dtype=np.float64)  # sediment load
+        # normalize heights to [0,1] for coloring
+        hmin = float(h.min()); hmax = float(h.max())
+        span = max(1e-6, hmax - hmin)
+        hn = (h - hmin) / span
 
-        # Per-frame tracking
-        max_erosion_tracker = 0.0
-        total_sed_tracker = 0.0
+        # ── Color by height ──
+        rgb = _palette(hn, cmode).astype(np.float64)
 
-        # ── Animation mode setup ──
-        is_thermal = anim_mode in ("thermal", "combined")
-        is_hydraulic = anim_mode in ("hydraulic", "combined", "tectonic", "coastal")
-        is_tectonic = anim_mode == "tectonic"
-        is_coastal = anim_mode == "coastal"
-        evap_rate = 0.03 if is_hydraulic else 0.0
+        # ── Hillshade (Lambertian on surface normal) ──
+        if hillshade:
+            gx2, gy2 = np.gradient(h)
+            # surface normal ~ (-gx, -gy, 1)/norm
+            nrm = np.sqrt(gx2 ** 2 + gy2 ** 2 + 1.0)
+            lx = math.cos(light_az); ly = math.sin(light_az); lz = 0.6
+            ln = math.sqrt(lx * lx + ly * ly + lz * lz)
+            lambert = (gx2 * (-lx) + gy2 * (-ly) + 1.0 * lz) / (nrm * ln)
+            lambert = np.clip(lambert, 0.0, 1.0)
+            shade = 0.35 + 0.65 * lambert
+            rgb = rgb * shade[..., None]
 
-        # Continuous noise seed for terrain perturbation (keeps system evolving)
-        noise_rng = np.random.default_rng(seed + 777)
+        rgb = np.clip(rgb, 0.0, 1.0).astype(np.float32)
 
-        # ── Simulation loop ──
-        for frame in range(n_frames):
-            frame_t = _t + (frame / max(1, n_frames)) * 8 * math.pi * anim_speed
-            frame_norm = frame / max(1, n_frames)
+        # ── Provenance (Rule 4 / Rule 5) ──
+        relief = float(hmax - hmin)
+        write_scalars(out_dir, base_relief=float(base_h.max() - base_h.min()),
+                      eroded_relief=relief,
+                      mean_height=float(h.mean()),
+                      droplets=n_drop)
+        write_field(out_dir, hn.astype(np.float32))
 
-            # ── Continuous noise injection (prevents settling) ──
-            # Tiny noise every frame keeps the system from reaching equilibrium
-            h += noise_rng.random((gh, gw)) * 0.005 * dt
-
-            # ── Thermal weathering (angle-of-repose smoothing) ──
-            if is_thermal or anim_mode == "coastal":
-                lap_h = _lap(h)
-                slope = _grad_norm(h)
-                over_steep = slope > theta
-                diff_strength = np.where(over_steep, (slope - theta) * 0.5, 0.0)
-                h += dt * diff_strength * lap_h
-
-            # ── Coastal wave erosion (vectorized, no Python loops) ──
-            if is_coastal:
-                wave_strength = wave_amp * dt * (
-                    0.5 + 0.5 * math.sin(frame_t * 0.5)
-                )
-                # Full-shape coordinate arrays for proper boolean indexing
-                xx_wave = np.broadcast_to(np.arange(gw), (gh, gw))
-                # Distance from left shore
-                wave_dist = gw // 10
-                wave_mask = xx_wave < wave_dist
-                wave_falloff = 1.0 - xx_wave.astype(np.float64) / wave_dist
-                h[wave_mask] -= wave_strength * wave_falloff[wave_mask]
-
-                # Beach deposition on right edge (vectorized)
-                beach_start = gw - gw // 8
-                beach_mask = xx_wave >= beach_start
-                beach_dist = (xx_wave.astype(np.float64) - beach_start) / (gw - beach_start)
-                h[beach_mask] += wave_strength * 0.3 * beach_dist[beach_mask]
-
-            # ── Tectonic uplift ──
-            if is_tectonic:
-                h[:, :] += uplift_rate * dt
-
-            # ── Hydraulic erosion ──
-            if is_hydraulic:
-                # 1. Rainfall (modulated by time for variety)
-                rain_eff = rain_rate * dt * (0.8 + 0.2 * math.sin(frame_t * 0.3))
-                w += rain_eff
-
-                # 2. Pre-smooth height field before routing to prevent pixel-scale rills
-                h_smooth = h + _lap(h) * 0.05
-
-                # 3. Steepest-descent water routing
-                h_u = np.roll(h_smooth, 1, 0)
-                h_d = np.roll(h_smooth, -1, 0)
-                h_l = np.roll(h_smooth, 1, 1)
-                h_r = np.roll(h_smooth, -1, 1)
-
-                h_min = np.minimum.reduce([h_u, h_d, h_l, h_r])
-                downhill = h_smooth - h_min > 1e-10
-
-                dirs_4 = np.stack([h_u, h_d, h_l, h_r], axis=-1)
-                min_idx = np.argmin(dirs_4, axis=-1)
-
-                # Route water — only route when water is above a threshold
-                # to prevent EVERY pixel from carving
-                water_thresh = rain_eff * 0.5
-                route_mask = (w > water_thresh)
-
-                w_new = np.zeros_like(w)
-                for d_idx, (dy, dx) in enumerate([(1, 0), (-1, 0), (0, 1), (0, -1)]):
-                    mask = (min_idx == d_idx) & downhill & route_mask
-                    yi, xi = np.where(mask)
-                    if len(yi) > 0:
-                        ri = np.clip(yi + dy, 0, gh - 1)
-                        rj = np.clip(xi + dx, 0, gw - 1)
-                        np.add.at(w_new, (ri, rj), w[yi, xi])
-                        w[yi, xi] = 0.0
-                w += w_new
-
-                # 4. Erosion: stream power = water * slope
-                slope = _grad_norm(h_smooth)
-                erosion_rate = K_e * w * slope * dt * 2.0  # ×2 for stronger incision
-                # Remove cap — let channels cut as deep as they want
-                erosion = erosion_rate
-
-                # 5. Sediment transport + deposition
-                s += erosion
-                capacity = K_d * w
-                deposit = np.maximum(s - capacity, 0.0) * 0.15
-                s -= deposit
-
-                # 6. Height update — stronger erosion impact
-                h -= erosion * 0.3
-                h += deposit * 0.5
-
-                # 6. Evaporation
-                w *= (1.0 - evap_rate * dt)
-
-                # Track diagnostics
-                max_erosion_tracker = max(max_erosion_tracker, erosion.max())
-
-            # ── Clamp height to prevent blowup ──
-            h = np.clip(h, -5.0, 5.0)
-            h = np.nan_to_num(h, nan=0.0)
-            total_sed_tracker = s.sum()
-
-            # ── Render ──
-            # Upsample to full resolution
-            h_full = _upsample(h, H, W, Image.BILINEAR)
-            w_full = None
-            if render_water and is_hydraulic:
-                w_full = _upsample(w, H, W, Image.BILINEAR)
-
-            gray = _render_terrain(h_full, w_full)
-
-            # Compose 3-channel grayscale
-            canvas = np.stack([gray] * 3, axis=-1)
-            img = Image.fromarray(canvas, mode="RGB")
-
-            capture_frame("137", np.array(img, dtype=np.float32) / 255.0)
-
-        # ── Final render + save ──
-        h_full_final = _upsample(h, H, W, Image.BILINEAR)
-        w_full_final = None
-        if render_water and is_hydraulic:
-            w_full_final = _upsample(w, H, W, Image.BILINEAR)
-        gray_final = _render_terrain(h_full_final, w_full_final)
-        canvas_final = np.stack([gray_final] * 3, axis=-1)
-        final_img = Image.fromarray(canvas_final, mode="RGB")
-        final_arr = np.array(final_img, dtype=np.uint8)
-
-        save(final_arr, mn(137, "Hydraulic Erosion"), out_dir)
-        capture_frame("137", np.array(final_img, dtype=np.float32) / 255.0)
-
-        # ── Write scalars ──
-        write_scalars(out_dir,
-                      max_erosion=float(max_erosion_tracker),
-                      total_sediment=float(total_sed_tracker),
-                      drainage_density=float(np.mean(w > 0.01) * 100))
-
-        # ── Write field (final height field) ──
-        write_field(out_dir, h_full_final.astype(np.float32))
-
-        return final_arr
-
+        capture_frame("348", rgb)
+        save(rgb, mn(348, "Droplet Erosion"), out_dir)
+        return rgb
     except Exception as exc:
         fallback = np.full((H, W, 3), 128, dtype=np.uint8)
-        save(fallback, mn(137, "Hydraulic Erosion"), out_dir)
-        print(f"[method_137] ERROR: {exc}")
+        save(fallback, mn(348, "Droplet Erosion"), out_dir)
+        print(f"[method_348] ERROR: {exc}")
         return fallback
