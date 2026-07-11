@@ -265,7 +265,11 @@ _TYPED_SHADER_NODES = [
     ("297", "prism_typed",      "GPU Spectral Prism"),
     ("298", "sdfscene_typed",   "GPU SDF Scene"),
     ("299", "burst_typed",      "GPU Energy Burst"),
-    ("300", "foam_typed",       "GPU Bubble Foam"),
+    ("300", "foam_typed",   "GPU Bubble Foam"),
+    # Categorical coverage pt.12 (2026-07-11): closed-form pattern node —
+    # Gyroid / triply-periodic minimal-surface slice (animation by in-plane
+    # spin + slice advance through the 3D field).
+    ("301", "gyroid_typed", "GPU Gyroid"),
 ]
 
 _TIME_SCALE_PARAM = {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0}
