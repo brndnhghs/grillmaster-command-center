@@ -177,7 +177,7 @@ def method_rolling_guidance(out_dir: Path, seed: int, params=None):
         abstraction = float(params.get("abstraction", 1.0))
         abstraction = max(0.0, min(1.0, abstraction))
         noise_amp = float(params.get("noise_amp", 0.35))
-        blur_sigma = float(params.get("blur_sigma", 30))
+        blur_sigma = float(params.get("blur_sigma", 12))
         pal_name = str(params.get("palette", "vapor"))
 
         # ── Animation (rename t to avoid shadowing the time param) ──
