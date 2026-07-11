@@ -1074,6 +1074,7 @@ class ShootoutRunRequest(BaseModel):
     session_id: str
     ratings: dict[str, int] | None = None  # /evolve: rate-if-not-already
     notes: dict[str, str] | None = None    # per-genome pros/cons free text
+    node_feedback: dict[str, dict[str, str]] | None = None  # phase 3: {gid:{node_id:text}}
 
 
 class ShootoutConfigRequest(BaseModel):
@@ -1158,12 +1159,13 @@ def shootout_generate(req: ShootoutRunRequest):
 @app.post("/api/shootout/rate")
 def shootout_rate(req: ShootoutRunRequest):
     """Persist star ratings and pros/cons notes for the latest generation."""
-    if not req.ratings and not req.notes:
-        raise HTTPException(400, "ratings or notes required")
+    if not req.ratings and not req.notes and not req.node_feedback:
+        raise HTTPException(400, "ratings, notes, or node_feedback required")
     try:
         return _shootout_session.rate(req.session_id, req.ratings or {},
                                       _shootout_config.effective_config(),
-                                      notes=req.notes)
+                                      notes=req.notes,
+                                      node_feedback=req.node_feedback)
     except ValueError as exc:
         raise HTTPException(404, str(exc))
 
@@ -1171,12 +1173,14 @@ def shootout_rate(req: ShootoutRunRequest):
 @app.post("/api/shootout/evolve")
 def shootout_evolve(req: ShootoutRunRequest):
     """Rate/annotate (if included) then breed + render the next generation.
-    Notes are interpreted by the advisor and steer the breeding."""
-    if req.ratings or req.notes:
+    Notes and per-node feedback are interpreted by the advisor and steer the
+    breeding."""
+    if req.ratings or req.notes or req.node_feedback:
         try:
             _shootout_session.rate(req.session_id, req.ratings or {},
                                    _shootout_config.effective_config(),
-                                   notes=req.notes)
+                                   notes=req.notes,
+                                   node_feedback=req.node_feedback)
         except ValueError as exc:
             raise HTTPException(404, str(exc))
     return _shootout_launch_job(req.session_id)
@@ -1197,6 +1201,36 @@ def shootout_train():
     artifact = _shootout_taste.train()
     return {k: v for k, v in artifact.items()
             if k in ("trained", "n_samples", "metrics", "note", "model")}
+
+
+@app.get("/api/shootout/utilization")
+def shootout_utilization(session_id: str | None = None):
+    """Gene-pool utilization audit (phase 2).
+
+    With session_id: union of every genome rendered in that session.
+    Without it: a fresh audit over one render_pool of random genomes, so
+    the UI can show coverage even before any session has run.
+    """
+    from image_pipeline.shootout import utilization as _shootout_util
+    from image_pipeline.shootout.generator import build_gene_pool
+    from image_pipeline.shootout.repair import sample_valid_genome
+    cfg = _shootout_config.effective_config()
+    pool = build_gene_pool(cfg)
+    genomes: list[dict] = []
+    if session_id:
+        s = _shootout_store.load_session(session_id)
+        if s is not None:
+            for gen in s.get("generations", []):
+                for gid in gen.get("pool", []):
+                    g = _shootout_store.load_genome(gid)
+                    if g is not None:
+                        genomes.append(g)
+    if not genomes:
+        import random as _random
+        rng = _random.Random()
+        genomes = [sample_valid_genome(pool, cfg, rng, origin="random")
+                   for _ in range(cfg.render_pool)]
+    return _shootout_util.audit_population(genomes, pool, cfg)
 
 
 @app.get("/api/graph/{gid}")

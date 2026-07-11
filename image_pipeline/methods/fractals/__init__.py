@@ -12,3 +12,4 @@ from . import plasma
 from . import sierpinski
 from . import pythagorean_tree
 from . import lsystem
+from . import kaleidoscopic_ifs

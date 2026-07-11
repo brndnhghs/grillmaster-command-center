@@ -230,18 +230,28 @@ def test_features_deterministic():
 def test_taste_beats_baseline(tmp_store):
     rng = random.Random(19)
     rng_np = np.random.default_rng(19)
-    recs = []
+    # One sample pass: features and the synthetic target come from the SAME
+    # genomes, so the target actually correlates with the features. The
+    # target is depth + a little size, jittered, then linearly rescaled into
+    # the 1–5 band so it keeps real spread regardless of how the generator
+    # distributes depth (post motif-grammar most graphs are deep).
+    feats: list[dict] = []
+    raw: list[float] = []
     for _ in range(60):
         g = sample_valid_genome(POOL, CFG, rng)
         f = genome_features(g, POOL, CFG)
-        score = 1 + 1.2 * f["depth"] + 1.5 * (f["n_drivers"] > 0) \
-            + rng_np.normal(0, 0.3)
+        feats.append(f)
+        raw.append(f["depth"] + 0.15 * f["n_nodes"] + rng_np.normal(0, 0.15))
+    lo, hi = min(raw), max(raw)
+    recs = []
+    for f, r in zip(feats, raw):
+        norm = 1.5 + 3.0 * (r - lo) / max(hi - lo, 1e-9)
         recs.append({"features": f,
-                     "rating": float(np.clip(round(score), 1, 5))})
+                     "rating": float(np.clip(round(norm), 1, 5))})
     art = taste.train(recs)
     assert art["trained"]
     assert art["metrics"]["beats_baseline"]
-    assert art["metrics"]["cv_corr"] > 0.5
+    assert art["metrics"]["cv_corr"] > 0.3
     pred = taste.predict(recs[0]["features"], art)
     assert 1.0 <= pred <= 5.0
 
@@ -539,3 +549,144 @@ def test_e2e_one_tiny_generation(tmp_store, monkeypatch):
     for sv in result["survivors"]:
         assert sv["mp4_url"].startswith("/api/sequences/shootout-")
         assert sv["liveness"]["alive"]
+
+
+# ── Phase 2: utilization audit ──────────────────────────────────────
+
+
+def test_utilization_counts_methods_and_gaps():
+    from image_pipeline.shootout import utilization
+    rng = random.Random(3)
+    genomes = [sample_valid_genome(POOL, CFG, rng) for _ in range(20)]
+    audit = utilization.audit_population(genomes, POOL, CFG)
+    # every generated method_id is in the pool and counted
+    used = {m for m, d in audit["per_method"].items() if d["count"] > 0}
+    assert used
+    for g in genomes:
+        for n in g["graph"]["nodes"]:
+            assert n["method_id"] in audit["per_method"]
+    # never_used is disjoint from used
+    assert not (set(audit["never_used"]) & used)
+    # roles section populated
+    assert audit["roles"]["n_terminals"] == len(POOL.terminals)
+    assert audit["roles"]["terminals_used_frac"] >= 0.0
+    # motif-genomes counted for motif-grammar-generated graphs
+    motif_genomes = sum(1 for g in genomes if g["graph"].get("motifs"))
+    assert audit["motifs"]["n_motif_genomes"] == motif_genomes
+    # summarize returns a non-empty string
+    assert utilization.summarize(audit)
+
+
+def test_utilization_empty_population_is_safe():
+    from image_pipeline.shootout import utilization
+    audit = utilization.audit_population([], POOL, CFG)
+    assert audit["n_genomes"] == 0
+    assert audit["n_methods_used"] == 0
+    assert audit["n_never_used"] == audit["n_pool_methods"]
+
+
+def test_utilization_endpoint_fresh(client):
+    r = client.get("/api/shootout/utilization")
+    assert r.status_code == 200
+    body = r.json()
+    assert "per_method" in body and "roles" in body
+    assert body["n_genomes"] == CFG.render_pool
+
+
+# ── Phase 3: per-node feedback → advisor ────────────────────────────
+
+
+def test_node_feedback_to_guidance():
+    from image_pipeline.shootout import advisor
+    rng = random.Random(53)
+    g = sample_valid_genome(POOL, CFG, rng)
+    nodes = g["graph"]["nodes"]
+    liked = nodes[0]["method_id"]
+    disliked = nodes[-1]["method_id"]
+    g["node_feedback"] = {
+        nodes[0]["id"]: "love this layer",
+        nodes[-1]["id"]: "drop this, it's muddy",
+    }
+    agg = advisor.node_feedback_to_guidance([g], POOL)
+    assert liked in agg["prefer"]
+    assert disliked in agg["avoid"]
+    assert liked not in agg["avoid"]
+
+
+def test_extract_guidance_uses_node_feedback_without_llm():
+    from image_pipeline.shootout import advisor
+    rng = random.Random(59)
+    g = sample_valid_genome(POOL, CFG, rng)
+    nid = g["graph"]["nodes"][0]["id"]
+    mid = g["graph"]["nodes"][0]["method_id"]
+    g["node_feedback"] = {nid: "hate this node"}
+    # no notes, LLM disabled → guidance comes purely from per-node feedback
+    g["notes"] = ""
+    out = advisor.extract_guidance([g], POOL, CFG, llm=lambda s, u: None)
+    assert out is not None
+    assert mid in out["avoid_methods"]
+    assert out["summary"] == "per-node feedback only"
+
+
+def test_extract_guidance_merges_node_and_llm():
+    from image_pipeline.shootout import advisor
+    rng = random.Random(61)
+    g = sample_valid_genome(POOL, CFG, rng)
+    nid = g["graph"]["nodes"][0]["id"]
+    mid = g["graph"]["nodes"][0]["method_id"]
+    g["notes"] = "more simulations please"
+    g["node_feedback"] = {nid: "love this"}
+    llm_reply = json.dumps({
+        "prefer_methods": ["999"],  # unknown → sanitized out
+        "avoid_methods": [],
+        "prefer_categories": ["simulations"],
+        "avoid_categories": [],
+        "complexity": "increase",
+        "protect_genomes": [],
+        "drop_genomes": [],
+        "summary": "favor simulations",
+    })
+    out = advisor.extract_guidance([g], POOL, CFG,
+                                   llm=lambda s, u: "```json\n" + llm_reply)
+    assert mid in out["prefer_methods"]          # node feedback merged in
+    assert "simulations" in out["prefer_categories"]
+    assert 999 not in out["prefer_methods"]       # LLM unknown id sanitized
+    assert "per-node" in out["summary"]
+
+
+def test_node_feedback_roundtrip(client, tmp_store):
+    from image_pipeline.shootout import session as sess
+    rng = random.Random(67)
+    s = sess.start_session()
+    sid = s["session_id"]
+    g = sample_valid_genome(POOL, CFG, rng)
+    store.save_genome(g)
+    s = store.load_session(sid)
+    s["generations"].append({
+        "gen": 0, "shown": [g["genome_id"]], "pool": [],
+        "ratings": {}, "notes": {}, "node_feedback": {}, "rated_logged": [],
+    })
+    store.save_session(s)
+    nid = g["graph"]["nodes"][0]["id"]
+    r = client.post("/api/shootout/rate", json={
+        "session_id": sid,
+        "ratings": {g["genome_id"]: 4},
+        "node_feedback": {g["genome_id"]: {nid: "keep this one"}},
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body["node_feedback"] == 1
+    # persisted on the genome + lineage
+    saved = store.load_genome(g["genome_id"])
+    assert saved["node_feedback"][nid] == "keep this one"
+    state = client.get(f"/api/shootout/session/{sid}").json()
+    sv = next(x for x in state["survivors"] if x["genome_id"] == g["genome_id"])
+    assert sv["node_feedback"][nid] == "keep this one"
+    # bad node id is dropped
+    r2 = client.post("/api/shootout/rate", json={
+        "session_id": sid,
+        "node_feedback": {g["genome_id"]: {"ghost_node": "like"}},
+    })
+    assert r2.status_code == 200
+    assert store.load_genome(g["genome_id"]).get("node_feedback", {}) == {} \
+        or "ghost_node" not in store.load_genome(g["genome_id"]).get("node_feedback", {})

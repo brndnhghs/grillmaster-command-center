@@ -396,12 +396,26 @@ def random_genome(pool: GenePool | None = None,
                   cfg: ShootoutConfig = DEFAULT_CONFIG,
                   rng: random.Random | None = None,
                   origin: str = "random",
-                  bias: SamplingBias | None = None) -> dict:
-    """Emit one genome envelope (plan §5) around a freshly sampled graph."""
+                  bias: SamplingBias | None = None,
+                  motif_weights: dict[str, float] | None = None) -> dict:
+    """Emit one genome envelope (plan §5) around a freshly sampled graph.
+
+    Structure is sampled by the motif grammar (motifs.compose_graph): it
+    stacks workflow motifs up to the size budget, then runs the driver
+    policy so every node is animated by control nodes. Falls back to the
+    legacy backward-walk (random_graph) if motif composition fails.
+    """
     pool = pool or build_gene_pool(cfg)
     rng = rng or random.Random()
     gid = new_genome_id()
-    graph = random_graph(pool, cfg, rng, bias)
+    graph: dict | None = None
+    try:
+        from . import motifs
+        graph = motifs.compose_graph(pool, cfg, rng, bias, motif_weights)
+    except Exception:
+        graph = None
+    if graph is None:
+        graph = random_graph(pool, cfg, rng, bias)
     graph["name"] = gid
     return {
         "genome_id": gid,

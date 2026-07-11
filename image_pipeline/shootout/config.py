@@ -29,8 +29,12 @@ class ShootoutConfig:
     # render_timeout_s. Raise this for wilder initial batches.
     max_depth: int = 12
     p_fill_image: float = 0.85     # chance to feed a node's image_in while budget remains
-    p_fill_aux: float = 0.6        # chance to feed declared field/mask/particles ports
-    p_driver: float = 0.4          # repeated-draw chance per extra scalar driver (LFO etc.)
+    p_fill_aux: float = 0.6      # chance to feed declared field/mask/particles ports
+    p_driver: float = 0.4          # legacy repeated-draw chance per extra scalar driver
+    # Motif-grammar driver policy (motifs.py): probability a non-driver node
+    # gets at least one control-node driver, and a second one.
+    p_drive_primary: float = 0.9
+    p_drive_secondary: float = 0.4
     p_extreme_param: float = 0.1   # chance a sampled numeric param is pushed to min/max
     time_varying_weight: float = 3.0   # sampling weight boost for animated terminals
     continuation_weight: float = 4.0   # boost for chain-continuing nodes while budget remains
@@ -102,6 +106,8 @@ TUNABLE_FIELDS: dict[str, tuple[str, float | None, float | None]] = {
     "width":             ("Render width (px)", 64, 2048),
     "height":            ("Render height (px)", 64, 2048),
     "max_depth":         ("Initial graph-size budget — evolution can grow past this, there is no hard cap", 1, 64),
+    "p_drive_primary":   ("Chance a node gets one animated control-node driver (motif grammar)", 0.0, 1.0),
+    "p_drive_secondary": ("Chance a node gets a second driver once it has one (motif grammar)", 0.0, 1.0),
     "explore_ratio":     ("Fraction of each bred generation that is fresh random graphs (keeps variety)", 0.0, 1.0),
     "elitism":           ("Top-rated clips carried into the next round unchanged", 0, 3),
     "crossover_ratio":   ("Of bred offspring, fraction made by splicing two parents (rest are mutations)", 0.0, 1.0),

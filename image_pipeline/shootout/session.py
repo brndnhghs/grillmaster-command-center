@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from typing import Callable
 
 from . import store, taste
+from . import utilization
 from .config import ShootoutConfig, DEFAULT_CONFIG
 from .evaluator import render_many
 from .evolve import next_generation
@@ -62,6 +63,7 @@ def _survivor_view(genome: dict, predicted: float | None = None) -> dict:
         "liveness": genome.get("liveness"),
         "rating": genome.get("rating"),
         "notes": genome.get("notes"),
+        "node_feedback": genome.get("node_feedback"),
         "predicted_rating": predicted,
         "node_count": len(genome["graph"].get("nodes", [])),
         "methods": [n.get("method_id") for n in genome["graph"].get("nodes", [])],
@@ -192,6 +194,12 @@ def _run_generation_locked(session_id, cfg, progress_cb, rng) -> dict:
         _p(f"warning: only {len(survivors)} alive clips "
            f"after {rendered_total} renders")
 
+    # Utilization audit (phase 2): how well this generation exercised the
+    # gene pool. Computed over every rendered candidate (not just the
+    # survivors) so dead-clip culling doesn't hide coverage gaps.
+    audit = utilization.audit_population(all_rendered, pool, cfg)
+    _p(f"utilization: {utilization.summarize(audit)}")
+
     # Informational taste predictions (v1: never gates — decision #6)
     model = store.load_model()
     views = []
@@ -215,6 +223,7 @@ def _run_generation_locked(session_id, cfg, progress_cb, rng) -> dict:
         # elites were already logged to the dataset in their birth generation
         "rated_logged": [g["genome_id"] for g in elites],
         "guidance": guidance,   # what the advisor derived from last gen's notes
+        "utilization": audit,   # phase 2: gene-pool coverage of this generation
         "rendered": rendered_total,
         "alive": len(alive) + len(elites),
         "completed_at": datetime.now(timezone.utc).isoformat(),
@@ -223,15 +232,21 @@ def _run_generation_locked(session_id, cfg, progress_cb, rng) -> dict:
 
     return {"session_id": session_id, "generation": gen_index,
             "survivors": views, "rendered": rendered_total,
-            "dead": dead, "guidance": guidance}
+            "dead": dead, "guidance": guidance, "utilization": audit}
 
 
 def rate(session_id: str, ratings: dict[str, int],
          cfg: ShootoutConfig = DEFAULT_CONFIG,
-         notes: dict[str, str] | None = None) -> dict:
+         notes: dict[str, str] | None = None,
+         node_feedback: dict[str, dict[str, str]] | None = None) -> dict:
     """Persist star ratings AND free-text pros/cons notes for the latest
     generation: session lineage, per-genome files, and the append-only
-    ratings dataset. Notes feed the advisor on the next evolve."""
+    ratings dataset. Notes feed the advisor on the next evolve.
+
+    Phase 3: `node_feedback` is {genome_id: {node_id: text}} — per-node
+    likes/dislikes the UI attaches to specific nodes. It is persisted to the
+    lineage + genome and merged into the advisor's breeding guidance.
+    """
     session = store.load_session(session_id)
     if session is None:
         raise ValueError(f"unknown session {session_id!r}")
@@ -239,12 +254,14 @@ def rate(session_id: str, ratings: dict[str, int],
         raise ValueError("no generation to rate")
     gen = session["generations"][-1]
     gen.setdefault("notes", {})
+    gen.setdefault("node_feedback", {})  # phase 3: {gid: {node_id: text}}
     pool = build_gene_pool(cfg)
     ratings = ratings or {}
     notes = notes or {}
+    node_feedback = node_feedback or {}
 
     appended = 0
-    for gid in set(ratings) | set(notes):
+    for gid in set(ratings) | set(notes) | set(node_feedback):
         if gid not in gen["shown"]:
             continue
         genome = store.load_genome(gid)
@@ -253,6 +270,17 @@ def rate(session_id: str, ratings: dict[str, int],
             gen["notes"][gid] = note_text
             if genome is not None:
                 genome["notes"] = note_text
+        nf = node_feedback.get(gid) or {}
+        valid: dict = {}
+        if nf:
+            # keep only feedback for nodes that exist in this genome
+            if genome is not None:
+                ids = {n["id"] for n in genome["graph"].get("nodes", [])}
+                valid = {nid: t for nid, t in nf.items() if nid in ids}
+            if valid:
+                gen["node_feedback"][gid] = valid
+                if genome is not None:
+                    genome["node_feedback"] = valid
 
         stars = ratings.get(gid)
         if stars is not None:
@@ -267,13 +295,16 @@ def rate(session_id: str, ratings: dict[str, int],
                 and gid not in gen.get("rated_logged", []):
             store.append_rating(gid, session_id, stars,
                                 genome_features(genome, pool, cfg),
-                                notes=note_text or genome.get("notes", ""))
+                                notes=note_text or genome.get("notes", ""),
+                                node_feedback=valid if genome is not None else {})
             gen.setdefault("rated_logged", []).append(gid)
             appended += 1
 
     store.save_session(session)
     return {"ok": True, "rated": len(gen["ratings"]),
-            "noted": len(gen["notes"]), "appended": appended}
+            "noted": len(gen["notes"]),
+            "node_feedback": len(gen.get("node_feedback", {})),
+            "appended": appended}
 
 
 def session_state(session_id: str) -> dict | None:

@@ -71,7 +71,8 @@ def list_sessions() -> list[dict]:
 
 
 def append_rating(genome_id: str, session_id: str, rating: int,
-                  features: dict, notes: str = "") -> None:
+                  features: dict, notes: str = "",
+                  node_feedback: dict | None = None) -> None:
     """Append one (features, rating[, notes]) line to the training corpus."""
     _ensure_dirs()
     line = json.dumps({
@@ -80,6 +81,7 @@ def append_rating(genome_id: str, session_id: str, rating: int,
         "rating": int(rating),
         "features": features,
         "notes": notes or "",
+        "node_feedback": node_feedback or {},
         "ts": time.time(),
     })
     with _ratings_lock:
