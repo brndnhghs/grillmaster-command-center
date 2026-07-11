@@ -7,6 +7,9 @@ PORT=7861
 DATA_DIR="/Users/admin/Documents/GitHub/grillmaster-command-center/data"
 CHORD_DIR="/Users/admin/Documents/GitHub/grillmaster-command-center/chord_bot"
 VENV_PYTHON="/Users/admin/Documents/GitHub/hermes-agent/venv/bin/python"
+# Clear PYTHONPATH/_VIRTUAL_ENV so this venv isn't shadowed by the Hermes
+# shell's inherited py3.11 site-packages (breaks numpy under py3.12).
+ENV_PREFIX="env -u PYTHONPATH -u _VIRTUAL_ENV PYTHONPATH=$CHORD_DIR"
 TUNNEL_URL_FILE="$DATA_DIR/tunnel-url.txt"
 TUNNEL_INFO="$DATA_DIR/tunnel-info.json"
 LOG_DIR="$DATA_DIR/logs"

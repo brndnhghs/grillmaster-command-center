@@ -20,7 +20,9 @@ sleep 1
 
 # ── 1. Start Chord Bot server ──
 echo "Starting Chord Bot server..."
-PYTHONPATH="/Users/admin/Documents/GitHub/grillmaster-command-center" nohup "$VENV_PYTHON" -m chord_bot.server --port "$CHORD_PORT" > "$LOG_DIR/chord-server.log" 2>&1 &
+# Clear PYTHONPATH/_VIRTUAL_ENV so the agent venv isn't shadowed by the
+# Hermes shell's inherited py3.11 site-packages (which breaks numpy import).
+env -u PYTHONPATH -u _VIRTUAL_ENV PYTHONPATH="/Users/admin/Documents/GitHub/grillmaster-command-center" nohup "$VENV_PYTHON" -m chord_bot.server --port "$CHORD_PORT" > "$LOG_DIR/chord-server.log" 2>&1 &
 CHORD_PID=$!
 
 for i in $(seq 1 15); do
@@ -34,7 +36,7 @@ done
 
 # ── 2. Start Image Pipeline server ──
 echo "Starting Image Pipeline server..."
-PYTHONPATH="/Users/admin/Documents/GitHub/grillmaster-command-center" nohup "$VENV_PYTHON" -m image_pipeline.server --port "$PIPELINE_PORT" > "$LOG_DIR/pipeline-server.log" 2>&1 &
+env -u PYTHONPATH -u _VIRTUAL_ENV PYTHONPATH="/Users/admin/Documents/GitHub/grillmaster-command-center" nohup "$VENV_PYTHON" -m image_pipeline.server --port "$PIPELINE_PORT" > "$LOG_DIR/pipeline-server.log" 2>&1 &
 PIPE_PID=$!
 
 for i in $(seq 1 15); do
