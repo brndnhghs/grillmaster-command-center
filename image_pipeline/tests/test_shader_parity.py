@@ -169,7 +169,9 @@ def test_endpoint_exposes_node_map():
     client = TestClient(app)
     data = client.get("/api/shader-sources").json()
     assert "node_map" in data
-    assert data["node_map"]["175"] == {"shader": "plasma", "type": "procedural"}
+    assert data["node_map"]["175"]["shader"] == "plasma"
+    assert data["node_map"]["175"]["type"] == "procedural"
+    assert data["node_map"]["175"].get("typed") is True
     # Every mapped shader is present in the shaders bundle.
     for mid, entry in data["node_map"].items():
         if entry.get("type") == "sim":

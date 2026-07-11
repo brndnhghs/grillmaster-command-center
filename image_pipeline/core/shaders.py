@@ -848,7 +848,26 @@ void main() {{
 }}
 '''
 
-_register("shader_bloom", "GPU bloom/glow from bright areas", "filter", _filter_shader('''
+def _filter_typed(body: str) -> str:
+    """Wrap a TYPED filter shader body (uses named u_<var> uniforms).
+
+    Unlike _filter_shader, this does NOT embed the prologue — render_shader's
+    _assemble_gl330 injects the shared _PROLOGUE + typed-uniform declarations
+    for filter shaders that declare `uniforms=`. The body uses v_uv, u_texture,
+    u_resolution, u_time (all from the prologue) and the local `step`/`sample`.
+    """
+    return f'''
+vec4 sample(vec2 uv) {{ return texture(u_texture, uv); }}
+
+void main() {{
+    vec2 uv = v_uv;
+    vec2 step = 1.0 / u_resolution;
+    vec4 orig = sample(uv);
+    {body}
+}}
+'''
+
+_register("shader_bloom", "GPU bloom/glow from bright areas", "filter", _filter_typed('''
     float brightness = dot(orig.rgb, vec3(0.299, 0.587, 0.114));
     vec4 glow = vec4(0.0);
     for (int x = -3; x <= 3; x++) {
@@ -859,107 +878,132 @@ _register("shader_bloom", "GPU bloom/glow from bright areas", "filter", _filter_
         }
     }
     glow /= 8.0;
-    f_color = orig + glow * u_params.x;
-'''))
+    f_color = orig + glow * u_strength;
+'''), uniforms={
+    "strength": {"glsl": "float", "min": 0.0, "max": 2.0, "default": 0.8, "description": "bloom intensity"},
+})
 
-_register("shader_emboss", "GPU emboss / bump mapping", "filter", _filter_shader('''
+_register("shader_emboss", "GPU emboss / bump mapping", "filter", _filter_typed('''
     float gx = dot(texture(u_texture, uv + vec2(step.x, 0)).rgb, vec3(0.299, 0.587, 0.114));
     float gy = dot(texture(u_texture, uv + vec2(0, step.y)).rgb, vec3(0.299, 0.587, 0.114));
     float gz = dot(orig.rgb, vec3(0.299, 0.587, 0.114));
     float dx = gx - gz; float dy = gy - gz;
     float bump = (dx + dy) * 2.0 + 0.5;
-    f_color = vec4(mix(orig.rgb, vec3(bump), u_params.x), 1.0);
-'''))
+    f_color = vec4(mix(orig.rgb, vec3(bump), u_strength), 1.0);
+'''), uniforms={
+    "strength": {"glsl": "float", "min": 0.0, "max": 2.0, "default": 0.8, "description": "emboss blend"},
+})
 
-_register("shader_kaleidoscope", "GPU kaleidoscope mirror", "filter", _filter_shader('''
+_register("shader_kaleidoscope", "GPU kaleidoscope mirror", "filter", _filter_typed('''
     vec2 p = uv - 0.5;
     float a = atan(p.y, p.x);
     float r = length(p);
-    float seg = 3.14159 * 2.0 / max(4.0, 8.0 - u_params.x * 4.0);
+    float seg = 3.14159 * 2.0 / max(3.0, u_segments);
     a = mod(a, seg);
     a = abs(a - seg * 0.5);
     vec2 q = vec2(cos(a), sin(a)) * r + 0.5;
     f_color = texture(u_texture, q);
-'''))
+'''), uniforms={
+    "segments": {"glsl": "float", "min": 3.0, "max": 16.0, "default": 8.0, "description": "mirror segments"},
+})
 
-_register("shader_water_ripple", "GPU water ripple distortion", "filter", _filter_shader('''
+_register("shader_water_ripple", "GPU water ripple distortion", "filter", _filter_typed('''
     vec2 off = vec2(
-        sin(uv.y * 50.0 + u_time * 2.0) * 0.01 * u_params.x,
-        cos(uv.x * 50.0 + u_time * 1.5) * 0.01 * u_params.x
+        sin(uv.y * 50.0 + u_time * 2.0) * 0.01 * u_amp,
+        cos(uv.x * 50.0 + u_time * 1.5) * 0.01 * u_amp
     );
     f_color = texture(u_texture, uv + off);
-'''))
+'''), uniforms={
+    "amp": {"glsl": "float", "min": 0.0, "max": 2.0, "default": 0.8, "description": "ripple amplitude"},
+})
 
-_register("shader_heat_shimmer", "GPU heat haze / shimmer", "filter", _filter_shader('''
-    float haze = sin(uv.x * 30.0 + uv.y * 20.0 + u_time * 3.0) * u_params.x * 0.02;
+_register("shader_heat_shimmer", "GPU heat haze / shimmer", "filter", _filter_typed('''
+    float haze = sin(uv.x * 30.0 + uv.y * 20.0 + u_time * 3.0) * u_strength * 0.02;
     vec2 off = vec2(0.0, haze * (1.0 - uv.y));
     f_color = texture(u_texture, uv + off);
-'''))
+'''), uniforms={
+    "strength": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.6, "description": "shimmer amount"},
+})
 
-_register("shader_pixelate_gpu", "GPU pixelation with edge preservation", "filter", _filter_shader('''
-    float block = max(4.0, 64.0 - u_params.x * 60.0);
+_register("shader_pixelate_gpu", "GPU pixelation with edge preservation", "filter", _filter_typed('''
+    float block = u_block;
     vec2 q = floor(uv * u_resolution / block) * block / u_resolution;
     f_color = texture(u_texture, q);
-'''))
+'''), uniforms={
+    "block": {"glsl": "float", "min": 4.0, "max": 64.0, "default": 16.0, "description": "pixel block size"},
+})
 
-_register("shader_ink_bleed", "GPU ink bleed / watercolor spread", "filter", _filter_shader('''
+_register("shader_ink_bleed", "GPU ink bleed / watercolor spread", "filter", _filter_typed('''
     vec3 sum = vec3(0.0);
     float count = 0.0;
     for (int x = -4; x <= 4; x++) {
         for (int y = -4; y <= 4; y++) {
-            vec2 off = vec2(float(x), float(y)) * step * u_params.x;
-            float w = exp(-float(x*x + y*y) / (4.0 * u_params.x));
+            vec2 off = vec2(float(x), float(y)) * step * u_spread;
+            float w = exp(-float(x*x + y*y) / (4.0 * u_spread));
             sum += texture(u_texture, uv + off).rgb * w;
             count += w;
         }
     }
     f_color = vec4(sum / count, 1.0);
-'''))
+'''), uniforms={
+    "spread": {"glsl": "float", "min": 0.1, "max": 3.0, "default": 0.6, "description": "bleed radius"},
+})
 
-_register("shader_halftone_gpu", "GPU halftone dot screen", "filter", _filter_shader('''
+_register("shader_halftone_gpu", "GPU halftone dot screen", "filter", _filter_typed('''
     float gray = dot(orig.rgb, vec3(0.299, 0.587, 0.114));
-    float cell = 8.0 + u_params.x * 20.0;
+    float cell = u_cell;
     vec2 q = fract(uv * u_resolution / cell);
     float d = length(q - 0.5);
     float dot_r = (1.0 - gray) * 0.5;
     float v = d < dot_r ? 0.0 : 1.0;
     f_color = vec4(vec3(v), 1.0);
-'''))
+'''), uniforms={
+    "cell": {"glsl": "float", "min": 6.0, "max": 40.0, "default": 16.0, "description": "dot cell size"},
+})
 
-_register("shader_crt_gpu", "GPU CRT scanlines + bloom", "filter", _filter_shader('''
+_register("shader_crt_gpu", "GPU CRT scanlines + bloom", "filter", _filter_typed('''
     float scan = sin(uv.y * u_resolution.y * 3.14159) * 0.5 + 0.5;
-    float scanline = 1.0 - (1.0 - scan) * 0.3;
+    float scanline = 1.0 - (1.0 - scan) * u_scanline;
     // chromatic shift at edges
-    vec2 r_uv = uv + vec2(0.001 * pow(abs(uv.x - 0.5) * 2.0, 2.0), 0.0);
-    vec2 b_uv = uv - vec2(0.001 * pow(abs(uv.x - 0.5) * 2.0, 2.0), 0.0);
+    vec2 r_uv = uv + vec2(u_chroma * pow(abs(uv.x - 0.5) * 2.0, 2.0), 0.0);
+    vec2 b_uv = uv - vec2(u_chroma * pow(abs(uv.x - 0.5) * 2.0, 2.0), 0.0);
     vec3 col;
     col.r = texture(u_texture, r_uv).r;
     col.g = texture(u_texture, uv).g;
     col.b = texture(u_texture, b_uv).b;
     col *= scanline;
     f_color = vec4(col, 1.0);
-'''))
+'''), uniforms={
+    "scanline": {"glsl": "float", "min": 0.0, "max": 0.7, "default": 0.3, "description": "scanline darkness"},
+    "chroma":   {"glsl": "float", "min": 0.0, "max": 0.004, "default": 0.001, "description": "RGB chroma shift"},
+})
 
-_register("shader_hologram", "GPU hologram / scan effect", "filter", _filter_shader('''
+_register("shader_hologram", "GPU hologram / scan effect", "filter", _filter_typed('''
     float scan = sin(uv.y * u_resolution.y * 0.5 + u_time * 5.0) * 0.5 + 0.5;
-    float scanline = 1.0 - pow(scan, 4.0) * 0.4;
+    float scanline = 1.0 - pow(scan, 4.0) * u_scan;
     float edge = abs(uv.x - 0.5) * 2.0;
-    float vignette = 1.0 - pow(edge, 3.0) * 0.5;
+    float vignette = 1.0 - pow(edge, 3.0) * u_vignette;
     float shift = sin(uv.x * 50.0 + u_time * 3.0) * 0.02;
     vec2 q = uv + vec2(0.0, shift);
     vec3 col = texture(u_texture, q).rgb * scanline * vignette;
-    float hue = sin(uv.y * 20.0 + u_time * 2.0) * 0.1 + 0.1;
+    float hue = sin(uv.y * 20.0 + u_time * 2.0) * u_hue + u_hue;
     col += vec3(hue, hue * 0.3, hue * 0.8);
     f_color = vec4(col, 1.0);
-'''))
+'''), uniforms={
+    "scan":     {"glsl": "float", "min": 0.0, "max": 0.8, "default": 0.4, "description": "scanline depth"},
+    "vignette": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "edge vignette"},
+    "hue":      {"glsl": "float", "min": 0.0, "max": 0.3, "default": 0.1, "description": "hue tint"},
+})
 
-_register("shader_mosaic_gpu", "GPU stained glass mosaic", "filter", _filter_shader('''
-    float cell = 20.0 + u_params.x * 40.0;
+_register("shader_mosaic_gpu", "GPU stained glass mosaic", "filter", _filter_typed('''
+    float cell = u_cell;
     vec2 cell_uv = floor(uv * u_resolution / cell) * cell / u_resolution + cell / u_resolution * 0.5;
     f_color = texture(u_texture, cell_uv);
-'''))
+'''), uniforms={
+    "cell": {"glsl": "float", "min": 10.0, "max": 60.0, "default": 30.0, "description": "tile size"},
+})
 
-_register("shader_edge_detect_gpu", "GPU Sobel edge detection", "filter", _filter_shader('''
+_register("shader_edge_detect_gpu", "GPU Sobel edge detection", "filter", _filter_typed('''
     float tl = dot(texture(u_texture, uv + vec2(-step.x, -step.y)).rgb, vec3(0.299, 0.587, 0.114));
     float t  = dot(texture(u_texture, uv + vec2(0, -step.y)).rgb, vec3(0.299, 0.587, 0.114));
     float tr = dot(texture(u_texture, uv + vec2(step.x, -step.y)).rgb, vec3(0.299, 0.587, 0.114));
@@ -971,8 +1015,10 @@ _register("shader_edge_detect_gpu", "GPU Sobel edge detection", "filter", _filte
     float gx = -tl - 2.0*l - bl + tr + 2.0*r + br;
     float gy = -tl - 2.0*t - tr + bl + 2.0*b + br;
     float edge = sqrt(gx*gx + gy*gy);
-    f_color = vec4(mix(orig.rgb, vec3(edge), u_params.x), 1.0);
-'''))
+    f_color = vec4(mix(orig.rgb, vec3(edge), u_strength), 1.0);
+'''), uniforms={
+    "strength": {"glsl": "float", "min": 0.0, "max": 2.0, "default": 1.0, "description": "edge blend"},
+})
 
 _register("shader_warhol", "GPU Warhol 4-panel duotone", "filter", _filter_shader('''
     float gray = dot(orig.rgb, vec3(0.299, 0.587, 0.114));
@@ -985,45 +1031,54 @@ _register("shader_warhol", "GPU Warhol 4-panel duotone", "filter", _filter_shade
     f_color = vec4(mix(c1, c2, gray), 1.0);
 '''))
 
-_register("shader_duotone_gpu", "GPU duotone with color controls", "filter", _filter_shader('''
+_register("shader_duotone_gpu", "GPU duotone with color controls", "filter", _filter_typed('''
     float gray = dot(orig.rgb, vec3(0.299, 0.587, 0.114));
-    vec3 c1 = vec3(u_params.x, u_params.y, u_params.z);
-    vec3 c2 = vec3(u_params.w, 0.2, 0.8);
-    f_color = vec4(mix(c1, c2, gray), 1.0);
-'''))
+    f_color = vec4(mix(u_color_shadow, u_color_highlight, gray), 1.0);
+'''), uniforms={
+    "color_shadow":   {"glsl": "color", "default": "#3366cc", "description": "shadow color"},
+    "color_highlight":{"glsl": "color", "default": "#ffcc33", "description": "highlight color"},
+})
 
-_register("shader_rgb_split", "GPU RGB channel separation", "filter", _filter_shader('''
-    float shift = 0.02 * u_params.x;
+_register("shader_rgb_split", "GPU RGB channel separation", "filter", _filter_typed('''
+    float shift = u_shift;
     vec2 r_uv = uv + vec2(shift, 0.0);
     vec2 b_uv = uv - vec2(shift, 0.0);
     float r = texture(u_texture, r_uv).r;
     float g = orig.g;
     float b = texture(u_texture, b_uv).b;
     f_color = vec4(r, g, b, 1.0);
-'''))
+'''), uniforms={
+    "shift": {"glsl": "float", "min": 0.0, "max": 0.05, "default": 0.02, "description": "channel shift"},
+})
 
-_register("shader_caustics_gpu", "GPU caustic light overlay", "filter", _filter_shader('''
+_register("shader_caustics_gpu", "GPU caustic light overlay", "filter", _filter_typed('''
     float caustic = sin(uv.x * 30.0 + u_time) * cos(uv.y * 25.0 + u_time * 0.7);
     caustic += sin(uv.x * 50.0 - u_time * 1.3) * sin(uv.y * 40.0 + u_time * 0.5) * 0.5;
-    caustic = max(0.0, caustic) * u_params.x * 0.8;
+    caustic = max(0.0, caustic) * u_amount;
     vec3 light = vec3(0.8, 0.9, 1.0) * caustic;
     f_color = vec4(orig.rgb + light, 1.0);
-'''))
+'''), uniforms={
+    "amount": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.6, "description": "caustic strength"},
+})
 
-_register("shader_glitch_gpu", "GPU digital glitch artifacts", "filter", _filter_shader('''
-    float band = floor(uv.y * 40.0 * u_params.x);
-    float shift = sin(band * 7.0 + u_time * 5.0) * 0.05 * u_params.x;
+_register("shader_glitch_gpu", "GPU digital glitch artifacts", "filter", _filter_typed('''
+    float band = floor(uv.y * 40.0 * u_amount);
+    float shift = sin(band * 7.0 + u_time * 5.0) * 0.05 * u_amount;
     float noise = fract(sin(dot(uv * u_resolution, vec2(12.9898, 78.233))) * 43758.5453);
-    float glitch = noise > (1.0 - u_params.x * 0.1) ? 1.0 : 0.0;
+    float glitch = noise > (1.0 - u_amount * 0.1) ? 1.0 : 0.0;
     vec2 q = uv + vec2(shift + glitch * 0.1, 0.0);
     f_color = texture(u_texture, q);
-'''))
+'''), uniforms={
+    "amount": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "glitch intensity"},
+})
 
-_register("shader_posterize_gpu", "GPU posterization / color reduction", "filter", _filter_shader('''
-    float levels = max(2.0, 16.0 - u_params.x * 14.0);
+_register("shader_posterize_gpu", "GPU posterization / color reduction", "filter", _filter_typed('''
+    float levels = u_levels;
     vec3 col = floor(orig.rgb * levels) / levels;
     f_color = vec4(col, 1.0);
-'''))
+'''), uniforms={
+    "levels": {"glsl": "float", "min": 2.0, "max": 16.0, "default": 9.0, "description": "color levels"},
+})
 
 # ── P0.5 LUT / color client-GPU twins (client-GPU live preview of nodes
 # 10/11/39/77) ───────────────────────────────────────────────────────────────
