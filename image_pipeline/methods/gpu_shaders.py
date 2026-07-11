@@ -336,10 +336,18 @@ def _make_typed(method_id: str, shader_name: str, method_name: str):
 # ── Register all shaders ──────────────────────────────────────────────
 
 for _mid, _sname, _mname in _PROC_SHADERS:
-    _make_proc(_mid, _sname, _mname)
+    # Typed-uniform shaders (those with a `uniforms=` spec) get named params +
+    # wireable SCALAR ports; the rest keep the legacy generic-p1..p4 path.
+    if SHADERS.get(_sname, {}).get("uniforms"):
+        _make_typed(_mid, _sname, _mname)
+    else:
+        _make_proc(_mid, _sname, _mname)
 
 for _mid, _sname, _mname in _FILT_SHADERS:
-    _make_filt(_mid, _sname, _mname)
+    if SHADERS.get(_sname, {}).get("uniforms"):
+        _make_typed(_mid, _sname, _mname)
+    else:
+        _make_filt(_mid, _sname, _mname)
 
 for _mid, _sname, _mname in _TYPED_SHADER_NODES:
     _make_typed(_mid, _sname, _mname)
@@ -350,8 +358,11 @@ for _mid, _sname, _mname in _TYPED_SHADER_NODES:
 # the live preview, from the same GLSL source (see core/shaders.py). The server
 # remains authoritative for one-shot Run and export.
 GPU_SHADER_NODE_MAP: dict[str, dict] = {}
+# 173-197 are registered as typed-uniform nodes (each shader declares named
+# variables → real params + wireable SCALAR ports + IMAGE/FIELD outputs).
 for _mid, _sname, _mname in _PROC_SHADERS:
-    GPU_SHADER_NODE_MAP[_mid] = {"shader": _sname, "type": "procedural"}
+    GPU_SHADER_NODE_MAP[_mid] = {"shader": _sname,
+                                 "type": SHADERS[_sname]["type"], "typed": True}
 for _mid, _sname, _mname in _FILT_SHADERS:
     GPU_SHADER_NODE_MAP[_mid] = {"shader": _sname, "type": "filter"}
 for _mid, _sname, _mname in _TYPED_SHADER_NODES:

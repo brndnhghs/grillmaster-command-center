@@ -445,3 +445,58 @@ def test_normal_map_swizzle_is_blue_dominant_flat():
         "flat input should have no spatial variation"
 
 
+# ── 10. Contract guard: every `uniforms=` shader is served by a typed node ──
+
+def _registration_is_typed(method_id: str) -> bool:
+    """True iff the node registered for `method_id` exposes its shader's typed
+    uniforms as named params (the `_make_typed` contract), not generic p1..p4."""
+    clear_node_defs_cache()
+    defs = get_all_node_defs()
+    d = defs.get(method_id)
+    if d is None:
+        return False
+    # The legacy generic path uses these exact four param keys with no named
+    # variables; a typed node carries the shader's real variable names instead.
+    legacy = {"p1", "p2", "p3", "p4"}
+    return not (legacy.issubset(set(d["params"].keys())) and
+                "time_scale" in d["params"])
+
+
+@needs_gpu
+def test_typed_shader_never_served_by_generic_proc():
+    """Any shader that declares `uniforms=` MUST be registered through the
+    typed-uniform factory (named params + wireable SCALAR ports), never the
+    legacy `_make_proc`/`_make_filt` p1..p4 path. This is the load-bearing
+    invariant for the GPU procedural-shader node-expansion mandate: a shader
+    whose variables are real uniforms must not be exposed with generic sliders.
+
+    Covers the dedicated GPU nodes 173-197 (now converted) and any future
+    shader the autonomous cronjob adds with named uniforms. We check every
+    shader that has a `uniforms=` spec and is reachable as a node (its name is
+    the registered shader for one of the GPU_SHADER_NODE_MAP ids, OR it is in
+    _TYPED_SHADER_NODES).
+    """
+    clear_node_defs_cache()
+    defs = get_all_node_defs()
+    # Collect (method_id, shader_name) for every node whose shader has uniforms.
+    checked = 0
+    for mid, entry in GPU_SHADER_NODE_MAP.items():
+        sname = entry.get("shader")
+        if sname in SHADERS and SHADERS[sname].get("uniforms"):
+            if mid in defs:
+                assert _registration_is_typed(mid), (
+                    f"shader {sname} declares uniforms= but node {mid} is "
+                    f"registered via the generic p1..p4 path — must use _make_typed"
+                )
+                checked += 1
+    # The known typed families must all pass.
+    for _, sname, _ in _TYPED_SHADER_NODES:
+        # find the method id for this shader
+        mid = next((m for m, e in GPU_SHADER_NODE_MAP.items()
+                    if e.get("shader") == sname), None)
+        assert mid is not None, f"typed shader {sname} missing from node map"
+        assert _registration_is_typed(mid), \
+            f"typed shader {sname} (node {mid}) served by generic path"
+    assert checked > 0, "guard found no uniforms-bearing shaders to check"
+
+

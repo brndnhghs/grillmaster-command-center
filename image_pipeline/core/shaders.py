@@ -6952,3 +6952,484 @@ _register("gyroid_typed", "Gyroid / triply-periodic minimal-surface slice (typed
     "wall":       {"glsl": "color", "default": "#ff5cf0",
                    "description": "wall highlight color"},
 })
+
+# ═══════════════════════════════════════════════
+#  TYPED-UNIFORM UPGRADE — dedicated GPU procedural nodes 173-197
+#  These re-register the same shader names with named, typed `uniforms=`
+#  and bodies that read `u_<name>` instead of the legacy `u_params` p-slots.
+#  The node factory (methods/gpu_shaders.py) routes these ids through
+#  `_make_typed`, so each variable becomes a real param + wireable SCALAR
+#  port + typed IMAGE/FIELD outputs. Additive — CPU/fp64 export untouched.
+# ═══════════════════════════════════════════════
+
+_register("mandelbrot", 'Mandelbrot set zoom region', "procedural", '\nvoid main() {\n    vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);\n    float zoom = exp(u_zoom * 3.0);\n    vec2 c = vec2(-0.5, 0.0) + uv * zoom;\n    vec2 z = vec2(0.0);\n    int n = 0;\n    for (int i = 0; i < 100; i++) {\n        z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;\n        if (dot(z, z) > 4.0) break;\n        n++;\n    }\n    float t = float(n) / 100.0;\n    f_color = vec4(0.5 + 0.5 * cos(t * 6.28 + vec3(0.0, 2.0, 4.0) + u_color_shift * 6.28), 1.0);\n}\n',
+          uniforms={
+  "zoom": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.5,
+    "description": "zoom (0.5 = full view)"
+  },
+  "color_shift": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.5,
+    "description": "hue rotation"
+  }
+})
+
+_register("julia", 'Julia set fractal', "procedural", '\nvoid main() {\n    vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);\n    vec2 c = vec2(u_c_re, u_c_im);\n    vec2 z = uv * exp((u_zoom - 0.5) * 3.0) * 3.0;\n    int n = 0;\n    float last2 = 0.0;\n    const float MAXI = 200.0;\n    for (int i = 0; i < 200; i++) {\n        z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;\n        last2 = dot(z, z);\n        if (last2 > 16.0) break;\n        n++;\n    }\n    float t = (n >= MAXI - 0.5) ? 0.0 : clamp((n + 1.0 - log(max(log(last2)*0.5, 1.0001))/log(2.0)) / MAXI, 0.0, 1.0);\n    f_color = vec4(0.5 + 0.5 * cos(t * 6.28318 + vec3(0.0, 2.0, 4.0) + u_color_shift * 6.28), 1.0);\n}\n',
+          uniforms={
+  "c_re": {
+    "glsl": "float",
+    "min": -1.0,
+    "max": 1.0,
+    "default": -0.7269,
+    "description": "Julia constant real"
+  },
+  "c_im": {
+    "glsl": "float",
+    "min": -1.0,
+    "max": 1.0,
+    "default": 0.1889,
+    "description": "Julia constant imaginary"
+  },
+  "zoom": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.5,
+    "description": "zoom (0.5 = full view)"
+  },
+  "color_shift": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.5,
+    "description": "hue rotation"
+  }
+})
+
+_register("plasma", 'Multi-octave colored plasma', "procedural", '\nvoid main() {\n    vec2 uv = v_uv;\n    float t = u_time * 0.1;\n    float v = sin(uv.x * u_scale + t) * cos(uv.y * u_scale * 0.75 + t * 0.7);\n    v += sin(uv.x * u_scale * 2.0 - t * 1.2) * cos(uv.y * u_scale * 1.5 + t * 0.5) * 0.5;\n    v += sin((uv.x + uv.y) * u_scale * 3.0 + t * 0.3) * 0.25;\n    v = v * 0.5 + 0.5;\n    f_color = vec4(0.5 + 0.5 * cos(v * 6.28 + vec3(0.0, 2.0, 4.0) + u_hue_shift * 6.28), 1.0);\n}\n',
+          uniforms={
+  "scale": {
+    "glsl": "float",
+    "min": 1.0,
+    "max": 32.0,
+    "default": 8.0,
+    "description": "spatial frequency"
+  },
+  "hue_shift": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.0,
+    "description": "hue rotation"
+  }
+})
+
+_register("domain_warp", 'Domain-warped fractal noise', "procedural", '\nvoid main() {\n    vec2 uv = v_uv * 3.0;\n    float t = u_time * 0.05;\n    float w = 2.0 + u_warp * 3.0;\n    vec2 q = vec2(fbm(uv + t), fbm(uv + vec2(5.2, 1.3) + t * 0.7));\n    vec2 r = vec2(fbm(uv + w * q + vec2(1.7, 9.2) + t * 0.3),\n                  fbm(uv + w * q + vec2(8.3, 2.8) + t * 0.4));\n    float v = fbm(uv + w * r);\n    f_color = vec4(0.5 + 0.5 * cos(v * 6.28 + vec3(0.0, 2.0, 4.0) + u_hue_shift * 6.28), 1.0);\n}\n',
+          uniforms={
+  "warp": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.5,
+    "description": "warp strength"
+  },
+  "hue_shift": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.0,
+    "description": "hue rotation"
+  }
+})
+
+_register("voronoi", 'Voronoi/Worley noise cells', "procedural", '\nvoid main() {\n    vec2 uv = v_uv * u_scale;\n    vec2 i = floor(uv); vec2 f = fract(uv);\n    float md = 1.0;\n    for (int y = -1; y <= 1; y++) {\n        for (int x = -1; x <= 1; x++) {\n            vec2 n = vec2(float(x), float(y));\n            vec2 p = hash21(i + n) * vec2(1.0);\n            float d = length(n + p - f);\n            md = min(md, d);\n        }\n    }\n    f_color = vec4(md, md * 0.5, 1.0 - md, 1.0);\n}\n',
+          uniforms={
+  "scale": {
+    "glsl": "float",
+    "min": 1.0,
+    "max": 15.0,
+    "default": 7.5,
+    "description": "cell density"
+  }
+})
+
+_register("voronoise", 'Smooth voronoi layers', "procedural", '\nvoid main() {\n    vec2 uv = v_uv * u_scale;\n    float t = u_time * 0.02;\n    vec2 q = vec2(fbm(uv + t), fbm(uv + vec2(3.7, 1.2) + t));\n    vec2 r = vec2(fbm(uv + 4.0 * q + vec2(1.7, 9.2)),\n                  fbm(uv + 4.0 * q + vec2(8.3, 2.8)));\n    float v = fbm(uv + 4.0 * r);\n    f_color = vec4(0.5 + 0.5 * cos(v * 4.0 + vec3(0.0, 2.0, 4.0) + u_hue_shift * 6.28), 1.0);\n}\n',
+          uniforms={
+  "scale": {
+    "glsl": "float",
+    "min": 1.0,
+    "max": 8.0,
+    "default": 4.0,
+    "description": "layer frequency"
+  },
+  "hue_shift": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.0,
+    "description": "hue rotation"
+  }
+})
+
+_register("ripples", 'Concentric ripple pattern', "procedural", '\nvoid main() {\n    vec2 uv = v_uv - 0.5;\n    float d = length(uv);\n    float ph = d * u_frequency - u_time * u_speed;\n    float r = sin(ph) * 0.5 + 0.5;\n    float g = sin(ph + 2.0) * 0.5 + 0.5;\n    float b = sin(ph + 4.0) * 0.5 + 0.5;\n    f_color = vec4(r, g, b, 1.0) * (1.0 - d);\n}\n',
+          uniforms={
+  "frequency": {
+    "glsl": "float",
+    "min": 5.0,
+    "max": 60.0,
+    "default": 30.0,
+    "description": "ripple frequency"
+  },
+  "speed": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 5.0,
+    "default": 2.0,
+    "description": "ripple speed"
+  }
+})
+
+_register("cells", 'Cellular growth simulation', "procedural", '\nvoid main() {\n    vec2 uv = v_uv * u_scale;\n    vec2 i = floor(uv); vec2 f = fract(uv);\n    float md = 8.0;\n    vec2 mp = vec2(0.0);\n    for (int y = -1; y <= 1; y++) {\n        for (int x = -1; x <= 1; x++) {\n            vec2 n = vec2(float(x), float(y));\n            vec2 p = hash21(i + n) * vec2(1.0);\n            float d = length(n + p - f);\n            if (d < md) { md = d; mp = n + p; }\n        }\n    }\n    float c = hash21(i + mp);\n    vec3 col = 0.5 + 0.5 * cos(c * 6.28 + vec3(0, 2, 4));\n    col *= 1.0 - md * 1.2;\n    col += vec3(0.05) / (md * md + 0.01);\n    f_color = vec4(col, 1.0);\n}\n',
+          uniforms={
+  "scale": {
+    "glsl": "float",
+    "min": 1.0,
+    "max": 16.0,
+    "default": 8.0,
+    "description": "cell scale"
+  }
+})
+
+_register("bubble_chamber", 'Simulated bubble chamber trails', "procedural", '\nvoid main() {\n    vec2 uv = v_uv * 2.0 - 1.0;\n    float t = u_time * u_speed;\n    float v = 0.0;\n    for (int i = 0; i < 40; i++) {\n        if (i >= u_count) break;\n        float fi = float(i);\n        vec2 p = vec2(sin(fi * 1.7 + t * 0.5), cos(fi * 2.3 + t * 0.7)) * 0.8;\n        float d = length(uv - p) - 0.03;\n        v += 0.005 / (d * d + 0.001);\n    }\n    f_color = vec4(v * 0.5, v * 0.8, v, 1.0);\n}\n',
+          uniforms={
+  "count": {
+    "glsl": "int",
+    "min": 1,
+    "max": 40,
+    "default": 20,
+    "description": "number of trails"
+  },
+  "speed": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 3.0,
+    "default": 0.3,
+    "description": "drift speed"
+  }
+})
+
+_register("stars", 'Starfield with parallax', "procedural", '\nvoid main() {\n    vec2 uv = v_uv;\n    float t = u_time * u_speed;\n    vec3 col = vec3(0.0);\n    for (int i = 0; i < 120; i++) {\n        if (i >= u_count) break;\n        float fi = float(i);\n        vec2 p = fract(vec2(sin(fi * 127.1 + t), cos(fi * 311.7 + t * 0.7)));\n        float d = length(uv - p);\n        float brightness = 0.003 / (d * d);\n        vec3 star_col = 0.5 + 0.5 * cos(fi + vec3(0, 2, 4));\n        col += brightness * star_col;\n    }\n    f_color = vec4(col, 1.0);\n}\n',
+          uniforms={
+  "count": {
+    "glsl": "int",
+    "min": 10,
+    "max": 120,
+    "default": 50,
+    "description": "star count"
+  },
+  "speed": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 3.0,
+    "default": 0.05,
+    "description": "parallax speed"
+  }
+})
+
+_register("lightning_fractal", 'Fractal lightning branching', "procedural", '\nvoid main() {\n    vec2 uv = v_uv * 2.0 - 1.0;\n    float t = u_time * u_speed;\n    vec2 p = vec2(0.0);\n    float v = 0.0;\n    for (int i = 0; i < 128; i++) {\n        if (i >= u_segments) break;\n        float fi = float(i);\n        p += vec2(sin(fi * 0.3 + t), cos(fi * 0.7 + t * 0.5)) * 0.02;\n        float d = length(uv - p);\n        v += 0.02 / (d + 0.01);\n    }\n    f_color = vec4(v * 0.3, v * 0.5, v, 1.0);\n}\n',
+          uniforms={
+  "segments": {
+    "glsl": "int",
+    "min": 8,
+    "max": 128,
+    "default": 64,
+    "description": "branch segments"
+  },
+  "speed": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 3.0,
+    "default": 0.2,
+    "description": "flicker speed"
+  }
+})
+
+_register("spiral", 'Logarithmic spiral galaxy', "procedural", '\nvoid main() {\n    vec2 uv = v_uv - 0.5;\n    float a = atan(uv.y, uv.x);\n    float r = length(uv);\n    float spiral = sin(a * u_arms - r * u_tightness + u_time * u_speed) * 0.5 + 0.5;\n    float fade = exp(-r * 3.0);\n    float col = spiral * fade;\n    f_color = vec4(col * 1.2, col * 0.8, col * fade + 0.1, 1.0);\n}\n',
+          uniforms={
+  "arms": {
+    "glsl": "float",
+    "min": 1.0,
+    "max": 12.0,
+    "default": 4.0,
+    "description": "spiral arms"
+  },
+  "tightness": {
+    "glsl": "float",
+    "min": 5.0,
+    "max": 30.0,
+    "default": 15.0,
+    "description": "winding tightness"
+  },
+  "speed": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 3.0,
+    "default": 0.5,
+    "description": "rotation speed"
+  }
+})
+
+_register("dendritic", 'Dendritic / tree-like branching', "procedural", '\nvoid main() {\n    vec2 uv = v_uv * 2.0 - 1.0;\n    float t = u_time * u_speed;\n    float d = length(uv);\n    float a = atan(uv.y, uv.x) * u_branches;\n    float branch = sin(a * 8.0 + log(d + 0.001) * 10.0 + t) * 0.5 + 0.5;\n    float v = branch * exp(-d * 2.0);\n    f_color = vec4(v * 0.3, v * 0.6, v * 0.2, 1.0);\n}\n',
+          uniforms={
+  "branches": {
+    "glsl": "float",
+    "min": 2.0,
+    "max": 16.0,
+    "default": 8.0,
+    "description": "branch count"
+  },
+  "speed": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 3.0,
+    "default": 0.1,
+    "description": "growth speed"
+  }
+})
+
+_register("barnsley", 'Barnsley fern approximation', "procedural", '\nvoid main() {\n    vec2 uv = v_uv * 3.0 - 1.5;\n    float t = u_time * u_speed;\n    float v = 0.0;\n    for (int i = 0; i < 200; i++) {\n        if (i >= u_iterations) break;\n        float fi = float(i);\n        vec2 p = vec2(sin(fi * 0.5 + t), cos(fi * 0.3 + t * 0.7));\n        float dx = uv.x - p.x * 0.5;\n        float dy = uv.y - p.y * 0.8 - 0.5;\n        v += 0.001 / (dx*dx + dy*dy + 0.001);\n    }\n    f_color = vec4(v * 0.2, v * 0.8, v * 0.2, 1.0);\n}\n',
+          uniforms={
+  "iterations": {
+    "glsl": "int",
+    "min": 20,
+    "max": 200,
+    "default": 100,
+    "description": "sample iterations"
+  },
+  "speed": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 3.0,
+    "default": 0.1,
+    "description": "sway speed"
+  }
+})
+
+_register("spectral", 'Spectral / rainbow interference', "procedural", '\nvoid main() {\n    vec2 uv = v_uv * 2.0 - 1.0;\n    float t = u_time * u_speed;\n    float a = atan(uv.y, uv.x);\n    float r = length(uv);\n    float v = sin(r * u_rings - t) + cos(a * u_arms + t * 0.5);\n    v = v * 0.25 + 0.5;\n    f_color = vec4(0.5 + 0.5 * cos(v * 6.28 + vec3(0, 2, 4)), 1.0);\n}\n',
+          uniforms={
+  "rings": {
+    "glsl": "float",
+    "min": 5.0,
+    "max": 40.0,
+    "default": 20.0,
+    "description": "radial rings"
+  },
+  "arms": {
+    "glsl": "float",
+    "min": 2.0,
+    "max": 10.0,
+    "default": 5.0,
+    "description": "angular arms"
+  },
+  "speed": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 3.0,
+    "default": 0.1,
+    "description": "animation speed"
+  }
+})
+
+_register("truchet", 'Truchet tile pattern', "procedural", '\nvoid main() {\n    vec2 uv = v_uv * u_scale;\n    vec2 i = floor(uv); vec2 f = fract(uv) - 0.5;\n    float flip = hash21(i) > 0.5 ? 1.0 : -1.0;\n    float d = length(f * flip);\n    float v = smoothstep(0.4, 0.5, d);\n    float c = hash21(i + vec2(1.0));\n    vec3 col = mix(vec3(0.9, 0.9, 0.95), 0.5 + 0.5 * cos(c * 6.28 + vec3(0, 2, 4)), v);\n    f_color = vec4(col, 1.0);\n}\n',
+          uniforms={
+  "scale": {
+    "glsl": "float",
+    "min": 1.0,
+    "max": 12.0,
+    "default": 6.0,
+    "description": "tile scale"
+  }
+})
+
+_register("kaleidoscope_fractal", 'Kaleidoscope IFS fractal', "procedural", '\nvoid main() {\n    vec2 uv = v_uv * 2.0 - 1.0;\n    float t = u_time * u_speed;\n    for (int i = 0; i < 20; i++) {\n        if (i >= u_iterations) break;\n        uv = abs(uv);\n        float a = sin(t + float(i) * 0.5);\n        uv = rot(a) * uv;\n        uv = uv * 1.5 - vec2(0.5);\n    }\n    float v = length(uv);\n    f_color = vec4(0.5 + 0.5 * cos(v * 10.0 + vec3(0, 2, 4)), 1.0);\n}\n',
+          uniforms={
+  "iterations": {
+    "glsl": "int",
+    "min": 3,
+    "max": 20,
+    "default": 10,
+    "description": "IFS iterations"
+  },
+  "speed": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 3.0,
+    "default": 0.1,
+    "description": "rotation speed"
+  }
+})
+
+_register("waves_3d", '3D wave interference', "procedural", '\nvoid main() {\n    vec2 uv = v_uv * u_scale - 2.0;\n    float t = u_time * u_speed;\n    float v = 0.0;\n    for (int i = 0; i < 20; i++) {\n        if (float(i) >= u_waves) break;\n        float fi = float(i);\n        vec2 p = vec2(sin(fi * 1.3 + t), cos(fi * 1.7 + t * 0.8));\n        v += sin(dot(uv, p) * 3.0 + t) * 0.1;\n    }\n    vec3 col = 0.5 + 0.5 * cos(v * 4.0 + vec3(0, 2, 4));\n    f_color = vec4(col, 1.0);\n}\n',
+          uniforms={
+  "waves": {
+    "glsl": "float",
+    "min": 2.0,
+    "max": 20.0,
+    "default": 10.0,
+    "description": "wave sources"
+  },
+  "scale": {
+    "glsl": "float",
+    "min": 1.0,
+    "max": 8.0,
+    "default": 4.0,
+    "description": "field scale"
+  },
+  "speed": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 3.0,
+    "default": 0.5,
+    "description": "animation speed"
+  }
+})
+
+_register("pixel_sort_gpu", 'Edge-directed pixel sorting on GPU', "procedural", '\nvoid main() {\n    vec2 uv = v_uv;\n    float v = fbm(uv * 4.0 + u_time * u_speed);\n    vec2 stepv = vec2(1.0 / u_resolution.x, 1.0 / u_resolution.y);\n    float dx = fbm((uv + vec2(stepv.x, 0)) * 4.0) - v;\n    float dy = fbm((uv + vec2(0, stepv.y)) * 4.0) - v;\n    float edge = abs(dx) + abs(dy);\n    float bands = floor(uv.x * u_bands + v * 10.0) / u_bands + v * 0.1;\n    vec3 col = 0.5 + 0.5 * cos(bands * 6.28 + vec3(0, 2, 4));\n    col = mix(col, vec3(0.1), edge * 5.0);\n    f_color = vec4(col, 1.0);\n}\n',
+          uniforms={
+  "bands": {
+    "glsl": "float",
+    "min": 4.0,
+    "max": 40.0,
+    "default": 20.0,
+    "description": "sort bands"
+  },
+  "speed": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 3.0,
+    "default": 0.02,
+    "description": "flow speed"
+  }
+})
+
+_register("ocean", 'Procedural ocean waves', "procedural", '\nvoid main() {\n    vec2 uv = v_uv * 3.0;\n    float t = u_time * u_speed;\n    float v = sin(uv.x * 5.0 + t) * cos(uv.y * 3.0 + t * 0.7);\n    v += sin(uv.x * 8.0 - t * 1.3) * sin(uv.y * 6.0 + t) * 0.5 * u_choppiness;\n    v += sin((uv.x + uv.y) * 12.0 + t * 0.5) * 0.25;\n    v = v * 0.5 + 0.5;\n    vec3 col = mix(vec3(0.0, 0.2, 0.5), vec3(0.1, 0.6, 0.8), v);\n    col += vec3(0.3, 0.4, 0.5) * pow(v, 4.0);\n    f_color = vec4(col, 1.0);\n}\n',
+          uniforms={
+  "choppiness": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 2.0,
+    "default": 1.0,
+    "description": "wave amplitude"
+  },
+  "speed": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 3.0,
+    "default": 0.3,
+    "description": "wave speed"
+  }
+})
+
+_register("nebula_gpu", 'Space nebula gas clouds', "procedural", '\nvoid main() {\n    vec2 uv = v_uv * u_scale;\n    float t = u_time * u_speed;\n    vec2 q = vec2(fbm(uv + t), fbm(uv + vec2(5.2, 1.3) + t * 0.7));\n    vec2 r = vec2(fbm(uv + 3.0 * q + vec2(1.7, 9.2) + t * 0.3),\n                  fbm(uv + 3.0 * q + vec2(8.3, 2.8) + t * 0.4));\n    float v = fbm(uv + 3.0 * r);\n    float mask = 1.0 - abs(v_uv.y - 0.5) * 2.0;\n    vec3 col = 0.3 + 0.7 * (0.5 + 0.5 * cos(v * 4.0 + vec3(0, 1, 2)));\n    col *= mask;\n    f_color = vec4(col, 1.0);\n}\n',
+          uniforms={
+  "scale": {
+    "glsl": "float",
+    "min": 1.0,
+    "max": 6.0,
+    "default": 2.0,
+    "description": "cloud scale"
+  },
+  "speed": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 3.0,
+    "default": 0.03,
+    "description": "drift speed"
+  }
+})
+
+_register("terrain", 'Procedural terrain heightmap', "procedural", '\nvoid main() {\n    vec2 uv = v_uv * u_scale;\n    float t = u_time * u_speed;\n    float h = fbm(uv + t);\n    float h2 = fbm(uv * 2.0 + t * 1.5) * 0.5;\n    float h3 = fbm(uv * 4.0 + t * 2.0) * 0.25;\n    h = h * 0.6 + h2 * 0.3 + h3 * 0.1;\n    vec3 col;\n    if (h < u_sea_level) col = vec3(0.1, 0.3, 0.6);\n    else if (h < u_sea_level + 0.15) col = vec3(0.2, 0.5, 0.2);\n    else if (h < 0.6) col = vec3(0.3, 0.3, 0.1);\n    else if (h < 0.75) col = vec3(0.4, 0.25, 0.1);\n    else col = vec3(0.8, 0.8, 0.9);\n    float shade = 0.5 + 0.5 * cos(h * 20.0);\n    f_color = vec4(col * shade, 1.0);\n}\n',
+          uniforms={
+  "scale": {
+    "glsl": "float",
+    "min": 1.0,
+    "max": 8.0,
+    "default": 3.0,
+    "description": "terrain scale"
+  },
+  "sea_level": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.3,
+    "description": "water line"
+  },
+  "speed": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 2.0,
+    "default": 0.02,
+    "description": "erosion speed"
+  }
+})
+
+_register("wood_grain_gpu", 'Concentric wood grain rings', "procedural", '\nvoid main() {\n    vec2 uv = v_uv - 0.5;\n    float d = length(uv) * u_rings;\n    float grain = sin(d * u_turbulence + fbm(uv * u_turbulence) * 0.5) * 0.5 + 0.5;\n    vec3 col = mix(vec3(0.3, 0.15, 0.05), vec3(0.6, 0.3, 0.1), grain);\n    f_color = vec4(col, 1.0);\n}\n',
+          uniforms={
+  "rings": {
+    "glsl": "float",
+    "min": 2.0,
+    "max": 20.0,
+    "default": 10.0,
+    "description": "ring density"
+  },
+  "turbulence": {
+    "glsl": "float",
+    "min": 1.0,
+    "max": 10.0,
+    "default": 8.0,
+    "description": "grain wobble"
+  }
+})
+
+_register("fire_gpu", 'Animated fire/flame', "procedural", '\nvoid main() {\n    vec2 uv = v_uv;\n    float t = u_time * u_speed;\n    float v = fbm(vec2(uv.x * 3.0, (1.0 - uv.y) * 5.0 + t));\n    v = v * (1.0 - uv.y) * u_intensity;\n    vec3 col = mix(vec3(1.0, 0.9, 0.4), vec3(0.8, 0.2, 0.0), v);\n    col = mix(col, vec3(0.1, 0.0, 0.0), 1.0 - v);\n    f_color = vec4(col, 1.0);\n}\n',
+          uniforms={
+  "intensity": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 2.0,
+    "default": 1.0,
+    "description": "flame intensity"
+  },
+  "speed": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 3.0,
+    "default": 0.5,
+    "description": "rise speed"
+  }
+})
+
+_register("smoke_gpu", 'Rising smoke / steam', "procedural", '\nvoid main() {\n    vec2 uv = v_uv;\n    float t = u_time * u_speed;\n    float v = fbm(uv * 3.0 + vec2(0.0, t));\n    v = v * (1.0 - uv.y) * 0.8 * u_density;\n    vec3 col = mix(vec3(0.8, 0.8, 0.85), vec3(0.2, 0.2, 0.25), v);\n    f_color = vec4(col, 1.0);\n}\n',
+          uniforms={
+  "density": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 2.0,
+    "default": 1.0,
+    "description": "smoke density"
+  },
+  "speed": {
+    "glsl": "float",
+    "min": 0.0,
+    "max": 3.0,
+    "default": 0.1,
+    "description": "rise speed"
+  }
+})
+
