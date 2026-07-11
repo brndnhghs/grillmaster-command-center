@@ -74,40 +74,50 @@ def _play_round(state, payoffs, gh, gw, offsets):
 
 
 def _update_imitate_best(state, payoffs_tbl, gh, gw, rng, mutation_rate, offsets):
-    """Imitate-the-best: copy the strategy of the neighbor with highest payoff."""
+    """Imitate-the-best: copy the strategy of the neighbor with highest payoff.
+
+    Vectorized: neighbor payoffs/strategies are gathered via np.roll over the
+    offset list, then a running max picks the best neighbor per cell. Ties are
+    adopted with 25% probability per neighbor (RNG drawn per offset).
+    """
     payoffs = _play_round(state, payoffs_tbl, gh, gw, offsets)
-    new_state = state.copy()
-    for ci in range(gh):
-        for cj in range(gw):
-            best_payoff = payoffs[ci, cj]
-            best_strategy = state[ci, cj]
-            for dy, dx in offsets:
-                ni = (ci + dy) % gh
-                nj = (cj + dx) % gw
-                if payoffs[ni, nj] > best_payoff:
-                    best_payoff = payoffs[ni, nj]
-                    best_strategy = state[ni, nj]
-                elif payoffs[ni, nj] == best_payoff and rng.random() < 0.25:
-                    best_strategy = state[ni, nj]
-            new_state[ci, cj] = best_strategy
+    best_payoff = payoffs.copy()
+    best_strategy = state.copy()
+    for dy, dx in offsets:
+        nb_p = np.roll(payoffs, shift=(-dy, -dx), axis=(0, 1))
+        nb_s = np.roll(state, shift=(-dy, -dx), axis=(0, 1))
+        better = nb_p > best_payoff
+        best_payoff[better] = nb_p[better]
+        best_strategy[better] = nb_s[better]
+        tie = (~better) & (nb_p == best_payoff)
+        adopt = tie & (rng.random((gh, gw)) < 0.25)
+        best_strategy[adopt] = nb_s[adopt]
+    new_state = best_strategy
     if mutation_rate > 0:
+        new_state = new_state.copy()
         new_state[rng.random((gh, gw)) < mutation_rate] ^= 1
     return new_state, payoffs
 
 
 def _update_fermi(state, payoffs_tbl, gh, gw, rng, mutation_rate, offsets, K):
-    """Fermi: compare with random neighbor, switch with logistic probability."""
+    """Fermi: compare with a random neighbor, switch with logistic probability.
+
+    Vectorized: one random neighbor per cell is selected via per-cell offset
+    indices, then the logistic switch probability is applied in bulk.
+    """
     payoffs = _play_round(state, payoffs_tbl, gh, gw, offsets)
+    n = len(offsets)
+    gi = np.arange(gh)[:, None]
+    gj = np.arange(gw)[None, :]
+    rolls_p = np.stack([np.roll(payoffs, shift=(-dy, -dx), axis=(0, 1)) for dy, dx in offsets])
+    rolls_s = np.stack([np.roll(state, shift=(-dy, -dx), axis=(0, 1)) for dy, dx in offsets])
+    oidx = rng.integers(0, n, size=(gh, gw))
+    nb_p = rolls_p[oidx, gi, gj]
+    nb_s = rolls_s[oidx, gi, gj]
+    prob = 1.0 / (1.0 + np.exp((payoffs - nb_p) / K))
     new_state = state.copy()
-    n_neighbors = len(offsets)
-    for ci in range(gh):
-        for cj in range(gw):
-            dy, dx = offsets[rng.integers(n_neighbors)]
-            ni = (ci + dy) % gh
-            nj = (cj + dx) % gw
-            prob = 1.0 / (1.0 + math.exp((payoffs[ci, cj] - payoffs[ni, nj]) / K))
-            if rng.random() < prob:
-                new_state[ci, cj] = state[ni, nj]
+    switch = rng.random((gh, gw)) < prob
+    new_state[switch] = nb_s[switch]
     if mutation_rate > 0:
         new_state[rng.random((gh, gw)) < mutation_rate] ^= 1
     return new_state, payoffs
@@ -116,25 +126,25 @@ def _update_fermi(state, payoffs_tbl, gh, gw, rng, mutation_rate, offsets, K):
 def _update_moran(state, payoffs_tbl, gh, gw, rng, mutation_rate, offsets):
     """Moran-like proportional imitation.
 
-    Pick a random focal cell. It compares its payoff with a random neighbor
-    and switches with probability proportional to the payoff difference:
-    p = max(0, (π_neighbor - π_self) / max(π) )
+    Per-cell random-neighbor comparison with probability proportional to the
+    payoff difference p = max(0, (π_neighbor - π_self) / max(π)). Vectorized as
+    a single stochastic sweep over all cells (one random neighbor per cell).
     """
     payoffs = _play_round(state, payoffs_tbl, gh, gw, offsets)
+    p_max = max(float(payoffs.max()), 0.01)
+    n = len(offsets)
+    gi = np.arange(gh)[:, None]
+    gj = np.arange(gw)[None, :]
+    rolls_p = np.stack([np.roll(payoffs, shift=(-dy, -dx), axis=(0, 1)) for dy, dx in offsets])
+    rolls_s = np.stack([np.roll(state, shift=(-dy, -dx), axis=(0, 1)) for dy, dx in offsets])
+    oidx = rng.integers(0, n, size=(gh, gw))
+    nb_p = rolls_p[oidx, gi, gj]
+    nb_s = rolls_s[oidx, gi, gj]
+    diff = nb_p - payoffs
+    prob = np.where(diff > 0, diff / p_max, 0.0)
     new_state = state.copy()
-    p_max = max(payoffs.max(), 0.01)
-    n_neighbors = len(offsets)
-    for _ in range(gh * gw):
-        ci = rng.integers(gh)
-        cj = rng.integers(gw)
-        dy, dx = offsets[rng.integers(n_neighbors)]
-        ni = (ci + dy) % gh
-        nj = (cj + dx) % gw
-        diff = payoffs[ni, nj] - payoffs[ci, cj]
-        if diff > 0:
-            prob = diff / p_max
-            if rng.random() < prob:
-                new_state[ci, cj] = state[ni, nj]
+    switch = rng.random((gh, gw)) < prob
+    new_state[switch] = nb_s[switch]
     if mutation_rate > 0:
         new_state[rng.random((gh, gw)) < mutation_rate] ^= 1
     return new_state, payoffs
@@ -263,27 +273,15 @@ def _render_heatmap(state, payoffs, gh, gw):
 def _render_cluster_labels(state, payoffs, gh, gw):
     """Color by connected-component cluster of the majority strategy.
 
-    Uses simple 4-way flood-fill labelling to find contiguous domains.
-    Each cluster gets a distinct hue from a fixed palette.
+    Uses scipy.ndimage.label (4-way structure) to find contiguous domains,
+    assigning each cluster a stable golden-ratio hue.
     """
-    # Label connected components (4-way)
-    labels = np.zeros((gh, gw), dtype=np.int32)
-    current_label = 0
-    # Simple scan-line labelling
-    for ci in range(gh):
-        for cj in range(gw):
-            if labels[ci, cj] == 0:
-                current_label += 1
-                # Flood fill from this cell
-                stack = [(ci, cj)]
-                strat = state[ci, cj]
-                while stack:
-                    yi, xi = stack.pop()
-                    if 0 <= yi < gh and 0 <= xi < gw and labels[yi, xi] == 0 and state[yi, xi] == strat:
-                        labels[yi, xi] = current_label
-                        stack.extend([(yi - 1, xi), (yi + 1, xi), (yi, xi - 1), (yi, xi + 1)])
-
+    from scipy.ndimage import label
+    struct = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=bool)
+    labels, current_label = label(state, structure=struct)
     img = np.zeros((gh, gw, 3), dtype=np.uint8)
+    if current_label == 0:
+        return img
     for label in range(1, current_label + 1):
         mask = labels == label
         strat = state[mask][0]  # all same strategy within label
@@ -318,15 +316,15 @@ def _render_payoff_diff(state, payoffs, gh, gw):
 
     img = np.zeros((gh, gw, 3), dtype=np.uint8)
     # Negative (behind) → red, Positive (ahead) → blue
-    for ci in range(gh):
-        for cj in range(gw):
-            d = normed[ci, cj]
-            if d < 0:
-                # Behind: red
-                img[ci, cj] = (int(200 * abs(d)), int(40 * abs(d)), int(30 * abs(d)))
-            else:
-                # Ahead: blue
-                img[ci, cj] = (int(30 * d), int(60 * d), int(200 * d))
+    behind = normed < 0
+    ahead = normed > 0
+    ad = np.abs(normed[behind])
+    img[behind, 0] = (200 * ad).astype(np.uint8)
+    img[behind, 1] = (40 * ad).astype(np.uint8)
+    img[behind, 2] = (30 * ad).astype(np.uint8)
+    img[ahead, 0] = (30 * normed[ahead]).astype(np.uint8)
+    img[ahead, 1] = (60 * normed[ahead]).astype(np.uint8)
+    img[ahead, 2] = (200 * normed[ahead]).astype(np.uint8)
     return img
 
 
@@ -344,14 +342,14 @@ def _render_coop_density(state, payoffs, gh, gw):
     density = gaussian_filter(density, sigma=sigma, mode="wrap")
 
     img = np.zeros((gh, gw, 3), dtype=np.uint8)
-    for ci in range(gh):
-        for cj in range(gw):
-            d = density[ci, cj]  # 0 = all def, 1 = all coop
-            # Blend between amber and blue
-            r = int((1 - d) * 200 + d * 60)
-            g = int((1 - d) * 80 + d * 130)
-            b = int((1 - d) * 30 + d * 210)
-            img[ci, cj] = (r, g, b)
+    # Blend between amber (d=0) and blue (d=1)
+    d = density  # 0 = all def, 1 = all coop
+    r = ((1 - d) * 200 + d * 60).astype(np.uint8)
+    g = ((1 - d) * 80 + d * 130).astype(np.uint8)
+    b = ((1 - d) * 30 + d * 210).astype(np.uint8)
+    img[:, :, 0] = r
+    img[:, :, 1] = g
+    img[:, :, 2] = b
     return img
 
 
