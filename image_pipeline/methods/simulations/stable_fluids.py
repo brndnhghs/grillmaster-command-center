@@ -229,7 +229,7 @@ class _Fluid:
                              "default": "dual_jet"},
             "color_mode": {"description": "dye coloring",
                            "choices": ["density", "speed", "vorticity", "curl"], "default": "density"},
-            "palette": {"description": "color palette name", "default": "plasma"},
+            "palette": {"description": "color palette name (vapor, cool, warm, sepia, amber, green, ...)", "default": "vapor"},
             "boundary": {"description": "domain boundary", "choices": ["walls", "wrap"], "default": "walls"},
             "anim_mode": {"description": "animation mode",
                           "choices": ["none", "pulse", "rotate", "turbulence", "shear_osc",
@@ -299,9 +299,11 @@ def method_stable_fluids(out_dir: Path, seed: int, params: dict | None = None) -
     rng = np.random.default_rng(seed)
 
     # ── Palette ──
-    pal = PALETTES.get(palette_name, PALETTES.get("plasma", [(20, 20, 60), (200, 60, 120), (250, 220, 120)]))
-    if len(pal) == 0:
-        pal = [(20, 20, 60), (200, 60, 120), (250, 220, 120)]
+    # "plasma" is not a key in PALETTES; fall back to a valid named ramp so the
+    # user-selectable palette system is actually used.
+    pal = PALETTES.get(palette_name) or PALETTES.get("vapor") or [
+        (20, 20, 60), (200, 60, 120), (250, 220, 120)
+    ]
 
     # ── Solver ──
     f = _Fluid(N)
