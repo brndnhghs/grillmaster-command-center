@@ -48,6 +48,7 @@ _PROC_SHADERS = [
     ("195", "wood_grain_gpu",     "GPU Wood Grain"),
     ("196", "fire_gpu",           "GPU Fire"),
     ("197", "smoke_gpu",          "GPU Smoke"),
+    ("412", "sdf_raymarch_gpu",   "GPU SDF Raymarch"),
 ]
 
 _FILT_SHADERS = [

@@ -151,7 +151,8 @@ def test_gpu_shader_node_map_resolves():
     # 314 Curl-Noise) added 2026-07-11 = 208.
     # +1 P0.4 filter twin (350 FXAA anti-aliasing) = 209.
     # +6 closed-form typed-uniform pattern nodes (302-307 pt.13) = 217.
-    assert len(GPU_SHADER_NODE_MAP) == 217, len(GPU_SHADER_NODE_MAP)
+    # +1 GPU SDF raymarch procedural node (412) = 218.
+    assert len(GPU_SHADER_NODE_MAP) == 218, len(GPU_SHADER_NODE_MAP)
     for mid, entry in GPU_SHADER_NODE_MAP.items():
         if entry.get("type") == "sim":
             # P1 ping-pong sim: seed/step/display must all resolve to shaders.
