@@ -23,3 +23,4 @@ from . import poisson_editing
 from . import bilateral_grid
 from . import rolling_guidance
 from . import l0_smoothing
+from . import wls_smoothing
