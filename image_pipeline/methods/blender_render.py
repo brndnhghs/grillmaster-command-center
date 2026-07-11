@@ -287,9 +287,9 @@ for o in imported:
 
 # Apply the node's PBR material to every imported mesh when requested.
 {material_block}
-# Spin about Y — a non-symmetry axis so the rotation is always visible.
-for o in imported:
-    o.rotation_euler = (0.0, {spin} * math.pi / 180.0, 0.0)
+# NOTE: we do NOT rotate the imported mesh to animate (a mesh spin is
+# invisible for axis-symmetric shapes).  The camera orbit in the Camera
+# block below provides the visible motion for every shape.
 
 # ── Light ──
 bpy.ops.object.light_add(type="POINT", location=(4, -4, 6))
@@ -298,12 +298,21 @@ if lit is not None:
     lit.data.energy = {light_intensity}
     lit.data.use_shadow = True
 
-# ── Camera ──
-bpy.ops.object.camera_add(location=(0, -{cam_z}, {cam_y}))
+# ── Camera (orbits the object so spin is visible for ALL shapes) ──
+# spin_deg drives an azimuth around the vertical (Z) axis.  Because the camera
+# moves while the mesh stays fixed, even a perfectly symmetric sphere shows
+# obvious motion (lighting/shadow sweep across its surface).
+import mathutils
+_az = {spin} * math.pi / 180.0
+_cam_r = {cam_z}
+_cam_x = _cam_r * math.sin(_az)
+_cam_y = -_cam_r * math.cos(_az)
+bpy.ops.object.camera_add(location=(_cam_x, _cam_y, {cam_y}))
 cam = next((o for o in bpy.data.objects if o.type == "CAMERA"), None)
 if cam is not None:
     cam.data.lens = 35
-    cam.rotation_euler = (math.radians(63.0), 0.0, 0.0)
+    _dir = mathutils.Vector((0.0, 0.0, 0.0)) - cam.location
+    cam.rotation_euler = _dir.to_track_quat("-Z", "Y").to_euler()
     bpy.context.scene.camera = cam
 
 # ── World / background ──
@@ -399,9 +408,10 @@ for m in list(bpy.data.materials):
 obj = next((o for o in bpy.data.objects if o.type == "MESH"), None)
 if obj is None:
     raise RuntimeError("Blender Render: mesh primitive failed to create object")
-# Spin about Y — a non-symmetry axis for the default torus/cube/monkey
-# (Z is the torus symmetry axis, so a Z-spin would be invisible).
-obj.rotation_euler = (0.0, {spin} * math.pi / 180.0, 0.0)
+# NOTE: we do NOT rotate the mesh to animate — a mesh spin is invisible for
+# axis-symmetric shapes (sphere about any axis, torus about its hole axis).
+# Instead we ORBIT THE CAMERA (see the Camera block below), which produces
+# clearly visible motion for every shape.  The mesh stays unrotated.
 
 # ── Material (Principled BSDF) ──
 mat = bpy.data.materials.new(name="GrillMat")
@@ -420,12 +430,21 @@ if lit is not None:
     lit.data.energy = {light_intensity}
     lit.data.use_shadow = True
 
-# ── Camera ──
-bpy.ops.object.camera_add(location=(0, -{cam_z}, {cam_y}))
+# ── Camera (orbits the object so spin is visible for ALL shapes) ──
+# spin_deg drives an azimuth around the vertical (Z) axis.  Because the camera
+# moves while the mesh stays fixed, even a perfectly symmetric sphere shows
+# obvious motion (lighting/shadow sweep across its surface).
+import mathutils
+_az = {spin} * math.pi / 180.0
+_cam_r = {cam_z}
+_cam_x = _cam_r * math.sin(_az)
+_cam_y = -_cam_r * math.cos(_az)
+bpy.ops.object.camera_add(location=(_cam_x, _cam_y, {cam_y}))
 cam = next((o for o in bpy.data.objects if o.type == "CAMERA"), None)
 if cam is not None:
     cam.data.lens = 35
-    cam.rotation_euler = (math.radians(63.0), 0.0, 0.0)
+    _dir = mathutils.Vector((0.0, 0.0, 0.0)) - cam.location
+    cam.rotation_euler = _dir.to_track_quat("-Z", "Y").to_euler()
     bpy.context.scene.camera = cam
 
 # ── World / background ──
