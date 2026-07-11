@@ -189,8 +189,11 @@ def method_rolling_guidance(out_dir: Path, seed: int, params=None):
             # oscillate the FINAL large radius across its full admissible span
             radius = int(max(4, min(64, round(4 + (64 - 4) * _osc))))
         elif anim_mode == "range_sweep":
-            # sweep range sigma across its full admissible span (0.02 → 0.5)
+            # sweep BOTH range sigma and guided-filter eps across their full
+            # admissible spans — together they are the RGF's edge-preservation
+            # knobs, and coupling them gives a clearly visible abstraction swing.
             range_sigma = max(0.02, min(0.5, 0.02 + (0.5 - 0.02) * _osc))
+            eps = max(0.001, min(0.1, 0.001 + (0.1 - 0.001) * _osc))
         elif anim_mode == "abstraction_sweep":
             abstraction = 0.5 + 0.5 * math.sin(_t * 0.4)
         # else: none — static
