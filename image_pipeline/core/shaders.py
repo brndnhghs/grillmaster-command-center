@@ -1171,11 +1171,11 @@ _register("shader_hologram", "GPU hologram / scan effect", "filter", _filter_typ
 })
 
 _register("shader_mosaic_gpu", "GPU stained glass mosaic", "filter", _filter_typed('''
-    float cell = u_cell;
-    vec2 cell_uv = floor(uv * u_resolution / cell) * cell / u_resolution + cell / u_resolution * 0.5;
+    float ts = u_tile_size;
+    vec2 cell_uv = floor(uv * u_resolution / ts) * ts / u_resolution + ts / u_resolution * 0.5;
     f_color = texture(u_texture, cell_uv);
 '''), uniforms={
-    "cell": {"glsl": "float", "min": 10.0, "max": 60.0, "default": 30.0, "description": "tile size"},
+    "tile_size": {"glsl": "float", "min": 10.0, "max": 60.0, "default": 30.0, "description": "tile size"},
 })
 
 _register("shader_edge_detect_gpu", "GPU Sobel edge detection", "filter", _filter_typed('''
@@ -1237,22 +1237,22 @@ _register("shader_caustics_gpu", "GPU caustic light overlay", "filter", _filter_
 })
 
 _register("shader_glitch_gpu", "GPU digital glitch artifacts", "filter", _filter_typed('''
-    float band = floor(uv.y * 40.0 * u_amount);
-    float shift = sin(band * 7.0 + u_time * 5.0) * 0.05 * u_amount;
+    float band = floor(uv.y * 40.0 * u_intensity);
+    float shift = sin(band * 7.0 + u_time * 5.0) * 0.05 * u_intensity;
     float noise = fract(sin(dot(uv * u_resolution, vec2(12.9898, 78.233))) * 43758.5453);
-    float glitch = noise > (1.0 - u_amount * 0.1) ? 1.0 : 0.0;
+    float glitch = noise > (1.0 - u_intensity * 0.1) ? 1.0 : 0.0;
     vec2 q = uv + vec2(shift + glitch * 0.1, 0.0);
     f_color = texture(u_texture, q);
 '''), uniforms={
-    "amount": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "glitch intensity"},
+    "intensity": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "glitch intensity"},
 })
 
 _register("shader_posterize_gpu", "GPU posterization / color reduction", "filter", _filter_typed('''
-    float levels = u_levels;
-    vec3 col = floor(orig.rgb * levels) / levels;
+    float nc = u_n_colors;
+    vec3 col = floor(orig.rgb * nc) / nc;
     f_color = vec4(col, 1.0);
 '''), uniforms={
-    "levels": {"glsl": "float", "min": 2.0, "max": 16.0, "default": 9.0, "description": "color levels"},
+    "n_colors": {"glsl": "float", "min": 2.0, "max": 16.0, "default": 9.0, "description": "color levels"},
 })
 
 # ── P0.5 LUT / color client-GPU twins (client-GPU live preview of nodes

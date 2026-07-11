@@ -254,3 +254,63 @@ def test_typed_uniforms_drive_output(mid):
         f"(best large-sweep MAD={best:.3f}). The twin may be reading u_params "
         f"instead of its u_<name> uniforms — a silent no-op live preview."
     )
+
+
+# ── Twin-uniform ↔ CPU-param name match (live-preview wiring guard) ──────────
+# The browser client (ui/js/client3d.js renderGpuShader) reads a twin shader's
+# *named* uniforms when the shader declares `uniforms=` — it sets u_<name> from
+# the live node's params[<name>] and IGNORES the shim's `param_map` entirely.
+# Therefore every uniform name on a CLIENT_GPU_SHIMS twin MUST equal a real param
+# of the backing CPU node, or that control silently renders with the shader's
+# default (a dead slider in the live preview). This guard fails the build on any
+# such mismatch so the wiring regression found on 2026-07-11 cannot recur.
+#
+# Exceptions: listed below are shim targets whose twin uniforms have NO clean
+# CPU-node synonym by design (secondary artistic knobs, or a string param that
+# pitfall #14 says must stay unmapped). These are intentional, not bugs.
+_TWIN_UNIFORM_ALLOW = {
+    "66": "julia: `constant` is a string param (pitfall #14); the twin uses its "
+          "own fixed view (c_re/c_im/zoom/color_shift) — intentionally unmapped",
+    "29": "voronoi: `scale` (zoom) is not exposed by CPU node 29",
+    "03": "domain_warp: `warp`/`hue_shift` are shader-only artistic knobs not in "
+          "CPU node 03",
+    "05": "voronoise: `hue_shift` is not exposed by CPU node 05",
+    "07": "truchet: `scale` (frequency) is not cleanly synonymous with CPU node 07 "
+          "`tile_size`",
+    "74": "swirl_gpu: `radius`/`spin` have no clean CPU-node synonym in node 74",
+}
+
+
+import image_pipeline.methods  # noqa: F401  (bulk-registers all method nodes)
+from image_pipeline.core import registry as _registry  # noqa: E402
+
+
+@pytest.mark.parametrize("mid", sorted(
+    (m for m in CLIENT_GPU_SHIMS.keys() if m.isdigit()),
+    key=lambda x: int(x),
+))
+def test_gpu_twin_uniforms_match_params(mid):
+    """Each twin shader's uniform names must be a subset of the backing CPU
+    node's params, so the client's typed path wires them live (not dead)."""
+    entry = CLIENT_GPU_SHIMS[mid]
+    name = entry["shader"]
+    info = SHADERS.get(name)
+    if not info or not info.get("uniforms"):
+        pytest.skip(f"{mid} {name} has no typed uniforms")
+    unames = set(info["uniforms"].keys())
+    meta = _registry.get_meta(mid)
+    if meta is None:
+        pytest.skip(f"{mid} backing CPU node not registered in this session")
+    pset = set(meta.params.keys())
+    missing = unames - pset
+    if not missing:
+        return
+    if mid in _TWIN_UNIFORM_ALLOW:
+        # Documented intentional exception — must not regress into a NEW mismatch.
+        pytest.skip(f"{mid} {name}: allowed exception ({sorted(missing)})")
+    pytest.fail(
+        f"{mid} {name}: twin uniform(s) {sorted(missing)} have no matching CPU "
+        f"node param — the live preview control is dead. Rename the shader "
+        f"uniform to the CPU param name, or add it to _TWIN_UNIFORM_ALLOW with "
+        f"a reason."
+    )
