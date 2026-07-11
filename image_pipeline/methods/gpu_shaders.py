@@ -942,17 +942,25 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "param_map": {"activity": "p1", "elastic_d": "p2",
                       "A_landau": "p3", "noise_amp": "p4"},
     },
-    # 156 Hydraulic Erosion: 3-field terrain (height=.r, water=.g, sediment=.b).
-    # rain_rate=p1, K_e=p2, K_d=p3, theta=p4. Local surface-gradient water flow
-    # (CPU authoritative for exact steepest-descent routing). anim_mode/grid_div/
-    # render_water are choice params (pitfall #14) left unmapped — twin renders
-    # the default hydraulic regime with water channels shown.
-    "156": {
+    # 348 Droplet Erosion (was "156 Hydraulic Erosion" before the node was
+    # renumbered): 3-field terrain twin (height=.r, water=.g, sediment=.b).
+    # The CPU node 348 is the particle/droplet model; this twin is a 3-field
+    # grid visual-style parity (CPU stays authoritative for exact routing).
+    # Map the node's REAL erosion knobs onto the shader's u_params slots:
+    #   erosion_rate → K_e (p2, erosion strength)
+    #   deposition   → K_d (p3, deposition rate)
+    #   min_slope    → theta (p4, angle of repose)
+    # The grid twin's rain (p1) is driven by `evaporation` (closest water-cycle
+    # knob on the droplet model); the live preview stays non-black via the
+    # shader's clamp on u_params. Choice params (colormap/hillshade/light_angle)
+    # are cosmetic and left unmapped (pitfall #14).
+    "348": {
         "type": "sim",
         "seed": "erosion_seed", "step": "erosion_step", "display": "erosion_display",
         "state_channels": 3, "substeps": 4,
         "reset_on": ["seed", "param", "loop", "resize"],
-        "param_map": {"rain_rate": "p1", "K_e": "p2", "K_d": "p3", "theta": "p4"},
+        "param_map": {"evaporation": "p1", "erosion_rate": "p2",
+                      "deposition": "p3", "min_slope": "p4"},
     },
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SIMS)
