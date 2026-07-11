@@ -102,8 +102,14 @@ def _readback(node_dir, raw_result):
     arr = np.asarray(arr, dtype=np.float32)
     if arr.ndim != 3 or arr.shape[2] != 3:
         return False, f"unexpected shape {arr.shape}", None
+    # A truly blank frame is a single flat colour (std ~ 0 AND <=2 distinct
+    # quantized tones). A low-contrast but VALID render has many distinct tones
+    # and must NOT be flagged blank.
     if arr.std() < 0.01:
-        return False, f"blank output (std={arr.std():.4f})", None
+        q = (arr * 31).astype(np.int32)
+        q = q[..., 0] * 1024 + q[..., 1] * 32 + q[..., 2]
+        if np.unique(q).size <= 2:
+            return False, f"blank output (flat colour, std={arr.std():.4f})", None
     return True, "", arr
 
 

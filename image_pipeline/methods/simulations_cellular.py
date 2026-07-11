@@ -14,6 +14,7 @@ import numpy as np
 
 from ..core.registry import method
 from ..core.animation import capture_frame
+from ..core.utils import save, mn, W, H
 
 
 # ─── Rule definitions ───
@@ -361,5 +362,6 @@ def method_58_cellular(out_dir: Path, seed: int, params=None):
     img = np.clip(img, 0.0, 1.0)
 
     capture_frame("58", img)
+    save(img, mn(58, "Cellular Automata"), out_dir)
 
     return {"image": img}
