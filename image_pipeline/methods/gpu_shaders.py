@@ -581,6 +581,14 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # the wired input via u_texture.
     "399": {"shader": "cmyk_halftone_gpu", "type": "filter",
             "param_map": {"spacing": "p1", "max_dot": "p2", "angle_offset": "p3"}},
+    # 402 Kaleidoscopic IFS: scale -> p1, fold_angle -> p2, symmetry -> p3,
+    # color_shift -> p4. offset_x/offset_y/anim_mode/colormode are choice or
+    # multi-value params left unmapped (pitfall #14); the twin renders the
+    # default 6-fold orbit coloring. Closed-form f(uv, t) -> exact parity
+    # preview; CPU numpy node stays authoritative for export.
+    "402": {"shader": "kifs_gpu", "type": "procedural",
+            "param_map": {"scale": "p1", "fold_angle": "p2",
+                          "symmetry": "p3", "color_shift": "p4"}},
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SHIMS)
 

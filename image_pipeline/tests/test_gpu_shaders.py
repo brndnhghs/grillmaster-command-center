@@ -205,3 +205,91 @@ def test_gpu_methods_have_new_image_contract():
         elif not m.new_image_contract:
             bad.append(f"#{mid} {m.name}: new_image_contract=False")
     assert not bad, "\n".join(bad)
+
+
+# ── 7. Shim/Sim shaders with named uniforms must drive the output ─────────
+# A CLIENT_GPU_SHIMS / CLIENT_GPU_SIMS entry may point at a shader that
+# declares named `uniforms=` (many were upgraded from the legacy p1..p4
+# contract). The client resolver takes the `u_<name>` branch for such shaders
+# and ignores `param_map`, so the node's REAL params (which the CPU fn and the
+# UI expose) must actually reach the shader body. If a shader body instead
+# reads the legacy `u_params` (or a helper shadows the uniform), every control
+# the user sees becomes a SILENT CONSTANT live preview. This guard fails the
+# build if NO declared uniform visibly affects the output — the exact
+# silent-no-op bug class. Robustness: a uniform may be legitimately gated
+# (e.g. color_a/b only under palette=grayscale), so we require at least ONE
+# uniform perturbed to a large valid extreme (not a tiny delta) with u_time>0
+# to move the output beyond a small threshold. A fully-static twin fails; a
+# correctly-wired twin passes even if some uniforms are gated.
+def _shim_synthetic_input(H, W):
+    yy, xx = np.mgrid[0:H, 0:W]
+    r = (xx / W * 255).astype(np.float32)
+    g = (yy / H * 255).astype(np.float32)
+    b = ((np.sin(xx * 0.1) * np.cos(yy * 0.1)) * 127 + 128).astype(np.float32)
+    return np.stack([r, g, b], -1) / 255.0
+
+
+def _shim_extreme(spec):
+    g = spec.get("glsl", "float")
+    if g == "int":
+        return int(spec.get("max", 99))
+    if g == "choice":
+        ch = spec.get("choices", [])
+        return ch[-1] if len(ch) >= 2 else spec.get("default", 0)
+    if g == "color":
+        return (0.95, 0.05, 0.05)
+    lo = float(spec.get("min", 0.0)); hi = float(spec.get("max", 1.0))
+    d = float(spec.get("default", (lo + hi) / 2))
+    return hi if abs(hi - d) >= abs(d - lo) else lo
+
+
+def _all_shim_uniformed_entries():
+    import image_pipeline.methods  # noqa: F401 — ensure registration
+    from image_pipeline.methods.gpu_shaders import (
+        GPU_SHADER_NODE_MAP, CLIENT_GPU_SHIMS, CLIENT_GPU_SIMS,
+    )
+    seen = {}
+    for src in (CLIENT_GPU_SHIMS, CLIENT_GPU_SIMS):
+        for mid, entry in src.items():
+            if mid not in seen:
+                seen[mid] = entry
+    for mid, entry in GPU_SHADER_NODE_MAP.items():
+        if entry.get("typed") is not True and mid not in seen:
+            seen[mid] = entry
+    out = []
+    for mid, entry in seen.items():
+        sname = entry.get("shader")
+        if sname and sname in SHADERS and SHADERS[sname].get("uniforms"):
+            out.append((mid, sname, entry.get("type") == "sim"))
+    return out
+
+
+@pytest.mark.parametrize("mid,sname,is_sim", _all_shim_uniformed_entries())
+def test_shim_uniforms_drive_output(mid, sname, is_sim):
+    """At least one declared uniform of a shim/sim shader must change output."""
+    uspec = SHADERS[sname]["uniforms"]
+    base = {u: spec.get("default") for u, spec in uspec.items()}
+    is_filter = SHADERS[sname].get("type") == "filter"
+    kwargs = dict(named_params=base, time=1.0)
+    if is_filter:
+        kwargs["input_image"] = _shim_synthetic_input(96, 128)
+    try:
+        img_base = render_shader(sname, (128, 96), (0.5,) * 4, **kwargs)
+    except Exception as e:  # pragma: no cover
+        pytest.fail(f"{mid} {sname} base render raised: {e}")
+    best = 0.0
+    for u, spec in uspec.items():
+        single = dict(base); single[u] = _shim_extreme(spec)
+        kw = dict(named_params=single, time=1.0)
+        if is_filter:
+            kw["input_image"] = _shim_synthetic_input(96, 128)
+        try:
+            img = render_shader(sname, (128, 96), (0.5,) * 4, **kw)
+        except Exception as e:  # pragma: no cover
+            pytest.fail(f"{mid} {sname} uniform '{u}' render raised: {e}")
+        best = max(best, float(np.mean(np.abs(
+            np.array(img, np.float64) - np.array(img_base, np.float64)))))
+    assert best >= 1.0, (
+        f"{mid} {sname}: no declared uniform visibly affects output "
+        f"(best MAD={best:.3f}) — silent no-op / dead-param live preview"
+    )
