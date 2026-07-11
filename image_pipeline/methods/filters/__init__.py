@@ -18,3 +18,4 @@ from . import seam_carving
 from . import guided_filter
 from . import xdog
 from . import tonal_hatching
+from . import anisotropic_diffusion
