@@ -284,12 +284,14 @@ for o in imported:
     o.scale = (o.scale[0] * fit * {size},
                o.scale[1] * fit * {size},
                o.scale[2] * fit * {size})
+    # Spin about Y (not Z) so Z-symmetric models actually animate.
+    o.rotation_euler = (0.0, {spin} * math.pi / 180.0, 0.0)
 
 # Apply the node's PBR material to every imported mesh when requested.
 {material_block}
-# NOTE: we do NOT rotate the imported mesh to animate (a mesh spin is
-# invisible for axis-symmetric shapes).  The camera orbit in the Camera
-# block below provides the visible motion for every shape.
+# NOTE: we rotate the imported mesh about Y (see the normalize loop above) so
+# the animation is visible.  A Z-camera-orbit would be invisible for
+# Z-symmetric models, so mesh Y-rotation is the correct strategy.
 
 # ── Light ──
 bpy.ops.object.light_add(type="POINT", location=(4, -4, 6))
@@ -298,16 +300,12 @@ if lit is not None:
     lit.data.energy = {light_intensity}
     lit.data.use_shadow = True
 
-# ── Camera (orbits the object so spin is visible for ALL shapes) ──
-# spin_deg drives an azimuth around the vertical (Z) axis.  Because the camera
-# moves while the mesh stays fixed, even a perfectly symmetric sphere shows
-# obvious motion (lighting/shadow sweep across its surface).
+# ── Camera (fixed 3/4 view; the MESH spins, not the camera) ──
+# We rotate the mesh about Y (see the mesh block).  Orbiting the camera about
+# the Z axis produces zero visible change for Z-symmetric primitives (torus,
+# cylinder, cone, sphere) and is therefore the wrong animation strategy.
 import mathutils
-_az = {spin} * math.pi / 180.0
-_cam_r = {cam_z}
-_cam_x = _cam_r * math.sin(_az)
-_cam_y = -_cam_r * math.cos(_az)
-bpy.ops.object.camera_add(location=(_cam_x, _cam_y, {cam_y}))
+bpy.ops.object.camera_add(location=(0.0, -{cam_z}, {cam_y}))
 cam = next((o for o in bpy.data.objects if o.type == "CAMERA"), None)
 if cam is not None:
     cam.data.lens = 35
@@ -408,10 +406,10 @@ for m in list(bpy.data.materials):
 obj = next((o for o in bpy.data.objects if o.type == "MESH"), None)
 if obj is None:
     raise RuntimeError("Blender Render: mesh primitive failed to create object")
-# NOTE: we do NOT rotate the mesh to animate — a mesh spin is invisible for
-# axis-symmetric shapes (sphere about any axis, torus about its hole axis).
-# Instead we ORBIT THE CAMERA (see the Camera block below), which produces
-# clearly visible motion for every shape.  The mesh stays unrotated.
+# NOTE: we rotate the mesh about Y (see the mesh-spin block above).  A Z-spin
+# is invisible for Z-symmetric primitives (torus hole-axis, cylinder/cones),
+# and a Z-camera-orbit is likewise invisible for them — so a Y rotation is the
+# correct, visible animation for every non-spherical primitive.
 
 # ── Material (Principled BSDF) ──
 mat = bpy.data.materials.new(name="GrillMat")
@@ -423,6 +421,13 @@ if bsdf is not None:
     bsdf.inputs["Roughness"].default_value = {roughness}
 obj.data.materials.append(mat)
 
+# ── Mesh spin (about Y, NOT Z) ──
+# Most primitives are symmetric about Z, so a Z-spin (or Z-camera-orbit) maps
+# the silhouette onto itself and shows NO motion.  Rotating about Y breaks that
+# symmetry and is clearly visible for torus/cube/cylinder/cone/ico/monkey/plane.
+# (A uniform sphere is spherically symmetric, so any spin is inherently static.)
+obj.rotation_euler = (0.0, {spin} * math.pi / 180.0, 0.0)
+
 # ── Light ──
 bpy.ops.object.light_add(type="POINT", location=(4, -4, 6))
 lit = next((o for o in bpy.data.objects if o.type == "LIGHT"), None)
@@ -430,16 +435,12 @@ if lit is not None:
     lit.data.energy = {light_intensity}
     lit.data.use_shadow = True
 
-# ── Camera (orbits the object so spin is visible for ALL shapes) ──
-# spin_deg drives an azimuth around the vertical (Z) axis.  Because the camera
-# moves while the mesh stays fixed, even a perfectly symmetric sphere shows
-# obvious motion (lighting/shadow sweep across its surface).
+# ── Camera (fixed 3/4 view; the MESH spins, not the camera) ──
+# We rotate the mesh about Y (see the mesh block).  Orbiting the camera about
+# the Z axis produces zero visible change for Z-symmetric primitives (torus,
+# cylinder, cone, sphere) and is therefore the wrong animation strategy.
 import mathutils
-_az = {spin} * math.pi / 180.0
-_cam_r = {cam_z}
-_cam_x = _cam_r * math.sin(_az)
-_cam_y = -_cam_r * math.cos(_az)
-bpy.ops.object.camera_add(location=(_cam_x, _cam_y, {cam_y}))
+bpy.ops.object.camera_add(location=(0.0, -{cam_z}, {cam_y}))
 cam = next((o for o in bpy.data.objects if o.type == "CAMERA"), None)
 if cam is not None:
     cam.data.lens = 35
