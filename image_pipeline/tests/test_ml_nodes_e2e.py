@@ -188,3 +188,38 @@ def test_clip_score_writes_field(tmp_path: Path):
     assert field.exists(), "CLIP Score: no field.npy (FIELD output missing)"
     f = np.load(field)
     assert f.shape == (h, w, 3), f"CLIP Score FIELD shape {f.shape} != (h,w,n_labels)"
+
+
+# ── ComfyUI capture_frame contract (Leverage Tier regression) ──────────────
+# Adding 2026-07: ml_models.py method_comfyui called capture_frame("28", <Path>)
+# without importing capture_frame AND without passing a numpy array — a latent
+# NameError + TypeError that only surfaced during --animate. Guard both: the
+# symbol must resolve, and the helper must accept an ndarray (its contract).
+def test_comfyui_module_imports_capture_frame():
+    """The ComfyUI method uses capture_frame(); the symbol must be importable."""
+    from image_pipeline.methods import ml_models  # noqa: F401
+
+    # capture_frame is imported at module top from ..core.animation
+    assert hasattr(
+        ml_models, "capture_frame"
+    ), "ml_models must import capture_frame (ComfyUI --animate path)"
+
+
+def test_capture_frame_accepts_ndarray_only():
+    """capture_frame() requires a numpy array (calls arr.copy()); a Path must
+    NOT be accepted. This pins the ComfyUI fix: it now loads via load_input()."""
+    from image_pipeline.core.animation import capture_frame
+
+    import image_pipeline.core.animation as anim
+
+    # CLI path: enable frame capture for the slot, then submit an ndarray.
+    anim.enable_frame_capture("28")
+    try:
+        arr = np.zeros((8, 8, 3), dtype=np.float32)
+        capture_frame("28", arr)  # must not raise
+        frames = anim.get_frames("28")
+        assert len(frames) == 1, "capture_frame swallowed the ndarray"
+        assert frames[0].shape == (8, 8, 3)
+    finally:
+        anim.disable_frame_capture()
+

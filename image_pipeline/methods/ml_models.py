@@ -11,6 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
+from ..core.animation import capture_frame
 from ..core.registry import method
 from ..core.utils import save, mn, seed_all, W, H, load_input, write_scalars, write_field, write_mask
 
@@ -218,7 +219,10 @@ def method_comfyui(out_dir: Path, seed: int, params=None):
             out = list(comfy_dir.glob(f"**/{filename_prefix}_*.png"))
             if out:
                 shutil.copy(str(out[-1]), str(out_dir / mn(28, "ComfyUI")))
-                capture_frame("28", out_dir / mn(28, "ComfyUI"))
+                # capture_frame() needs a numpy array in [0,1] (it calls
+                # arr.copy()) — load the just-copied file via load_input.
+                _cf_arr = load_input(str(out_dir / mn(28, "ComfyUI")), int(W), int(H))
+                capture_frame("28", _cf_arr)
                 print(f"  ✓ {mn(28, 'ComfyUI')}  ({out[-1].stat().st_size // 1024} KB)")
                 return
             print("  ✗ ComfyUI: no output found")
