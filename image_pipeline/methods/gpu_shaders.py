@@ -540,6 +540,22 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # default strength. CPU numpy node stays the authoritative export.
     "68": {"shader": "anisotropic_kuwahara_gpu", "type": "filter",
            "param_map": {"radius": "p1", "anisotropy": "p2"}},
+    # 311 Domain Warping: scale -> p1, warp_strength -> p2, contrast -> p3,
+    # octaves -> p4. colormode/warp_levels/anim_mode are choice strings
+    # (pitfall #14) left unmapped; preview shows IQ inferno marbling at the
+    # node's default scale/warp/contrast. Closed-form f(uv,t) -> exact parity
+    # preview; CPU numpy node stays authoritative for export.
+    "311": {"shader": "domain_warp_gpu", "type": "procedural",
+            "param_map": {"scale": "p1", "warp_strength": "p2",
+                          "contrast": "p3", "octaves": "p4"}},
+    # 314 Curl-Noise Flow Field: scale -> p1, octaves -> p2, brightness -> p3,
+    # anim_mode -> p4 (0=static/1=drift; node choice string decoded to float
+    # per pitfall #14 so the preview animates). render_style/colormode are
+    # choice strings left unmapped; preview shows the spectral angle->hue field.
+    # Closed-form f(uv,t) -> exact parity preview; CPU numpy node authoritative.
+    "314": {"shader": "curl_noise_gpu", "type": "procedural",
+            "param_map": {"scale": "p1", "octaves": "p2",
+                          "brightness": "p3", "anim_mode": "p4"}},
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SHIMS)
 

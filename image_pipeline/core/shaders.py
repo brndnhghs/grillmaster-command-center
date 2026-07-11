@@ -1504,6 +1504,114 @@ void main() {
 }
 ''')
 
+
+# ── Domain Warping (node 311) client-GPU twin ──
+# Inigo Quilez two-level domain warp: fbm noise displaced by a lower-frequency
+# copy of itself. Every frame is a pure closed-form function of (uv, t) — same
+# family as 125/164/172/53/43/57/312. The CPU numpy node stays authoritative for
+# export (two-tier precision). Real params bound via CLIENT_GPU_SHIMS param_map
+# (scale/warp_strength/contrast/octaves); colormode defaults to the node's
+# 'inferno'. pitfall #15: 0.5 -> node default so neutral u_params yields the
+# canonical marbled view. pitfall #19: amplitude is divided by a FIXED normalizer
+# (sum of octave amps), so warp_strength stays live and is not silently cancelled.
+_register("domain_warp_gpu",
+          "Domain Warping — IQ two-level fractal noise warp (client-GPU twin of node 311)",
+          "procedural", _inferno_local('') + '''
+float dw_fbm(vec2 p, int oct) {
+    float v = 0.0, a = 0.5, norm = 0.0;
+    for (int i = 0; i < 8; i++) {
+        if (i >= oct) break;
+        v += a * noise(p);
+        norm += a;
+        p *= 2.0; a *= 0.5;
+    }
+    return v / max(norm, 1e-6) * 2.0 - 1.0;   // [-1,1]
+}
+void main() {
+    // Decode real node params (0.5-neutral -> node defaults):
+    //   p1 scale [1,12] 0.5->4.0 ; p2 warp_strength [0,8] 0.5->4.0
+    //   p3 contrast [0.5,3] 0.5->1.25 ; p4 octaves [1,8] 0.5->4
+    float scale = 1.0 + u_params.x * 6.0;
+    float warp  = u_params.y * 8.0;
+    float contr = 0.5 + u_params.z * 1.5;
+    int oct = int(clamp(1.0 + u_params.w * 7.0, 1.0, 8.0));
+
+    vec2 p = (v_uv - 0.5) * scale;
+    // Gentle time drift -> live preview evolves (canonical view at t=0).
+    vec2 ph = vec2(u_time * 0.12);
+
+    vec2 q = vec2(dw_fbm(p, oct),
+                  dw_fbm(p + vec2(5.2, 1.3), oct));
+    vec2 r = vec2(dw_fbm(p + warp * q + vec2(1.7, 9.2) + ph, oct),
+                  dw_fbm(p + warp * q + vec2(8.3, 2.8) + ph, oct));
+    float val = dw_fbm(p + warp * r, oct);
+
+    val = (val + 1.0) * 0.5;
+    val = clamp(0.5 + (val - 0.5) * contr, 0.0, 1.0);
+
+    vec3 col = inferno(val);
+    f_color = vec4(clamp(col, 0.0, 1.0), 1.0);
+}
+''')
+
+
+# ── Curl-Noise Flow Field (node 314) client-GPU twin ──
+# Divergence-free flow via curl of an fbm potential P: v = (dP/dy, -dP/dx).
+# Velocity ANGLE -> hue, MAGNITUDE -> brightness (node default 'spectral' colormap).
+# Closed-form function of (uv, t); CPU numpy node stays authoritative for export.
+# Real params bound via CLIENT_GPU_SHIMS param_map (scale/octaves/brightness/
+# anim_mode). pitfall #15: 0.5 -> node default. A subtle u_time pan keeps the
+# live preview in motion (canonical view at t=0).
+_register("curl_noise_gpu",
+          "Curl-Noise flow field — divergence-free direction field (client-GPU twin of node 314)",
+          "procedural", '''vec3 hsv2rgb(vec3 c) {
+    vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+float cn_fbm(vec2 p, int oct) {
+    float v = 0.0, a = 0.5, norm = 0.0;
+    for (int i = 0; i < 6; i++) {
+        if (i >= oct) break;
+        // golden-angle rotate each octave so layers don't align on axes
+        float ang = 2.3999632 * float(i + 1);
+        vec2 rp = rot(ang) * p;
+        v += a * noise(rp);
+        norm += a;
+        p *= 2.0; a *= 0.5;
+    }
+    return v / max(norm, 1e-6);
+}
+void main() {
+    // Decode real node params (0.5-neutral -> node defaults):
+    //   p1 scale [1,12] 0.5->6.5 ; p2 octaves [1,6] 0.5->3
+    //   p3 brightness [0.2,2] 0.5->1.1 ; p4 anim_mode [0,1] 0.5->drift
+    float scale = 1.0 + u_params.x * 11.0;
+    int oct = int(clamp(1.0 + u_params.y * 5.0, 1.0, 6.0));
+    float bright = 0.2 + u_params.z * 1.8;
+    float drift = step(0.5, u_params.w);   // 0=static, 1=drift
+
+    vec2 p = (v_uv - 0.5) * scale;
+    vec2 pan = vec2(u_time * 0.6, u_time * 0.25) * drift;
+
+    float e = 0.35;   // finite-difference step in noise space
+    float P0 = cn_fbm(p + pan, oct);
+    float Px = cn_fbm(p + pan + vec2(e, 0.0), oct);
+    float Py = cn_fbm(p + pan + vec2(0.0, e), oct);
+    float vx = (Py - P0) / e;        // dP/dy
+    float vy = -(Px - P0) / e;       // -dP/dx
+    float mag = length(vec2(vx, vy));
+    float ang = atan(vy, vx);
+
+    float hue = (ang + 3.14159265) / 6.2831853;
+    float sat = clamp(0.5 + mag * 1.5, 0.0, 1.0);
+    float val = clamp((0.25 + mag * 2.0) * bright, 0.0, 1.0);
+    vec3 col = hsv2rgb(vec3(hue, sat, val));
+    f_color = vec4(clamp(col, 0.0, 1.0), 1.0);
+}
+''')
+
+
 _register("shader_oil_gpu", "GPU oil painting simulation", "filter", _filter_shader('''
     float radius = 2.0 + u_params.x * 4.0;
     vec3 sum = vec3(0.0); float total = 0.0;
