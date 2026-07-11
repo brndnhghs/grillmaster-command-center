@@ -325,6 +325,155 @@ def test_rating_persistence_roundtrip(client, tmp_store):
     assert ratings[gids[0]] == 3 and ratings[gids[1]] == 2
 
 
+# ── Notes + advisor guidance ──────────────────────────────────────────
+
+
+def test_notes_roundtrip(client, tmp_store):
+    from image_pipeline.shootout import session as sess
+    rng = random.Random(29)
+    s = sess.start_session()
+    sid = s["session_id"]
+    genomes = [sample_valid_genome(POOL, CFG, rng) for _ in range(2)]
+    for g in genomes:
+        store.save_genome(g)
+    s = store.load_session(sid)
+    s["generations"].append({
+        "gen": 0, "shown": [g["genome_id"] for g in genomes],
+        "pool": [], "ratings": {}, "notes": {}, "rated_logged": [],
+    })
+    store.save_session(s)
+    g0, g1 = (g["genome_id"] for g in genomes)
+
+    r = client.post("/api/shootout/rate", json={
+        "session_id": sid,
+        "ratings": {g0: 5},
+        "notes": {g0: "love the motion, keep this structure",
+                  g1: "too static, drop it"},
+    })
+    assert r.status_code == 200
+    assert r.json()["noted"] == 2
+
+    # lineage + genome + dataset all carry the note
+    s = store.load_session(sid)
+    assert s["generations"][-1]["notes"][g1] == "too static, drop it"
+    assert store.load_genome(g0)["notes"].startswith("love the motion")
+    line = json.loads((tmp_store / "ratings.jsonl").read_text().splitlines()[0])
+    assert line["notes"].startswith("love the motion")
+
+    # notes-only rate (no stars) is accepted
+    r = client.post("/api/shootout/rate", json={
+        "session_id": sid, "notes": {g1: "updated note"}})
+    assert r.status_code == 200
+    assert store.load_genome(g1)["notes"] == "updated note"
+
+    # session_state surfaces notes for UI resume
+    state = client.get(f"/api/shootout/session/{sid}").json()
+    by_id = {sv["genome_id"]: sv for sv in state["survivors"]}
+    assert by_id[g1]["notes"] == "updated note"
+
+
+def _fake_llm_reply(reply):
+    return lambda system, user: reply
+
+
+def test_advisor_guidance_parsing(tmp_store):
+    from image_pipeline.shootout import advisor
+    rng = random.Random(31)
+    rated = [sample_valid_genome(POOL, CFG, rng) for _ in range(2)]
+    rated[0]["rating"] = 5
+    rated[0]["notes"] = "more nodes please, love the physarum look"
+    real_mid = rated[0]["graph"]["nodes"][0]["method_id"]
+
+    reply = json.dumps({
+        "prefer_methods": [real_mid, "does-not-exist"],
+        "avoid_methods": [],
+        "prefer_categories": ["simulations", "bogus-cat"],
+        "avoid_categories": [],
+        "complexity": "increase",
+        "protect_genomes": [rated[0]["genome_id"], "g-unknown"],
+        "drop_genomes": [],
+        "summary": "grow graphs, favor simulations",
+    })
+    g = advisor.extract_guidance(rated, POOL, CFG, llm=_fake_llm_reply(
+        "Sure! Here is the JSON:\n" + reply))
+    assert g["prefer_methods"] == [real_mid]          # unknown id stripped
+    assert g["prefer_categories"] == ["simulations"]  # bogus category stripped
+    assert g["protect_genomes"] == [rated[0]["genome_id"]]
+    assert g["complexity"] == "increase"
+
+    bias = advisor.bias_from_guidance(g)
+    assert bias.complexity > 0 and real_mid in bias.prefer_methods
+
+    # no notes → no LLM call, no guidance
+    for r in rated:
+        r["notes"] = ""
+    assert advisor.extract_guidance(rated, POOL, CFG,
+                                    llm=_fake_llm_reply(reply)) is None
+    # unparseable reply → None
+    rated[0]["notes"] = "x"
+    assert advisor.extract_guidance(rated, POOL, CFG,
+                                    llm=_fake_llm_reply("no json here")) is None
+    # LLM unavailable → None
+    assert advisor.extract_guidance(rated, POOL, CFG,
+                                    llm=lambda s, u: None) is None
+
+
+def test_guidance_steers_generation():
+    rng = random.Random(37)
+    prev = _rated_generation(rng, [None] * 4)   # nothing rated → all explorers
+    guidance = {"prefer_methods": [], "avoid_methods": [],
+                "prefer_categories": [], "avoid_categories": ["gpu_shaders"],
+                "complexity": "increase", "protect_genomes": [],
+                "drop_genomes": [], "summary": ""}
+    gen = next_generation(prev, 1, POOL, CFG, rng, guidance=guidance)
+    for g in gen:
+        assert all(POOL.defs[n["method_id"]]["category"] != "gpu_shaders"
+                   for n in g["graph"]["nodes"]), "avoid_categories ignored"
+        assert not validate_graph(g["graph"], POOL, CFG)
+
+
+def test_guidance_drops_parents():
+    rng = random.Random(41)
+    prev = _rated_generation(rng, [5, 4])
+    dropped = prev[0]["genome_id"]
+    guidance = {"prefer_methods": [], "avoid_methods": [],
+                "prefer_categories": [], "avoid_categories": [],
+                "complexity": "keep", "protect_genomes": [],
+                "drop_genomes": [dropped], "summary": ""}
+    for _ in range(5):
+        gen = next_generation(prev, 1, POOL, CFG, rng, guidance=guidance)
+        for g in gen:
+            assert dropped not in (g.get("parents") or [])
+
+
+def test_growth_ops_are_valid_and_uncapped():
+    from image_pipeline.shootout.evolve import _op_insert_filter, _op_add_branch
+    from image_pipeline.shootout.repair import repair_graph
+    rng = random.Random(43)
+    g = sample_valid_genome(POOL, CFG, rng)
+    graph = g["graph"]
+    start = len(graph["nodes"])
+    for _ in range(CFG.max_depth + 6):   # grow well past the gen-0 budget
+        (_op_insert_filter if rng.random() < 0.5 else _op_add_branch)(
+            graph, POOL, CFG, rng)
+    fixed = repair_graph(graph, POOL, CFG)
+    assert fixed is not None
+    assert not validate_graph(fixed, POOL, CFG)
+    assert len(fixed["nodes"]) > start, "growth ops never added a node"
+
+
+def test_complexity_bias_shifts_sizes():
+    from image_pipeline.shootout.generator import SamplingBias
+    rng = random.Random(47)
+    def mean_size(bias):
+        return sum(
+            len(sample_valid_genome(POOL, CFG, rng, bias=bias)["graph"]["nodes"])
+            for _ in range(120)) / 120
+    grow = mean_size(SamplingBias(complexity=0.8))
+    shrink = mean_size(SamplingBias(complexity=-0.8))
+    assert grow > shrink + 0.5, (grow, shrink)
+
+
 # ── E2E render smoke (slow — needs ffmpeg) ────────────────────────────
 
 

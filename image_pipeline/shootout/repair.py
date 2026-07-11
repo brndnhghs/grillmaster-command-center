@@ -271,11 +271,12 @@ def validate_graph(graph: dict, pool: GenePool | None = None,
 
 def sample_valid_genome(pool: GenePool, cfg: ShootoutConfig,
                         rng: random.Random, origin: str = "random",
-                        max_tries: int = 20) -> dict:
+                        max_tries: int = 20, bias=None) -> dict:
     """random_genome + repair, resampling until valid (plan §7 last bullet)."""
     from .generator import random_genome
     for _ in range(max_tries):
-        g = repair_genome(random_genome(pool, cfg, rng, origin=origin), pool, cfg)
+        g = repair_genome(random_genome(pool, cfg, rng, origin=origin,
+                                        bias=bias), pool, cfg)
         if g is not None:
             return g
     raise RuntimeError("could not sample a repairable genome")

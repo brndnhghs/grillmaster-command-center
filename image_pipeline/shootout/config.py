@@ -16,12 +16,17 @@ class ShootoutConfig:
     height: int = 512
 
     # ── Generation ────────────────────────────────────────────────
-    max_depth: int = 6         # max nodes on the backbone walk
-    p_fill_image: float = 0.75     # chance to feed a node's image_in while budget remains
-    p_fill_aux: float = 0.5        # chance to feed declared field/mask/particles ports
-    p_driver: float = 0.4          # chance to attach a scalar driver (LFO etc.) per genome
+    # max_depth is the gen-0 size-budget ceiling, not a hard graph limit —
+    # evolution (crossover, insert-filter, add-branch) can grow past it and
+    # repair imposes no size cap. The real brake on huge graphs is
+    # render_timeout_s. Raise this for wilder initial batches.
+    max_depth: int = 12
+    p_fill_image: float = 0.85     # chance to feed a node's image_in while budget remains
+    p_fill_aux: float = 0.6        # chance to feed declared field/mask/particles ports
+    p_driver: float = 0.4          # repeated-draw chance per extra scalar driver (LFO etc.)
     p_extreme_param: float = 0.1   # chance a sampled numeric param is pushed to min/max
     time_varying_weight: float = 3.0   # sampling weight boost for animated terminals
+    continuation_weight: float = 4.0   # boost for chain-continuing nodes while budget remains
 
     # ── Evolution ─────────────────────────────────────────────────
     explore_ratio: float = 0.3     # fraction of each generation that is fresh randoms
@@ -64,6 +69,10 @@ class ShootoutConfig:
     exclude_methods: tuple[str, ...] = ("18", "__test__", "__custom_shader__")
     # Params never sampled or jittered (executor-owned / identity-level).
     frozen_params: tuple[str, ...] = ("n_frames", "anim_speed")
+
+    # ── Advisor (user notes → breeding guidance via the Hermes LLM) ──
+    advisor_enabled: bool = True
+    advisor_timeout_s: float = 90.0
 
     def as_dict(self) -> dict:
         return asdict(self)

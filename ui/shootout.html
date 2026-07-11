@@ -103,6 +103,21 @@ try {
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pred { font-size: 11px; color: var(--muted); }
 
+  .notes {
+    width: 100%; min-height: 44px; resize: vertical;
+    background: var(--bg2); color: var(--text);
+    border: 1px solid var(--border); border-radius: var(--radius-s);
+    padding: 6px 8px; font-size: 12px; font-family: inherit; line-height: 1.4;
+  }
+  .notes:focus { outline: none; border-color: var(--accent); }
+  .notes::placeholder { color: var(--muted2); }
+
+  #guidance-bar {
+    display: none; padding: 6px 18px; font-size: 12px;
+    color: var(--accent2); background: var(--bg1);
+    border-bottom: 1px solid var(--border); font-style: italic;
+  }
+
   .stars { display: flex; gap: 2px; }
   .stars span {
     font-size: 22px; cursor: pointer; color: var(--muted2);
@@ -132,6 +147,7 @@ try {
 </header>
 
 <div id="status-bar">idle</div>
+<div id="guidance-bar"></div>
 
 <div id="empty">
   <div class="big">🧬</div>
@@ -147,8 +163,19 @@ const $ = (id) => document.getElementById(id);
 let SESSION = null;      // session_id
 let SURVIVORS = [];      // latest generation's clips
 let RATINGS = {};        // genome_id -> stars (this generation)
+let NOTES = {};          // genome_id -> pros/cons text (this generation)
 let GENERATION = null;
 let BUSY = false;
+
+function setGuidance(g) {
+  const el = $('guidance-bar');
+  if (g && g.summary) {
+    el.textContent = `🧭 advisor: ${g.summary}`;
+    el.style.display = '';
+  } else {
+    el.style.display = 'none';
+  }
+}
 
 // ── status helpers ─────────────────────────────────────────────
 function setStatus(msg, cls) {
@@ -235,6 +262,13 @@ function renderGrid() {
     methods.textContent = `${sv.node_count} nodes: ` + (sv.methods || []).join(' ← ');
     body.appendChild(methods);
 
+    const notes = document.createElement('textarea');
+    notes.className = 'notes';
+    notes.placeholder = 'pros / cons — what works, what to change (steers the next generation)';
+    notes.value = NOTES[sv.genome_id] || sv.notes || '';
+    notes.oninput = () => { NOTES[sv.genome_id] = notes.value; };
+    body.appendChild(notes);
+
     const row2 = document.createElement('div');
     row2.className = 'clip-row';
     row2.appendChild(starWidget(sv.genome_id, RATINGS[sv.genome_id] || sv.rating || 0));
@@ -297,6 +331,8 @@ async function newSession() {
   GENERATION = null;
   SURVIVORS = [];
   RATINGS = {};
+  NOTES = {};
+  setGuidance(null);
   localStorage.setItem('shootout-session', SESSION);
   setTaste(s.taste, s.n_ratings_total);
   setStatus('session ready — hit Generate');
@@ -312,7 +348,13 @@ async function resumeSession(sid) {
   SURVIVORS = s.survivors || [];
   GENERATION = s.generations.length ? s.generation : null;
   RATINGS = {};
-  for (const sv of SURVIVORS) if (sv.rating) RATINGS[sv.genome_id] = sv.rating;
+  NOTES = {};
+  for (const sv of SURVIVORS) {
+    if (sv.rating) RATINGS[sv.genome_id] = sv.rating;
+    if (sv.notes) NOTES[sv.genome_id] = sv.notes;
+  }
+  const lastGen = s.generations[s.generations.length - 1];
+  setGuidance(lastGen && lastGen.guidance);
   setTaste(s.taste, s.n_ratings_total);
   setStatus(SURVIVORS.length ? 'session resumed' : 'session resumed — hit Generate');
   renderGrid();
@@ -344,7 +386,10 @@ async function runGeneration() {
   refreshHeader();
   const isEvolve = SURVIVORS.length > 0;
   const body = {session_id: SESSION};
-  if (isEvolve) body.ratings = RATINGS;   // unrated clips are skipped
+  if (isEvolve) {
+    body.ratings = RATINGS;   // unrated clips are skipped
+    body.notes = NOTES;       // pros/cons → advisor → breeding guidance
+  }
   setStatus(isEvolve ? 'breeding next generation…' : 'generating…', 'busy');
   try {
     const r = await fetch(`/api/shootout/${isEvolve ? 'evolve' : 'generate'}`, {
@@ -357,7 +402,12 @@ async function runGeneration() {
     SURVIVORS = result.survivors || [];
     GENERATION = result.generation;
     RATINGS = {};
-    for (const sv of SURVIVORS) if (sv.rating) RATINGS[sv.genome_id] = sv.rating;
+    NOTES = {};
+    for (const sv of SURVIVORS) {
+      if (sv.rating) RATINGS[sv.genome_id] = sv.rating;
+      if (sv.notes) NOTES[sv.genome_id] = sv.notes;
+    }
+    setGuidance(result.guidance);
     setStatus(`generation ${result.generation}: ${SURVIVORS.length} alive`
       + ` (${result.rendered} rendered, ${result.dead} dead) — rate & evolve`);
     renderGrid();

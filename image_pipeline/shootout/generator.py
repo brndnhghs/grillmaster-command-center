@@ -22,6 +22,29 @@ from .config import ShootoutConfig, DEFAULT_CONFIG
 _UNSAMPLED_NAME_FRAGMENTS = ("path", "url", "file", "prompt")
 
 
+@dataclass
+class SamplingBias:
+    """Steers sampling without changing the gene pool itself. Built from
+    user notes by advisor.extract_guidance (or left default)."""
+    prefer_methods: set = field(default_factory=set)
+    avoid_methods: set = field(default_factory=set)
+    prefer_categories: set = field(default_factory=set)
+    avoid_categories: set = field(default_factory=set)
+    complexity: float = 0.0   # -1 shrink … +1 grow (skews the size budget)
+
+    def weight(self, pool: "GenePool", method_id: str) -> float:
+        d = pool.defs[method_id]
+        if method_id in self.avoid_methods or \
+                d.get("category") in self.avoid_categories:
+            return 0.0
+        w = 1.0
+        if method_id in self.prefer_methods:
+            w *= 4.0
+        if d.get("category") in self.prefer_categories:
+            w *= 2.0
+        return w
+
+
 def _port_compat() -> dict[str, set[str]]:
     """dst_type -> set of src_types it accepts (lowercase), from the registry.
 
@@ -69,6 +92,13 @@ class GenePool:
 
     def wireable_params(self, method_id: str) -> list[str]:
         return list(self.defs[method_id].get("param_ports") or [])
+
+    def driver_targets(self, method_id: str) -> list[str]:
+        """Ports a scalar driver can legally feed: auto param ports plus
+        declared scalar structural inputs (speed/rate/… on sims)."""
+        d = self.defs[method_id]
+        return self.wireable_params(method_id) + \
+            [p for p, t in _declared_ports(d) if t == "scalar"]
 
 
 _POOL_CACHE: dict[tuple, GenePool] = {}
@@ -118,6 +148,16 @@ def _declared_ports(d: dict) -> list[tuple[str, str]]:
     return [(p, t) for p, t in (d.get("inputs") or {}).items() if p not in param_ports]
 
 
+_FILLABLE_TYPES = ("image", "field", "mask", "particles", "colormap")
+
+
+def _fillable_ports(d: dict) -> list[tuple[str, str]]:
+    """Structural ports the backward walk can feed (scalar ports are driver
+    targets, not chain continuations — ~1/3 of image producers declare only
+    scalar inputs and would otherwise dead-end every chain)."""
+    return [(p, t) for p, t in _declared_ports(d) if t in _FILLABLE_TYPES]
+
+
 def _is_needy(d: dict) -> bool:
     """True when the node is useless without wired inputs (pure combiner —
     every declared port is an a/b merge port)."""
@@ -126,8 +166,15 @@ def _is_needy(d: dict) -> bool:
 
 
 def _pick_producer(pool: GenePool, cfg: ShootoutConfig, rng: random.Random,
-                   dst_type: str, leaf_only: bool) -> str | None:
-    """Weighted pick of a node whose output feeds dst_type."""
+                   dst_type: str, leaf_only: bool,
+                   bias: SamplingBias | None = None,
+                   prefer_continuation: bool = False) -> str | None:
+    """Weighted pick of a node whose output feeds dst_type.
+
+    prefer_continuation boosts nodes that themselves have structural input
+    ports, so chains keep growing while size budget remains — without it,
+    backbones die at the first pure source and graphs stall at ~3 nodes.
+    """
     cands = []
     weights = []
     universe = pool.image_producers if dst_type == "image" else \
@@ -143,11 +190,40 @@ def _pick_producer(pool: GenePool, cfg: ShootoutConfig, rng: random.Random,
             continue
         if leaf_only and _is_needy(d):
             continue
-        cands.append(mid)
-        weights.append(cfg.time_varying_weight if d.get("is_time_varying") else 1.0)
+        w = cfg.time_varying_weight if d.get("is_time_varying") else 1.0
+        if prefer_continuation and _fillable_ports(d):
+            w *= cfg.continuation_weight
+        if bias is not None:
+            w *= bias.weight(pool, mid)
+        if w > 0:
+            cands.append(mid)
+            weights.append(w)
     if not cands:
+        if bias is not None:   # avoid-lists filtered everything — relax them
+            return _pick_producer(pool, cfg, rng, dst_type, leaf_only,
+                                  None, prefer_continuation)
         return None
     return rng.choices(cands, weights=weights, k=1)[0]
+
+
+# Base size-budget distribution (extra nodes beyond the terminal). Heavier
+# mid/tail than a flat draw — the sampler should regularly reach 4–8 node
+# graphs and occasionally larger. Sizes past the list get a small constant
+# tail, so raising max_depth in config directly unlocks bigger graphs.
+_BUDGET_BASE = [1.0, 3.0, 4.0, 4.0, 3.0, 2.5, 2.0, 1.5, 1.2, 1.0, 0.8, 0.6]
+
+
+def sample_budget(cfg: ShootoutConfig, rng: random.Random,
+                  complexity: float = 0.0) -> int:
+    """Draw the extra-node budget; complexity in [-1, 1] tilts the whole
+    distribution toward bigger (+) or smaller (-) graphs."""
+    n = max(cfg.max_depth, 1)
+    weights = [
+        (_BUDGET_BASE[i] if i < len(_BUDGET_BASE) else 0.4)
+        * math.exp(0.6 * complexity * i)
+        for i in range(n)
+    ]
+    return rng.choices(range(n), weights=weights, k=1)[0]
 
 
 def sample_params(pool: GenePool, cfg: ShootoutConfig, rng: random.Random,
@@ -232,7 +308,8 @@ def new_genome_id() -> str:
     return f"g-{uuid.uuid4().hex[:8]}"
 
 
-def random_graph(pool: GenePool, cfg: ShootoutConfig, rng: random.Random) -> dict:
+def random_graph(pool: GenePool, cfg: ShootoutConfig, rng: random.Random,
+                 bias: SamplingBias | None = None) -> dict:
     """Sample one wild-but-type-plausible graph (nodes + edges)."""
     nodes: list[dict] = []
     edges: list[dict] = []
@@ -250,10 +327,7 @@ def random_graph(pool: GenePool, cfg: ShootoutConfig, rng: random.Random) -> dic
         })
         return nid
 
-    # Extra-node budget beyond the terminal, biased toward 2–4 node graphs
-    # (flat randint left >half the pool as single nodes).
-    depth_weights = [1, 3, 3, 2, 2, 1][:cfg.max_depth]
-    budget = [rng.choices(range(len(depth_weights)), weights=depth_weights, k=1)[0]]
+    budget = [sample_budget(cfg, rng, bias.complexity if bias else 0.0)]
 
     def fill_inputs(nid: str, method_id: str) -> None:
         d = pool.defs[method_id]
@@ -268,7 +342,9 @@ def random_graph(pool: GenePool, cfg: ShootoutConfig, rng: random.Random) -> dic
             if budget[0] <= 0 or rng.random() > p:
                 continue
             budget[0] -= 1
-            src_mid = _pick_producer(pool, cfg, rng, ptype, leaf_only=budget[0] <= 0)
+            src_mid = _pick_producer(pool, cfg, rng, ptype,
+                                     leaf_only=budget[0] <= 0, bias=bias,
+                                     prefer_continuation=budget[0] > 0)
             if src_mid is None:
                 budget[0] += 1
                 continue
@@ -279,7 +355,9 @@ def random_graph(pool: GenePool, cfg: ShootoutConfig, rng: random.Random) -> dic
             fill_inputs(src_id, src_mid)
 
     terminal_mid = _pick_producer(pool, cfg, rng, "image",
-                                  leaf_only=budget[0] <= 0) or rng.choice(pool.terminals)
+                                  leaf_only=budget[0] <= 0, bias=bias,
+                                  prefer_continuation=budget[0] > 0) \
+        or rng.choice(pool.terminals)
     terminal_id = add_node(terminal_mid, has_image_input=False, render=True)
     fill_inputs(terminal_id, terminal_mid)
 
@@ -292,18 +370,23 @@ def random_graph(pool: GenePool, cfg: ShootoutConfig, rng: random.Random) -> dic
         if n["id"] in fed:
             n["params"] = sample_params(pool, cfg, rng, n["method_id"], True)
 
-    # Optional scalar drivers (LFO → param etc., plan §6.2)
-    if pool.scalar_drivers and rng.random() < cfg.p_driver:
+    # Optional scalar drivers (LFO → param etc., plan §6.2). Repeated draw —
+    # a complex graph can carry several animated params, not at most one.
+    while pool.scalar_drivers and rng.random() < cfg.p_driver:
         targets = [(n, p) for n in list(nodes)
-                   for p in pool.wireable_params(n["method_id"])
-                   if p not in cfg.frozen_params]
-        if targets:
-            tgt_node, tgt_param = rng.choice(targets)
-            drv_mid = rng.choice(pool.scalar_drivers)
-            drv_port = pool.output_port_for(drv_mid, "scalar") or "value"
-            drv_id = add_node(drv_mid, has_image_input=False)
-            edges.append({"src_node": drv_id, "src_port": drv_port,
-                          "dst_node": tgt_node["id"], "dst_port": tgt_param})
+                   if n["method_id"] not in pool.scalar_drivers
+                   for p in pool.driver_targets(n["method_id"])
+                   if p not in cfg.frozen_params
+                   and not any(e["dst_node"] == n["id"] and e["dst_port"] == p
+                               for e in edges)]
+        if not targets:
+            break
+        tgt_node, tgt_param = rng.choice(targets)
+        drv_mid = rng.choice(pool.scalar_drivers)
+        drv_port = pool.output_port_for(drv_mid, "scalar") or "value"
+        drv_id = add_node(drv_mid, has_image_input=False)
+        edges.append({"src_node": drv_id, "src_port": drv_port,
+                      "dst_node": tgt_node["id"], "dst_port": tgt_param})
 
     _auto_layout(nodes, edges)
     return {"version": 1, "name": "", "nodes": nodes, "edges": edges}
@@ -312,12 +395,13 @@ def random_graph(pool: GenePool, cfg: ShootoutConfig, rng: random.Random) -> dic
 def random_genome(pool: GenePool | None = None,
                   cfg: ShootoutConfig = DEFAULT_CONFIG,
                   rng: random.Random | None = None,
-                  origin: str = "random") -> dict:
+                  origin: str = "random",
+                  bias: SamplingBias | None = None) -> dict:
     """Emit one genome envelope (plan §5) around a freshly sampled graph."""
     pool = pool or build_gene_pool(cfg)
     rng = rng or random.Random()
     gid = new_genome_id()
-    graph = random_graph(pool, cfg, rng)
+    graph = random_graph(pool, cfg, rng, bias)
     graph["name"] = gid
     return {
         "genome_id": gid,

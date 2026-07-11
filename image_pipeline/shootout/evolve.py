@@ -11,8 +11,8 @@ import uuid
 
 from .config import ShootoutConfig, DEFAULT_CONFIG
 from .generator import (
-    GenePool, build_gene_pool, new_genome_id, random_genome,
-    sample_params, _auto_layout,
+    GenePool, SamplingBias, build_gene_pool, new_genome_id, random_genome,
+    sample_params, _auto_layout, _fillable_ports, _pick_producer,
 )
 from .repair import repair_genome
 
@@ -150,6 +150,90 @@ def _op_remove_node(graph: dict, pool: GenePool, cfg: ShootoutConfig,
                       if victim["id"] not in (e["src_node"], e["dst_node"])]
 
 
+def _op_insert_filter(graph: dict, pool: GenePool, cfg: ShootoutConfig,
+                      rng: random.Random) -> None:
+    """Grow the backbone: splice an image-processing node into an existing
+    image edge (src → [new filter] → dst), or feed an unfed image port."""
+    nodes_by_id = {n["id"]: n for n in graph["nodes"]}
+    filters = [m for m in pool.image_producers
+               if any(t == "image" for _, t in _fillable_ports(pool.defs[m]))]
+    if not filters:
+        return
+    mid = rng.choice(filters)
+    d = pool.defs[mid]
+    in_port = next((p for p, t in _fillable_ports(d)
+                    if t == "image" and p == "image_in"),
+                   next(p for p, t in _fillable_ports(d) if t == "image"))
+    nid = f"f{uuid.uuid4().hex[:6]}"
+    new_node = {"id": nid, "method_id": mid,
+                "params": sample_params(pool, cfg, rng, mid, True),
+                "x": 0, "y": 0, "render": False}
+
+    img_edges = []
+    for e in graph["edges"]:
+        dst = nodes_by_id.get(e["dst_node"])
+        if dst is None or e["src_node"] not in nodes_by_id:
+            continue
+        t = (pool.defs[dst["method_id"]].get("inputs") or {}).get(e["dst_port"])
+        if t == "image":
+            img_edges.append(e)
+
+    graph["nodes"].append(new_node)
+    if img_edges:
+        e = rng.choice(img_edges)
+        graph["edges"].append({"src_node": e["src_node"], "src_port": e["src_port"],
+                               "dst_node": nid, "dst_port": in_port})
+        e["src_node"] = nid
+        e["src_port"] = pool.output_port_for(mid, "image")
+        return
+    fed = {(e["dst_node"], e["dst_port"]) for e in graph["edges"]}
+    open_img = [(n, p) for n in graph["nodes"] if n["id"] != nid
+                for p, t in _fillable_ports(pool.defs[n["method_id"]])
+                if t == "image" and (n["id"], p) not in fed]
+    if open_img:
+        tgt, port = rng.choice(open_img)
+        graph["edges"].append({"src_node": nid,
+                               "src_port": pool.output_port_for(mid, "image"),
+                               "dst_node": tgt["id"], "dst_port": port})
+        return
+    # No image wiring anywhere (e.g. a lone scalar-input sim) — append the
+    # filter AFTER the current terminal as a post-process. Always legal, so
+    # every graph can grow regardless of its input ports.
+    terminal = next((n for n in graph["nodes"] if n.get("render")), None)
+    if terminal is None or terminal is new_node:
+        graph["nodes"].pop()
+        return
+    graph["edges"].append({"src_node": terminal["id"],
+                           "src_port": pool.output_port_for(
+                               terminal["method_id"], "image") or "image",
+                           "dst_node": nid, "dst_port": in_port})
+    terminal["render"] = False
+    new_node["render"] = True
+
+
+def _op_add_branch(graph: dict, pool: GenePool, cfg: ShootoutConfig,
+                   rng: random.Random) -> None:
+    """Grow sideways: feed a random unfed structural port (field/mask/
+    particles/image) with a fresh producer node."""
+    fed = {(e["dst_node"], e["dst_port"]) for e in graph["edges"]}
+    open_ports = [(n, p, t) for n in graph["nodes"]
+                  for p, t in _fillable_ports(pool.defs[n["method_id"]])
+                  if (n["id"], p) not in fed]
+    if not open_ports:
+        return
+    tgt, port, ptype = rng.choice(open_ports)
+    mid = _pick_producer(pool, cfg, rng, ptype, leaf_only=True)
+    if mid is None:
+        return
+    nid = f"b{uuid.uuid4().hex[:6]}"
+    graph["nodes"].append({"id": nid, "method_id": mid,
+                           "params": sample_params(pool, cfg, rng, mid, False),
+                           "x": 0, "y": 0, "render": False})
+    graph["edges"].append({"src_node": nid,
+                           "src_port": pool.output_port_for(mid, ptype),
+                           "dst_node": tgt["id"], "dst_port": port})
+
+
 def _op_rewire(graph: dict, pool: GenePool, cfg: ShootoutConfig,
                rng: random.Random) -> None:
     if not graph["edges"]:
@@ -175,20 +259,27 @@ def _op_rewire(graph: dict, pool: GenePool, cfg: ShootoutConfig,
 _MUTATION_OPS = [
     (_op_param_jitter, 3.0),
     (_op_node_swap, 2.0),
+    (_op_insert_filter, 1.5),   # growth ops — favorites gain structure
+    (_op_add_branch, 1.5),      # across generations (no size cap)
     (_op_add_driver, 1.0),
-    (_op_remove_node, 1.0),
+    (_op_remove_node, 0.7),
     (_op_rewire, 1.0),
 ]
 
+# Gentle mode: structure is protected (advisor "keep this, tweak params").
+_GENTLE_OPS = [(_op_param_jitter, 1.0)]
+
 
 def mutate(parent: dict, pool: GenePool, cfg: ShootoutConfig,
-           rng: random.Random, generation: int) -> dict | None:
+           rng: random.Random, generation: int,
+           gentle: bool = False) -> dict | None:
     """1–2 mutation ops + occasional seed jitter → repaired child or None."""
     import copy
     graph = copy.deepcopy(parent["graph"])
+    op_table = _GENTLE_OPS if gentle else _MUTATION_OPS
     lo, hi = cfg.mutations_per_offspring
-    ops = rng.choices([op for op, _ in _MUTATION_OPS],
-                      weights=[w for _, w in _MUTATION_OPS],
+    ops = rng.choices([op for op, _ in op_table],
+                      weights=[w for _, w in op_table],
                       k=rng.randint(lo, hi))
     for op in ops:
         op(graph, pool, cfg, rng)
@@ -293,15 +384,24 @@ def select_parents(rated: list[dict], cfg: ShootoutConfig) -> tuple[list[dict], 
 def next_generation(rated: list[dict], generation: int,
                     pool: GenePool | None = None,
                     cfg: ShootoutConfig = DEFAULT_CONFIG,
-                    rng: random.Random | None = None) -> list[dict]:
+                    rng: random.Random | None = None,
+                    guidance: dict | None = None) -> list[dict]:
     """Compose the next candidate pool: exploit (mutation/crossover of
-    rating-weighted parents) + explore (fresh randoms). Returns
-    cfg.render_pool unrendered, repaired genomes."""
+    rating-weighted parents) + explore (fresh randoms). Advisor guidance
+    (from user notes) drops/protects specific parents and biases all fresh
+    sampling. Returns cfg.render_pool unrendered, repaired genomes."""
+    from .advisor import bias_from_guidance
     from .repair import sample_valid_genome
     pool = pool or build_gene_pool(cfg)
     rng = rng or random.Random()
 
-    parents, weights = select_parents(rated, cfg)
+    guidance = guidance or {}
+    bias = bias_from_guidance(guidance)
+    protect = set(guidance.get("protect_genomes") or [])
+    drop = set(guidance.get("drop_genomes") or [])
+
+    breedable = [g for g in rated if g["genome_id"] not in drop]
+    parents, weights = select_parents(breedable, cfg)
     n_total = cfg.render_pool
     n_explore = max(1, round(cfg.explore_ratio * n_total)) if parents else n_total
 
@@ -312,17 +412,21 @@ def next_generation(rated: list[dict], generation: int,
             pa, pb = rng.choices(parents, weights=weights, k=2)
             if pa is pb:
                 pb = rng.choices(parents, weights=weights, k=1)[0]
-            child = crossover(pa, pb, pool, cfg, rng, generation)
+            if pa["genome_id"] in protect:   # protected structure: no splicing
+                child = mutate(pa, pool, cfg, rng, generation, gentle=True)
+            else:
+                child = crossover(pa, pb, pool, cfg, rng, generation)
         if child is None and parents:
             parent = rng.choices(parents, weights=weights, k=1)[0]
-            child = mutate(parent, pool, cfg, rng, generation)
+            child = mutate(parent, pool, cfg, rng, generation,
+                           gentle=parent["genome_id"] in protect)
         if child is None:
-            child = sample_valid_genome(pool, cfg, rng, origin="random")
+            child = sample_valid_genome(pool, cfg, rng, origin="random", bias=bias)
             child["generation"] = generation
         out.append(child)
 
     while len(out) < n_total:
-        g = sample_valid_genome(pool, cfg, rng, origin="explorer")
+        g = sample_valid_genome(pool, cfg, rng, origin="explorer", bias=bias)
         g["generation"] = generation
         out.append(g)
 
