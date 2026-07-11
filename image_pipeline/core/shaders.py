@@ -396,8 +396,8 @@ _register("mandelbrot_gpu", "Mandelbrot set (client-GPU twin of node 33)", "proc
 void main() {
     vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);
     // p1 = zoom (0.5 = full view), p2 = color_shift, p3 = center_x, p4 = center_y.
-    float zoom = exp((u_params.x - 0.5) * 6.0);
-    vec2 ctr = vec2(u_params.z, u_params.w);
+    float zoom = u_zoom;
+    vec2 ctr = vec2(u_center_x, u_center_y);
     vec2 c = ctr + uv * zoom;
     vec2 z = vec2(0.0);
     float n = 0.0;
@@ -410,17 +410,24 @@ void main() {
         n += 1.0;
     }
     float t = (n >= MAXI - 0.5) ? 0.0 : smooth_iter(n, last2, MAXI);
-    f_color = vec4(fractal_palette(t + u_params.y), 1.0);
+    f_color = vec4(fractal_palette(t + u_color_shift), 1.0);
 }
-''')
+''',
+    uniforms={
+    "zoom": {"glsl": "float", "min": 0.05, "max": 20.0, "default": 1.0, "description": "zoom (0.5=1x full view)"},
+    "color_shift": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "palette color offset"},
+    "center_x": {"glsl": "float", "min": -1.5, "max": 1.5, "default": 0.5, "description": "center x"},
+    "center_y": {"glsl": "float", "min": -1.5, "max": 1.5, "default": 0.5, "description": "center y"}
+}
+    )
 
 _register("burning_ship_gpu", "Burning Ship fractal (client-GPU twin of node 51)", "procedural",
           _FRACTAL_HELPERS + '''
 void main() {
     vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);
     // p1 = zoom (0.5 = full view), p2 = color_shift, p3 = center_x, p4 = center_y.
-    float zoom = exp((u_params.x - 0.5) * 6.0);
-    vec2 ctr = vec2(u_params.z, u_params.w);
+    float zoom = exp((u_color_speed - 0.5) * 6.0);
+    vec2 ctr = vec2(0.5, 0.5);
     vec2 c = ctr + uv * zoom;
     vec2 z = vec2(0.0);
     float n = 0.0;
@@ -434,16 +441,21 @@ void main() {
         n += 1.0;
     }
     float t = (n >= MAXI - 0.5) ? 0.0 : smooth_iter(n, last2, MAXI);
-    f_color = vec4(fractal_palette(t + u_params.y), 1.0);
+    f_color = vec4(fractal_palette(t + u_color_offset), 1.0);
 }
-''')
+''',
+    uniforms={
+    "color_speed": {"glsl": "float", "min": 0.0, "max": 2.0, "default": 0.5, "description": "palette color speed"},
+    "color_offset": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "palette color offset"}
+}
+    )
 
 _register("newton_gpu", "Newton fractal basins (client-GPU twin of node 52)", "procedural",
           _FRACTAL_HELPERS + '''
 void main() {
     vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);
     // p1 = color_speed, p2 = color_offset, p3 = zoom (0.5 = full view), p4 = unused.
-    vec2 z = uv * exp((u_params.z - 0.5) * 5.0) * 2.2;
+    vec2 z = uv * 2.2;
     const float MAXI = 60.0;
     float n = 0.0;
     for (int i = 0; i < 60; i++) {
@@ -461,17 +473,22 @@ void main() {
     // Color by nearest of the 3 cube roots of unity (angle quantization).
     float ang = atan(z.y, z.x);
     float root = floor((ang + 3.14159) / (2.0 * 3.14159 / 3.0));
-    float t = mod(root / 3.0 + u_params.y + 0.15 * n / MAXI, 1.0);
-    f_color = vec4(fractal_palette(t * (0.6 + 0.4 * u_params.x)), 1.0);
+    float t = mod(root / 3.0 + u_color_offset + 0.15 * n / MAXI, 1.0);
+    f_color = vec4(fractal_palette(t * (0.6 + 0.4 * u_color_speed)), 1.0);
 }
-''')
+''',
+    uniforms={
+    "color_speed": {"glsl": "float", "min": 0.0, "max": 2.0, "default": 0.5, "description": "palette color speed"},
+    "color_offset": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "palette color offset"}
+}
+    )
 
 _register("sierpinski_gpu", "Sierpinski carpet (client-GPU twin of node 67)", "procedural",
           _FRACTAL_HELPERS + '''
 void main() {
     vec2 uv = v_uv;
     // p1 = depth (subdivisions), p2 = color_shift, p3/p4 unused (reserved).
-    float depth = clamp(floor(u_params.x * 7.0) + 1.0, 1.0, 7.0);
+    float depth = clamp(u_depth, 1.0, 7.0);
     // Tiling coordinates in [0,1] space.
     vec2 p = uv;
     float hole = 0.0;
@@ -482,19 +499,23 @@ void main() {
         if (cell.x == 1.0 && cell.y == 1.0) { hole = 1.0; break; }
         p = fract(p * 3.0);
     }
-    float t = fract(0.15 * (depth) + u_params.y + 0.3 * uv.x + 0.2 * uv.y);
+    float t = fract(0.15 * (depth) + 0.5 + 0.3 * uv.x + 0.2 * uv.y);
     vec3 col = (hole > 0.5) ? vec3(0.04) : fractal_palette(t);
     f_color = vec4(col, 1.0);
 }
-''')
+''',
+    uniforms={
+    "depth": {"glsl": "float", "min": 1.0, "max": 7.0, "default": 4.0, "description": "subdivision depth"}
+}
+    )
 
 _register("lyapunov_gpu", "Lyapunov exponent map (client-GPU twin of node 69)", "procedural",
           _FRACTAL_HELPERS + '''
 void main() {
     vec2 uv = v_uv;
     // p1 = r_min, p2 = r_max, p3 = color_mode(0=lyapunov), p4 = color_shift.
-    vec2 rmin = vec2(u_params.x, u_params.x);
-    vec2 rmax = vec2(u_params.y, u_params.y);
+    vec2 rmin = vec2(u_r_min, u_r_min);
+    vec2 rmax = vec2(u_r_max, u_r_max);
     vec2 r = mix(rmin, rmax, uv);
     // Logistic-map A/B perturbation (ABAB...), 8 chars.
     float lambda = 0.0;
@@ -512,10 +533,15 @@ void main() {
     }
     lambda = lambda / MEAS;
     float t = clamp(0.5 + 0.5 * lambda / 2.0, 0.0, 1.0);
-    t = (u_params.z > 0.5) ? fract(t + u_params.w) : t;
+    t = t;
     f_color = vec4(fractal_palette(t), 1.0);
 }
-''')
+''',
+    uniforms={
+    "r_min": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "lower logistic r"},
+    "r_max": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "upper logistic r"}
+}
+    )
 
 _register("domain_warp", "Domain-warped fractal noise", "procedural", '''
 void main() {
@@ -1107,12 +1133,12 @@ void main() {
     // u_params.x = direction (radians, 0.5 = 0 rad; maps -PI..PI),
     // u_params.y = center_x (0.5 = middle), u_params.z = center_y,
     // u_params.w = gradient_type (0=linear,1=radial,2=concentric,3=angular,4=diamond).
-    float dir = (u_params.x - 0.5) * 6.2831853;
-    vec2 ctr = vec2(u_params.y, u_params.z);
+    float dir = (u_cx - 0.5) * 6.2831853;
+    vec2 ctr = vec2(u_cy, 0.5);
     vec2 p = v_uv - ctr;
 
     float t;
-    int gtype = int(floor(u_params.w * 4.999));
+    int gtype = int(floor(0.5 * 4.999));
     if (gtype == 1) {                       // radial
         t = length(p);
     } else if (gtype == 2) {                // concentric (ring index)
@@ -1133,7 +1159,12 @@ void main() {
     vec3 col = mix(c1, c2, t);
     f_color = vec4(col, 1.0);
 }
-''')
+''',
+    uniforms={
+    "cx": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "center x"},
+    "cy": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "center y"}
+}
+    )
 
 _register("false_color_gpu",
           "False-color IR remap (client-GPU twin of node 77)",
@@ -1181,10 +1212,10 @@ _register("palette_gpu",
 void main() {
     // u_params.x = n_colors (2..32), u_params.y = saturation (0.5=auto),
     // u_params.z = hue_offset (0..1), u_params.w = value (0.5=auto).
-    float ncols = floor(2.0 + u_params.x * 30.0);
-    float hueOff = u_params.z;
-    float sat = (u_params.y <= 0.0) ? 0.75 : clamp(u_params.y, 0.0, 1.0);
-    float val = (u_params.w <= 0.0) ? 0.95 : clamp(u_params.w, 0.0, 1.0);
+    float ncols = floor(2.0 + u_hue_offset * 30.0);
+    float hueOff = u_value;
+    float sat = (u_saturation <= 0.0) ? 0.75 : clamp(u_saturation, 0.0, 1.0);
+    float val = 0.95;
 
     // Arrange the hue ramp as a vertical band of swatches across the canvas.
     int col = int(floor(v_uv.x * ncols));
@@ -1201,7 +1232,13 @@ void main() {
     col3 = mix(vec3(dot(col3, vec3(0.299,0.587,0.114))), col3, sat) * v;
     f_color = vec4(mix(vec3(0.05), col3, band), 1.0);
 }
-''')
+''',
+    uniforms={
+    "hue_offset": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "hue offset"},
+    "saturation": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "saturation"},
+    "value": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "value (kept for parity)"}
+}
+    )
 
 
 
@@ -1226,10 +1263,10 @@ void main() {
     // u_params.y = n-mode (0.5 -> 3.0),
     // u_params.z = rotation (0.5 -> 0 rad, range -PI..PI),
     // u_params.w = phase shimmer (0.5 -> 0 rad, range -PI..PI).
-    float m = 0.5 + u_params.x * 11.0;
-    float n = 0.5 + u_params.y * 11.0;
-    float rot_ang = (u_params.z - 0.5) * 6.2831853;
-    float ph = (u_params.w - 0.5) * 6.2831853;
+    float m = 0.5 + u_m_start * 11.0;
+    float n = 0.5 + u_n_start * 11.0;
+    float rot_ang = (u_rotation_speed - 0.5) * 6.2831853;
+    float ph = (u_phase_speed_x - 0.5) * 6.2831853;
 
     // Centered, normalized coords in [-1, 1] (matches node: xn = X/(W/2)).
     vec2 p = (v_uv - 0.5) * 2.0;
@@ -1248,7 +1285,14 @@ void main() {
     gray = clamp(gray + nodal * 0.35, 0.0, 1.0);
     f_color = vec4(vec3(gray), 1.0);
 }
-''')
+''',
+    uniforms={
+    "m_start": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "m mode"},
+    "n_start": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "n mode"},
+    "rotation_speed": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "plate rotation speed"},
+    "phase_speed_x": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "shimmer phase"}
+}
+    )
 
 _register("moire_gpu",
           "Moiré interference (client-GPU twin of node 164)",
@@ -1257,10 +1301,10 @@ void main() {
     // u_params.x = mode (0=radial,1=linear,2=spiral,3=hex),
     // u_params.y = speed1 (0.5 -> ~1.0), u_params.z = speed2 (0.5 -> ~1.28),
     // u_params.w = frequency (0.5 -> 20).
-    int mode = int(floor(u_params.x * 3.999));
-    float s1 = 0.1 + u_params.y * 1.9;      // ~1.0 at default
-    float s2 = 0.1 + u_params.z * 1.9;      // ~1.28 at default
-    float freq = 5.0 + u_params.w * 45.0;   // 20 at default
+    int mode = int(floor(u_mode * 3.999));
+    float s1 = 0.1 + u_speed1 * 1.9;      // ~1.0 at default
+    float s2 = 0.1 + u_speed2 * 1.9;      // ~1.28 at default
+    float freq = 5.0 + u_frequency * 45.0;   // 20 at default
     float t = u_time * 0.05;               // matches node: t = fr*0.05
 
     vec2 res = u_resolution;
@@ -1293,7 +1337,14 @@ void main() {
     float g = clamp(g1 * g2 * 2.0, 0.0, 1.0);
     f_color = vec4(vec3(g), 1.0);
 }
-''')
+''',
+    uniforms={
+    "mode": {"glsl": "float", "min": 0.0, "max": 3.0, "default": 0.0, "description": "grating mode (0-3)"},
+    "speed1": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "speed 1"},
+    "speed2": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "speed 2"},
+    "frequency": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "grating frequency"}
+}
+    )
 
 
 _register("dunes_gpu",
@@ -1306,8 +1357,8 @@ void main() {
     // live-preview defaults; CPU export is authoritative — two-tier precision).
     // Closed-form wave superposition of (uv, t) -> exact parity preview, no
     // seeded-layout divergence (same family as 125 Chladni / 164 Moiré).
-    float wind = 0.1 + u_params.x * 1.0;     // ~0.6 at neutral 0.5
-    float sed  = 0.1 + u_params.y * 1.4;     // ~0.8 at neutral 0.5
+    float wind = 0.1 + u_wind_strength * 1.0;     // ~0.6 at neutral 0.5
+    float sed  = 0.1 + u_sediment_supply * 1.4;     // ~0.8 at neutral 0.5
     float t = u_time * 0.05;                 // matches node: t = frame*0.04
 
     // Slowly rotating wind (node "evolve" mode) -> migrating, merging field.
@@ -1362,7 +1413,12 @@ void main() {
     }
     f_color = vec4(col, 1.0);
 }
-''')
+''',
+    uniforms={
+    "wind_strength": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "wind strength"},
+    "sediment_supply": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "sediment supply"}
+}
+    )
 
 # ── P0.6 field-eval client-GPU twins (continued) ──────────────────────────
 # Nodes 53 / 43 / 57 are closed-form functions of (uv, t) — exact parity
@@ -1393,8 +1449,8 @@ _register("metaballs_gpu",
           "procedural", _inferno_local('') + '''
 void main() {
     // u_params.x = isovalue (0.5 -> ~0.425), u_params.y = ball_speed (0.5 -> ~2.55).
-    float iso   = 0.05 + u_params.x * 0.75;
-    float speed = 0.1  + u_params.y * 4.9;
+    float iso   = 0.05 + u_isovalue * 0.75;
+    float speed = 0.1  + u_ball_speed * 4.9;
     float t = u_time * 0.05 * speed;
 
     // Closed-form soft metaball field from N orbiting balls (pure f(uv, t)).
@@ -1420,15 +1476,20 @@ void main() {
     col += edge * 0.35;
     f_color = vec4(clamp(col, 0.0, 1.0), 1.0);
 }
-''')
+''',
+    uniforms={
+    "isovalue": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "isosurface value"},
+    "ball_speed": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "ball orbit speed"}
+}
+    )
 
 _register("heatmap_gpu",
           "Density heatmap (client-GPU twin of node 43)",
           "procedural", _inferno_local('') + '''
 void main() {
     // u_params.x = sigma proxy (0.5 -> ~0.06), u_params.z = colormap_shift.
-    float sigma = 0.01 + u_params.x * 0.10;
-    float shift = u_params.z;
+    float sigma = 0.01 + u_sigma * 0.10;
+    float shift = u_colormap_shift;
     float t = u_time * 0.04;
 
     // Closed-form kernel-density estimate from K drifting gaussian clusters.
@@ -1447,7 +1508,12 @@ void main() {
     dens = fract(dens + shift);
     f_color = vec4(inferno(dens), 1.0);
 }
-''')
+''',
+    uniforms={
+    "sigma": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "gaussian sigma"},
+    "colormap_shift": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "colormap shift"}
+}
+    )
 
 _register("slitscan_gpu",
           "Slit-scan displacement (client-GPU twin of node 57)",
@@ -1461,9 +1527,9 @@ void main() {
     // u_params.x = amplitude (0.5 -> ~0.275), u_params.y = frequency
     // (0.5 -> ~0.25), u_params.z = slit_type (0=vertical,1=horizontal,
     // 2=radial,3=spiral,4=angular,5=diagonal).
-    int mode = int(floor(u_params.z * 6.999));
-    float amp  = 0.05 + u_params.x * 0.45;
-    float freq = 0.005 + u_params.y * 0.495;
+    int mode = int(floor(u_slit_type * 6.999));
+    float amp  = 0.05 + u_amplitude * 0.45;
+    float freq = 0.005 + u_frequency * 0.495;
     float t = u_time * 0.05;
 
     vec2 uv = v_uv;
@@ -1485,7 +1551,13 @@ void main() {
     vec3 col = mix(vec3(n), hsv2rgb(vec3(hue, 0.7, 0.9)), 0.5);
     f_color = vec4(col, 1.0);
 }
-''')
+''',
+    uniforms={
+    "amplitude": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "displacement amplitude"},
+    "frequency": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "slit frequency"},
+    "slit_type": {"glsl": "float", "min": 0.0, "max": 5.0, "default": 0.0, "description": "slit pattern (0-5)"}
+}
+    )
 
 # ── Water Caustics (node 312) client-GPU twin ──
 # Closed-form Jacobian caustics, same family as 125/164/172/53/43/57: every
@@ -1508,10 +1580,10 @@ void main() {
     // Decode real node params (0.5-neutral -> node defaults):
     //   p1 scale [1,16] 0.5->6.0 ; p2 caustic_gain [0.1,3] 0.5->1.2
     //   p3 sharpen [0.5,4] 0.5->1.6 ; p4 anim_speed [0.1,3] 0.5->1.0
-    float scale = 0.5 + u_params.x * 11.0;
-    float gain  = 0.1 + u_params.y * 2.2;
-    float sharp = 0.5 + u_params.z * 2.2;
-    float aspd  = 0.1 + u_params.w * 1.8;
+    float scale = 0.5 + u_scale * 11.0;
+    float gain  = 0.1 + u_caustic_gain * 2.2;
+    float sharp = 0.5 + u_sharpen * 2.2;
+    float aspd  = 0.1 + u_anim_speed * 1.8;
     float pht   = u_time * aspd;            // flow-mode phase advance
 
     // Pixel-centered, scale-normalized cartesian coords.
@@ -1557,7 +1629,14 @@ void main() {
     vec3 col = caustics_ocean(c, floor_);
     f_color = vec4(col, 1.0);
 }
-''')
+''',
+    uniforms={
+    "scale": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "caustic scale"},
+    "caustic_gain": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "caustic gain"},
+    "sharpen": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "sharpen exponent"},
+    "anim_speed": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "flow speed"}
+}
+    )
 
 
 # ── Domain Warping (node 311) client-GPU twin ──
@@ -1586,10 +1665,10 @@ void main() {
     // Decode real node params (0.5-neutral -> node defaults):
     //   p1 scale [1,12] 0.5->4.0 ; p2 warp_strength [0,8] 0.5->4.0
     //   p3 contrast [0.5,3] 0.5->1.25 ; p4 octaves [1,8] 0.5->4
-    float scale = 1.0 + u_params.x * 6.0;
-    float warp  = u_params.y * 8.0;
-    float contr = 0.5 + u_params.z * 1.5;
-    int oct = int(clamp(1.0 + u_params.w * 7.0, 1.0, 8.0));
+    float scale = 1.0 + u_scale * 6.0;
+    float warp  = u_warp_strength * 8.0;
+    float contr = 0.5 + u_contrast * 1.5;
+    int oct = int(clamp(1.0 + u_octaves * 7.0, 1.0, 8.0));
 
     vec2 p = (v_uv - 0.5) * scale;
     // Gentle time drift -> live preview evolves (canonical view at t=0).
@@ -1607,7 +1686,14 @@ void main() {
     vec3 col = inferno(val);
     f_color = vec4(clamp(col, 0.0, 1.0), 1.0);
 }
-''')
+''',
+    uniforms={
+    "scale": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "noise scale"},
+    "warp_strength": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "warp strength"},
+    "contrast": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "contrast"},
+    "octaves": {"glsl": "float", "min": 1.0, "max": 8.0, "default": 4.0, "description": "fbm octaves"}
+}
+    )
 
 
 # ── Curl-Noise Flow Field (node 314) client-GPU twin ──
@@ -1641,10 +1727,10 @@ void main() {
     // Decode real node params (0.5-neutral -> node defaults):
     //   p1 scale [1,12] 0.5->6.5 ; p2 octaves [1,6] 0.5->3
     //   p3 brightness [0.2,2] 0.5->1.1 ; p4 anim_mode [0,1] 0.5->drift
-    float scale = 1.0 + u_params.x * 11.0;
-    int oct = int(clamp(1.0 + u_params.y * 5.0, 1.0, 6.0));
-    float bright = 0.2 + u_params.z * 1.8;
-    float drift = step(0.5, u_params.w);   // 0=static, 1=drift
+    float scale = 1.0 + u_scale * 11.0;
+    int oct = int(clamp(1.0 + u_octaves * 5.0, 1.0, 6.0));
+    float bright = 0.2 + u_brightness * 1.8;
+    float drift = step(0.5, u_anim_mode);   // 0=static, 1=drift
 
     vec2 p = (v_uv - 0.5) * scale;
     vec2 pan = vec2(u_time * 0.6, u_time * 0.25) * drift;
@@ -1664,7 +1750,14 @@ void main() {
     vec3 col = hsv2rgb(vec3(hue, sat, val));
     f_color = vec4(clamp(col, 0.0, 1.0), 1.0);
 }
-''')
+''',
+    uniforms={
+    "scale": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "noise scale"},
+    "octaves": {"glsl": "float", "min": 1.0, "max": 6.0, "default": 3.0, "description": "fbm octaves"},
+    "brightness": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "brightness"},
+    "anim_mode": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "drift on/off"}
+}
+    )
 
 
 _register("shader_oil_gpu", "GPU oil painting simulation", "filter", _filter_shader('''
@@ -2156,8 +2249,8 @@ _register("worley_gpu", "Worley/cellular F1 noise (client-GPU twin of node 04)",
 vec2 h22(vec2 p){ p = fract(p*vec2(123.34,456.21)); p += dot(p,p+45.32); return fract(vec2(p.x*p.y, p.x+p.y)); }
 void main() {
     // u_params.x = jitter (0..1), u_params.y = cell density scale
-    float jitter = u_params.x;
-    float cells  = 4.0 + u_params.y * 14.0;
+    float jitter = u_jitter;
+    float cells  = 4.0 + u_fractal_gain * 14.0;
     vec2 st = v_uv * cells;
     vec2 g = floor(st), f = fract(st);
     float d = 8.0;
@@ -2170,16 +2263,21 @@ void main() {
     }
     f_color = vec4(inferno(clamp(d, 0.0, 1.0)), 1.0);
 }
-""")
+""",
+    uniforms={
+    "jitter": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "point jitter"},
+    "fractal_gain": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "cell density scale"}
+}
+    )
 
 _register("quasicrystal_gpu", "Quasicrystal wave superposition (client-GPU twin of node 02)", "procedural", _INFERNO + """
 float h11(float n){ return fract(sin(n*127.1)*43758.5453); }
 void main() {
     // u_params.x = frequency, .y = amplitude, .z = rotation, .w = wave count
-    float freq = max(u_params.x, 0.005);
-    float amp  = (u_params.y <= 0.0) ? 1.0 : u_params.y;
-    float rot  = u_params.z;
-    int nwaves = int(clamp(u_params.w, 2.0, 24.0));
+    float freq = max(u_frequency, 0.005);
+    float amp  = (u_amplitude <= 0.0) ? 1.0 : u_amplitude;
+    float rot  = u_rotation;
+    int nwaves = int(clamp(u_waves, 2.0, 24.0));
     vec2 p = v_uv * u_resolution - 0.5 * u_resolution;      // centered pixel coords
     float phi = 3.14159265 * (1.0 + 2.2360679) / 2.0;        // pi*(1+sqrt5)/2 (penrose)
     float field = 0.0;
@@ -2195,7 +2293,14 @@ void main() {
     float result = field / float(nwaves) * 0.5 + 0.5;        // approx of CPU norm()
     f_color = vec4(inferno(clamp(result, 0.0, 1.0)), 1.0);
 }
-""")
+""",
+    uniforms={
+    "frequency": {"glsl": "float", "min": 0.005, "max": 2.0, "default": 0.5, "description": "wave frequency"},
+    "amplitude": {"glsl": "float", "min": 0.0, "max": 2.0, "default": 1.0, "description": "wave amplitude"},
+    "rotation": {"glsl": "float", "min": 0.0, "max": 6.2831853, "default": 0.0, "description": "wave rotation"},
+    "waves": {"glsl": "float", "min": 2.0, "max": 24.0, "default": 12.0, "description": "wave count"}
+}
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -2212,8 +2317,8 @@ _register("wallpaper_gpu",
             "procedural", _INFERNO + """
 void main() {
     // u_params.x = tile size (log-scaled), .y = color variation, .z = rotation noise
-    float ts = mix(8.0, 64.0, clamp(u_params.x, 0.0, 1.0));
-    float cv = u_params.y;
+    float ts = mix(8.0, 64.0, clamp(u_scale_variation, 0.0, 1.0));
+    float cv = u_color_variation;
     vec2 st = v_uv * u_resolution / ts;
     vec2 g = floor(st), f = fract(st);
     // per-tile slight rotation + hue offset (echoes rotation_noise/color_variation)
@@ -2225,45 +2330,61 @@ void main() {
     col *= smoothstep(0.5, 0.45, d);
     f_color = vec4(inferno(clamp(length(col) * 0.6 + d * 0.4, 0.0, 1.0)), 1.0);
 }
-""")
+""",
+    uniforms={
+    "scale_variation": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "tile size variation"},
+    "color_variation": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "color variation"}
+}
+    )
 
 _register("morph_grid_gpu",
             "Morphing grid warp (client-GPU twin of node 105)",
             "procedural", _INFERNO + """
 void main() {
     // u_params.x = warp strength, .y = line width, .z = palette mix
-    float ws = u_params.x;
-    float lw = clamp(u_params.y, 0.02, 1.0);
+    float ws = u_warp_strength;
+    float lw = clamp(u_line_width, 0.02, 1.0);
     vec2 p = v_uv * 14.0;
     vec2 w = vec2(fbm(p + u_time * 0.1), fbm(p.yx - u_time * 0.1));
     p += (w - 0.5) * ws * 6.0;
     vec2 g = abs(fract(p) - 0.5);
     float line = smoothstep(lw, lw * 0.5, min(g.x, g.y));
-    vec3 col = 0.5 + 0.5 * cos(6.2831853 * (u_params.z + vec3(0.0, 0.33, 0.67)) + w.x * 4.0);
+    vec3 col = 0.5 + 0.5 * cos(6.2831853 * (0.5 + vec3(0.0, 0.33, 0.67)) + w.x * 4.0);
     f_color = vec4(mix(vec3(line), col, line), 1.0);
 }
-""")
+""",
+    uniforms={
+    "warp_strength": {"glsl": "float", "min": 0.0, "max": 2.0, "default": 0.5, "description": "warp strength"},
+    "line_width": {"glsl": "float", "min": 0.02, "max": 1.0, "default": 0.5, "description": "line width"}
+}
+    )
 
 _register("phyllotaxis_gpu",
             "Phyllotaxis spiral field (client-GPU twin of node 08)",
             "procedural", _INFERNO + """
 void main() {
     // u_params.x = point density, .y = angle goldenness, .z = radius scale
-    float dens = mix(0.1, 1.0, clamp(u_params.x, 0.0, 1.0));
-    float phi = 2.39996323 + u_params.y * 1.5;        // ~golden angle + jitter
+    float dens = mix(0.1, 1.0, clamp(u_points, 0.0, 1.0));
+    float phi = 2.39996323 + u_angle * 1.5;        // ~golden angle + jitter
     vec2 c = (v_uv - 0.5) * u_resolution;
     float rmax = 0.5 * min(u_resolution.x, u_resolution.y);
     float acc = 0.0;
     for (int i = 0; i < 220; i++) {
         float fi = float(i) * dens * 12.0;
         float a = fi * phi;
-        float rad = sqrt(fi) * (u_params.z * 0.5 + 0.05) * rmax * 0.06;
+        float rad = sqrt(fi) * (u_radius_scale * 0.5 + 0.05) * rmax * 0.06;
         vec2 pos = rad * vec2(cos(a), sin(a));
         acc += smoothstep(3.0, 0.0, length(c - pos));
     }
     f_color = vec4(inferno(clamp(acc * 0.5, 0.0, 1.0)), 1.0);
 }
-""")
+""",
+    uniforms={
+    "points": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "point density"},
+    "angle": {"glsl": "float", "min": 0.0, "max": 1.5, "default": 0.5, "description": "angle goldenness"},
+    "radius_scale": {"glsl": "float", "min": 0.0, "max": 2.0, "default": 0.5, "description": "radius scale"}
+}
+    )
 
 
 _register("grayscott_seed",
