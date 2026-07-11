@@ -467,6 +467,12 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # (pitfall #14) and are left unmapped. Gives `filters` another GPU mirror.
     "13": {"shader": "dither13_gpu", "type": "filter",
            "param_map": {"levels": "p1", "contrast": "p2"}},
+    # 350 FXAA Anti-Aliasing → new twin. edge_threshold p1 (0.5 = neutral
+    # medium strength; see pitfall #15 — 0.5 must not be a degenerate extreme).
+    # The CPU node's test-pattern `source` and `anim_mode` are CPU-only concerns
+    # (no GPU equivalent); only edge_threshold is mapped to u_params.x.
+    "350": {"shader": "fxaa_gpu", "type": "filter",
+            "param_map": {"edge_threshold": "p1"}},
     # ── P0.5 LUT / color ──
     # 11 Gradient: cx/cy are already in [0,1] so they map cleanly onto the
     # twin's center params (0.5 = middle). `direction` (0-360°) and
