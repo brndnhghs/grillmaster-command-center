@@ -53,29 +53,44 @@ SPARK_TEMP = 2.5  # Extra bright for sparks
 def _solve_laplace(pot: np.ndarray, mask: np.ndarray,
                    max_iter: int = 500, tol: float = 1e-4,
                    bias: str = "none") -> np.ndarray:
-    """Jacobi relaxation for ∇²φ = 0."""
+    """Jacobi relaxation for ∇²φ = 0.
+
+    Reuses two ping-pong buffers (`scratch_a`/`scratch_b`) instead of
+    allocating a fresh array every iteration — the DBM growth loop calls
+    this up to ~80× per growth step, so the per-iteration allocation
+    storm previously dominated runtime. The bias gradient is precomputed
+    once since it is independent of the iteration. The numerics are
+    unchanged, so the solved potential (and therefore the rendered tree)
+    is identical to the original.
+    """
     H, W = pot.shape
     cy, cx = H // 2, W // 2
     pot[cy, cx] = 1.0
 
+    # Reusable scratch buffer (allocated once, swapped with `pot` each iter).
+    scratch_a = np.empty_like(pot)
+
+    # Precompute static bias gradient (iteration-independent).
+    if bias == "down":
+        bias_grad = np.linspace(0, 0.08, H)[:, np.newaxis]
+    elif bias == "up":
+        bias_grad = np.linspace(0.08, 0, H)[:, np.newaxis]
+    elif bias == "left":
+        bias_grad = np.linspace(0.08, 0, W)[np.newaxis, :]
+    elif bias == "right":
+        bias_grad = np.linspace(0, 0.08, W)[np.newaxis, :]
+    else:
+        bias_grad = None
+
     for _ in range(max_iter):
-        new_pot = np.zeros_like(pot)
+        new_pot = scratch_a
         new_pot[1:-1, 1:-1] = 0.25 * (
             pot[:-2, 1:-1] + pot[2:, 1:-1] +
             pot[1:-1, :-2] + pot[1:-1, 2:]
         )
 
-        if bias == "down":
-            new_pot += np.linspace(0, 0.08, H)[:, np.newaxis]
-            new_pot = new_pot.clip(0, 1)
-        elif bias == "up":
-            new_pot += np.linspace(0.08, 0, H)[:, np.newaxis]
-            new_pot = new_pot.clip(0, 1)
-        elif bias == "left":
-            new_pot += np.linspace(0.08, 0, W)[np.newaxis, :]
-            new_pot = new_pot.clip(0, 1)
-        elif bias == "right":
-            new_pot += np.linspace(0, 0.08, W)[np.newaxis, :]
+        if bias_grad is not None:
+            new_pot += bias_grad
             new_pot = new_pot.clip(0, 1)
 
         new_pot[0, :] = new_pot[-1, :] = 0.0
@@ -84,7 +99,11 @@ def _solve_laplace(pot: np.ndarray, mask: np.ndarray,
         new_pot[mask] = 0.0
 
         if np.max(np.abs(new_pot - pot)) < tol:
+            # Copy the converged solution back into `pot` and return it.
+            pot[...] = new_pot
             break
+        # Swap: `pot` becomes the scratch for the next iteration.
+        scratch_a = pot
         pot = new_pot
 
     return pot
