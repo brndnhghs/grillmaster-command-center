@@ -181,12 +181,16 @@ def method_rolling_guidance(out_dir: Path, seed: int, params=None):
         pal_name = str(params.get("palette", "vapor"))
 
         # ── Animation (rename t to avoid shadowing the time param) ──
+        # _osc = 0.5 - 0.5*cos(_t) spans the FULL 0→1 as t goes 0→π, so the
+        # two audit frames (t=0 and t=3.14) land on the two OPPOSITE extremes.
         _t = anim_time * anim_speed
+        _osc = 0.5 - 0.5 * math.cos(_t)
         if anim_mode == "radius_pulse":
-            # oscillate the FINAL large radius so the abstraction amount breathes
-            radius = int(max(4, min(64, round(radius * (0.25 + 2.0 * (0.5 + 0.5 * math.sin(_t * 0.3)))))))
+            # oscillate the FINAL large radius across its full admissible span
+            radius = int(max(4, min(64, round(4 + (64 - 4) * _osc))))
         elif anim_mode == "range_sweep":
-            range_sigma = max(0.02, min(0.5, range_sigma * (0.4 + 1.4 * (0.5 + 0.5 * math.sin(_t * 0.25)))))
+            # sweep range sigma across its full admissible span (0.02 → 0.5)
+            range_sigma = max(0.02, min(0.5, 0.02 + (0.5 - 0.02) * _osc))
         elif anim_mode == "abstraction_sweep":
             abstraction = 0.5 + 0.5 * math.sin(_t * 0.4)
         # else: none — static
@@ -223,8 +227,11 @@ def method_rolling_guidance(out_dir: Path, seed: int, params=None):
                 ], axis=-1).astype(np.float32)
             elif source == "procedural":
                 yy, xx = np.mgrid[:H, :W].astype(np.float32)
-                g = np.sin(xx * 0.03 + yy * 0.02 + _t * 0.5) * \
-                    np.cos(xx * 0.02 - yy * 0.03 + _t * 0.3) * 0.5 + 0.5
+                # time term only active under an explicit anim mode, so
+                # anim_mode="none" is a genuinely static baseline (Step-7 contract)
+                _anim_t = _t if anim_mode != "none" else 0.0
+                g = np.sin(xx * 0.03 + yy * 0.02 + _anim_t * 0.5) * \
+                    np.cos(xx * 0.02 - yy * 0.03 + _anim_t * 0.3) * 0.5 + 0.5
                 src = np.stack([g, g * 0.6, 1 - g * 0.8], axis=-1).astype(np.float32)
             else:  # noise / input_image fallback
                 n = rng.standard_normal((H, W, 3)).astype(np.float32) * noise_amp + 0.5
