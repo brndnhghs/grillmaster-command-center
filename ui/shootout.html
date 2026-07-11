@@ -267,15 +267,15 @@ async function fetchGenome(gid) {
 }
 
 async function openInEditor(gid) {
-  // Load into the shared 'active' graph doc — the editor follows it.
+  // Save to the graph library, then deep-link the editor (?load=…) — the
+  // editor loads library graphs, not the shared 'active' doc.
   const genome = await fetchGenome(gid);
-  const ok = confirm('Replace the current editor graph with this genome?');
-  if (!ok) return;
-  await fetch('/api/graph/active?by=shootout', {
-    method: 'PUT', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({nodes: genome.graph.nodes, edges: genome.graph.edges}),
+  const name = `shootout-${gid}`;
+  await fetch('/api/graph/save', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name, graph: genome.graph}),
   });
-  window.open('/', '_blank');
+  window.open(`/?load=${encodeURIComponent(name)}`, '_blank');
 }
 
 async function saveGenome(gid, btn) {

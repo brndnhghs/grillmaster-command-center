@@ -7749,8 +7749,26 @@ async function gRestoreGraph() {
   gRedrawEdges();
 }
 
+// ── Deep link: /?load=<saved-name> loads a library graph on boot ──
+// (used by the Shootout page's "Open in editor"). Chained after
+// gRestoreGraph so the localStorage restore can't re-render on top.
+async function gDeepLinkLoad() {
+  const name = new URLSearchParams(location.search).get('load');
+  if (!name) return;
+  history.replaceState(null, '', location.pathname); // don't re-load on refresh
+  try {
+    const r = await fetch(`/api/graph/saved/${encodeURIComponent(name)}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const saved = await r.json();
+    // save_graph stores {graph:{nodes,edges}, name, saved_at}; gLoadGraph
+    // reads .nodes/.edges at the top level, so unwrap .graph if present.
+    await gLoadGraph(saved.graph || saved);
+    gShowToast(`Loaded "${name}"`);
+  } catch (e) { gShowToast(`Load failed: ${name} (${e.message})`, true); }
+}
+
 gLoad();
-setTimeout(gRestoreGraph, 100);
+setTimeout(async () => { await gRestoreGraph(); await gDeepLinkLoad(); }, 100);
 
 // ── Canvas size preset ────────────────────────────────────────────
 _gApplyCanvasSize(gCanvasW, gCanvasH); // sync selects to restored state
