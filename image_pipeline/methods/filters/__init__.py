@@ -20,3 +20,4 @@ from . import xdog
 from . import tonal_hatching
 from . import anisotropic_diffusion
 from . import poisson_editing
+from . import bilateral_grid
