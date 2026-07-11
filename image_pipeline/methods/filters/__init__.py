@@ -30,3 +30,4 @@ from . import fxaa
 from . import domain_transform
 from . import low_poly
 from . import bloom
+from . import non_local_means
