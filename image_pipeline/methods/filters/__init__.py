@@ -27,3 +27,4 @@ from . import l0_smoothing
 from . import wls_smoothing
 from . import fxaa
 from . import domain_transform
+from . import low_poly
