@@ -86,3 +86,4 @@ from . import turing_morphogenesis
 from . import pfc
 from . import sand_dune_migration
 from . import space_colonization
+from . import stable_fluids
