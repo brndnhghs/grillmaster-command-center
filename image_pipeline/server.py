@@ -1073,6 +1073,7 @@ class ShootoutSessionRequest(BaseModel):
 class ShootoutRunRequest(BaseModel):
     session_id: str
     ratings: dict[str, int] | None = None  # /evolve: rate-if-not-already
+    notes: dict[str, str] | None = None    # per-genome pros/cons free text
 
 
 @app.post("/api/shootout/session")
@@ -1132,21 +1133,24 @@ def shootout_generate(req: ShootoutRunRequest):
 
 @app.post("/api/shootout/rate")
 def shootout_rate(req: ShootoutRunRequest):
-    """Persist star ratings for the latest generation."""
-    if not req.ratings:
-        raise HTTPException(400, "ratings map required")
+    """Persist star ratings and pros/cons notes for the latest generation."""
+    if not req.ratings and not req.notes:
+        raise HTTPException(400, "ratings or notes required")
     try:
-        return _shootout_session.rate(req.session_id, req.ratings, _SHOOTOUT_CFG)
+        return _shootout_session.rate(req.session_id, req.ratings or {},
+                                      _SHOOTOUT_CFG, notes=req.notes)
     except ValueError as exc:
         raise HTTPException(404, str(exc))
 
 
 @app.post("/api/shootout/evolve")
 def shootout_evolve(req: ShootoutRunRequest):
-    """Rate (if ratings included) then breed + render the next generation."""
-    if req.ratings:
+    """Rate/annotate (if included) then breed + render the next generation.
+    Notes are interpreted by the advisor and steer the breeding."""
+    if req.ratings or req.notes:
         try:
-            _shootout_session.rate(req.session_id, req.ratings, _SHOOTOUT_CFG)
+            _shootout_session.rate(req.session_id, req.ratings or {},
+                                   _SHOOTOUT_CFG, notes=req.notes)
         except ValueError as exc:
             raise HTTPException(404, str(exc))
     return _shootout_launch_job(req.session_id)
