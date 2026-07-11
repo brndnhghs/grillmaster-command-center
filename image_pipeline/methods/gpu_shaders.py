@@ -573,6 +573,14 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     "314": {"shader": "curl_noise_gpu", "type": "procedural",
             "param_map": {"scale": "p1", "octaves": "p2",
                           "brightness": "p3", "anim_mode": "p4"}},
+    # 399 CMYK Halftone: spacing -> p1, max_dot -> p2, angle_offset -> p3.
+    # ink_set/paper/source/anim_mode are choice strings (pitfall #14) left
+    # unmapped; the preview renders the default cmyk ink set on white paper.
+    # Closed-form per-pixel screening f(uv, input, params) -> exact parity
+    # preview; CPU numpy node stays authoritative for export. Filter twin reads
+    # the wired input via u_texture.
+    "399": {"shader": "cmyk_halftone_gpu", "type": "filter",
+            "param_map": {"spacing": "p1", "max_dot": "p2", "angle_offset": "p3"}},
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SHIMS)
 
