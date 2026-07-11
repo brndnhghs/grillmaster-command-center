@@ -10,4 +10,5 @@ from . import edge_halftone
 from . import swirl
 from . import pixel_mosaic
 from . import cross_stitch
+from . import kuwahara
 from . import transform

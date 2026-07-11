@@ -524,6 +524,11 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # preview is a procedural noise+rainbow displacement. Exact parity preview.
     "57": {"shader": "slitscan_gpu", "type": "procedural",
            "param_map": {"amplitude": "p1", "frequency": "p2", "slit_type": "p3"}},
+    # 68 Anisotropic Kuwahara: radius -> p1 (8 -> 0.5 neutral), anisotropy ->
+    # p2 (4 -> 0.5). presmooth/blend are not mapped; the twin renders the
+    # default strength. CPU numpy node stays the authoritative export.
+    "68": {"shader": "anisotropic_kuwahara_gpu", "type": "filter",
+           "param_map": {"radius": "p1", "anisotropy": "p2"}},
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SHIMS)
 
