@@ -12,8 +12,9 @@ from ...core.utils import (
 from ...core.animation import capture_frame
 
 
-def _inferno(t):
-    t = np.clip(t, 0.0, 1.0)[..., None]
+# ── Colormaps (polynomial approximations, all in [0,1]) ──
+def _inferno(t: np.ndarray) -> np.ndarray:
+    t = np.clip(t, 0.0, 1.0)[..., None]  # (...,1)
     c0 = np.array([0.00021894, 0.00016488, -0.01907227]).reshape(1, 1, 3)
     c1 = np.array([0.10651034, 0.56396050, 3.93279110]).reshape(1, 1, 3)
     c2 = np.array([11.6028830, -3.9781129, -15.9420510]).reshape(1, 1, 3)
@@ -25,7 +26,7 @@ def _inferno(t):
     return r
 
 
-def _viridis(t):
+def _viridis(t: np.ndarray) -> np.ndarray:
     t = np.clip(t, 0.0, 1.0)[..., None]
     c0 = np.array([0.2777273272234177, 0.005407344544966578, 0.3340998053353061]).reshape(1, 1, 3)
     c1 = np.array([0.1050930431085774, 1.404613529898575, 1.384590162594685]).reshape(1, 1, 3)
@@ -45,11 +46,11 @@ _COLORMAPS = {
 }
 
 
-def _upsample_bilinear(field, Hh, Ww):
+def _upsample_bilinear(field: np.ndarray, Hh: int, Ww: int) -> np.ndarray:
     """Bilinear upsample a (n,n) or (n,n,3) float field to (Hh,Ww[,3])."""
     squeeze = field.ndim == 2
     if squeeze:
-        field = field[..., None]
+        field = field[..., None]            # (n,n,1)
     n = field.shape[0]
     if n == Hh and n == Ww:
         return field[:, :, 0] if squeeze else field
@@ -61,8 +62,8 @@ def _upsample_bilinear(field, Hh, Ww):
     x1 = np.clip(x0 + 1, 0, n - 1)
     y0 = np.clip(y0, 0, n - 1)
     x0 = np.clip(x0, 0, n - 1)
-    fy = np.clip(ys - y0, 0.0, 1.0)[:, None, None]
-    fx = np.clip(xs - x0, 0.0, 1.0)[None, :, None]
+    fy = np.clip(ys - y0, 0.0, 1.0)[:, None, None]   # (H,1,1)
+    fx = np.clip(xs - x0, 0.0, 1.0)[None, :, None]   # (1,W,1)
     f00 = field[y0[:, None], x0[None, :]]
     f01 = field[y0[:, None], x1[None, :]]
     f10 = field[y1[:, None], x0[None, :]]
@@ -80,8 +81,8 @@ def _upsample_bilinear(field, Hh, Ww):
         params={
     "grid": {"description": "cloth lattice resolution (vertices per side)", "min": 16, "max": 96, "default": 48},
     "steps": {"description": "Verlet integration steps (sim length before render)", "min": 10, "max": 220, "default": 70},
-    "constraint_iters": {"description": "distance-constraint relaxation passes per step (keep <=12 for stability)", "min": 1, "max": 12, "default": 12},
-    "stiffness": {"description": "constraint relaxation factor clamped to <=0.5 internally (higher over-corrects and explodes)", "min": 0.1, "max": 1.0, "default": 0.5},
+    "constraint_iters": {"description": "distance-constraint relaxation passes per step (keep ≤12 for stability)", "min": 1, "max": 12, "default": 12},
+    "stiffness": {"description": "constraint relaxation factor — clamped to ≤0.5 internally (higher over-corrects and explodes)", "min": 0.1, "max": 1.0, "default": 0.5},
     "damping": {"description": "velocity damping (Verlet)", "min": 0.8, "max": 0.999, "default": 0.98},
     "gravity": {"description": "downward pull (out-of-plane droop)", "min": 0.0, "max": 1.2, "default": 0.35},
     "wind": {"description": "base wind strength (only active in wind/wave modes)", "min": 0.0, "max": 1.2, "default": 0.6},
@@ -90,33 +91,40 @@ def _upsample_bilinear(field, Hh, Ww):
     "render_mode": {"description": "shaded relief (normal-lit) or pure height colormap",
                     "choices": ["shaded", "height"], "default": "shaded"},
     "colormap": {"description": "height colormap", "choices": ["inferno", "viridis", "grayscale"], "default": "inferno"},
-    "anim_mode": {"description": "animation mode: none (static drape), wind (oscillating gusts), wave (travelling ripple)",
+    "anim_mode": {"description": "animation mode: none (static drape), wind (oscillating gusts), wave (traveling ripple)",
                   "choices": ["none", "wind", "wave"], "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
     "time": {"description": "animation phase [0, 2pi)", "min": 0.0, "max": 6.28, "default": 0.0},
 })
-def method_verlet_cloth(out_dir, seed, params=None):
-    """Verlet-integration cloth -- Jakobsen's 'Advanced Character Physics' (1997).
+def method_verlet_cloth(out_dir, seed: int, params=None):
+    """Verlet-integration cloth — Jakobsen's "Advanced Character Physics" (1997).
 
-    Thomas Jakobsen's Verlet cloth (the method behind Hitman's ragdolls and
-    most real-time cloth in games). Each vertex stores only its current and
+    Technique: Thomas Jakobsen's Verlet cloth (the method behind Hitman's ragdolls
+    and most real-time cloth in games). Each vertex stores only its current and
     previous position; velocity is implicit in (pos - prev). After integrating,
     distance constraints between neighbors are relaxed iteratively (Gauss-Seidel
-    style) to keep the mesh inextensible -- this is what makes the cloth read
-    as fabric rather than a particle cloud. We use structural (edge) and
-    shear (diagonal) constraints.
+    style) to keep the mesh inextensible — this is what makes the cloth read as
+    fabric rather than a particle cloud. We add structural (edge) and shear
+    (diagonal) constraints.
 
-    Rendered as a shaded height field: the out-of-plane displacement z becomes
-    a topographic surface, lit by a fixed directional light using per-vertex
-    normals, then colored through a colormap.
+    Rendered as a shaded height field: the out-of-plane displacement z becomes a
+    topographic surface, lit by a fixed directional light using per-vertex
+    normals, then colored through a colormap. Output is a single deterministic
+    frame.
 
     Architecture B (closed-form per frame): the orchestrator re-calls the method
     with an increasing ``time``. Animation modes drive the motion with ``_t``:
-      * none : no wind, cloth drapes to a stable rest state (static, delta~0)
-      * wind : gust strength oscillates -> the sheet breathes and flaps
-      * wave : a travelling ripple across x, phase locked to ``_t``
-    Re-seeding each call keeps the spatial noise (wind turbulence) stable across
-    frames, so the only motion comes from ``_t``.
+      * none : no wind, cloth drapes to a stable rest state (static, Δ≈0)
+      * wind : a smooth out-of-plane (z) gust whose amplitude breathes with _t —
+               the sheet flutters because z is exactly what we render
+      * wave : a smooth traveling-wave force over the whole sheet, phase locked to
+               _t, so adjacent frames are always visibly different
+    Because the sim is re-run deterministically from ``seed`` every frame, the only
+    motion comes from ``_t``.
+
+    Stability note: forcing uses a smooth, low-frequency, bounded spatial field
+    (not white noise — white-noise forcing diverges the constraint solver). The
+    gust is clamped so the settled shape is stable at every ``_t``.
     """
     try:
         if params is None:
@@ -124,7 +132,6 @@ def method_verlet_cloth(out_dir, seed, params=None):
         out_dir = Path(out_dir)
         t = float(params.get("time", 0.0))
         seed_all(seed)
-        rng = np.random.default_rng(seed)
 
         grid = int(params.get("grid", 48))
         steps = int(params.get("steps", 70))
@@ -152,6 +159,7 @@ def method_verlet_cloth(out_dir, seed, params=None):
         pos = np.stack([X, Y, np.zeros_like(X)], axis=-1).reshape(-1, 3).astype(np.float64)
         prev = pos.copy()
         lat_x = X.flatten().astype(np.float64)   # initial lattice x (stable spatial anchor)
+        lat_y = Y.flatten().astype(np.float64)   # initial lattice y
 
         # Pin mask (vertices held fixed at their initial position)
         pinned = np.zeros(n * n, dtype=bool)
@@ -163,11 +171,9 @@ def method_verlet_cloth(out_dir, seed, params=None):
             pinned[[0, n - 1, (n - 1) * n, (n - 1) * n + (n - 1)]] = True
         # "free" -> nothing pinned
 
-        # For wave mode remember the pinned vertices' lattice x-coordinate
-        # so we can displace the pinned edge as a travelling wave locked to _t.
-        pin_x = lat_x[pinned] if pinned.any() else np.zeros(0)
-
         # Static neighbor constraint list: (a, b, rest_length)
+        # Structural (edge) + shear (diagonal) constraints — the standard
+        # Jakobsen cloth basis.
         edges = []
         gpos = pos.reshape(n, n, 3)
         rest = {}
@@ -185,45 +191,43 @@ def method_verlet_cloth(out_dir, seed, params=None):
         edges = np.array(edges, dtype=np.int64)
         rest_arr = np.array([rest[(min(a, b), max(a, b))] for a, b in edges], dtype=np.float64)
 
-        # Pre-generate a stable spatial wind-turbulence field (rng, same every frame)
-        turb = rng.normal(0.0, 1.0, size=(n, n)).astype(np.float64)
-
-        # Per-step wind vector driven by _t (smooth, no cusps).
+        # Per-frame wind state, driven by _t (smooth, no cusps).
+        # wind : a gust that breathes in/out over _t.
+        # wave : gust stays on; the visible motion comes from a whole-sheet
+        #        traveling-wave force whose phase locks to _t.
         if anim_mode == "wind":
             gust = wind * (0.4 + 0.6 * (0.5 + 0.5 * math.sin(_t)))
         elif anim_mode == "wave":
             gust = wind * 0.5
         else:
             gust = 0.0
-        wind_dir = np.array([gust, 0.0, gust * 0.5], dtype=np.float64)
 
         for step in range(steps):
             # Verlet integration
             accel = np.zeros_like(pos)
             accel[:, 2] -= gravity  # gravity pulls out of plane (droop)
             if gust > 0.0:
-                if anim_mode == "wave":
-                    # Travelling ripple: phase advances with _t AND the
-                    # in-sim step, so re-running the sim for each frame yields
-                    # a smoothly advancing standing wave (visible animation).
-                    phase = _t * 1.7 - step * 0.12
-                    accel[:, 2] += wind * 1.6 * np.sin(3.0 * lat_x + phase)
-                    accel[:, 0] += wind * 0.3 * (0.5 + 0.5 * math.sin(_t))
-                else:
-                    # oscillating gust + per-vertex spatial turbulence
-                    accel[:, 0] += wind_dir[0] + wind * 0.4 * turb.reshape(-1)
-                    accel[:, 2] += wind_dir[2]
+                if anim_mode == "wind":
+                    # Out-of-plane (Z) gust over a SMOOTH spatial field that
+                    # *rotates* with _t, with an amplitude that breathes with _t.
+                    # Rotating the field means different _t values yield genuinely
+                    # different settled shapes (not just different depth), so the
+                    # animation is clearly visible. Driving Z (the rendered
+                    # height) keeps the motion divergence-free.
+                    breath = 0.5 + 0.5 * math.sin(_t)
+                    fld = np.sin(2.0 * lat_x + _t) * np.cos(2.0 * lat_y - _t * 0.7)
+                    accel[:, 2] += wind * 1.0 * fld * breath
+                else:  # wave
+                    # Smooth traveling-wave force over the WHOLE sheet, phase
+                    # locked to _t. The cloth settles into a ripple whose phase
+                    # advances with _t, so adjacent frames are visibly different.
+                    accel[:, 2] += wind * 0.9 * np.sin(3.0 * lat_x - _t * 2.0)
             tmp = pos.copy()
             vel = (pos - prev) * damping
             pos = pos + vel + accel * 0.02
             prev = tmp
             # pin
             pos[pinned] = tmp[pinned]
-            if anim_mode == "wave" and pin_x.size:
-                # Drive the pinned edge's z as a travelling wave whose
-                # phase advances with _t, so adjacent frames are always
-                # visibly different (the sheet never settles to one shape).
-                pos[pinned, 2] = wind * 0.6 * np.sin(3.0 * pin_x + _t * 1.7)
 
             # Constraint relaxation (Jakobsen, 1997).
             # Per-edge correction = move both endpoints back toward the
@@ -232,7 +236,7 @@ def method_verlet_cloth(out_dir, seed, params=None):
             # Accumulate all edges touching a vertex, then apply once per
             # pass (Gauss-Seidel) scaled by ``stiff`` (clamped to <=1.0).
             # The correction is clamped so a single edge can never overshoot.
-            w = (~pinned & np.isfinite(pos).all(axis=1)).astype(np.float64)
+            w = (~pinned & np.isfinite(pos).all(axis=1)).astype(np.float64)  # inverse-mass weight
             corr_p = np.zeros_like(pos)
             for _ in range(iters):
                 pa = pos[edges[:, 0]]
@@ -257,7 +261,8 @@ def method_verlet_cloth(out_dir, seed, params=None):
                     pos = np.where(np.isfinite(pos), pos, tmp)
                     break
 
-        # Safety: if the solve diverged, fall back to a flat plane.
+        # Safety: if the solve diverged (shouldn't with clamped stiffness),
+        # fall back to a flat plane so we never return NaNs.
         if not np.isfinite(pos).all():
             pos[:, 2] = 0.0
 
