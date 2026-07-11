@@ -16,3 +16,4 @@ from . import weighted_voronoi_stippling
 from . import line_integral_convolution
 from . import seam_carving
 from . import guided_filter
+from . import xdog
