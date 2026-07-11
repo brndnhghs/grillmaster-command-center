@@ -104,10 +104,11 @@ def method_water_caustics(out_dir, seed: int, params=None):
             py = py + _t * 0.2
 
         # ── Sum-of-plane-waves water height field ──
-        # Random but seed-stable wave directions / phases / frequencies.
-        # ripple mode pulses the amplitude over time (smooth, no cusps).
+        # ripple mode pulses the wave AMPLITUDE (standing-wave breathing);
+        # flow mode travels the waves (advances phase). These give two
+        # visually distinct signatures.
         if anim_mode == "ripple":
-            amp_now = amplitude * (0.5 + 0.5 * math.sin(_t * 0.6))
+            amp_now = amplitude * (0.25 + 0.75 * (0.5 + 0.5 * math.sin(_t * 0.6)))
         else:
             amp_now = amplitude
 
@@ -115,8 +116,8 @@ def method_water_caustics(out_dir, seed: int, params=None):
         angles = rng.random(nwaves) * 2.0 * math.pi
         freqs = (0.8 + rng.random(nwaves) * 1.6) * scale / 4.0
         phases = rng.random(nwaves) * 2.0 * math.pi
-        # flow & ripple advance every wave's phase (traveling); ripple also pulses
-        phase_adv = _t if anim_mode in ("flow", "ripple") else 0.0
+        # Only flow advances phase (traveling waves); ripple breathes in place.
+        phase_adv = _t if anim_mode == "flow" else 0.0
 
         H_field = np.zeros((H, W), dtype=np.float64)
         for i in range(nwaves):
@@ -125,7 +126,7 @@ def method_water_caustics(out_dir, seed: int, params=None):
             k = freqs[i]
             ph = phases[i]
             H_field += amp_now * np.sin(k * (px * dx + py * dy) + ph + phase_adv)
-        H_field /= max(1.0, float(nwaves) * amp_now)  # normalize to ~[-1,1]
+        H_field /= max(1.0, float(nwaves))  # fixed normalizer — keeps amplitude/ripple in play
 
         # ── Surface gradients (slope) via central differences ──
         # Differentiate wrt the NORMALIZED coords (px,py), not pixels, so the

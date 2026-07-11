@@ -33,7 +33,7 @@ from image_pipeline.methods.gpu_shaders import GPU_SHADER_NODE_MAP
 # Stable count guard — bump when the GPU mirror grows (one logical chunk per run).
 # 203 -> 204: P0.4 filter twin (68 Anisotropic Kuwahara) added by bdbb37f.
 # 204 -> 205: typed closed-form pattern node (301 gyroid_typed) added.
-EXPECTED_MAP_ENTRIES = 205
+EXPECTED_MAP_ENTRIES = 206
 
 # Simulations-category CPU nodes that are intentionally NOT GPU-mirrored yet.
 # These are Architecture-A stateful sims (discrete CA, agent/particle systems,

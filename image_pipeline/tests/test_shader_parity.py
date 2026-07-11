@@ -147,7 +147,7 @@ def test_gpu_shader_node_map_resolves():
     # +1 P1.6 3-field terrain sim twin (156 Hydraulic Erosion) = 203.
     # +1 P0.4 filter twin (68 Anisotropic Kuwahara) = 204.
     # +1 typed closed-form pattern node (301 gyroid_typed) = 205.
-    assert len(GPU_SHADER_NODE_MAP) == 205, len(GPU_SHADER_NODE_MAP)
+    assert len(GPU_SHADER_NODE_MAP) == 206, len(GPU_SHADER_NODE_MAP)
     for mid, entry in GPU_SHADER_NODE_MAP.items():
         if entry.get("type") == "sim":
             # P1 ping-pong sim: seed/step/display must all resolve to shaders.

@@ -528,6 +528,13 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # preview is a procedural noise+rainbow displacement. Exact parity preview.
     "57": {"shader": "slitscan_gpu", "type": "procedural",
            "param_map": {"amplitude": "p1", "frequency": "p2", "slit_type": "p3"}},
+    # 312 Water Caustics: scale->p1, caustic_gain->p2, sharpen->p3, anim_speed->p4.
+    # colormode/anim_mode are choice strings (pitfall 14) left unmapped; the twin
+    # renders the default ocean colormap in flow-mode. Closed-form f(uv,t) ->
+    # exact parity preview. CPU numpy node stays authoritative for export.
+    "312": {"shader": "caustics_gpu", "type": "procedural",
+            "param_map": {"scale": "p1", "caustic_gain": "p2",
+                          "sharpen": "p3", "anim_speed": "p4"}},
     # 68 Anisotropic Kuwahara: radius -> p1 (8 -> 0.5 neutral), anisotropy ->
     # p2 (4 -> 0.5). presmooth/blend are not mapped; the twin renders the
     # default strength. CPU numpy node stays the authoritative export.
