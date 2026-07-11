@@ -281,7 +281,9 @@ def mutate(parent: dict, pool: GenePool, cfg: ShootoutConfig,
     ops = rng.choices([op for op, _ in op_table],
                       weights=[w for _, w in op_table],
                       k=rng.randint(lo, hi))
+    applied = []
     for op in ops:
+        applied.append(op.__name__.lstrip("_"))
         op(graph, pool, cfg, rng)
     seed = parent.get("seed", 42)
     if rng.random() < 0.2:  # seed jitter (occasional — seed is genome-carried)
@@ -290,6 +292,17 @@ def mutate(parent: dict, pool: GenePool, cfg: ShootoutConfig,
     gid = new_genome_id()
     graph["name"] = gid
     _auto_layout(graph["nodes"], graph["edges"])
+    if gentle:
+        deviation = {"kind": "protected",
+                     "text": "kept structurally intact (your note said keep this) "
+                             "— only its parameters were nudged",
+                     "ops": applied}
+    else:
+        deviation = {"kind": "mutation",
+                     "text": f"mutated from a rated parent "
+                             f"({' + '.join(applied) if applied else 'param jitter'})",
+                     "ops": applied,
+                     "parent": parent.get("genome_id")}
     child = {
         "genome_id": gid,
         "generation": generation,
@@ -297,6 +310,7 @@ def mutate(parent: dict, pool: GenePool, cfg: ShootoutConfig,
         "origin": "mutation",
         "seed": seed,
         "graph": graph,
+        "deviation": deviation,
         "render": None, "liveness": None, "rating": None,
     }
     return repair_genome(child, pool, cfg)
@@ -357,6 +371,11 @@ def crossover(parent_a: dict, parent_b: dict, pool: GenePool,
     gid = new_genome_id()
     graph["name"] = gid
     _auto_layout(graph["nodes"], graph["edges"])
+    deviation = {"kind": "crossover",
+                 "text": f"spliced a {donor['method_id']} subtree from a second "
+                         f"rated parent into a first parent",
+                 "donor": parent_b.get("genome_id"),
+                 "subtree_nodes": len(sub_nodes)}
     child = {
         "genome_id": gid,
         "generation": generation,
@@ -364,6 +383,7 @@ def crossover(parent_a: dict, parent_b: dict, pool: GenePool,
         "origin": "crossover",
         "seed": rng.choice([parent_a, parent_b]).get("seed", 42),
         "graph": graph,
+        "deviation": deviation,
         "render": None, "liveness": None, "rating": None,
     }
     return repair_genome(child, pool, cfg)
@@ -423,11 +443,17 @@ def next_generation(rated: list[dict], generation: int,
         if child is None:
             child = sample_valid_genome(pool, cfg, rng, origin="random", bias=bias)
             child["generation"] = generation
+            child["deviation"] = {"kind": "random",
+                                  "text": "fresh random graph (no parent — pure exploration)",
+                                  "ops": []}
         out.append(child)
 
     while len(out) < n_total:
         g = sample_valid_genome(pool, cfg, rng, origin="explorer", bias=bias)
         g["generation"] = generation
+        g["deviation"] = {"kind": "explorer",
+                          "text": "fresh random graph (explorer — keeps variety high)",
+                          "ops": []}
         out.append(g)
 
     return out

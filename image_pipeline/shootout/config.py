@@ -40,7 +40,7 @@ class ShootoutConfig:
     continuation_weight: float = 4.0   # boost for chain-continuing nodes while budget remains
 
     # ── Evolution ─────────────────────────────────────────────────
-    explore_ratio: float = 0.3     # fraction of each generation that is fresh randoms
+    explore_ratio: float = 0.45     # fraction of each bred generation that is fresh randoms
     elitism: int = 1               # top-rated genomes carried forward unmutated
     crossover_ratio: float = 0.4   # of the bred (non-explore) slots, fraction via crossover
     mutations_per_offspring: tuple[int, int] = (1, 2)  # inclusive range

@@ -76,6 +76,27 @@ try {
   #status-bar.busy { color: var(--warn); }
   #status-bar.error { color: var(--err); }
 
+  #gen-log-wrap {
+    background: var(--bg1); border-bottom: 1px solid var(--border);
+    font-size: 11px;
+  }
+  #gen-log-wrap summary {
+    cursor: pointer; padding: 4px 18px; color: var(--muted);
+    font-family: var(--font-mono); user-select: none; list-style: none;
+  }
+  #gen-log-wrap summary::-webkit-details-marker { display: none; }
+  #gen-log-wrap summary::before { content: "▸ "; }
+  #gen-log-wrap[open] summary::before { content: "▾ "; }
+  #gen-log {
+    max-height: 200px; overflow-y: auto; padding: 4px 18px 10px;
+    font-family: var(--font-mono); line-height: 1.5; color: var(--muted);
+    white-space: pre-wrap; border-top: 1px solid var(--border);
+  }
+  #gen-log .line.alive { color: var(--success); }
+  #gen-log .line.dead { color: var(--err); }
+  #gen-log .line.head { color: var(--text); font-weight: 600; }
+  #gen-log .line.done { color: var(--success); font-weight: 600; }
+
   #grid {
     display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
     padding: 18px; max-width: 1500px; margin: 0 auto;
@@ -132,6 +153,43 @@ try {
   #empty .big { font-size: 40px; margin-bottom: 12px; }
 
   /* ── About / Settings modal ─────────────────────────────────── */
+  .blurb {
+    font-size: 12px; color: var(--text); line-height: 1.45;
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius-s); padding: 7px 9px;
+  }
+  .blurb b { color: var(--accent2); font-weight: 600; }
+
+  .wire-diagram {
+    width: 100%; background: var(--bg0);
+    border: 1px solid var(--border); border-radius: var(--radius-s);
+    padding: 4px; display: block;
+  }
+  .wire-diagram text {
+    font-family: var(--font-mono); font-size: 7px; fill: var(--muted);
+  }
+  .wire-diagram .mn { fill: var(--bg3); stroke: var(--border-strong); }
+  .wire-diagram .mn.driver { stroke: var(--warn); }
+  .wire-diagram .mn.render { stroke: var(--success); stroke-width: 1.5px; }
+  .wire-diagram .edge { stroke: var(--accent); stroke-width: 1px; fill: none; opacity: 0.7; }
+  .wire-diagram .edge.fb { stroke: var(--err); stroke-dasharray: 2 2; }
+
+  .chain { font-family: var(--font-mono); font-size: 11px; color: var(--muted);
+    line-height: 1.5; }
+  .chain .nm { color: var(--text); }
+  .chain .drv { color: var(--warn); }
+
+  .deviation {
+    font-size: 11px; color: var(--muted); line-height: 1.4;
+    border-left: 2px solid var(--accent); padding-left: 8px;
+  }
+  .deviation .k { text-transform: uppercase; letter-spacing: 0.05em;
+    font-size: 9px; font-weight: 700; }
+  .deviation.kind-mutation .k { color: var(--warn); }
+  .deviation.kind-crossover .k { color: var(--success); }
+  .deviation.kind-explorer .k, .deviation.kind-random .k { color: var(--accent2); }
+  .deviation.kind-protected .k { color: var(--accent); }
+
   #modal-overlay {
     display: none; position: fixed; inset: 0; z-index: 100;
     background: rgba(0,0,0,0.6); align-items: flex-start; justify-content: center;
@@ -185,6 +243,10 @@ try {
 </header>
 
 <div id="status-bar">idle</div>
+<details id="gen-log-wrap">
+  <summary>generation log</summary>
+  <div id="gen-log"></div>
+</details>
 <div id="guidance-bar"></div>
 
 <div id="modal-overlay">
@@ -206,7 +268,10 @@ try {
         "explorers" so it never goes stale. Your notes are interpreted by the
         LLM advisor and steer the breeding: favor/avoid certain nodes, grow
         or simplify graphs, protect or drop specific clips — watch the 🧭
-        line for what it understood.</p>
+        line for what it understood. <b>Each clip now shows what was changed
+        to it</b> (mutation / crossover / explorer / protected) so you can see
+        exactly how the breeding moved, and ~45% of every generation is fresh
+        random exploration for a wide spread of results.</p>
       <p><b>4 · Taste model.</b> Every rating is logged to a permanent
         dataset. <b>Train taste</b> fits a model that predicts your stars
         (shown as ~n★ on new clips); it compounds across sessions.</p>
@@ -300,6 +365,105 @@ function starWidget(gid, current) {
   return wrap;
 }
 
+// ── mini node-graph wiring diagram ─────────────────────────────
+// Renders an SVG of the actual graph wiring (handles branches / merges /
+// feedback, not just a single chain). Simple layered layout by BFS depth.
+function wireDiagramSVG(g) {
+  const nodes = g.nodes || [];
+  const edges = g.edges || [];
+  if (!nodes.length) return document.createElement('div');
+
+  const W = 300, ROW = 20, PAD_L = 14, PAD_T = 12, NODE_W = 54, NODE_H = 13;
+
+  // depth = longest path from any root (node with no incoming edge)
+  const incoming = {};
+  edges.forEach(e => { incoming[e.dst] = (incoming[e.dst] || 0) + 1; });
+  const depth = {};
+  const roots = nodes.filter(n => !incoming[n.id]);
+  const queue = roots.map(n => n.id);
+  roots.forEach(n => { depth[n.id] = 0; });
+  // BFS; for nodes not reachable from a root, assign depth after
+  let heads = [...queue];
+  while (heads.length) {
+    const nxt = [];
+    for (const nid of heads) {
+      const d = depth[nid] ?? 0;
+      for (const e of edges) {
+        if (e.src === nid && depth[e.dst] === undefined) {
+          depth[e.dst] = d + 1;
+          nxt.push(e.dst);
+        }
+      }
+    }
+    heads = nxt;
+  }
+  // orphan/fallback depths
+  nodes.forEach(n => {
+    if (depth[n.id] === undefined) depth[n.id] = 0;
+  });
+
+  // group nodes per depth column
+  const byDepth = {};
+  nodes.forEach(n => {
+    (byDepth[depth[n.id]] = byDepth[depth[n.id]] || []).push(n);
+  });
+  const pos = {};
+  Object.keys(byDepth).forEach(col => {
+    const colNodes = byDepth[col];
+    colNodes.forEach((n, i) => {
+      pos[n.id] = {
+        x: PAD_L + Number(col) * (NODE_W + 14),
+        y: PAD_T + i * ROW + (col % 2) * (ROW / 2),  // slight stagger
+      };
+    });
+  });
+
+  const H = PAD_T + Math.max(...nodes.map(n => pos[n.id].y)) + NODE_H + 6;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'wire-diagram');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('width', W);
+  svg.setAttribute('height', H);
+
+  // edges first (under nodes)
+  edges.forEach(e => {
+    const a = pos[e.src], b = pos[e.dst];
+    if (!a || !b) return;
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const x1 = a.x + NODE_W, y1 = a.y + NODE_H / 2;
+    const x2 = b.x, y2 = b.y + NODE_H / 2;
+    const mx = (x1 + x2) / 2;
+    path.setAttribute('d', `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`);
+    path.setAttribute('class', 'edge' + (e.is_feedback ? ' fb' : ''));
+    svg.appendChild(path);
+  });
+
+  // nodes
+  nodes.forEach(n => {
+    const p = pos[n.id];
+    const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    r.setAttribute('x', p.x); r.setAttribute('y', p.y);
+    r.setAttribute('width', NODE_W); r.setAttribute('height', NODE_H);
+    r.setAttribute('rx', 3);
+    let cls = 'mn';
+    if (n.render) cls += ' render';
+    else if (n.is_driver) cls += ' driver';
+    r.setAttribute('class', cls);
+    svg.appendChild(r);
+    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    t.setAttribute('x', p.x + NODE_W / 2);
+    t.setAttribute('y', p.y + NODE_H - 3);
+    t.setAttribute('text-anchor', 'middle');
+    const label = (n.name || n.method_id || n.id).replace(/_/g, ' ');
+    t.textContent = label.length > 9 ? label.slice(0, 8) + '…' : label;
+    svg.appendChild(t);
+  });
+
+  const wrap = document.createElement('div');
+  wrap.appendChild(svg);
+  return wrap;
+}
+
 function renderGrid() {
   const grid = $('grid');
   grid.innerHTML = '';
@@ -336,11 +500,47 @@ function renderGrid() {
     }
     body.appendChild(row1);
 
-    const methods = document.createElement('div');
-    methods.className = 'methods';
-    methods.title = (sv.methods || []).join(' ← ');
-    methods.textContent = `${sv.node_count} nodes: ` + (sv.methods || []).join(' ← ');
-    body.appendChild(methods);
+    // ── "what it's going for" blurb ──
+    if (sv.blurb) {
+      const blurb = document.createElement('div');
+      blurb.className = 'blurb';
+      blurb.textContent = sv.blurb;
+      body.appendChild(blurb);
+    }
+
+    // ── mini node-graph wiring diagram ──
+    const g = sv.graph;
+    if (g && g.nodes && g.nodes.length) {
+      body.appendChild(wireDiagramSVG(g));
+    }
+
+    // ── named node chain (text fallback / supplementary) ──
+    const chain = document.createElement('div');
+    chain.className = 'chain';
+    const names = (sv.method_names && g && g.nodes)
+      ? g.nodes.map(n => sv.method_names[n.method_id] || n.method_id)
+      : (sv.methods || []);
+    if (names.length) {
+      chain.innerHTML = names.map((nm, i) => {
+        const isDrv = g && g.nodes[i] && g.nodes[i].is_driver;
+        const cls = isDrv ? 'nm drv' : 'nm';
+        const sep = i < names.length - 1 ? ' → ' : '';
+        return `<span class="${cls}">${nm}</span>${sep}`;
+      }).join('');
+    }
+    body.appendChild(chain);
+
+    // ── evolution deviation (only meaningful after an evolve) ──
+    if (sv.deviation && sv.deviation.text) {
+      const dev = document.createElement('div');
+      dev.className = `deviation kind-${sv.deviation.kind}`;
+      const kind = document.createElement('span');
+      kind.className = 'k';
+      kind.textContent = sv.deviation.kind;
+      dev.appendChild(kind);
+      dev.appendChild(document.createTextNode(' — ' + sv.deviation.text));
+      body.appendChild(dev);
+    }
 
     const notes = document.createElement('textarea');
     notes.className = 'notes';
@@ -443,11 +643,26 @@ async function resumeSession(sid) {
 }
 
 // ── generation runs (SSE progress) ─────────────────────────────
+function appendLog(msg) {
+  const box = $('gen-log');
+  if (!box) return;
+  const div = document.createElement('div');
+  div.className = 'line';
+  if (/→ ALIVE/.test(msg)) div.classList.add('alive');
+  else if (/→ DEAD/.test(msg)) div.classList.add('dead');
+  else if (/^▶/.test(msg)) div.classList.add('head');
+  else if (/^✓/.test(msg)) div.classList.add('done');
+  div.textContent = msg;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
 function watchJob(jobId) {
   return new Promise((resolve, reject) => {
     const es = new EventSource(`/api/jobs/${jobId}/stream`);
     es.addEventListener('progress', (e) => {
       const d = JSON.parse(e.data);
+      appendLog(d.message);
       setStatus(`⏳ ${d.message}  (${d.elapsed}s)`, 'busy');
     });
     es.addEventListener('done', (e) => { es.close(); resolve(JSON.parse(e.data)); });
@@ -470,6 +685,10 @@ async function runGeneration() {
     body.ratings = RATINGS;   // unrated clips are skipped
     body.notes = NOTES;       // pros/cons → advisor → breeding guidance
   }
+  const logBox = $('gen-log');
+  if (logBox) logBox.innerHTML = '';
+  const logWrap = $('gen-log-wrap');
+  if (logWrap) logWrap.open = true;
   setStatus(isEvolve ? 'breeding next generation…' : 'generating…', 'busy');
   try {
     const r = await fetch(`/api/shootout/${isEvolve ? 'evolve' : 'generate'}`, {

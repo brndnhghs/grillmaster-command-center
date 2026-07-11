@@ -24,7 +24,7 @@ from .config import ShootoutConfig, DEFAULT_CONFIG
 from .evaluator import render_many
 from .evolve import next_generation
 from .features import genome_features
-from .generator import build_gene_pool
+from .generator import build_gene_pool, GenePool
 from .repair import sample_valid_genome
 
 _session_locks: dict[str, threading.Lock] = {}
@@ -53,7 +53,12 @@ def start_session(session_id: str | None = None,
     return session
 
 
-def _survivor_view(genome: dict, predicted: float | None = None) -> dict:
+def _survivor_view(genome: dict, predicted: float | None = None,
+                   pool: GenePool | None = None) -> dict:
+    from . import describe as _describe
+    graph = genome.get("graph", {})
+    pool = pool or build_gene_pool(DEFAULT_CONFIG)
+    desc = _describe.describe_clip(graph, pool)
     return {
         "genome_id": genome["genome_id"],
         "generation": genome.get("generation", 0),
@@ -65,8 +70,14 @@ def _survivor_view(genome: dict, predicted: float | None = None) -> dict:
         "notes": genome.get("notes"),
         "node_feedback": genome.get("node_feedback"),
         "predicted_rating": predicted,
-        "node_count": len(genome["graph"].get("nodes", [])),
-        "methods": [n.get("method_id") for n in genome["graph"].get("nodes", [])],
+        "node_count": len(graph.get("nodes", [])),
+        "methods": [n.get("method_id") for n in graph.get("nodes", [])],
+        "method_names": _describe.node_names(graph, pool),
+        "graph": _describe.compact_graph(graph, pool),
+        "blurb": desc["blurb"],
+        "motifs": desc["motifs"],
+        "n_drivers": desc["n_drivers"],
+        "deviation": genome.get("deviation"),
     }
 
 
@@ -104,6 +115,9 @@ def run_generation(session_id: str,
 
 
 def _run_generation_locked(session_id, cfg, progress_cb, rng) -> dict:
+    import time as _time
+    _t0 = _time.time()
+
     def _p(msg: str) -> None:
         if progress_cb:
             progress_cb(msg)
@@ -119,7 +133,8 @@ def _run_generation_locked(session_id, cfg, progress_cb, rng) -> dict:
     guidance: dict | None = None
     explorer_bias = None
     if gen_index == 0:
-        _p(f"gen 0: sampling {cfg.render_pool} random genomes")
+        _p(f"▶ gen 0 · sampling {cfg.render_pool} random genomes "
+           f"(max_depth={cfg.max_depth})")
         candidates = [sample_valid_genome(pool, cfg, rng) for _ in range(cfg.render_pool)]
     else:
         prev = session["generations"][-1]
@@ -147,8 +162,9 @@ def _run_generation_locked(session_id, cfg, progress_cb, rng) -> dict:
         for g in rated_only[:cfg.elitism]:
             if g["rating"] >= 4 and (g.get("liveness") or {}).get("alive"):
                 elites.append(g)
-        _p(f"gen {gen_index}: breeding from {len(rated_only)} rated parents"
-           + (f" (+{len(elites)} elite)" if elites else ""))
+        _p(f"▶ gen {gen_index} · {len(rated_only)} rated parent(s) "
+           f"({len(dropped)} dropped by advisor)"
+           + (f", carrying {len(elites)} elite unchanged" if elites else ""))
         candidates = next_generation(rated, gen_index, pool, cfg, rng, guidance)
         if guidance:
             from .advisor import bias_from_guidance
@@ -156,6 +172,15 @@ def _run_generation_locked(session_id, cfg, progress_cb, rng) -> dict:
 
     for c in candidates:
         c["generation"] = gen_index
+
+    # ── Candidate composition breakdown (the "what's being bred" readout) ──
+    if gen_index > 0:
+        kinds = {}
+        for c in candidates:
+            k = (c.get("deviation") or {}).get("kind", "unknown")
+            kinds[k] = kinds.get(k, 0) + 1
+        parts = ", ".join(f"{n}× {k}" for k, n in sorted(kinds.items()))
+        _p(f"  composed {len(candidates)} offspring: {parts}")
 
     # ── Render, over-generating until show_n alive ────────────────
     alive: list[dict] = []
@@ -166,22 +191,30 @@ def _run_generation_locked(session_id, cfg, progress_cb, rng) -> dict:
     all_rendered: list[dict] = []
     need = cfg.show_n - len(elites)
     while batch:
-        _p(f"rendering {len(batch)} candidates "
-           f"({rendered_total + len(batch)}/{max_total} budget)")
+        _p(f"▶ rendering {len(batch)} candidate(s) "
+           f"[{rendered_total + len(batch)}/{max_total} budget]")
+        _rt0 = _time.time()
         results = render_many(batch, cfg, progress_cb=_p)
+        _rt = _time.time() - _rt0
         rendered_total += len(batch)
         for g in results:
             store.save_genome(g)
             all_rendered.append(g)
-            if (g.get("liveness") or {}).get("alive"):
+            gid = g["genome_id"]
+            n_nodes = len(g.get("graph", {}).get("nodes", []))
+            lv = g.get("liveness") or {}
+            if lv.get("alive"):
                 alive.append(g)
+                _p(f"  ✓ {gid}  {n_nodes} nodes  → ALIVE  ({_rt / max(len(results), 1):.1f}s/clip)")
             else:
                 dead += 1
-        _p(f"{len(alive)} alive / {dead} dead so far")
+                reason = lv.get("reason", "unknown")
+                _p(f"  ✗ {gid}  {n_nodes} nodes  → DEAD ({reason})")
+        _p(f"  batch done in {_rt:.1f}s · {len(alive)} alive / {dead} dead so far")
         if len(alive) >= need or rendered_total >= max_total:
             break
         n_more = min(max(2 * (need - len(alive)), 2), max_total - rendered_total)
-        _p(f"under-filled — sampling {n_more} explorers")
+        _p(f"  under-filled ({len(alive)}/{need}) — sampling {n_more} more explorers")
         batch = []
         for _ in range(n_more):
             g = sample_valid_genome(pool, cfg, rng, origin="explorer",
@@ -191,8 +224,32 @@ def _run_generation_locked(session_id, cfg, progress_cb, rng) -> dict:
 
     survivors = elites + alive[:need]
     if len(survivors) < cfg.show_n:
-        _p(f"warning: only {len(survivors)} alive clips "
-           f"after {rendered_total} renders")
+        _p(f"⚠ only {len(survivors)} alive clip(s) after {rendered_total} renders "
+           f"(wanted {cfg.show_n})")
+
+    # Dead-reason tally (why clips were culled)
+    dead_reasons: dict[str, int] = {}
+    for g in all_rendered:
+        lv = g.get("liveness") or {}
+        if not lv.get("alive"):
+            r = lv.get("reason", "unknown")
+            dead_reasons[r] = dead_reasons.get(r, 0) + 1
+    if dead_reasons:
+        _p("  dead reasons: " + ", ".join(
+            f"{n}× {r}" for r, n in sorted(dead_reasons.items())))
+
+    # Spread of the surviving generation (mutation / crossover / explorer mix)
+    surv_kinds: dict[str, int] = {}
+    for g in survivors:
+        k = (g.get("deviation") or {}).get("kind", "gen0")
+        surv_kinds[k] = surv_kinds.get(k, 0) + 1
+    _p("  survivors: " + ", ".join(
+        f"{n}× {k}" for k, n in sorted(surv_kinds.items())))
+
+    _elapsed = _time.time() - _t0
+    _p(f"✓ gen {gen_index} complete in {_elapsed:.1f}s · "
+       f"{len(survivors)} shown, {len(alive)} alive, {dead} dead, "
+       f"{rendered_total} rendered")
 
     # Utilization audit (phase 2): how well this generation exercised the
     # gene pool. Computed over every rendered candidate (not just the
@@ -211,7 +268,7 @@ def _run_generation_locked(session_id, cfg, progress_cb, rng) -> dict:
                 pred = round(pred, 2) if pred is not None else None
             except Exception:
                 pred = None
-        views.append(_survivor_view(g, pred))
+        views.append(_survivor_view(g, pred, pool))
 
     session = store.load_session(session_id)  # reload — rate() may have run
     session["generations"].append({

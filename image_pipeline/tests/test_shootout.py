@@ -690,3 +690,60 @@ def test_node_feedback_roundtrip(client, tmp_store):
     assert r2.status_code == 200
     assert store.load_genome(g["genome_id"]).get("node_feedback", {}) == {} \
         or "ghost_node" not in store.load_genome(g["genome_id"]).get("node_feedback", {})
+
+
+# ── Explainer enrichment (node names, mini-graph, blurb, deviations) ──
+
+
+def test_describe_clip_uses_names_and_drivers():
+    from image_pipeline.shootout import describe as d
+    rng = random.Random(71)
+    g = sample_valid_genome(POOL, CFG, rng)
+    graph = g["graph"]
+    names = d.node_names(graph, POOL)
+    assert names  # every node maps to a human name
+    for n in graph["nodes"]:
+        assert names[n["method_id"]] != n["method_id"] or n["method_id"] in POOL.defs
+    cg = d.compact_graph(graph, POOL)
+    assert len(cg["nodes"]) == len(graph["nodes"])
+    assert all("name" in nd and "is_driver" in nd for nd in cg["nodes"])
+    desc = d.describe_clip(graph, POOL)
+    assert desc["n_nodes"] == len(graph["nodes"])
+    assert isinstance(desc["blurb"], str) and desc["blurb"]
+    # driver count matches the pool's scalar_driver classification
+    expect_drv = sum(1 for n in graph["nodes"]
+                     if n["method_id"] in POOL.scalar_drivers)
+    assert desc["n_drivers"] == expect_drv
+
+
+def test_next_generation_tags_deviations():
+    from image_pipeline.shootout import evolve
+    rng = random.Random(73)
+    # two rated parents
+    parents = [sample_valid_genome(POOL, CFG, rng) for _ in range(2)]
+    for i, p in enumerate(parents):
+        p["rating"] = 5
+        p["genome_id"] = f"par{i}"
+    kids = evolve.next_generation(parents, 1, POOL, CFG, rng)
+    assert kids
+    for k in kids:
+        assert "deviation" in k
+        assert k["deviation"]["kind"] in (
+            "mutation", "crossover", "explorer", "random", "protected")
+        assert k["deviation"]["text"]
+    # with rated parents present, we should see a mix of bred + explore kinds
+    kinds = {k["deviation"]["kind"] for k in kids}
+    assert "explorer" in kinds          # fresh randoms always present
+
+
+def test_survivor_view_carries_explainer_fields():
+    from image_pipeline.shootout import session as sess, describe as d
+    rng = random.Random(79)
+    g = sample_valid_genome(POOL, CFG, rng)
+    view = sess._survivor_view(g, None, POOL)
+    assert view["method_names"]
+    assert "graph" in view and view["graph"]["nodes"]
+    assert view["blurb"]
+    assert view["deviation"] is None  # no evolution yet → no deviation
+    # names match the describe module directly
+    assert view["method_names"] == d.node_names(g["graph"], POOL)

@@ -21,7 +21,7 @@ sleep 1
 
 # 1. Start Chord Bot server (no trap — runs independently)
 echo "Starting Chord Bot server..."
-PYTHONPATH="$CHORD_DIR" nohup "$VENV_PYTHON" -m chord_bot.server --port "$PORT" > "$LOG_DIR/server.log" 2>&1 &
+$ENV_PREFIX nohup "$VENV_PYTHON" -m chord_bot.server --port "$PORT" > "$LOG_DIR/server.log" 2>&1 &
 SERVER_PID=$!
 
 # Wait for server to be ready
