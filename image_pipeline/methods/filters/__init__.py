@@ -7,6 +7,7 @@ from . import hdr
 from . import data_bending
 from . import slitscan
 from . import edge_halftone
+from . import cmyk_halftone
 from . import swirl
 from . import pixel_mosaic
 from . import cross_stitch
