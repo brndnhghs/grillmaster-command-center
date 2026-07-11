@@ -38,6 +38,39 @@ CUMULATIVE_TIMEOUT = 150.0
 SIM_IDS = sorted(mid for mid, m in get_all().items() if m.category == "simulations")
 NAMES = {mid: get_all()[mid].name for mid in SIM_IDS}
 
+
+def _frame_validity(arr):
+    """Return ``(ok, reason)`` for an output frame.
+
+    Accepts RGB or RGBA float arrays in [0,1]. RGBA is allowed for
+    sparse-content methods (discrete dots/blobs on a transparent background --
+    pipeline rule 9: "Methods with discrete objects/blobs on empty bg output
+    RGBA"); for those we judge content over the ``alpha > 0`` pixels only.
+
+    A frame is blank only if it is a single flat colour (std < 0.01 AND <= 2
+    distinct quantized tones) or, for RGBA, fully transparent / a single flat
+    colour of opaque pixels. A low-contrast but VALID render (faint Perlin
+    relief, shallow-water at rest, sparse stipples) has many distinct tones and
+    must NOT be flagged blank.
+    """
+    if arr.ndim != 3 or arr.shape[2] not in (3, 4):
+        return False, f"unexpected shape {arr.shape}"
+    rgb = arr[..., :3]
+    if arr.shape[2] == 4:
+        alpha = arr[..., 3]
+        mask = alpha > 0.5
+        if not mask.any():
+            return False, "fully transparent (no opaque pixels)"
+        rgb = rgb[mask]
+    if rgb.size == 0:
+        return False, "no content"
+    if rgb.std() < 0.01:
+        q = (rgb * 31).astype(np.int32)
+        q = q[..., 0] * 1024 + q[..., 1] * 32 + q[..., 2]
+        if np.unique(q).size <= 2:
+            return False, f"blank output (flat colour, std={rgb.std():.4f})"
+    return True, ""
+
 # Wirable input port types -> node needs an upstream wire to produce output.
 # A sim whose only meaningful input is another node's output (e.g. a PARTICLE
 # consumer that intentionally blanks when nothing is wired) legitimately
@@ -94,19 +127,11 @@ def _run_one(mid: str):
     if not pngs:
         return False, dt, "no PNG output"
     try:
-        img = Image.open(str(pngs[-1])).convert("RGB")
+        img = Image.open(str(pngs[-1])).convert("RGBA")
         arr = np.asarray(img, dtype=np.float32) / 255.0
-        if arr.ndim != 3 or arr.shape[2] != 3:
-            return False, dt, f"unexpected shape {arr.shape}"
-        # A truly blank frame is a single flat colour (std ~ 0 AND <=2 distinct
-        # quantized tones). A low-contrast but VALID render (e.g. a faint Perlin
-        # relief map, or shallow-water height field at rest) has many distinct
-        # tones and must NOT be flagged blank.
-        if arr.std() < 0.01:
-            q = (arr * 31).astype(np.int32)
-            q = (q[..., 0] * 1024 + q[..., 1] * 32 + q[..., 2])
-            if np.unique(q).size <= 2:
-                return False, dt, "blank output (flat colour)"
+        ok, detail = _frame_validity(arr)
+        if not ok:
+            return False, dt, detail
     except Exception as e:  # noqa: BLE001
         return False, dt, f"read failed: {type(e).__name__}: {e}"
     return True, dt, ""

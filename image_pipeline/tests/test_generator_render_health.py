@@ -68,6 +68,39 @@ GEN_IDS.sort(key=lambda x: (get_all()[x].category, x))
 NAMES = {mid: get_all()[mid].name for mid in GEN_IDS}
 
 
+def _frame_validity(arr):
+    """Return ``(ok, reason)`` for an output frame.
+
+    Accepts RGB or RGBA float arrays in [0,1]. RGBA is allowed for
+    sparse-content methods (discrete dots/blobs on a transparent background --
+    pipeline rule 9: "Methods with discrete objects/blobs on empty bg output
+    RGBA"); for those we judge content over the ``alpha > 0`` pixels only.
+
+    A frame is blank only if it is a single flat colour (std < 0.01 AND <= 2
+    distinct quantized tones) or, for RGBA, fully transparent / a single flat
+    colour of opaque pixels. A low-contrast but VALID render (faint Perlin
+    relief, shallow-water at rest, sparse stipples) has many distinct tones and
+    must NOT be flagged blank.
+    """
+    if arr.ndim != 3 or arr.shape[2] not in (3, 4):
+        return False, f"unexpected shape {arr.shape}"
+    rgb = arr[..., :3]
+    if arr.shape[2] == 4:
+        alpha = arr[..., 3]
+        mask = alpha > 0.5
+        if not mask.any():
+            return False, "fully transparent (no opaque pixels)"
+        rgb = rgb[mask]
+    if rgb.size == 0:
+        return False, "no content"
+    if rgb.std() < 0.01:
+        q = (rgb * 31).astype(np.int32)
+        q = q[..., 0] * 1024 + q[..., 1] * 32 + q[..., 2]
+        if np.unique(q).size <= 2:
+            return False, f"blank output (flat colour, std={rgb.std():.4f})"
+    return True, ""
+
+
 def _timeout_for(mid: str) -> float:
     return PER_METHOD_TIMEOUT
 
@@ -100,17 +133,8 @@ def _readback(node_dir, raw_result):
     if arr is None:
         return False, "no image (return dict or PNG)", None
     arr = np.asarray(arr, dtype=np.float32)
-    if arr.ndim != 3 or arr.shape[2] != 3:
-        return False, f"unexpected shape {arr.shape}", None
-    # A truly blank frame is a single flat colour (std ~ 0 AND <=2 distinct
-    # quantized tones). A low-contrast but VALID render has many distinct tones
-    # and must NOT be flagged blank.
-    if arr.std() < 0.01:
-        q = (arr * 31).astype(np.int32)
-        q = q[..., 0] * 1024 + q[..., 1] * 32 + q[..., 2]
-        if np.unique(q).size <= 2:
-            return False, f"blank output (flat colour, std={arr.std():.4f})", None
-    return True, "", arr
+    ok, detail = _frame_validity(arr)
+    return ok, detail, (arr if ok else None)
 
 
 def _run_one(mid: str):
