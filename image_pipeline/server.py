@@ -2465,19 +2465,62 @@ else:
     )
 
 
-@app.post("/api/node-doctor/chat")
-async def nd_chat(payload: dict):
-    method_id   = payload.get("method_id", "")
-    node_def    = payload.get("node_def", {})
-    node_params = payload.get("node_params", {})
-    messages    = payload.get("messages", [])
+# ── Shared Hermes streaming helper (used by chat + complain) ────────
+async def _nd_stream(system: str, messages: list, timeout: int = 120):
+    """Stream a Node Doctor agent run as SSE text events."""
+    if not _HERMES_PY.exists():
+        msg = (f"⚠ Hermes backend not found at {_HERMES_PY}. "
+               f"Set HERMES_AGENT_DIR (or HERMES_PYTHON) and restart.")
+        yield f"data: {json.dumps({'text': msg})}\n\n"
+        return
 
+    stdin_bytes = json.dumps({"system_prompt": system, "messages": messages}).encode()
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            str(_HERMES_PY), str(_ND_RUNNER),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(input=stdin_bytes), timeout=timeout
+        )
+    except asyncio.TimeoutError:
+        yield f"data: {json.dumps({'text': '⚠ NODE DOCTOR timed out'})}\n\n"
+        return
+    except Exception as exc:
+        yield f"data: {json.dumps({'text': f'⚠ subprocess error: {exc}'})}\n\n"
+        return
+
+    if proc.returncode != 0 and not stdout.strip():
+        err = stderr.decode()[:500] if stderr else "no output"
+        yield f"data: {json.dumps({'text': f'⚠ runner failed: {err}'})}\n\n"
+        return
+
+    for raw in stdout.decode().splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        try:
+            d = json.loads(line)
+            if "text" in d:
+                yield f"data: {json.dumps({'text': d['text']})}\n\n"
+            elif "error" in d:
+                yield f"data: {json.dumps({'text': '⚠ ' + d['error']})}\n\n"
+            elif d.get("done"):
+                yield f"data: {json.dumps({'done': True})}\n\n"
+        except Exception:
+            pass
+
+
+def _nd_system_for(method_id: str, node_def: dict, node_params: dict,
+                   extra: str = "") -> str:
+    """Build the node-context system prompt shared by chat/complain."""
     source = ""
     path = _get_method_path(method_id)
     if path and path.exists():
         source = path.read_text()
-
-    system = _ND_SYSTEM + f"""
+    return f"""{extra}
 --- NODE CONTEXT ---
 method_id : {method_id}
 name      : {node_def.get('name', '')}
@@ -2492,53 +2535,116 @@ current_param_values: {json.dumps(node_params)}
 ```
 """
 
-    stdin_bytes = json.dumps({"system_prompt": system, "messages": messages}).encode()
 
-    async def generate():
-        if not _HERMES_PY.exists():
-            msg = (f"⚠ Hermes backend not found at {_HERMES_PY}. "
-                   f"Set HERMES_AGENT_DIR (or HERMES_PYTHON) and restart.")
-            yield f"data: {json.dumps({'text': msg})}\n\n"
-            return
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                str(_HERMES_PY), str(_ND_RUNNER),
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(input=stdin_bytes), timeout=120
-            )
-        except asyncio.TimeoutError:
-            yield f"data: {json.dumps({'text': '⚠ NODE DOCTOR timed out'})}\n\n"
-            return
-        except Exception as exc:
-            yield f"data: {json.dumps({'text': f'⚠ subprocess error: {exc}'})}\n\n"
-            return
+@app.post("/api/node-doctor/chat")
+async def nd_chat(payload: dict):
+    method_id   = payload.get("method_id", "")
+    node_def    = payload.get("node_def", {})
+    node_params = payload.get("node_params", {})
+    messages    = payload.get("messages", [])
 
-        if proc.returncode != 0 and not stdout.strip():
-            err = stderr.decode()[:500] if stderr else "no output"
-            yield f"data: {json.dumps({'text': f'⚠ runner failed: {err}'})}\n\n"
-            return
-
-        for raw in stdout.decode().splitlines():
-            line = raw.strip()
-            if not line:
-                continue
-            try:
-                d = json.loads(line)
-                if "text" in d:
-                    yield f"data: {json.dumps({'text': d['text']})}\n\n"
-                elif "error" in d:
-                    yield f"data: {json.dumps({'text': '⚠ ' + d['error']})}\n\n"
-                elif d.get("done"):
-                    yield f"data: {json.dumps({'done': True})}\n\n"
-            except Exception:
-                pass
+    system = _nd_system_for(method_id, node_def, node_params, _ND_SYSTEM)
 
     return StreamingResponse(
-        generate(), media_type="text/event-stream",
+        _nd_stream(system, messages), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ── Complain: right-click a parameter, request a targeted rewrite ──
+_ND_COMPLAIN_SYSTEM = """\
+You are NODE DOCTOR — COMPLAINT MODE. A user has right-clicked a specific
+PARAMETER on a node and filed a complaint about it. Your job is to rewrite the
+node's Python method so the complaint is fixed, while respecting the node /
+dataflow HYGIENE contract below.
+
+THE COMPLAINT is scoped to one parameter (param_key + complaint text). Fix that
+parameter and its downstream effects, but DO NOT touch unrelated parameters
+unless the fix genuinely requires it.
+
+HARD RULES (same as Node Doctor):
+- Always output the COMPLETE, runnable Python file — never partial snippets.
+- Preserve the method signature exactly:
+      fn(out_dir: Path | str, seed: int, params: dict | None = None)
+- Methods must write at least one PNG to out_dir/ if they have an IMAGE output
+  port.
+- For sidecar outputs use only: write_scalars(out_dir, {...}),
+  write_field(out_dir, arr), write_particles(out_dir, arr) imported from
+  image_pipeline.core.utils.
+- Every param MUST have a default so existing graphs keep working.
+- Never remove existing params or break existing port contracts.
+
+NODE / DATAFLOW HYGIENE CONTRACT (CHECK YOUR REWRITE AGAINST THESE):
+1. Type correctness — the parameter's type must match its behavior. If the
+   complaint says "should be float not int" the default must be a float
+   (e.g. 1.0) and any int() coercion in the body removed. A number box with no
+   min/max becomes a SCALAR input port; an int default is a SCALAR too but
+   silently truncates — honor the requested type.
+2. Every declared param must AFFECT the output. If the complaint is "no effect
+   on image" / "does not produce image", wire the parameter into the compute
+   (or the body must explain why it cannot). No dead parameters.
+3. No fallback generation on pure processors — a node that transforms an input
+   must not silently synthesize a standalone image when the input is missing,
+   unless that is the node's stated purpose.
+4. Declared outputs= must match what the node actually writes. If you add a
+   sidecar (field/particles/scalar), declare it in outputs=; if the node writes
+   nothing of a declared type, remove the dead declaration.
+5. No unused imports, no dead code paths. The rewrite must be minimal and
+   clean.
+6. Speed complaints ("runs too slow" / "runs too fast"): adjust work size /
+   iteration counts / quality factors driven by the parameter; do not add
+   unrelated behavior.
+
+PORT TYPES: IMAGE (H×W×3 float32 [0,1]), SCALAR (float), FIELD (H×W float32),
+PARTICLES (N×4 float32 [x,y,vx,vy]).
+
+RESPONSE FORMAT:
+- Reply conversationally first — state the current behavior, then exactly what
+  you changed about param_key and why it resolves the complaint.
+- End your response with the COMPLETE rewritten file in a single ```python
+  block.
+"""
+
+
+@app.post("/api/node-doctor/complain")
+async def nd_complain(payload: dict):
+    method_id   = payload.get("method_id", "")
+    node_def    = payload.get("node_def", {})
+    node_params = payload.get("node_params", {})
+    param_key   = payload.get("param_key", "")
+    complaint   = payload.get("complaint", "").strip()
+    messages    = payload.get("messages", [])
+
+    if not param_key:
+        return {"error": "param_key is required"}
+    if not complaint:
+        return {"error": "complaint text is required"}
+
+    spec = (node_def.get("params", {}) or {}).get(param_key, {})
+    param_ctx = f"""
+--- COMPLAINT SCOPE ---
+parameter_key : {param_key}
+parameter_spec: {json.dumps(spec)}
+current_value : {json.dumps(node_params.get(param_key))}
+complaint     : {complaint}
+"""
+    system = _nd_system_for(method_id, node_def, node_params,
+                            _ND_COMPLAIN_SYSTEM + param_ctx)
+
+    # Complain flows as a single user turn. If a prior conversation exists
+    # (follow-ups), append; otherwise seed a focused first message.
+    if not messages:
+        messages = [{
+            "role": "user",
+            "content": (
+                f'Complaint about parameter "{param_key}": {complaint}\n\n'
+                "Rewrite the node to resolve this, keeping the rest of the node "
+                "intact and honoring node/dataflow hygiene. Output the full file."
+            ),
+        }]
+
+    return StreamingResponse(
+        _nd_stream(system, messages, timeout=180), media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
