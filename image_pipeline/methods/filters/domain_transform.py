@@ -117,7 +117,7 @@ def _dt_filter_2d(src: np.ndarray, guide: np.ndarray,
     inputs={},
     outputs={"image": "IMAGE", "mask": "MASK"},
     params={
-        "source": {"description": "source (noise/gradient/input_image/palette/rainbow/procedural)", "default": "noise"},
+        "source": {"description": "source (procedural/noise/gradient/input_image/palette/rainbow)", "default": "procedural"},
         "spatial": {"description": "spatial sigma σs in px — HIGHER = wider smoothing (scale-free, O(N))", "min": 2, "max": 200, "default": 60},
         "range": {"description": "range sigma σr — LOWER = sharper edge preservation, HIGHER = flatter smoothing", "min": 0.02, "max": 1.0, "default": 0.2},
         "passes": {"description": "recursive iterations (1-5, more = smoother/tighter convergence)", "min": 1, "max": 5, "default": 3},
@@ -183,7 +183,7 @@ def method_domain_transform(out_dir: Path, seed: int, params=None):
         seed_all(seed)
         rng = np.random.default_rng(seed)
 
-        source = str(params.get("source", "noise"))
+        source = str(params.get("source", "procedural"))
         sigma_s = float(params.get("spatial", 60))
         sigma_s = max(2.0, min(200.0, sigma_s))
         sigma_r = float(params.get("range", 0.2))
