@@ -12,3 +12,4 @@ from . import pixel_mosaic
 from . import cross_stitch
 from . import kuwahara
 from . import transform
+from . import line_integral_convolution
