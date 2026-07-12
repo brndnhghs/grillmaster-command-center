@@ -20,6 +20,7 @@ import numpy as np
 from image_pipeline.core.animation import frames_to_mp4
 from image_pipeline.core.graph import GraphExecutor
 
+from . import progress
 from .config import ShootoutConfig, DEFAULT_CONFIG
 
 OUTPUT_ROOT = Path(__file__).resolve().parent.parent / "output"
@@ -213,24 +214,44 @@ def render_genome(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
     _pin_n_frames(nodes, cfg.frames)
     seed = int(genome.get("seed", 42))
 
+    # Live telemetry + skip: register this render on the shared board, install
+    # the skip event the executor's sim loop polls, and a node-progress hook
+    # so the heartbeat can report the node cooking right now.
+    mon = progress.MONITOR
+    skip_ev = mon.skip_event(gid)
+    mon.begin(gid, cfg.frames, len(nodes))
+
     executor = GraphExecutor(work_dir, fps=cfg.fps, in_memory=True,
                              audit_to_disk=False)
+    executor.cancel_event = skip_ev
+    executor.node_progress = (
+        lambda node_id, method_id, name, sim_frame=None:
+        mon.node_cooking(gid, node_id, method_id, name, sim_frame=sim_frame))
     acc = LivenessAccumulator(cfg)
     t0 = time.time()
     timed_out = False
+    skipped = False
     # Per-node compute, summed across every rendered frame. The executor
     # reports ms-per-node for the *last* frame only (last_frame_stats), so
     # we fold each frame's timings in here to get total compute per node.
     node_ms: dict[str, float] = {}
 
+    from image_pipeline.core.animation import JobCancelled
+
     def _frame_gen():
-        nonlocal timed_out
+        nonlocal timed_out, skipped
         for frame in range(cfg.frames):
+            if skip_ev.is_set():
+                skipped = True
+                if progress_cb:
+                    progress_cb(f"{gid}: skipped at frame {frame}")
+                return
             if time.time() - t0 > cfg.render_timeout_s:
                 timed_out = True
                 if progress_cb:
                     progress_cb(f"{gid}: timeout after {frame} frames")
                 return
+            mon.frame_start(gid, frame)
             arr = None
             try:
                 flat, terminal_id, _errs = executor.execute(
@@ -239,6 +260,11 @@ def render_genome(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
                 for nid, ms in (executor.last_frame_stats.get("node_timings") or {}).items():
                     node_ms[nid] = node_ms.get(nid, 0.0) + ms
                 arr = _terminal_image(flat, terminal_id, nodes)
+            except JobCancelled:  # skip button / watchdog aborted a wedged node
+                skipped = True
+                if progress_cb:
+                    progress_cb(f"{gid}: skipped mid-frame {frame}")
+                return
             except Exception as exc:  # cycle / unknown method — dead clip
                 if progress_cb:
                     progress_cb(f"{gid}: frame {frame} error: {exc}")
@@ -256,11 +282,17 @@ def render_genome(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
     except Exception as exc:
         if progress_cb:
             progress_cb(f"{gid}: encode failed: {exc}")
+    finally:
+        mon.finish(gid)
 
     liveness = acc.stats()
     captured = acc.total - acc.missing
     min_frames = int(cfg.frames * cfg.min_render_frames_frac)
-    if timed_out:
+    if skipped:
+        # Manually skipped or watchdog-aborted: cull, but keep whatever the
+        # liveness stats saw so the log can show how far it got.
+        liveness = {**liveness, "alive": False, "reason": "skipped"}
+    elif timed_out:
         # Recover good clips: only cull as "timeout" when we captured too few
         # frames to form a meaningful clip. If most frames rendered and the
         # liveness gate passes, keep the clip (mark it truncated) instead of
@@ -297,7 +329,15 @@ def render_genome(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
 def render_many(genomes: list[dict], cfg: ShootoutConfig = DEFAULT_CONFIG,
                 progress_cb: Callable[[str], None] | None = None) -> list[dict]:
     """Render candidates concurrently (capped — plan §12 perf note).
-    Returns genomes in input order with render/liveness filled."""
+    Returns genomes in input order with render/liveness filled.
+
+    A heartbeat thread reads the live render board every cfg.heartbeat_s and
+    emits a status line per in-flight clip (current frame, node cooking now,
+    seconds on this frame), so a hang is visible second-by-second. It also
+    acts as the wedged-render watchdog: any clip whose *current frame* has run
+    past render_timeout_s (or the tighter auto_skip_frame_hang_s, if set) is
+    force-skipped — the safety net the between-frame timeout can't provide
+    when a node is stuck mid-cook."""
     results: dict[int, dict] = {}
     lock = threading.Lock()
 
@@ -306,17 +346,47 @@ def render_many(genomes: list[dict], cfg: ShootoutConfig = DEFAULT_CONFIG,
             with lock:
                 progress_cb(msg)
 
-    with ThreadPoolExecutor(max_workers=cfg.render_concurrency) as ex:
-        futs = {ex.submit(render_genome, g, cfg, _safe_progress): i
-                for i, g in enumerate(genomes)}
-        for fut in as_completed(futs):
-            i = futs[fut]
-            try:
-                results[i] = fut.result()
-            except Exception as exc:
-                _safe_progress(f"{genomes[i]['genome_id']}: render crashed: {exc}")
-                results[i] = {**genomes[i],
-                              "render": None,
-                              "liveness": {"alive": False, "reason": "crash",
-                                           "error": str(exc)}}
+    # Fresh board for this batch (drop any finished entries from the last one).
+    progress.MONITOR.clear_all()
+    stop = threading.Event()
+
+    def _heartbeat() -> None:
+        hard = cfg.auto_skip_frame_hang_s or 0.0
+        while not stop.wait(cfg.heartbeat_s):
+            now = time.time()
+            snap = progress.MONITOR.snapshot()
+            for line in progress.heartbeat_lines(snap, cfg.frame_hang_s, now):
+                _safe_progress(line)
+            # Watchdog: force-skip a clip wedged on a single frame.
+            for gid, s in snap.items():
+                if s.get("skip_requested"):
+                    continue
+                on_frame = now - s.get("t_frame", now)
+                limit = hard if hard > 0 else cfg.render_timeout_s
+                if on_frame > limit:
+                    progress.MONITOR.request_skip(gid)
+                    _safe_progress(
+                        f"⏹ {gid}: auto-skip — frame stuck {on_frame:.0f}s "
+                        f"(> {limit:.0f}s), likely a wedged node")
+
+    hb = threading.Thread(target=_heartbeat, daemon=True)
+    hb.start()
+    try:
+        with ThreadPoolExecutor(max_workers=cfg.render_concurrency) as ex:
+            futs = {ex.submit(render_genome, g, cfg, _safe_progress): i
+                    for i, g in enumerate(genomes)}
+            for fut in as_completed(futs):
+                i = futs[fut]
+                try:
+                    results[i] = fut.result()
+                except Exception as exc:
+                    _safe_progress(f"{genomes[i]['genome_id']}: render crashed: {exc}")
+                    results[i] = {**genomes[i],
+                                  "render": None,
+                                  "liveness": {"alive": False, "reason": "crash",
+                                               "error": str(exc)}}
+    finally:
+        stop.set()
+        hb.join(timeout=2.0)
+        progress.MONITOR.clear_all()
     return [results[i] for i in range(len(genomes))]

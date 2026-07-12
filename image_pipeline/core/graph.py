@@ -404,11 +404,16 @@ def _eligible_params(params: dict, src_type: str) -> list[tuple[str, dict]]:
 
 
 def _inject_typed(
-    run_params: dict, param: str, value: Any, src_type: str, node_params: dict
+    run_params: dict, param: str, value: Any, src_type: str, node_params: dict,
+    spec: dict | None = None,
 ) -> None:
     """Write value into run_params[param] with type-safe coercion.
 
     SCALAR → int param: round(); SCALAR → float param: pass as-is.
+    SCALAR → int param with a ``choices`` list: map the driver's normalized
+        value onto the discrete choice set (so a continuously-sweeping LFO /
+        Counter actually steps the parameter instead of collapsing through
+        int() to a single clamped value — a real dead-clip contributor).
     FIELD  → list/tuple param: pass raw ndarray.
     Logs a warning and skips on type mismatch.
     """
@@ -419,6 +424,31 @@ def _inject_typed(
             return
         if orig is None or isinstance(orig, (int, float)):
             val = round(float(value)) if isinstance(orig, int) else float(value)
+            # Discrete choice params (e.g. CLAHE tile_size ∈ {4,8,16,32,64}):
+            # a continuous scalar driver would otherwise round to one value
+            # and never animate. Map the driver's normalized [0,1] sweep onto
+            # the choice list by fractional index. A driver with no min/max
+            # still advances (its output range spans the union of choices).
+            if spec and isinstance(orig, int) and isinstance(spec.get("choices"), (list, tuple)):
+                choices = [c for c in spec["choices"] if isinstance(c, (int, float))]
+                if choices:
+                    # Normalize the incoming scalar to [0,1]. A scalar driver
+                    # conventionally emits within its own min/max; when the
+                    # *target* param declares none, the incoming value is
+                    # already normalized (the [0,1] driver-output convention),
+                    # so map it straight onto the choice list by fractional
+                    # index rather than stretching the choice bounds (which
+                    # would collapse a [0,1] sweep to a single entry).
+                    _mn = spec.get("min")
+                    _mx = spec.get("max")
+                    if isinstance(_mn, (int, float)) and isinstance(_mx, (int, float)):
+                        lo, hi = float(_mn), float(_mx)
+                        rng = (hi - lo) or 1.0
+                        frac = max(0.0, min(1.0, (float(value) - lo) / rng))
+                    else:
+                        frac = max(0.0, min(1.0, float(value)))
+                    idx = min(len(choices) - 1, int(round(frac * (len(choices) - 1))))
+                    val = int(choices[idx])
             run_params[param] = val
             # Also inject as uniform field for FIELD-input methods.
             # broadcast_to is a zero-copy read-only view — a np.full here
@@ -605,6 +635,15 @@ class GraphExecutor:
         self._group_executors: dict[str, "GraphExecutor"] = {}
         # Diagnostics for the last completed frame — written by execute(), read by server
         self.last_frame_stats: dict = {}
+        # Optional live-telemetry / skip hooks (default off — the render and
+        # live pipelines don't set them, so behaviour is unchanged). The
+        # shootout render pool installs these to report the node cooking right
+        # now and to let a skip button / watchdog abort a wedged sim.
+        #   cancel_event  : threading.Event — polled by the Arch-A sim loop
+        #                   (via animation.capture_frame) and between nodes.
+        #   node_progress : callable(node_id, method_id, name, sim_frame=None)
+        self.cancel_event = None
+        self.node_progress = None
 
     def _evict_sim_cache(self) -> None:
         """Drop oldest sim-cache entries until under the byte budget."""
@@ -687,6 +726,14 @@ class GraphExecutor:
         for node_id in order:
             node = node_map[node_id]
 
+            # ── Cooperative skip: abort between nodes when signalled ───
+            # A wedged sim swallows JobCancelled internally and returns
+            # partial frames; the next node then trips this check and bails
+            # the whole frame, so the caller sees the skip promptly.
+            if self.cancel_event is not None and self.cancel_event.is_set():
+                from image_pipeline.core.animation import JobCancelled
+                raise JobCancelled("skip requested")
+
             # ── Group node: recursive sub-execution ───────────────────
             raw_n = raw_nodes.get(node_id, {})
             if raw_n.get("type") == "group":
@@ -702,6 +749,14 @@ class GraphExecutor:
             meta = registry.get_meta(node.method_id)
             if meta is None:
                 raise GraphError(f"Unknown method '{node.method_id}'")
+
+            # ── Live telemetry: report the node about to cook ─────────
+            if self.node_progress is not None:
+                try:
+                    self.node_progress(node_id, node.method_id,
+                                       getattr(meta, "name", None) or node.method_id)
+                except Exception:
+                    pass
 
             upstream_node_ids = {
                 e.src_node for e in gedges if e.dst_node == node_id and not e.feedback
@@ -828,8 +883,21 @@ class GraphExecutor:
                 )
                 import threading as _thr
                 _captured = []
-                _cancel_evt = _thr.Event()
+                # Honour an externally-installed skip event (shootout render
+                # pool / skip button) so a wedged sim can actually be aborted;
+                # otherwise a fresh local event that nothing ever sets.
+                _cancel_evt = self.cancel_event if self.cancel_event is not None else _thr.Event()
+                _sim_prog = self.node_progress
+                _sim_meta_name = getattr(meta, "name", None) or node.method_id
                 def _on_capture(arr):
+                    # Per sim sub-frame heartbeat: lets the readout show a long
+                    # sim advancing (frame 40/96) instead of a silent stall.
+                    if _sim_prog is not None:
+                        try:
+                            _sim_prog(node_id, node.method_id, _sim_meta_name,
+                                      sim_frame=len(_captured) + 1)
+                        except Exception:
+                            pass
                     _captured.append(
                         (arr.copy() / 255.0).astype(np.float32)
                         if isinstance(arr, np.ndarray) and arr.dtype == np.uint8
@@ -968,7 +1036,8 @@ class GraphExecutor:
             for _sk, _sv in upstream_scalars.items():
                 _tgt = _score_param(_sk, _eligible_s)
                 if _tgt:
-                    _inject_typed(run_params, _tgt, _sv, "scalar", node.params)
+                    _inject_typed(run_params, _tgt, _sv, "scalar", node.params,
+                                  (meta.params or {}).get(_tgt))
             # (explicit edges below will override any pre-seeded values)
 
             node_dir = self.out_dir / node_id
@@ -1116,17 +1185,22 @@ class GraphExecutor:
                 if edge.dst_port in node.params:
                     # User wired to a specific named param port — inject directly,
                     # enforcing type compatibility (logs warning on mismatch).
-                    _inject_typed(run_params, edge.dst_port, src_val, src_type, node.params)
+                    _inject_typed(run_params, edge.dst_port, src_val, src_type,
+                                  node.params, (meta.params or {}).get(edge.dst_port))
                 else:
                     # dst_port is not a named param (generic or unrecognised) —
                     # pick the best eligible param by name-similarity scoring.
                     eligible = _eligible_params(meta.params or {}, src_type)
                     target = _score_param(edge.src_port, [k for k, _ in eligible])
                     if target:
-                        _inject_typed(run_params, target, src_val, src_type, node.params)
+                        _tgt_spec = dict(eligible).get(target)
+                        _inject_typed(run_params, target, src_val, src_type,
+                                      node.params, _tgt_spec)
                     elif eligible:
                         # No name match — fall back to first eligible param
-                        _inject_typed(run_params, eligible[0][0], src_val, src_type, node.params)
+                        _tgt0, _tgt0_spec = eligible[0]
+                        _inject_typed(run_params, _tgt0, src_val, src_type,
+                                      node.params, _tgt0_spec)
 
             # Save upstream image to a file so methods can read it via load_input()
             upstream_arr: np.ndarray | None = None

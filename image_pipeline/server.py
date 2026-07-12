@@ -1223,6 +1223,46 @@ def shootout_contribution(genome_id: str):
     return _shootout_contrib.analyze_contribution(genome, cfg, pool)
 
 
+@app.get("/api/shootout/render-status")
+def shootout_render_status():
+    """Live board of every clip currently rendering: which frame, the node
+    cooking right now, sim sub-frame, and seconds elapsed / on the current
+    frame. Drives the UI's live-render panel + skip buttons so a hang is
+    visible and cancellable second-by-second."""
+    from image_pipeline.shootout import progress as _shootout_progress
+    import time as _t
+    now = _t.time()
+    out = []
+    for gid, s in _shootout_progress.MONITOR.snapshot().items():
+        out.append({
+            "genome_id": gid,
+            "frame": s.get("frame", 0),
+            "total_frames": s.get("total_frames", 0),
+            "n_nodes": s.get("n_nodes", 0),
+            "node_id": s.get("node_id"),
+            "node_name": s.get("node_name"),
+            "node_method": s.get("node_method"),
+            "sim_frame": s.get("sim_frame", 0),
+            "elapsed_s": round(now - s.get("t0", now), 1),
+            "frame_s": round(now - s.get("t_frame", now), 1),
+            "skip_requested": bool(s.get("skip_requested")),
+        })
+    out.sort(key=lambda r: r["genome_id"])
+    return {"rendering": out}
+
+
+@app.post("/api/shootout/skip/{genome_id}")
+def shootout_skip(genome_id: str):
+    """Request an in-flight clip be skipped (skip button / hunting hangs).
+
+    Sets the skip event the executor's sim loop polls and the render loop
+    checks between frames; the clip is culled as 'skipped'. Returns
+    active=False if that genome isn't currently rendering."""
+    from image_pipeline.shootout import progress as _shootout_progress
+    active = _shootout_progress.MONITOR.request_skip(genome_id)
+    return {"ok": True, "genome_id": genome_id, "active": active}
+
+
 @app.get("/api/shootout/utilization")
 def shootout_utilization(session_id: str | None = None):
     """Gene-pool utilization audit (phase 2).
@@ -2611,37 +2651,73 @@ async def nd_complain(payload: dict):
     method_id   = payload.get("method_id", "")
     node_def    = payload.get("node_def", {})
     node_params = payload.get("node_params", {})
+    complaints  = payload.get("complaints")      # list of {param_key, complaint}
     param_key   = payload.get("param_key", "")
-    complaint   = payload.get("complaint", "").strip()
+    complaint   = (payload.get("complaint", "") or "").strip()
     messages    = payload.get("messages", [])
 
-    if not param_key:
-        return {"error": "param_key is required"}
-    if not complaint:
-        return {"error": "complaint text is required"}
+    # Normalize to a list of (param_key, complaint) tuples.
+    items = []
+    if isinstance(complaints, list):
+        for c in complaints:
+            pk = (c.get("param_key") if isinstance(c, dict) else "") or ""
+            ct = (c.get("complaint") if isinstance(c, dict) else "") or ""
+            ct = ct.strip()
+            if pk and ct:
+                items.append((pk, ct))
+    if not items and param_key and complaint:
+        items.append((param_key, complaint))
 
-    spec = (node_def.get("params", {}) or {}).get(param_key, {})
-    param_ctx = f"""
---- COMPLAINT SCOPE ---
-parameter_key : {param_key}
+    if not items:
+        return {"error": "at least one (param_key, complaint) pair is required"}
+
+    # Build the COMPLAINT SCOPE block for every item.
+    scope_lines = ["--- COMPLAINT SCOPE ---"]
+    for pk, ct in items:
+        spec = (node_def.get("params", {}) or {}).get(pk, {})
+        scope_lines.append(f"""
+parameter_key : {pk}
 parameter_spec: {json.dumps(spec)}
-current_value : {json.dumps(node_params.get(param_key))}
-complaint     : {complaint}
-"""
-    system = _nd_system_for(method_id, node_def, node_params,
-                            _ND_COMPLAIN_SYSTEM + param_ctx)
+current_value : {json.dumps(node_params.get(pk))}
+complaint     : {ct}""")
+    param_ctx = "\n".join(scope_lines) + "\n"
+
+    # The hygiene contract body already says "scoped to one parameter"; when
+    # there are several, generalize that framing.
+    extra = _ND_COMPLAIN_SYSTEM
+    if len(items) > 1:
+        extra = _ND_COMPLAIN_SYSTEM.replace(
+            "THE COMPLAINT is scoped to one parameter (param_key + complaint text). "
+            "Fix that parameter and its downstream effects, but DO NOT touch "
+            "unrelated parameters unless the fix genuinely requires it.",
+            "THESE COMPLAINTS are scoped to a set of parameters. Fix each one and "
+            "its downstream effects, but DO NOT touch other unrelated parameters "
+            "unless a fix genuinely requires it. Resolve every complaint in a single "
+            "coherent rewrite.",
+        )
+        extra = extra.replace(
+            "state the current behavior, then exactly what\n  you changed about param_key and why it resolves the complaint.",
+            "state the current behavior, then exactly what you changed about each "
+            "complained parameter and why it resolves the complaint.",
+        )
+
+    system = _nd_system_for(method_id, node_def, node_params, extra + param_ctx)
 
     # Complain flows as a single user turn. If a prior conversation exists
     # (follow-ups), append; otherwise seed a focused first message.
     if not messages:
-        messages = [{
-            "role": "user",
-            "content": (
-                f'Complaint about parameter "{param_key}": {complaint}\n\n'
-                "Rewrite the node to resolve this, keeping the rest of the node "
-                "intact and honoring node/dataflow hygiene. Output the full file."
-            ),
-        }]
+        if len(items) == 1:
+            pk, ct = items[0]
+            first = (f'Complaint about parameter "{pk}": {ct}\n\n'
+                     "Rewrite the node to resolve this, keeping the rest of the node "
+                     "intact and honoring node/dataflow hygiene. Output the full file.")
+        else:
+            bullets = "\n".join(f'  - "{pk}": {ct}' for pk, ct in items)
+            first = (f"Complaints about multiple parameters:\n{bullets}\n\n"
+                     "Rewrite the node to resolve all of them in one coherent change, "
+                     "keeping the rest intact and honoring node/dataflow hygiene. "
+                     "Output the full file.")
+        messages = [{"role": "user", "content": first}]
 
     return StreamingResponse(
         _nd_stream(system, messages, timeout=300), media_type="text/event-stream",

@@ -1785,6 +1785,7 @@ try {
         <button id="nd-apply-btn">Apply changes</button>
         <button id="nd-undo-btn">↩ Undo</button>
       </div>
+      <div id="nd-chips" style="display:flex;flex-wrap:wrap;gap:5px;padding:6px 8px 0;"></div>
       <div id="nd-input-row">
         <textarea id="nd-input" placeholder="Describe the issue or what you want to change…" rows="2"></textarea>
         <button id="nd-send-btn" title="Send">↑</button>
@@ -1926,6 +1927,7 @@ try {
   <div class="cp-chips" id="complain-chips"></div>
   <div class="cp-msg" id="complain-msg"></div>
   <div class="cp-actions">
+    <button class="cp-btn" id="complain-fix-all" style="display:none">⚕ Fix all complaints</button>
     <button class="cp-btn" id="complain-cancel">Cancel</button>
     <button class="cp-btn primary" id="complain-submit">Submit complaint</button>
   </div>
@@ -8276,6 +8278,30 @@ function gConnectEvents() {
 }
 gConnectEvents();
 
+// ── Shared complaint state (used by the popover + Node Doctor chips) ──
+// window.__complaints: Map<nodeId, Array<{param_key, complaint, row}>>
+window.__complaints = window.__complaints || new Map();
+
+const COMMON_COMPLAINTS = [
+  'parameter should be float not int',
+  'this parameter is not working',
+  'no effect on image',
+  'does not produce image',
+  'runs too fast',
+  'runs too slow',
+];
+
+function cpAdd(nodeId, paramKey, complaint, row) {
+  if (!window.__complaints.has(nodeId)) window.__complaints.set(nodeId, []);
+  const list = window.__complaints.get(nodeId);
+  const existing = list.find(c => c.param_key === paramKey);
+  if (existing) { existing.complaint = complaint; existing.row = row; }
+  else list.push({ param_key: paramKey, complaint, row });
+}
+
+// Clear a node's accumulated complaints once a rewrite is applied.
+function cpClear(nodeId) { window.__complaints.delete(nodeId); }
+
 // ── COMPLAIN feature: right-click a param → rewrite via Node Doctor ──
 (function() {
   const paramCtx   = document.getElementById('param-ctx-menu');
@@ -8289,15 +8315,6 @@ gConnectEvents();
 
   let ctxParam = null;   // param key last right-clicked
   let ctxRow   = null;   // param-row element last right-clicked
-
-  const COMMON_COMPLAINTS = [
-    'parameter should be float not int',
-    'this parameter is not working',
-    'no effect on image',
-    'does not produce image',
-    'runs too fast',
-    'runs too slow',
-  ];
 
   // Seed the quick-pick chips
   COMMON_COMPLAINTS.forEach(c => {
@@ -8384,6 +8401,9 @@ gConnectEvents();
     if (!node) { hidePopover(); return; }
     const def = gNodeDefs[node.method_id];
 
+    // Accumulate this complaint for the "Fix all" batch (keyed by node + param).
+    cpAdd(node.id, ctxParam, complaint, ctxRow);
+
     cpSubmit.disabled = true;
     cpMsg.classList.remove('cp-err');
     cpMsg.textContent = '⏳ Agent is rewriting the node…';
@@ -8444,6 +8464,8 @@ gConnectEvents();
             ? '✓ Rewrite applied — node updated.'
             : '⚠ Applied, but hot-reload not confirmed (server may need restart).';
           if (ctxRow) { ctxRow.classList.add('complaint-flash'); }
+          cpClear(node.id);          // drop accumulated complaints for this node
+          refreshFixAll();           // hide "Fix all" now that they're cleared
           undoBtn.style.display = '';
           undoBtn.onclick = async () => {
             undoBtn.disabled = true;
@@ -8507,6 +8529,95 @@ gConnectEvents();
       cpSubmit.disabled = false;
     }
   });
+
+  // ── Fix all accumulated complaints for this node in one rewrite ──
+  const cpFixAll = document.getElementById('complain-fix-all');
+  function refreshFixAll() {
+    const node = gNodes.find(n => n.id === gSelectedNode);
+    const list = node ? (window.__complaints.get(node.id) || []) : [];
+    if (cpFixAll) {
+      cpFixAll.style.display = list.length ? '' : 'none';
+      cpFixAll.textContent = `⚕ Fix all ${list.length} complaint${list.length === 1 ? '' : 's'}`;
+    }
+  }
+
+  // Reveal/count the batch button whenever a param row is right-clicked.
+  gParamsForm.addEventListener('contextmenu', () => refreshFixAll());
+
+  if (cpFixAll) {
+    cpFixAll.addEventListener('click', async () => {
+      const node = gNodes.find(n => n.id === gSelectedNode);
+      if (!node) return;
+      const list = window.__complaints.get(node.id) || [];
+      if (!list.length) return;
+      const def = gNodeDefs[node.method_id];
+      cpSubmit.disabled = true;
+      cpMsg.classList.remove('cp-err');
+      cpMsg.textContent = `⏳ Agent is rewriting the node to fix ${list.length} complaints…`;
+
+      let live = document.getElementById('complain-live');
+      if (!live) {
+        live = document.createElement('div');
+        live.id = 'complain-live';
+        live.style.cssText = 'margin-top:10px;max-height:220px;overflow:auto;font-size:11px;' +
+          'line-height:1.5;white-space:pre-wrap;background:var(--bg1);border:1px solid var(--border);' +
+          'border-radius:7px;padding:8px;';
+        cpPop.insertBefore(live, cpMsg);
+      }
+      live.textContent = '';
+      live.style.display = '';
+      // Open popover so the user sees progress (in case it was closed).
+      cpPop.style.display = '';
+
+      let botText = '';
+      let pendingCode = null;
+      try {
+        const resp = await fetch('/api/node-doctor/complain', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            method_id: node.method_id,
+            node_def: def || {},
+            node_params: node.params || {},
+            complaints: list.map(c => ({ param_key: c.param_key, complaint: c.complaint })),
+          }),
+        });
+        if (!resp.ok) throw new Error('Server error ' + resp.status);
+        const reader = resp.body.getReader();
+        const dec = new TextDecoder();
+        let buf = '';
+        while (true) {
+          const { value, done: d } = await reader.read();
+          if (d) break;
+          buf += dec.decode(value, { stream: true });
+          const lines = buf.split('\n');
+          buf = lines.pop();
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            try {
+              const j = JSON.parse(line.slice(6));
+              if (j.done) break;
+              if (j.text) { botText += j.text; live.textContent = botText; live.scrollTop = live.scrollHeight; }
+            } catch {}
+          }
+        }
+        const m = botText.match(/```python\s*([\s\S]*?)```/);
+        pendingCode = m ? m[1].trim() : null;
+        if (pendingCode) {
+          ensureApplyRow();
+          applyBtn.disabled = false;
+          cpMsg.textContent = '⚠ Review the batched rewrite below, then Apply.';
+        } else {
+          cpMsg.textContent = '⚠ Agent responded but no rewritten file was found — see message above.';
+        }
+      } catch (err) {
+        cpMsg.textContent = '⚠ ' + err.message;
+        cpMsg.classList.add('cp-err');
+      } finally {
+        cpSubmit.disabled = false;
+      }
+    });
+  }
 })();
 
 // ── Load palette now (graph is the default view) ──────────────
@@ -8530,6 +8641,26 @@ gLoadGroupPresets();
   const ndApplyRow   = document.getElementById('nd-apply-row');
   const ndApplyBtn   = document.getElementById('nd-apply-btn');
   const ndUndoBtn    = document.getElementById('nd-undo-btn');
+
+  // ── Pre-fill chips: fire a common complaint straight into Node Doctor ──
+  const ndChipsEl = document.getElementById('nd-chips');
+  if (ndChipsEl) {
+    COMMON_COMPLAINTS.forEach(c => {
+      const chip = document.createElement('div');
+      chip.className = 'cp-chip';
+      chip.textContent = c;
+      chip.addEventListener('click', () => {
+        if (!ndIsOpen()) ndOpenPanel();
+        // Append to whatever the user already typed (or set if empty).
+        const cur = ndInput.value.trim();
+        ndInput.value = cur
+          ? cur.replace(/[.;]*$/, '; ') + c
+          : c;
+        ndInput.focus();
+      });
+      ndChipsEl.appendChild(chip);
+    });
+  }
 
   function ndIsOpen() { return ndPanel.classList.contains('nd-open'); }
 

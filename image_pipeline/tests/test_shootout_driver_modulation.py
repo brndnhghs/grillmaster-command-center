@@ -122,6 +122,62 @@ def test_driver_clock_reaches_driver_node():
     assert spread > 1e-3, f"LFO SCALAR output did not vary across frames (spread={spread})"
 
 
+def test_driver_modulation_steps_choices_param():
+    """A driver wired to a discrete ``choices``-gated int param (e.g. CLAHE
+    tile_size ∈ {4,8,16,32,64}) must step through the discrete set across the
+    driver sweep, not collapse to a single clamped value.
+
+    Regression: before the fix, a continuous SCALAR driver output was
+    ``int()``-coerced at injection, so a [0,1] LFO always became tile_size=8
+    and the node never animated — a real contributor to static-clip culling.
+    """
+    import tempfile
+    from pathlib import Path
+    from image_pipeline.core.registry import get_meta
+    set_canvas(W, H)
+    mid = "436"
+    meta = get_meta(mid)
+    assert meta is not None, "CLAHE (436) not registered"
+    spec = (meta.params or {}).get("tile_size", {})
+    assert isinstance(spec.get("choices"), (list, tuple)), "tile_size must be choices-gated"
+    choices = [c for c in spec["choices"] if isinstance(c, (int, float))]
+    assert choices, "tile_size choices must be numeric"
+
+    tgt_params = {k: (v.get("default") if isinstance(v, dict) else v)
+                  for k, v in (meta.params or {}).items()}
+    tgt_params["anim_mode"] = "none"
+    tgt = {"id": "t1", "method_id": mid, "params": tgt_params, "dirty": True}
+    lfo = {"id": "d1", "method_id": "__lfo__", "params": {
+        "frequency": 1.0, "min": 0.0, "max": 1.0, "rate": 0.6,
+        "waveform": "sine", "phase": 0.0, "offset": 0.0, "amplitude": 1.0,
+    }, "dirty": True}
+    edges = [{"src_node": "d1", "src_port": "value",
+              "dst_node": "t1", "dst_port": "tile_size"}]
+    wd = Path(tempfile.mkdtemp(prefix="sdmod-C-"))
+    seen = set()
+    try:
+        # Spy on the injected value by reading run_params back via a tiny
+        # wrapper: instead, render and read the node's _field_ uniform std?
+        # Simpler: assert the produced frames actually differ (the choice
+        # sweep changes tile_size -> different output), and confirm more than
+        # one distinct frame occurs.
+        ex = GraphExecutor(wd, fps=24, in_memory=True, audit_to_disk=False)
+        sigs = []
+        for frame in range(48):
+            flat, _term, _errs = ex.execute([dict(lfo), tgt], edges, 42,
+                                            frame=frame, frames=48)
+            img = (flat.get("t1", {}) or {}).get("image")
+            if img is None:
+                continue
+            small = np.asarray(img, dtype=np.float32)[::8, ::8].mean()
+            sigs.append(round(float(small), 4))
+        # Distinct downsampled means => tile_size actually stepped (not frozen).
+        assert len(set(sigs)) >= 2, "choices-gated param never animated under driver"
+    finally:
+        import shutil
+        shutil.rmtree(wd, ignore_errors=True)
+
+
 def test_driver_modulation_reaches_pixels():
     """Check B: a driver wired to a target SCALAR port moves the rendered image."""
     set_canvas(W, H)

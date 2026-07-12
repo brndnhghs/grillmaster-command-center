@@ -96,6 +96,44 @@ try {
   #gen-log .line.dead { color: var(--err); }
   #gen-log .line.head { color: var(--text); font-weight: 600; }
   #gen-log .line.done { color: var(--success); font-weight: 600; }
+  #gen-log .line.tick { color: var(--muted); }
+  #gen-log .line.slow { color: var(--warn); }
+  #gen-log .line.skip { color: var(--err); font-weight: 600; }
+
+  /* Live-render panel — in-flight clips with per-clip skip while a
+     generation is rendering. Reads /api/shootout/render-status. */
+  #live-renders {
+    display: none; flex-direction: column; gap: 6px;
+    padding: 8px 18px; background: var(--bg1);
+    border-bottom: 1px solid var(--border);
+  }
+  #live-renders.active { display: flex; }
+  #live-renders .lr-head {
+    font-size: 11px; color: var(--muted); font-family: var(--font-mono);
+    text-transform: uppercase; letter-spacing: .04em;
+  }
+  .live-clip {
+    display: flex; align-items: center; gap: 10px; font-size: 12px;
+    font-family: var(--font-mono); background: var(--bg2);
+    border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px;
+  }
+  .live-clip.slow { border-color: var(--warn); }
+  .live-clip .lc-id { color: var(--text); font-weight: 600; }
+  .live-clip .lc-bar {
+    flex: 1; height: 5px; background: var(--border); border-radius: 3px;
+    overflow: hidden; min-width: 60px;
+  }
+  .live-clip .lc-fill { height: 100%; background: var(--success); width: 0; }
+  .live-clip.slow .lc-fill { background: var(--warn); }
+  .live-clip .lc-node { color: var(--muted); }
+  .live-clip .lc-time { color: var(--muted); min-width: 42px; text-align: right; }
+  .live-clip .lc-time.warn { color: var(--warn); font-weight: 600; }
+  .live-clip button.lc-skip {
+    background: transparent; border: 1px solid var(--err); color: var(--err);
+    border-radius: 4px; padding: 2px 9px; font-size: 11px; cursor: pointer;
+  }
+  .live-clip button.lc-skip:hover { background: var(--err); color: #fff; }
+  .live-clip button.lc-skip:disabled { opacity: .5; cursor: default; }
 
   #grid {
     display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
@@ -252,6 +290,9 @@ try {
 </header>
 
 <div id="status-bar">idle</div>
+<div id="live-renders">
+  <div class="lr-head">live renders — click skip to abort a hanging clip</div>
+</div>
 <details id="gen-log-wrap">
   <summary>generation log</summary>
   <div id="gen-log"></div>
@@ -679,22 +720,82 @@ function appendLog(msg) {
   else if (/→ DEAD/.test(msg)) div.classList.add('dead');
   else if (/^▶/.test(msg)) div.classList.add('head');
   else if (/^✓/.test(msg)) div.classList.add('done');
+  else if (/^⏹/.test(msg) || /skipped/.test(msg)) div.classList.add('skip');
+  else if (/⚠ SLOW/.test(msg)) div.classList.add('slow');
+  else if (/^⏱/.test(msg)) div.classList.add('tick');
   div.textContent = msg;
   box.appendChild(div);
   box.scrollTop = box.scrollHeight;
 }
 
+// ── live-render panel (in-flight clips + per-clip skip) ─────────
+let LIVE_POLL = null;
+
+async function skipClip(gid, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'skipping…'; }
+  try { await fetch(`/api/shootout/skip/${gid}`, {method: 'POST'}); }
+  catch (_) {}
+}
+
+function renderLivePanel(rows) {
+  const panel = $('live-renders');
+  if (!panel) return;
+  if (!rows || !rows.length) { panel.classList.remove('active'); }
+  else { panel.classList.add('active'); }
+  // Drop old clip rows (keep the header).
+  panel.querySelectorAll('.live-clip').forEach((el) => el.remove());
+  for (const r of (rows || [])) {
+    const slow = r.frame_s >= 15;
+    const pct = r.total_frames ? Math.round((r.frame + 1) / r.total_frames * 100) : 0;
+    const node = r.node_name ? `${r.node_name} [${r.node_method}]` : '—';
+    const sim = r.sim_frame ? ` · sim ${r.sim_frame}/${r.total_frames}` : '';
+    const row = document.createElement('div');
+    row.className = 'live-clip' + (slow ? ' slow' : '');
+    row.innerHTML =
+      `<span class="lc-id">${r.genome_id}</span>`
+      + `<span>f ${r.frame + 1}/${r.total_frames}</span>`
+      + `<span class="lc-bar"><span class="lc-fill" style="width:${pct}%"></span></span>`
+      + `<span class="lc-node">cooking ${node}${sim}</span>`
+      + `<span class="lc-time ${slow ? 'warn' : ''}">${r.frame_s}s</span>`;
+    const btn = document.createElement('button');
+    btn.className = 'lc-skip';
+    btn.textContent = r.skip_requested ? 'skipping…' : 'skip';
+    btn.disabled = !!r.skip_requested;
+    btn.onclick = () => skipClip(r.genome_id, btn);
+    row.appendChild(btn);
+    panel.appendChild(row);
+  }
+}
+
+function startLivePanel() {
+  stopLivePanel();
+  LIVE_POLL = setInterval(async () => {
+    try {
+      const r = await fetch('/api/shootout/render-status');
+      const d = await r.json();
+      renderLivePanel(d.rendering);
+    } catch (_) {}
+  }, 1000);
+}
+
+function stopLivePanel() {
+  if (LIVE_POLL) { clearInterval(LIVE_POLL); LIVE_POLL = null; }
+  renderLivePanel([]);
+}
+
 function watchJob(jobId) {
   return new Promise((resolve, reject) => {
     const es = new EventSource(`/api/jobs/${jobId}/stream`);
+    startLivePanel();
+    const finish = () => { es.close(); stopLivePanel(); };
     es.addEventListener('progress', (e) => {
       const d = JSON.parse(e.data);
       appendLog(d.message);
       setStatus(`⏳ ${d.message}  (${d.elapsed}s)`, 'busy');
     });
-    es.addEventListener('done', (e) => { es.close(); resolve(JSON.parse(e.data)); });
+    es.addEventListener('done', (e) => { finish(); resolve(JSON.parse(e.data)); });
     es.addEventListener('error', (e) => {
-      es.close();
+      finish();
       let msg = 'stream error';
       try { msg = JSON.parse(e.data).message; } catch (_) {}
       reject(new Error(msg));

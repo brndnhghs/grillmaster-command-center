@@ -121,6 +121,19 @@ class ShootoutConfig:
     contrib_silent_delta: float = 0.01  # normalized pixel Δ below this → node is silent
     contrib_max_nodes: int = 24         # above this, structural pass only (no re-renders)
 
+    # ── Live render telemetry (verbose readout + skip) ────────────
+    # A heartbeat thread reads the render board every heartbeat_s and emits a
+    # "still on frame N, cooking <node>, Xs elapsed" line per in-flight clip,
+    # so a hang is visible second-by-second instead of a silent stall. A frame
+    # slower than frame_hang_s is flagged ⚠ SLOW. auto_skip_frame_hang_s > 0
+    # auto-aborts a genome whose *current frame* exceeds it (0 = manual skip
+    # only). Regardless, any single frame that runs past render_timeout_s is
+    # force-skipped — the safety net for a sim wedged mid-cook, which the
+    # between-frame timeout can never catch on its own.
+    heartbeat_s: float = 1.0
+    frame_hang_s: float = 15.0
+    auto_skip_frame_hang_s: float = 0.0
+
     # ── Advisor (user notes → breeding guidance via the Hermes LLM) ──
     advisor_enabled: bool = True
     advisor_timeout_s: float = 90.0
@@ -156,6 +169,8 @@ TUNABLE_FIELDS: dict[str, tuple[str, float | None, float | None]] = {
     "cost_gate_enabled": ("Skip guaranteed-timeout graphs before rendering, using the empirical cost model", None, None),
     "cost_skip_factor":  ("Cost gate strictness: skip when estimated render > render_timeout_s × this (lower = stricter)", 0.1, 2.0),
     "render_concurrency": ("Clips rendered in parallel", 1, 8),
+    "frame_hang_s":      ("Flag a clip ⚠ SLOW in the live log when a single frame exceeds this (seconds)", 1, 600),
+    "auto_skip_frame_hang_s": ("Auto-skip a clip whose current frame exceeds this (seconds); 0 = manual skip only", 0, 3600),
     "advisor_enabled":   ("Interpret your pros/cons notes with the LLM advisor to steer breeding", None, None),
     "temporal_var_min":  ("Liveness: minimum motion required — lower lets calmer clips through", 0.0, 0.5),
     "spatial_var_min":   ("Liveness: minimum spatial detail — lower lets flatter clips through", 0.0, 0.5),

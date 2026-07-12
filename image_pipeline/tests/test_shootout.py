@@ -902,3 +902,90 @@ def test_contribution_analyze_real_render():
     assert set(report["dead_weight"]) == set(report["disconnected"]) | set(report["silent"])
     assert "orphan" in report["dead_weight"]
     assert contrib.summarize(report)
+
+
+# ── Phase 5: live render telemetry + skip ───────────────────────────
+
+
+def test_render_monitor_lifecycle_and_skip():
+    from image_pipeline.shootout.progress import RenderMonitor
+    mon = RenderMonitor()
+    mon.begin("gA", total_frames=96, n_nodes=3)
+    mon.frame_start("gA", 4)
+    mon.node_cooking("gA", "n2", "312", "Water Caustics")
+    mon.node_cooking("gA", "n2", "312", "Water Caustics", sim_frame=40)
+    snap = mon.snapshot()
+    assert "gA" in snap
+    s = snap["gA"]
+    assert s["frame"] == 4 and s["node_method"] == "312" and s["sim_frame"] == 40
+
+    # skip flips the event + status; a finished genome drops from snapshot
+    assert mon.request_skip("gA") is True
+    assert mon.is_skipped("gA") and mon.skip_event("gA").is_set()
+    assert mon.snapshot()["gA"]["skip_requested"] is True
+    mon.finish("gA")
+    assert "gA" not in mon.snapshot()
+    assert "gA" in mon.snapshot(include_done=True)
+    # skip on an unknown genome is inactive, never raises
+    assert mon.request_skip("ghost") is False
+
+
+def test_heartbeat_lines_flag_slow_frames():
+    import time
+    from image_pipeline.shootout.progress import RenderMonitor, heartbeat_lines
+    mon = RenderMonitor()
+    mon.begin("gB", total_frames=96, n_nodes=2)
+    mon.frame_start("gB", 10)
+    mon.node_cooking("gB", "n1", "408", "Bloom / Glow")
+    now = time.time()
+    # pretend this frame started 30s ago → must be flagged ⚠ SLOW
+    mon.snapshot()  # touch
+    line = heartbeat_lines(mon.snapshot(), frame_hang_s=15.0, now=now + 30)[0]
+    assert "gB" in line and "Bloom / Glow" in line and "408" in line
+    assert "frame 11/96" in line and "⚠ SLOW" in line
+    # under the threshold → no SLOW flag
+    calm = heartbeat_lines(mon.snapshot(), frame_hang_s=15.0, now=now + 1)[0]
+    assert "⚠ SLOW" not in calm
+
+
+def test_skip_and_status_endpoints(client):
+    from image_pipeline.shootout import progress
+    progress.MONITOR.clear_all()
+    # nothing rendering yet
+    r = client.get("/api/shootout/render-status")
+    assert r.status_code == 200 and r.json()["rendering"] == []
+    # a genome that isn't rendering → skip reports inactive
+    r = client.post("/api/shootout/skip/gnope")
+    assert r.status_code == 200 and r.json()["active"] is False
+
+    # register one on the board and confirm it surfaces + can be skipped
+    progress.MONITOR.begin("glive", total_frames=96, n_nodes=2)
+    progress.MONITOR.frame_start("glive", 5)
+    progress.MONITOR.node_cooking("glive", "n1", "312", "Water Caustics")
+    rows = client.get("/api/shootout/render-status").json()["rendering"]
+    assert len(rows) == 1 and rows[0]["genome_id"] == "glive"
+    assert rows[0]["node_method"] == "312" and rows[0]["frame"] == 5
+    assert client.post("/api/shootout/skip/glive").json()["active"] is True
+    assert progress.MONITOR.is_skipped("glive")
+    progress.MONITOR.clear_all()
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg required")
+def test_render_genome_honors_preset_skip():
+    """A skip requested before a render starts culls the clip as 'skipped'
+    at frame 0 — exercises the executor cancel_event → render-loop path end
+    to end without depending on race timing."""
+    from image_pipeline.shootout import evaluator, progress
+    cfg = ShootoutConfig(width=128, height=96, frames=12)
+    graph = {"version": 1, "name": "t", "nodes": [
+        {"id": "n1", "method_id": "312", "params": {}, "render": False},
+        {"id": "n2", "method_id": "408", "params": {}, "render": True},
+    ], "edges": [{"src_node": "n1", "src_port": "image",
+                  "dst_node": "n2", "dst_port": "image_in"}]}
+    g = {"genome_id": "gpreskip", "seed": 7, "graph": graph}
+    progress.MONITOR.request_skip("gpreskip")
+    out = evaluator.render_genome(g, cfg)
+    progress.MONITOR.clear_all()
+    assert out["liveness"]["reason"] == "skipped"
+    assert out["liveness"]["alive"] is False
