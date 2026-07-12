@@ -37,7 +37,7 @@ from ...core.utils import (
     H,
     write_field,
     write_scalars,
-    write_mask,
+    write_mask, wired_source_lum,
 )
 from ...core.animation import capture_frame
 
@@ -173,6 +173,12 @@ def _jfa(seed_pos, hh, ww, accuracy):
     ix = np.clip(np.round(seed_pos[:, 1]).astype(np.int32), 0, ww - 1)
     owner[iy, ix] = np.arange(k, dtype=np.int32)
     yy, xx = np.mgrid[0:hh, 0:ww]
+    # Wired image as a domain-warp source (luminance distorts the pattern grid)
+    _src_lum = wired_source_lum(params, xx.shape[1], xx.shape[0])
+    if _src_lum is not None:
+        xx = xx + (_src_lum - 0.5) * 15.0
+        yy = yy + (_src_lum - 0.5) * 15.0
+
     n = max(hh, ww)
     step = 1
     while step < n:
@@ -263,57 +269,7 @@ def _color_image(owner, dist, seed_pos, hh, ww, color_by, invert, metric_kind):
     return np.stack([r, g, bb], axis=-1).astype(np.float32)
 
 
-@method(
-    id="333",
-    name="Jump Flood Voronoi (JFA)",
-    category="patterns",
-    tags=["voronoi", "distance", "sdf", "jfa", "gpu-analog", "procedural"],
-    timeout=120,
-    inputs={},
-    outputs={"image": "IMAGE", "luminance": "FIELD", "field": "FIELD", "mask": "MASK"},
-    params={
-        "seed_mode": {
-            "description": "seed point placement (random/grid/spiral/concentric)",
-            "choices": ["random", "grid", "spiral", "concentric"],
-            "default": "random",
-        },
-        "n_seeds": {
-            "description": "number of seed points",
-            "min": 2, "max": 256, "default": 48,
-        },
-        "jitter": {
-            "description": "jittered placement randomness for grid mode (0=regular,1=scattered)",
-            "min": 0.0, "max": 1.0, "default": 0.5,
-        },
-        "distance_metric": {
-            "description": "distance metric shaping the Voronoi cells",
-            "choices": ["euclidean", "manhattan", "chebyshev"],
-            "default": "euclidean",
-        },
-        "color_by": {
-            "description": "image coloring (owner/distance/angle/checker)",
-            "choices": ["owner", "distance", "angle", "checker"],
-            "default": "owner",
-        },
-        "invert_distance": {
-            "description": "invert distance coloring (bright cores instead of edges)",
-            "choices": ["true", "false"], "default": "false",
-        },
-        "accuracy": {
-            "description": "jump-flood refinement (jfa / jfa+1 / jfa+2)",
-            "choices": ["jfa", "jfa+1", "jfa+2"], "default": "jfa+1",
-        },
-        "anim_mode": {
-            "description": "seed animation mode (none/rotate/drift/morph/pulse)",
-            "choices": ["none", "rotate", "drift", "morph", "pulse"],
-            "default": "none",
-        },
-        "anim_speed": {
-            "description": "animation speed multiplier",
-            "min": 0.1, "max": 3.0, "default": 1.0,
-        },
-    },
-)
+@method(id='333', name='Jump Flood Voronoi (JFA)', category='patterns', tags=['voronoi', 'distance', 'sdf', 'jfa', 'gpu-analog', 'procedural'], timeout=120, inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'luminance': 'FIELD', 'field': 'FIELD', 'mask': 'MASK'}, params={'seed_mode': {'description': 'seed point placement (random/grid/spiral/concentric)', 'choices': ['random', 'grid', 'spiral', 'concentric'], 'default': 'random'}, 'n_seeds': {'description': 'number of seed points', 'min': 2, 'max': 256, 'default': 48}, 'jitter': {'description': 'jittered placement randomness for grid mode (0=regular,1=scattered)', 'min': 0.0, 'max': 1.0, 'default': 0.5}, 'distance_metric': {'description': 'distance metric shaping the Voronoi cells', 'choices': ['euclidean', 'manhattan', 'chebyshev'], 'default': 'euclidean'}, 'color_by': {'description': 'image coloring (owner/distance/angle/checker)', 'choices': ['owner', 'distance', 'angle', 'checker'], 'default': 'owner'}, 'invert_distance': {'description': 'invert distance coloring (bright cores instead of edges)', 'choices': ['true', 'false'], 'default': 'false'}, 'accuracy': {'description': 'jump-flood refinement (jfa / jfa+1 / jfa+2)', 'choices': ['jfa', 'jfa+1', 'jfa+2'], 'default': 'jfa+1'}, 'anim_mode': {'description': 'seed animation mode (none/rotate/drift/morph/pulse)', 'choices': ['none', 'rotate', 'drift', 'morph', 'pulse'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 3.0, 'default': 1.0}, 'source': {'description': "wired upstream image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}})
 def method_jump_flood_voronoi(out_dir: Path, seed: int, params=None):
     """Jump Flooding Algorithm — exact generalized Voronoi + distance field.
 

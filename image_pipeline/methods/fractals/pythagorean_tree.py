@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES
+from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES, wired_source_lum
 from ...core.animation import capture_frame
 
 # ── Optional libraries ──
@@ -29,30 +29,7 @@ def _render_flame_preview(density, colors, h, w):
         result = np.random.rand(h, w, 3).astype(np.float32) * 0.08 + 0.02
     return result
 
-@method(id="72", name="Pythagorean Tree", category="fractals", tags=["recursive", "colorful", "expanded", "animation"],
-         inputs={},
-         params={
-    "depth": {"description": "branch recursion depth", "min": 3, "max": 16, "default": 10},
-    "tree_type": {"description": "tree style: pythagorean, fractal_tree, binary, ternary, quaternary, asymmetric, weeping, fibonacci, golden, spiral", "default": "pythagorean"},
-    "start_length": {"description": "initial branch length", "min": 20, "max": 400, "default": 140},
-    "start_angle": {"description": "initial branch angle (degrees from vertical)", "min": -180, "max": 180, "default": 90},
-    "length_scale": {"description": "branch length multiplier per level", "min": 0.3, "max": 0.95, "default": 0.72},
-    "angle_delta": {"description": "branch split angle delta in degrees", "min": 5, "max": 60, "default": 28},
-    "angle_variation": {"description": "random angle variation per branch", "min": 0, "max": 30, "default": 0},
-    "color_mode": {"description": "coloring: depth_gradient, palette, autumn, spring, fire, ice, rainbow, neon, monochrome, seasonal, per_branch_hue", "default": "depth_gradient"},
-    "palette_name": {"description": "palette name for palette mode", "default": "vapor"},
-    "background": {"description": "background: dark, light, gradient, radial, transparent", "default": "dark"},
-    "leaf_style": {"description": "leaf style: none, ellipse, circle, triangle, star, petal, dot, flame", "default": "ellipse"},
-    "leaf_size": {"description": "leaf ellipse radius", "min": 1, "max": 20, "default": 4},
-    "leaf_min_depth": {"description": "min depth to draw leaves", "min": 1, "max": 10, "default": 3},
-    "leaf_density": {"description": "leaf density (0-1)", "min": 0.0, "max": 1.0, "default": 1.0},
-    "branch_width": {"description": "branch line width base", "min": 1, "max": 10, "default": 2},
-    "taper": {"description": "branch width taper (0=uniform, 1=max taper)", "min": 0.0, "max": 1.0, "default": 0.5},
-    "curvature": {"description": "branch curvature (0=straight, 1=curved)", "min": 0.0, "max": 1.0, "default": 0.0},
-    "wind": {"description": "wind sway amount", "min": 0.0, "max": 1.0, "default": 0.0},
-    "anim_mode": {"description": "animation: none, grow, sway, wind, color_cycle, pulse, breath", "default": "none"},
-    "anim_speed": {"description": "animation speed", "min": 0.1, "max": 3.0, "default": 1.0}}
-)
+@method(id='72', name='Pythagorean Tree', category='fractals', tags=['recursive', 'colorful', 'expanded', 'animation'], inputs={'image_in': 'IMAGE'}, params={'depth': {'description': 'branch recursion depth', 'min': 3, 'max': 16, 'default': 10}, 'tree_type': {'description': 'tree style: pythagorean, fractal_tree, binary, ternary, quaternary, asymmetric, weeping, fibonacci, golden, spiral', 'default': 'pythagorean'}, 'start_length': {'description': 'initial branch length', 'min': 20, 'max': 400, 'default': 140}, 'start_angle': {'description': 'initial branch angle (degrees from vertical)', 'min': -180, 'max': 180, 'default': 90}, 'length_scale': {'description': 'branch length multiplier per level', 'min': 0.3, 'max': 0.95, 'default': 0.72}, 'angle_delta': {'description': 'branch split angle delta in degrees', 'min': 5, 'max': 60, 'default': 28}, 'angle_variation': {'description': 'random angle variation per branch', 'min': 0, 'max': 30, 'default': 0}, 'color_mode': {'description': 'coloring: depth_gradient, palette, autumn, spring, fire, ice, rainbow, neon, monochrome, seasonal, per_branch_hue', 'default': 'depth_gradient'}, 'palette_name': {'description': 'palette name for palette mode', 'default': 'vapor'}, 'background': {'description': 'background: dark, light, gradient, radial, transparent', 'default': 'dark'}, 'leaf_style': {'description': 'leaf style: none, ellipse, circle, triangle, star, petal, dot, flame', 'default': 'ellipse'}, 'leaf_size': {'description': 'leaf ellipse radius', 'min': 1, 'max': 20, 'default': 4}, 'leaf_min_depth': {'description': 'min depth to draw leaves', 'min': 1, 'max': 10, 'default': 3}, 'leaf_density': {'description': 'leaf density (0-1)', 'min': 0.0, 'max': 1.0, 'default': 1.0}, 'branch_width': {'description': 'branch line width base', 'min': 1, 'max': 10, 'default': 2}, 'taper': {'description': 'branch width taper (0=uniform, 1=max taper)', 'min': 0.0, 'max': 1.0, 'default': 0.5}, 'curvature': {'description': 'branch curvature (0=straight, 1=curved)', 'min': 0.0, 'max': 1.0, 'default': 0.0}, 'wind': {'description': 'wind sway amount', 'min': 0.0, 'max': 1.0, 'default': 0.0}, 'anim_mode': {'description': 'animation: none, grow, sway, wind, color_cycle, pulse, breath', 'default': 'none'}, 'anim_speed': {'description': 'animation speed', 'min': 0.1, 'max': 3.0, 'default': 1.0}, 'source': {'description': "wired upstream image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}})
 def method_pythagorean_tree(out_dir: Path, seed: int, params=None):
     """Pythagorean Tree — recursive fractal tree with multiple tree types, color modes, and animation.
 

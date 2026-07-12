@@ -7,7 +7,7 @@ from PIL import Image
 
 from ...core.registry import method
 from ...core.utils import (
-    save, mn, seed_all, W, H, write_scalars, write_field,
+    save, mn, seed_all, W, H, write_scalars, write_field, wired_source_lum,
 )
 from ...core.animation import capture_frame
 
@@ -40,21 +40,7 @@ def _value_noise(x: np.ndarray, y: np.ndarray, seed: int) -> np.ndarray:
     return (a + (b - a) * v) * 2.0 - 1.0
 
 
-@method(id="312", name="Water Caustics", category="patterns",
-        tags=["procedural", "caustics", "water", "height-field", "refraction", "animation"],
-        inputs={},
-        outputs={"image": "IMAGE", "luminance": "FIELD"},
-        params={
-    "scale": {"description": "base zoom of the water surface", "min": 1.0, "max": 16.0, "default": 6.0},
-    "waves": {"description": "number of summed plane waves in the height field", "min": 2, "max": 10, "default": 6},
-    "amplitude": {"description": "wave height amplitude", "min": 0.1, "max": 2.0, "default": 0.8},
-    "caustic_gain": {"description": "refraction displacement strength (lensing sharpness)", "min": 0.1, "max": 3.0, "default": 1.2},
-    "sharpen": {"description": "caustic intensity exponent", "min": 0.5, "max": 4.0, "default": 1.6},
-    "colormode": {"description": "color mapping (ocean/aqua/gold/inferno/viridis/grayscale)", "default": "ocean"},
-    "anim_mode": {"description": "animation mode: none, flow, ripple, drift", "default": "none"},
-    "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
-    "time": {"description": "animation phase [0, 2pi)", "min": 0.0, "max": 6.28, "default": 0.0},
-})
+@method(id='312', name='Water Caustics', category='patterns', tags=['procedural', 'caustics', 'water', 'height-field', 'refraction', 'animation'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'luminance': 'FIELD'}, params={'scale': {'description': 'base zoom of the water surface', 'min': 1.0, 'max': 16.0, 'default': 6.0}, 'waves': {'description': 'number of summed plane waves in the height field', 'min': 2, 'max': 10, 'default': 6}, 'amplitude': {'description': 'wave height amplitude', 'min': 0.1, 'max': 2.0, 'default': 0.8}, 'caustic_gain': {'description': 'refraction displacement strength (lensing sharpness)', 'min': 0.1, 'max': 3.0, 'default': 1.2}, 'sharpen': {'description': 'caustic intensity exponent', 'min': 0.5, 'max': 4.0, 'default': 1.6}, 'colormode': {'description': 'color mapping (ocean/aqua/gold/inferno/viridis/grayscale)', 'default': 'ocean'}, 'anim_mode': {'description': 'animation mode: none, flow, ripple, drift', 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 3.0, 'default': 1.0}, 'time': {'description': 'animation phase [0, 2pi)', 'min': 0.0, 'max': 6.28, 'default': 0.0}, 'source': {'description': "wired upstream image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}})
 def method_water_caustics(out_dir, seed: int, params=None):
     """Render water caustics from an animated height field.
 
@@ -94,6 +80,12 @@ def method_water_caustics(out_dir, seed: int, params=None):
 
         # ── Coordinate field (normalized to [-0.5, 0.5] * scale) ──
         yy, xx = np.mgrid[0:H, 0:W].astype(np.float64)
+        # Wired image as a domain-warp source (luminance distorts the pattern grid)
+        _src_lum = wired_source_lum(params, xx.shape[1], xx.shape[0])
+        if _src_lum is not None:
+            xx = xx + (_src_lum - 0.5) * 15.0
+            yy = yy + (_src_lum - 0.5) * 15.0
+
         cx, cy = W / 2.0, H / 2.0
         px = (xx - cx) / max(H, W) * scale
         py = (yy - cy) / max(H, W) * scale

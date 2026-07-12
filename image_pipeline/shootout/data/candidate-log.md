@@ -68,3 +68,10 @@
 - Action taken: implemented node 476 Wave Function Collapse (fresh CPU method, valid adjacency-rule tiling).
 - Dead hotspots are system/util nodes (__lfo__ __counter__ __noise1d__ __ramp__) — attribution artifact (every node in a dead graph is counted), NOT method breakage. Genuine method hotspot: node 137 (33 dead refs).
 - Evolution-research #4 (grammar-aware mutation/crossover): ALREADY PRESENT. evolve.py crossover() splices port-type-compatible ancestor subtrees from parent B into A; mutate() guarantees >=1 structural op per attempt (node-swap/insert/branch/driver/rewire). This is Whigham GBX (1995). No code change warranted.
+
+## 2026-07-12 (this run)
+- Top-3 rated ids: all None/rating 5, origin=explorer|random (genomes lack persistent ids; rating table untraceable) — promotion-seed wiring via POST /api/shootout/config seed_ids is NOT actionable this run; logged as a real gap (need stable genome ids to promote).
+- Dead/rejected rate: 68% (313/461) | renders>150s: 24% (110/461)
+- Cheap-alive recombine seeds: 92 (explore_ratio ~0.45 intact — fresh randoms still entering).
+- Dead hotspots dominated by system/util driver nodes (__lfo__ 744, __counter__ 206, __noise1d__ 118, __ramp__ 97, __strobe__ 43, __image_to_mask__ 38). SCALAR/FIELD/MASK-only nodes mis-flagged by the image-liveness metric (temporal_var_min residual) — attribution artifact, not method breakage. Genuine numeric-method hotspot: node 137 (Image Blend, 33 dead refs) — investigate separately.
+- Action taken: implemented node 472 Poisson Image Edit (Perez et al. SIGGRAPH 2003 gradient-domain seamless cloning) + wired-source in-memory ndarray support in core/utils.py. Verified headlessly: re-lighting toward target confirmed (seamless mean pulls from source 0.50,0.15,0.75 toward target 0.35,0.40,0.30 while preserving source texture), param-live (placement shift Δ=0.063), mixing-gradient mode runs.

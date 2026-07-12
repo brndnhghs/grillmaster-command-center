@@ -7,25 +7,11 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, W, H
+from ...core.utils import save, norm, mn, seed_all, W, H, wired_source_lum
 from ...core.animation import capture_frame
 from ...core.utils import PALETTES
 
-@method(id="04", name="Worley Noise", category="patterns",
-         tags=["classic", "cellular", "fast", "expanded", "animation"],
-         params={
-    "points": {"description": "number of feature points", "min": 5, "max": 500, "default": 60},
-    "distance": {"description": "distance metric (euclidean/manhattan/minkowski/chebyshev/angular)", "default": "euclidean"},
-    "feature": {"description": "feature index for each pixel (F1=closest, F2=2nd closest, Fn=nth)", "min": 1, "max": 4, "default": 1},
-    "colormode": {"description": "color mode (grayscale/palette/heatmap/spectral/fire/ice/dual_layer/flat_shaded/crackle)", "default": "heatmap"},
-    "palette": {"description": "color palette name", "default": "vapor"},
-    "jitter": {"description": "point position jitter (0=grid, 1=full random)", "min": 0.0, "max": 1.0, "default": 1.0},
-    "tile_size": {"description": "spatial hash tile size for grid acceleration", "min": 16, "max": 128, "default": 64},
-    "fractal": {"description": "fractal Worley layers (1=off, 2-4=layered FBM)", "min": 1, "max": 4, "default": 1},
-    "fractal_gain": {"description": "amplitude scaling per fractal layer", "min": 0.1, "max": 1.0, "default": 0.5},
-    "cell_border": {"description": "cell edge highlight width (0=off)", "min": 0, "max": 20, "default": 0},
-    "anim_mode": {"description": "animation mode: none, point_drift, feature_sweep, gain_sweep", "default": "none"},
-    "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.5},})
+@method(id='04', name='Worley Noise', category='patterns', tags=['classic', 'cellular', 'fast', 'expanded', 'animation'], params={'points': {'description': 'number of feature points', 'min': 5, 'max': 500, 'default': 60}, 'distance': {'description': 'distance metric (euclidean/manhattan/minkowski/chebyshev/angular)', 'default': 'euclidean'}, 'feature': {'description': 'feature index for each pixel (F1=closest, F2=2nd closest, Fn=nth)', 'min': 1, 'max': 4, 'default': 1}, 'colormode': {'description': 'color mode (grayscale/palette/heatmap/spectral/fire/ice/dual_layer/flat_shaded/crackle)', 'default': 'heatmap'}, 'palette': {'description': 'color palette name', 'default': 'vapor'}, 'jitter': {'description': 'point position jitter (0=grid, 1=full random)', 'min': 0.0, 'max': 1.0, 'default': 1.0}, 'tile_size': {'description': 'spatial hash tile size for grid acceleration', 'min': 16, 'max': 128, 'default': 64}, 'fractal': {'description': 'fractal Worley layers (1=off, 2-4=layered FBM)', 'min': 1, 'max': 4, 'default': 1}, 'fractal_gain': {'description': 'amplitude scaling per fractal layer', 'min': 0.1, 'max': 1.0, 'default': 0.5}, 'cell_border': {'description': 'cell edge highlight width (0=off)', 'min': 0, 'max': 20, 'default': 0}, 'anim_mode': {'description': 'animation mode: none, point_drift, feature_sweep, gain_sweep', 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 3.0, 'default': 0.5}, 'source': {'description': "wired upstream image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}}, inputs={'image_in': 'IMAGE'})
 def method_worley_noise(out_dir: Path, seed: int, params=None):
     """Render Worley (Voronoi cell) noise with GPU-free vectorized KD-tree.
 
@@ -53,6 +39,12 @@ def method_worley_noise(out_dir: Path, seed: int, params=None):
         cell_border = int(params.get("cell_border", 0))
 
         yy, xx = np.mgrid[:H, :W].astype(np.float32)
+        # Wired image as a domain-warp source (luminance distorts the pattern grid)
+        _src_lum = wired_source_lum(params, xx.shape[1], xx.shape[0])
+        if _src_lum is not None:
+            xx = xx + (_src_lum - 0.5) * 15.0
+            yy = yy + (_src_lum - 0.5) * 15.0
+
 
         # ── Matplotlib/scipy import (with fallback) ──
         try:

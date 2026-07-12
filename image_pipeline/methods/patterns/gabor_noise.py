@@ -5,29 +5,13 @@ from pathlib import Path
 import numpy as np
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, write_field, W, H, PALETTES
+from ...core.utils import save, norm, mn, seed_all, write_field, W, H, PALETTES, wired_source_lum
 from ...core.animation import capture_frame
 
 _ERROR_IMG = np.full((H, W, 3), 128, dtype=np.uint8)
 
 
-@method(id="25", name="Gabor Noise", category="patterns",
-        new_image_contract=True,
-        tags=["classic", "noise", "gabor", "anisotropic", "band-limited", "generative", "animated"],
-        inputs={"phase": "SCALAR", "orientation": "SCALAR"},
-        outputs={"image": "IMAGE", "luminance": "FIELD"},
-        params={
-    "frequency": {"description": "Gabor kernel radial frequency (cycles per unit)", "min": 0.5, "max": 40.0, "default": 12.0},
-    "bandwidth": {"description": "Gaussian envelope width (higher = wider, lower frequency spread)", "min": 1.0, "max": 12.0, "default": 4.0},
-    "orientation": {"description": "kernel orientation in degrees (anisotropic mode)", "min": 0.0, "max": 360.0, "default": 45.0},
-    "aniso": {"description": "anisotropy: anisotropic (fixed orientation) or isotropic (random per-impulse)", "default": "anisotropic", "choices": ["anisotropic", "isotropic"]},
-    "impulses": {"description": "average impulses per cell (kernel density)", "min": 4, "max": 128, "default": 32},
-    "cells": {"description": "sparse-convolution grid cells across the short axis", "min": 4, "max": 40, "default": 12},
-    "style": {"description": "render style", "default": "grayscale", "choices": ["grayscale", "colormap", "signed"]},
-    "palette": {"description": "matplotlib colormap for 'colormap' style", "default": "twilight"},
-    "phase": {"description": "temporal phase (animates impulse phases / orientation drift)", "default": 0.0},
-},
-is_time_varying=False,)
+@method(id='25', name='Gabor Noise', category='patterns', new_image_contract=True, tags=['classic', 'noise', 'gabor', 'anisotropic', 'band-limited', 'generative', 'animated'], inputs={'phase': 'SCALAR', 'orientation': 'SCALAR', 'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'luminance': 'FIELD'}, params={'frequency': {'description': 'Gabor kernel radial frequency (cycles per unit)', 'min': 0.5, 'max': 40.0, 'default': 12.0}, 'bandwidth': {'description': 'Gaussian envelope width (higher = wider, lower frequency spread)', 'min': 1.0, 'max': 12.0, 'default': 4.0}, 'orientation': {'description': 'kernel orientation in degrees (anisotropic mode)', 'min': 0.0, 'max': 360.0, 'default': 45.0}, 'aniso': {'description': 'anisotropy: anisotropic (fixed orientation) or isotropic (random per-impulse)', 'default': 'anisotropic', 'choices': ['anisotropic', 'isotropic']}, 'impulses': {'description': 'average impulses per cell (kernel density)', 'min': 4, 'max': 128, 'default': 32}, 'cells': {'description': 'sparse-convolution grid cells across the short axis', 'min': 4, 'max': 40, 'default': 12}, 'style': {'description': 'render style', 'default': 'grayscale', 'choices': ['grayscale', 'colormap', 'signed']}, 'palette': {'description': "matplotlib colormap for 'colormap' style", 'default': 'twilight'}, 'phase': {'description': 'temporal phase (animates impulse phases / orientation drift)', 'default': 0.0}, 'source': {'description': "wired upstream image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}}, is_time_varying=False)
 def method_gabor_noise(out_dir: Path, seed: int, params=None):
     """Gabor noise — sparse convolution of randomly-placed Gabor kernels.
 
@@ -79,6 +63,12 @@ def method_gabor_noise(out_dir: Path, seed: int, params=None):
 
         # Per-pixel coordinates in cell units
         yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+        # Wired image as a domain-warp source (luminance distorts the pattern grid)
+        _src_lum = wired_source_lum(params, xx.shape[1], xx.shape[0])
+        if _src_lum is not None:
+            xx = xx + (_src_lum - 0.5) * 15.0
+            yy = yy + (_src_lum - 0.5) * 15.0
+
         cx = xx / cell_px
         cy = yy / cell_px
 

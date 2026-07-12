@@ -29,21 +29,7 @@ def _render_flame_preview(density, colors, h, w):
         result = np.random.rand(h, w, 3).astype(np.float32) * 0.08 + 0.02
     return result
 
-@method(id="66", name="Julia Set", category="fractals", tags=["classic", "fast", "expanded", "animation"],
-         inputs={"image_in": "IMAGE"},
-         params={
-    "source": {"description": "seed the fractal's initial coordinate plane from the wired image's luminance", "choices": ["none", "input_image"], "default": "none"},
-    "warp_strength": {"description": "domain-warp strength applied to the per-pixel initial complex coordinate", "min": 0.0, "max": 2.0, "default": 0.6},
-    "constant": {"description": "Julia c parameter as real,imag or a preset name", "default": "-0.7,0.27"},
-    "iterations": {"description": "max iterations", "min": 30, "max": 500, "default": 100},
-    "viewpoint": {"description": "complex plane range as xmin,xmax,ymin,ymax", "default": "-1.5,1.5,-1,1"},
-    "escape_radius": {"description": "divergence threshold", "min": 1.5, "max": 10.0, "default": 2.0},
-    "variation": {"description": "Julia variation: classic, cubic, quartic, quintic, sin_z, cos_z, exp_z, multi_bake, alternating", "default": "classic"},
-    "color_mode": {"description": "coloring: sine, palette, heatmap, smooth_gradient, spectral, fire, ice, dual_layer, plasma, distance, interior_angle", "default": "sine"},
-    "palette_name": {"description": "palette name (retro palettes)", "default": "vapor"},
-    "smooth": {"description": "use smooth fractional iteration counting", "default": True},
-    "interior_color": {"description": "interior coloring: black, iteration_cycle, palette_gradient, atlas", "default": "black"}}
-)
+@method(id='66', name='Julia Set', category='fractals', tags=['classic', 'fast', 'expanded', 'animation'], inputs={'image_in': 'IMAGE'}, params={'source': {'description': "seed the fractal's initial coordinate plane from the wired image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}, 'warp_strength': {'description': 'domain-warp strength applied to the per-pixel initial complex coordinate', 'min': 0.0, 'max': 2.0, 'default': 0.6}, 'constant': {'description': 'Julia c parameter as real,imag or a preset name', 'default': '-0.7,0.27'}, 'iterations': {'description': 'max iterations', 'min': 30, 'max': 500, 'default': 100}, 'viewpoint': {'description': 'complex plane range as xmin,xmax,ymin,ymax', 'default': '-1.5,1.5,-1,1'}, 'escape_radius': {'description': 'divergence threshold', 'min': 1.5, 'max': 10.0, 'default': 2.0}, 'variation': {'description': 'Julia variation: classic, cubic, quartic, quintic, sin_z, cos_z, exp_z, multi_bake, alternating', 'default': 'classic'}, 'color_mode': {'description': 'coloring: sine, palette, heatmap, smooth_gradient, spectral, fire, ice, dual_layer, plasma, distance, interior_angle', 'default': 'sine'}, 'palette_name': {'description': 'palette name (retro palettes)', 'default': 'vapor'}, 'smooth': {'description': 'use smooth fractional iteration counting', 'default': True}, 'interior_color': {'description': 'interior coloring: black, iteration_cycle, palette_gradient, atlas', 'default': 'black'}})
 def method_julia_set(out_dir: Path, seed: int, params=None):
     """Generate Julia set fractals with various variations and color modes.
 

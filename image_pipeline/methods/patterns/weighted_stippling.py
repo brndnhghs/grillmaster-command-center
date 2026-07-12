@@ -48,7 +48,7 @@ from ...core.utils import (
     write_scalars,
     write_mask,
     write_particles,
-    load_input,
+    load_input, wired_source_lum,
 )
 from ...core.animation import capture_frame
 
@@ -62,6 +62,12 @@ _GOLDEN = 2.399963229728653  # golden angle, radians
 def _source_density(source, hh, ww, rng, _t):
     """Return a density field D (H,W) in [0,1]: high = more dots (darker)."""
     yy, xx = np.mgrid[0:hh, 0:ww].astype(np.float64)
+    # Wired image as a domain-warp source (luminance distorts the pattern grid)
+    _src_lum = wired_source_lum(params, xx.shape[1], xx.shape[0])
+    if _src_lum is not None:
+        xx = xx + (_src_lum - 0.5) * 15.0
+        yy = yy + (_src_lum - 0.5) * 15.0
+
     cy, cx = hh * 0.5, ww * 0.5
     ny = (yy - cy) / max(hh, ww)
     nx = (xx - cx) / max(hh, ww)
@@ -186,57 +192,7 @@ def _inferno(t):
     return stops[-1][1]
 
 
-@method(
-    id="338",
-    name="Weighted Voronoi Stippling (Secord 2002)",
-    category="patterns",
-    tags=["stippling", "voronoi", "lloyd", "secord", "npr", "halftone", "procedural"],
-    timeout=160,
-    inputs={},
-    outputs={"image": "IMAGE", "luminance": "FIELD", "field": "FIELD", "mask": "MASK", "particles": "PARTICLES"},
-    params={
-        "source": {
-            "description": "density source pattern (gaussians/rings/gradient/checker/noise/input_image)",
-            "choices": ["gaussians", "rings", "gradient", "checker", "noise", "input_image"],
-            "default": "gaussians",
-        },
-        "n_points": {
-            "description": "number of stipple points (after Lloyd relaxation)",
-            "min": 200, "max": 12000, "default": 3500,
-        },
-        "iterations": {
-            "description": "Lloyd relaxation iterations (higher = smoother density match)",
-            "min": 1, "max": 30, "default": 12,
-        },
-        "gamma": {
-            "description": "density contrast exponent (higher = pushes dots into darkest areas)",
-            "min": 0.2, "max": 4.0, "default": 1.6,
-        },
-        "dot_scale": {
-            "description": "base dot radius in pixels",
-            "min": 0.5, "max": 6.0, "default": 2.2,
-        },
-        "color_mode": {
-            "description": "dot coloring (mono/ink/density)",
-            "choices": ["mono", "ink", "density"],
-            "default": "mono",
-        },
-        "background": {
-            "description": "canvas background (white/black)",
-            "choices": ["white", "black"],
-            "default": "white",
-        },
-        "anim_mode": {
-            "description": "source animation mode (none/gaussians_orbit/rings_breathe/gradient_rotate/scroll)",
-            "choices": ["none", "gaussians_orbit", "rings_breathe", "gradient_rotate", "scroll"],
-            "default": "none",
-        },
-        "anim_speed": {
-            "description": "animation speed multiplier",
-            "min": 0.1, "max": 3.0, "default": 1.0,
-        },
-    },
-)
+@method(id='338', name='Weighted Voronoi Stippling (Secord 2002)', category='patterns', tags=['stippling', 'voronoi', 'lloyd', 'secord', 'npr', 'halftone', 'procedural'], timeout=160, inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'luminance': 'FIELD', 'field': 'FIELD', 'mask': 'MASK', 'particles': 'PARTICLES'}, params={'source': {'description': 'density source pattern (gaussians/rings/gradient/checker/noise/input_image)', 'choices': ['gaussians', 'rings', 'gradient', 'checker', 'noise', 'input_image'], 'default': 'gaussians'}, 'n_points': {'description': 'number of stipple points (after Lloyd relaxation)', 'min': 200, 'max': 12000, 'default': 3500}, 'iterations': {'description': 'Lloyd relaxation iterations (higher = smoother density match)', 'min': 1, 'max': 30, 'default': 12}, 'gamma': {'description': 'density contrast exponent (higher = pushes dots into darkest areas)', 'min': 0.2, 'max': 4.0, 'default': 1.6}, 'dot_scale': {'description': 'base dot radius in pixels', 'min': 0.5, 'max': 6.0, 'default': 2.2}, 'color_mode': {'description': 'dot coloring (mono/ink/density)', 'choices': ['mono', 'ink', 'density'], 'default': 'mono'}, 'background': {'description': 'canvas background (white/black)', 'choices': ['white', 'black'], 'default': 'white'}, 'anim_mode': {'description': 'source animation mode (none/gaussians_orbit/rings_breathe/gradient_rotate/scroll)', 'choices': ['none', 'gaussians_orbit', 'rings_breathe', 'gradient_rotate', 'scroll'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 3.0, 'default': 1.0}})
 def method_weighted_stippling(out_dir: Path, seed: int, params=None):
     """Weighted Voronoi Stippling — density-matched tonal stipple art (Secord 2002).
 

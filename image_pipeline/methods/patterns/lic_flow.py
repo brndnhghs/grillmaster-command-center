@@ -7,7 +7,7 @@ from PIL import Image
 
 from ...core.registry import method
 from ...core.utils import (
-    save, mn, seed_all, W, H, write_scalars, write_field,
+    save, mn, seed_all, W, H, write_scalars, write_field, wired_source_lum,
 )
 from ...core.animation import capture_frame
 
@@ -99,22 +99,7 @@ def _sample(arr: np.ndarray, px: np.ndarray, py: np.ndarray,
             + arr[y1c, x0c] * w01 + arr[y1c, x1c] * w11)
 
 
-@method(id="424", name="Line Integral Convolution", category="patterns",
-        tags=["procedural", "lic", "flow-field", "visualization", "fluid", "animation"],
-        inputs={},
-        outputs={"image": "IMAGE", "luminance": "FIELD"},
-        params={
-    "scale": {"description": "zoom of the underlying curl-noise potential field", "min": 1.0, "max": 12.0, "default": 5.0},
-    "octaves": {"description": "fbm octaves for the potential field", "min": 1, "max": 6, "default": 4},
-    "steps": {"description": "streamline half-length in integration steps", "min": 8, "max": 80, "default": 28},
-    "step_len": {"description": "integration step length in pixels", "min": 0.3, "max": 3.0, "default": 1.0},
-    "colormode": {"description": "output color (grayscale/steel/amber/inferno/spectral)", "default": "grayscale"},
-    "brightness": {"description": "overall brightness multiplier", "min": 0.2, "max": 2.0, "default": 1.0},
-    "contrast": {"description": "tone contrast", "min": 0.5, "max": 3.0, "default": 1.0},
-    "anim_mode": {"description": "animation mode: none, drift, evolve, pulse", "default": "none"},
-    "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
-    "time": {"description": "animation phase [0, 2pi)", "min": 0.0, "max": 6.28, "default": 0.0},
-})
+@method(id='424', name='Line Integral Convolution', category='patterns', tags=['procedural', 'lic', 'flow-field', 'visualization', 'fluid', 'animation'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'luminance': 'FIELD'}, params={'scale': {'description': 'zoom of the underlying curl-noise potential field', 'min': 1.0, 'max': 12.0, 'default': 5.0}, 'octaves': {'description': 'fbm octaves for the potential field', 'min': 1, 'max': 6, 'default': 4}, 'steps': {'description': 'streamline half-length in integration steps', 'min': 8, 'max': 80, 'default': 28}, 'step_len': {'description': 'integration step length in pixels', 'min': 0.3, 'max': 3.0, 'default': 1.0}, 'colormode': {'description': 'output color (grayscale/steel/amber/inferno/spectral)', 'default': 'grayscale'}, 'brightness': {'description': 'overall brightness multiplier', 'min': 0.2, 'max': 2.0, 'default': 1.0}, 'contrast': {'description': 'tone contrast', 'min': 0.5, 'max': 3.0, 'default': 1.0}, 'anim_mode': {'description': 'animation mode: none, drift, evolve, pulse', 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 3.0, 'default': 1.0}, 'time': {'description': 'animation phase [0, 2pi)', 'min': 0.0, 'max': 6.28, 'default': 0.0}, 'source': {'description': "wired upstream image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}})
 def method_lic_flow(out_dir, seed: int, params=None):
     """Visualize a flow field with Line Integral Convolution (LIC).
 
@@ -163,6 +148,12 @@ def method_lic_flow(out_dir, seed: int, params=None):
 
         # ── Normalized sample coordinates in [-0.5, 0.5] * scale ──
         yy, xx = np.mgrid[0:H, 0:W].astype(np.float64)
+        # Wired image as a domain-warp source (luminance distorts the pattern grid)
+        _src_lum = wired_source_lum(params, xx.shape[1], xx.shape[0])
+        if _src_lum is not None:
+            xx = xx + (_src_lum - 0.5) * 15.0
+            yy = yy + (_src_lum - 0.5) * 15.0
+
         cx, cy = W / 2.0, H / 2.0
         px = (xx - cx) / max(H, W) * scale
         py = (yy - cy) / max(H, W) * scale

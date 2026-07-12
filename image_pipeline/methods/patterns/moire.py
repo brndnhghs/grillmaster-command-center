@@ -7,27 +7,11 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, W, H
+from ...core.utils import save, norm, mn, seed_all, W, H, wired_source_lum
 from ...core.animation import capture_frame
 from ...core.utils import PALETTES
 
-@method(id="03", name="Moiré", category="patterns",
-         tags=["classic", "wave", "fast", "expanded", "animation"],
-         params={
-    "grids": {"description": "number of overlaid grids/layers", "min": 2, "max": 12, "default": 3},
-    "pattern": {"description": "pattern type (radial/linear/concentric/spiral/wave/honeycomb/hexagon/triangle/circle_grid/fractal/checkerboard/star/bullseye)", "default": "linear"},
-    "operation": {"description": "blend operation (multiply/min/add/max/difference/xor/divide/average/overlay/screen/exclusion/negation/luminosity)", "default": "multiply"},
-    "colormode": {"description": "color mode (grayscale/rainbow/heatmap/palette/spectral/fire/ice/dual_layer)", "default": "rainbow"},
-    "palette": {"description": "color palette name", "default": "vapor"},
-    "frequency": {"description": "base frequency", "min": 0.005, "max": 0.5, "default": 0.06},
-    "freq_variation": {"description": "frequency variation between layers", "min": 0.0, "max": 1.0, "default": 0.3},
-    "rotation": {"description": "rotation between layers (radians)", "min": 0.0, "max": 3.1416, "default": 0.15},
-    "offset_mode": {"description": "offset between layers (none/linear/radial/random)", "default": "linear"},
-    "amplitude": {"description": "pattern contrast/amplitude", "min": 0.1, "max": 2.0, "default": 1.0},
-    "thickness": {"description": "line thickness multiplier", "min": 0.2, "max": 5.0, "default": 1.0},
-    "wobble": {"description": "wobble distortion of grid lines", "min": 0.0, "max": 3.0, "default": 0.0},
-    "anim_mode": {"description": "animation mode: none, layer_rotate, op_morph, pattern_morph", "default": "none"},
-    "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 0.25},})
+@method(id='03', name='Moiré', category='patterns', tags=['classic', 'wave', 'fast', 'expanded', 'animation'], params={'grids': {'description': 'number of overlaid grids/layers', 'min': 2, 'max': 12, 'default': 3}, 'pattern': {'description': 'pattern type (radial/linear/concentric/spiral/wave/honeycomb/hexagon/triangle/circle_grid/fractal/checkerboard/star/bullseye)', 'default': 'linear'}, 'operation': {'description': 'blend operation (multiply/min/add/max/difference/xor/divide/average/overlay/screen/exclusion/negation/luminosity)', 'default': 'multiply'}, 'colormode': {'description': 'color mode (grayscale/rainbow/heatmap/palette/spectral/fire/ice/dual_layer)', 'default': 'rainbow'}, 'palette': {'description': 'color palette name', 'default': 'vapor'}, 'frequency': {'description': 'base frequency', 'min': 0.005, 'max': 0.5, 'default': 0.06}, 'freq_variation': {'description': 'frequency variation between layers', 'min': 0.0, 'max': 1.0, 'default': 0.3}, 'rotation': {'description': 'rotation between layers (radians)', 'min': 0.0, 'max': 3.1416, 'default': 0.15}, 'offset_mode': {'description': 'offset between layers (none/linear/radial/random)', 'default': 'linear'}, 'amplitude': {'description': 'pattern contrast/amplitude', 'min': 0.1, 'max': 2.0, 'default': 1.0}, 'thickness': {'description': 'line thickness multiplier', 'min': 0.2, 'max': 5.0, 'default': 1.0}, 'wobble': {'description': 'wobble distortion of grid lines', 'min': 0.0, 'max': 3.0, 'default': 0.0}, 'anim_mode': {'description': 'animation mode: none, layer_rotate, op_morph, pattern_morph', 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 3.0, 'default': 0.25}, 'source': {'description': "wired upstream image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}}, inputs={'image_in': 'IMAGE'})
 def method_moire(out_dir: Path, seed: int, params=None):
     """Render Moiré interference patterns by overlaying transformed grids.
 
@@ -42,6 +26,12 @@ def method_moire(out_dir: Path, seed: int, params=None):
         seed_all(seed)  # seed is fixed — animation from continuous time params only
         rng = np.random.default_rng(seed)
         yy, xx = np.mgrid[:H, :W].astype(np.float32)
+        # Wired image as a domain-warp source (luminance distorts the pattern grid)
+        _src_lum = wired_source_lum(params, xx.shape[1], xx.shape[0])
+        if _src_lum is not None:
+            xx = xx + (_src_lum - 0.5) * 15.0
+            yy = yy + (_src_lum - 0.5) * 15.0
+
         cx, cy = W / 2.0, H / 2.0
         xc = xx - cx
         yc = yy - cy

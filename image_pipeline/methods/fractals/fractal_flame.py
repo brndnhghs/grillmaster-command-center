@@ -362,24 +362,7 @@ def _render_trail(density, age_arr):
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-@method(id="70", name="Fractal Flame", category="fractals", tags=["ifs", "colorful", "expanded"],
-        inputs={"image_in": "IMAGE"},
-        outputs={"image": "IMAGE", "field": "FIELD"},
-        params={
-    "source": {"description": "seed the primary density field from the wired image's luminance", "choices": ["none", "input_image"], "default": "none"},
-    "seed_strength": {"description": "blend weight between the procedural density and the wired luminance field", "min": 0.0, "max": 1.0, "default": 0.6},
-    "points": {"description": "number of flame points", "min": 50000, "max": 2000000, "default": 200000},
-    "scale": {"description": "flame coordinate scale factor (0=auto)", "min": 0.0, "max": 20.0, "default": 3.0},
-    "variation": {"description": "flame variation name, or 'multi' for multi-transform", "choices": list(FLAME_VARIATIONS.keys()) + ["multi", "ifs"], "default": "multi"},
-    "variations": {"description": "comma-separated variations for multi mode", "default": "sinusoidal,spherical,swirl,horseshoe"},
-    "ifs_preset": {"description": "IFS preset for ifs variation mode", "choices": list(IFS_PRESETS.keys()), "default": "sierpinski_triangle"},
-    "color_mode": {"description": "coloring method", "choices": ["flame_colored", "density_only", "palette", "age", "channel_mix"], "default": "flame_colored"},
-    "palette": {"description": "PALETTES name for palette color mode", "default": "vapor"},
-    "color_decay": {"description": "color channel decay per step", "min": 0.9, "max": 1.0, "default": 0.99},
-    "color_jitter": {"description": "random color drift amplitude", "min": 0.001, "max": 0.1, "default": 0.01},
-    "anim_mode": {"description": "animation mode", "choices": ["none", "transform_morph", "param_sweep", "growth_reveal", "color_cycle"], "default": "none"},
-    "anim_speed": {"description": "animation speed multiplier", "min": 0.0, "max": 5.0, "default": 1.0}}
-)
+@method(id='70', name='Fractal Flame', category='fractals', tags=['ifs', 'colorful', 'expanded'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'field': 'FIELD'}, params={'source': {'description': "seed the primary density field from the wired image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}, 'seed_strength': {'description': 'blend weight between the procedural density and the wired luminance field', 'min': 0.0, 'max': 1.0, 'default': 0.6}, 'points': {'description': 'number of flame points', 'min': 50000, 'max': 2000000, 'default': 200000}, 'scale': {'description': 'flame coordinate scale factor (0=auto)', 'min': 0.0, 'max': 20.0, 'default': 3.0}, 'variation': {'description': "flame variation name, or 'multi' for multi-transform", 'choices': list(FLAME_VARIATIONS.keys()) + ['multi', 'ifs'], 'default': 'multi'}, 'variations': {'description': 'comma-separated variations for multi mode', 'default': 'sinusoidal,spherical,swirl,horseshoe'}, 'ifs_preset': {'description': 'IFS preset for ifs variation mode', 'choices': list(IFS_PRESETS.keys()), 'default': 'sierpinski_triangle'}, 'color_mode': {'description': 'coloring method', 'choices': ['flame_colored', 'density_only', 'palette', 'age', 'channel_mix'], 'default': 'flame_colored'}, 'palette': {'description': 'PALETTES name for palette color mode', 'default': 'vapor'}, 'color_decay': {'description': 'color channel decay per step', 'min': 0.9, 'max': 1.0, 'default': 0.99}, 'color_jitter': {'description': 'random color drift amplitude', 'min': 0.001, 'max': 0.1, 'default': 0.01}, 'anim_mode': {'description': 'animation mode', 'choices': ['none', 'transform_morph', 'param_sweep', 'growth_reveal', 'color_cycle'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.0, 'max': 5.0, 'default': 1.0}})
 def method_fractal_flame(out_dir: Path, seed: int, params=None):
     """Fractal Flame — IFS-based flame renderer with multiple variations, color modes, and animation.
 

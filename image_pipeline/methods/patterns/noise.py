@@ -8,7 +8,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from ...core.registry import method
-from ...core.utils import norm, seed_all, W, H
+from ...core.utils import norm, seed_all, W, H, wired_source_lum
 from ...core.animation import capture_frame
 from ...core.utils import PALETTES
 
@@ -31,43 +31,7 @@ def _value_table(seed_val: int, table_size: int = 256) -> np.ndarray:
     return rng.uniform(-1, 1, (table_size, table_size)).astype(np.float32)
 
 
-@method(id="05", name="Procedural Noise", category="patterns", new_image_contract=True,
-        tags=["classic", "noise", "generative", "animated", "expanded"],
-        inputs={"phase": "SCALAR",
-                "offset_x": "SCALAR",
-                "offset_y": "SCALAR",
-                "morph": "SCALAR",
-                "domain_warp": "SCALAR"},
-        outputs={"image": "IMAGE", "luminance": "FIELD"},
-        params={
-    "noise_type": {"description": "type of noise",
-                    "default": "perlin",
-                    "choices": ["perlin", "value", "simplex", "curl",
-                                "cloud", "marble", "plasma", "cell",
-                                "wood", "terrain", "spot", "ring", "brick"]},
-    "style": {"description": "rendering style", "default": "normal",
-              "choices": ["normal", "colormap", "posterize", "edge"]},
-    "palette": {"description": "color palette (PALETTES name or matplotlib cmap)", "default": "none"},
-    "domain_warp": {"description": "domain warp strength (0=none, can be driven by SCALAR)", "min": 0.0, "max": 10.0, "default": 0.0},
-    "warp_mode": {"description": "domain warp style: normal or warped (Inigo Quilez 3-level)",
-                  "default": "normal", "choices": ["normal", "warped"]},
-    "scale": {"description": "noise frequency scale", "min": 0.1, "max": 10.0, "default": 2.0},
-    "octaves": {"description": "number of octaves", "min": 1, "max": 12, "default": 4},
-    "lacunarity": {"description": "frequency multiplier per octave", "min": 1.0, "max": 4.0, "default": 2.0},
-    "gain": {"description": "amplitude multiplier per octave", "min": 0.1, "max": 1.0, "default": 0.5},
-    "phase": {"description": "temporal phase offset (drives evolution, drift, warp time)", "default": 0.0},
-    "offset_x": {"description": "horizontal coordinate offset", "default": 0.0},
-    "offset_y": {"description": "vertical coordinate offset", "default": 0.0},
-    "morph": {"description": "noise type morph (0=current type, 1=next type in cycle)", "default": 0.0},
-    "cell_points": {"description": "Voronoi cell count (nx*ny, for cell noise)", "min": 20, "max": 500, "default": 96},
-    "cell_borders": {"description": "Voronoi cell border thickness (0=off)", "min": 0, "max": 20, "default": 0},
-    "cell_colors": {"description": "Voronoi cell colorized (vs grayscale)", "default": False},
-    "ring_wobble": {"description": "wood ring wobble distortion (0=perfect circles)", "min": 0.0, "max": 5.0, "default": 2.0},
-    "ring_count": {"description": "wood ring count", "min": 5, "max": 100, "default": 30},
-    "water_level": {"description": "terrain water level cutoff (0=no water, 1=all water)", "min": 0.0, "max": 1.0, "default": 0.0},
-    "erosion": {"description": "terrain simulated erosion strength (0=off)", "min": 0.0, "max": 1.0, "default": 0.0},
-},
-is_time_varying=False,)
+@method(id='05', name='Procedural Noise', category='patterns', new_image_contract=True, tags=['classic', 'noise', 'generative', 'animated', 'expanded'], inputs={'phase': 'SCALAR', 'offset_x': 'SCALAR', 'offset_y': 'SCALAR', 'morph': 'SCALAR', 'domain_warp': 'SCALAR', 'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'luminance': 'FIELD'}, params={'noise_type': {'description': 'type of noise', 'default': 'perlin', 'choices': ['perlin', 'value', 'simplex', 'curl', 'cloud', 'marble', 'plasma', 'cell', 'wood', 'terrain', 'spot', 'ring', 'brick']}, 'style': {'description': 'rendering style', 'default': 'normal', 'choices': ['normal', 'colormap', 'posterize', 'edge']}, 'palette': {'description': 'color palette (PALETTES name or matplotlib cmap)', 'default': 'none'}, 'domain_warp': {'description': 'domain warp strength (0=none, can be driven by SCALAR)', 'min': 0.0, 'max': 10.0, 'default': 0.0}, 'warp_mode': {'description': 'domain warp style: normal or warped (Inigo Quilez 3-level)', 'default': 'normal', 'choices': ['normal', 'warped']}, 'scale': {'description': 'noise frequency scale', 'min': 0.1, 'max': 10.0, 'default': 2.0}, 'octaves': {'description': 'number of octaves', 'min': 1, 'max': 12, 'default': 4}, 'lacunarity': {'description': 'frequency multiplier per octave', 'min': 1.0, 'max': 4.0, 'default': 2.0}, 'gain': {'description': 'amplitude multiplier per octave', 'min': 0.1, 'max': 1.0, 'default': 0.5}, 'phase': {'description': 'temporal phase offset (drives evolution, drift, warp time)', 'default': 0.0}, 'offset_x': {'description': 'horizontal coordinate offset', 'default': 0.0}, 'offset_y': {'description': 'vertical coordinate offset', 'default': 0.0}, 'morph': {'description': 'noise type morph (0=current type, 1=next type in cycle)', 'default': 0.0}, 'cell_points': {'description': 'Voronoi cell count (nx*ny, for cell noise)', 'min': 20, 'max': 500, 'default': 96}, 'cell_borders': {'description': 'Voronoi cell border thickness (0=off)', 'min': 0, 'max': 20, 'default': 0}, 'cell_colors': {'description': 'Voronoi cell colorized (vs grayscale)', 'default': False}, 'ring_wobble': {'description': 'wood ring wobble distortion (0=perfect circles)', 'min': 0.0, 'max': 5.0, 'default': 2.0}, 'ring_count': {'description': 'wood ring count', 'min': 5, 'max': 100, 'default': 30}, 'water_level': {'description': 'terrain water level cutoff (0=no water, 1=all water)', 'min': 0.0, 'max': 1.0, 'default': 0.0}, 'erosion': {'description': 'terrain simulated erosion strength (0=off)', 'min': 0.0, 'max': 1.0, 'default': 0.0}, 'source': {'description': "wired upstream image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}}, is_time_varying=False)
 def method_noise(out_dir: Path, seed: int, params=None):
     """
     Multi-type procedural 2D noise generator with FBM styles, domain warping,
@@ -115,6 +79,9 @@ def method_noise(out_dir: Path, seed: int, params=None):
 
         dw_override = params.get("domain_warp")
         domain_warp = float(dw_override) if dw_override is not None else base_domain_warp
+
+        # ── Wired image as a domain-warp source (Rule #12: overrides regardless of source param) ──
+        _src_lum = wired_source_lum(params, int(W), int(H))
 
         # ── Matplotlib/scipy import (with fallback) ──
         try:
@@ -351,6 +318,10 @@ def method_noise(out_dir: Path, seed: int, params=None):
         # Apply coordinate offset (drift/scroll) and phase
         tx = xx + offset_x + phase * 0.5
         ty = yy + offset_y + phase * 0.5
+        if _src_lum is not None:
+            # warp the noise domain by the wired image's luminance
+            tx = tx + (_src_lum - 0.5) * 15.0
+            ty = ty + (_src_lum - 0.5) * 15.0
 
         if effective_noise_type == "perlin":
             no = _fbm(tx, ty, octaves, lacunarity, gain, use_gradient=True)

@@ -7,7 +7,7 @@ from scipy.ndimage import uniform_filter
 
 from ...core.registry import method
 from ...core.utils import (
-    save, mn, seed_all, write_field, write_mask, write_scalars, W, H,
+    save, mn, seed_all, write_field, write_mask, write_scalars, W, H, wired_source_lum,
 )
 from ...core.animation import capture_frame
 
@@ -81,30 +81,7 @@ def _palette(c: np.ndarray, name: str, shift: float) -> np.ndarray:
     return rgb.astype(np.float32)
 
 
-@method(
-    id="415",
-    name="Multi-Scale Turing",
-    category="patterns",
-    new_image_contract=True,
-    timeout=300,
-    tags=["generative", "pattern", "turing", "mccabe", "reaction-diffusion",
-          "multiscale", "organic", "gpu-twin-candidate"],
-    inputs={},
-    outputs={"image": "IMAGE", "field": "FIELD", "mask": "MASK"},
-    params={
-        "scales": {"description": "number of superimposed Turing scales", "min": 2, "max": 8, "default": 5},
-        "min_radius": {"description": "smallest blur radius (innermost scale)", "min": 2.0, "max": 20.0, "default": 5.0},
-        "max_radius": {"description": "largest blur radius (outermost scale)", "min": 20.0, "max": 90.0, "default": 48.0},
-        "ratio": {"description": "r2/r1 multiplier per scale (scale separation)", "min": 1.2, "max": 3.0, "default": 1.7},
-        "rate": {"description": "per-step nudge magnitude", "min": 0.005, "max": 0.08, "default": 0.02},
-        "thresh": {"description": "activation threshold (lower = busier, more active pattern)", "min": 0.005, "max": 0.15, "default": 0.03},
-        "steps": {"description": "total evolution iterations (higher = more evolved)", "min": 50, "max": 1200, "default": 400},
-        "n_frames": {"description": "captured frames (1 = still, >1 = emergence movie)", "min": 1, "max": 240, "default": 60},
-        "init": {"description": "initial field seeding", "choices": ["noise", "center", "gradient", "zero"], "default": "noise"},
-        "palette": {"description": "color map", "choices": ["inferno", "fire", "ice", "grayscale", "cosine"], "default": "inferno"},
-        "palette_shift": {"description": "cosine palette hue offset", "min": 0.0, "max": 1.0, "default": 0.5},
-    },
-)
+@method(id='415', name='Multi-Scale Turing', category='patterns', new_image_contract=True, timeout=300, tags=['generative', 'pattern', 'turing', 'mccabe', 'reaction-diffusion', 'multiscale', 'organic', 'gpu-twin-candidate'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'field': 'FIELD', 'mask': 'MASK'}, params={'scales': {'description': 'number of superimposed Turing scales', 'min': 2, 'max': 8, 'default': 5}, 'min_radius': {'description': 'smallest blur radius (innermost scale)', 'min': 2.0, 'max': 20.0, 'default': 5.0}, 'max_radius': {'description': 'largest blur radius (outermost scale)', 'min': 20.0, 'max': 90.0, 'default': 48.0}, 'ratio': {'description': 'r2/r1 multiplier per scale (scale separation)', 'min': 1.2, 'max': 3.0, 'default': 1.7}, 'rate': {'description': 'per-step nudge magnitude', 'min': 0.005, 'max': 0.08, 'default': 0.02}, 'thresh': {'description': 'activation threshold (lower = busier, more active pattern)', 'min': 0.005, 'max': 0.15, 'default': 0.03}, 'steps': {'description': 'total evolution iterations (higher = more evolved)', 'min': 50, 'max': 1200, 'default': 400}, 'n_frames': {'description': 'captured frames (1 = still, >1 = emergence movie)', 'min': 1, 'max': 240, 'default': 60}, 'init': {'description': 'initial field seeding', 'choices': ['noise', 'center', 'gradient', 'zero'], 'default': 'noise'}, 'palette': {'description': 'color map', 'choices': ['inferno', 'fire', 'ice', 'grayscale', 'cosine'], 'default': 'inferno'}, 'palette_shift': {'description': 'cosine palette hue offset', 'min': 0.0, 'max': 1.0, 'default': 0.5}, 'source': {'description': "wired upstream image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}})
 def method_multiscale_turing(out_dir: Path, seed: int, params=None):
     """Multi-Scale Turing Patterns — McCabe's superposed-scale organic textures.
 
@@ -173,6 +150,12 @@ def method_multiscale_turing(out_dir: Path, seed: int, params=None):
             c = np.full((H, W), 0.5, dtype=np.float64)
             if init == "center":
                 yy, xx = np.mgrid[0:H, 0:W].astype(np.float64)
+                # Wired image as a domain-warp source (luminance distorts the pattern grid)
+                _src_lum = wired_source_lum(params, xx.shape[1], xx.shape[0])
+                if _src_lum is not None:
+                    xx = xx + (_src_lum - 0.5) * 15.0
+                    yy = yy + (_src_lum - 0.5) * 15.0
+
                 d2 = (xx - W / 2.0) ** 2 + (yy - H / 2.0) ** 2
                 c += 0.4 * np.exp(-d2 / (2 * (min(W, H) * 0.12) ** 2))
         elif init == "gradient":

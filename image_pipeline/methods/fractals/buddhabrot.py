@@ -29,27 +29,7 @@ def _render_flame_preview(density, colors, h, w):
         result = np.random.rand(h, w, 3).astype(np.float32) * 0.08 + 0.02
     return result
 
-@method(id="49", name="Buddhabrot", category="fractals", tags=["classic", "expanded", "animation"],
-        inputs={"image_in": "IMAGE"},
-        outputs={"image": "IMAGE", "field": "FIELD"},
-         params={
-    "source": {"description": "seed the primary density field from the wired image's luminance", "choices": ["none", "input_image"], "default": "none"},
-    "seed_strength": {"description": "blend weight between the procedural density and the wired luminance field", "min": 0.0, "max": 1.0, "default": 0.6},
-    "samples": {"description": "random points traced", "min": 10000, "max": 500000, "default": 100000},
-    "viewpoint": {"description": "complex plane range as xmin,xmax,ymin,ymax", "default": "-2,1,-1.5,1.5"},
-    "max_iter": {"description": "max iterations per sample", "min": 30, "max": 1000, "default": 200},
-    "formula": {"description": "formula: mandelbrot, burning_ship, tricorn, celtic, mandelbrot3, mandelbrot4, custom", "default": "mandelbrot"},
-    "color_mode": {"description": "coloring: density, sine, palette, heatmap, fire, ice, spectral, dual_layer, plasma, log_density", "default": "log_density"},
-    "palette_name": {"description": "palette name (retro palettes)", "default": "vapor"},
-    "color_speed": {"description": "color rotation speed", "min": 0.5, "max": 8.0, "default": 2.0},
-    "color_offset": {"description": "hue shift offset", "min": 0.0, "max": 6.28, "default": 0.0},
-    "render_mode": {"description": "render mode: buddhabrot, antibuddhabrot, nebulabrot, hybrid", "default": "buddhabrot"},
-    "animation_mode": {"description": "animation: none, reveal, color_cycle, param_sweep", "default": "none"},
-    "anim_speed": {"description": "animation speed", "min": 0.1, "max": 3.0, "default": 1.0},
-    "blur_sigma": {"description": "post-render gaussian blur sigma (0=off)", "min": 0.0, "max": 5.0, "default": 0.0},
-    "gamma": {"description": "density gamma correction", "min": 0.1, "max": 3.0, "default": 1.0},
-    "contrast": {"description": "density contrast boost", "min": 0.5, "max": 3.0, "default": 1.5}}
-)
+@method(id='49', name='Buddhabrot', category='fractals', tags=['classic', 'expanded', 'animation'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'field': 'FIELD'}, params={'source': {'description': "seed the primary density field from the wired image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}, 'seed_strength': {'description': 'blend weight between the procedural density and the wired luminance field', 'min': 0.0, 'max': 1.0, 'default': 0.6}, 'samples': {'description': 'random points traced', 'min': 10000, 'max': 500000, 'default': 100000}, 'viewpoint': {'description': 'complex plane range as xmin,xmax,ymin,ymax', 'default': '-2,1,-1.5,1.5'}, 'max_iter': {'description': 'max iterations per sample', 'min': 30, 'max': 1000, 'default': 200}, 'formula': {'description': 'formula: mandelbrot, burning_ship, tricorn, celtic, mandelbrot3, mandelbrot4, custom', 'default': 'mandelbrot'}, 'color_mode': {'description': 'coloring: density, sine, palette, heatmap, fire, ice, spectral, dual_layer, plasma, log_density', 'default': 'log_density'}, 'palette_name': {'description': 'palette name (retro palettes)', 'default': 'vapor'}, 'color_speed': {'description': 'color rotation speed', 'min': 0.5, 'max': 8.0, 'default': 2.0}, 'color_offset': {'description': 'hue shift offset', 'min': 0.0, 'max': 6.28, 'default': 0.0}, 'render_mode': {'description': 'render mode: buddhabrot, antibuddhabrot, nebulabrot, hybrid', 'default': 'buddhabrot'}, 'animation_mode': {'description': 'animation: none, reveal, color_cycle, param_sweep', 'default': 'none'}, 'anim_speed': {'description': 'animation speed', 'min': 0.1, 'max': 3.0, 'default': 1.0}, 'blur_sigma': {'description': 'post-render gaussian blur sigma (0=off)', 'min': 0.0, 'max': 5.0, 'default': 0.0}, 'gamma': {'description': 'density gamma correction', 'min': 0.1, 'max': 3.0, 'default': 1.0}, 'contrast': {'description': 'density contrast boost', 'min': 0.5, 'max': 3.0, 'default': 1.5}})
 def method_buddhabrot(out_dir: Path, seed: int, params=None):
     """Render a Buddhabrot fractal — orbits of escaped Mandelbrot points.
 

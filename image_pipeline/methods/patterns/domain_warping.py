@@ -6,7 +6,7 @@ import numpy as np
 from PIL import Image
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, W, H, PALETTES
+from ...core.utils import save, norm, mn, seed_all, W, H, PALETTES, wired_source_lum
 from ...core.animation import capture_frame
 
 
@@ -53,22 +53,7 @@ def _fbm(x: np.ndarray, y: np.ndarray, seed: int, octaves: int,
     return total / norm if norm > 0 else total
 
 
-@method(id="311", name="Domain Warping", category="patterns",
-        tags=["procedural", "fractal", "noise", "iq", "domain-warp", "animation"],
-        params={
-    "scale": {"description": "base zoom of the noise field", "min": 1.0, "max": 12.0, "default": 4.0},
-    "octaves": {"description": "FBM octaves (detail depth)", "min": 1, "max": 8, "default": 5},
-    "lacunarity": {"description": "frequency multiplier per octave", "min": 1.5, "max": 3.0, "default": 2.0},
-    "gain": {"description": "amplitude falloff per octave", "min": 0.3, "max": 0.8, "default": 0.5},
-    "warp_strength": {"description": "how far the field is distorted by itself", "min": 0.0, "max": 8.0, "default": 4.0},
-    "warp_levels": {"description": "domain-warp recursion depth (1 or 2, IQ classic = 2)", "min": 1, "max": 2, "default": 2},
-    "contrast": {"description": "final tone contrast", "min": 0.5, "max": 3.0, "default": 1.0},
-    "colormode": {"description": "color mapping (grayscale/rainbow/inferno/viridis/palette/fire/ice)", "default": "inferno"},
-    "palette": {"description": "palette name for palette mode", "default": "vapor"},
-    "anim_mode": {"description": "animation mode: none, warp_evolve, zoom_pan, warp_rotate", "default": "none"},
-    "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
-    "time": {"description": "animation phase [0, 2pi)", "min": 0.0, "max": 6.28, "default": 0.0},
-})
+@method(id='311', name='Domain Warping', category='patterns', tags=['procedural', 'fractal', 'noise', 'iq', 'domain-warp', 'animation'], params={'scale': {'description': 'base zoom of the noise field', 'min': 1.0, 'max': 12.0, 'default': 4.0}, 'octaves': {'description': 'FBM octaves (detail depth)', 'min': 1, 'max': 8, 'default': 5}, 'lacunarity': {'description': 'frequency multiplier per octave', 'min': 1.5, 'max': 3.0, 'default': 2.0}, 'gain': {'description': 'amplitude falloff per octave', 'min': 0.3, 'max': 0.8, 'default': 0.5}, 'warp_strength': {'description': 'how far the field is distorted by itself', 'min': 0.0, 'max': 8.0, 'default': 4.0}, 'warp_levels': {'description': 'domain-warp recursion depth (1 or 2, IQ classic = 2)', 'min': 1, 'max': 2, 'default': 2}, 'contrast': {'description': 'final tone contrast', 'min': 0.5, 'max': 3.0, 'default': 1.0}, 'colormode': {'description': 'color mapping (grayscale/rainbow/inferno/viridis/palette/fire/ice)', 'default': 'inferno'}, 'palette': {'description': 'palette name for palette mode', 'default': 'vapor'}, 'anim_mode': {'description': 'animation mode: none, warp_evolve, zoom_pan, warp_rotate', 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 3.0, 'default': 1.0}, 'time': {'description': 'animation phase [0, 2pi)', 'min': 0.0, 'max': 6.28, 'default': 0.0}, 'source': {'description': "wired upstream image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}}, inputs={'image_in': 'IMAGE'})
 def method_domain_warping(out_dir, seed: int, params=None):
     """Render Inigo Quilez's Domain Warping (iquilezles.org/articles/warp).
 
@@ -104,6 +89,12 @@ def method_domain_warping(out_dir, seed: int, params=None):
 
         # ── Coordinate field ──
         yy, xx = np.mgrid[0:H, 0:W].astype(np.float64)
+        # Wired image as a domain-warp source (luminance distorts the pattern grid)
+        _src_lum = wired_source_lum(params, xx.shape[1], xx.shape[0])
+        if _src_lum is not None:
+            xx = xx + (_src_lum - 0.5) * 15.0
+            yy = yy + (_src_lum - 0.5) * 15.0
+
         cx, cy = W / 2.0, H / 2.0
         p = np.stack([(xx - cx) / max(H, W) * scale,
                       (yy - cy) / max(H, W) * scale], axis=-1)

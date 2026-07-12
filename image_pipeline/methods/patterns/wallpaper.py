@@ -13,6 +13,7 @@ from ...core.utils import PALETTES
 
 @method(id="06", name="Wallpaper Group", category="patterns",
         tags=["classic", "tiling", "fast", "animated", "expanded"],
+        inputs={},
         params={
     "group": {"description": "crystallographic symmetry group",
               "default": "p1",

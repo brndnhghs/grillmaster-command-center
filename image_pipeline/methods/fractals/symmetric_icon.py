@@ -8,7 +8,7 @@ import numpy as np
 from ...core.registry import method
 from ...core.utils import (
     save, mn, seed_all, write_field, write_mask, write_scalars, W, H, PALETTES,
-    wired_source_lum,
+    wired_source_lum, wired_source_lum, wired_source_lum,
 )
 from ...core.animation import capture_frame
 
@@ -43,33 +43,7 @@ def _cos_pal(t: np.ndarray, shift: float):
     return r, g, b
 
 
-@method(
-    id="416",
-    name="Symmetric Icon",
-    category="fractals",
-    new_image_contract=True,
-    tags=["symmetric-chaos", "field-golubitsky", "attractor", "strange",
-          "animation", "gpu-twin-candidate"],
-    inputs={"image_in": "IMAGE"},
-    outputs={"image": "IMAGE", "mask": "MASK", "field": "FIELD"},
-    params={
-        "source": {"description": "seed the density field from the wired image's luminance", "choices": ["none", "input_image"], "default": "none"},
-        "seed_strength": {"description": "blend weight between the procedural density and the wired luminance field", "min": 0.0, "max": 1.0, "default": 0.6},
-        "symmetry": {"description": "rotational symmetry order n (>=2)", "min": 2, "max": 9, "default": 6},
-        "a0": {"description": "real constant term (bounded-attractor basin ~ -1.4..-2.4)", "min": -3.0, "max": 3.0, "default": -2.0},
-        "a1": {"description": "modulus |z|^2 coupling (high ~1.2..1.8 keeps the orbit bounded)", "min": -3.0, "max": 3.0, "default": 1.5},
-        "a2": {"description": "Re(z^n) coupling — perturbs the attractor shape", "min": -3.0, "max": 3.0, "default": -0.1},
-        "a3": {"description": "imaginary term (0 = mirror/mirror symmetry; off gives chiral twist)", "min": -1.5, "max": 1.5, "default": 0.0},
-        "a4": {"description": "conjugate z^(n-1) coupling (not too near 0)", "min": -1.5, "max": 1.5, "default": 0.6},
-        "iterations": {"description": "total plotted points ~ orbits*steps", "min": 100000, "max": 4000000, "default": 900000},
-        "orbits": {"description": "parallel random initial conditions (vectorization width)", "min": 500, "max": 16000, "default": 4000},
-        "colormode": {"description": "color map (rainbow/vapor/inferno/fire/ice/grayscale)", "default": "rainbow"},
-        "palette_shift": {"description": "cosine palette hue offset", "min": 0.0, "max": 1.0, "default": 0.5},
-        "time": {"description": "animation phase [0, 2pi)", "min": 0.0, "max": 6.28, "default": 0.0},
-        "anim_mode": {"description": "animation mode (none/evolve/rotate)", "choices": ["none", "evolve", "rotate"], "default": "none"},
-        "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
-    },
-)
+@method(id='416', name='Symmetric Icon', category='fractals', new_image_contract=True, tags=['symmetric-chaos', 'field-golubitsky', 'attractor', 'strange', 'animation', 'gpu-twin-candidate'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'mask': 'MASK', 'field': 'FIELD'}, params={'source': {'description': "seed the density field from the wired image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}, 'seed_strength': {'description': 'blend weight between the procedural density and the wired luminance field', 'min': 0.0, 'max': 1.0, 'default': 0.6}, 'symmetry': {'description': 'rotational symmetry order n (>=2)', 'min': 2, 'max': 9, 'default': 6}, 'a0': {'description': 'real constant term (bounded-attractor basin ~ -1.4..-2.4)', 'min': -3.0, 'max': 3.0, 'default': -2.0}, 'a1': {'description': 'modulus |z|^2 coupling (high ~1.2..1.8 keeps the orbit bounded)', 'min': -3.0, 'max': 3.0, 'default': 1.5}, 'a2': {'description': 'Re(z^n) coupling — perturbs the attractor shape', 'min': -3.0, 'max': 3.0, 'default': -0.1}, 'a3': {'description': 'imaginary term (0 = mirror/mirror symmetry; off gives chiral twist)', 'min': -1.5, 'max': 1.5, 'default': 0.0}, 'a4': {'description': 'conjugate z^(n-1) coupling (not too near 0)', 'min': -1.5, 'max': 1.5, 'default': 0.6}, 'iterations': {'description': 'total plotted points ~ orbits*steps', 'min': 100000, 'max': 4000000, 'default': 900000}, 'orbits': {'description': 'parallel random initial conditions (vectorization width)', 'min': 500, 'max': 16000, 'default': 4000}, 'colormode': {'description': 'color map (rainbow/vapor/inferno/fire/ice/grayscale)', 'default': 'rainbow'}, 'palette_shift': {'description': 'cosine palette hue offset', 'min': 0.0, 'max': 1.0, 'default': 0.5}, 'time': {'description': 'animation phase [0, 2pi)', 'min': 0.0, 'max': 6.28, 'default': 0.0}, 'anim_mode': {'description': 'animation mode (none/evolve/rotate)', 'choices': ['none', 'evolve', 'rotate'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 3.0, 'default': 1.0}})
 def method_symmetric_icon(out_dir: Path, seed: int, params=None):
     """Symmetric Icon — Field & Golubitsky's symmetric-chaos attractor.
 

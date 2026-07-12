@@ -7,26 +7,11 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, W, H, write_field
+from ...core.utils import save, norm, mn, seed_all, W, H, write_field, wired_source_lum
 from ...core.animation import capture_frame
 from ...core.utils import PALETTES
 
-@method(id="02", name="Quasicrystal", category="patterns",
-         tags=["classic", "wave", "fast", "expanded", "animation"],
-        outputs={"image": "IMAGE", "field": "FIELD"},
-         params={
-    "waves": {"description": "number of wave planes", "min": 2, "max": 50, "default": 8},
-    "lattice": {"description": "lattice symmetry (penrose/octagonal/dodecagonal/decagonal/tetragonal/hexagon/triangular/quasi/radial/custom)", "default": "penrose"},
-    "wave_fn": {"description": "wave function (sin/triangle/square/sawtooth/gabor/gaussian/pulse)", "default": "sin"},
-    "colormode": {"description": "color mode (grayscale/palette/heatmap/spectral/fire/ice/plasma/dual_layer)", "default": "heatmap"},
-    "frequency": {"description": "wave frequency scale", "min": 0.005, "max": 0.5, "default": 0.05},
-    "amplitude": {"description": "wave amplitude", "min": 0.1, "max": 2.0, "default": 1.0},
-    "modulation": {"description": "space modulation (none/radial/gaussian/spiral/vortex)", "default": "none"},
-    "mod_strength": {"description": "modulation strength", "min": 0.0, "max": 1.0, "default": 0.3},
-    "palette": {"description": "color palette name (PALETTES keys)", "default": "vapor"},
-    "rotation": {"description": "global rotation offset (radians)", "min": 0.0, "max": 6.2832, "default": 0.0},
-    "anim_mode": {"description": "animation mode: none, plane_rotate, freq_sweep, counter_rotate, multi_plane_freq, wave_count_sweep, lattice_cycle, wave_fn_cycle, mod_cycle, colormode_cycle, phase_drift", "default": "none"},
-    "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},})
+@method(id='02', name='Quasicrystal', category='patterns', tags=['classic', 'wave', 'fast', 'expanded', 'animation'], outputs={'image': 'IMAGE', 'field': 'FIELD'}, params={'waves': {'description': 'number of wave planes', 'min': 2, 'max': 50, 'default': 8}, 'lattice': {'description': 'lattice symmetry (penrose/octagonal/dodecagonal/decagonal/tetragonal/hexagon/triangular/quasi/radial/custom)', 'default': 'penrose'}, 'wave_fn': {'description': 'wave function (sin/triangle/square/sawtooth/gabor/gaussian/pulse)', 'default': 'sin'}, 'colormode': {'description': 'color mode (grayscale/palette/heatmap/spectral/fire/ice/plasma/dual_layer)', 'default': 'heatmap'}, 'frequency': {'description': 'wave frequency scale', 'min': 0.005, 'max': 0.5, 'default': 0.05}, 'amplitude': {'description': 'wave amplitude', 'min': 0.1, 'max': 2.0, 'default': 1.0}, 'modulation': {'description': 'space modulation (none/radial/gaussian/spiral/vortex)', 'default': 'none'}, 'mod_strength': {'description': 'modulation strength', 'min': 0.0, 'max': 1.0, 'default': 0.3}, 'palette': {'description': 'color palette name (PALETTES keys)', 'default': 'vapor'}, 'rotation': {'description': 'global rotation offset (radians)', 'min': 0.0, 'max': 6.2832, 'default': 0.0}, 'anim_mode': {'description': 'animation mode: none, plane_rotate, freq_sweep, counter_rotate, multi_plane_freq, wave_count_sweep, lattice_cycle, wave_fn_cycle, mod_cycle, colormode_cycle, phase_drift', 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 3.0, 'default': 1.0}, 'source': {'description': "wired upstream image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}}, inputs={'image_in': 'IMAGE'})
 def method_quasicrystal(out_dir: Path, seed: int, params=None):
     """Render quasicrystal diffraction patterns via wave-plane superposition.
 
@@ -40,6 +25,12 @@ def method_quasicrystal(out_dir: Path, seed: int, params=None):
         t = float(params.get("time", 0.0))
         seed_all(seed)
         yy, xx = np.mgrid[:H, :W].astype(np.float32)
+        # Wired image as a domain-warp source (luminance distorts the pattern grid)
+        _src_lum = wired_source_lum(params, xx.shape[1], xx.shape[0])
+        if _src_lum is not None:
+            xx = xx + (_src_lum - 0.5) * 15.0
+            yy = yy + (_src_lum - 0.5) * 15.0
+
         cx, cy = W / 2.0, H / 2.0
 
         # ── Params ──

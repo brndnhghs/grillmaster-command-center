@@ -29,30 +29,7 @@ def _render_flame_preview(density, colors, h, w):
         result = np.random.rand(h, w, 3).astype(np.float32) * 0.08 + 0.02
     return result
 
-@method(id="50", name="Barnsley Fern", category="fractals", tags=["ifs", "fast", "animation", "expanded"],
-        inputs={"image_in": "IMAGE"},
-        outputs={"image": "IMAGE", "field": "FIELD", "particles": "PARTICLES"},
-         params={
-             "source": {"description": "seed the primary density field from the wired image's luminance", "choices": ["none", "input_image"], "default": "none"},
-             "seed_strength": {"description": "blend weight between the procedural density and the wired luminance field", "min": 0.0, "max": 1.0, "default": 0.6},
-             "particles": {"description": "fern points", "min": 50000, "max": 500000, "default": 200000},
-             "density_increment": {"description": "accumulation per hit", "min": 0.0001, "max": 0.01, "default": 0.002},
-             "ifs_type": {"description": "IFS system type", "choices": ["barnsley", "cyclosorus", "thelypteris", "fractal_tree", "coral", "dragon", "custom"], "default": "barnsley"},
-             "color_mode": {"description": "coloring method", "choices": ["simple", "palette", "frond_age", "stem_density", "autumn", "multi_fern"], "default": "simple"},
-             "palette": {"description": "PALETTES name", "default": ""},
-             "layout": {"description": "arrangement", "choices": ["single", "mirror", "kaleidoscope", "multi_fern", "forest"], "default": "single"},
-             "n_ferns": {"description": "ferns in multi_fern/forest mode", "min": 2, "max": 20, "default": 5},
-             "symmetry": {"description": "kaleidoscope symmetry (3-8)", "min": 3, "max": 8, "default": 4},
-             "animation": {"description": "animation type", "choices": ["none", "growth_reveal", "sway", "color_cycle", "param_morph"], "default": "none"},
-             "sway_amount": {"description": "wind sway amplitude", "min": 0.0, "max": 1.0, "default": 0.3},
-             "color_r": {"description": "R multiplier", "min": 0.0, "max": 3.0, "default": 0.5},
-             "color_g": {"description": "G multiplier", "min": 0.0, "max": 3.0, "default": 0.8},
-             "color_b": {"description": "B multiplier", "min": 0.0, "max": 3.0, "default": 0.3},
-             "offset_g": {"description": "G offset", "min": 0.0, "max": 1.0, "default": 0.1},
-             "x_range": {"description": "fern x viewport as xmin,xmax", "default": "-4,4"},
-             "y_range": {"description": "fern y viewport as ymin,ymax", "default": "-2,10"},
-             "custom_ifs": {"description": "custom IFS as JSON: [[p,a,b,c,d,e,f],...]", "default": ""}}
-)
+@method(id='50', name='Barnsley Fern', category='fractals', tags=['ifs', 'fast', 'animation', 'expanded'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'field': 'FIELD', 'particles': 'PARTICLES'}, params={'source': {'description': "seed the primary density field from the wired image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}, 'seed_strength': {'description': 'blend weight between the procedural density and the wired luminance field', 'min': 0.0, 'max': 1.0, 'default': 0.6}, 'particles': {'description': 'fern points', 'min': 50000, 'max': 500000, 'default': 200000}, 'density_increment': {'description': 'accumulation per hit', 'min': 0.0001, 'max': 0.01, 'default': 0.002}, 'ifs_type': {'description': 'IFS system type', 'choices': ['barnsley', 'cyclosorus', 'thelypteris', 'fractal_tree', 'coral', 'dragon', 'custom'], 'default': 'barnsley'}, 'color_mode': {'description': 'coloring method', 'choices': ['simple', 'palette', 'frond_age', 'stem_density', 'autumn', 'multi_fern'], 'default': 'simple'}, 'palette': {'description': 'PALETTES name', 'default': ''}, 'layout': {'description': 'arrangement', 'choices': ['single', 'mirror', 'kaleidoscope', 'multi_fern', 'forest'], 'default': 'single'}, 'n_ferns': {'description': 'ferns in multi_fern/forest mode', 'min': 2, 'max': 20, 'default': 5}, 'symmetry': {'description': 'kaleidoscope symmetry (3-8)', 'min': 3, 'max': 8, 'default': 4}, 'animation': {'description': 'animation type', 'choices': ['none', 'growth_reveal', 'sway', 'color_cycle', 'param_morph'], 'default': 'none'}, 'sway_amount': {'description': 'wind sway amplitude', 'min': 0.0, 'max': 1.0, 'default': 0.3}, 'color_r': {'description': 'R multiplier', 'min': 0.0, 'max': 3.0, 'default': 0.5}, 'color_g': {'description': 'G multiplier', 'min': 0.0, 'max': 3.0, 'default': 0.8}, 'color_b': {'description': 'B multiplier', 'min': 0.0, 'max': 3.0, 'default': 0.3}, 'offset_g': {'description': 'G offset', 'min': 0.0, 'max': 1.0, 'default': 0.1}, 'x_range': {'description': 'fern x viewport as xmin,xmax', 'default': '-4,4'}, 'y_range': {'description': 'fern y viewport as ymin,ymax', 'default': '-2,10'}, 'custom_ifs': {'description': 'custom IFS as JSON: [[p,a,b,c,d,e,f],...]', 'default': ''}})
 def method_barnsley_fern(out_dir: Path, seed: int, params=None):
     """Render an IFS fractal fern (Barnsley Fern and variants).
 

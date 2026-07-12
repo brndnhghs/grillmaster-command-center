@@ -10,7 +10,7 @@ from scipy.spatial import cKDTree
 from ...core.registry import method
 from ...core.utils import (
     save, mn, seed_all, W, H, write_scalars, write_field, write_mask,
-    write_particles, load_input, BG_DEFAULT,
+    write_particles, load_input, BG_DEFAULT, wired_source_lum,
 )
 from ...core.animation import capture_frame
 
@@ -24,6 +24,12 @@ def _build_density(gen: str, rng: np.random.Generator, seed: int) -> np.ndarray:
     halftones into stipples (Secord 2002, "Weighted Voronoi Stippling").
     """
     yy, xx = np.mgrid[0:H, 0:W].astype(np.float64)
+    # Wired image as a domain-warp source (luminance distorts the pattern grid)
+    _src_lum = wired_source_lum(params, xx.shape[1], xx.shape[0])
+    if _src_lum is not None:
+        xx = xx + (_src_lum - 0.5) * 15.0
+        yy = yy + (_src_lum - 0.5) * 15.0
+
     cx, cy = W / 2.0, H / 2.0
     nx = (xx - cx) / max(H, W)
     ny = (yy - cy) / max(H, W)
@@ -118,20 +124,7 @@ def _base_color(mode: str, b: float) -> tuple[float, float, float]:
     return (b, b, b)
 
 
-@method(id="332", name="Weighted Voronoi Stippling", category="patterns",
-        tags=["stippling", "halftone", "voronoi", "lloyd", "secord", "generative", "animation"],
-        inputs={},
-        outputs={"image": "IMAGE", "luminance": "FIELD", "mask": "MASK", "particles": "PARTICLES"},
-        params={
-    "density": {"description": "density-field generator driving dot placement (blobs/rings/gradient/noise)", "default": "blobs"},
-    "max_points": {"description": "max stipple count (scaled by mean density)", "min": 100, "max": 3000, "default": 900},
-    "iters": {"description": "Lloyd relaxation iterations (higher = more even spacing)", "min": 1, "max": 40, "default": 14},
-    "dot_size": {"description": "base stipple radius in px", "min": 1.0, "max": 6.0, "default": 2.0},
-    "colormode": {"description": "dot color (white/black/gold/cyan/viridis)", "default": "white"},
-    "anim_mode": {"description": "animation mode: none, rotate, morph, reveal", "default": "none"},
-    "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
-    "time": {"description": "animation phase [0, 2pi)", "min": 0.0, "max": 6.28, "default": 0.0},
-})
+@method(id='332', name='Weighted Voronoi Stippling', category='patterns', tags=['stippling', 'halftone', 'voronoi', 'lloyd', 'secord', 'generative', 'animation'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'luminance': 'FIELD', 'mask': 'MASK', 'particles': 'PARTICLES'}, params={'density': {'description': 'density-field generator driving dot placement (blobs/rings/gradient/noise)', 'default': 'blobs'}, 'max_points': {'description': 'max stipple count (scaled by mean density)', 'min': 100, 'max': 3000, 'default': 900}, 'iters': {'description': 'Lloyd relaxation iterations (higher = more even spacing)', 'min': 1, 'max': 40, 'default': 14}, 'dot_size': {'description': 'base stipple radius in px', 'min': 1.0, 'max': 6.0, 'default': 2.0}, 'colormode': {'description': 'dot color (white/black/gold/cyan/viridis)', 'default': 'white'}, 'anim_mode': {'description': 'animation mode: none, rotate, morph, reveal', 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 3.0, 'default': 1.0}, 'time': {'description': 'animation phase [0, 2pi)', 'min': 0.0, 'max': 6.28, 'default': 0.0}, 'source': {'description': "wired upstream image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}})
 def method_weighted_stipple(out_dir, seed: int, params=None):
     """Halftone an image/density field into stipples via Weighted Voronoi
     Stippling (Secord, SIGGRAPH 2002).

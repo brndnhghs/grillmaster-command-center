@@ -29,26 +29,7 @@ def _render_flame_preview(density, colors, h, w):
         result = np.random.rand(h, w, 3).astype(np.float32) * 0.08 + 0.02
     return result
 
-@method(id="51", name="Burning Ship", category="fractals", tags=["classic", "fast", "expanded", "animation"],
-         inputs={"image_in": "IMAGE"},
-         params={
-    "source": {"description": "domain-warp the initial complex coordinate plane from the wired image's luminance", "choices": ["none", "input_image"], "default": "none"},
-    "warp_strength": {"description": "domain-warp strength applied to the per-pixel initial complex coordinate", "min": 0.0, "max": 2.0, "default": 0.6},
-    "iterations": {"description": "max iterations", "min": 30, "max": 500, "default": 100},
-    "viewpoint": {"description": "complex plane range as xmin,xmax,ymin,ymax", "default": "-2,1,-2,1.5"},
-    "escape_radius": {"description": "divergence threshold", "min": 1.5, "max": 10.0, "default": 2.0},
-    "color_mode": {"description": "coloring method: sine, palette, heatmap, smooth_gradient, spectral, fire, ice, dual_layer, plasma", "default": "sine"},
-    "variation": {"description": "fractal variation: classic, dual, antialiased, alternating, ship_of_theseus, mandelbrot_hybrid", "default": "classic"},
-    "exponent": {"description": "exponent for alternating variation", "min": 1.0, "max": 6.0, "default": 2.0},
-    "palette_name": {"description": "palette name for palette mode", "default": "magma"},
-    "smooth": {"description": "use smooth fractional iteration counting", "default": True},
-    "color_speed": {"description": "color rotation speed", "min": 0.5, "max": 8.0, "default": 2.0},
-    "color_offset": {"description": "hue shift offset", "min": 0.0, "max": 6.28, "default": 0.0},
-    "animation_mode": {"description": "animation mode: none, zoom, color_cycle, iteration_growth, param_morph, flame", "default": "none"},
-    "anim_zoom_target": {"description": "zoom target as x,y or auto", "default": "auto"},
-    "anim_zoom_speed": {"description": "zoom speed factor", "min": 0.1, "max": 2.0, "default": 0.5},
-    "antialias": {"description": "supersample factor (2=2x2)", "min": 1, "max": 3, "default": 1}}
-)
+@method(id='51', name='Burning Ship', category='fractals', tags=['classic', 'fast', 'expanded', 'animation'], inputs={'image_in': 'IMAGE'}, params={'source': {'description': "domain-warp the initial complex coordinate plane from the wired image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}, 'warp_strength': {'description': 'domain-warp strength applied to the per-pixel initial complex coordinate', 'min': 0.0, 'max': 2.0, 'default': 0.6}, 'iterations': {'description': 'max iterations', 'min': 30, 'max': 500, 'default': 100}, 'viewpoint': {'description': 'complex plane range as xmin,xmax,ymin,ymax', 'default': '-2,1,-2,1.5'}, 'escape_radius': {'description': 'divergence threshold', 'min': 1.5, 'max': 10.0, 'default': 2.0}, 'color_mode': {'description': 'coloring method: sine, palette, heatmap, smooth_gradient, spectral, fire, ice, dual_layer, plasma', 'default': 'sine'}, 'variation': {'description': 'fractal variation: classic, dual, antialiased, alternating, ship_of_theseus, mandelbrot_hybrid', 'default': 'classic'}, 'exponent': {'description': 'exponent for alternating variation', 'min': 1.0, 'max': 6.0, 'default': 2.0}, 'palette_name': {'description': 'palette name for palette mode', 'default': 'magma'}, 'smooth': {'description': 'use smooth fractional iteration counting', 'default': True}, 'color_speed': {'description': 'color rotation speed', 'min': 0.5, 'max': 8.0, 'default': 2.0}, 'color_offset': {'description': 'hue shift offset', 'min': 0.0, 'max': 6.28, 'default': 0.0}, 'animation_mode': {'description': 'animation mode: none, zoom, color_cycle, iteration_growth, param_morph, flame', 'default': 'none'}, 'anim_zoom_target': {'description': 'zoom target as x,y or auto', 'default': 'auto'}, 'anim_zoom_speed': {'description': 'zoom speed factor', 'min': 0.1, 'max': 2.0, 'default': 0.5}, 'antialias': {'description': 'supersample factor (2=2x2)', 'min': 1, 'max': 3, 'default': 1}})
 def method_burning_ship(out_dir: Path, seed: int, params=None):
     """Render the Burning Ship fractal with 6 variations and 10 color modes.
 

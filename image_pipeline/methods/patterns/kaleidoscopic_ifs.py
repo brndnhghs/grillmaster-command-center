@@ -5,26 +5,11 @@ import numpy as np
 from PIL import Image
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, write_field, write_scalars, W, H
+from ...core.utils import save, norm, mn, seed_all, write_field, write_scalars, W, H, wired_source_lum
 from ...core.animation import capture_frame
 
 
-@method(id="402", name="Kaleidoscopic IFS", category="patterns",
-        tags=["fractal", "escape-time", "kaleidoscopic", "animation",
-              "color_intrinsic", "gpu-twin"],
-        params={
-    "iterations": {"description": "number of fold iterations", "min": 4, "max": 24, "default": 14},
-    "scale": {"description": "fold scale (negative = classic KIFS detail)", "min": -3.0, "max": 1.0, "default": -2.0},
-    "fold_angle": {"description": "rotation between folds (radians)", "min": 0.0, "max": 6.2832, "default": 1.0},
-    "offset_x": {"description": "fold offset x", "min": -3.0, "max": 3.0, "default": 1.0},
-    "offset_y": {"description": "fold offset y", "min": -3.0, "max": 3.0, "default": 1.0},
-    "symmetry": {"description": "kaleidoscopic symmetry order (2..8)", "min": 2, "max": 8, "default": 6},
-    "escape_radius": {"description": "orbit-escape radius", "min": 2.0, "max": 40.0, "default": 12.0},
-    "colormode": {"description": "color mode (orbit / bands / neon)", "default": "orbit"},
-    "color_shift": {"description": "palette color offset", "min": 0.0, "max": 1.0, "default": 0.5},
-    "anim_mode": {"description": "animation mode (none/rotate/spin/pulse/zoom)", "default": "none"},
-    "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
-        })
+@method(id='402', name='Kaleidoscopic IFS', category='patterns', tags=['fractal', 'escape-time', 'kaleidoscopic', 'animation', 'color_intrinsic', 'gpu-twin'], params={'iterations': {'description': 'number of fold iterations', 'min': 4, 'max': 24, 'default': 14}, 'scale': {'description': 'fold scale (negative = classic KIFS detail)', 'min': -3.0, 'max': 1.0, 'default': -2.0}, 'fold_angle': {'description': 'rotation between folds (radians)', 'min': 0.0, 'max': 6.2832, 'default': 1.0}, 'offset_x': {'description': 'fold offset x', 'min': -3.0, 'max': 3.0, 'default': 1.0}, 'offset_y': {'description': 'fold offset y', 'min': -3.0, 'max': 3.0, 'default': 1.0}, 'symmetry': {'description': 'kaleidoscopic symmetry order (2..8)', 'min': 2, 'max': 8, 'default': 6}, 'escape_radius': {'description': 'orbit-escape radius', 'min': 2.0, 'max': 40.0, 'default': 12.0}, 'colormode': {'description': 'color mode (orbit / bands / neon)', 'default': 'orbit'}, 'color_shift': {'description': 'palette color offset', 'min': 0.0, 'max': 1.0, 'default': 0.5}, 'anim_mode': {'description': 'animation mode (none/rotate/spin/pulse/zoom)', 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 3.0, 'default': 1.0}, 'source': {'description': "wired upstream image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}}, inputs={'image_in': 'IMAGE'})
 def method_kaleidoscopic_ifs(out_dir, seed: int, params=None):
     """Kaleidoscopic IFS fractal (iteration-fold escape-time).
 
@@ -76,6 +61,12 @@ def method_kaleidoscopic_ifs(out_dir, seed: int, params=None):
 
         # ── Initial point field: map pixels to a small complex-plane region ──
         yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+        # Wired image as a domain-warp source (luminance distorts the pattern grid)
+        _src_lum = wired_source_lum(params, xx.shape[1], xx.shape[0])
+        if _src_lum is not None:
+            xx = xx + (_src_lum - 0.5) * 15.0
+            yy = yy + (_src_lum - 0.5) * 15.0
+
         zx = (xx - W / 2.0) / (W / 2.0) * 3.0
         zy = (yy - H / 2.0) / (H / 2.0) * 3.0
         if anim_mode == "spin":

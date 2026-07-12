@@ -47,7 +47,7 @@ from PIL import Image
 from ...core.registry import method
 from ...core.utils import (
     save, mn, seed_all, W, H,
-    write_field, write_scalars,
+    write_field, write_scalars, wired_source_lum,
 )
 from ...core.animation import capture_frame
 
@@ -109,40 +109,7 @@ def _value_noise(shape, freq: float, seed: int, ox: float = 0.0, oy: float = 0.0
     return nx0 + (nx1 - nx0) * sy
 
 
-@method(
-    id="464",
-    name="Thin-Film Iridescence",
-    category="patterns",
-    tags=["iridescence", "thin-film", "interference", "spectral", "procedural",
-          "soap-bubble", "oil-slick", "animation"],
-    inputs={},
-    outputs={"image": "IMAGE", "field": "FIELD"},
-    params={
-        "thickness": {"description": "base film thickness (nm) — sets the colour order",
-                      "min": 100.0, "max": 1500.0, "default": 500.0},
-        "thickness_source": {"description": "how the thickness varies across the image",
-                             "choices": ["radial", "linear", "angular", "noise", "constant"],
-                             "default": "radial"},
-        "thickness_scale": {"description": "variation amount of the thickness source",
-                            "min": 0.2, "max": 3.0, "default": 1.0},
-        "noise_freq": {"description": "spatial frequency of the noise source",
-                       "min": 1.0, "max": 12.0, "default": 4.0},
-        "ior": {"description": "film refractive index (1=air, 1.33=water, 1.5=glass)",
-                "min": 1.0, "max": 2.5, "default": 1.33},
-        "tilt": {"description": "viewing tilt in degrees (shifts effective thickness)",
-                 "min": 0.0, "max": 80.0, "default": 0.0},
-        "intensity": {"description": "overall brightness gain",
-                      "min": 0.3, "max": 3.0, "default": 1.4},
-        "saturation": {"description": "colour saturation multiplier",
-                       "min": 0.0, "max": 2.0, "default": 1.0},
-        "time": {"description": "animation phase [0, 2pi)",
-                 "min": 0.0, "max": 6.28, "default": 0.0},
-        "anim_mode": {"description": "animation mode (none/breathe/ripple/swirl)",
-                      "choices": ["none", "breathe", "ripple", "swirl"], "default": "none"},
-        "anim_speed": {"description": "animation speed multiplier",
-                       "min": 0.1, "max": 5.0, "default": 1.0},
-    },
-)
+@method(id='464', name='Thin-Film Iridescence', category='patterns', tags=['iridescence', 'thin-film', 'interference', 'spectral', 'procedural', 'soap-bubble', 'oil-slick', 'animation'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'field': 'FIELD'}, params={'thickness': {'description': 'base film thickness (nm) — sets the colour order', 'min': 100.0, 'max': 1500.0, 'default': 500.0}, 'thickness_source': {'description': 'how the thickness varies across the image', 'choices': ['radial', 'linear', 'angular', 'noise', 'constant'], 'default': 'radial'}, 'thickness_scale': {'description': 'variation amount of the thickness source', 'min': 0.2, 'max': 3.0, 'default': 1.0}, 'noise_freq': {'description': 'spatial frequency of the noise source', 'min': 1.0, 'max': 12.0, 'default': 4.0}, 'ior': {'description': 'film refractive index (1=air, 1.33=water, 1.5=glass)', 'min': 1.0, 'max': 2.5, 'default': 1.33}, 'tilt': {'description': 'viewing tilt in degrees (shifts effective thickness)', 'min': 0.0, 'max': 80.0, 'default': 0.0}, 'intensity': {'description': 'overall brightness gain', 'min': 0.3, 'max': 3.0, 'default': 1.4}, 'saturation': {'description': 'colour saturation multiplier', 'min': 0.0, 'max': 2.0, 'default': 1.0}, 'time': {'description': 'animation phase [0, 2pi)', 'min': 0.0, 'max': 6.28, 'default': 0.0}, 'anim_mode': {'description': 'animation mode (none/breathe/ripple/swirl)', 'choices': ['none', 'breathe', 'ripple', 'swirl'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 5.0, 'default': 1.0}, 'source': {'description': "wired upstream image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}})
 def method_thin_film(out_dir: Path, seed: int, params=None):
     """Thin-Film Iridescence — spectral two-beam interference colour field.
 
@@ -189,6 +156,12 @@ def method_thin_film(out_dir: Path, seed: int, params=None):
 
         # ── Geometry fields ──
         yy, xx = np.mgrid[0:h, 0:w]
+        # Wired image as a domain-warp source (luminance distorts the pattern grid)
+        _src_lum = wired_source_lum(params, xx.shape[1], xx.shape[0])
+        if _src_lum is not None:
+            xx = xx + (_src_lum - 0.5) * 15.0
+            yy = yy + (_src_lum - 0.5) * 15.0
+
         cx, cy = (w - 1) / 2.0, (h - 1) / 2.0
         nx = xx / float(w)
         ny = yy / float(h)
