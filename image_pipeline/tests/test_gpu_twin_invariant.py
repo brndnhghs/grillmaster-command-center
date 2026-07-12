@@ -180,23 +180,22 @@ def test_sim_shaders_compile_and_seed_renders(mid):
 # a correctly-wired twin passes even if some uniforms are gated.
 
 
-def _extreme_value(spec):
-    """A large, clearly-visible value for a uniform (not a tiny delta)."""
+def _extreme_values(spec):
+    """Both range endpoints for a uniform, so the drive-output probe can pick
+    whichever extreme (min or max) maximally disturbs the frame. Returns a list."""
     g = spec.get("glsl", "float")
     if g == "int":
-        return int(spec.get("max", 99))
+        return [int(spec.get("min", 0)), int(spec.get("max", 99))]
     if g == "choice":
         ch = spec.get("choices", [])
         if len(ch) < 2:
-            return spec.get("default", 0)
-        return ch[-1]  # maximally different from the default (usually index 0)
+            return [spec.get("default", 0)]
+        return [ch[0], ch[-1]]  # both ends, maximally apart
     if g == "color":
-        return (0.95, 0.05, 0.05)
+        return [(0.95, 0.05, 0.05), (0.05, 0.05, 0.95)]
     lo = float(spec.get("min", 0.0))
     hi = float(spec.get("max", 1.0))
-    d = float(spec.get("default", (lo + hi) / 2))
-    # pick the extreme farther from the default so the visual change is large
-    return hi if abs(hi - d) >= abs(d - lo) else lo
+    return [lo, hi]
 
 
 def _synthetic():
@@ -238,16 +237,24 @@ def test_typed_uniforms_drive_output(mid):
 
     best = 0.0
     for u, spec in uspec.items():
-        single = dict(base)
-        single[u] = _extreme_value(spec)
-        kw = dict(named_params=single, time=1.0)
-        if stype == "filter":
-            kw["input_image"] = _synthetic()
-        try:
-            img = render_shader(name, SIZE, (0.5,) * 4, **kw)
-        except Exception as e:  # pragma: no cover
-            pytest.fail(f"{mid} {name} uniform '{u}' render raised: {e}")
-        best = max(best, _mad(img_base, img))
+        # Probe BOTH extremes of the uniform's valid range. Some twins are
+        # self-similar or (near-)symmetric (e.g. Apollonian gasket, fractal /
+        # kaleidoscopic / rotational patterns), so sweeping the default toward
+        # a single far endpoint can map almost onto the base frame and produce
+        # a low MAD even though the uniform is fully live. A genuinely no-op
+        # uniform is flat at BOTH endpoints, so taking the max MAD still catches
+        # dead controls while avoiding a symmetric-shape false negative.
+        for extreme in _extreme_values(spec):
+            single = dict(base)
+            single[u] = extreme
+            kw = dict(named_params=single, time=1.0)
+            if stype == "filter":
+                kw["input_image"] = _synthetic()
+            try:
+                img = render_shader(name, SIZE, (0.5,) * 4, **kw)
+            except Exception as e:  # pragma: no cover
+                pytest.fail(f"{mid} {name} uniform '{u}' render raised: {e}")
+            best = max(best, _mad(img_base, img))
 
     assert best >= 1.0, (
         f"{mid} {name}: no declared typed uniform visibly affects the output "
