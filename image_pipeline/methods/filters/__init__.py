@@ -19,6 +19,7 @@ from . import line_integral_convolution
 from . import seam_carving
 from . import guided_filter
 from . import xdog
+from . import coherent_line_drawing
 from . import tonal_hatching
 from . import anisotropic_diffusion
 from . import poisson_editing
