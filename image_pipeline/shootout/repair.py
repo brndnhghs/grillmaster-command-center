@@ -214,6 +214,23 @@ def repair_genome(genome: dict, pool: GenePool | None = None,
     fixed = repair_graph(genome["graph"], pool, cfg)
     if fixed is None:
         return None
+    # Route 8 terminal variance guard (2026-07-12): guarantee the render head
+    # is animated and spatially/temporally varied so the liveness gate stops
+    # wasting compute on boring random graphs. Wrapped so it can never break
+    # sampling — on any failure we just keep the unrepaired (still valid) graph.
+    if cfg.terminal_variance_probe:
+        try:
+            from .motifs import Builder
+            pool = pool or build_gene_pool(cfg)
+            rng = random.Random(genome.get("seed", 42))
+            b = Builder(pool, cfg, rng, None)
+            b.nodes = [dict(n) for n in fixed["nodes"]]
+            b.edges = [dict(e) for e in fixed["edges"]]
+            b._n = len(b.nodes)
+            b.ensure_terminal_variance(cfg, rng)
+            fixed = {**fixed, "nodes": b.nodes, "edges": b.edges}
+        except Exception:
+            pass
     return {**genome, "graph": fixed}
 
 

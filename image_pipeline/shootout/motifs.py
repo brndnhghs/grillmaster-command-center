@@ -23,6 +23,8 @@ import json
 import random
 from pathlib import Path
 
+import numpy as np
+
 from .config import ShootoutConfig, DEFAULT_CONFIG
 from .generator import (
     GenePool, SamplingBias, _declared_ports, _fillable_ports, _is_needy,
@@ -119,6 +121,246 @@ class Builder:
         if max_len > 0 and self.rng.random() < 0.6:
             return self.chain(src, self.rng.randint(1, max_len))
         return src
+
+
+    # ── Terminal variance guard (Route 8: kill flat/static reject waste) ──
+
+    def _primary_image_in(self, mid: str) -> str | None:
+        d = self.pool.defs[mid]
+        for p, t in _fillable_ports(d):
+            if t == "image":
+                return p
+        for p, t in (d.get("outputs") or {}).items():
+            if t == "image":
+                return p
+        return None
+
+    def _probe_terminal_variance(self, cfg) -> "tuple[float, float] | None":
+        """Render 2 tiny frames of the render head + its ancestor subgraph
+        (drivers are ancestors, so modulation is captured; parallel heavy
+        branches are excluded) and return (spatial_var, temporal_var), or None
+        on failure/timeout. Sim heads are skipped (n_frames param)."""
+        import shutil
+        import tempfile
+        import threading
+
+        head = self.terminal_id()
+        if head is None:
+            return None
+        if "n_frames" in (self.pool.defs[self.mid(head)].get("params") or {}):
+            return None
+        # Subgraph: head + ancestors only (BFS up the edge list).
+        keep = {head}
+        changed = True
+        while changed:
+            changed = False
+            for e in self.edges:
+                if e["src_node"] in keep and e["dst_node"] not in keep:
+                    keep.add(e["dst_node"])
+                    changed = True
+        nodes = [dict(n, dirty=True) for n in self.nodes if n["id"] in keep]
+        edges = [dict(e) for e in self.edges
+                 if e["src_node"] in keep and e["dst_node"] in keep]
+        W, H = 112, 72
+        try:
+            from image_pipeline.core.graph import GraphExecutor
+            from image_pipeline.core.utils import set_canvas
+        except Exception:
+            return None
+        wd = Path(tempfile.mkdtemp(prefix="svar-"))
+        res: dict = {}
+
+        def _run() -> None:
+            try:
+                set_canvas(W, H)
+                ex = GraphExecutor(wd, fps=cfg.fps, in_memory=True,
+                                   audit_to_disk=False)
+                frames = []
+                for frame in range(2):
+                    flat, _t, _e = ex.execute(nodes, edges, 1,
+                                              frame=frame, frames=2)
+                    img = (flat.get(head) or {}).get("image")
+                    if img is None:
+                        return
+                    s = np.asarray(img, dtype=np.float32)[::4, ::4]
+                    if s.ndim == 3:
+                        s = s.mean(axis=-1)
+                    frames.append(s)
+                if len(frames) < 2:
+                    return
+                stack = np.stack(frames)
+                res["spatial"] = float(stack.mean(axis=0).var())
+                res["temporal"] = float(stack.var(axis=0).mean())
+            except Exception:
+                pass
+
+        th = threading.Thread(target=_run)
+        th.start()
+        th.join(timeout=2.5)
+        shutil.rmtree(wd, ignore_errors=True)
+        if th.is_alive() or "spatial" not in res:
+            return None
+        return res["spatial"], res["temporal"]
+
+    def _boost_head_motion(self, rng: random.Random) -> None:
+        """Ensure the render head moves: widen an existing driver, attach one
+        to a drivable param, or force a strong live anim_mode on a TV head."""
+        head = self.terminal_id()
+        if head is None:
+            return
+        head_mid = self.mid(head)
+        fed = self.fed_ports()
+        # Widen an existing driver feeding the head.
+        drv_edge = next((e for e in self.edges
+                         if e["dst_node"] == head
+                         and self.mid(e["src_node"]) in self.pool.scalar_drivers),
+                        None)
+        if drv_edge is not None:
+            drv = self.node(drv_edge["src_node"])
+            drv_mid = drv["method_id"]
+            target = (self.pool.defs[head_mid].get("params") or {}).get(
+                drv_edge["dst_port"])
+            if target is not None and drv_mid in _DRIVER_RANGE_PARAMS:
+                lo_k, hi_k = _DRIVER_RANGE_PARAMS[drv_mid]
+                lo, hi = float(target["min"]), float(target["max"])
+                drv["params"][lo_k] = round(lo, 4)
+                drv["params"][hi_k] = round(hi, 4)
+                if drv_mid in ("__lfo__", "__noise1d__", "__strobe__"):
+                    drv["params"]["rate"] = round(rng.uniform(0.8, 2.0), 3)
+            return
+        # Attach a fresh driver to the best drivable param.
+        cands = [(p, s) for p, s in _drivable_params(self.pool, self.cfg, head_mid)
+                 if (head, p) not in fed]
+        if cands:
+            pname, spec = cands[0]
+            drv_mid = _driver_for(pname, rng, set(self.pool.scalar_drivers))
+            if drv_mid is not None:
+                drv_id = self.add(drv_mid)
+                _configure_driver(self, drv_id, drv_mid, spec)
+                self.wire(drv_id,
+                          self.pool.output_port_for(drv_mid, "scalar") or "value",
+                          head, pname)
+            return
+        # TV but nothing drivable: force a strong live anim_mode.
+        if self.pool.defs[head_mid].get("is_time_varying"):
+            for pname, spec in (self.pool.defs[head_mid].get("params") or {}).items():
+                if isinstance(spec, dict) and "none" in (spec.get("choices") or []):
+                    live = [c for c in spec["choices"] if c != "none"]
+                    if live:
+                        self.node(head)["params"][pname] = rng.choice(live)
+                        return
+
+    def _reroll_head_params(self, rng: random.Random) -> None:
+        head = self.terminal_id()
+        if head is None:
+            return
+        mid = self.mid(head)
+        has_img = any(e["dst_node"] == head
+                      and self.mid(e["src_node"]) not in self.pool.scalar_drivers
+                      for e in self.edges)
+        self.node(head)["params"] = sample_params(self.pool, self.cfg, rng,
+                                                   mid, has_img)
+
+    def _reroll_upstream_sources(self, rng: random.Random) -> None:
+        """Flatness often lives in the head's upstream image source, not the
+        head itself — re-rolling only the head can't fix a flat source feeding
+        it. Re-sample the direct image/field/mask/particles sources of the head
+        toward higher-variance params so the head receives varied input."""
+        head = self.terminal_id()
+        if head is None:
+            return
+        head_def = self.pool.defs[self.mid(head)]
+        src_ids: set[str] = set()
+        for e in self.edges:
+            if e["dst_node"] != head:
+                continue
+            ptype = (head_def.get("inputs") or {}).get(e["dst_port"])
+            if ptype in ("image", "field", "mask", "particles"):
+                src_ids.add(e["src_node"])
+        for sid in src_ids:
+            mid = self.mid(sid)
+            has_img = any(e2["dst_node"] == sid
+                          and self.mid(e2["src_node"]) not in self.pool.scalar_drivers
+                          for e2 in self.edges)
+            self.node(sid)["params"] = sample_params(self.pool, self.cfg, rng,
+                                                      mid, has_img)
+
+    def _swap_terminal_to_filter(self, rng: random.Random) -> None:
+        """Replace the render head (in place, keeping its id) with a TV filter
+        that accepts an image input — keeps upstream edges valid and is
+        inherently high-variance. Last resort after param re-rolls fail."""
+        head = self.terminal_id()
+        if head is None:
+            return
+        opts = [m for m in self.pool.image_producers
+                if self.pool.defs[m].get("is_time_varying")
+                and self._primary_image_in(m) is not None
+                and m != self.mid(head)]
+        if not opts:
+            return
+        new_mid = rng.choice(opts)
+        node = self.node(head)
+        node["method_id"] = new_mid
+        node["params"] = sample_params(self.pool, self.cfg, rng, new_mid, True)
+        # Drop incoming edges that no longer match the new node's ports.
+        valid_in = set((self.pool.defs[new_mid].get("inputs") or {}).keys())
+        valid_params = set((self.pool.defs[new_mid].get("params") or {}).keys())
+        self.edges = [e for e in self.edges
+                      if not (e["dst_node"] == head
+                              and e["dst_port"] not in valid_in
+                              and e["dst_port"] not in valid_params)]
+        _terminal_animated_floor(self)
+        self._boost_head_motion(rng)
+
+    def ensure_terminal_variance(self, cfg, rng: random.Random) -> None:
+        """Route 8 terminal guard: guarantee the render head is animated AND
+        spatially/temporally varied. Cheap 2-frame probe (head + ancestors)
+        re-rolls the head params and its upstream sources, or swaps the head to
+        a variance-friendly filter, when output is flat/static. Sim heads are
+        skipped (structural bias only — they vary)."""
+        _terminal_animated_floor(self)
+        head = self.terminal_id()
+        if head is None:
+            return
+        head_mid = self.mid(head)
+        if not self.pool.defs[head_mid].get("is_time_varying"):
+            self._boost_head_motion(rng)
+            # A non-TV head that still can't be driven must be swapped.
+            if not self.pool.defs[self.mid(head)].get("is_time_varying"):
+                self._swap_terminal_to_filter(rng)
+                self._reroll_upstream_sources(rng)
+                return
+        if "n_frames" in (self.pool.defs[head_mid].get("params") or {}):
+            return  # sim head: structural bias only
+        # Up to `retries` fix cycles: re-roll head + upstream sources, re-probe.
+        for _ in range(max(1, cfg.terminal_variance_retries)):
+            probe = self._probe_terminal_variance(cfg)
+            if probe is None:
+                return
+            spatial, temporal = probe
+            if (spatial >= cfg.spatial_var_min * 1.5
+                    and temporal >= cfg.temporal_var_min * 1.5):
+                return
+            if temporal < cfg.temporal_var_min * 1.5:
+                self._boost_head_motion(rng)
+            if spatial < cfg.spatial_var_min * 1.5:
+                self._reroll_head_params(rng)
+                self._reroll_upstream_sources(rng)
+        # Final fallback: swap head to a variance-friendly filter and re-roll
+        # the upstream sources + head params, retrying with different filters
+        # until one passes the probe (high-variance filters like edge/threshold
+        # vary far more than a random pick, so try several).
+        for _ in range(5):
+            self._swap_terminal_to_filter(rng)
+            self._reroll_upstream_sources(rng)
+            self._reroll_head_params(rng)
+            probe = self._probe_terminal_variance(cfg)
+            if probe is None:
+                return
+            spatial, temporal = probe
+            if (spatial >= cfg.spatial_var_min * 1.5
+                    and temporal >= cfg.temporal_var_min * 1.5):
+                return
 
 
 # ── Motifs ────────────────────────────────────────────────────────────

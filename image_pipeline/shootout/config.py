@@ -77,6 +77,15 @@ class ShootoutConfig:
     # a slow tail frame shouldn't discard an otherwise-good dynamic clip.
     min_render_frames_frac: float = 0.5
 
+    # ── Terminal variance guard (Route 8, 2026-07-12) ──
+    # A cheap 2-frame tiny render probe in repair_genome guarantees the
+    # render head is not flat (low spatial_var) or static (low temporal_var):
+    # it re-rolls the head params or swaps the head to a variance-friendly
+    # filter when output fails, so the liveness gate stops wasting compute on
+    # boring random graphs. Set terminal_variance_probe=False to disable.
+    terminal_variance_probe: bool = True
+    terminal_variance_retries: int = 3  # re-roll/swap attempts before giving up
+
     # ── Pre-render cost gate (cost_model.py) ──────────────────────
     # Empirical per-method ms/frame model estimates a genome's wall time
     # before rendering. Guaranteed-timeout graphs (est > render_timeout_s *
