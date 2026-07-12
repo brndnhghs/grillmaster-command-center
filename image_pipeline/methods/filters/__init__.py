@@ -41,3 +41,4 @@ from . import rolling_shutter
 from . import lens_flare
 from . import clahe
 from . import marbling
+from . import subsurface
