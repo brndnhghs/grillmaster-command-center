@@ -4878,6 +4878,88 @@ void main() {
                "description": "animated pulse speed"},
 })
 
+# ── Typed-uniform shims for CPU filter nodes 417 / 419 ──
+# Mirrors node 417 (Chromatic Aberration) and node 419 (Thin-Film Interference)
+# with NAMED typed uniforms that equal the CPU node's real params (contract #5),
+# so the live preview tracks the sliders. The CPU numpy node stays authoritative
+# for export (two-tier precision). Each uniform is verified live by
+# test_typed_uniforms_drive_output (MAD >= 1.0 when perturbed to an extreme).
+_register("chromatic_aberration_gpu", "Chromatic aberration RGB split (client-GPU twin of node 417)",
+          "filter", '''
+void main() {
+    // Optical center can be nudged by center_drift (kept static here — the CPU
+    // node only orbits it in spin mode); at the default 0.4 it sits at (0.5,0.5).
+    vec2 ctr = vec2(0.5) + (u_center_drift - 0.4) * vec2(0.25, -0.15);
+    vec2 d = v_uv - ctr;
+    float rn = length(d);
+    vec2 dir = d / max(rn, 1e-4);
+    // Lateral split grows as r^curve (k=2 reproduces physical lateral CA).
+    float amt = u_amount * 0.012;
+    float k = amt * pow(rn, u_curve);
+    // Optional barrel/pincushion radial distortion.
+    float rbar = rn * (1.0 + u_barrel * rn * rn);
+    float rR = rbar + k;          // R sampled outward
+    float rB = rbar - k;          // B sampled inward
+    float rC = texture(u_texture, ctr + dir * rR).r;
+    float gC = texture(u_texture, v_uv).g;
+    float bC = texture(u_texture, ctr + dir * rB).b;
+    vec3 col = vec3(rC, gC, bC);
+    col *= (1.0 - u_vignette * rn * rn);
+    f_color = vec4(clamp(col, 0.0, 1.0), 1.0);
+}
+''', uniforms={
+    "amount":       {"glsl": "float", "min": 0.0, "max": 60.0, "default": 20.0,
+                    "description": "max lateral RGB split (px)"},
+    "curve":        {"glsl": "float", "min": 1.0, "max": 4.0, "default": 2.0,
+                    "description": "radial falloff exponent"},
+    "barrel":       {"glsl": "float", "min": -0.4, "max": 0.4, "default": 0.0,
+                    "description": "barrel/pincushion distortion"},
+    "vignette":     {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.0,
+                    "description": "edge darkening"},
+    "center_drift": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.4,
+                    "description": "aberration-center offset"},
+})
+
+_register("thin_film_gpu", "Thin-film interference iridescence (client-GPU twin of node 419)",
+          "filter", '''
+void main() {
+    // Radial thickness field (matches the CPU node's default 'radial' source):
+    // d grows from the frame center outward, so the iridescent bands form a
+    // soap-bubble / oil-slick ring pattern over the wired substrate.
+    vec2 p = v_uv - 0.5;
+    float r = length(p) * 1.4;
+    float d = u_thickness + u_thickness_range * r;
+    float ang = radians(u_angle);
+    float sin_a = sin(ang);
+    float c = sin_a / max(u_ior, 1.001);
+    float cos_t = sqrt(max(0.0, 1.0 - c * c));
+    // Optical path difference (nm); per-wavelength reflectance via R(λ)=cos².
+    float opd = 2.0 * u_ior * d * cos_t;
+    vec3 lam = vec3(650.0, 550.0, 450.0);
+    vec3 phase = (6.2831853 * opd / lam) + 3.14159265;
+    vec3 iri = (1.0 - cos(phase)) * 0.5;
+    // Saturation control around the band luminance.
+    float lum = dot(iri, vec3(0.3333333));
+    iri = clamp(lum + u_saturation * (iri - lum), 0.0, 1.0);
+    vec3 src = texture(u_texture, v_uv).rgb;
+    vec3 col = mix(src, iri, u_strength);
+    f_color = vec4(clamp(col, 0.0, 1.0), 1.0);
+}
+''', uniforms={
+    "thickness":        {"glsl": "float", "min": 100.0, "max": 1200.0, "default": 380.0,
+                        "description": "base film thickness (nm)"},
+    "thickness_range":  {"glsl": "float", "min": 0.0, "max": 1200.0, "default": 320.0,
+                        "description": "thickness variation (nm)"},
+    "ior":              {"glsl": "float", "min": 1.0, "max": 2.5, "default": 1.33,
+                        "description": "film refractive index"},
+    "angle":            {"glsl": "float", "min": 0.0, "max": 80.0, "default": 0.0,
+                        "description": "incidence angle (deg)"},
+    "strength":         {"glsl": "float", "min": 0.0, "max": 1.0, "default": 1.0,
+                        "description": "overlay blend over source"},
+    "saturation":       {"glsl": "float", "min": 0.0, "max": 1.5, "default": 1.0,
+                        "description": "band color saturation"},
+})
+
 _register("halftone_gpu", "Halftone dot-screen of the input (typed)",
           "filter", '''
 void main() {

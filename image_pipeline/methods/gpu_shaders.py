@@ -618,6 +618,24 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     "402": {"shader": "kifs_gpu", "type": "procedural",
             "param_map": {"scale": "p1", "fold_angle": "p2",
                           "symmetry": "p3", "color_shift": "p4"}},
+    # 417 Chromatic Aberration → typed-uniform twin. Every uniform name equals a
+    # real CPU param of node 417 (contract #5): amount/curve/barrel/vignette/
+    # center_drift. `source`/`palette`/`anim_mode` are string choices (pitfall
+    # #14) and stay unmapped — the twin filters whatever image is wired in. CPU
+    # numpy node stays authoritative for export.
+    "417": {"shader": "chromatic_aberration_gpu", "type": "filter", "typed": True,
+            "param_map": {"amount": "amount", "curve": "curve",
+                          "barrel": "barrel", "vignette": "vignette",
+                          "center_drift": "center_drift"}},
+    # 419 Thin-Film Interference → typed-uniform twin. Uniform names match node
+    # 419's real params: thickness/thickness_range/ior/angle/strength/saturation
+    # (contract #5). `source`/`noise_scale`/`palette`/`anim_mode` are string or
+    # mode controls (pitfall #14) left unmapped; the twin paints the iridescent
+    # radial bands over the wired substrate. CPU numpy node stays authoritative.
+    "419": {"shader": "thin_film_gpu", "type": "filter", "typed": True,
+            "param_map": {"thickness": "thickness", "thickness_range": "thickness_range",
+                          "ior": "ior", "angle": "angle",
+                          "strength": "strength", "saturation": "saturation"}},
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SHIMS)
 

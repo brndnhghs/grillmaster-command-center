@@ -40,7 +40,10 @@ from image_pipeline.methods.gpu_shaders import GPU_SHADER_NODE_MAP
 #             msg said "node_map count 210" but the guard was left at 208 — fixed.
 # 210 -> 217: +6 closed-form typed-uniform pattern nodes (302-307 pt.13).
 # 217 -> 218: +1 GPU SDF raymarch procedural node (412).
-EXPECTED_MAP_ENTRIES = 219
+# 218 -> 219: +1 P0.4 filter twin (422 Palette Posterize).
+# 219 -> 221: +2 typed-uniform filter twins (417 Chromatic Aberration,
+#             419 Thin-Film Interference) as client-GPU shims.
+EXPECTED_MAP_ENTRIES = 221
 
 # Simulations-category CPU nodes that are intentionally NOT GPU-mirrored yet.
 # These are Architecture-A stateful sims (discrete CA, agent/particle systems,

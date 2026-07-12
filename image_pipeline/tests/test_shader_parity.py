@@ -153,7 +153,9 @@ def test_gpu_shader_node_map_resolves():
     # +6 closed-form typed-uniform pattern nodes (302-307 pt.13) = 217.
     # +1 GPU SDF raymarch procedural node (412) = 218.
     # +1 P0.4 filter twin (422 Palette Posterize) = 219.
-    assert len(GPU_SHADER_NODE_MAP) == 219, len(GPU_SHADER_NODE_MAP)
+    # +2 typed-uniform filter twins (417 Chromatic Aberration,
+    #   419 Thin-Film Interference) = 221.
+    assert len(GPU_SHADER_NODE_MAP) == 221, len(GPU_SHADER_NODE_MAP)
     for mid, entry in GPU_SHADER_NODE_MAP.items():
         if entry.get("type") == "sim":
             # P1 ping-pong sim: seed/step/display must all resolve to shaders.
