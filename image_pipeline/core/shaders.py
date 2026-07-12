@@ -1519,6 +1519,98 @@ void main() {
     )
 
 
+_register("spherical_harmonics_gpu",
+          "Spherical harmonics banding (client-GPU twin of node 104)",
+          "procedural", '''
+void main() {
+    // Named uniforms (auto-declared) match node 104's real params; the client
+    // reads them by name (pitfall #14b). Closed-form approximation of
+    // spherical-harmonic Y_l^m banding projected to a 2D (theta, phi) map.
+    float L = max(1.0, floor(u_max_l + 0.5));
+    float th = v_uv.y * 3.14159265;     // polar angle 0..pi
+    float ph = v_uv.x * 6.2831853;      // azimuth 0..2pi
+    float t = u_time * u_anim_speed * 0.15;
+
+    float f = 0.0;
+    float wsum = 0.0;
+    for (int li = 1; li <= 8; li++) {
+        if (float(li) > L) break;
+        float fl = float(li);
+        float Pl = cos(fl * th);        // meridional banding (Legendre-like)
+        for (int mi = 0; mi <= 8; mi++) {
+            if (float(mi) > fl) break;
+            float fm = float(mi);
+            float az = cos(fm * ph + (fm == 0.0 ? 0.0 : t) + fm * 1.3);
+            float w = 1.0 / (fl + 1.0);
+            f += Pl * az * w;
+            wsum += w;
+        }
+    }
+    f /= max(wsum, 1.0);
+
+    // Twist: azimuthal phase shear (node twist_wave character).
+    float twist = sin(ph * (1.0 + u_twist_amplitude) + t * 2.0) * u_osc_spread * 0.15;
+    f += twist;
+
+    float val = clamp(f * 0.5 + 0.5, 0.0, 1.0);
+    val = pow(val, 1.0 / max(u_glow_strength, 0.2));   // glow emphasis
+    float gray = clamp(val * u_amplitude, 0.0, 1.0);
+    f_color = vec4(vec3(gray), 1.0);
+}
+''',
+    uniforms={
+    "max_l": {"glsl": "float", "min": 1.0, "max": 8.0, "default": 5.0, "description": "max shell l"},
+    "amplitude": {"glsl": "float", "min": 0.5, "max": 3.0, "default": 1.5, "description": "brightness amplitude"},
+    "glow_strength": {"glsl": "float", "min": 0.5, "max": 3.0, "default": 1.5, "description": "glow emphasis"},
+    "anim_speed": {"glsl": "float", "min": 0.1, "max": 5.0, "default": 1.0, "description": "animation speed"},
+    "twist_amplitude": {"glsl": "float", "min": 0.5, "max": 5.0, "default": 2.0, "description": "twist amplitude"},
+    "osc_spread": {"glsl": "float", "min": 0.0, "max": 5.0, "default": 1.5, "description": "oscillator spread"}
+    }
+    )
+
+_register("spectral_tapestry_gpu",
+          "Spectral tapestry interference (client-GPU twin of node 161)",
+          "procedural", '''
+void main() {
+    // Named uniforms match node 161's real params; client reads by name
+    // (pitfall #14b). Closed-form approximation of the spectral-PDE field: a
+    // golden-angle fan of drifting sinusoidal gratings, contrast-shaped by
+    // coupling. The CPU spectral simulation stays authoritative for export.
+    float nm = clamp(floor(u_n_modes), 6.0, 40.0);
+    float c = u_coupling;
+    vec2 res = u_resolution;
+    vec2 p = (v_uv - 0.5) * res;
+    float scale = 6.2831853 / max(res.x, res.y);
+    float t = u_time * (0.05 + u_drift_speed * 20.0);
+
+    float acc = 0.0;
+    for (int i = 0; i < 40; i++) {
+        if (float(i) >= nm) break;
+        float k = float(i);
+        float ang = k * 2.39996323;           // golden angle fan
+        vec2 d = vec2(cos(ang), sin(ang));
+        float w = 3.0 + k * (1.0 + c * 2.0);  // finer modes with coupling
+        float ph = t * (0.5 + 0.05 * k) + k * 1.7;
+        acc += sin(dot(p, d) * scale * w + ph);
+    }
+    acc /= max(nm, 1.0);
+
+    float val = acc * 0.5 + 0.5;
+    // coupling sharpens the interference (storm-like thresholding)
+    val = clamp(mix(val, smoothstep(0.35, 0.65, val), clamp(c * 0.5, 0.0, 1.0)), 0.0, 1.0);
+    val += (noise(p * 0.05 + vec2(t)) - 0.5) * u_noise * 4.0;   // stochastic grain
+    val = clamp(val, 0.0, 1.0);
+    f_color = vec4(vec3(val), 1.0);
+}
+''',
+    uniforms={
+    "n_modes": {"glsl": "float", "min": 8.0, "max": 80.0, "default": 25.0, "description": "mode count"},
+    "coupling": {"glsl": "float", "min": 0.0, "max": 2.0, "default": 0.4, "description": "mode coupling"},
+    "drift_speed": {"glsl": "float", "min": 0.0, "max": 0.05, "default": 0.005, "description": "drift speed"},
+    "noise": {"glsl": "float", "min": 0.0, "max": 0.1, "default": 0.01, "description": "stochastic noise"}
+    }
+    )
+
 _register("dunes_gpu",
           "Sand dune migration height field (client-GPU twin of node 172)",
           "procedural", '''

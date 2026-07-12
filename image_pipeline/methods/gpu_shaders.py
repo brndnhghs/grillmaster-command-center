@@ -700,6 +700,22 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # twin's n/b/c/p uniforms, so they stay unmapped.
     "409": {"shader": "superformula_typed", "type": "procedural", "typed": False,
             "param_map": {"m": "m"}},
+    # ── P0.6 field-eval completion (2026-07-12) ──
+    # 104 Spherical Harmonics → closed-form twin. max_l/amplitude/glow_strength/
+    # anim_speed/twist_amplitude/osc_spread are the node's REAL numeric params
+    # (contract #5). The twin declares uniforms= so the client reads them by
+    # name (pitfall #14b) — the legacy p1..p4 mapping here is for the
+    # param_map-resolves test + documentation only. CPU numpy node stays
+    # authoritative for exact spherical-harmonic export.
+    "104": {"shader": "spherical_harmonics_gpu", "type": "procedural",
+            "param_map": {"max_l": "p1", "amplitude": "p2",
+                          "glow_strength": "p3", "anim_speed": "p4"}},
+    # 161 Spectral Tapestry → closed-form twin. n_modes/coupling/drift_speed/
+    # noise are the node's REAL numeric params (contract #5), wired by name.
+    # The CPU spectral-PDE node stays authoritative for export.
+    "161": {"shader": "spectral_tapestry_gpu", "type": "procedural",
+            "param_map": {"n_modes": "p1", "coupling": "p2",
+                          "drift_speed": "p3"}},
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SHIMS)
 
