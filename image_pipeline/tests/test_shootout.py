@@ -302,6 +302,27 @@ def test_gentle_mutation_still_valid_and_recorded():
     assert "divergence" in child["deviation"]
 
 
+def test_crossover_never_produces_duplicate_ids():
+    """Regression: the terminal-variance guard seeds a Builder from a crossed
+    graph whose ids may be non-contiguous (donor subtree remapped to
+    nNx....). Appending driver/filter nodes must not collide with an existing
+    id. Previously ~4% of crossovers shipped a duplicate id + self-loop that
+    repair silently dropped, thinning the evolved variety."""
+    rng = random.Random(5)
+    prev = _rated_generation(rng, [5, 4, 3, 2])
+    bad = 0
+    for _ in range(120):
+        pa, pb = rng.choice(prev), rng.choice(prev)
+        cx = crossover(pa, pb, POOL, CFG, rng, 1)
+        if cx is None:
+            continue
+        issues = validate_graph(cx["graph"], POOL, CFG)
+        if issues:
+            bad += 1
+            print("bad crossover:", issues)
+    assert bad == 0, f"{bad}/120 crossovers produced invalid graphs"
+
+
 def test_selection_favors_high_stars():
     rng = random.Random(9)
     prev = _rated_generation(rng, [5, 4, 2, 1, None])

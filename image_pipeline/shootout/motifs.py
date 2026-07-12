@@ -52,6 +52,10 @@ class Builder:
             render: bool = False) -> str:
         self._n += 1
         nid = f"n{self._n}"
+        existing = {n["id"] for n in self.nodes}
+        while nid in existing:
+            self._n += 1
+            nid = f"n{self._n}"
         self.nodes.append({
             "id": nid, "method_id": method_id,
             "params": sample_params(self.pool, self.cfg, self.rng,

@@ -226,12 +226,23 @@ def repair_genome(genome: dict, pool: GenePool | None = None,
             b = Builder(pool, cfg, rng, None)
             b.nodes = [dict(n) for n in fixed["nodes"]]
             b.edges = [dict(e) for e in fixed["edges"]]
-            b._n = len(b.nodes)
+            # Seed the id counter past any existing numeric suffix so appended
+            # driver/filter nodes never collide with ids from a crossed-in
+            # subtree (which may be non-contiguous, e.g. n5 + n11x09aa).
+            max_n = 0
+            for n in b.nodes:
+                suf = n["id"].split("n", 1)[-1].split("x")[0]
+                if suf.isdigit():
+                    max_n = max(max_n, int(suf))
+            b._n = max(max_n, len(b.nodes))
             b.ensure_terminal_variance(cfg, rng)
             fixed = {**fixed, "nodes": b.nodes, "edges": b.edges}
         except Exception:
             pass
-    return {**genome, "graph": fixed}
+    if fixed is not None and validate_graph(fixed, pool, cfg):
+        # issues present → discard (next_generation resamples)
+        fixed = None
+    return {**genome, "graph": fixed} if fixed is not None else None
 
 
 def validate_graph(graph: dict, pool: GenePool | None = None,
