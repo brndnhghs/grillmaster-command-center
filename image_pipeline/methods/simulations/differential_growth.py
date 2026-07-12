@@ -38,7 +38,7 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw
-from scipy.spatial import cKDTree
+from scipy.spatial import cKDTree, Delaunay
 
 from ...core.registry import method
 from ...core.utils import save, mn, seed_all, W, H, write_scalars, write_field
@@ -46,30 +46,9 @@ from ...core.animation import capture_frame
 
 
 N_SEED = 28          # nodes in the initial ring
-K_NEIGH = 3          # nearest neighbours used to build the graph
-SPLIT_FACTOR = 1.35  # edge longer than len*SPLIT_FACTOR is split
-EXPAND = 0.30        # per-frame outward growth from centroid (the growth engine)
-SPRING = 0.40        # edge spring strength toward the target edge length
-REPEL = 0.45         # short-range crowding repulsion (keeps the sheet open)
-
-
-def _build_edges(pts: np.ndarray, len0: float, k: int):
-    """Return a set of undirected edges (frozenset pairs) from k-NN links."""
-    n = len(pts)
-    if n < 2:
-        return set()
-    tree = cKDTree(pts)
-    kk = min(k + 1, n)
-    dist, idx = tree.query(pts, k=kk)
-    edges = set()
-    for i in range(n):
-        for j in range(1, kk):
-            nb = int(idx[i, j])
-            if nb == i:
-                continue
-            a, b = (i, nb) if i < nb else (nb, i)
-            edges.add((a, b))
-    return edges
+SPLIT_FACTOR = 1.45  # edge longer than len*SPLIT_FACTOR is split
+EXPAND = 10.0        # per-frame outward growth from centroid (the growth engine)
+REPEL = 0.40         # short-range crowding repulsion (keeps the sheet open)
 
 
 def _seed_ring(n, cx, cy, r, rng):
@@ -162,7 +141,6 @@ def method_differential_growth(out_dir: Path, seed: int, params=None):
     R = min(w, h) * 0.42  # planar confinement / boundary ring radius
 
     pts = _seed_ring(N_SEED, cx, cy, len0 * 2.0, rng)
-    edges = _build_edges(pts, len0, K_NEIGH)
 
     last_img = None
     perimeter = 0.0
@@ -186,62 +164,58 @@ def method_differential_growth(out_dir: Path, seed: int, params=None):
         pts[:, 0] += EXPAND * rxv / rr_safe
         pts[:, 1] += EXPAND * ryv / rr_safe
 
-        # ── edge-length spring relaxation (keeps the sheet coherent) ──
-        # Pulls neighbours toward the target edge length; a slight short-range
-        # repulsion stops nodes collapsing on top of each other.
+        # ── short-range repulsion (keeps the sheet from collapsing) ──
         tree = cKDTree(pts)
-        kk = min(K_NEIGH + 1, n)
+        kk = min(4, n)
         dist, idx = tree.query(pts, k=kk)
         force = np.zeros_like(pts)
         for i in range(n):
             for j in range(1, kk):
                 nb = int(idx[i, j])
                 dd = float(dist[i, j])
-                if dd <= 1e-6:
+                if dd <= 1e-6 or dd >= len0:
                     continue
-                ux = (pts[nb, 0] - pts[i, 0]) / dd
-                uy = (pts[nb, 1] - pts[i, 1]) / dd
-                if dd < len0:
-                    f = REPEL * (len0 - dd) / len0      # too close -> spread
-                else:
-                    f = -SPRING * (dd - len0) / len0     # too far -> pull back
-                force[i, 0] += ux * f
-                force[i, 1] += uy * f
+                f = REPEL * (len0 - dd) / len0
+                force[i, 0] += (pts[nb, 0] - pts[i, 0]) / dd * f
+                force[i, 1] += (pts[nb, 1] - pts[i, 1]) / dd * f
         pts = pts + force
 
-        # ── edge split (the actual growth) ──
-        edges = _build_edges(pts, len0, K_NEIGH)
+        # ── Delaunay mesh + edge split (the actual growth) ──
+        # A proper triangulation means splitting an edge retriangulates the
+        # region, creating many new short edges that then stretch and split —
+        # this is what makes the subdivision cascade (exponential growth)
+        # instead of stalling at a fixed density.
+        edges: set = set()
+        try:
+            tri = Delaunay(pts)
+        except Exception:
+            tri = None
         new_pts = []
-        new_edges = set(edges)
-        for (a, b) in edges:
-            ax, ay = pts[a, 0], pts[a, 1]
-            bx, by = pts[b, 0], pts[b, 1]
-            dx, dy = bx - ax, by - ay
-            L = math.hypot(dx, dy)
-            if L > len0 * SPLIT_FACTOR and (n + len(new_pts)) < max_nodes:
-                # perpendicular jitter for wrinkle asymmetry
-                nx, ny = -dy / (L + 1e-6), dx / (L + 1e-6)
-                jit = (rng.random() - 0.5) * 2.0 * jitter * L * 0.5
-                mxpt = (ax + bx) / 2.0 + nx * jit
-                mypt = (ay + by) / 2.0 + ny * jit
-                ni = n + len(new_pts)
-                new_pts.append((mxpt, mypt))
-                new_edges.discard((a, b))
-                new_edges.add((a, ni))
-                new_edges.add((ni, b))
-        # pace the animation: cap splits per frame so growth is visible
+        if tri is not None:
+            for t in tri.simplices:
+                for e in ((t[0], t[1]), (t[1], t[2]), (t[2], t[0])):
+                    edges.add((min(e), max(e)))
+            for (a, b) in edges:
+                ax, ay = pts[a, 0], pts[a, 1]
+                bx, by = pts[b, 0], pts[b, 1]
+                dx, dy = bx - ax, by - ay
+                L = math.hypot(dx, dy)
+                if L > len0 * SPLIT_FACTOR and (n + len(new_pts)) < max_nodes:
+                    # perpendicular jitter for wrinkle asymmetry
+                    nx, ny = -dy / (L + 1e-6), dx / (L + 1e-6)
+                    jit = (rng.random() - 0.5) * 2.0 * jitter * L * 0.5
+                    new_pts.append(((ax + bx) / 2.0 + nx * jit,
+                                    (ay + by) / 2.0 + ny * jit))
         if new_pts:
-            step = max(1, (max_nodes - n) // max(1, n_frames - frame))
-            if len(new_pts) > step:
-                new_pts = new_pts[:step]
             pts = np.vstack([pts, np.array(new_pts, dtype=np.float64)])
             n = len(pts)
 
-        # ── growth-mode bias ──
+        # ── growth-mode bias (applied to the expansion, not as a post nudge) ──
         if anim_mode == "directional":
-            pts[:, 0] += bias * len0 * 0.15
+            # shear the expansion so the membrane grows preferentially along +x
+            pts[:, 0] += bias * EXPAND * 0.5
         elif anim_mode == "planar":
-            # soft confinement inside disk R
+            # hard confinement inside disk R (flat pancake growth)
             rx = pts[:, 0] - cx
             ry = pts[:, 1] - cy
             rr2 = np.hypot(rx, ry)
@@ -264,8 +238,6 @@ def method_differential_growth(out_dir: Path, seed: int, params=None):
         # keep inside canvas
         pts[:, 0] = np.clip(pts[:, 0], 1, w - 2)
         pts[:, 1] = np.clip(pts[:, 1], 1, h - 2)
-
-        edges = _build_edges(pts, len0, K_NEIGH)
 
         # ── render ──
         img = _render(pts, edges, w, h)
