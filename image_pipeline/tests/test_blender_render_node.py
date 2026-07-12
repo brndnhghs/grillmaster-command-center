@@ -106,11 +106,26 @@ def test_static_render_is_nonblank_rgb_plus_field():
 def test_spin_advances_render_per_frame():
     tmp = Path(tempfile.mkdtemp(prefix="blender_spin_"))
     try:
-        # 90° is NOT a symmetry angle for a torus, so frames must differ.
-        a = _run(tmp, frame=0, spin_speed=30.0)
-        b = _run(tmp, frame=3, spin_speed=30.0)
-        delta = float(np.mean(np.abs(b["image"] - a["image"])))
-        assert delta > 0.01, f"spin did not change the render (Δ={delta})"
+        # The mesh is spun about the X axis (screen-horizontal), which tumbles
+        # the object visibly for every non-spherical primitive.  Use the
+        # non-symmetric monkey at a NON-symmetry angle: a cube rotated exactly
+        # 90° about X maps its silhouette onto itself (cubic 4-fold symmetry),
+        # so 90° is a false-negative angle — we deliberately avoid it and use a
+        # fine 25°/frame step at frame 2 (=50°) on the monkey, which has no
+        # rotational symmetry and must differ frame-to-frame.
+        a = _run(tmp, shape="monkey", frame=0, spin_speed=25.0,
+                 color="#ffffff", light_intensity=400.0)
+        b = _run(tmp, shape="monkey", frame=2, spin_speed=25.0,
+                 color="#ffffff", light_intensity=400.0)
+        diff = np.abs(b["image"] - a["image"])
+        # Correct metric: fraction of pixels that changed by a visible margin.
+        # Mean-abs-diff alone is a FALSE NEGATIVE for rotation (a silhouette
+        # shift can leave the mean unchanged), so assert on changed-pixel %.
+        changed_frac = float(np.mean(diff > 0.08))
+        assert changed_frac > 0.01, (
+            f"spin did not change the render "
+            f"(changed-pixel frac={changed_frac:.3f}, meanΔ={diff.mean():.4f})"
+        )
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
