@@ -293,3 +293,43 @@ def test_shim_uniforms_drive_output(mid, sname, is_sim):
         f"{mid} {sname}: no declared uniform visibly affects output "
         f"(best MAD={best:.3f}) — silent no-op / dead-param live preview"
     )
+
+
+# ── is_time_varying honesty (2026-07-11) ──────────────────────────────
+# Every GPU shader node must advertise is_time_varying iff its GLSL body
+# actually reads u_time. Previously all GPU nodes defaulted to True, so
+# static procedural nodes (Sierpinski, Mandelbrot, gradient, ASCII, solid
+# color, checker) were mislabelled "animated" — which made the shootout
+# generator preferentially pick them as animated terminals (weight 3.0),
+# then cull the resulting static clips, and made the executor needlessly
+# re-cook them every frame.
+
+def _gpu_shader_nodes():
+    import image_pipeline.methods  # noqa: F401
+    from image_pipeline.core.graph import get_all_node_defs
+    from image_pipeline.methods.gpu_shaders import (
+        _PROC_SHADERS, _FILT_SHADERS, _TYPED_SHADER_NODES)
+    defs = get_all_node_defs()
+    id_to_shader = {}
+    for lst in (_PROC_SHADERS, _FILT_SHADERS, _TYPED_SHADER_NODES):
+        for mid, sname, _mname in lst:
+            id_to_shader[mid] = sname
+    out = []
+    for mid, sname in id_to_shader.items():
+        if mid in defs:
+            out.append((mid, sname))
+    return out
+
+
+@pytest.mark.parametrize("mid,sname", _gpu_shader_nodes())
+def test_gpu_node_time_variance_matches_shader(mid, sname):
+    """A GPU node's is_time_varying must equal whether its shader reads u_time."""
+    from image_pipeline.core.graph import get_all_node_defs
+    from image_pipeline.core.shaders import shader_uses_time
+    defs = get_all_node_defs()
+    expected = shader_uses_time(sname)
+    actual = defs[mid].get("is_time_varying")
+    assert actual == expected, (
+        f"node {mid} ({sname}): is_time_varying={actual} but shader "
+        f"{'uses' if expected else 'does NOT use'} u_time (expected {expected})"
+    )

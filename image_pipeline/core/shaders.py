@@ -167,6 +167,23 @@ def _register(name: str, description: str, shader_type: str, source: str,
     }
 
 
+def shader_uses_time(name: str) -> bool:
+    """True iff the shader's body actually references the ``u_time`` uniform.
+
+    The common prologue *declares* ``uniform float u_time`` in every shader,
+    so presence of the name in the assembled fragment is meaningless — we look
+    only at the per-shader ``source`` body. A shader that never reads
+    ``u_time`` renders an identical frame for every ``t`` (e.g. static
+    fractals like Sierpinski/Mandelbrot, ASCII, gradient, solid color), so its
+    node should be marked ``is_time_varying=False``: the executor then cooks it
+    once and reuses the result until an upstream input changes. This keeps the
+    time-variance contract honest (previously every GPU node defaulted to
+    ``is_time_varying=True``, which mislabelled static procedural nodes as
+    animated).
+    """
+    return "u_time" in (SHADERS.get(name, {}).get("source") or "")
+
+
 # ── COMMON PROLOGUE (injected into every shader) ──
 
 _PROLOGUE = '''

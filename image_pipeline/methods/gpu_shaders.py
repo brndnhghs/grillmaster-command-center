@@ -19,7 +19,7 @@ import numpy as np
 from ..core.registry import method
 from ..core.utils import save, seed_all, get_canvas
 from ..core.animation import capture_frame
-from ..core.shaders import render_shader, render_procedural, SHADERS
+from ..core.shaders import render_shader, render_procedural, SHADERS, shader_uses_time
 
 # ── Ordered shader lists (stable IDs) ────────────────────────────────
 _PROC_SHADERS = [
@@ -97,6 +97,7 @@ def _make_proc(method_id: str, shader_name: str, method_name: str):
     @method(id=method_id, name=method_name, category="gpu_shaders",
             new_image_contract=True,
             tags=["gpu", "fast"],
+            is_time_varying=shader_uses_time(shader_name),
             params=_PROC_PARAMS)
     def _fn(out_dir: Path, seed: int, params=None):
         if params is None:
@@ -121,6 +122,7 @@ def _make_filt(method_id: str, shader_name: str, method_name: str):
             new_image_contract=True,
             inputs={"image_in": "IMAGE"},
             tags=["gpu", "fast"],
+            is_time_varying=shader_uses_time(shader_name),
             params=_FILT_PARAMS)
     def _fn(out_dir: Path, seed: int, params=None):
         if params is None:
@@ -324,6 +326,7 @@ def _make_typed(method_id: str, shader_name: str, method_name: str):
             inputs=inputs,
             outputs={"image": "IMAGE", "luminance": "FIELD"},
             tags=["gpu", "fast", "typed-uniforms"],
+            is_time_varying=shader_uses_time(shader_name),
             description=info.get("description", ""),
             params=params)
     def _fn(out_dir: Path, seed: int, params=None,
