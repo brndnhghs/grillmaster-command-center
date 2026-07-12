@@ -56,8 +56,12 @@ EXPECTED_MAP_ENTRIES = 235
 DEFERRED_SIM_IDS = set(
     "20 34 35 36 55 79 83 84 86 88 89 90 92 94 97 98 101 102 103 "
     "107 109 110 111 112 113 114 116 117 123 129 130 131 134 "
-    "136 145 147 149 151 152 158 159 167 337 343 429 440".split()
+    "136 145 147 149 151 152 158 159 167 337 343 429 440 448".split()
 )
+# 448 Differential Growth (Lomas "Primordial"): Arch-A agent/particle growth
+# sim (mesh sprouting + Laplacian smoothing, explicit Euler over a node graph).
+# Not a closed-form f(uv,t) field, so its honest GPU twin is a WebGL2 ping-pong
+# sim needing browser parity -- out of scope for headless verification.
 
 # CPU categories that MUST have a GPU mirror (coverage by category).
 # patterns / fractals / filters / math_art / codegen are fully mirrored by the
@@ -193,4 +197,65 @@ def test_sim_deferral_is_exhaustive():
     assert len(missing_from_map) == len(DEFERRED_SIM_IDS), (
         f"deferred set size ({len(DEFERRED_SIM_IDS)}) != actual sim gap "
         f"({len(missing_from_map)}); reconcile DEFERRED_SIM_IDS."
+    )
+
+
+def test_param_map_keys_resolve_to_node_params():
+    """GPU Node Coverage mandate point 4: every param_map KEY is a real node param.
+
+    A shim key that does not match a node param means the client resolver looks
+    up a param the node never exposes, so the uniform is never filled and the
+    live preview is frozen at the shader default -- a silent dead control (the
+    exact footgun that produced the stale ``color_shift`` key on node 67, now
+    cleaned in gpu_shaders.py).
+    """
+    import image_pipeline.methods  # noqa: F401 — ensure registration
+
+    breaches = []
+    for mid, entry in GPU_SHADER_NODE_MAP.items():
+        pm = entry.get("param_map") or {}
+        if not pm:
+            continue
+        meta = get_meta(str(mid))
+        present = set(meta.params.keys()) if (meta and getattr(meta, "params", None)) else set()
+        missing = [k for k in pm if k not in present]
+        if missing:
+            breaches.append((mid, entry.get("shader"), missing))
+
+    assert not breaches, (
+        "GPU shim/sim param_map keys that are NOT real node params "
+        "(silent dead controls -- live preview frozen at defaults):\n"
+        + "\n".join(f"  node {m} ({sh}): {miss}" for m, sh, miss in breaches)
+    )
+
+
+def test_param_map_values_resolve_to_uniforms_or_pslots():
+    """GPU Node Coverage mandate point 4: every param_map VALUE is wired.
+
+    A non-typed shim routes a node param to a legacy p-slot (p1..p4 /
+    time_scale). A typed shim routes it to a named shader uniform. A value that
+    is neither means the client writes to a slot/uniform that does not exist --
+    another silent no-op that leaves the preview frozen at defaults.
+    """
+    import image_pipeline.methods  # noqa: F401 — ensure registration
+
+    VALID_PSLOTS = {"p1", "p2", "p3", "p4", "time_scale"}
+    breaches = []
+    for mid, entry in GPU_SHADER_NODE_MAP.items():
+        pm = entry.get("param_map") or {}
+        if not pm:
+            continue
+        shader = entry.get("shader")
+        uspec = (SHADERS.get(shader) or {}).get("uniforms") or {}
+        for key, val in pm.items():
+            if val in VALID_PSLOTS:
+                continue
+            if val in uspec:
+                continue
+            breaches.append((mid, shader, key, val))
+
+    assert not breaches, (
+        "GPU shim/sim param_map values that are neither a legacy p-slot nor a "
+        "real shader uniform (silent no-op writes):\n"
+        + "\n".join(f"  node {m} ({sh}): '{k}' -> '{v}'" for m, sh, k, v in breaches)
     )
