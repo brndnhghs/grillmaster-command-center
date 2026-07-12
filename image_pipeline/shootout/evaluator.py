@@ -281,6 +281,14 @@ def render_genome(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
             acc.add(arr)
             if arr is not None:
                 yield np.asarray(arr, dtype=np.float32)
+                # Live preview thumbnail: capture on the very first rendered
+                # frame (so a still shows immediately) and then every
+                # `preview_every` frames after, so the user can eyeball +
+                # skip the clip before it lands in the survivor pool.
+                # Cheap + best-effort.
+                if frame == 0 or (cfg.preview_every
+                        and frame % cfg.preview_every == 0):
+                    mon.capture_preview(gid, frame, arr, cfg.preview_w)
             if progress_cb and frame % 24 == 0:
                 progress_cb(f"{gid}: frame {frame + 1}/{cfg.frames}")
 
@@ -398,5 +406,13 @@ def render_many(genomes: list[dict], cfg: ShootoutConfig = DEFAULT_CONFIG,
     finally:
         stop.set()
         hb.join(timeout=2.0)
-        progress.MONITOR.clear_all()
+        # NOTE: do NOT clear_all() here. Each genome's board slot is
+        # marked done by render_genome's mon.finish(), and the
+        # render-status endpoint + live panel already drop done/finished
+        # genomes from the poll, so the board self-prunes. Clearing
+        # here would wipe the just-captured preview thumbnails
+        # before the 1s live panel can read them (short clips
+        # finish faster than the poll), leaving only the black
+        # placeholder. Leftover slots from a crashed run are
+        # cleared by the clear_all() at the top of the NEXT run.
     return [results[i] for i in range(len(genomes))]

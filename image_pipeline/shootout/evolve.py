@@ -77,22 +77,113 @@ def _ancestor_subtree(graph: dict, root_id: str) -> tuple[list[dict], list[dict]
     return nodes, edges
 
 
+# ── Graph-distance metric ────────────────────────────────────────────
+# Procedural measure of how different two graphs are. Drives the
+# divergence-target loop in mutate(): the breeder keeps escalating
+# mutation intensity until the offspring clears cfg.min_divergence, so
+# evolutions are guaranteed to be meaningfully different from the parent
+# instead of near-clones. Range ~[0, 1]: 0 = identical, 1 = nothing shared.
+
+
+def graph_distance(a: dict, b: dict, pool: GenePool | None = None) -> float:
+    """Normalised structural + parametric distance between two graphs.
+
+    Components (each normalised to [0,1], averaged):
+      - node multiset (method ids): Jaccard over node method_id counts
+      - edge multiset (typed src→dst): Jaccard over (dst_method, dst_port) pairs
+      - shared-node param delta: mean per-shared-node normalised param change
+    """
+    ga, gb = a.get("graph", a), b.get("graph", b)
+    na = ga.get("nodes", [])
+    nb = gb.get("nodes", [])
+    if not na and not nb:
+        return 0.0
+    if not na or not nb:
+        return 1.0
+
+    # Node-type multiset Jaccard (method_id counts).
+    def counter(items, key):
+        c = {}
+        for it in items:
+            c[key(it)] = c.get(key(it), 0) + 1
+        return c
+
+    ca = counter(na, lambda n: n["method_id"])
+    cb = counter(nb, lambda n: n["method_id"])
+    node_d = _multiset_jaccard(ca, cb)
+    size_d = abs(len(na) - len(nb)) / max(len(na), len(nb))
+
+    # Edge-type multiset Jaccard (dst method + port), shape-agnostic.
+    def edge_key(e, nodes):
+        dst = next((n for n in nodes if n["id"] == e["dst_node"]), None)
+        return (dst["method_id"] if dst else "?", e.get("dst_port"))
+    ea = counter(ga.get("edges", []), lambda e: edge_key(e, na))
+    eb = counter(gb.get("edges", []), lambda e: edge_key(e, nb))
+    edge_d = _multiset_jaccard(ea, eb)
+
+    # Per-shared-node parameter delta (normalised within schema range).
+    by_id_a = {n["id"]: n for n in na}
+    by_id_b = {n["id"]: n for n in nb}
+    shared = set(by_id_a) & set(by_id_b)
+    param_d = 0.0
+    if shared:
+        deltas = []
+        for nid in shared:
+            da, db = by_id_a[nid], by_id_b[nid]
+            if da["method_id"] != db["method_id"]:
+                deltas.append(1.0)  # same id, different node type = total
+                continue
+            spec = (pool.defs[da["method_id"]].get("params") or {}) if pool else {}
+            pa, pb = da.get("params", {}), db.get("params", {})
+            keys = set(pa) | set(pb)
+            if not keys:
+                deltas.append(0.0)
+                continue
+            dsum = 0.0
+            for k in keys:
+                va, vb = pa.get(k), pb.get(k)
+                if va == vb:
+                    dsum += 0.0
+                elif isinstance(va, (int, float)) and isinstance(vb, (int, float)) \
+                        and isinstance(spec.get(k), dict):
+                    lo, hi = spec[k].get("min"), spec[k].get("max")
+                    if lo is not None and hi is not None and hi > lo:
+                        dsum += abs(va - vb) / (hi - lo)
+                    else:
+                        dsum += 1.0
+                else:
+                    dsum += 1.0  # structural/enum change
+            deltas.append(min(dsum / len(keys), 1.0))
+        param_d = sum(deltas) / len(deltas)
+
+    # structural weight 0.7 (type + edges + size), parametric 0.3.
+    structural = 0.45 * node_d + 0.25 * edge_d + 0.30 * size_d
+    return round(min(1.0, 0.7 * structural + 0.3 * param_d), 4)
+
+
+def _multiset_jaccard(ca: dict, cb: dict) -> float:
+    inter = sum(min(ca[k], cb[k]) for k in ca if k in cb)
+    union = sum(max(ca.get(k, 0), cb.get(k, 0)) for k in set(ca) | set(cb))
+    return 0.0 if union == 0 else 1.0 - inter / union
+
+
 # ── Mutation operators (plan §8) ─────────────────────────────────────
 
 
 def _op_param_jitter(graph: dict, pool: GenePool, cfg: ShootoutConfig,
-                     rng: random.Random) -> None:
+                     rng: random.Random,
+                     sigma_scale: float = 1.0, jitter_p: float = 0.35) -> None:
     node = rng.choice(graph["nodes"])
     ranged = _numeric_ranged_params(pool, node["method_id"])
     params = node.setdefault("params", {})
     for k, spec in ranged.items():
-        if rng.random() > 0.35:
+        if rng.random() > jitter_p:
             continue
         lo, hi = spec["min"], spec["max"]
         cur = params.get(k, spec.get("default", lo))
         if not isinstance(cur, (int, float)) or isinstance(cur, bool):
             continue
-        v = cur + rng.gauss(0, cfg.param_jitter_sigma * (hi - lo))
+        v = cur + rng.gauss(0, cfg.param_jitter_sigma * sigma_scale * (hi - lo))
         v = min(max(v, lo), hi)
         params[k] = int(round(v)) if isinstance(spec.get("default"), int) else round(v, 4)
     # occasional enum flip
@@ -270,50 +361,95 @@ _MUTATION_OPS = [
 _GENTLE_OPS = [(_op_param_jitter, 1.0)]
 
 
+def _apply_op(op, graph, pool, cfg, rng, intensity: int):
+    """Apply one mutated op, passing escalating intensity to the jitter op
+    (more params touched + larger steps the harder we push)."""
+    if op is _op_param_jitter:
+        op(graph, pool, cfg, rng,
+           sigma_scale=1.0 + 0.6 * intensity,
+           jitter_p=min(0.35 + 0.18 * intensity, 1.0))
+    else:
+        op(graph, pool, cfg, rng)
+
+
 def mutate(parent: dict, pool: GenePool, cfg: ShootoutConfig,
            rng: random.Random, generation: int,
            gentle: bool = False) -> dict | None:
-    """1–2 mutation ops + occasional seed jitter → repaired child or None."""
-    import copy
-    graph = copy.deepcopy(parent["graph"])
-    op_table = _GENTLE_OPS if gentle else _MUTATION_OPS
-    lo, hi = cfg.mutations_per_offspring
-    ops = rng.choices([op for op, _ in op_table],
-                      weights=[w for _, w in op_table],
-                      k=rng.randint(lo, hi))
-    applied = []
-    for op in ops:
-        applied.append(op.__name__.lstrip("_"))
-        op(graph, pool, cfg, rng)
-    seed = parent.get("seed", 42)
-    if rng.random() < 0.2:  # seed jitter (occasional — seed is genome-carried)
-        seed = rng.randint(0, 2**31 - 1)
+    """Mutation with a divergence target: keep escalating mutation
+    intensity (more ops + larger jitter) until the child clears
+    cfg.min_divergence from the parent, or after cfg.max_divergence_attempts.
+    This guarantees bred offspring are meaningfully different — not clones.
 
-    gid = new_genome_id()
-    graph["name"] = gid
-    _auto_layout(graph["nodes"], graph["edges"])
+    Records the achieved `divergence` and the `intensity` used in the
+    deviation dict so the UI can show how extreme the evolution was.
+    """
+    import copy
+    op_table = _GENTLE_OPS if gentle else _MUTATION_OPS
+    op_names = [op for op, _ in op_table]
+    op_weights = [w for _, w in op_table]
+
+    best_child = None
+    best_div = -1.0
+    for attempt in range(max(1, cfg.max_divergence_attempts)):
+        intensity = attempt  # 0,1,2… → more ops, wider steps
+        graph = copy.deepcopy(parent["graph"])
+        lo = max(cfg.mutations_per_offspring[0], 1 + intensity // 2)
+        hi = cfg.mutations_per_offspring[1] + intensity
+        n_ops = rng.randint(lo, hi)
+        applied = []
+        for _ in range(n_ops):
+            op = rng.choices(op_names, weights=op_weights, k=1)[0]
+            applied.append(op.__name__.lstrip("_"))
+            _apply_op(op, graph, pool, cfg, rng, intensity)
+        seed = parent.get("seed", 42)
+        if not gentle and rng.random() < 0.2 + 0.1 * attempt:
+            seed = rng.randint(0, 2**31 - 1)
+
+        # Don't bother repairing fully until we know this is our best shot —
+        # but cheap to just repair each; repair is local graph surgery.
+        gid = new_genome_id()
+        graph["name"] = gid
+        _auto_layout(graph["nodes"], graph["edges"])
+        child = {
+            "genome_id": gid,
+            "generation": generation,
+            "parents": [parent["genome_id"]],
+            "origin": "mutation",
+            "seed": seed,
+            "graph": graph,
+            "deviation": {"kind": "mutation", "ops": applied,
+                          "parent": parent.get("genome_id")},
+            "render": None, "liveness": None, "rating": None,
+        }
+        child = repair_genome(child, pool, cfg)
+        if child is None:
+            continue
+        div = graph_distance(parent, child, pool)
+        if div > best_div:
+            best_div = div
+            best_child = child
+            best_child["deviation"]["divergence"] = div
+            best_child["deviation"]["intensity"] = attempt
+        if div >= cfg.min_divergence:
+            break
+
+    if best_child is None:
+        return None
+    d = best_child["deviation"]
+    div = d.get("divergence", 0.0)
     if gentle:
-        deviation = {"kind": "protected",
-                     "text": "kept structurally intact (your note said keep this) "
-                             "— only its parameters were nudged",
-                     "ops": applied}
+        d["kind"] = "protected"
+        d["text"] = (
+            "kept structurally intact (your note said keep this) "
+            f"— only its parameters were pushed ({div:.0%} different)"
+        )
     else:
-        deviation = {"kind": "mutation",
-                     "text": f"mutated from a rated parent "
-                             f"({' + '.join(applied) if applied else 'param jitter'})",
-                     "ops": applied,
-                     "parent": parent.get("genome_id")}
-    child = {
-        "genome_id": gid,
-        "generation": generation,
-        "parents": [parent["genome_id"]],
-        "origin": "mutation",
-        "seed": seed,
-        "graph": graph,
-        "deviation": deviation,
-        "render": None, "liveness": None, "rating": None,
-    }
-    return repair_genome(child, pool, cfg)
+        d["text"] = (
+            f"mutated from a rated parent "
+            f"({' + '.join(d['ops']) if d['ops'] else 'param jitter'}) "
+            f"— {div:.0%} different from the original"
+        )
+    return best_child
 
 
 def crossover(parent_a: dict, parent_b: dict, pool: GenePool,

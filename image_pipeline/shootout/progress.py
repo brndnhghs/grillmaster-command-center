@@ -44,6 +44,9 @@ class RenderMonitor:
                 "node_id": None, "node_name": None, "node_method": None,
                 "sim_frame": 0, "t0": now, "t_frame": now, "t_node": now,
                 "done": False, "skip_requested": False,
+                # Latest live preview thumbnail (data: URL) for the UI. None
+                # until the first frame is captured (see capture_preview).
+                "preview": None, "preview_frame": -1,
             }
             self._skip.setdefault(gid, threading.Event())
 
@@ -75,6 +78,51 @@ class RenderMonitor:
             s = self._status.get(gid)
             if s is not None:
                 s["done"] = True
+
+    # ── live preview (called by the render loop per captured frame) ──
+    def capture_preview(self, gid: str, frame: int, arr, max_w: int) -> None:
+        """Encode a low-res JPEG preview of the current frame into the
+        shared board so the live-renders panel can show a thumbnail the
+        user can eyeball and skip before the clip finishes rendering.
+
+        `arr` is an (H, W, 3) uint8 RGB array (the rendered output).
+        Encoding is cheap: downscale to `max_w` px wide, low JPEG quality.
+        No-ops on bad input or if the board slot no longer exists.
+        """
+        if arr is None:
+            return
+        try:
+            import base64
+            import io
+            from PIL import Image
+            import numpy as _np
+
+            a = _np.asarray(arr, dtype=_np.float32)
+            if a.ndim != 3 or a.shape[2] < 3:
+                return
+            # The executor's output frames may be float [0,1] or uint8
+            # [0,255]; normalise to uint8 so JPEG encoding is correct.
+            if a.dtype != _np.uint8 and a.max() <= 1.0:
+                a = (_np.clip(a[..., :3] * 255.0, 0, 255)).astype("uint8")
+            else:
+                a = a[..., :3].astype("uint8")
+            img = Image.fromarray(a, "RGB")
+            w, h = img.size
+            if w > max_w > 0:
+                img = img.resize((max_w, max(1, round(h * max_w / w))),
+                                 Image.BILINEAR)
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=55, optimize=True)
+            data = base64.b64encode(buf.getvalue()).decode("ascii")
+            with self._lock:
+                s = self._status.get(gid)
+                if s is not None:
+                    s["preview"] = f"data:image/jpeg;base64,{data}"
+                    s["preview_frame"] = frame
+        except Exception:
+            # Previews are best-effort — never let a thumbnail failure
+            # break the actual render.
+            pass
 
     def clear_all(self) -> None:
         with self._lock:

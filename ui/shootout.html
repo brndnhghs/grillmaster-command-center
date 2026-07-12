@@ -118,6 +118,17 @@ try {
     border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px;
   }
   .live-clip.slow { border-color: var(--warn); }
+  .live-clip .lc-preview {
+    width: 120px; height: 80px; object-fit: cover; flex: 0 0 auto;
+    border-radius: 4px; background: #000; border: 1px solid var(--border-strong);
+    image-rendering: auto;
+  }
+  .live-clip .lc-preview.placeholder {
+    display: flex; align-items: center; justify-content: center;
+    color: var(--muted2); font-size: 10px; letter-spacing: .04em;
+  }
+  .live-clip .lc-main { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .live-clip .lc-row1 { display: flex; align-items: center; gap: 8px; }
   .live-clip .lc-id { color: var(--text); font-weight: 600; }
   .live-clip .lc-bar {
     flex: 1; height: 5px; background: var(--border); border-radius: 3px;
@@ -269,7 +280,23 @@ try {
   }
   .cfg-grid input:focus { outline: none; border-color: var(--accent); }
   .cfg-grid input.overridden { border-color: var(--warn); }
-  .cfg-grid input[type="checkbox"] { justify-self: start; width: 16px; height: 16px; }
+  .cfg-grid input[type="checkbox"] { justify-self: start; width:16px; height:16px; }
+  /* ── Problematic-methods banner (timeout blame) ── */
+  #blame-box { margin-top: 16px; border-top: 1px solid var(--border);
+    padding-top: 12px; }
+  #blame-box h4 { font-size: 12px; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--err); margin-bottom: 8px; }
+  #blame-box .blame-empty { font-size: 12px; color: var(--muted); }
+  #blame-box .blame-row { display: flex; align-items: center; gap: 8px;
+    font-family: var(--font-mono); font-size: 11.5px; padding: 3px 0; }
+  #blame-box .bm-mid { color: var(--text); font-weight: 600; min-width: 54px; }
+  #blame-box .bm-weight { color: var(--err); }
+  #blame-box .bm-meta { color: var(--muted); }
+  #blame-box .bm-bar { flex: 1; height: 6px; background: var(--border);
+    border-radius: 3px; overflow: hidden; min-width: 40px; }
+  #blame-box .bm-fill { height: 100%; background: var(--err); }
+  #blame-box .blame-note { font-size: 11px; color: var(--muted2);
+    margin-top: 6px; line-height: 1.4; }
   #modal-actions { display: flex; gap: 10px; margin-top: 18px; align-items: center; }
   #modal-status { font-size: 12px; color: var(--muted); flex: 1; }
 </style>
@@ -291,7 +318,7 @@ try {
 
 <div id="status-bar">idle</div>
 <div id="live-renders">
-  <div class="lr-head">live renders — click skip to abort a hanging clip</div>
+  <div class="lr-head">live renders — preview each clip, click skip to abort a hanging or unwanted candidate</div>
 </div>
 <details id="gen-log-wrap">
   <summary>generation log</summary>
@@ -334,6 +361,9 @@ try {
 
     <h3>Settings</h3>
     <div class="cfg-grid" id="cfg-grid"></div>
+    <div id="blame-box"><h4>problematic methods — timeout offenders</h4>
+      <div id="blame-body"></div>
+    </div>
 
     <div id="modal-actions">
       <span id="modal-status"></span>
@@ -742,28 +772,101 @@ function renderLivePanel(rows) {
   if (!panel) return;
   if (!rows || !rows.length) { panel.classList.remove('active'); }
   else { panel.classList.add('active'); }
-  // Drop old clip rows (keep the header).
-  panel.querySelectorAll('.live-clip').forEach((el) => el.remove());
+  // Update in place keyed by genome_id (so the image never reloads/flickers
+  // while a clip cooks). Old clip rows are dropped, new ones created.
+  const liveIds = new Set((rows || []).map(r => r.genome_id));
+  panel.querySelectorAll('.live-clip').forEach((el) => {
+    if (!liveIds.has(el.dataset.gid)) el.remove();
+  });
+  const existing = {};
+  panel.querySelectorAll('.live-clip').forEach((el) => {
+    existing[el.dataset.gid] = el;
+  });
+
   for (const r of (rows || [])) {
+    let row = existing[r.genome_id];
     const slow = r.frame_s >= 15;
     const pct = r.total_frames ? Math.round((r.frame + 1) / r.total_frames * 100) : 0;
     const node = r.node_name ? `${r.node_name} [${r.node_method}]` : '—';
     const sim = r.sim_frame ? ` · sim ${r.sim_frame}/${r.total_frames}` : '';
-    const row = document.createElement('div');
-    row.className = 'live-clip' + (slow ? ' slow' : '');
-    row.innerHTML =
-      `<span class="lc-id">${r.genome_id}</span>`
-      + `<span>f ${r.frame + 1}/${r.total_frames}</span>`
-      + `<span class="lc-bar"><span class="lc-fill" style="width:${pct}%"></span></span>`
-      + `<span class="lc-node">cooking ${node}${sim}</span>`
-      + `<span class="lc-time ${slow ? 'warn' : ''}">${r.frame_s}s</span>`;
-    const btn = document.createElement('button');
-    btn.className = 'lc-skip';
-    btn.textContent = r.skip_requested ? 'skipping…' : 'skip';
-    btn.disabled = !!r.skip_requested;
-    btn.onclick = () => skipClip(r.genome_id, btn);
-    row.appendChild(btn);
-    panel.appendChild(row);
+
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 'live-clip';
+      row.dataset.gid = r.genome_id;
+
+      const img = document.createElement('img');
+      img.className = 'lc-preview placeholder';
+      img.alt = 'preview';
+      img.onerror = () => {
+        img.classList.add('placeholder');
+        img.removeAttribute('src');
+        img.textContent = 'preview n/a';
+      };
+      row.appendChild(img);
+
+      const main = document.createElement('div');
+      main.className = 'lc-main';
+
+      const r1 = document.createElement('div');
+      r1.className = 'lc-row1';
+      const id = document.createElement('span');
+      id.className = 'lc-id';
+      id.textContent = r.genome_id;
+      r1.appendChild(id);
+      const fr = document.createElement('span');
+      fr.className = 'lc-frame';
+      r1.appendChild(fr);
+      main.appendChild(r1);
+
+      const bar = document.createElement('span');
+      bar.className = 'lc-bar';
+      const fill = document.createElement('span');
+      fill.className = 'lc-fill';
+      bar.appendChild(fill);
+      main.appendChild(bar);
+
+      const n = document.createElement('span');
+      n.className = 'lc-node';
+      main.appendChild(n);
+
+      const t = document.createElement('span');
+      t.className = 'lc-time';
+      main.appendChild(t);
+
+      const btn = document.createElement('button');
+      btn.className = 'lc-skip';
+      btn.textContent = 'skip';
+      btn.onclick = () => skipClip(r.genome_id, btn);
+      main.appendChild(btn);
+
+      row.appendChild(main);
+      panel.appendChild(row);
+    }
+
+    // ── in-place updates ──
+    row.classList.toggle('slow', slow);
+    const img = row.querySelector('.lc-preview');
+    const hasPreview = !!r.preview;
+    if (hasPreview && img.dataset.src !== r.preview) {
+      img.src = r.preview;
+      img.dataset.src = r.preview;
+      img.classList.remove('placeholder');
+      img.removeAttribute('alt');
+    } else if (!hasPreview) {
+      img.classList.add('placeholder');
+      img.textContent = 'cooking…';
+    }
+    row.querySelector('.lc-frame').textContent = `f ${r.frame + 1}/${r.total_frames}`;
+    row.querySelector('.lc-fill').style.width = pct + '%';
+    row.querySelector('.lc-node').textContent = `cooking ${node}${sim}`;
+    const t = row.querySelector('.lc-time');
+    t.textContent = `${r.frame_s}s`;
+    t.classList.toggle('warn', slow);
+    const btn = row.querySelector('.lc-skip');
+    const skipReq = !!r.skip_requested;
+    btn.textContent = skipReq ? 'skipping…' : 'skip';
+    btn.disabled = skipReq;
   }
 }
 
@@ -865,6 +968,42 @@ let CFG_FIELDS = [];   // last-fetched field specs
 
 function cfgInputId(name) { return `cfg-${name}`; }
 
+async function renderBlame() {
+  const body = $('blame-body');
+  if (!body) return;
+  body.innerHTML = '<span class="blame-empty">loading…</span>';
+  try {
+    const r = await fetch('/api/shootout/timeout-blame');
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    const probs = d.problematic || [];
+    if (!probs.length) {
+      body.innerHTML = `<span class="blame-empty">no repeat timeout ` +
+        `offenders — every timeout method appeared &lt;2×</span>`;
+      return;
+    }
+    const maxW = Math.max(...probs.map(p => p.weight || 0), 0.001);
+    body.innerHTML = probs.slice(0, 12).map(p => {
+      const pct = Math.round(100 * (p.weight || 0) / maxW);
+      return `<div class="blame-row">` +
+        `<span class="bm-mid">${p.method_id}</span>` +
+        `<span class="bm-meta">${p.timeout_genomes}×to</span>` +
+        `<span class="bm-bar"><span class="bm-fill" style="width:${pct}%">` +
+        `</span></span>` +
+        `<span class="bm-weight">w=${p.weight}</span>` +
+        `<span class="bm-meta">${p.ms_total}ms</span></div>`;
+    }).join('');
+    const note = document.createElement('div');
+    note.className = 'blame-note';
+    note.textContent = `${d.n_timeout} timed-out · ${d.n_timed} with ` +
+      `attribution (pre-timing genomes excluded) — target these for ` +
+      `speed/debug work`;
+    body.appendChild(note);
+  } catch (_) {
+    body.innerHTML = '<span class="blame-empty">blame report unavailable</span>';
+  }
+}
+
 async function openModal() {
   const r = await fetch('/api/shootout/config');
   CFG_FIELDS = (await r.json()).fields;
@@ -896,6 +1035,7 @@ async function openModal() {
   }
   $('modal-status').textContent = '';
   $('modal-overlay').classList.add('visible');
+  renderBlame();   // async: problematic timeout methods, no await needed
 }
 
 async function saveConfig(reset) {

@@ -16,6 +16,7 @@ from .evaluator import render_many
 from .generator import build_gene_pool
 from .repair import sample_valid_genome
 from . import store
+from . import timeout_blame as _blame
 
 
 def main() -> None:
@@ -24,7 +25,15 @@ def main() -> None:
     ap.add_argument("--frames", type=int, default=None, help="frames per clip")
     ap.add_argument("--seed", type=int, default=None, help="RNG seed for sampling")
     ap.add_argument("--concurrency", type=int, default=None)
+    ap.add_argument("--timeout-blame", action="store_true",
+                    help="Instead of rendering: print the timeout-blame report "
+                         "over the persisted genome corpus and exit")
     args = ap.parse_args()
+
+    if args.timeout_blame:
+        rep = _blame.report(ShootoutConfig())
+        print(_blame.summarize(rep))
+        return
 
     cfg = ShootoutConfig()
     if args.frames:

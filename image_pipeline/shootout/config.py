@@ -45,6 +45,8 @@ class ShootoutConfig:
     crossover_ratio: float = 0.4   # of the bred (non-explore) slots, fraction via crossover
     mutations_per_offspring: tuple[int, int] = (1, 2)  # inclusive range
     param_jitter_sigma: float = 0.15   # gaussian sigma as fraction of param range
+    min_divergence: float = 0.3        # breeder aims for this graph-distance (0..1) from the parent
+    max_divergence_attempts: int = 5   # mutation retries to hit min_divergence before accepting best-so-far
     min_rating_to_parent: int = 2      # genomes rated below this never breed
 
     # ── Liveness rejection (tuned on the first empirical batch — plan §7) ──
@@ -63,6 +65,13 @@ class ShootoutConfig:
     # ── Rendering ─────────────────────────────────────────────────
     render_concurrency: int = 3
     stat_stride: int = 4       # spatial subsampling stride for liveness stats
+    # Live preview thumbnails for the live-renders panel: a low-res JPEG of
+    # the current frame is captured every `preview_every` frames so the user
+    # can eyeball each candidate and skip undesirable ones BEFORE they reach
+    # the survivor pool. Cheap (downscaled + low-quality JPEG, encoded a
+    # handful of times per clip). Set preview_every=0 to disable previews.
+    preview_every: int = 6
+    preview_w: int = 200        # preview thumbnail width (px)
     # Cooperative per-candidate wall clock; slow graphs are culled, not awaited.
     # Empirics (315-genome scan, 2026-07-11): 61 genomes were culled as
     # 'timeout' with wall_s min=150 / median=157 / max=547. 60 of 61 fell in
@@ -172,11 +181,17 @@ TUNABLE_FIELDS: dict[str, tuple[str, float | None, float | None]] = {
     "explore_ratio":     ("Fraction of each bred generation that is fresh random graphs (keeps variety)", 0.0, 1.0),
     "elitism":           ("Top-rated clips carried into the next round unchanged", 0, 3),
     "crossover_ratio":   ("Of bred offspring, fraction made by splicing two parents (rest are mutations)", 0.0, 1.0),
+    "mutations_per_offspring": ("Mutation ops per bred offspring (1–2 = subtle, higher = wilder evolutions)", 0, 5),
+    "param_jitter_sigma": ("Mutation strength — fraction of each param's range a tweak can move (higher = more extreme)", 0.0, 1.0),
+    "min_divergence":   ("Bred offspring must differ from the parent by at least this graph-distance (0..1); the breeder escalates mutation until it does (higher = more extreme evolutions)", 0.0, 1.0),
+    "max_divergence_attempts": ("Mutation retries to reach min_divergence before accepting the best attempt (higher = more effort pushing extreme changes)", 1, 12),
     "min_rating_to_parent": ("Clips rated below this never breed", 1, 5),
     "render_timeout_s":  ("Per-clip render budget (seconds) — slower graphs are culled as 'timeout'", 10, 3600),
     "cost_gate_enabled": ("Skip guaranteed-timeout graphs before rendering, using the empirical cost model", None, None),
     "cost_skip_factor":  ("Cost gate strictness: skip when estimated render > render_timeout_s × this (lower = stricter)", 0.1, 2.0),
     "render_concurrency": ("Clips rendered in parallel", 1, 8),
+    "preview_every":    ("Capture a live preview thumbnail every N frames (0 = off) so you can skip candidates before they finish", 0, 48),
+    "preview_w":        ("Live preview thumbnail width (px)", 64, 512),
     "frame_hang_s":      ("Flag a clip ⚠ SLOW in the live log when a single frame exceeds this (seconds)", 1, 600),
     "auto_skip_frame_hang_s": ("Auto-skip a clip whose current frame exceeds this (seconds); 0 = manual skip only", 0, 3600),
     "advisor_enabled":   ("Interpret your pros/cons notes with the LLM advisor to steer breeding", None, None),

@@ -1232,8 +1232,14 @@ def shootout_render_status():
     from image_pipeline.shootout import progress as _shootout_progress
     import time as _t
     now = _t.time()
+    # include_done=True so a just-finished genome KEEPS its captured
+    # preview in the feed — the user sees the final still until the
+    # next run's clear_all() wipes the board. Done genomes with
+    # no preview (finished before frame 0 captured) are dropped.
     out = []
-    for gid, s in _shootout_progress.MONITOR.snapshot().items():
+    for gid, s in _shootout_progress.MONITOR.snapshot(include_done=True).items():
+        if s.get("done") and not s.get("preview"):
+            continue
         out.append({
             "genome_id": gid,
             "frame": s.get("frame", 0),
@@ -1246,6 +1252,11 @@ def shootout_render_status():
             "elapsed_s": round(now - s.get("t0", now), 1),
             "frame_s": round(now - s.get("t_frame", now), 1),
             "skip_requested": bool(s.get("skip_requested")),
+            # Live preview thumbnail (data: URL) — null until the first
+            # captured frame. Lets the UI show a playless still so the
+            # user can skip a candidate before it reaches the pool.
+            "preview": s.get("preview"),
+            "preview_frame": s.get("preview_frame", -1),
         })
     out.sort(key=lambda r: r["genome_id"])
     return {"rendering": out}
@@ -1291,6 +1302,22 @@ def shootout_utilization(session_id: str | None = None):
         genomes = [sample_valid_genome(pool, cfg, rng, origin="random")
                    for _ in range(cfg.render_pool)]
     return _shootout_util.audit_population(genomes, pool, cfg)
+
+
+@app.get("/api/shootout/timeout-blame")
+def shootout_timeout_blame():
+    """Timeout blame — which methods/nodes waste the render budget.
+
+    A clip culled as `timeout` (or `over-budget`) burned the full
+    render budget only to be discarded. This aggregates the whole genome
+    corpus: the per-method repeat offenders (the "problematic" set to
+    target for debugging / speed work), per-clip attribution, and the
+    worst (most expensive) clips. See shootout/timeout_blame.py.
+    """
+    from image_pipeline.shootout import timeout_blame as _tb
+    cfg = _shootout_config.effective_config()
+    rep = _tb.report(cfg)
+    return rep
 
 
 @app.get("/api/graph/{gid}")

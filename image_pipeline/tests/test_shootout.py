@@ -238,6 +238,70 @@ def test_offspring_are_valid():
         assert cx is None or not validate_graph(cx["graph"], POOL, CFG)
 
 
+def test_graph_distance_bounds_and_identical():
+    from image_pipeline.shootout.evolve import graph_distance
+    a = sample_valid_genome(POOL, CFG, random.Random(1))
+    assert graph_distance(a, a, POOL) == 0.0          # identical → 0
+    b = sample_valid_genome(POOL, CFG, random.Random(2))
+    d = graph_distance(a, b, POOL)
+    assert 0.0 <= d <= 1.0                            # bounded
+    # a deliberately different graph (different node types) is not ~0
+    assert d > 0.0
+
+
+def test_mutation_reaches_min_divergence():
+    """Bred offspring should clear cfg.min_divergence from the parent at
+    least most of the time, and every mutation records a divergence field."""
+    from image_pipeline.shootout.evolve import graph_distance
+    rng = random.Random(5)
+    prev = _rated_generation(rng, [5, 4, 3, 2])
+    hit = 0
+    n = 60
+    for _ in range(n):
+        parent = rng.choice(prev[:2])
+        child = mutate(parent, POOL, CFG, rng, 1)
+        assert child is not None, "divergence loop must always produce a child"
+        assert "divergence" in child["deviation"]
+        assert graph_distance(parent, child, POOL) == child["deviation"]["divergence"]
+        if child["deviation"]["divergence"] >= CFG.min_divergence:
+            hit += 1
+    # The escalation loop must drive the overwhelming majority past the floor.
+    assert hit >= n * 0.8, f"only {hit}/{n} cleared min_divergence={CFG.min_divergence}"
+
+
+def test_high_min_divergence_forces_more_intensity():
+    """Raising min_divergence should push the breeder to use higher
+    intensity (more mutation ops) than the default."""
+    from image_pipeline.shootout.evolve import mutate
+    rng = random.Random(5)
+    prev = _rated_generation(rng, [5, 4, 3, 2])
+    low = ShootoutConfig(min_divergence=0.1, max_divergence_attempts=8)
+    high = ShootoutConfig(min_divergence=0.6, max_divergence_attempts=8)
+    rng_low, rng_high = random.Random(99), random.Random(99)
+    prev_low = _rated_generation(rng_low, [5, 4, 3, 2])
+    prev_high = _rated_generation(rng_high, [5, 4, 3, 2])
+    ints_low, ints_high = [], []
+    for p in prev_low[:10]:
+        c = mutate(p, POOL, low, random.Random(1), 1)
+        assert c is not None
+        ints_low.append(c["deviation"]["intensity"])
+    for p in prev_high[:10]:
+        c = mutate(p, POOL, high, random.Random(1), 1)
+        assert c is not None
+        ints_high.append(c["deviation"]["intensity"])
+    assert sum(ints_high) > sum(ints_low), \
+        f"higher min_divergence should need more intensity ({ints_high} vs {ints_low})"
+
+
+def test_gentle_mutation_still_valid_and_recorded():
+    rng = random.Random(5)
+    prev = _rated_generation(rng, [5, 4, 3, 2])
+    child = mutate(prev[0], POOL, CFG, rng, 1, gentle=True)
+    assert child is not None
+    assert child["deviation"]["kind"] == "protected"
+    assert "divergence" in child["deviation"]
+
+
 def test_selection_favors_high_stars():
     rng = random.Random(9)
     prev = _rated_generation(rng, [5, 4, 2, 1, None])
@@ -989,3 +1053,75 @@ def test_render_genome_honors_preset_skip():
     progress.MONITOR.clear_all()
     assert out["liveness"]["reason"] == "skipped"
     assert out["liveness"]["alive"] is False
+
+
+# ── Timeout blame (flag problematic methods for speed/debug work) ──
+def _write_timeout_genome(store, gid, reason, timings, nodes, wall=None):
+    store.save_genome({
+        "genome_id": gid,
+        "graph": {"nodes": [{"id": k, "method_id": m} for k, m in nodes]},
+        "render": {"node_timings": timings, "wall_s": wall},
+        "liveness": {"alive": False, "reason": reason},
+    })
+
+
+def test_timeout_blame_flags_repeat_offenders(tmp_store):
+    from image_pipeline.shootout import store, timeout_blame as tb
+    # 141 owns ~90% of two timeout clips; 137 owns one. 141 must be
+    # flagged, a cheap leaf (8) must not.
+    _write_timeout_genome(store, "g-a", "timeout",
+                         {"n1": 9000.0, "n2": 1000.0},
+                         [("n1", "141"), ("n2", "8")], wall=300)
+    _write_timeout_genome(store, "g-b", "timeout",
+                         {"n1": 8000.0, "n2": 2000.0},
+                         [("n1", "141"), ("n2", "9")], wall=290)
+    _write_timeout_genome(store, "g-c", "timeout",
+                         {"n1": 7000.0, "n2": 3000.0},
+                         [("n1", "137"), ("n2", "10")], wall=280)
+    # 137 needs a 2nd timeout appearance to clear the repeat threshold
+    _write_timeout_genome(store, "g-h", "timeout",
+                         {"n1": 6000.0, "n2": 4000.0},
+                         [("n1", "137"), ("n2", "11")], wall=260)
+    # a driver leaf present but ~0% compute -> not flagged
+    _write_timeout_genome(store, "g-d", "timeout",
+                         {"n1": 9500.0, "nL": 10.0},
+                         [("n1", "141"), ("nL", "__lfo__")], wall=300)
+    # over-budget (pre-render gate, no timings) counts in headline only
+    _write_timeout_genome(store, "g-e", "over-budget", {}, [("n1", "141")])
+    # alive + non-timeout dead -> excluded
+    _write_timeout_genome(store, "g-f", "alive",
+                         {"n1": 50.0}, [("n1", "8")], wall=2)
+    _write_timeout_genome(store, "g-g", "static", {"n1": 40.0},
+                         [("n1", "8")])
+
+    rep = tb.report()
+    assert rep["n_timeout"] == 5
+    assert rep["n_over_budget"] == 1
+    assert rep["n_timed"] == 5
+    pids = {m["method_id"] for m in rep["problematic"]}
+    assert pids == {"141", "137"}, pids
+    assert "__lfo__" not in pids, "driver leaf leaked into problematic"
+    # worst clips ordered by wall desc (tie at 300 is order-robust)
+    worst_ids = [w["genome_id"] for w in rep["worst_clips"]]
+    assert rep["worst_clips"][0]["wall_s"] == 300
+    assert "g-a" in worst_ids and "g-d" in worst_ids
+    # per-clip attribution: 141 owns 90% of g-a
+    b = tb.blame_genome(store.load_genome("g-a"))
+    assert b["top_nodes"][0]["method_id"] == "141"
+    assert b["top_nodes"][0]["pct"] == 90.0
+
+
+def test_timeout_blame_endpoint(client, tmp_store):
+    from image_pipeline.shootout import store, timeout_blame as tb
+    _write_timeout_genome(store, "g-x", "timeout",
+                         {"n1": 9000.0, "n2": 1000.0},
+                         [("n1", "141"), ("n2", "8")], wall=300)
+    _write_timeout_genome(store, "g-y", "timeout",
+                         {"n1": 7000.0, "n2": 3000.0},
+                         [("n1", "141"), ("n2", "10")], wall=280)
+    r = client.get("/api/shootout/timeout-blame")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["n_timeout"] == 2 and d["n_timed"] == 2
+    pids = {m["method_id"] for m in d["problematic"]}
+    assert pids == {"141"}
