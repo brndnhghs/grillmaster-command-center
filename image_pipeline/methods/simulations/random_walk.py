@@ -176,8 +176,12 @@ def method_random_walk(out_dir: Path, seed: int, params=None):
         # ── Perlin noise field (simple approximation) ──
         if noise_scale > 0:
             from scipy.ndimage import gaussian_filter
-            noise_field_x = gaussian_filter(rng.standard_normal((H, W)).astype(np.float32), sigma=30) * noise_scale * 10
-            noise_field_y = gaussian_filter(rng.standard_normal((H, W)).astype(np.float32), sigma=30) * noise_scale * 10
+            # `rng` is a stdlib random.Random (no .standard_normal); use a
+            # numpy RNG seeded from the same `seed` so the field stays
+            # deterministic and the per-frame AttributeError crash is avoided.
+            _nrng = np.random.default_rng(seed)
+            noise_field_x = gaussian_filter(_nrng.standard_normal((H, W)).astype(np.float32), sigma=30) * noise_scale * 10
+            noise_field_y = gaussian_filter(_nrng.standard_normal((H, W)).astype(np.float32), sigma=30) * noise_scale * 10
         else:
             noise_field_x = np.zeros((H, W))
             noise_field_y = np.zeros((H, W))
