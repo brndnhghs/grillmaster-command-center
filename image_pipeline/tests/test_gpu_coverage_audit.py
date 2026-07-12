@@ -43,7 +43,10 @@ from image_pipeline.methods.gpu_shaders import GPU_SHADER_NODE_MAP
 # 218 -> 219: +1 P0.4 filter twin (422 Palette Posterize).
 # 219 -> 221: +2 typed-uniform filter twins (417 Chromatic Aberration,
 #             419 Thin-Film Interference) as client-GPU shims.
-EXPECTED_MAP_ENTRIES = 221
+# 221 -> 228: +7 categorical-coverage client-GPU shims wiring closed-form
+#             typed twins onto existing CPU nodes (16, 65, 78, 56, 81,
+#             406, 409 — math_art / patterns categories).
+EXPECTED_MAP_ENTRIES = 228
 
 # Simulations-category CPU nodes that are intentionally NOT GPU-mirrored yet.
 # These are Architecture-A stateful sims (discrete CA, agent/particle systems,

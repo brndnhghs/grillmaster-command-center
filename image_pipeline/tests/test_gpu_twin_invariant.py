@@ -285,6 +285,27 @@ _TWIN_UNIFORM_ALLOW = {
     "07": "truchet: `scale` (frequency) is not cleanly synonymous with CPU node 07 "
           "`tile_size`",
     "74": "swirl_gpu: `radius`/`spin` have no clean CPU-node synonym in node 74",
+    # Categorical coverage (2026-07-11): each twin below is a standalone
+    # closed-form pattern generator with its own artistic uniforms (fg/bg color,
+    # speed, line thick, internal freq counts) that have NO CPU-node synonym by
+    # design. The backing CPU node is a different algorithm (particle/serial/
+    # multi-pass) whose params do not map 1:1 onto the twin's per-pixel knobs;
+    # the twin is a live-preview approximation and the CPU fn stays authoritative
+    # (two-tier precision). Documented so the wiring guard does not regress.
+    "16": "flow_field_typed: zoom/swirl/freq/density are shader-only flow knobs; "
+          "only `speed` maps to CPU node 16",
+    "65": "waveform_typed: amp/thick/fg/bg are shader-only render knobs; only "
+          "freq1/2/3 (k1/2/3) map to CPU node 65",
+    "78": "circle_packing_typed: normalized min_r/max_r/speed/bg/fg are shader "
+          "knobs; only radius bounds map to CPU node 78",
+    "56": "maze_typed: normalized scale/wall/drift/bg/fg are shader knobs; only "
+          "cell_size/ wall_thickness map to CPU node 56",
+    "81": "fourier_circles_typed: thick/phase2/bg/fg are shader knobs; freq1/2/3/"
+          "speed map to CPU node 81",
+    "406": "harmonograph_typed: decay/turns/steps/thick/bg/fg are shader knobs; "
+          "freq1/freq2/phase/scale map to CPU node 406",
+    "409": "superformula_typed: n/b/c/p/scale/thick/bg are shader knobs; only `m` "
+          "maps to CPU node 409",
 }
 
 

@@ -155,7 +155,9 @@ def test_gpu_shader_node_map_resolves():
     # +1 P0.4 filter twin (422 Palette Posterize) = 219.
     # +2 typed-uniform filter twins (417 Chromatic Aberration,
     #   419 Thin-Film Interference) = 221.
-    assert len(GPU_SHADER_NODE_MAP) == 221, len(GPU_SHADER_NODE_MAP)
+    # +7 categorical-coverage client-GPU shims (16, 65, 78, 56, 81, 406,
+    #   409 — math_art / patterns) = 228.
+    assert len(GPU_SHADER_NODE_MAP) == 228, len(GPU_SHADER_NODE_MAP)
     for mid, entry in GPU_SHADER_NODE_MAP.items():
         if entry.get("type") == "sim":
             # P1 ping-pong sim: seed/step/display must all resolve to shaders.
