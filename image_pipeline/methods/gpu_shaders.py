@@ -452,8 +452,9 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # 17 Glitch Art → existing GPU twin (214). intensity p1.
     "17": {"shader": "shader_glitch_gpu", "type": "filter",
             "param_map": {"intensity": "p1"}},
-    # 41 Oil Paint → existing GPU twin (216). radius drives u_radius named uniform.
-    "41": {"shader": "shader_oil_gpu", "type": "filter",
+    # 41 Oil Paint → existing GPU twin (216). radius drives u_radius named uniform
+    # (twin is now typed, so the client sets u_radius directly, not via p1).
+    "41": {"shader": "shader_oil_gpu", "type": "filter", "typed": True,
            "param_map": {"radius": "radius"}},
     # 80 Pixel Mosaic → existing GPU twin (208). tile_size p1.
     "80": {"shader": "shader_mosaic_gpu", "type": "filter",
