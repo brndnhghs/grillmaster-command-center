@@ -90,3 +90,4 @@ from . import stable_fluids
 from . import water_ripple
 from . import lattice_boltzmann
 from . import differential_growth
+from . import brusselator
