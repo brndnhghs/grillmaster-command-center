@@ -693,7 +693,23 @@ def wired_source_rgb(params: dict, w: int, h: int) -> np.ndarray | None:
     field/seed initialization. Returns None when nothing is wired (so the
     method falls back to its procedural generation). Mirrors the Rule-#12
     contract used by filter nodes (a wired image overrides internal gen).
+
+    Handles both executor contracts: live in-memory mode injects ``_input_image``
+    (an ndarray); render/audit mode injects ``input_image`` (a disk path).
     """
+    # Live in-memory: ndarray already in memory
+    arr = params.get("_input_image", None)
+    if isinstance(arr, np.ndarray) and arr.size > 0:
+        from PIL import Image as _PILI
+        # resize to canvas if needed
+        if arr.shape[0] != int(h) or arr.shape[1] != int(w):
+            img = _PILI.fromarray((np.clip(arr, 0, 1) * 255).astype(np.uint8))
+            img = img.resize((int(w), int(h)), _PILI.LANCZOS)
+            arr = np.array(img, dtype=np.float32) / 255.0
+        if arr.ndim == 2:
+            arr = arr[..., None].repeat(3, axis=-1)
+        return arr.astype(np.float32)[..., :3]
+    # Render/audit mode: disk path
     p = params.get("input_image", "")
     if not p:
         return None
