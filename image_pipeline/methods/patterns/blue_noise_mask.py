@@ -118,9 +118,17 @@ def _vac_mask(H: int, W: int, M: int, G_full: np.ndarray, G: np.ndarray, dy: np.
               dx: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     """Generate a void-and-cluster ranked blue-noise mask.
 
+    Textbook VAC (Ulichney 1993). For correctness and simplicity we use a direct
+    FFT energy recompute is wasteful, so we maintain the energy field
+    incrementally via the Gaussian prototype stamp, but pick the next void/cluster
+    with an exact ``np.argmin`` / ``np.argmax`` over the live energy (no priority
+    queue). This is the provably-correct selection rule and produces true
+    blue-noise; the recompute cost is absorbed by the module-level memo in
+    ``_ensure_rank_mask`` (the ranking depends only on H,W,M,sigma,seed), so an
+    animated sequence reuses the first render.
+
     Returns R (int64, shape (H, W)) with a unique rank 0..N-1 per pixel.
     """
-    import heapq
     N = H * W
     if M < 1:
         M = 1
@@ -150,20 +158,6 @@ def _vac_mask(H: int, W: int, M: int, G_full: np.ndarray, G: np.ndarray, dy: np.
         xx = (x + dx) % W
         E[yy * W + xx] += sign * G
 
-    def _neighborhood(p: int):
-        y = p // W
-        x = p % W
-        return ((y + dy) % H) * W + ((x + dx) % W)
-
-    # ── Priority queues (min-heap of (-energy, idx) for voids, max via -E) ──
-    # We push entries lazily and validate against the live `samples`/`E` when
-    # popped, so a stale (already changed) entry is simply discarded. This turns
-    # the O(N) argmin-per-step into ~O(k log N) where k is the stamp footprint.
-    void_q = [(-float(E[i]), int(i)) for i in range(N) if not samples[i]]
-    heapq.heapify(void_q)
-    clust_q = [(float(E[i]), int(i)) for i in range(N) if samples[i]]
-    heapq.heapify(clust_q)
-
     # ── Phase 0: initial seeds own the lowest ranks 0 .. M-1 ──
     R[init_idx] = np.arange(M, dtype=np.int64)
 
@@ -171,41 +165,23 @@ def _vac_mask(H: int, W: int, M: int, G_full: np.ndarray, G: np.ndarray, dy: np.
     rank = M
     target = N - M  # stop when total sample count reaches N - M
     while int(samples.sum()) < target:
-        while True:
-            negE, p = heapq.heappop(void_q)
-            if not samples[p] and -negE == float(E[p]):
-                break
+        masked = np.where(samples, np.inf, E)
+        p = int(np.argmin(masked))
         samples[p] = True
         R[p] = rank
         rank += 1
         _stamp(p, 1.0)
-        # re-push the changed pixel + its footprint (only those whose sample
-        # state is consistent) so every current void/sample has a live entry.
-        for q in _neighborhood(p):
-            if samples[q]:
-                heapq.heappush(clust_q, (float(E[q]), int(q)))
-            else:
-                heapq.heappush(void_q, (-float(E[q]), int(q)))
-        heapq.heappush(clust_q, (float(E[p]), int(p)))  # p is now a sample
 
     # ── Phase 2: clusters — remove the M densest samples (argmax energy) ──
     rank = N - M
     floor = N - 2 * M  # stop when sample count drops to N - 2M
     while int(samples.sum()) > floor:
-        while True:
-            Ee, p = heapq.heappop(clust_q)
-            if samples[p] and Ee == float(E[p]):
-                break
+        masked = np.where(samples, E, -np.inf)
+        p = int(np.argmax(masked))
         samples[p] = False
         R[p] = rank
         rank += 1
         _stamp(p, -1.0)
-        for q in _neighborhood(p):
-            if samples[q]:
-                heapq.heappush(clust_q, (float(E[q]), int(q)))
-            else:
-                heapq.heappush(void_q, (-float(E[q]), int(q)))
-        heapq.heappush(void_q, (-float(E[p]), int(p)))  # p is now a void
 
     return R.reshape(H, W)
 
@@ -220,8 +196,8 @@ def _vac_mask(H: int, W: int, M: int, G_full: np.ndarray, G: np.ndarray, dy: np.
     inputs={},
     outputs={"image": "IMAGE", "field": "FIELD", "mask": "MASK"},
     params={
-        "size": {"description": "square mask resolution (one side, px)",
-                 "choices": [128, 256, 384, 512], "default": 256},
+        "size": {"description": "square mask resolution (one side, px). 128 is fast (~5s); larger sizes cost more",
+                 "choices": [128, 256, 384, 512], "default": 128},
         "sigma": {"description": "void/cluster Gaussian prototype width (px) — sets blue-noise spectrum",
                   "min": 1.0, "max": 4.0, "default": 1.9},
         "seed_density": {"description": "initial seed fraction (drives low-end mask structure)",
