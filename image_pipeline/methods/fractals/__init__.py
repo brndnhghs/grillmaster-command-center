@@ -14,3 +14,4 @@ from . import pythagorean_tree
 from . import lsystem
 from . import kaleidoscopic_ifs
 from . import symmetric_icon
+from . import mandelbulb
