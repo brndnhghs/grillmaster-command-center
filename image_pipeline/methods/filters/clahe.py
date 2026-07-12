@@ -69,16 +69,14 @@ def _clahe_channel(channel: np.ndarray, tile: int, clip_frac: float) -> np.ndarr
     """Contrast-limited adaptive histogram equalization for one H×W channel.
 
     `channel` is float32 in [0,1]. Returns the equalized channel in [0,1].
-    Fully vectorized: tile histograms via a single scatter-add, the clip +
-    redistribute step per tile, and a bilinear blend of the four surrounding
-    tile CDFs at every pixel.
+    Fully vectorized: per-tile histograms (binned into each tile's OWN min..max
+    range so a smooth tile fills every bin and gets a full local-contrast
+    stretch, instead of a sparse fixed-[0,1] histogram that collapses to a
+    near-identity), the clip + redistribute step, and a bilinear blend of the
+    four surrounding tile CDFs at every pixel.
     """
     Hc, Wc = channel.shape
     nbins = 256
-    # Bin index of every pixel (0..255).
-    bins = np.clip(channel * 255.0, 0.0, 255.0).astype(np.int32)
-
-    # Tile grid (last partial row/col extends the final tile via clamping).
     n_tx = max(1, Wc // tile)
     n_ty = max(1, Hc // tile)
 
@@ -86,16 +84,29 @@ def _clahe_channel(channel: np.ndarray, tile: int, clip_frac: float) -> np.ndarr
     tx = np.minimum(xx // tile, n_tx - 1)
     ty = np.minimum(yy // tile, n_ty - 1)
 
-    # Histogram per tile via scatter-add (vectorized).
-    hist = np.zeros((n_ty, n_tx, nbins), dtype=np.float64)
-    np.add.at(hist, (ty.ravel(), tx.ravel(), bins.ravel()), 1.0)
+    # Per-tile value range. Each tile's histogram is binned into its OWN
+    # [min,max] so a smooth tile fills ALL bins → full local-contrast stretch.
+    tmin = np.full((n_ty, n_tx), 1.0)
+    tmax = np.full((n_ty, n_tx), 0.0)
+    np.minimum.at(tmin, (ty.ravel(), tx.ravel()), channel.ravel())
+    np.maximum.at(tmax, (ty.ravel(), tx.ravel()), channel.ravel())
+    trange = np.maximum(tmax - tmin, 1e-3)
 
-    # Per-tile pixel total → clip ceiling = clip_frac * (pixels per tile).
-    # (Must scale with the *count*, not the mean-bin fraction, else the
-    # np.maximum(1.0, ...) floor makes every clip_limit collapse to 1.0 and
-    # the slider becomes a silent no-op — that was the launch bug.)
+    # Per-pixel bin index within the pixel's OWN tile range (used for scatter).
+    bin_local = np.clip(
+        ((channel - tmin[ty, tx]) / trange[ty, tx] * (nbins - 1)).astype(np.int32),
+        0, nbins - 1,
+    )
+
+    # Tile histogram via scatter-add (vectorized).
+    hist = np.zeros((n_ty, n_tx, nbins), dtype=np.float64)
+    np.add.at(hist, (ty.ravel(), tx.ravel(), bin_local.ravel()), 1.0)
+
+    # Contrast limit = clip_frac × (average bin count per tile). 1 ≈ off (pure
+    # adaptive equalization, strongest local-contrast boost); higher values clip
+    # histogram spikes and suppress the blocking / over-enhancement artifacts.
     counts = hist.sum(axis=-1, keepdims=True)
-    clip = np.maximum(1.0, clip_frac * counts)
+    clip = clip_frac * (counts / nbins)
     excess = np.clip(hist - clip, 0.0, None).sum(axis=-1, keepdims=True)
     hist_c = np.minimum(hist, clip) + excess / nbins
 
@@ -107,23 +118,24 @@ def _clahe_channel(channel: np.ndarray, tile: int, clip_frac: float) -> np.ndarr
     # Continuous tile coordinate centred on each tile (xx/tile - 0.5).
     xf = xx / tile - 0.5
     yf = yy / tile - 0.5
-    tx0 = np.floor(xf).astype(np.int32)
-    ty0 = np.floor(yf).astype(np.int32)
+    tx0 = np.clip(np.floor(xf).astype(np.int32), 0, n_tx - 1)
+    tx1 = np.clip(tx0 + 1, 0, n_tx - 1)
+    ty0 = np.clip(np.floor(yf).astype(np.int32), 0, n_ty - 1)
+    ty1 = np.clip(ty0 + 1, 0, n_ty - 1)
     wx1 = (xf - tx0).astype(np.float64)
     wy1 = (yf - ty0).astype(np.float64)
     wx0 = 1.0 - wx1
     wy0 = 1.0 - wy1
-    tx1 = tx0 + 1
-    ty1 = ty0 + 1
-    tx0 = np.clip(tx0, 0, n_tx - 1)
-    tx1 = np.clip(tx1, 0, n_tx - 1)
-    ty0 = np.clip(ty0, 0, n_ty - 1)
-    ty1 = np.clip(ty1, 0, n_ty - 1)
 
-    # Bilinear blend of the 4 surrounding tile mapping functions, evaluated at
-    # this pixel's own intensity bin.
+    # Bilinear blend of the 4 surrounding tile mapping functions. Each tile's
+    # CDF is defined over THAT tile's [tmin,tmax] range, so a pixel's bin within
+    # a neighbour tile is recomputed against the neighbour's own range.
     def _map_at(cy: np.ndarray, cx: np.ndarray) -> np.ndarray:
-        return cdf[cy, cx, bins]  # cy,cx,bins all (H,W) → (H,W)
+        vmin = tmin[cy, cx]
+        vr = trange[cy, cx]
+        bl = np.clip(((channel - vmin) / vr * (nbins - 1)).astype(np.int32),
+                     0, nbins - 1)
+        return cdf[cy, cx, bl]  # cy,cx,bl all (H,W) → (H,W)
 
     out = (wy0 * wx0 * _map_at(ty0, tx0)
            + wy0 * wx1 * _map_at(ty0, tx1)
@@ -164,11 +176,11 @@ def _apply_clahe(img: np.ndarray, tile: int, clip_frac: float,
     outputs={"image": "IMAGE", "field": "FIELD"},
     params={
         "source": {"description": "source when no image is wired (gradient/noise/palette/rainbow/procedural/input_image)",
-                   "default": "gradient"},
+                   "default": "procedural"},
         "tile_size": {"description": "CLAHE tile edge in px — smaller = more local contrast",
                       "choices": [4, 8, 16, 32, 64], "default": 8},
-        "clip_limit": {"description": "contrast-limit fraction (0.005 subtle … 0.1 aggressive). Caps per-tile histogram gain",
-                       "min": 0.005, "max": 0.1, "default": 0.02},
+        "clip_limit": {"description": "contrast-limit multiple of the per-tile average bin count (1≈off/full equalization … higher=stronger spike limiting)",
+                       "min": 1.0, "max": 8.0, "default": 4.0},
         "strength": {"description": "blend equalized ←→ original (0=off, 1=full CLAHE)",
                      "min": 0.0, "max": 1.0, "default": 1.0},
         "view": {"description": "IMAGE render: equalized result / local 'gain' (contrast boost) field",
@@ -194,11 +206,11 @@ def method_clahe(out_dir: Path, seed: int, params=None):
     Params:
         source:     built-in source when nothing is wired (gradient/noise/palette/rainbow/procedural/input_image)
         tile_size:  CLAHE tile edge (px)
-        clip_limit: contrast-limit fraction — caps per-tile histogram gain
+        clip_limit: contrast-limit multiple of the per-tile average bin count (1≈off, higher=stronger spike limiting)
         strength:   blend equalized ←→ original
         view:       equalized image / local gain (contrast-boost) field
         time:       animation clock [0, 2pi)
-        anim_mode:  none (static) / amount_pulse (amount of CLAHE pulses with t)
+        anim_mode:  none (static) / clip_sweep (contrast limit breathes with t)
     """
     try:
         if params is None:
@@ -213,7 +225,7 @@ def method_clahe(out_dir: Path, seed: int, params=None):
         tile = int(float(params.get("tile_size", 8)))
         if tile not in (4, 8, 16, 32, 64):
             tile = 8
-        clip_limit = max(0.005, min(0.1, float(params.get("clip_limit", 0.02))))
+        clip_limit = max(1.0, min(8.0, float(params.get("clip_limit", 4.0))))
         strength = max(0.0, min(1.0, float(params.get("strength", 1.0))))
         view = str(params.get("view", "equalized"))
         noise_amp = max(0.1, min(1.0, float(params.get("noise_amp", 0.8))))
@@ -224,10 +236,11 @@ def method_clahe(out_dir: Path, seed: int, params=None):
         # ── Animation clock (rename t to avoid shadowing the time param) ──
         _t = t * anim_speed
         if anim_mode == "clip_sweep":
-            # Smoothly breathe the contrast-limit (no cusp). 0.005 … 0.1.
-            # This drives the highest-leverage CLAHE control, so the animated
-            # mode is always visibly live (never a silent no-op).
-            clip_limit = 0.005 + 0.095 * (0.5 + 0.5 * math.sin(_t * 0.4))
+            # Sweep the contrast limit across its full 1..8 range so the
+            # local-contrast strength breathes over time. Offset sine → no cusp.
+            # Makes the UI-exposed `clip_sweep` mode actually drive the output
+            # (the previous `amount_pulse` name never matched the schema choice).
+            clip_limit = 1.0 + 7.0 * (0.5 + 0.5 * math.sin(_t * 0.4))
 
         # ── Resolve canvas size (robust if no canvas context is set) ──
         Hw = int(H)
