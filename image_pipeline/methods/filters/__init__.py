@@ -32,3 +32,4 @@ from . import low_poly
 from . import bloom
 from . import non_local_means
 from . import thin_film
+from . import bokeh
