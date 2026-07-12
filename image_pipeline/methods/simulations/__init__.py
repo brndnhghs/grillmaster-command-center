@@ -88,3 +88,4 @@ from . import sand_dune_migration
 from . import space_colonization
 from . import stable_fluids
 from . import water_ripple
+from . import lattice_boltzmann
