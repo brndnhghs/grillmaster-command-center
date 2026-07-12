@@ -71,6 +71,11 @@ class ShootoutConfig:
     # recovers ~19% of the whole corpus (60 good clips) from arbitrary culling;
     # only the single 547s outlier stays culled, which is the intended behaviour.
     render_timeout_s: float = 300.0
+    # A genome is only culled as "timeout" when it captured fewer than this
+    # fraction of the frame budget. If the wall clock is hit but MOST frames
+    # already rendered with real motion, the clip is kept (marked truncated) —
+    # a slow tail frame shouldn't discard an otherwise-good dynamic clip.
+    min_render_frames_frac: float = 0.5
 
     # ── Gene pool ─────────────────────────────────────────────────
     # client_3d renders in the browser (no server-side cook), ml_models are

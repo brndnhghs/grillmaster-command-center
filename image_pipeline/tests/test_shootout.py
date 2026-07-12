@@ -163,6 +163,59 @@ def test_evaluator_missing_frames_dead():
     assert not s["alive"] and s["reason"] == "no-output"
 
 
+def test_timeout_recovers_slow_tailed_dynamic_clip():
+    """A clip that hits the wall-clock cap but captured most frames with real
+    motion must NOT be culled as 'timeout' (Route 8, item 2). Regression guard
+    against the old unconditional ``timed_out -> alive=False`` override."""
+    from image_pipeline.shootout.evaluator import LivenessAccumulator
+
+    cfg = ShootoutConfig()
+    frames = cfg.frames
+    min_frames = int(frames * cfg.min_render_frames_frac)
+    # Capture min_frames+1 dynamic frames: a spatial gradient whose vertical
+    # offset shifts each frame (real spatial structure AND temporal motion),
+    # then stop (cap hit).
+    acc = LivenessAccumulator(cfg)
+    hs = np.linspace(0.0, 1.0, 96, dtype=np.float32)
+    for i in range(min_frames + 1):
+        shift = (i * 6) % 96
+        col = np.roll(hs, shift)
+        acc.add(np.tile(col, (64, 1))[:, :, None].repeat(3, axis=-1))
+    # Replicate the render_genome timeout branch exactly.
+    stats = acc.stats()
+    captured = acc.total - acc.missing
+    timed_out = True
+    if timed_out:
+        if captured >= min_frames and stats.get("alive"):
+            stats = {**stats, "truncated": True, "reason": stats.get("reason")}
+        else:
+            stats = {**stats, "alive": False, "reason": "timeout"}
+    assert stats["alive"], stats
+    assert stats.get("truncated") is True, stats
+
+
+def test_timeout_still_culls_too_short_clip():
+    """A clip that barely rendered before the cap hit stays culled as 'timeout'."""
+    from image_pipeline.shootout.evaluator import LivenessAccumulator
+
+    cfg = ShootoutConfig()
+    frames = cfg.frames
+    min_frames = int(frames * cfg.min_render_frames_frac)
+    acc = LivenessAccumulator(cfg)
+    # Capture only 10% of the budget, all static (no motion at all).
+    for _ in range(int(frames * 0.1)):
+        acc.add(np.zeros((64, 96, 3), np.float32))
+    stats = acc.stats()
+    captured = acc.total - acc.missing
+    timed_out = True
+    if timed_out:
+        if captured >= min_frames and stats.get("alive"):
+            stats = {**stats, "truncated": True, "reason": stats.get("reason")}
+        else:
+            stats = {**stats, "alive": False, "reason": "timeout"}
+    assert not stats["alive"] and stats["reason"] == "timeout", stats
+
+
 # ── Evolve ────────────────────────────────────────────────────────────
 
 

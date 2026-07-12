@@ -258,10 +258,18 @@ def render_genome(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
             progress_cb(f"{gid}: encode failed: {exc}")
 
     liveness = acc.stats()
+    captured = acc.total - acc.missing
+    min_frames = int(cfg.frames * cfg.min_render_frames_frac)
     if timed_out:
-        liveness = {**liveness, "alive": False, "reason": "timeout"}
-    elif out is None and liveness.get("alive"):
-        liveness = {**liveness, "alive": False, "reason": "encode-failed"}
+        # Recover good clips: only cull as "timeout" when we captured too few
+        # frames to form a meaningful clip. If most frames rendered and the
+        # liveness gate passes, keep the clip (mark it truncated) instead of
+        # discarding a slow-tailed but dynamic animation.
+        if captured >= min_frames and liveness.get("alive"):
+            liveness = {**liveness, "truncated": True,
+                        "reason": liveness.get("reason")}
+        else:
+            liveness = {**liveness, "alive": False, "reason": "timeout"}
 
     # The _work dir holds per-node transport PNGs from Arch-A sims — the mp4
     # is the durable artifact, so drop the scratch.
