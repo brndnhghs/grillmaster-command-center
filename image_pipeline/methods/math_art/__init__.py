@@ -16,3 +16,4 @@ from . import polytope_4d
 from . import domain_coloring
 from . import marching_squares_contours
 from . import fast_marching_geodesic
+from . import space_colonization
