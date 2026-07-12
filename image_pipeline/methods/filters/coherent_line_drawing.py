@@ -218,6 +218,9 @@ def method_coherent_line_drawing(out_dir: Path, seed: int, params=None):
 
         # ── Animation (rename t to avoid shadowing the time param) ──
         _t = anim_time * anim_speed
+        # Source phase is frozen in 'none' mode so the output is truly static
+        # (the detector-pulse modes below only act when anim_mode != 'none').
+        _src_t = _t if anim_mode != "none" else 0.0
         if anim_mode == "sigma_pulse":
             sigma_c = max(0.6, sigma_c * (0.35 + 1.3 * (0.5 + 0.5 * math.sin(_t * 0.3))))
         elif anim_mode == "tau_pulse":
@@ -258,8 +261,8 @@ def method_coherent_line_drawing(out_dir: Path, seed: int, params=None):
                 ], axis=-1).astype(np.float32)
             elif source == "procedural":
                 yy, xx = np.mgrid[:H, :W].astype(np.float32)
-                g = np.sin(xx * 0.03 + yy * 0.02 + _t * 0.5) * \
-                    np.cos(xx * 0.02 - yy * 0.03 + _t * 0.3) * 0.5 + 0.5
+                g = np.sin(xx * 0.03 + yy * 0.02 + _src_t * 0.5) * \
+                    np.cos(xx * 0.02 - yy * 0.03 + _src_t * 0.3) * 0.5 + 0.5
                 src = np.stack([g, g * 0.6, 1 - g * 0.8], axis=-1).astype(np.float32)
             else:  # noise / input_image fallback
                 n = rng.standard_normal((H, W, 3)).astype(np.float32) * noise_amp + 0.5
