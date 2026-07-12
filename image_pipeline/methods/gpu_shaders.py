@@ -484,6 +484,13 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # (no GPU equivalent); only edge_threshold is mapped to u_params.x.
     "350": {"shader": "fxaa_gpu", "type": "filter",
             "param_map": {"edge_threshold": "p1"}},
+    # 422 Palette Posterize → new twin (ordered-Bayer preview). levels p1,
+    # dither_scale p2. The CPU node does median-cut + Floyd-Steinberg + CIELAB
+    # (serial/perceptual steps with no per-pixel GPU equivalent), so the twin
+    # renders the ORDERED dither path and the CPU fn stays authoritative.
+    # `use_lab`/`palette`/`dither` are string choices (pitfall #14), unmapped.
+    "422": {"shader": "dither_palette_gpu", "type": "filter",
+            "param_map": {"levels": "p1", "dither_scale": "p2"}},
     # ── P0.5 LUT / color ──
     # 11 Gradient: cx/cy are already in [0,1] so they map cleanly onto the
     # twin's center params (0.5 = middle). `direction` (0-360°) and

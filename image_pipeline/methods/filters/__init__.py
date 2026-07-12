@@ -34,3 +34,4 @@ from . import bloom
 from . import non_local_means
 from . import thin_film
 from . import bokeh
+from . import palette_posterize
