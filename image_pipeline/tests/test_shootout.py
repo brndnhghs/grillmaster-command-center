@@ -874,6 +874,75 @@ def test_next_generation_tags_deviations():
     assert "explorer" in kinds          # fresh randoms always present
 
 
+def test_no_verbatim_survivors():
+    """Critique 1: a top-rated genome must NOT roll over unchanged into the
+    next generation. Every bred offspring is a new star-weighted variation,
+    never the same genome_id carried forward verbatim (elitism removed)."""
+    from image_pipeline.shootout import evolve, config as cfg_mod
+
+    # Cross-breed roll off so every child is a single/multi-parent variation.
+    cfg = cfg_mod.ShootoutConfig()
+    cfg.cross_breed_probability = 0.0
+    rng = random.Random(101)
+    parents = _rated_generation(rng, [5, 4])[:2]
+    for i, p in enumerate(parents):
+        p["rating"] = 5
+        p["genome_id"] = f"elite-par{i}"
+    kids = evolve.next_generation(parents, 1, POOL, cfg, rng)
+    assert kids
+    parent_ids = {p["genome_id"] for p in parents}
+    for k in kids:
+        assert k["genome_id"] not in parent_ids, \
+            "elite genome rolled over unchanged"
+
+
+def test_cross_breed_probability_tracks_setting():
+    """Critique 2: cross_breed_probability sets the realized fraction of
+    offspring that blend TWO parents; raising it yields more crossovers.
+    Retrying incompatible pairs keeps the rate from silently decaying."""
+    from image_pipeline.shootout import evolve, config as cfg_mod
+
+    def crossover_fraction(prob: float, seed: int, n_gen: int = 24) -> float:
+        cfg = cfg_mod.ShootoutConfig()
+        cfg.cross_breed_probability = prob
+        rng = random.Random(seed)
+        parents = _rated_generation(rng, [5, 4])[:2]
+        for i, p in enumerate(parents):
+            p["rating"] = 5
+            p["genome_id"] = f"cb-par{i}-{seed}"
+        total = bred = 0
+        for _ in range(n_gen):
+            for k in evolve.next_generation(parents, 1, POOL, cfg, rng):
+                if k["origin"] in ("mutation", "crossover"):
+                    bred += 1
+                    if k["origin"] == "crossover":
+                        total += 1
+        return total / bred if bred else 0.0
+
+    lo = crossover_fraction(0.1, 200)
+    hi = crossover_fraction(0.9, 200)
+    assert hi > lo + 0.3, f"cross-breed rate didn't track setting: {lo:.2f} vs {hi:.2f}"
+
+
+def test_parent_selection_power_sharpens():
+    """Critique 1 (mechanism): higher parent_selection_power makes 5★ parents
+    dominate the breeding pool more than 2★ ones (star-weighted, no verbatim
+    carry-over)."""
+    from image_pipeline.shootout import evolve, config as cfg_mod
+
+    def p5_share(power: float) -> float:
+        cfg = cfg_mod.ShootoutConfig()
+        cfg.parent_selection_power = power
+        rng = random.Random(303)
+        parents, weights = evolve.select_parents(_rated_generation(rng, [5, 2]), cfg)
+        wi = dict(zip((p["genome_id"] for p in parents), weights))
+        p5 = next(p for p in parents if p["rating"] == 5)
+        p2 = next(p for p in parents if p["rating"] == 2)
+        return wi[p5["genome_id"]] / (wi[p5["genome_id"]] + wi[p2["genome_id"]])
+
+    assert p5_share(3.0) > p5_share(1.0), "power didn't sharpen star weighting"
+
+
 def test_survivor_view_carries_explainer_fields():
     from image_pipeline.shootout import session as sess, describe as d
     rng = random.Random(79)

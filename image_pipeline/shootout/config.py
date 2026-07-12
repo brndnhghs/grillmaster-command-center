@@ -41,8 +41,17 @@ class ShootoutConfig:
 
     # ── Evolution ─────────────────────────────────────────────────
     explore_ratio: float = 0.45     # fraction of each bred generation that is fresh randoms
-    elitism: int = 1               # top-rated genomes carried forward unmutated
-    crossover_ratio: float = 0.4   # of the bred (non-explore) slots, fraction via crossover
+    # cross_breed_probability: chance a bred offspring blends TWO distinct
+    # rated parents together (true cross-breeding of winning graphs); the rest
+    # are variations on a single parent. Retried across pairs so the realized
+    # rate tracks this setting instead of silently degrading to a mutation.
+    cross_breed_probability: float = 0.4
+    # parent_selection_power: how sharply star ratings favor top clips as
+    # breeding parents. weight = (rating/5)**power, so power=2 means a 5★
+    # parent is ~6× more likely to be sampled than a 2★ parent. (Replaces the
+    # old elitism carry-over: there are no verbatim survivors, only star-
+    # weighted variations on the winning forms.)
+    parent_selection_power: float = 2.0
     mutations_per_offspring: tuple[int, int] = (1, 2)  # inclusive range
     param_jitter_sigma: float = 0.15   # gaussian sigma as fraction of param range
     min_divergence: float = 0.3        # breeder aims for this graph-distance (0..1) from the parent
@@ -179,8 +188,8 @@ TUNABLE_FIELDS: dict[str, tuple[str, float | None, float | None]] = {
     "p_drive_primary":   ("Chance a node gets one animated control-node driver (motif grammar)", 0.0, 1.0),
     "p_drive_secondary": ("Chance a node gets a second driver once it has one (motif grammar)", 0.0, 1.0),
     "explore_ratio":     ("Fraction of each bred generation that is fresh random graphs (keeps variety)", 0.0, 1.0),
-    "elitism":           ("Top-rated clips carried into the next round unchanged", 0, 3),
-    "crossover_ratio":   ("Of bred offspring, fraction made by splicing two parents (rest are mutations)", 0.0, 1.0),
+    "cross_breed_probability": ("Chance a bred offspring blends two rated parents together (rest are variations on one parent)", 0.0, 1.0),
+    "parent_selection_power": ("How strongly star ratings favor top clips as breeding parents (higher = 5★ dominates; 1 = linear by stars)", 1.0, 6.0),
     "mutations_per_offspring": ("Mutation ops per bred offspring (1–2 = subtle, higher = wilder evolutions)", 0, 5),
     "param_jitter_sigma": ("Mutation strength — fraction of each param's range a tweak can move (higher = more extreme)", 0.0, 1.0),
     "min_divergence":   ("Bred offspring must differ from the parent by at least this graph-distance (0..1); the breeder escalates mutation until it does (higher = more extreme evolutions)", 0.0, 1.0),

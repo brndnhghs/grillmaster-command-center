@@ -529,11 +529,15 @@ def crossover(parent_a: dict, parent_b: dict, pool: GenePool,
 
 
 def select_parents(rated: list[dict], cfg: ShootoutConfig) -> tuple[list[dict], list[float]]:
-    """Rating-weighted parent pool (4–5★ dominate; below threshold never breed)."""
+    """Rating-weighted parent pool (top stars dominate; below threshold never breed).
+
+    weight = (rating/5)**cfg.parent_selection_power, so a higher power sharpens
+    preference for the winning forms without ever carrying a clip forward verbatim.
+    """
     parents = [g for g in rated
                if isinstance(g.get("rating"), (int, float))
                and g["rating"] >= cfg.min_rating_to_parent]
-    weights = [(g["rating"] / 5.0) ** 2 for g in parents]
+    weights = [(g["rating"] / 5.0) ** cfg.parent_selection_power for g in parents]
     return parents, weights
 
 
@@ -564,15 +568,26 @@ def next_generation(rated: list[dict], generation: int,
     out: list[dict] = []
     while len(out) < n_total - n_explore:
         child = None
-        if len(parents) >= 2 and rng.random() < cfg.crossover_ratio:
-            pa, pb = rng.choices(parents, weights=weights, k=2)
-            if pa is pb:
-                pb = rng.choices(parents, weights=weights, k=1)[0]
-            if pa["genome_id"] in protect:   # protected structure: no splicing
-                child = mutate(pa, pool, cfg, rng, generation, gentle=True)
-            else:
+        # Cross-breed: blend TWO distinct rated parents (winning graphs bred
+        # together) with probability cfg.cross_breed_probability. Retry with
+        # fresh pairs so the realized cross-breed rate tracks the setting
+        # instead of silently degrading to a single-parent mutation when a
+        # given splice happens to be incompatible.
+        if len(parents) >= 2 and rng.random() < cfg.cross_breed_probability:
+            for _ in range(3):
+                pa, pb = rng.choices(parents, weights=weights, k=2)
+                if pa is pb:
+                    pb = rng.choices(parents, weights=weights, k=1)[0]
+                if pa["genome_id"] in protect:   # protected structure: vary, don't splice
+                    child = mutate(pa, pool, cfg, rng, generation, gentle=True)
+                    break
                 child = crossover(pa, pb, pool, cfg, rng, generation)
+                if child is not None:
+                    break
+            # child stays None only if no compatible cross existed across tries
         if child is None and parents:
+            # single-parent variation (also the fallback when cross-breeding
+            # is impossible with the current parent set)
             parent = rng.choices(parents, weights=weights, k=1)[0]
             child = mutate(parent, pool, cfg, rng, generation,
                            gentle=parent["genome_id"] in protect)

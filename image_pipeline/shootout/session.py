@@ -150,7 +150,6 @@ def _run_generation_locked(session_id, cfg, progress_cb, rng) -> dict:
     pool = build_gene_pool(cfg)
     gen_index = len(session["generations"])
 
-    elites: list[dict] = []
     guidance: dict | None = None
     explorer_bias = None
     if gen_index == 0:
@@ -174,18 +173,16 @@ def _run_generation_locked(session_id, cfg, progress_cb, rng) -> dict:
             else:
                 _p("advisor: no usable guidance — breeding on stars only")
 
-        # Elitism: the top-rated genome survives unmutated, mp4 already on
-        # disk — no re-render (plan §8). Advisor drop-list overrides stars.
+        # No verbatim survivors (critique 1): the shootout keeps no survivors
+        # between generations — every bred offspring is a star-weighted
+        # variation on the winning forms, nothing rolls forward unchanged.
+        # The advisor drop-list still skips clips flagged as dead ends.
         dropped = set((guidance or {}).get("drop_genomes") or [])
-        rated_only = [g for g in rated if isinstance(g.get("rating"), (int, float))
-                      and g["genome_id"] not in dropped]
-        rated_only.sort(key=lambda g: g["rating"], reverse=True)
-        for g in rated_only[:cfg.elitism]:
-            if g["rating"] >= 4 and (g.get("liveness") or {}).get("alive"):
-                elites.append(g)
-        _p(f"▶ gen {gen_index} · {len(rated_only)} rated parent(s) "
-           f"({len(dropped)} dropped by advisor)"
-           + (f", carrying {len(elites)} elite unchanged" if elites else ""))
+        n_parents = sum(1 for g in rated
+                        if isinstance(g.get("rating"), (int, float))
+                        and g["genome_id"] not in dropped)
+        _p(f"▶ gen {gen_index} · {n_parents} rated parent(s) "
+           f"({len(dropped)} dropped by advisor)")
         candidates = next_generation(rated, gen_index, pool, cfg, rng, guidance)
         if guidance:
             from .advisor import bias_from_guidance
@@ -210,7 +207,7 @@ def _run_generation_locked(session_id, cfg, progress_cb, rng) -> dict:
     max_total = cfg.render_pool * cfg.max_attempts_factor
     batch = candidates
     all_rendered: list[dict] = []
-    need = cfg.show_n - len(elites)
+    need = cfg.show_n
     # Rebuild the empirical cost model from the corpus so this generation's
     # gate reflects timings logged by every prior render.
     _cm = refresh_cost_model()
@@ -278,7 +275,7 @@ def _run_generation_locked(session_id, cfg, progress_cb, rng) -> dict:
             g["generation"] = gen_index
             batch.append(g)
 
-    survivors = elites + alive[:need]
+    survivors = alive[:need]
     if len(survivors) < cfg.show_n:
         _p(f"⚠ only {len(survivors)} alive clip(s) after {rendered_total} renders "
            f"(wanted {cfg.show_n})")
@@ -331,14 +328,13 @@ def _run_generation_locked(session_id, cfg, progress_cb, rng) -> dict:
         "gen": gen_index,
         "shown": [g["genome_id"] for g in survivors],
         "pool": [g["genome_id"] for g in all_rendered],
-        "ratings": {g["genome_id"]: g["rating"] for g in elites},  # carry elite stars
+        "ratings": {},
         "notes": {},
-        # elites were already logged to the dataset in their birth generation
-        "rated_logged": [g["genome_id"] for g in elites],
+        "rated_logged": [],
         "guidance": guidance,   # what the advisor derived from last gen's notes
         "utilization": audit,   # phase 2: gene-pool coverage of this generation
         "rendered": rendered_total,
-        "alive": len(alive) + len(elites),
+        "alive": len(alive),
         "completed_at": datetime.now(timezone.utc).isoformat(),
     })
     store.save_session(session)
