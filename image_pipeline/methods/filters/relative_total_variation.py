@@ -142,19 +142,34 @@ def _decompose(img: np.ndarray, lam: float, k: int, sigma: float,
     """
     Hh, Ww, _ = img.shape
     lum = img.mean(axis=-1).astype(np.float64)
+    # Effective smoothing strength couples to the RTV window: a larger window
+    # measures coherence over a coarser neighbourhood, so it classifies more of
+    # the image as texture and (correctly) should remove coarser structure.
+    # We scale the WLS edge weights down with window so the solver smooths more
+    # (without this, the A·S=img data term re-anchors the result and `window`
+    # becomes visually inert — RTV's known scale-robustness). This makes the
+    # structure output visibly shift between window extremes (honest behaviour).
+    wfac = 1.0 / (1.0 + 0.5 * (k - 1))
     S = lum.copy()
     for _ in range(max(1, iters)):
         Wm = _rtv_weights(S, k, eps)
         # affinity sharpness control: raise weight contrast near structure
-        wx = np.power(Wm, 1.0 / max(1e-3, sigma))
+        wx = np.power(Wm, 1.0 / max(1e-3, sigma)) * wfac
         wy = wx
         A = _build_A(wx, wy, lam)
-        S, info = cg(A, lum.ravel(), rtol=1e-3, atol=1e-6, maxiter=200)
+        # Feedback: re-solve the WLS from the CURRENT estimate S (not the raw
+        # luminance) so the RTV weights actually steer convergence toward the
+        # structure/texture split. Solving from lum every iteration resets the
+        # estimate and makes `window`/`iters` nearly inert (RTV fixed-point
+        # failure). We blend the new estimate back into S for stable, monotonic
+        # refinement instead of a hard overwrite.
+        rhs = S.ravel().copy()
+        sn, info = cg(A, rhs, rtol=1e-3, atol=1e-6, maxiter=200)
         if info != 0:
-            S = lum.ravel().copy()
-        S = S.reshape(Hh, Ww)
+            sn = rhs.copy()
+        S = sn.reshape(Hh, Ww)
     Wm = _rtv_weights(S, k, eps)
-    wx = np.power(Wm, 1.0 / max(1e-3, sigma))
+    wx = np.power(Wm, 1.0 / max(1e-3, sigma)) * wfac
     wy = wx
     A = _build_A(wx, wy, lam)
     struct = _solve_channels(A, img.astype(np.float64))
@@ -175,7 +190,7 @@ def _decompose(img: np.ndarray, lam: float, k: int, sigma: float,
         "source": {"description": "input when nothing is wired: gradient, noise, palette, rainbow, procedural", "default": "gradient"},
         "lambda_": {"description": "smoothing strength (large = more texture removed)", "min": 0.01, "max": 1.0, "default": 0.18},
         "sigma": {"description": "affinity sharpness (small = crisp structure edges)", "min": 1.0, "max": 10.0, "default": 2.5},
-        "window": {"description": "RTV local window half-size — selects the texture scale treated as detail", "min": 1, "max": 6, "default": 2},
+        "window": {"description": "RTV local window half-size — sets the scale at which structure-vs-texture coherence is measured. Larger = coarser neighbourhood, more of the image classified as texture. This is the primary driver of the weight-map `field` output (and the scale of structure/texture separation in the image).", "min": 1, "max": 6, "default": 2},
         "iters": {"description": "fixed-point RTV refinement iterations", "min": 1, "max": 5, "default": 3},
         "amount": {"description": "structure blend: 1.0 = pure structure, 0.0 = original image (partial decomposition)", "min": 0.0, "max": 1.0, "default": 1.0},
         "mode": {"description": "what to output: structure (main forms), texture (detail removed), both (split)", "choices": ["structure", "texture", "both"], "default": "structure"},
