@@ -88,10 +88,20 @@ class LivenessAccumulator:
         reason = None
         if self.nan:
             reason = "nan"
-        elif spatial_var < cfg.spatial_var_min:
-            reason = "flat"
         elif temporal_var < cfg.temporal_var_min:
-            reason = "static"
+            # Not moving. If it is also spatially degenerate
+            # (near black/white/uniform) call it "flat"; otherwise it
+            # is a structured-but-frozen "static" clip.
+            reason = "flat" if spatial_var < cfg.spatial_var_min else "static"
+        elif spatial_var < cfg.spatial_var_min:
+            # Moving (passed the temporal floor above) but spatially
+            # smooth / low-contrast. Motion wins: a smooth gradient or
+            # global pulse that animates is a live clip, not a "flat"
+            # one. The old gate culled these as "flat" and threw away
+            # genuinely dynamic content (e.g. a slow brightness wipe, a
+            # smooth field advecting). Only a clip that is BOTH
+            # static AND degenerate should be called flat.
+            pass
         elif temporal_var > cfg.flicker_var_min and frame_corr < cfg.flicker_corr_max:
             reason = "flicker"
 

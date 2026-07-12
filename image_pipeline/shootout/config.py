@@ -75,7 +75,15 @@ class ShootoutConfig:
     # fraction of the frame budget. If the wall clock is hit but MOST frames
     # already rendered with real motion, the clip is kept (marked truncated) —
     # a slow tail frame shouldn't discard an otherwise-good dynamic clip.
-    min_render_frames_frac: float = 0.5
+    # Lowered from 0.5 to 0.3 (Route 8, 2026-07-12): heavy
+    # Architecture-A sims cook their first frames slowly (warmup) and hit
+    # the render_timeout_s wall ~2 frames short of the old 0.5*96=48 floor,
+    # so clearly-dynamic clips were hard-culled as "timeout" even though
+    # they captured ~40-46 animated frames. 0.3 (=29 frames @96) keeps
+    # any dynamic clip that rendered at least a ~1.2s tail. The recovery
+    # still requires temporal_var >= temporal_var_min, so a static or
+    # degenerate clip is never rescued regardless of this floor.
+    min_render_frames_frac: float = 0.3
 
     # ── Terminal variance guard (Route 8, 2026-07-12) ──
     # A cheap 2-frame tiny render probe in repair_genome guarantees the
