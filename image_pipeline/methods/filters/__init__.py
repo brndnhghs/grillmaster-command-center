@@ -39,6 +39,7 @@ from . import image_quilting
 from . import tone_mapping
 from . import rolling_shutter
 from . import lens_flare
+from . import god_rays
 from . import clahe
 from . import marbling
 from . import subsurface
