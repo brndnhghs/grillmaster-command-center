@@ -37,7 +37,7 @@ import numpy as np
 from PIL import Image
 
 from ..core.registry import method
-from ..core.utils import save, mn, W, H
+from ..core.utils import save, mn, W, H, load_input
 
 
 # ── Blender MCP socket client (self-contained, no new dependency) ──────────
@@ -116,6 +116,56 @@ def _resolve_model_path(model_path: str) -> Path:
     return p
 
 
+def _build_texture_block(texture_mode: str, texture_path: str) -> str:
+    """Return a Blender Python snippet (or '') wiring a wired IMAGE into 3D.
+
+    Honors the pipeline's Wired-Input Override pattern (skill Rule 12): when an
+    upstream 2D IMAGE is wired into this node it is brought *into* 3D.
+
+    texture_mode:
+      * ``'none'`` -> '' (no wiring)
+      * ``'decal'`` -> map the image onto the object's surface (Image Texture
+        node driven by the object's UVs).  Guarded so it only applies when a
+        ``mat``/``bsdf`` exists (i.e. the primitive path, or a model import with
+        ``apply_material=True``).
+      * ``'env'``   -> use the image as the World environment backdrop
+        (Environment Texture node).  Independent of geometry, so it works for
+        every source mode.
+    """
+    if not texture_mode or texture_mode == "none" or not texture_path:
+        return ""
+    tex = str(texture_path).replace("\\", "/")
+    if texture_mode == "decal":
+        return f'''
+# ── Wired IMAGE as object decal ──
+if 'mat' in locals() and mat is not None and hasattr(mat, 'node_tree'):
+    _img = bpy.data.images.load(r"{tex}")
+    _tn = mat.node_tree.nodes.new("ShaderNodeTexImage")
+    _tn.image = _img
+    _tn.location = (-380, 220)
+    _uv = mat.node_tree.nodes.new("ShaderNodeUVMap")
+    _uv.location = (-640, 220)
+    mat.node_tree.links.new(_uv.outputs[0], _tn.inputs[0])
+    try:
+        mat.node_tree.links.new(_tn.outputs[0], bsdf.inputs["Base Color"])
+        bsdf.inputs["Base Color"].default_value = (1.0, 1.0, 1.0, 1.0)
+    except Exception:
+        pass
+'''
+    # 'env' -> 3D environment backdrop (non-destructive: link the env texture to
+    # the world Output's Surface.  The world tree was reset earlier in the
+    # script to a clean Background+Output, so `_wn` and `_out` exist and the
+    # Background node is preserved for the next render.)
+    return f'''
+# ── Wired IMAGE as 3D environment backdrop ──
+_img = bpy.data.images.load(r"{tex}")
+_env = _wn.nodes.new("ShaderNodeTexEnvironment")
+_env.image = _img
+_env.location = (-460, 0)
+_wn.links.new(_env.outputs[0], _out.inputs["Surface"])
+'''
+
+
 def _build_model_script(  # noqa: C901
     model_path: str,
     apply_material: bool,
@@ -131,6 +181,8 @@ def _build_model_script(  # noqa: C901
     res_y: int,
     spin_deg: float,
     out_path: str,
+    texture_mode: str = "none",
+    texture_path: str = "",
 ) -> str:
     """Return a Blender Python script that imports model_path and renders it."""
     r, g, b = _hex_to_rgb01(color_hex)
@@ -141,6 +193,7 @@ def _build_model_script(  # noqa: C901
     mp = str(model_path).replace("\\", "/")
     cam_z = max(2.0, size * 3.2)
     cam_y = max(1.5, size * 1.2)
+    texture_block = _build_texture_block(texture_mode, texture_path)
 
     # Import strategy:
     #  * OBJ / STL are parsed directly in Python and turned into a mesh via
@@ -255,6 +308,16 @@ for o in list(bpy.data.objects):
 for m in list(bpy.data.materials):
     bpy.data.materials.remove(m, do_unlink=True)
 
+# ── Reset World node tree to a known state ──
+_wn = bpy.context.scene.world.node_tree
+for _n in list(_wn.nodes):
+    _wn.nodes.remove(_n)
+_bg = _wn.nodes.new("ShaderNodeBackground")
+_bg.location = (-200, 0)
+_out = _wn.nodes.new("ShaderNodeOutputWorld")
+_out.location = (200, 0)
+_wn.links.new(_bg.outputs[0], _out.inputs["Surface"])
+
 # ── Import model ──
 mp = r"{mp}"
 {import_block}
@@ -289,6 +352,7 @@ for o in imported:
 
 # Apply the node's PBR material to every imported mesh when requested.
 {material_block}
+
 # NOTE: we rotate the imported mesh about Y (see the normalize loop above) so
 # the animation is visible.  A Z-camera-orbit would be invisible for
 # Z-symmetric models, so mesh Y-rotation is the correct strategy.
@@ -315,6 +379,11 @@ if cam is not None:
 
 # ── World / background ──
 bpy.context.scene.world.node_tree.nodes["Background"].inputs[0].default_value = ({br}, {bg}, {bb}, 1.0)
+
+# ── Wired IMAGE into 3D (decal on this mesh / env backdrop) ──
+# Runs after the material + world are set, so the 'env' branch may safely wipe
+# and rebuild the World node tree without breaking the Background lookup above.
+{texture_block}
 
 # ── Render settings ──
 scn = bpy.context.scene
@@ -376,6 +445,8 @@ def _build_scene_script(
     res_y: int,
     spin_deg: float,
     out_path: str,
+    texture_mode: str = "none",
+    texture_path: str = "",
 ) -> str:
     """Return a Blender Python script (as a string) that renders to out_path."""
     ctor = _SHAPE_CTOR.get(shape, _SHAPE_CTOR["torus"])
@@ -386,6 +457,7 @@ def _build_scene_script(
     spin = float(spin_deg)
     cam_z = max(2.0, size * 3.2)
     cam_y = max(1.5, size * 1.2)
+    texture_block = _build_texture_block(texture_mode, texture_path)
 
     # The Blender MCP exec context does not expose bpy.context.active_object,
     # so we create then fetch the single object of each type by iterating
@@ -400,6 +472,20 @@ for o in list(bpy.data.objects):
         bpy.data.objects.remove(o, do_unlink=True)
 for m in list(bpy.data.materials):
     bpy.data.materials.remove(m, do_unlink=True)
+
+# ── Reset World node tree to a known state ──
+# Blender's world tree is *persistent* across renders in the same session, so a
+# previous (e.g. 'env') render could leave it mutated.  Rebuild it deterministically
+# to a clean Background + OutputWorld every time, and surface handles for the
+# wired-image 'env' backdrop branch.
+_wn = bpy.context.scene.world.node_tree
+for _n in list(_wn.nodes):
+    _wn.nodes.remove(_n)
+_bg = _wn.nodes.new("ShaderNodeBackground")
+_bg.location = (-200, 0)
+_out = _wn.nodes.new("ShaderNodeOutputWorld")
+_out.location = (200, 0)
+_wn.links.new(_bg.outputs[0], _out.inputs["Surface"])
 
 # ── Mesh ──
 {ctor.format(size=size)}
@@ -451,6 +537,11 @@ if cam is not None:
 # ── World / background ──
 bpy.context.scene.world.node_tree.nodes["Background"].inputs[0].default_value = ({br}, {bg}, {bb}, 1.0)
 
+# ── Wired IMAGE into 3D (decal on this mesh / env backdrop) ──
+# Runs after the material + world are set, so the 'env' branch may safely wipe
+# and rebuild the World node tree without breaking the Background lookup above.
+{texture_block}
+
 # ── Render settings ──
 scn = bpy.context.scene
 scn.render.engine = "{eng}"
@@ -478,7 +569,7 @@ print("BLENDER_RENDER_DONE path=%s exists=%s" % (r"{out_path}", os.path.exists(r
     new_image_contract=True,
     # Spin > 0 makes output depend on the frame → re-cook each frame.
     is_time_varying=True,
-    inputs={},  # source node — no image_in port
+    inputs={"image_in": "IMAGE"},  # optional wire — a 2D IMAGE maps into 3D
     outputs={"image": "IMAGE", "field": "FIELD"},
     params={
         "source": {
@@ -550,6 +641,16 @@ print("BLENDER_RENDER_DONE path=%s exists=%s" % (r"{out_path}", os.path.exists(r
             "description": "mesh Y-rotation per frame in degrees (0 = static)",
             "min": 0.0, "max": 60.0, "default": 0.0,
         },
+        "texture_mode": {
+            "description": (
+                "how a wired upstream IMAGE is brought into 3D: "
+                "'decal' maps it onto the object surface (UVs), "
+                "'env' uses it as a 3D environment backdrop, "
+                "'none' ignores the wire"
+            ),
+            "default": "none",
+            "choices": ["none", "decal", "env"],
+        },
     },
 )
 def method_blender_render(out_dir: Path, seed: int, params=None):
@@ -575,12 +676,31 @@ def method_blender_render(out_dir: Path, seed: int, params=None):
     engine = str(params.get("engine", "cycles"))
     samples = int(params.get("samples", 64))
     spin_speed = float(params.get("spin_speed", 0.0))
+    texture_mode = str(params.get("texture_mode", "none"))
+
+    cw, ch = int(W), int(H)
+
+    # ── Wired IMAGE override (skill Rule 12) ──
+    # If an upstream IMAGE is wired in, save it to a PNG and bring it into 3D
+    # via texture_mode. We ALWAYS honor the wire over the solid-color material
+    # path. When no image is wired, texture_mode stays 'none' and the node
+    # renders its normal procedural scene.
+    wired_input_path = str(params.get("input_image", ""))
+    texture_path = ""
+    if wired_input_path:
+        try:
+            img_arr = load_input(wired_input_path, cw, ch)
+            tmp_tx = Path(tempfile.mkdtemp(prefix="blender_tx_")) / "_wired_input.png"
+            Image.fromarray((img_arr * 255).astype(np.uint8), "RGB").save(str(tmp_tx))
+            texture_path = str(tmp_tx)
+            if texture_mode == "none":
+                texture_mode = "decal"  # sensible default when wired
+        except (FileNotFoundError, OSError, ValueError):
+            texture_path = ""  # fall through to normal procedural render
 
     # Injected timeline frame (executor sets params["frame"] per frame).
     frame = int(params.get("frame", 0))
     spin_deg = spin_speed * frame
-
-    cw, ch = int(W), int(H)
 
     if source == "model_file":
         if not model_path:
@@ -609,6 +729,8 @@ def method_blender_render(out_dir: Path, seed: int, params=None):
                 res_y=ch,
                 spin_deg=spin_deg,
                 out_path=str(out_png),
+                texture_mode=texture_mode,
+                texture_path=texture_path,
             )
             reply = _blender_exec(script, timeout=180.0)
             status = reply.get("status")
@@ -644,6 +766,8 @@ def method_blender_render(out_dir: Path, seed: int, params=None):
             res_y=ch,
             spin_deg=spin_deg,
             out_path=str(out_png),
+            texture_mode=texture_mode,
+            texture_path=texture_path,
         )
         reply = _blender_exec(script, timeout=120.0)
         status = reply.get("status")

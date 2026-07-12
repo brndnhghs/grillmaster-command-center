@@ -30,6 +30,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from PIL import Image
 
 from image_pipeline.methods.blender_render import method_blender_render, _BLENDER_HOST, _BLENDER_PORT
 
@@ -238,3 +239,68 @@ def test_model_file_unsupported_extension_raises():
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
         shutil.rmtree(bad.parent, ignore_errors=True)
+
+
+# ── Wired IMAGE → 3D (skill Rule 12: upstream image always overrides) ──────
+
+def _write_test_image(path: Path, pattern: str = "checker") -> None:
+    """Write a small, high-contrast PNG so the wired decal/env is clearly visible."""
+    arr = np.zeros((64, 64, 3), dtype=np.float32)
+    if pattern == "checker":
+        for y in range(64):
+            for x in range(64):
+                v = 1.0 if ((x // 8) + (y // 8)) % 2 == 0 else 0.0
+                arr[y, x] = (v, 1.0 - v, v)
+    elif pattern == "gradient":
+        for y in range(64):
+            for x in range(64):
+                arr[y, x] = (x / 64.0, y / 64.0, 0.5 + 0.5 * ((x + y) / 128.0))
+    Image.fromarray((arr * 255).astype(np.uint8), "RGB").save(str(path))
+
+
+def test_wired_image_as_decal_changes_render():
+    """A wired IMAGE mapped as a 'decal' must visibly change the 3D render.
+
+    Proves the Wired-Input Override pattern reaches pixels: with no wire the
+    torus is the node's solid ``color``; with a high-contrast checker wired in
+    and ``texture_mode='decal'`` the surface shows the checker pattern, so the
+    two renders must differ by a clear margin.
+    """
+    tmp = Path(tempfile.mkdtemp(prefix="blender_decal_"))
+    tx = Path(tempfile.mkdtemp(prefix="blender_decal_tx_")) / "tex.png"
+    _write_test_image(tx, "checker")
+    try:
+        plain = _run(tmp, shape="cube", frame=0, color="#4a9eff")
+        wired = _run(
+            tmp, shape="cube", frame=0, color="#4a9eff",
+            texture_mode="decal", input_image=str(tx),
+        )
+        delta = float(np.mean(np.abs(wired["image"] - plain["image"])))
+        assert delta > 0.02, f"wired decal had no visible effect (Δ={delta})"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+        shutil.rmtree(tx.parent, ignore_errors=True)
+
+
+def test_wired_image_as_env_backdrop_changes_render():
+    """A wired IMAGE used as a 3D 'env' backdrop must change the background.
+
+    Independent of geometry, so it must also work for the default primitive
+    path.  The wired gradient backdrop differs from the solid ``bg_color``.
+    """
+    tmp = Path(tempfile.mkdtemp(prefix="blender_env_"))
+    tx = Path(tempfile.mkdtemp(prefix="blender_env_tx_")) / "tex.png"
+    _write_test_image(tx, "gradient")
+    try:
+        plain = _run(tmp, shape="torus", frame=0, bg_color="#0a0e18")
+        wired = _run(
+            tmp, shape="torus", frame=0, bg_color="#0a0e18",
+            texture_mode="env", input_image=str(tx),
+        )
+        delta = float(np.mean(np.abs(wired["image"] - plain["image"])))
+        assert delta > 0.01, f"wired env backdrop had no visible effect (Δ={delta})"
+        # The wired render must not be blank.
+        assert wired["image"].std() > 0.02
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+        shutil.rmtree(tx.parent, ignore_errors=True)
