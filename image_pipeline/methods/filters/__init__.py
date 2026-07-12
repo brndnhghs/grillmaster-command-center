@@ -44,3 +44,4 @@ from . import marbling
 from . import subsurface
 from . import gabor_filter
 from . import droste
+from . import diffraction
