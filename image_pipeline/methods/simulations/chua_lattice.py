@@ -15,12 +15,14 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 from ...core.registry import method
-from ...core.utils import save, mn, seed_all, W, H
+from ...core.utils import save, mn, seed_all, W, H, wired_source_lum
 from ...core.animation import capture_frame
 
 @method(id="150", name="FPU Chain Lattice", category="simulations",
         tags=["fpu", "nonlinear", "recurrence", "lattice"], timeout=600,
+        inputs={"image_in": "IMAGE"},
         params={
+            "source": {"description": "initial-condition seed: random patches or the wired upstream image's luminance", "choices": ["random", "input_image"], "default": "random"},
             "k2": {"min": 0.1, "max": 5.0, "default": 1.0, "description": "Linear spring constant"},
             "k3": {"min": 0.0, "max": 2.0, "default": 0.5, "description": "Cubic (α-FPU) nonlinearity"},
             "k4": {"min": 0.0, "max": 2.0, "default": 0.3, "description": "Quartic (β-FPU) nonlinearity"},
@@ -45,32 +47,41 @@ def fpu_lattice(out_dir, seed, params=None):
     v = np.zeros((sh, sw), dtype=np.float64)
     yy, xx = np.mgrid[:sh, :sw]
 
-    if mode == "waves":
-        for mx in range(1, 4):
-            for my in range(1, 4):
-                amp = rng.uniform(0.1, 0.4)
-                px = rng.uniform(0, 2 * math.pi)
-                py = rng.uniform(0, 2 * math.pi)
-                u += amp * np.sin(mx * math.pi * xx / sw + px) * np.sin(my * math.pi * yy / sh + py)
-                v += amp * 0.5 * np.cos(mx * math.pi * xx / sw + px) * np.cos(my * math.pi * yy / sh + py)
-    elif mode == "impulse":
-        cx, cy = sw // 2, sh // 2
-        r2 = (xx - cx)**2 + (yy - cy)**2
-        u = 2.0 * np.exp(-r2 / (2 * (max(sw, sh) * 0.05)**2))
-        v = np.zeros_like(u)
-    elif mode == "random":
-        u = rng.normal(0, 0.5, (sh, sw))
-        v = rng.normal(0, 0.3, (sh, sw))
-    elif mode == "checker":
-        u = 0.5 * np.sin(4 * math.pi * xx / sw) * np.sin(4 * math.pi * yy / sh)
-        v = 0.3 * np.cos(4 * math.pi * xx / sw) * np.cos(4 * math.pi * yy / sh)
-    elif mode == "vortex":
-        dx = xx - sw / 2
-        dy = yy - sh / 2
-        theta = np.arctan2(dy, dx)
-        r = np.sqrt(dx**2 + dy**2)
-        u = 0.5 * np.sin(3 * theta) * np.exp(-r / (max(sw, sh) * 0.3))
-        v = 0.3 * np.cos(3 * theta) * np.exp(-r / (max(sw, sh) * 0.3))
+    # Seed from a wired upstream image's luminance when source == "input_image"
+    src_lum = None
+    if str(params.get("source", "random")) == "input_image":
+        src_lum = wired_source_lum(params, sw, sh)
+    if src_lum is not None:
+        u = np.clip(src_lum.astype(np.float64), 0.0, None)
+        print("  Seeded u from wired input image luminance")
+    else:
+
+        if mode == "waves":
+            for mx in range(1, 4):
+                for my in range(1, 4):
+                    amp = rng.uniform(0.1, 0.4)
+                    px = rng.uniform(0, 2 * math.pi)
+                    py = rng.uniform(0, 2 * math.pi)
+                    u += amp * np.sin(mx * math.pi * xx / sw + px) * np.sin(my * math.pi * yy / sh + py)
+                    v += amp * 0.5 * np.cos(mx * math.pi * xx / sw + px) * np.cos(my * math.pi * yy / sh + py)
+        elif mode == "impulse":
+            cx, cy = sw // 2, sh // 2
+            r2 = (xx - cx)**2 + (yy - cy)**2
+            u = 2.0 * np.exp(-r2 / (2 * (max(sw, sh) * 0.05)**2))
+            v = np.zeros_like(u)
+        elif mode == "random":
+            u = rng.normal(0, 0.5, (sh, sw))
+            v = rng.normal(0, 0.3, (sh, sw))
+        elif mode == "checker":
+            u = 0.5 * np.sin(4 * math.pi * xx / sw) * np.sin(4 * math.pi * yy / sh)
+            v = 0.3 * np.cos(4 * math.pi * xx / sw) * np.cos(4 * math.pi * yy / sh)
+        elif mode == "vortex":
+            dx = xx - sw / 2
+            dy = yy - sh / 2
+            theta = np.arctan2(dy, dx)
+            r = np.sqrt(dx**2 + dy**2)
+            u = 0.5 * np.sin(3 * theta) * np.exp(-r / (max(sw, sh) * 0.3))
+            v = 0.3 * np.cos(3 * theta) * np.exp(-r / (max(sw, sh) * 0.3))
 
     def acceleration(u):
         dxp = np.roll(u, -1, 1) - u

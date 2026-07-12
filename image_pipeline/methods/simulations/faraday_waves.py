@@ -38,7 +38,7 @@ import numpy as np
 from PIL import Image, ImageFilter
 
 from ...core.registry import method
-from ...core.utils import save, mn, seed_all, W, H
+from ...core.utils import save, mn, seed_all, W, H, wired_source_lum
 from ...core.animation import capture_frame
 
 
@@ -124,7 +124,9 @@ def _render_velocity(h: np.ndarray, v: np.ndarray,
     tags=["animation", "waves", "parametric", "patterns",
            "standing-waves", "instability", "resonance"],
     timeout=300,
+    inputs={"image_in": "IMAGE"},
     params={
+        "source": {"description": "initial-condition seed: random patches or the wired upstream image's luminance", "choices": ["random", "input_image"], "default": "random"},
         "anim_mode": {
             "description": "driving / evolution mode",
             "choices": ["evolve", "sweep", "pulse", "chaos", "drift"],
@@ -214,6 +216,15 @@ def method_faraday_waves(out_dir: Path, seed: int, params=None):
         h += up * (0.5 / _scale)
     h *= 0.5  # total amplitude ~0.25
     v = np.zeros((sh, sw), dtype=np.float64)  # zero initial velocity
+
+    # Seed from a wired upstream image's luminance when source == "input_image"
+    # (seeds the height field h, the active pattern variable; v is velocity)
+    src_lum = None
+    if str(params.get("source", "random")) == "input_image":
+        src_lum = wired_source_lum(params, sw, sh)
+    if src_lum is not None:
+        h = np.clip(src_lum.astype(np.float64) * 2.0 - 1.0, -2.0, 2.0)
+        print("  Seeded initial h from wired input image luminance")
 
     # ── Spatially-varying omega for drift mode ──
     omega_map = None

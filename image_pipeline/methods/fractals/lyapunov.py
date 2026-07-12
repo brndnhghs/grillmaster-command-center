@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES
+from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES, wired_source_lum
 from ...core.animation import capture_frame
 
 # ── Optional libraries ──
@@ -30,7 +30,10 @@ def _render_flame_preview(density, colors, h, w):
     return result
 
 @method(id="69", name="Lyapunov Fractal", category="fractals", tags=["classic", "expanded", "animation"],
+         inputs={"image_in": "IMAGE"},
          params={
+    "source": {"description": "seed the primary scalar field (r-parameter grid) from the wired image's luminance", "choices": ["none", "input_image"], "default": "none"},
+    "seed_strength": {"description": "blend weight between the procedural r-grid and the wired luminance field", "min": 0.0, "max": 1.0, "default": 0.6},
     "sequence": {"description": "A/B perturbation pattern (A/B string)", "default": "ABABABAB"},
     "warmup": {"description": "warmup iterations before measuring", "min": 10, "max": 500, "default": 80},
     "measure": {"description": "iterations used for lyapunov sum", "min": 10, "max": 500, "default": 80},
@@ -157,6 +160,13 @@ def method_lyapunov(out_dir: Path, seed: int, params=None):
                      r2_max if r2_max is not None else r_max,
                      H, dtype=np.float64)
     ra_grid, rb_grid = np.meshgrid(ra, rb)
+
+    if str(params.get("source", "none")) == "input_image":
+        lum = wired_source_lum(params, W, H)
+        if lum is not None:
+            sst = float(params.get("seed_strength", 0.6))
+            ra_grid = (1.0 - sst) * ra_grid + sst * (lum * (r_max - r_min) + r_min)
+            rb_grid = (1.0 - sst) * rb_grid + sst * (lum * (r_max - r_min) + r_min)
 
     # Resolve A/B from sequence
     seq = [1.0 if c == 'A' else 0.0 for c in seq_str.upper()]

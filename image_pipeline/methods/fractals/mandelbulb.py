@@ -9,6 +9,7 @@ from PIL import Image
 from ...core.registry import method
 from ...core.utils import (
     save, mn, seed_all, write_field, write_mask, write_scalars, W, H, PALETTES,
+    wired_source_lum,
 )
 from ...core.animation import capture_frame
 
@@ -102,7 +103,7 @@ def _camera(az: float, el: float, cam_dist: float):
 
 
 def _render(RW: int, RH: int, az: float, el: float, cam_dist: float,
-            power: float, iters: int, steps: int):
+            power: float, iters: int, steps: int, warp=None):
     """Raymarch the bulb at (RW,RH). Returns (rgb (RH,RW,3), hit (RH,RW),
     depth (RH,RW), trap (RH,RW))."""
     ro, fwd, rgt, upv = _camera(az, el, cam_dist)
@@ -122,6 +123,8 @@ def _render(RW: int, RH: int, az: float, el: float, cam_dist: float,
     eps = 4e-4
     for _ in range(steps):
         p = ro[None, :] + rd_f * t[:, None]
+        if warp is not None:
+            p = p + warp.reshape(-1)[:, None]
         d, trap, r_final = _mandelbulb_de(p, power, iters)
         trap_min = np.minimum(trap_min, trap)
         new_hit = d < eps
@@ -172,9 +175,11 @@ def _render(RW: int, RH: int, az: float, el: float, cam_dist: float,
     new_image_contract=True,
     tags=["mandelbulb", "3d-fractal", "raymarch", "distance-estimator",
           "animation", "quilez"],
-    inputs={},
+    inputs={"image_in": "IMAGE"},
     outputs={"image": "IMAGE", "mask": "MASK", "field": "FIELD"},
     params={
+        "source": {"description": "domain-warp the per-ray sample point from the wired image's luminance", "choices": ["none", "input_image"], "default": "none"},
+        "warp_strength": {"description": "domain-warp strength for the 3D sample points", "min": 0.0, "max": 2.0, "default": 0.6},
         "power": {"description": "bulb exponent (8 = classic; other powers morph the surface)", "min": 2.0, "max": 12.0, "default": 8.0},
         "iterations": {"description": "distance-estimator fold iterations (higher = sharper surface)", "min": 2, "max": 16, "default": 6},
         "steps": {"description": "raymarch steps (higher = fewer surface holes)", "min": 16, "max": 128, "default": 56},
@@ -264,8 +269,18 @@ def method_mandelbulb(out_dir: Path, seed: int, params=None):
             s = math.sqrt(cap / (RW * RH))
             RW, RH = max(64, int(RW * s)), max(64, int(RH * s))
 
+        # ── Domain-warp from wired luminance (per-pixel 3D offset) ──
+        bulb_warp = None
+        if str(params.get("source", "none")) == "input_image":
+            lum = wired_source_lum(params, RW, RH)
+            if lum is not None:
+                wst = float(params.get("warp_strength", 0.6))
+                bulb_warp = np.stack([(lum - 0.5) * wst,
+                                      (lum - 0.5) * wst,
+                                      (lum - 0.5) * wst], axis=-1).astype(np.float64)
+
         shade, hit, col, bg, base_t = _render(
-            RW, RH, az, el, cam_dist, p_eff, iterations, steps)
+            RW, RH, az, el, cam_dist, p_eff, iterations, steps, warp=bulb_warp)
 
         # ── Colour mapping ──
         if colormode == "grayscale":

@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES
+from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES, wired_source_lum
 from ...core.animation import capture_frame
 
 # ── Optional libraries ──
@@ -30,7 +30,10 @@ def _render_flame_preview(density, colors, h, w):
     return result
 
 @method(id="66", name="Julia Set", category="fractals", tags=["classic", "fast", "expanded", "animation"],
+         inputs={"image_in": "IMAGE"},
          params={
+    "source": {"description": "seed the fractal's initial coordinate plane from the wired image's luminance", "choices": ["none", "input_image"], "default": "none"},
+    "warp_strength": {"description": "domain-warp strength applied to the per-pixel initial complex coordinate", "min": 0.0, "max": 2.0, "default": 0.6},
     "constant": {"description": "Julia c parameter as real,imag or a preset name", "default": "-0.7,0.27"},
     "iterations": {"description": "max iterations", "min": 30, "max": 500, "default": 100},
     "viewpoint": {"description": "complex plane range as xmin,xmax,ymin,ymax", "default": "-1.5,1.5,-1,1"},
@@ -174,6 +177,10 @@ def method_julia_set(out_dir: Path, seed: int, params=None):
     ys = np.linspace(y0, y1, mh, dtype=np.float64)
     xg, yg = np.meshgrid(xs, ys)
     z = xg + 1j * yg
+    if str(params.get("source", "none")) == "input_image":
+        lum = wired_source_lum(params, mw, mh)
+        if lum is not None:
+            z = z + (lum - 0.5) * float(params.get("warp_strength", 0.6)) * (1.0 + 1j)
     div = np.full(z.shape, max_iter, dtype=np.float32)
     last_z = np.zeros_like(z, dtype=np.complex128)
     frame_interval = max(1, max_iter // 20)

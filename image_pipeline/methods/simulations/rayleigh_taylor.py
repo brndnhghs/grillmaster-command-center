@@ -15,7 +15,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H
+from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, wired_source_lum
 from ...core.animation import capture_frame
 
 
@@ -250,7 +250,18 @@ def _build_initial_field(
                                          perturb_amp, perturb_freq,
                                          noise_smooth, "", seed)
 
-    # Fallback — simple sine interface
+    elif source == "input_image":
+        # Upstream wired image's luminance becomes the density field.
+        try:
+            lum = wired_source_lum(params, gx, gy)
+        except Exception:
+            lum = None
+        if lum is None:
+            return _build_initial_field("noise", gy, gx, rng, atwood,
+                                         perturb_amp, perturb_freq,
+                                         noise_smooth, "", seed)
+        field = rho_light + (rho_heavy - rho_light) * np.clip(lum.astype(np.float64), 0.0, 1.0)
+        return field
     y_coord = np.arange(gy).reshape(gy, 1)
     x_coord = np.arange(gx).reshape(1, gx)
     interface_y = gy // 2 + perturb_amp * np.sin(2.0 * PI * perturb_freq * x_coord / gx)
@@ -265,9 +276,10 @@ def _build_initial_field(
     category="simulations",
     tags=["physics", "fluid", "instability", "animation"],
     timeout=180,
+    inputs={"image_in": "IMAGE"},
     params={
         "source": {"description": "interface perturbation source",
-                    "choices": ["sine", "noise", "perlin", "shape", "image"],
+                    "choices": ["sine", "noise", "perlin", "shape", "image", "input_image"],
                     "default": "sine"},
         "gravity": {"description": "buoyancy driving strength",
                      "min": 0.1, "max": 5.0, "default": 1.0},

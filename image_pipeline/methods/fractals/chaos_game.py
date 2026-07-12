@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES, write_field, write_particles
+from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES, write_field, write_particles, wired_source_lum
 from ...core.animation import capture_frame
 
 # ── Optional libraries ──
@@ -363,8 +363,11 @@ def _render_trail(density, age_arr):
 
 
 @method(id="71", name="Chaos Game", category="fractals", tags=["ifs", "fast", "expanded"],
+        inputs={"image_in": "IMAGE"},
         outputs={"image": "IMAGE", "field": "FIELD", "particles": "PARTICLES"},
         params={
+    "source": {"description": "seed the primary density field from the wired image's luminance", "choices": ["none", "input_image"], "default": "none"},
+    "seed_strength": {"description": "blend weight between the procedural density and the wired luminance field", "min": 0.0, "max": 1.0, "default": 0.6},
     "particles": {"description": "chaos game points", "min": 50000, "max": 500000, "default": 100000},
     "preset": {"description": "chaos game preset", "choices": list(IFS_PRESETS.keys()), "default": "sierpinski_triangle"},
     "ratio": {"description": "distance ratio toward chosen vertex", "min": 0.1, "max": 0.9, "default": 0.5},
@@ -559,6 +562,16 @@ def method_chaos_game(out_dir: Path, seed: int, params=None):
         _process_preset(pn, particles_per_preset, density, age_map, vertex_colors_map, scatter_points, pi * particles_per_preset)
 
     write_field(out_dir, density)
+    _pts = np.argwhere(density > 0)
+
+    # ── Seed density from wired luminance (image-as-source) ──
+    if str(params.get("source", "none")) == "input_image":
+        lum = wired_source_lum(params, W, H)
+        if lum is not None:
+            sst = float(params.get("seed_strength", 0.6))
+            dmax = density.max()
+            density = (1.0 - sst) * density + sst * (lum * dmax if dmax > 0 else lum)
+
     _pts = np.argwhere(density > 0)
     if len(_pts) > 10000:
         _pts = _pts[np.random.default_rng(seed).choice(len(_pts), 10000, replace=False)]

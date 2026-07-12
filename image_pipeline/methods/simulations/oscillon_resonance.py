@@ -38,7 +38,7 @@ import numpy as np
 from PIL import Image
 
 from ...core.registry import method
-from ...core.utils import save, mn, seed_all, W, H, write_scalars
+from ...core.utils import save, mn, seed_all, W, H, write_scalars, wired_source_lum
 from ...core.animation import capture_frame
 
 
@@ -117,7 +117,9 @@ def _render_envelope(u: np.ndarray, buf: list[np.ndarray],
     tags=["animation", "waves", "parametric", "resonance",
            "oscillon", "coupled-oscillators", "patterns"],
     timeout=300,
+    inputs={"image_in": "IMAGE"},
     params={
+        "source": {"description": "initial-condition seed: random patches or the wired upstream image's luminance", "choices": ["random", "input_image"], "default": "random"},
         "anim_mode": {
             "description": "driving / evolution mode",
             "choices": ["evolve", "sweep", "pulse", "chaos", "gradient"],
@@ -220,6 +222,14 @@ def method_oscillon_resonance(out_dir: Path, seed: int, params=None):
         u += up * (0.5 / _scale)
     u *= 0.3  # small initial perturbation
     v = np.zeros((sh, sw), dtype=np.float64)  # zero initial velocity
+
+    # Seed from a wired upstream image's luminance when source == "input_image"
+    src_lum = None
+    if str(params.get("source", "random")) == "input_image":
+        src_lum = wired_source_lum(params, sw, sh)
+    if src_lum is not None:
+        u = np.clip(src_lum.astype(np.float64) * 4.0 - 2.0, -3.0, 3.0)
+        print("  Seeded initial u from wired input image luminance")
 
     # ── Envelope buffer ──
     env_buf: list[np.ndarray] = []

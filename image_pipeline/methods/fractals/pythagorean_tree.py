@@ -30,6 +30,7 @@ def _render_flame_preview(density, colors, h, w):
     return result
 
 @method(id="72", name="Pythagorean Tree", category="fractals", tags=["recursive", "colorful", "expanded", "animation"],
+         inputs={},
          params={
     "depth": {"description": "branch recursion depth", "min": 3, "max": 16, "default": 10},
     "tree_type": {"description": "tree style: pythagorean, fractal_tree, binary, ternary, quaternary, asymmetric, weeping, fibonacci, golden, spiral", "default": "pythagorean"},

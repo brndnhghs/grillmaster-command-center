@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES
+from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES, wired_source_lum
 from ...core.animation import capture_frame
 
 # ── Optional libraries ──
@@ -34,7 +34,10 @@ def _render_flame_preview(density, colors, h, w):
     name="Plasma Fractal",
     category="fractals",
     tags=["diamond-square", "landscape", "animation", "expanded"],
+    inputs={"image_in": "IMAGE"},
     params={
+        "source": {"description": "seed the heightmap field from the wired image's luminance", "choices": ["none", "input_image"], "default": "none"},
+        "seed_strength": {"description": "blend weight between the procedural heightmap and the wired luminance field", "min": 0.0, "max": 1.0, "default": 0.6},
         "size": {"description": "plasma grid size (power of 2)", "min": 64, "max": 1024, "default": 512},
         "roughness": {"description": "initial roughness amplitude", "min": 0.05, "max": 2.0, "default": 0.5},
         "roughness_decay": {"description": "roughness multiplier per step", "min": 0.1, "max": 0.9, "default": 0.5},
@@ -219,6 +222,14 @@ def method_plasma(out_dir: Path, seed: int, params=None):
         height += sub_resized * amp * _height_warp_frac
 
     height = (height - height.min()) / (height.max() - height.min() + 0.0001)
+
+    # ── Seed heightmap from wired luminance (image-as-source) ──
+    if str(params.get("source", "none")) == "input_image":
+        lum = wired_source_lum(params, W, H)
+        if lum is not None:
+            lum_small = cv2.resize(lum, (height.shape[1], height.shape[0]), interpolation=cv2.INTER_LINEAR)
+            sst = float(params.get("seed_strength", 0.6))
+            height = (1.0 - sst) * height + sst * lum_small
 
     # --- Terrain modifications ---
     yy, xx = np.mgrid[0:size + 1, 0:size + 1]

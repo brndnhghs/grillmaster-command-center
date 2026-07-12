@@ -23,7 +23,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
 from ...core.registry import method
-from ...core.utils import save, mn, seed_all, W, H, write_field
+from ...core.utils import save, mn, seed_all, W, H, write_field, wired_source_lum
 from ...core.animation import capture_frame
 
 
@@ -94,7 +94,9 @@ def _render_mono(u: np.ndarray, v: np.ndarray, channel: str) -> Image.Image:
     tags=["physics", "reaction-diffusion", "ecological", "expanded"],
     timeout=180,
     outputs={"image": "IMAGE", "luminance": "SCALAR", "field": "FIELD"},
+    inputs={"image_in": "IMAGE"},
     params={
+        "source": {"description": "initial-condition seed: random patches or the wired upstream image's luminance", "choices": ["random", "input_image"], "default": "random"},
         "alpha": {"description": "prey birth rate",
                   "min": 0.1, "max": 3.0, "default": 1.0},
         "beta": {"description": "predation rate",
@@ -215,6 +217,15 @@ def method_lotka_volterra(out_dir: Path, seed: int, params=None):
         smooth_v = smooth_v / max(np.std(smooth_v), 0.01)
         v = 0.3 + 0.3 * smooth_v  # predator varies 0.0-0.6
         v = np.clip(v, 0.0, 1.0).astype(np.float64)
+
+    # Seed from a wired upstream image's luminance when source == "input_image"
+    src_lum = None
+    if str(params.get("source", "random")) == "input_image":
+        src_lum = wired_source_lum(params, W, H)
+    if src_lum is not None:
+        # bright pixels → high predator density v (prey u stays from branch above)
+        v = np.clip(src_lum.astype(np.float64), 0.0, 1.0)
+        print("  Seeded initial v from wired input image luminance")
 
     img = None
 

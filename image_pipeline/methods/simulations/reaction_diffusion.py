@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES, load_input, write_field
+from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES, load_input, write_field, wired_source_lum
 from ...core.animation import capture_frame
 
 # ── Preview helpers for animated captures ──
@@ -45,7 +45,9 @@ def _render_sandpile_preview(grid, colors, size, h, w):
 
 @method(id="32", name="Reaction Diffusion", category="simulations", new_image_contract=True, tags=["gray-scott", "organic", "animation", "expanded"],
          outputs={"image": "IMAGE", "luminance": "SCALAR", "field": "FIELD"},
+         inputs={"image_in": "IMAGE"},
          params={
+             "source": {"description": "initial-condition seed: random patches or the wired upstream image's luminance", "choices": ["random", "input_image"], "default": "random"},
              "preset": {"description": "named pattern: mitosis, coral, spots, stripes, waves, zebra, moving_spots, spiral_waves, self_replicate, chaotic, gliders, solitons, mazes, honeycomb, bacteria, fingers, u_skate, flower, pulse, worms, custom", "default": "mitosis"},
              "species": {"description": "species model: gray_scott, bz_3species", "default": "gray_scott"},
              "feed_rate": {"description": "Gray-Scott F parameter (feed rate of U)", "min": 0.01, "max": 0.1, "default": 0.035},

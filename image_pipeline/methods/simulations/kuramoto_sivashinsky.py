@@ -25,7 +25,7 @@ import numpy as np
 from PIL import Image
 
 from ...core.registry import method
-from ...core.utils import save, mn, seed_all, W, H
+from ...core.utils import save, mn, seed_all, W, H, wired_source_lum
 from ...core.animation import capture_frame
 
 
@@ -220,7 +220,9 @@ def _init_anisotropic(rng: np.random.Generator,
     category="simulations",
     tags=["simulation", "animation", "physics", "pde", "chaos", "flame"],
     timeout=180,
+    inputs={"image_in": "IMAGE"},
     params={
+        "source": {"description": "initial-condition seed: random patches or the wired upstream image's luminance", "choices": ["random", "input_image"], "default": "random"},
         "nu": {"description": "hyperviscosity (lower = more chaotic)",
                "min": 0.01, "max": 0.5, "default": 0.1},
         "dt": {"description": "timestep",
@@ -297,6 +299,15 @@ def method_ks(out_dir: Path, seed: int, params=None):
     else:
         u, u_hat = _init_cellular(rng, noise_amp)
         is_evolve = False
+
+    # Seed from a wired upstream image's luminance when source == "input_image"
+    src_lum = None
+    if str(params.get("source", "random")) == "input_image":
+        src_lum = wired_source_lum(params, W, H)
+    if src_lum is not None:
+        u = np.clip(src_lum.astype(np.float64), -5.0, 5.0)
+        u_hat = np.fft.fft2(u)
+        print("  Seeded initial u from wired input image luminance")
 
     img = None
 

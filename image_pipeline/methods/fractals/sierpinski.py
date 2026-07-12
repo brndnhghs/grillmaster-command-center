@@ -30,6 +30,7 @@ def _render_flame_preview(density, colors, h, w):
     return result
 
 @method(id="67", name="Sierpinski Carpet", category="fractals", new_image_contract=True, tags=["deterministic", "fast", "expanded", "animation"],
+        inputs={},
         outputs={"image": "IMAGE", "field": "FIELD"},
          params={
     "depth": {"description": "subdivision depth (1-7)", "min": 1, "max": 7, "default": 5},

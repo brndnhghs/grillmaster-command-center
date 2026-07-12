@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES
+from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES, wired_source_lum
 from ...core.animation import capture_frame
 
 # ── Optional libraries ──
@@ -31,7 +31,10 @@ def _render_flame_preview(density, colors, h, w):
 
 @method(id="33", name="Fractal Explorer", category="fractals",
         tags=["classic", "fast", "animated", "expanded"],
+        inputs={"image_in": "IMAGE"},
         params={
+    "source": {"description": "domain-warp the initial complex coordinate plane from the wired image's luminance", "choices": ["none", "input_image"], "default": "none"},
+    "warp_strength": {"description": "domain-warp strength applied to the per-pixel initial complex coordinate", "min": 0.0, "max": 2.0, "default": 0.6},
     "formula": {"description": "fractal formula",
                 "default": "mandelbrot",
                 "choices": ["mandelbrot", "julia", "burning_ship", "tricorn",
@@ -233,6 +236,12 @@ def method_fractal(out_dir: Path, seed: int, params=None):
         x = np.linspace(xmin, xmax, W, dtype=np.float64)
         y = np.linspace(ymin, ymax, H, dtype=np.float64)
         xx, yy = np.meshgrid(x, y)
+
+        if str(params.get("source", "none")) == "input_image":
+            lum = wired_source_lum(params, W, H)
+            if lum is not None:
+                xx = xx + (lum - 0.5) * float(params.get("warp_strength", 0.6))
+                yy = yy + (lum - 0.5) * float(params.get("warp_strength", 0.6))
 
         # ── Julia constant ──────────────────────────────────────────────────
         try:

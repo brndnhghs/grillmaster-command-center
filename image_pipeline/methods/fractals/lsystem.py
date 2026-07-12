@@ -34,6 +34,7 @@ def _render_flame_preview(density, colors, h, w):
     name="L-System",
     category="fractals",
     tags=["recursive", "fast", "animation", "expanded"],
+    inputs={},
     params={
         "preset": {"description": "system preset: plant, sierpinski, dragon, koch, hilbert, tree, weed, bush, coral, snowflake, custom", "default": "plant"},
         "iterations": {"description": "L-system rewrite iterations", "min": 2, "max": 7, "default": 4},

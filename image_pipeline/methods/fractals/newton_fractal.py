@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES
+from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES, wired_source_lum
 from ...core.animation import capture_frame
 
 # ── Optional libraries ──
@@ -30,7 +30,10 @@ def _render_flame_preview(density, colors, h, w):
     return result
 
 @method(id="52", name="Newton Fractal", category="fractals", tags=["classic", "expanded", "animation", "fast"],
+        inputs={"image_in": "IMAGE"},
          params={
+    "source": {"description": "domain-warp the initial complex coordinate plane from the wired image's luminance", "choices": ["none", "input_image"], "default": "none"},
+    "warp_strength": {"description": "domain-warp strength applied to the per-pixel initial complex coordinate", "min": 0.0, "max": 2.0, "default": 0.6},
     "max_iter": {"description": "max Newton iterations", "min": 10, "max": 200, "default": 50},
     "tol": {"description": "root convergence tolerance", "min": 1e-12, "max": 1e-2, "default": 1e-8},
     "viewpoint": {"description": "complex plane range as xmin,xmax,ymin,ymax", "default": "-2,2,-2,2"},
@@ -166,6 +169,10 @@ def method_newton_fractal(out_dir: Path, seed: int, params=None):
         y = np.linspace(y0, y1, H, dtype=np.complex128)
         xx, yy = np.meshgrid(x, y)
         z = xx + 1j * yy
+        if str(params.get("source", "none")) == "input_image":
+            lum = wired_source_lum(params, W, H)
+            if lum is not None:
+                z = z + (lum - 0.5) * float(params.get("warp_strength", 0.6)) * (1.0 + 1j)
 
         root_idx = np.full(z.shape, -1, dtype=np.int32)
         iter_count = np.zeros(z.shape, dtype=np.float32)

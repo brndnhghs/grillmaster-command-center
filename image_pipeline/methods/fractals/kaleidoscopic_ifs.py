@@ -7,7 +7,7 @@ import numpy as np
 from ...core.registry import method
 from ...core.utils import (
     save, norm, mn, seed_all, W, H, PALETTES,
-    write_field, write_scalars, write_mask,
+    write_field, write_scalars, write_mask, wired_source_lum,
 )
 from ...core.animation import capture_frame
 
@@ -42,7 +42,10 @@ def _rot_fold(z: np.ndarray, n: int, extra_rot: float = 0.0) -> np.ndarray:
     name="Kaleidoscopic IFS",
     category="fractals",
     tags=["kifs", "fractal", "kaleidoscope", "symmetric", "escape-time", "expanded", "animation"],
+    inputs={"image_in": "IMAGE"},
     params={
+        "source": {"description": "domain-warp the initial complex coordinate plane from the wired image's luminance", "choices": ["none", "input_image"], "default": "none"},
+        "warp_strength": {"description": "domain-warp strength applied to the per-pixel initial complex coordinate", "min": 0.0, "max": 2.0, "default": 0.6},
         "system": {
             "description": "KIFS fold set (box / kaleidoscopic / inversion)",
             "choices": ["box", "kaleidoscopic", "inversion"],
@@ -188,6 +191,10 @@ def method_kaleidoscopic_ifs(out_dir: Path, seed: int, params=None):
     ys = np.linspace(y0, y1, int(H), dtype=np.float64)
     xg, yg = np.meshgrid(xs, ys)
     z = xg + 1j * yg
+    if str(params.get("source", "none")) == "input_image":
+        lum = wired_source_lum(params, int(W), int(H))
+        if lum is not None:
+            z = z + (lum - 0.5) * float(params.get("warp_strength", 0.6)) * (1.0 + 1j)
     if spin_ang != 0.0:
         z = z * np.exp(1j * spin_ang)
 

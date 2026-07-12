@@ -13,12 +13,14 @@ import numpy as np
 from PIL import Image
 from scipy.ndimage import zoom
 from ...core.registry import method
-from ...core.utils import save, mn, seed_all, W, H
+from ...core.utils import save, mn, seed_all, W, H, wired_source_lum
 from ...core.animation import capture_frame
 
 @method(id="169", name="Turing Morphogenesis", category="simulations",
         tags=["turing", "morphogenesis", "growing-domain", "rd"], timeout=600,
+        inputs={"image_in": "IMAGE"},
         params={
+            "source": {"description": "initial-condition seed: random patches or the wired upstream image's luminance", "choices": ["random", "input_image"], "default": "random"},
             "a": {"min": 0.05, "max": 0.5, "default": 0.1, "description": "Schnakenberg parameter a"},
             "b": {"min": 0.5, "max": 2.0, "default": 0.9, "description": "Schnakenberg parameter b"},
             "Du": {"min": 0.001, "max": 0.1, "default": 0.01, "description": "Activator diffusion"},
@@ -95,6 +97,16 @@ def turing_morphogenesis(out_dir, seed, params=None):
             r = rng.uniform(4, 12)
             d2 = (xx - sx)**2 + (yy - sy)**2
             u += 0.15 * np.exp(-d2 / (2 * r**2))
+
+    # Seed from a wired upstream image's luminance when source == "input_image"
+    # (overrides the procedural seed above; maps brightness onto activator u)
+    src_lum = None
+    if str(params.get("source", "random")) == "input_image":
+        src_lum = wired_source_lum(params, sw, sh)
+    if src_lum is not None:
+        u = uss + (src_lum.astype(np.float64) - 0.5) * 0.5
+        v = vss + (src_lum.astype(np.float64) - 0.5) * 0.3
+        print("  Seeded initial u from wired input image luminance")
 
     cur_sh, cur_sw = sh, sw
     scale = 1.0

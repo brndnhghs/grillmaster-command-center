@@ -36,7 +36,7 @@ import numpy as np
 from PIL import Image
 
 from ...core.registry import method
-from ...core.utils import save, mn, seed_all, W, H, write_field
+from ...core.utils import save, mn, seed_all, W, H, write_field, wired_source_lum
 from ...core.animation import capture_frame
 
 
@@ -105,7 +105,9 @@ def _render_u(u: np.ndarray, v: np.ndarray, mode: str = "u") -> Image.Image:
     tags=["physics", "reaction-diffusion", "excitable", "waves", "spiral"],
     timeout=300,
     outputs={"image": "IMAGE", "field": "FIELD"},
+    inputs={"image_in": "IMAGE"},
     params={
+        "source": {"description": "initial-condition seed: random patches or the wired upstream image's luminance", "choices": ["random", "input_image"], "default": "random"},
         "diff_u": {
             "description": "diffusion coefficient for excitation u",
             "min": 0.1, "max": 5.0, "default": 1.5,
@@ -203,73 +205,83 @@ def method_fitzhugh_nagumo(out_dir: Path, seed: int, params=None):
     u = np.zeros((h, w), dtype=np.float64)
     v = np.zeros((h, w), dtype=np.float64)
 
-    # ── Initial conditions per anim_mode ──
-    if anim_mode == "spiral":
-        # Broken wavefront: u=1 half-plane with a gap → spiral forms
-        u[:, :] = -1.0
-        v[:, :] = -0.5
-        # Excitable half-plane with gap
-        u[:, w // 3:] = 1.0
-        v[:, w // 3:] = 0.5
-        # Break the wavefront — create a gap for the spiral tip
-        gap_cy = h // 2
-        gap_r = h // 8
-        yy, xx = np.ogrid[:h, :w]
-        gap = (xx - w // 3)**2 + (yy - gap_cy)**2 < gap_r**2
-        u[gap] = 0.0
-
-    elif anim_mode == "target":
-        # Rest state everywhere, broad oscillating pacemaker at center
-        u[:, :] = -1.0
-        v[:, :] = -0.6
-        # Broad pacemaker region
-        pm_g = _gaussian_2d(h, w, w // 2, h // 2, sigma=w * 0.04)
-        u += 2.0 * pm_g
-
-    elif anim_mode == "chaos":
-        # Random patches of excitation + multiple seeds
-        u[:, :] = -1.0 + 0.1 * rng.random((h, w))
-        v[:, :] = -0.6 + 0.1 * rng.random((h, w))
-        # Seed multiple excited patches
-        for _ in range(6):
-            sx = int(rng.uniform(w * 0.1, w * 0.9))
-            sy = int(rng.uniform(h * 0.1, h * 0.9))
-            g = _gaussian_2d(h, w, sx, sy, sigma=w * 0.04)
-            u += ampl * g
-            v += 0.5 * g
-
-    elif anim_mode == "scroll":
-        # Same as spiral but with different gap for meandering tip
-        u[:, :] = -1.0
-        v[:, :] = -0.5
-        u[:, w // 3:] = 1.0
-        v[:, w // 3:] = 0.5
-        gap_cy = h // 3
-        gap_r = h // 6
-        yy, xx = np.ogrid[:h, :w]
-        gap = (xx - w // 3)**2 + (yy - gap_cy)**2 < gap_r**2
-        u[gap] = 0.0
-
-    elif anim_mode == "pacemaker":
-        # Two competing pacemakers — broad Gaussian regions
-        u[:, :] = -1.0
-        v[:, :] = -0.6
-        # Left pacemaker region
-        pm1 = _gaussian_2d(h, w, w * 0.25, h * 0.5, sigma=w * 0.03)
-        u += 2.0 * pm1
-        # Right pacemaker region
-        pm2 = _gaussian_2d(h, w, w * 0.75, h * 0.5, sigma=w * 0.03)
-        u += 2.0 * pm2
-
+    # Seed from a wired upstream image's luminance when source == "input_image"
+    src_lum = None
+    if str(params.get("source", "random")) == "input_image":
+        src_lum = wired_source_lum(params, w, h)
+    if src_lum is not None:
+        # bright pixels → high excitation u (waves nucleate there)
+        u = np.clip(src_lum.astype(np.float64), -3.0, 3.0)
+        print("  Seeded initial u from wired input image luminance")
     else:
-        # Static: random patches
-        u[:, :] = -1.0 + 0.1 * rng.random((h, w))
-        v[:, :] = -0.6 + 0.1 * rng.random((h, w))
-        for _ in range(3):
-            sx = int(rng.uniform(w * 0.1, w * 0.9))
-            sy = int(rng.uniform(h * 0.1, h * 0.9))
-            g = _gaussian_2d(h, w, sx, sy, sigma=w * 0.06)
-            u += ampl * g
+
+        # ── Initial conditions per anim_mode ──
+        if anim_mode == "spiral":
+            # Broken wavefront: u=1 half-plane with a gap → spiral forms
+            u[:, :] = -1.0
+            v[:, :] = -0.5
+            # Excitable half-plane with gap
+            u[:, w // 3:] = 1.0
+            v[:, w // 3:] = 0.5
+            # Break the wavefront — create a gap for the spiral tip
+            gap_cy = h // 2
+            gap_r = h // 8
+            yy, xx = np.ogrid[:h, :w]
+            gap = (xx - w // 3)**2 + (yy - gap_cy)**2 < gap_r**2
+            u[gap] = 0.0
+
+        elif anim_mode == "target":
+            # Rest state everywhere, broad oscillating pacemaker at center
+            u[:, :] = -1.0
+            v[:, :] = -0.6
+            # Broad pacemaker region
+            pm_g = _gaussian_2d(h, w, w // 2, h // 2, sigma=w * 0.04)
+            u += 2.0 * pm_g
+
+        elif anim_mode == "chaos":
+            # Random patches of excitation + multiple seeds
+            u[:, :] = -1.0 + 0.1 * rng.random((h, w))
+            v[:, :] = -0.6 + 0.1 * rng.random((h, w))
+            # Seed multiple excited patches
+            for _ in range(6):
+                sx = int(rng.uniform(w * 0.1, w * 0.9))
+                sy = int(rng.uniform(h * 0.1, h * 0.9))
+                g = _gaussian_2d(h, w, sx, sy, sigma=w * 0.04)
+                u += ampl * g
+                v += 0.5 * g
+
+        elif anim_mode == "scroll":
+            # Same as spiral but with different gap for meandering tip
+            u[:, :] = -1.0
+            v[:, :] = -0.5
+            u[:, w // 3:] = 1.0
+            v[:, w // 3:] = 0.5
+            gap_cy = h // 3
+            gap_r = h // 6
+            yy, xx = np.ogrid[:h, :w]
+            gap = (xx - w // 3)**2 + (yy - gap_cy)**2 < gap_r**2
+            u[gap] = 0.0
+
+        elif anim_mode == "pacemaker":
+            # Two competing pacemakers — broad Gaussian regions
+            u[:, :] = -1.0
+            v[:, :] = -0.6
+            # Left pacemaker region
+            pm1 = _gaussian_2d(h, w, w * 0.25, h * 0.5, sigma=w * 0.03)
+            u += 2.0 * pm1
+            # Right pacemaker region
+            pm2 = _gaussian_2d(h, w, w * 0.75, h * 0.5, sigma=w * 0.03)
+            u += 2.0 * pm2
+
+        else:
+            # Static: random patches
+            u[:, :] = -1.0 + 0.1 * rng.random((h, w))
+            v[:, :] = -0.6 + 0.1 * rng.random((h, w))
+            for _ in range(3):
+                sx = int(rng.uniform(w * 0.1, w * 0.9))
+                sy = int(rng.uniform(h * 0.1, h * 0.9))
+                g = _gaussian_2d(h, w, sx, sy, sigma=w * 0.06)
+                u += ampl * g
 
     # ── Compute total simulated time for diagnostics ──
     # Wave speed in FHN is roughly 1-2 px/frame at typical parameters

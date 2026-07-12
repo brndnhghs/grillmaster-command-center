@@ -32,13 +32,21 @@ W, H = 256, 160
 FRAMES = 24
 
 
-def _pick_target(defs):
-    """A node with an IMAGE output and a numeric SCALAR-injectable param.
+def _candidate_targets(defs):
+    """Every node with an IMAGE output and a numeric SCALAR-injectable param.
 
-    Returns (method_id, param_name, params-with-schema-defaults) so the
-    explicit-wire path in graph.py (``edge.dst_port in node.params``) is
+    Returns a list of (method_id, param_name, params-with-schema-defaults) so
+    the explicit-wire path in graph.py (``edge.dst_port in node.params``) is
     exercised the same way real shootout genomes are built.
+
+    Order-independent: candidates are sorted by method_id so the test does not
+    depend on node-registration order (which changed when the methods packages
+    switched to auto-discovery). Some nodes (e.g. Chafa) *require* an upstream
+    image_in this harness does not wire and would render nothing; callers should
+    try each candidate until one produces motion rather than assuming the first
+    is self-sufficient.
     """
+    out = []
     for mid, d in defs.items():
         if mid.startswith("__"):
             continue
@@ -54,8 +62,15 @@ def _pick_target(defs):
                        ("scale", "freq", "zoom", "angle", "rot", "phase")):
                     filled = {k: (v.get("default") if isinstance(v, dict) else v)
                               for k, v in params.items()}
-                    return mid, pname, filled
-    return None, None, None
+                    out.append((mid, pname, filled))
+    out.sort(key=lambda c: c[0])
+    return out
+
+
+def _pick_target(defs):
+    """Back-compat shim: first candidate (sorted by method_id)."""
+    cands = _candidate_targets(defs)
+    return cands[0] if cands else (None, None, None)
 
 
 def _render_driver_value_spread():
@@ -179,14 +194,28 @@ def test_driver_modulation_steps_choices_param():
 
 
 def test_driver_modulation_reaches_pixels():
-    """Check B: a driver wired to a target SCALAR port moves the rendered image."""
+    """Check B: a driver wired to a target SCALAR port moves the rendered image.
+
+    Iterates candidate targets (sorted by method_id, so registration order is
+    irrelevant) and asserts that at least one produces real per-frame motion
+    under an LFO. This validates the driver->target modulation path without
+    coupling to which node happens to be first in the registry.
+    """
     set_canvas(W, H)
     defs = get_all_node_defs()
-    tgt_id, tgt_param, tgt_params = _pick_target(defs)
-    assert tgt_id is not None, "no suitable target node found"
-    tvar = _render_target_temporal_var(tgt_id, tgt_param, tgt_params)
+    cands = _candidate_targets(defs)
+    assert cands, "no suitable target node found"
     floor = DEFAULT_CONFIG.temporal_var_min
-    assert tvar > floor, (
-        f"driver->target modulation produced no motion "
-        f"(temporal_var={tvar:.5f} <= floor={floor}); driver path is broken"
+    best_id, best_param, best_tvar = None, None, 0.0
+    for tgt_id, tgt_param, tgt_params in cands:
+        tvar = _render_target_temporal_var(tgt_id, tgt_param, tgt_params)
+        if tvar > floor:
+            best_id, best_param, best_tvar = tgt_id, tgt_param, tvar
+            break
+        if tvar > best_tvar:
+            best_id, best_param, best_tvar = tgt_id, tgt_param, tvar
+    assert best_tvar > floor, (
+        f"driver->target modulation produced no motion on any candidate "
+        f"(best temporal_var={best_tvar:.5f} from node {best_id}:{best_param} "
+        f"<= floor={floor}); driver path is broken"
     )

@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES, write_field
+from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES, write_field, wired_source_lum
 from ...core.animation import capture_frame
 
 # ── Optional libraries ──
@@ -363,8 +363,11 @@ def _render_trail(density, age_arr):
 
 
 @method(id="70", name="Fractal Flame", category="fractals", tags=["ifs", "colorful", "expanded"],
+        inputs={"image_in": "IMAGE"},
         outputs={"image": "IMAGE", "field": "FIELD"},
         params={
+    "source": {"description": "seed the primary density field from the wired image's luminance", "choices": ["none", "input_image"], "default": "none"},
+    "seed_strength": {"description": "blend weight between the procedural density and the wired luminance field", "min": 0.0, "max": 1.0, "default": 0.6},
     "points": {"description": "number of flame points", "min": 50000, "max": 2000000, "default": 200000},
     "scale": {"description": "flame coordinate scale factor (0=auto)", "min": 0.0, "max": 20.0, "default": 3.0},
     "variation": {"description": "flame variation name, or 'multi' for multi-transform", "choices": list(FLAME_VARIATIONS.keys()) + ["multi", "ifs"], "default": "multi"},
@@ -546,6 +549,13 @@ def method_fractal_flame(out_dir: Path, seed: int, params=None):
             capture_frame('70', _render_flame_preview(density, colors, H, W))
 
     write_field(out_dir, density.astype(np.float32))
+
+    # ── Seed density from wired luminance (image-as-source) ──
+    if str(params.get("source", "none")) == "input_image":
+        lum = wired_source_lum(params, W, H)
+        if lum is not None:
+            sst = float(params.get("seed_strength", 0.6))
+            density = (1.0 - sst) * density + sst * (lum * density.max() if density.max() > 0 else lum)
 
     # ── Final render ──
     if color_mode == "flame_colored":

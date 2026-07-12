@@ -14,6 +14,7 @@ from ...core.utils import (
     write_scalars,
     write_field,
     write_mask,
+    wired_source_lum,
 )
 from ...core.animation import capture_frame
 
@@ -62,9 +63,10 @@ def _resize01(arr: np.ndarray, w: int, h: int) -> np.ndarray:
         "simulation",
         "procedural",
     ],
-    inputs={},
+    inputs={"image_in": "IMAGE"},
     outputs={"image": "IMAGE", "field": "FIELD", "mask": "MASK"},
     params={
+        "source": {"description": "initial-condition seed: random patches or the wired upstream image's luminance", "choices": ["random", "input_image"], "default": "random"},
         "A": {
             "description": "Brusselator feed parameter A (sets the homogeneous steady state u*=A)",
             "min": 0.1,
@@ -193,6 +195,18 @@ def method_brusselator(out_dir, seed, params=None):
             v = (B / A) + 0.1 * rng.standard_normal((N, N))
         u = np.clip(u, 0.0, None)
         v = np.clip(v, 0.0, None)
+
+        # Seed from a wired upstream image's luminance when source == "input_image"
+        src_lum = None
+        if str(params.get("source", "random")) == "input_image":
+            src_lum = wired_source_lum(params, N, N)
+        if src_lum is not None:
+            # brightness modulates activator u around its steady state
+            u = A + (src_lum.astype(np.float64) - 0.5) * 0.6
+            v = (B / A) + (src_lum.astype(np.float64) - 0.5) * 0.3
+            u = np.clip(u, 0.0, None)
+            v = np.clip(v, 0.0, None)
+            print("  Seeded u from wired input image luminance")
 
         def _step(uu, vv):
             Lu = convolve2d(uu, _LAP, mode="same", boundary="wrap")
