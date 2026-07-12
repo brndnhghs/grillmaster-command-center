@@ -460,15 +460,19 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     "80": {"shader": "shader_mosaic_gpu", "type": "filter",
             "param_map": {"tile_size": "p1"}},
     # 42 Fake HDR → new twin. contrast p1, saturation p2, vignette p3, bloom p4.
-    "42": {"shader": "hdr_gpu", "type": "filter",
-            "param_map": {"contrast": "p1", "saturation": "p2",
-                        "vignette": "p3", "bloom": "p4"}},
-    # 63 Cross Stitch → new twin. thread_step p1, line_width p2.
-    "63": {"shader": "cross_stitch_gpu", "type": "filter",
-            "param_map": {"thread_step": "p1", "line_width": "p2"}},
-    # 64 Edge Halftone → new twin. dot_spacing p1, dot_size p2.
-    "64": {"shader": "edge_halftone_gpu", "type": "filter",
-            "param_map": {"dot_spacing": "p1", "dot_size": "p2"}},
+    # 42 Fake HDR → typed-uniform twin. contrast/saturation/vignette/bloom are
+    # the node's REAL numeric params (node 42), now wired by name to the
+    # shader's u_<name> uniforms (replacing the legacy p1..p4 contract so the
+    # live preview actually tracks the sliders — contract #5).
+    "42": {"shader": "hdr_gpu", "type": "filter", "typed": True,
+            "param_map": {"contrast": "contrast", "saturation": "saturation",
+                        "vignette": "vignette", "bloom": "bloom"}},
+    # 63 Cross Stitch → typed-uniform twin. thread_step/line_width by name.
+    "63": {"shader": "cross_stitch_gpu", "type": "filter", "typed": True,
+            "param_map": {"thread_step": "thread_step", "line_width": "line_width"}},
+    # 64 Edge Halftone → typed-uniform twin. dot_spacing/dot_size by name.
+    "64": {"shader": "edge_halftone_gpu", "type": "filter", "typed": True,
+            "param_map": {"dot_spacing": "dot_spacing", "dot_size": "dot_size"}},
     # 74 Swirl Displacement → new twin. strength p1 (0.5 = none).
     "74": {"shader": "swirl_gpu", "type": "filter",
            "param_map": {"strength": "p1"}},
@@ -476,23 +480,28 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # `contrast` p2. The CPU node's default `fs` and other error-diffusion
     # algorithms are serial scans that cannot be reproduced per-pixel, so the
     # twin renders the ORDERED (Bayer) approximation and the CPU fn stays
-    # authoritative. `algorithm`/`palette`/`noise_type` are string choices
-    # (pitfall #14) and are left unmapped. Gives `filters` another GPU mirror.
-    "13": {"shader": "dither13_gpu", "type": "filter",
-           "param_map": {"levels": "p1", "contrast": "p2"}},
-    # 350 FXAA Anti-Aliasing → new twin. edge_threshold p1 (0.5 = neutral
+    # 13 Dithering → typed-uniform twin (Bayer ordered path). `levels`/`contrast`
+    # are the node's REAL numeric params, now wired by name (contract #5).
+    # `algorithm`/`palette`/`noise_type` are string choices (pitfall #14) and are
+    # left unmapped. Gives `filters` another GPU mirror.
+    "13": {"shader": "dither13_gpu", "type": "filter", "typed": True,
+           "param_map": {"levels": "levels", "contrast": "contrast"}},
+    # 350 FXAA Anti-Aliasing → twin. edge_threshold p1 (0.5 = neutral
     # medium strength; see pitfall #15 — 0.5 must not be a degenerate extreme).
-    # The CPU node's test-pattern `source` and `anim_mode` are CPU-only concerns
-    # (no GPU equivalent); only edge_threshold is mapped to u_params.x.
+    # Kept on the legacy p-path: FXAA is an edge-AA filter that is a genuine
+    # no-op on smooth regions, so the named-uniform drive-output guard does not
+    # apply; migration to typed-uniform is deferred until that guard is relaxed.
     "350": {"shader": "fxaa_gpu", "type": "filter",
             "param_map": {"edge_threshold": "p1"}},
     # 422 Palette Posterize → new twin (ordered-Bayer preview). levels p1,
-    # dither_scale p2. The CPU node does median-cut + Floyd-Steinberg + CIELAB
+    # 422 Palette Posterize → typed-uniform twin (ordered-Bayer preview).
+    # `levels`/`dither_scale` are the node's REAL numeric params, wired by name
+    # (contract #5). The CPU node does median-cut + Floyd-Steinberg + CIELAB
     # (serial/perceptual steps with no per-pixel GPU equivalent), so the twin
     # renders the ORDERED dither path and the CPU fn stays authoritative.
     # `use_lab`/`palette`/`dither` are string choices (pitfall #14), unmapped.
-    "422": {"shader": "dither_palette_gpu", "type": "filter",
-            "param_map": {"levels": "p1", "dither_scale": "p2"}},
+    "422": {"shader": "dither_palette_gpu", "type": "filter", "typed": True,
+            "param_map": {"levels": "levels", "dither_scale": "dither_scale"}},
     # ── P0.5 LUT / color ──
     # 11 Gradient: cx/cy are already in [0,1] so they map cleanly onto the
     # twin's center params (0.5 = middle). `direction` (0-360°) and
@@ -513,11 +522,11 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # `poster_method` is a choice and not mapped (pitfall #14).
     "39": {"shader": "shader_posterize_gpu", "type": "filter",
            "param_map": {}},
-    # 77 False Color IR: `strength` (0-1) maps cleanly onto the twin's blend
-    # factor. `color_scheme` is a choice string (pitfall #14) so it is left
-    # unmapped; the preview defaults to the thermal ramp.
-    "77": {"shader": "false_color_gpu", "type": "filter",
-           "param_map": {"strength": "p1"}},
+    # 77 False Color IR → typed-uniform twin. `strength` wired by name (contract
+    # #5). `color_scheme` is a choice string (pitfall #14) so the preview locks to
+    # the thermal ramp; CPU fn stays authoritative for all schemes.
+    "77": {"shader": "false_color_gpu", "type": "filter", "typed": True,
+           "param_map": {"strength": "strength"}},
     # ── P0.7 compositing (per-pixel utility) ──
     # __image_to_mask__: converts an IMAGE wire to a MASK. `mode` is a STRING
     # choice param (luminance/red/green/blue/alpha_from_white/invert_luminance)
@@ -572,11 +581,11 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     "312": {"shader": "caustics_gpu", "type": "procedural",
             "param_map": {"scale": "p1", "caustic_gain": "p2",
                           "sharpen": "p3", "anim_speed": "p4"}},
-    # 68 Anisotropic Kuwahara: radius -> p1 (8 -> 0.5 neutral), anisotropy ->
-    # p2 (4 -> 0.5). presmooth/blend are not mapped; the twin renders the
-    # default strength. CPU numpy node stays the authoritative export.
-    "68": {"shader": "anisotropic_kuwahara_gpu", "type": "filter",
-           "param_map": {"radius": "p1", "anisotropy": "p2"}},
+    # 68 Anisotropic Kuwahara → typed-uniform twin. `radius`/`anisotropy` wired
+    # by name (contract #5); presmooth/blend are not mapped — the twin renders
+    # the default strength. CPU numpy node stays authoritative for export.
+    "68": {"shader": "anisotropic_kuwahara_gpu", "type": "filter", "typed": True,
+           "param_map": {"radius": "radius", "anisotropy": "anisotropy"}},
     # 311 Domain Warping: scale -> p1, warp_strength -> p2, contrast -> p3,
     # octaves -> p4. colormode/warp_levels/anim_mode are choice strings
     # (pitfall #14) left unmapped; preview shows IQ inferno marbling at the

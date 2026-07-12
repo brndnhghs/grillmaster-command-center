@@ -1320,12 +1320,13 @@ void main() {
 
 _register("false_color_gpu",
           "False-color IR remap (client-GPU twin of node 77)",
-          "filter", _filter_shader('''
-    // u_params.x = strength (0 = grayscale, 1 = full false-color),
-    // u_params.y = scheme (0=standard,1=thermal,2=vegetation,3=urban).
+          "filter", _filter_typed('''
+    // u_strength: 0 = grayscale, 1 = full false-color blend. The node's
+    // color_scheme is a STRING choice (pitfall #14) so the preview locks to
+    // the thermal ramp; the CPU fn stays authoritative for all schemes.
     float lum = dot(orig.rgb, vec3(0.299, 0.587, 0.114));
-    float s = clamp(u_params.x, 0.0, 1.0);
-    int scheme = int(floor(u_params.y * 3.999));
+    float s = clamp(u_strength, 0.0, 1.0);
+    int scheme = 1;   // preview default: thermal ramp
 
     vec3 heat;
     if (scheme == 1) {                      // thermal (black-red-yellow-white)
@@ -1342,7 +1343,9 @@ _register("false_color_gpu",
     heat = clamp(heat, 0.0, 1.0);
     vec3 col = mix(vec3(lum), heat, s);
     f_color = vec4(col, 1.0);
-'''))
+'''), uniforms={
+        "strength": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "false-color blend"},
+    })
 
 _register("image_to_mask_gpu",
           "Luminance/channel mask extraction (client-GPU twin of __image_to_mask__)",
@@ -1993,11 +1996,11 @@ _register("shader_oil_gpu", "GPU oil painting simulation", "filter", _filter_typ
 # sector wins (Kyprianidis et al. 2011). Decoded from normalized u_params:
 # p1 = radius∈[0,1] (0.5→8), p2 = anisotropy∈[0,1] (0.5→4). CPU numpy node stays
 # authoritative for exact export.
-_register("anisotropic_kuwahara_gpu", "GPU anisotropic Kuwahara painterly abstraction", "filter", _filter_shader('''
-    // Decode normalized params (client sends p1 = radius∈[0,1], p2 = anisotropy∈[0,1],
-    // per the 0.5-neutral GPU contract). radius 0.5→8 (node default), aniso 0.5→4.
-    int R = int(clamp(2.0 + u_params.x * 12.0, 2.0, 15.0));
-    float aniso = clamp(1.0 + u_params.y * 6.0, 1.0, 12.0);
+_register("anisotropic_kuwahara_gpu", "GPU anisotropic Kuwahara painterly abstraction", "filter", _filter_typed('''
+    // Decode normalized params (client sends radius/anisotropy 0..1 per the
+    // 0.5-neutral GPU contract). radius 0.5→8 (node default), aniso 0.5→4.
+    int R = int(clamp(2.0 + u_radius * 12.0, 2.0, 15.0));
+    float aniso = clamp(1.0 + u_anisotropy * 6.0, 1.0, 12.0);
 
     // Local structure via Sobel (step is reserved in filter twins — only read it).
     float gx = 0.0, gy = 0.0;
@@ -2041,7 +2044,10 @@ _register("anisotropic_kuwahara_gpu", "GPU anisotropic Kuwahara painterly abstra
         }
     }
     f_color = vec4(bestC, 1.0);
-'''))
+'''), uniforms={
+        "radius": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "Kuwahara radius"},
+        "anisotropy": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "anisotropy"},
+    })
 
 # ── P0.4 filter twin (node 422 Palette Posterize) ───────────────────────────
 # Client GPU live-preview: ordered (Bayer) dithering against a per-channel band
@@ -2049,11 +2055,10 @@ _register("anisotropic_kuwahara_gpu", "GPU anisotropic Kuwahara painterly abstra
 # preview shows the ordered-dither path; the authoritative CPU numpy node
 # (median-cut + Floyd-Steinberg + CIELAB) is the export. Per pitfall #15b, no
 # local named `step` (the _filter_shader wrapper injects it).
-_register("dither_palette_gpu", "GPU palette posterize with ordered dither (client twin of 422)", "filter", _filter_shader('''
-    // u_params.x = levels (band count per channel, 0.5->16)
-    // u_params.y = dither strength (0.5->2.0)
-    int levels = int(clamp(2.0 + u_params.x * 28.0, 2.0, 32.0));
-    float strength = clamp((u_params.y - 0.5) * 4.0, 0.0, 4.0);
+_register("dither_palette_gpu", "GPU palette posterize with ordered dither (client twin of 422)", "filter", _filter_typed('''
+    // u_levels = band count per channel; u_dither_scale = ordered-dither strength.
+    int levels = int(clamp(2.0 + u_levels * 28.0, 2.0, 32.0));
+    float strength = clamp((u_dither_scale - 0.5) * 4.0, 0.0, 4.0);
 
     vec3 col = orig.rgb;
     // perceptual luma weighting (approximates CIELAB channel weighting)
@@ -2072,7 +2077,10 @@ _register("dither_palette_gpu", "GPU palette posterize with ordered dither (clie
 
     vec3 q = floor(col * float(levels) + thr) / float(levels);
     f_color = vec4(clamp(q, 0.0, 1.0), 1.0);
-'''))
+'''), uniforms={
+        "levels": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "posterize levels"},
+        "dither_scale": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "ordered dither strength"},
+    })
 
 _register("shader_neon_gpu", "GPU neon glow on edges", "filter", _filter_typed('''
     float gx = 0.0, gy = 0.0;
@@ -2127,26 +2135,31 @@ _register("shader_motion_blur_gpu", "GPU directional motion blur", "filter", _fi
 # The CPU numpy path stays the authoritative export (two-tier precision).
 
 # 42 Fake HDR — contrast / saturation / vignette / bloom (GPU live twin)
-_register("hdr_gpu", "GPU fake-HDR tonemap (contrast/sat/vignette/bloom)", "filter", _filter_shader('''
+_register("hdr_gpu", "GPU fake-HDR tonemap (contrast/sat/vignette/bloom)", "filter", _filter_typed('''
     float gray = dot(orig.rgb, vec3(0.299, 0.587, 0.114));
     // contrast around mid-gray
-    vec3 c = (orig.rgb - 0.5) * (0.5 + u_params.x * 3.0) + 0.5;
+    vec3 c = (orig.rgb - 0.5) * (0.5 + u_contrast * 3.0) + 0.5;
     // saturation toward/away from luma
-    c = mix(vec3(gray), c, 0.5 + u_params.y * 2.0);
+    c = mix(vec3(gray), c, 0.5 + u_saturation * 2.0);
     // bloom: cheap bright-area lift
-    float bright = max(0.0, gray - 0.6) * u_params.w * 2.0;
+    float bright = max(0.0, gray - 0.6) * u_bloom * 2.0;
     c += bright;
     // vignette
     vec2 d = uv - 0.5;
-    float vig = 1.0 - dot(d, d) * u_params.z * 2.5;
+    float vig = 1.0 - dot(d, d) * u_vignette * 2.5;
     c *= clamp(vig, 0.0, 1.0);
     f_color = vec4(clamp(c, 0.0, 1.0), 1.0);
-'''))
+'''), uniforms={
+        "contrast": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "tone contrast"},
+        "saturation": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "saturation"},
+        "vignette": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "vignette strength"},
+        "bloom": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "bloom lift"},
+    })
 
 # 63 Cross Stitch — grid of stitches on a fabric backdrop (GPU live twin)
-_register("cross_stitch_gpu", "GPU cross-stitch embroidery", "filter", _filter_shader('''
-    float gstep = max(4.0, 32.0 - u_params.x * 28.0);   // thread_step -> p1
-    float lw = 1.0 + u_params.y * 6.0;                  // line_width -> p2
+_register("cross_stitch_gpu", "GPU cross-stitch embroidery", "filter", _filter_typed('''
+    float gstep = max(4.0, 32.0 - u_thread_step * 28.0);   // thread_step
+    float lw = 1.0 + u_line_width * 6.0;                  // line_width
     vec2 cell = floor(uv * u_resolution / gstep);
     vec2 cell_uv = (cell + 0.5) * gstep / u_resolution;
     vec3 src = texture(u_texture, cell_uv).rgb;
@@ -2160,10 +2173,13 @@ _register("cross_stitch_gpu", "GPU cross-stitch embroidery", "filter", _filter_s
     float stitch = 1.0 - smoothstep(lw * 0.35, lw * 0.45, stroke);
     vec3 col = mix(fabric, src, stitch);
     f_color = vec4(col, 1.0);
-'''))
+'''), uniforms={
+        "thread_step": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "stitch grid step"},
+        "line_width": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "thread width"},
+    })
 
 # 64 Edge Halftone — Sobel-magnitude-weighted dots (GPU live twin)
-_register("edge_halftone_gpu", "GPU edge-weighted halftone dots", "filter", _filter_shader('''
+_register("edge_halftone_gpu", "GPU edge-weighted halftone dots", "filter", _filter_typed('''
     float tl = dot(texture(u_texture, uv + vec2(-step.x, -step.y)).rgb, vec3(0.299,0.587,0.114));
     float t  = dot(texture(u_texture, uv + vec2(0, -step.y)).rgb, vec3(0.299,0.587,0.114));
     float tr = dot(texture(u_texture, uv + vec2(step.x, -step.y)).rgb, vec3(0.299,0.587,0.114));
@@ -2175,15 +2191,18 @@ _register("edge_halftone_gpu", "GPU edge-weighted halftone dots", "filter", _fil
     float gx = -tl - 2.0*l - bl + tr + 2.0*r + br;
     float gy = -tl - 2.0*t - tr + bl + 2.0*b + br;
     float edge = clamp(sqrt(gx*gx + gy*gy), 0.0, 1.0);
-    float cell = 4.0 + u_params.x * 16.0;               // dot_spacing -> p1
-    float base = (1.0 - edge) * 0.5 * (0.5 + u_params.y * 0.5); // dot_size -> p2
+    float cell = 4.0 + u_dot_spacing * 16.0;               // dot_spacing
+    float base = (1.0 - edge) * 0.5 * (0.5 + u_dot_size * 0.5); // dot_size
     vec2 q = fract(uv * u_resolution / cell) - 0.5;
     float d = length(q);
     float dot_r = clamp(base, 0.02, 0.5);
     float v = d < dot_r ? 0.0 : 1.0;
     vec3 bg = vec3(0.05, 0.05, 0.08);
     f_color = vec4(mix(bg, vec3(1.0), v), 1.0);
-'''))
+'''), uniforms={
+        "dot_spacing": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "halftone cell spacing"},
+        "dot_size": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "halftone dot size"},
+    })
 
 # 350 FXAA Anti-Aliasing — Fast Approximate Anti-Aliasing (Lottes, NVIDIA
 # 2009/2011). Real-time screen-space AA: 3x3 luma neighbourhood, edge early-out,
@@ -2244,9 +2263,9 @@ _register("swirl_gpu", "GPU swirl/pinch displacement", "filter", _filter_shader(
 # authoritative for all error-diffusion algorithms. `levels` -> p1 (2..8),
 # `contrast` -> p2. `algorithm`/`palette`/`noise_type` are string choices
 # (pitfall #14) and are left unmapped.
-_register("dither13_gpu", "GPU Bayer-4 ordered dithering (node 13 twin)", "filter", _filter_shader('''
+_register("dither13_gpu", "GPU Bayer-4 ordered dithering (node 13 twin)", "filter", _filter_typed('''
     float gray = dot(orig.rgb, vec3(0.299, 0.587, 0.114));
-    float contrast = 0.5 + u_params.y * 2.5;            // contrast -> p2 (0.5..3.0)
+    float contrast = 0.5 + u_contrast * 2.5;            // contrast
     gray = clamp((gray - 0.5) * contrast + 0.5, 0.0, 1.0);
     // Bayer 4x4 ordered threshold matrix (values 0..15) via a small lookup.
     float bx = mod(gl_FragCoord.x, 4.0);
@@ -2258,14 +2277,17 @@ _register("dither13_gpu", "GPU Bayer-4 ordered dithering (node 13 twin)", "filte
     m[12]=15.0;m[13]=7.0; m[14]=13.0;m[15]=5.0;
     int idx = int(by) * 4 + int(bx);
     float threshold = (m[idx] + 0.5) / 16.0;            // in (0,1)
-    float levels = floor(2.0 + u_params.x * 6.0 + 0.5); // levels -> p1 (2..8)
+    float levels = floor(2.0 + u_levels * 6.0 + 0.5); // levels
     float steps = max(1.0, levels - 1.0);
     float scaled = gray * steps;
     float lower = floor(scaled);
     float frac = scaled - lower;
     float q = (lower + (frac > threshold ? 1.0 : 0.0)) / steps;
     f_color = vec4(vec3(clamp(q, 0.0, 1.0)), 1.0);
-'''))
+'''), uniforms={
+        "levels": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "quantization levels"},
+        "contrast": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "contrast"},
+    })
 
 
 # ═══════════════════════════════════════════════
