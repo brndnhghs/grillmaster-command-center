@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, get_font, BG_DEFAULT, W, H
+from ...core.utils import save, norm, mn, seed_all, get_font, BG_DEFAULT, W, H, wired_source_lum
 from ...core.animation import capture_frame
 
 try:
@@ -16,23 +16,7 @@ try:
 except ImportError:
     _has_cv2 = False
 
-@method(id="73", name="Low Poly", category="math_art", new_image_contract=True, tags=["triangulation", "fast", "expanded"],
-         inputs={"image_in": "IMAGE"},
-         params={"points":{"description":"triangulation points","min":50,"max":500,"default":200},
-                 "jitter":{"description":"jitter","min":2,"max":30,"default":10},
-                 "point_distribution":{"description":"placement","choices":["uniform","grid_jitter","fibonacci","edge_weighted","perlin_weighted","input_edges","multi_res","poisson_disc","spiral","concentric","gaussian_clusters","wave","lattice"],"default":"uniform"},
-                 "mesh_type":{"description":"mesh","choices":["delaunay","voronoi","delaunay_wireframe","dual"],"default":"delaunay"},
-                 "color_source":{"description":"coloring","choices":["position","input_image","palette","gradient","random_palette","noise","brightness"],"default":"position"},
-                 "palette":{"description":"PALETTES","default":""},
-                 "style":{"description":"style","choices":["filled","wireframe","filled_wireframe","glow_edges","dual_layer","shaded_3d","gradient_fill","noise_displaced"],"default":"filled"},
-                 "bg_style":{"description":"bg","choices":["dark","light","gradient","input_image"],"default":"dark"},
-                 "edge_color":{"description":"edge color","default":"auto"},"edge_width":{"description":"edge width","min":0.5,"max":5.0,"default":1.0},
-                 "light_angle":{"description":"light angle","min":0,"max":360,"default":45},"light_altitude":{"description":"light alt","min":0,"max":90,"default":30},
-                 "extrusion_scale":{"description":"extrusion","min":0.0,"max":2.0,"default":0.5},"gradient_blend":{"description":"blend","min":0.0,"max":1.0,"default":0.5},
-                 "noise_amplitude":{"description":"noise","min":0.0,"max":20.0,"default":0.0},
-                 "adaptive_detail":{"description":"adaptive","choices":["no","yes"],"default":"no"},
-                 "anim_mode":{"description":"animation mode","choices":["none","point_drift","color_cycle","noise_pulse"],"default":"none"},
-                 "anim_speed":{"description":"animation speed multiplier","min":0.0,"max":5.0,"default":1.0},})
+@method(id='73', name='Low Poly', category='math_art', new_image_contract=True, tags=['triangulation', 'fast', 'expanded'], inputs={'image_in': 'IMAGE'}, params={'points': {'description': 'triangulation points', 'min': 50, 'max': 500, 'default': 200}, 'jitter': {'description': 'jitter', 'min': 2, 'max': 30, 'default': 10}, 'point_distribution': {'description': 'placement', 'choices': ['uniform', 'grid_jitter', 'fibonacci', 'edge_weighted', 'perlin_weighted', 'input_edges', 'multi_res', 'poisson_disc', 'spiral', 'concentric', 'gaussian_clusters', 'wave', 'lattice'], 'default': 'uniform'}, 'mesh_type': {'description': 'mesh', 'choices': ['delaunay', 'voronoi', 'delaunay_wireframe', 'dual'], 'default': 'delaunay'}, 'color_source': {'description': 'coloring', 'choices': ['position', 'input_image', 'palette', 'gradient', 'random_palette', 'noise', 'brightness'], 'default': 'position'}, 'palette': {'description': 'PALETTES', 'default': ''}, 'style': {'description': 'style', 'choices': ['filled', 'wireframe', 'filled_wireframe', 'glow_edges', 'dual_layer', 'shaded_3d', 'gradient_fill', 'noise_displaced'], 'default': 'filled'}, 'bg_style': {'description': 'bg', 'choices': ['dark', 'light', 'gradient', 'input_image'], 'default': 'dark'}, 'edge_color': {'description': 'edge color', 'default': 'auto'}, 'edge_width': {'description': 'edge width', 'min': 0.5, 'max': 5.0, 'default': 1.0}, 'light_angle': {'description': 'light angle', 'min': 0, 'max': 360, 'default': 45}, 'light_altitude': {'description': 'light alt', 'min': 0, 'max': 90, 'default': 30}, 'extrusion_scale': {'description': 'extrusion', 'min': 0.0, 'max': 2.0, 'default': 0.5}, 'gradient_blend': {'description': 'blend', 'min': 0.0, 'max': 1.0, 'default': 0.5}, 'noise_amplitude': {'description': 'noise', 'min': 0.0, 'max': 20.0, 'default': 0.0}, 'adaptive_detail': {'description': 'adaptive', 'choices': ['no', 'yes'], 'default': 'no'}, 'anim_mode': {'description': 'animation mode', 'choices': ['none', 'point_drift', 'color_cycle', 'noise_pulse'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.0, 'max': 5.0, 'default': 1.0}, 'source': {'description': 'wired upstream image as a domain-warp / seed source', 'choices': ['none', 'input_image'], 'default': 'none'}})
 def method_lowpoly(out_dir: Path, seed: int, params=None):
     """Low Poly — triangulated mesh art with multiple point distributions, mesh types, and styles.
 

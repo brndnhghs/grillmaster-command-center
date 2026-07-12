@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, get_font, BG_DEFAULT, W, H, write_field
+from ...core.utils import save, norm, mn, seed_all, get_font, BG_DEFAULT, W, H, write_field, wired_source_lum
 from ...core.animation import capture_frame
 
 try:
@@ -16,24 +16,7 @@ try:
 except ImportError:
     _has_cv2 = False
 
-@method(id="54", name="Ulam Spiral", category="math_art", new_image_contract=True, tags=["prime", "fast", "expanded"],
-        outputs={"image": "IMAGE", "field": "FIELD"},
-         params={
-             "max_num": {"description": "max number checked for primality", "min": 50000, "max": 500000, "default": 400000},
-             "spiral_type": {"description": "spiral direction and geometry", "choices": ["clockwise", "counter_clockwise", "diamond", "hexagonal", "archimedean"], "default": "clockwise"},
-             "color_mode": {"description": "prime/coloring scheme", "choices": ["binary", "palette", "factor_count", "twin_prime", "prime_gap", "semiprime", "goldbach", "constellation", "mersenne"], "default": "binary"},
-             "palette": {"description": "PALETTES name for coloring", "default": ""},
-             "bg_style": {"description": "background rendering", "choices": ["dark", "gradient", "density_heatmap", "number_grid", "input_image"], "default": "dark"},
-             "show_twin_lines": {"description": "draw lines between twin primes", "choices": ["no", "yes"], "default": "no"},
-             "show_constellations": {"description": "highlight prime constellations (k-tuples)", "choices": ["no", "yes"], "default": "no"},
-             "show_goldbach": {"description": "visualize Goldbach pairs", "choices": ["no", "yes"], "default": "no"},
-             "show_mersenne": {"description": "highlight Mersenne primes", "choices": ["no", "yes"], "default": "no"},
-             "show_numbers": {"description": "overlay number labels on primes", "choices": ["no", "yes"], "default": "no"},
-             "density_sigma": {"description": "density heatmap blur sigma", "min": 2, "max": 30, "default": 8},
-             "prime_size": {"description": "prime dot size (px at render)", "min": 1, "max": 5, "default": 1},
-             "composite_alpha": {"description": "composite dot visibility (0=invisible)", "min": 0.0, "max": 1.0, "default": 0.0},"anim_mode": {"description": "animation mode", "choices": ["none", "color_cycle", "archimedean_rotate"], "default": "none"},
-             "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
-         })
+@method(id='54', name='Ulam Spiral', category='math_art', new_image_contract=True, tags=['prime', 'fast', 'expanded'], outputs={'image': 'IMAGE', 'field': 'FIELD'}, params={'max_num': {'description': 'max number checked for primality', 'min': 50000, 'max': 500000, 'default': 400000}, 'spiral_type': {'description': 'spiral direction and geometry', 'choices': ['clockwise', 'counter_clockwise', 'diamond', 'hexagonal', 'archimedean'], 'default': 'clockwise'}, 'color_mode': {'description': 'prime/coloring scheme', 'choices': ['binary', 'palette', 'factor_count', 'twin_prime', 'prime_gap', 'semiprime', 'goldbach', 'constellation', 'mersenne'], 'default': 'binary'}, 'palette': {'description': 'PALETTES name for coloring', 'default': ''}, 'bg_style': {'description': 'background rendering', 'choices': ['dark', 'gradient', 'density_heatmap', 'number_grid', 'input_image'], 'default': 'dark'}, 'show_twin_lines': {'description': 'draw lines between twin primes', 'choices': ['no', 'yes'], 'default': 'no'}, 'show_constellations': {'description': 'highlight prime constellations (k-tuples)', 'choices': ['no', 'yes'], 'default': 'no'}, 'show_goldbach': {'description': 'visualize Goldbach pairs', 'choices': ['no', 'yes'], 'default': 'no'}, 'show_mersenne': {'description': 'highlight Mersenne primes', 'choices': ['no', 'yes'], 'default': 'no'}, 'show_numbers': {'description': 'overlay number labels on primes', 'choices': ['no', 'yes'], 'default': 'no'}, 'density_sigma': {'description': 'density heatmap blur sigma', 'min': 2, 'max': 30, 'default': 8}, 'prime_size': {'description': 'prime dot size (px at render)', 'min': 1, 'max': 5, 'default': 1}, 'composite_alpha': {'description': 'composite dot visibility (0=invisible)', 'min': 0.0, 'max': 1.0, 'default': 0.0}, 'anim_mode': {'description': 'animation mode', 'choices': ['none', 'color_cycle', 'archimedean_rotate'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 5.0, 'default': 1.0}, 'source': {'description': 'wired upstream image as a domain-warp / seed source', 'choices': ['none', 'input_image'], 'default': 'none'}}, inputs={'image_in': 'IMAGE'})
 def method_ulam_spiral(out_dir: Path, seed: int, params=None):
     """Render Ulam Spiral — prime numbers arranged in a spiral pattern.
 

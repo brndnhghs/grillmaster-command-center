@@ -7,7 +7,7 @@ import numpy as np
 
 from ...core.registry import method
 from ...core.utils import (
-    save, mn, seed_all, W, H, write_scalars, write_field, write_mask, load_input,
+    save, mn, seed_all, W, H, write_scalars, write_field, write_mask, load_input, wired_source_lum,
 )
 from ...core.animation import capture_frame
 
@@ -137,28 +137,7 @@ def _iq_ramp(t: np.ndarray):
     return np.stack([r, g, b], axis=-1)
 
 
-@method(
-    id="442",
-    name="Fast Marching Geodesic",
-    category="math_art",
-    new_image_contract=True,
-    tags=["geodesic", "distance", "eikonal", "fast-marching", "anisotropic", "obstacle", "expanded", "animation"],
-    inputs={"image_in": "IMAGE"},
-    outputs={"image": "IMAGE", "mask": "MASK"},
-    params={
-        "seed_mode": {"description": "seed placement: single, corners, grid, noise, input_mask", "choices": ["single", "corners", "grid", "noise", "input_mask"], "default": "single"},
-        "speed_mode": {"description": "speed field (cost) source: uniform, radial, noise, input_image", "choices": ["uniform", "radial", "noise", "input_image"], "default": "uniform"},
-        "obstacle_mode": {"description": "obstacle (impassable) source: none, input_image, noise", "choices": ["none", "input_image", "noise"], "default": "none"},
-        "obstacle_strength": {"description": "obstacle slow-down (1=free, 30=near-blocking)", "min": 1.0, "max": 30.0, "default": 8.0},
-        "seed_count": {"description": "number of seeds (grid/noise modes)", "min": 1, "max": 24, "default": 6},
-        "color_mode": {"description": "render: field (geodesic heat), isolines (contour bands), overlay (on bg)", "choices": ["field", "isolines", "overlay"], "default": "field"},
-        "n_iso": {"description": "number of geodesic contour bands", "min": 4, "max": 32, "default": 16},
-        "line_width": {"description": "isoline/overlay stroke width in px", "min": 1, "max": 6, "default": 2},
-        "anim_mode": {"description": "animation mode: none, sweep, breathe, rotate", "choices": ["none", "sweep", "breathe", "rotate"], "default": "none"},
-        "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
-        "time": {"description": "animation time in radians", "min": 0.0, "max": 6.2832, "default": 0.0},
-    },
-)
+@method(id='442', name='Fast Marching Geodesic', category='math_art', new_image_contract=True, tags=['geodesic', 'distance', 'eikonal', 'fast-marching', 'anisotropic', 'obstacle', 'expanded', 'animation'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'mask': 'MASK'}, params={'seed_mode': {'description': 'seed placement: single, corners, grid, noise, input_mask', 'choices': ['single', 'corners', 'grid', 'noise', 'input_mask'], 'default': 'single'}, 'speed_mode': {'description': 'speed field (cost) source: uniform, radial, noise, input_image', 'choices': ['uniform', 'radial', 'noise', 'input_image'], 'default': 'uniform'}, 'obstacle_mode': {'description': 'obstacle (impassable) source: none, input_image, noise', 'choices': ['none', 'input_image', 'noise'], 'default': 'none'}, 'obstacle_strength': {'description': 'obstacle slow-down (1=free, 30=near-blocking)', 'min': 1.0, 'max': 30.0, 'default': 8.0}, 'seed_count': {'description': 'number of seeds (grid/noise modes)', 'min': 1, 'max': 24, 'default': 6}, 'color_mode': {'description': 'render: field (geodesic heat), isolines (contour bands), overlay (on bg)', 'choices': ['field', 'isolines', 'overlay'], 'default': 'field'}, 'n_iso': {'description': 'number of geodesic contour bands', 'min': 4, 'max': 32, 'default': 16}, 'line_width': {'description': 'isoline/overlay stroke width in px', 'min': 1, 'max': 6, 'default': 2}, 'anim_mode': {'description': 'animation mode: none, sweep, breathe, rotate', 'choices': ['none', 'sweep', 'breathe', 'rotate'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 5.0, 'default': 1.0}, 'time': {'description': 'animation time in radians', 'min': 0.0, 'max': 6.2832, 'default': 0.0}, 'source': {'description': 'wired upstream image as a domain-warp / seed source', 'choices': ['none', 'input_image'], 'default': 'none'}})
 def method_fast_marching(out_dir: Path, seed: int, params=None):
     """Fast Marching Method — exact geodesic / Eikonal distance transform.
 

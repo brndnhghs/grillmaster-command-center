@@ -9,7 +9,7 @@ from scipy.spatial import cKDTree
 
 from ...core.registry import method
 from ...core.utils import (
-    save, mn, seed_all, W, H, write_scalars, write_field, write_mask, load_input,
+    save, mn, seed_all, W, H, write_scalars, write_field, write_mask, load_input, wired_source_lum,
 )
 from ...core.animation import capture_frame
 
@@ -172,32 +172,7 @@ def _grow(attractors, root, da, di, seg, max_iter):
     return nxs, nys, parents, depths, birth
 
 
-@method(
-    id="443",
-    name="Space Colonization",
-    category="math_art",
-    new_image_contract=True,
-    tags=["space-colonization", "procedural", "botany", "branching", "tree",
-          "generation", "runions-2007", "animation"],
-    inputs={"image_in": "IMAGE"},
-    outputs={"image": "IMAGE", "mask": "MASK", "field": "FIELD"},
-    params={
-        "shape_mode": {"description": "attractor cloud shape: disc, blob, ring, top, noise, input_mask", "choices": ["disc", "blob", "ring", "top", "noise", "input_mask"], "default": "disc"},
-        "attractor_count": {"description": "number of leaf attractors the branches reach for", "min": 50, "max": 4000, "default": 1200},
-        "attraction_dist": {"description": "how far a branch can sense an attractor (fraction of min dim)", "min": 0.02, "max": 0.5, "default": 0.16},
-        "kill_dist": {"description": "attractor removed once a branch gets this close (fraction of min dim)", "min": 0.005, "max": 0.1, "default": 0.02},
-        "segment_len": {"description": "branch growth step per iteration (fraction of min dim)", "min": 0.003, "max": 0.06, "default": 0.012},
-        "max_iter": {"description": "growth iteration cap (also the full-tree reveal for static mode)", "min": 10, "max": 200, "default": 120},
-        "trunk_x": {"description": "root position x (fraction of width)", "min": 0.0, "max": 1.0, "default": 0.5},
-        "trunk_y": {"description": "root position y (fraction of height, 1=bottom)", "min": 0.0, "max": 1.0, "default": 0.95},
-        "color_mode": {"description": "branch colouring: age (IQ ramp by depth) or mono", "choices": ["age", "mono"], "default": "age"},
-        "show_leaves": {"description": "draw bright leaf buds at terminal branches", "choices": ["yes", "no"], "default": "yes"},
-        "line_width": {"description": "branch stroke width in px (kept thin 1-2)", "min": 1, "max": 2, "default": 1},
-        "anim_mode": {"description": "animation mode: none (full tree) or grow (reveal over time)", "choices": ["none", "grow"], "default": "none"},
-        "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
-        "time": {"description": "animation time in radians", "min": 0.0, "max": 6.2832, "default": 0.0},
-    },
-)
+@method(id='443', name='Space Colonization', category='math_art', new_image_contract=True, tags=['space-colonization', 'procedural', 'botany', 'branching', 'tree', 'generation', 'runions-2007', 'animation'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'mask': 'MASK', 'field': 'FIELD'}, params={'shape_mode': {'description': 'attractor cloud shape: disc, blob, ring, top, noise, input_mask', 'choices': ['disc', 'blob', 'ring', 'top', 'noise', 'input_mask'], 'default': 'disc'}, 'attractor_count': {'description': 'number of leaf attractors the branches reach for', 'min': 50, 'max': 4000, 'default': 1200}, 'attraction_dist': {'description': 'how far a branch can sense an attractor (fraction of min dim)', 'min': 0.02, 'max': 0.5, 'default': 0.16}, 'kill_dist': {'description': 'attractor removed once a branch gets this close (fraction of min dim)', 'min': 0.005, 'max': 0.1, 'default': 0.02}, 'segment_len': {'description': 'branch growth step per iteration (fraction of min dim)', 'min': 0.003, 'max': 0.06, 'default': 0.012}, 'max_iter': {'description': 'growth iteration cap (also the full-tree reveal for static mode)', 'min': 10, 'max': 200, 'default': 120}, 'trunk_x': {'description': 'root position x (fraction of width)', 'min': 0.0, 'max': 1.0, 'default': 0.5}, 'trunk_y': {'description': 'root position y (fraction of height, 1=bottom)', 'min': 0.0, 'max': 1.0, 'default': 0.95}, 'color_mode': {'description': 'branch colouring: age (IQ ramp by depth) or mono', 'choices': ['age', 'mono'], 'default': 'age'}, 'show_leaves': {'description': 'draw bright leaf buds at terminal branches', 'choices': ['yes', 'no'], 'default': 'yes'}, 'line_width': {'description': 'branch stroke width in px (kept thin 1-2)', 'min': 1, 'max': 2, 'default': 1}, 'anim_mode': {'description': 'animation mode: none (full tree) or grow (reveal over time)', 'choices': ['none', 'grow'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 5.0, 'default': 1.0}, 'time': {'description': 'animation time in radians', 'min': 0.0, 'max': 6.2832, 'default': 0.0}, 'source': {'description': 'wired upstream image as a domain-warp / seed source', 'choices': ['none', 'input_image'], 'default': 'none'}})
 def method_space_colonization(out_dir: Path, seed: int, params=None):
     """Space Colonization — procedural branching structures (Runions et al. 2007).
 

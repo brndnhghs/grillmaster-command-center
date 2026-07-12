@@ -6,7 +6,7 @@ import numpy as np
 
 from ...core.registry import method
 from ...core.utils import (
-    save, mn, seed_all, W, H, write_scalars, write_field,
+    save, mn, seed_all, W, H, write_scalars, write_field, wired_source_lum,
 )
 from ...core.animation import capture_frame
 
@@ -76,31 +76,7 @@ def _f_of_z(z: np.ndarray, fn: str, n: float) -> np.ndarray:
         return z
 
 
-@method(
-    id="431",
-    name="Domain Coloring",
-    category="math_art",
-    new_image_contract=True,
-    tags=["complex-analysis", "phase-portrait", "visualization", "math-art",
-          "generative", "animation", "gpu-twin-candidate"],
-    inputs={},
-    outputs={"image": "IMAGE"},
-    params={
-        "function": {"description": "complex function to visualize", "choices": [
-            "z2", "z3", "z5", "z_n", "inv", "exp", "sin", "cos", "tan",
-            "log", "mobius", "poly", "identity"], "default": "poly"},
-        "exponent": {"description": "power n for the z_n function", "min": 2.0, "max": 12.0, "default": 3.0},
-        "coloring": {"description": "color scheme", "choices": [
-            "phase", "enhanced", "contour", "grid"], "default": "grid"},
-        "scale": {"description": "view half-extent in the complex plane (zoom out = larger)", "min": 0.5, "max": 8.0, "default": 3.0},
-        "center_x": {"description": "real part of the view center", "min": -4.0, "max": 4.0, "default": 0.0},
-        "center_y": {"description": "imaginary part of the view center", "min": -4.0, "max": 4.0, "default": 0.0},
-        "time": {"description": "animation phase [0, 2pi)", "min": 0.0, "max": 6.28, "default": 0.0},
-        "anim_mode": {"description": "animation mode (none/rotate/drift/pulse/phase_shift)", "choices": [
-            "none", "rotate", "drift", "pulse", "phase_shift"], "default": "none"},
-        "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
-    },
-)
+@method(id='431', name='Domain Coloring', category='math_art', new_image_contract=True, tags=['complex-analysis', 'phase-portrait', 'visualization', 'math-art', 'generative', 'animation', 'gpu-twin-candidate'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE'}, params={'function': {'description': 'complex function to visualize', 'choices': ['z2', 'z3', 'z5', 'z_n', 'inv', 'exp', 'sin', 'cos', 'tan', 'log', 'mobius', 'poly', 'identity'], 'default': 'poly'}, 'exponent': {'description': 'power n for the z_n function', 'min': 2.0, 'max': 12.0, 'default': 3.0}, 'coloring': {'description': 'color scheme', 'choices': ['phase', 'enhanced', 'contour', 'grid'], 'default': 'grid'}, 'scale': {'description': 'view half-extent in the complex plane (zoom out = larger)', 'min': 0.5, 'max': 8.0, 'default': 3.0}, 'center_x': {'description': 'real part of the view center', 'min': -4.0, 'max': 4.0, 'default': 0.0}, 'center_y': {'description': 'imaginary part of the view center', 'min': -4.0, 'max': 4.0, 'default': 0.0}, 'time': {'description': 'animation phase [0, 2pi)', 'min': 0.0, 'max': 6.28, 'default': 0.0}, 'anim_mode': {'description': 'animation mode (none/rotate/drift/pulse/phase_shift)', 'choices': ['none', 'rotate', 'drift', 'pulse', 'phase_shift'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 5.0, 'default': 1.0}, 'source': {'description': 'wired upstream image as a domain-warp / seed source', 'choices': ['none', 'input_image'], 'default': 'none'}})
 def method_domain_coloring(out_dir: Path, seed: int, params=None):
     """Domain Coloring — visualizing complex functions by phase & magnitude.
 

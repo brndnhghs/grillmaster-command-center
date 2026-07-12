@@ -9,7 +9,7 @@ from PIL import Image, ImageDraw
 from ...core.registry import method
 from ...core.utils import (
     save, mn, seed_all, W, H,
-    write_scalars, write_field, write_mask,
+    write_scalars, write_field, write_mask, wired_source_lum,
 )
 from ...core.animation import capture_frame
 
@@ -172,27 +172,7 @@ def _edge_pixels(a, b, g, cx, cy, s):
     return [(float(x), float(y)) for x, y in zip(xs, ys)]
 
 
-@method(
-    id="452",
-    name="Poincaré Tessellation",
-    category="math_art",
-    new_image_contract=True,
-    tags=["hyperbolic", "tessellation", "poincare", "escher", "coxeter",
-          "geometry", "tiling", "expanded", "animation"],
-    inputs={},
-    outputs={"image": "IMAGE", "mask": "MASK"},
-    params={
-        "p": {"description": "sides of each central polygon (3-12)", "min": 3, "max": 12, "default": 7},
-        "q": {"description": "polygons meeting at each vertex (3-12)", "min": 3, "max": 12, "default": 3},
-        "detail": {"description": "max polygons flooded (tiling density)", "min": 100, "max": 2500, "default": 900},
-        "color_mode": {"description": "face colour: depth (palette by ring), duo (two-tone), mono (paper)", "choices": ["depth", "duo", "mono"], "default": "depth"},
-        "bg": {"description": "background outside the disk: space (dark), paper (light)", "choices": ["space", "paper"], "default": "space"},
-        "line_width": {"description": "edge stroke width (px)", "min": 1.0, "max": 4.0, "default": 1.5},
-        "anim_mode": {"description": "animation mode: none, rotate (rigid spin), breathe (hyperbolic zoom)", "choices": ["none", "rotate", "breathe"], "default": "none"},
-        "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
-        "time": {"description": "animation time in radians", "min": 0.0, "max": 6.2832, "default": 0.0},
-    },
-)
+@method(id='452', name='Poincaré Tessellation', category='math_art', new_image_contract=True, tags=['hyperbolic', 'tessellation', 'poincare', 'escher', 'coxeter', 'geometry', 'tiling', 'expanded', 'animation'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'mask': 'MASK'}, params={'p': {'description': 'sides of each central polygon (3-12)', 'min': 3, 'max': 12, 'default': 7}, 'q': {'description': 'polygons meeting at each vertex (3-12)', 'min': 3, 'max': 12, 'default': 3}, 'detail': {'description': 'max polygons flooded (tiling density)', 'min': 100, 'max': 2500, 'default': 900}, 'color_mode': {'description': 'face colour: depth (palette by ring), duo (two-tone), mono (paper)', 'choices': ['depth', 'duo', 'mono'], 'default': 'depth'}, 'bg': {'description': 'background outside the disk: space (dark), paper (light)', 'choices': ['space', 'paper'], 'default': 'space'}, 'line_width': {'description': 'edge stroke width (px)', 'min': 1.0, 'max': 4.0, 'default': 1.5}, 'anim_mode': {'description': 'animation mode: none, rotate (rigid spin), breathe (hyperbolic zoom)', 'choices': ['none', 'rotate', 'breathe'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 5.0, 'default': 1.0}, 'time': {'description': 'animation time in radians', 'min': 0.0, 'max': 6.2832, 'default': 0.0}, 'source': {'description': 'wired upstream image as a domain-warp / seed source', 'choices': ['none', 'input_image'], 'default': 'none'}})
 def method_poincare_tessellation(out_dir: Path, seed: int, params=None):
     """Poincaré disk {p,q} hyperbolic tessellation (Coxeter / Escher).
 

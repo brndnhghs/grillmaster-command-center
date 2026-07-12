@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, get_font, BG_DEFAULT, W, H
+from ...core.utils import save, norm, mn, seed_all, get_font, BG_DEFAULT, W, H, wired_source_lum
 from ...core.animation import capture_frame
 
 try:
@@ -16,25 +16,7 @@ try:
 except ImportError:
     _has_cv2 = False
 
-@method(id="81", name="Fourier Circles", category="math_art", tags=["epicycle", "fast", "expanded", "animation"],
-         params={
-    "n_circles": {"description": "epicycle count", "min": 3, "max": 100, "default": 15},
-    "shape": {"description": "target shape: circle, square, triangle, sawtooth, star, heart, butterfly, spiral, custom", "default": "circle"},
-    "render_style": {"description": "rendering: epicycles, trace_only, ghost_trace, filled, radial, scatter, glow, dual_trace", "default": "epicycles"},
-    "color_mode": {"description": "coloring: single, rainbow, gradient, per_circle_hue, trace_gradient, fire, ice, spectral, neon", "default": "single"},
-    "speed": {"description": "animation speed", "min": 0.1, "max": 5.0, "default": 1.0},
-    "line_width": {"description": "line width", "min": 1, "max": 8, "default": 2},
-    "color": {"description": "base color hex", "default": "#FF6600"},
-    "trace_length": {"description": "trace trail length (0=off)", "min": 0, "max": 500, "default": 0},
-    "trace_fade": {"description": "trace fade rate (0-1)", "min": 0.0, "max": 0.99, "default": 0.9},
-    "show_circles": {"description": "draw epicycle circles", "default": True},
-    "show_axes": {"description": "draw reference axes", "default": False},
-    "background": {"description": "background: dark, light, gradient, radial", "default": "dark"},
-    "anim_mode": {"description": "animation: none, rotate, morph, color_cycle, pulse, trace_grow", "default": "none"},
-    "anim_speed": {"description": "animation speed factor", "min": 0.1, "max": 3.0, "default": 1.0},
-    "scale": {"description": "epicycle scale factor", "min": 0.1, "max": 2.0, "default": 1.0},
-    "offset_x": {"description": "x offset (center-relative)", "min": -0.5, "max": 0.5, "default": 0.0},
-    "offset_y": {"description": "y offset (center-relative)", "min": -0.5, "max": 0.5, "default": 0.0},})
+@method(id='81', name='Fourier Circles', category='math_art', tags=['epicycle', 'fast', 'expanded', 'animation'], params={'n_circles': {'description': 'epicycle count', 'min': 3, 'max': 100, 'default': 15}, 'shape': {'description': 'target shape: circle, square, triangle, sawtooth, star, heart, butterfly, spiral, custom', 'default': 'circle'}, 'render_style': {'description': 'rendering: epicycles, trace_only, ghost_trace, filled, radial, scatter, glow, dual_trace', 'default': 'epicycles'}, 'color_mode': {'description': 'coloring: single, rainbow, gradient, per_circle_hue, trace_gradient, fire, ice, spectral, neon', 'default': 'single'}, 'speed': {'description': 'animation speed', 'min': 0.1, 'max': 5.0, 'default': 1.0}, 'line_width': {'description': 'line width', 'min': 1, 'max': 8, 'default': 2}, 'color': {'description': 'base color hex', 'default': '#FF6600'}, 'trace_length': {'description': 'trace trail length (0=off)', 'min': 0, 'max': 500, 'default': 0}, 'trace_fade': {'description': 'trace fade rate (0-1)', 'min': 0.0, 'max': 0.99, 'default': 0.9}, 'show_circles': {'description': 'draw epicycle circles', 'default': True}, 'show_axes': {'description': 'draw reference axes', 'default': False}, 'background': {'description': 'background: dark, light, gradient, radial', 'default': 'dark'}, 'anim_mode': {'description': 'animation: none, rotate, morph, color_cycle, pulse, trace_grow', 'default': 'none'}, 'anim_speed': {'description': 'animation speed factor', 'min': 0.1, 'max': 3.0, 'default': 1.0}, 'scale': {'description': 'epicycle scale factor', 'min': 0.1, 'max': 2.0, 'default': 1.0}, 'offset_x': {'description': 'x offset (center-relative)', 'min': -0.5, 'max': 0.5, 'default': 0.0}, 'offset_y': {'description': 'y offset (center-relative)', 'min': -0.5, 'max': 0.5, 'default': 0.0}, 'source': {'description': 'wired upstream image as a domain-warp / seed source', 'choices': ['none', 'input_image'], 'default': 'none'}}, inputs={'image_in': 'IMAGE'})
 def method_fourier_circles(out_dir: Path, seed: int, params=None):
     """Fourier Circles — epicycle-based Fourier series visualization with multiple shapes and animation.
 
