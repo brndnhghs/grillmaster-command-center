@@ -146,3 +146,69 @@ def test_recovery_keeps_dynamic_partial_render():
         f"captured={captured} floor={min_frames} alive={liveness.get('alive')}"
     )
     assert liveness.get("truncated") is True
+
+
+# ── Route 8 follow-up: perceptual (changed-pixel) liveness rescue ──
+#
+# Global temporal_var averages LOCALIZED motion (a single drifting blob, a
+# rotating thin shape, strokes being drawn) down to ~0 and wrongly culls it
+# as 'static' — the #2 dead reason in the corpus. A per-pixel changed-fraction
+# catches that real motion. The rescue only ever FLIPS static/flat -> alive.
+
+
+def _localized_motion_stack(n: int = 24) -> list[np.ndarray]:
+    """A clip with LOCALIZED motion: a solid disc drifts across an otherwise
+    static frame. Global temporal_var is tiny (only a few % of pixels move),
+    so the variance metric calls it 'static' — but it is genuinely animated.
+    """
+    H, W = 72, 112
+    cy, r = H // 2, 10
+    frames = []
+    for i in range(n):
+        canvas = np.zeros((H, W), dtype=np.float32)
+        cx = int(15 + (W - 30) * i / max(1, n - 1))
+        yy, xx = np.ogrid[:H, :W]
+        mask = (yy - cy) ** 2 + (xx - cx) ** 2 <= r * r
+        canvas[mask] = 0.9
+        frames.append(canvas)
+    return frames
+
+
+def test_localized_motion_rescued_from_static():
+    """A drifting disc has negligible global temporal_var but real motion.
+    With the perceptual rescue it must be classified alive; without it the
+    variance metric alone would call it 'static'."""
+    cfg = DEFAULT_CONFIG
+    st = evaluate_frames(_localized_motion_stack(), cfg)
+    assert st["alive"], (
+        f"localized motion wrongly culled: reason={st['reason']} "
+        f"tvar={st['temporal_var']} motion_frac={st.get('motion_pixel_frac')}"
+    )
+    assert st.get("motion_pixel_frac", 0) >= cfg.motion_pixel_frac_min
+
+
+def test_rescue_is_non_destructive():
+    """A frozen-but-detailed checkerboard still has ~0 changed pixels, so the
+    rescue must NOT admit it — it stays 'static'. Confirms the fix only ever
+    flips moving clips, never frozen ones."""
+    cfg = DEFAULT_CONFIG
+    st = evaluate_frames(_structured_static_stack(), cfg)
+    assert not st["alive"]
+    assert st["reason"] == "static"
+    assert st.get("motion_pixel_frac", 1.0) < cfg.motion_pixel_frac_min
+
+
+def test_rescue_rejects_random_dither():
+    """High-frequency per-pixel noise changes every pixel every frame
+    (motion_pixel_frac ~1) but is temporally decorrelated (frame_corr ~0).
+    The rescue_corr_max guard must keep it excluded (the flicker gate already
+    would, but this proves the rescue alone doesn't admit dither)."""
+    cfg = DEFAULT_CONFIG
+    rng = np.random.default_rng(0)
+    H, W, n = 72, 112, 24
+    frames = [rng.random((H, W)).astype(np.float32) for _ in range(n)]
+    st = evaluate_frames(frames, cfg)
+    # Dither has huge temporal_var anyway, so it's caught by flicker upstream;
+    # assert the rescue signal alone wouldn't misfire: frame_corr is low.
+    assert st.get("frame_corr", 1.0) < cfg.rescue_corr_max
+

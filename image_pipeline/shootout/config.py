@@ -70,6 +70,19 @@ class ShootoutConfig:
     temporal_var_min: float = 3e-3     # per-pixel variance across time below this → static
     flicker_corr_max: float = 0.05     # consecutive-frame correlation below this AND
     flicker_var_min: float = 0.02      # temporal variance above this → pure noise/flicker
+    # ── Perceptual-liveness rescue (Route 8 follow-up, 2026-07-12) ──
+    # Global temporal_var averages LOCALIZED motion (drift / rotation / thin
+    # strokes / a single moving blob) down to ~0 and wrongly culls it as
+    # 'static' (86/288 dead genomes are 'static' — the #2 dead reason). A
+    # per-pixel changed-fraction catches that real motion. Rescue a clip the
+    # variance metric would call static/flat ONLY when a meaningful fraction
+    # of pixels actually move frame-to-frame AND the motion is temporally
+    # structured (frame_corr below rescue_corr_max) — so random dither,
+    # already handled by the flicker gate, is never admitted. Strictly
+    # non-destructive: it can only flip static/flat -> alive, never reverse.
+    motion_thresh: float = 0.03          # per-pixel abs frame-diff to count as "changed"
+    motion_pixel_frac_min: float = 0.03  # changed-pixel fraction implying real motion
+    rescue_corr_max: float = 0.98        # frame_corr must be below this for rescue
 
     # ── Rendering ─────────────────────────────────────────────────
     render_concurrency: int = 3

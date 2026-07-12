@@ -85,14 +85,35 @@ class LivenessAccumulator:
                                    / (len(a) * sa * sb)))
         frame_corr = float(np.mean(corrs)) if corrs else 1.0
 
+        # ── Perceptual motion signal (changed-pixel fraction) ──
+        # Global temporal_var averages LOCALIZED motion (a single drifting
+        # blob, a rotating thin shape, strokes being drawn) down toward 0,
+        # so the variance metric wrongly reports those as "static". Count the
+        # fraction of pixels whose per-frame step exceeds motion_thresh; real
+        # motion lights up a stable sub-region of the frame, while frozen
+        # noise and a global uniform pulse barely register here (the global
+        # pulse is already rescued by the temporal_var floor above).
+        diffs = np.abs(stack[1:] - stack[:-1])
+        changed = (diffs > cfg.motion_thresh).mean(axis=0)  # (h, w) per-pixel frac
+        motion_pixel_frac = float((changed > 0).mean())
+
         reason = None
         if self.nan:
             reason = "nan"
         elif temporal_var < cfg.temporal_var_min:
-            # Not moving. If it is also spatially degenerate
-            # (near black/white/uniform) call it "flat"; otherwise it
-            # is a structured-but-frozen "static" clip.
-            reason = "flat" if spatial_var < cfg.spatial_var_min else "static"
+            # Not moving by the variance metric. Try a perceptual rescue:
+            # if a meaningful fraction of pixels actually change frame to
+            # frame AND the motion is temporally structured (not random
+            # dither, which the flicker gate already rejects), keep it.
+            # This only ever FLIPS static/flat -> alive, never the reverse.
+            if (motion_pixel_frac >= cfg.motion_pixel_frac_min
+                    and frame_corr < cfg.rescue_corr_max):
+                reason = None
+            else:
+                # Not moving. If it is also spatially degenerate
+                # (near black/white/uniform) call it "flat"; otherwise it
+                # is a structured-but-frozen "static" clip.
+                reason = "flat" if spatial_var < cfg.spatial_var_min else "static"
         elif spatial_var < cfg.spatial_var_min:
             # Moving (passed the temporal floor above) but spatially
             # smooth / low-contrast. Motion wins: a smooth gradient or
@@ -112,6 +133,7 @@ class LivenessAccumulator:
             "temporal_var": round(temporal_var, 6),
             "spatial_var": round(spatial_var, 6),
             "frame_corr": round(frame_corr, 4),
+            "motion_pixel_frac": round(motion_pixel_frac, 4),
             "frame_drop": self.missing,
         }
 

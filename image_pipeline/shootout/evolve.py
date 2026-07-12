@@ -380,13 +380,19 @@ def mutate(parent: dict, pool: GenePool, cfg: ShootoutConfig,
     cfg.min_divergence from the parent, or after cfg.max_divergence_attempts.
     This guarantees bred offspring are meaningfully different — not clones.
 
-    Records the achieved `divergence` and the `intensity` used in the
-    deviation dict so the UI can show how extreme the evolution was.
+    Every attempt force-includes at least one STRUCTURAL op (node swap /
+    insert / branch / driver / rewire) so the graph topology actually changes
+    and survives repair_graph's terminal-reachability prune. Pure param-jitter
+    attempts can be pruned back to near-clones, which is what made old evolutions
+    look identical to the parent. Records the achieved `divergence` and the
+    `intensity` used in the deviation dict so the UI can show how extreme the
+    evolution was.
     """
     import copy
     op_table = _GENTLE_OPS if gentle else _MUTATION_OPS
     op_names = [op for op, _ in op_table]
     op_weights = [w for _, w in op_table]
+    structural_ops = [op for op in op_names if op is not _op_param_jitter]
 
     best_child = None
     best_div = -1.0
@@ -397,8 +403,12 @@ def mutate(parent: dict, pool: GenePool, cfg: ShootoutConfig,
         hi = cfg.mutations_per_offspring[1] + intensity
         n_ops = rng.randint(lo, hi)
         applied = []
-        for _ in range(n_ops):
-            op = rng.choices(op_names, weights=op_weights, k=1)[0]
+        chosen = [rng.choices(op_names, weights=op_weights, k=1)[0]
+                  for _ in range(n_ops)]
+        # Guarantee at least one structural op so topology genuinely changes.
+        if structural_ops and not any(op in structural_ops for op in chosen):
+            chosen[0] = rng.choice(structural_ops)
+        for op in chosen:
             applied.append(op.__name__.lstrip("_"))
             _apply_op(op, graph, pool, cfg, rng, intensity)
         seed = parent.get("seed", 42)
