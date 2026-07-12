@@ -50,3 +50,4 @@ from . import retinex_msrcr
 from . import mean_shift
 from . import shock_filter
 from . import relative_total_variation
+from . import kaleidoscope_mirror
