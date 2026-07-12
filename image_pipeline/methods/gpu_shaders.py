@@ -719,6 +719,12 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     "161": {"shader": "spectral_tapestry_gpu", "type": "procedural",
             "param_map": {"n_modes": "p1", "coupling": "p2",
                           "drift_speed": "p3"}},
+    # 477 Gabor Noise -> closed-form twin (live-preview path; the CPU numpy
+    # node stays authoritative for exact export). REAL numeric params
+    # orientation/anisotropy/frequency/bandwidth mapped to the twin's p1..p4.
+    "477": {"shader": "gabor_gpu", "type": "procedural",
+            "param_map": {"orientation": "p1", "anisotropy": "p2",
+                          "frequency": "p3", "bandwidth": "p4"}},
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SHIMS)
 

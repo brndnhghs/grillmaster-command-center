@@ -1,158 +1,184 @@
 from __future__ import annotations
+
 import math
-from pathlib import Path
 
 import numpy as np
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, write_field, W, H, PALETTES, wired_source_lum
+from ...core.utils import (
+    save, mn, seed_all, W, H, write_scalars, write_field,
+)
 from ...core.animation import capture_frame
 
-_ERROR_IMG = np.full((H, W, 3), 128, dtype=np.uint8)
+
+# ── Stable integer-lattice hash (deterministic, seed-stable) ──
+def _hash2(ix: np.ndarray, iy: np.ndarray, seed: int) -> np.ndarray:
+    """Integer-lattice hash -> float in [0,1). Vectorized, platform-stable."""
+    ix = ix.astype(np.uint64)
+    iy = iy.astype(np.uint64)
+    n = (ix * np.uint64(73856093)) ^ (iy * np.uint64(19349663)) ^ (np.uint64(seed) * np.uint64(83492791))
+    n = (n ^ (n >> np.uint64(13))) * np.uint64(1274126177)
+    n = n ^ (n >> np.uint64(16))
+    return (n & np.uint64(0x7FFFFFFF)).astype(np.float64) / 2147483647.0
 
 
-@method(id='25', name='Gabor Noise', category='patterns', new_image_contract=True, tags=['classic', 'noise', 'gabor', 'anisotropic', 'band-limited', 'generative', 'animated'], inputs={'phase': 'SCALAR', 'orientation': 'SCALAR', 'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'luminance': 'FIELD'}, params={'frequency': {'description': 'Gabor kernel radial frequency (cycles per unit)', 'min': 0.5, 'max': 40.0, 'default': 12.0}, 'bandwidth': {'description': 'Gaussian envelope width (higher = wider, lower frequency spread)', 'min': 1.0, 'max': 12.0, 'default': 4.0}, 'orientation': {'description': 'kernel orientation in degrees (anisotropic mode)', 'min': 0.0, 'max': 360.0, 'default': 45.0}, 'aniso': {'description': 'anisotropy: anisotropic (fixed orientation) or isotropic (random per-impulse)', 'default': 'anisotropic', 'choices': ['anisotropic', 'isotropic']}, 'impulses': {'description': 'average impulses per cell (kernel density)', 'min': 4, 'max': 128, 'default': 32}, 'cells': {'description': 'sparse-convolution grid cells across the short axis', 'min': 4, 'max': 40, 'default': 12}, 'style': {'description': 'render style', 'default': 'grayscale', 'choices': ['grayscale', 'colormap', 'signed']}, 'palette': {'description': "matplotlib colormap for 'colormap' style", 'default': 'twilight'}, 'phase': {'description': 'temporal phase (animates impulse phases / orientation drift)', 'default': 0.0}, 'source': {'description': "wired upstream image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}}, is_time_varying=False)
-def method_gabor_noise(out_dir: Path, seed: int, params=None):
-    """Gabor noise — sparse convolution of randomly-placed Gabor kernels.
+# Inline inferno LUT (8 control stops, 0-255) -> normalized RGB
+_INFERNO = np.array([
+    [0, 0, 4], [40, 11, 84], [101, 21, 110], [159, 42, 99],
+    [212, 72, 66], [245, 125, 21], [250, 193, 39], [252, 255, 164],
+], dtype=np.float64) / 255.0
 
-    Implements Lagae, Lefebvre, Drettakis & Dutre, "Procedural Noise using
-    Sparse Gabor Convolution" (ACM SIGGRAPH 2009). Noise is built by summing
-    band-limited Gabor kernels
 
-        g(x, y) = exp(-pi * a^2 * (x^2 + y^2)) * cos(2*pi*F0 * (x*cos w + y*sin w) + phi)
+def _inferno(t: np.ndarray) -> np.ndarray:
+    t = np.clip(t, 0.0, 1.0)
+    x = t * 7.0
+    i0 = np.floor(x).astype(np.int64)
+    i1 = np.minimum(i0 + 1, 7)
+    f = x - i0
+    return _INFERNO[i0] + (_INFERNO[i1] - _INFERNO[i0]) * f[..., None]
 
-    placed at Poisson-distributed impulse positions. Setting a single kernel
-    orientation gives anisotropic (streaky, oriented) noise; randomizing the
-    orientation per impulse gives isotropic noise with a controllable power
-    spectrum. Kernel support is bounded (~1/a), so each pixel only needs the
-    impulses in its 3x3 neighbourhood — exact, tileable, band-limited noise.
+
+@method(id="477", name="Gabor Noise", category="patterns",
+        tags=["procedural", "gabor", "noise", "anisotropic", "texture", "animation",
+              "gpu-twin-candidate"],
+        inputs={},
+        outputs={"image": "IMAGE", "luminance": "FIELD"},
+        params={
+    "frequency": {"description": "spatial frequency / ridge density (higher = finer)", "min": 1.0, "max": 12.0, "default": 5.0},
+    "anisotropy": {"description": "ridge elongation: 0 = isotropic blobs, 1 = fully stretched ridges", "min": 0.0, "max": 1.0, "default": 0.7},
+    "orientation": {"description": "global ridge orientation in degrees", "min": 0.0, "max": 180.0, "default": 30.0},
+    "bandwidth": {"description": "kernel sharpness / overlap (higher = wider, smoother)", "min": 1.0, "max": 6.0, "default": 2.5},
+    "octaves": {"description": "multi-scale layers (FBM-style)", "min": 1, "max": 5, "default": 3},
+    "colormode": {"description": "color mapping for the scalar field", "choices": ["spectral", "mono", "inferno"], "default": "spectral"},
+    "anim_mode": {"description": "animation mode (none/rotate/drift/pulse)", "choices": ["none", "rotate", "drift", "pulse"], "default": "none"},
+    "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
+    "time": {"description": "animation phase [0, 2pi)", "min": 0.0, "max": 6.28, "default": 0.0},
+})
+def method_gabor_noise(out_dir, seed: int, params=None):
+    """Gabor Noise — anisotropic procedural noise via Sparse Gabor Convolution.
+
+    Technique (Lagae, Lefebvre, Drettakis & Dutré, "Procedural Noise using
+    Sparse Gabor Convolution", SIGGRAPH 2011; also "Gabor Noise: A Practical
+    and Efficient Noise Model for Graphics", 2011). A Gabor kernel is a
+    Gaussian envelope multiplied by a cosine carrier:
+
+        g(x) = K * exp(-π (x_par²/σ_par² + x_perp²/σ_perp²)) * cos(2π F·x + φ)
+
+    Sparse Gabor noise scatters one such kernel (an "impulse") per cell of a
+    jittered lattice; the field value is the sum of every kernel in a pixel's
+    neighbourhood. Because the frequency vector F is shared (and can be
+    rotated / stretched), the noise has a *controlled directionality*:
+    anisotropy stretches the Gaussian along the perpendicular axis, producing
+    long parallel ridges — the signature Gabor look (wood grain, brushed metal,
+    fabric) and a drop-in anisotropic replacement for Perlin / FBM noise.
+
+    Closed-form per-frame field (Architecture B): the orchestrator re-calls it
+    with an increasing ``time``. Animation modes:
+      * ``rotate`` — the global orientation sweeps over time;
+      * ``drift``  — the lattice pans along the ridge direction;
+      * ``pulse``  — the kernel amplitude breathes (smooth, no cusps).
+    With ``anim_mode="none"`` the field is a pure function of the seed, so it
+    is a static baseline (Δ ≈ 0) as required.
     """
     try:
         if params is None:
             params = {}
+        t = float(params.get("time", 0.0))
         seed_all(seed)
 
-        frequency = float(params.get("frequency", 12.0))
-        bandwidth = float(params.get("bandwidth", 4.0))
-        orientation_deg = float(params.get("orientation", 45.0))
-        aniso = params.get("aniso", "anisotropic")
-        impulses = int(params.get("impulses", 32))
-        cells = int(params.get("cells", 12))
-        style = params.get("style", "grayscale")
-        pal = params.get("palette", "twilight")
+        frequency = float(params.get("frequency", 5.0))
+        anisotropy = float(params.get("anisotropy", 0.7))
+        orientation = float(params.get("orientation", 30.0))
+        bandwidth = float(params.get("bandwidth", 2.5))
+        octaves = int(params.get("octaves", 3))
+        colormode = params.get("colormode", "spectral")
+        anim_mode = params.get("anim_mode", "none")
+        anim_speed = float(params.get("anim_speed", 1.0))
 
-        # SCALAR-driven animation
-        phase_override = params.get("phase")
-        phase = float(phase_override) if phase_override is not None else 0.0
-        orient_override = params.get("orientation")
-        if orient_override is not None:
-            orientation_deg = float(orient_override)
+        # ── Architecture-B time wiring ──
+        _t = 0.0 if anim_mode == "none" else t * anim_speed
 
-        # Gaussian envelope coefficient 'a' from bandwidth (kernel radius ~ 1/a in cell units)
-        a = 1.0 / max(1e-3, bandwidth)
-        # F0 in cell-space cycles: normalize frequency so it reads consistently
-        F0 = frequency / 40.0 * 3.0
-        # Kernel truncation radius (in cell units) where the Gaussian ~ 0
-        radius = math.sqrt(-math.log(0.01) / math.pi) / a  # exp(-pi a^2 r^2) = 0.01
+        # ── Pixel grid (resolved from the canvas ContextVar) ──
+        Hpx, Wpx = int(H), int(W)
+        yy, xx = np.mgrid[0:Hpx, 0:Wpx].astype(np.float64)
 
-        # ── Sparse convolution grid ──
-        cells_y = max(4, cells)
-        cell_px = H / cells_y            # square cells in pixel space
-        cells_x = int(math.ceil(W / cell_px)) + 1
-        cells_y = cells_y + 1
+        # ── Global orientation (radians), with optional time sweep ──
+        theta = math.radians(orientation) + (_t * 0.5 if anim_mode == "rotate" else 0.0)
+        ux, uy = math.cos(theta), math.sin(theta)
 
-        # Per-pixel coordinates in cell units
-        yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
-        # Wired image as a domain-warp source (luminance distorts the pattern grid)
-        _src_lum = wired_source_lum(params, xx.shape[1], xx.shape[0])
-        if _src_lum is not None:
-            xx = xx + (_src_lum - 0.5) * 15.0
-            yy = yy + (_src_lum - 0.5) * 15.0
+        # ── Base scale derived from frequency ──
+        S = float(np.clip(70.0 / frequency, 6.0, 90.0))
+        Fmag = frequency * 0.03
+        bwf = float(np.clip(bandwidth / 2.5, 0.4, 2.4))
+        sigma_par = S * 0.34 * bwf
+        sigma_perp = sigma_par * max(0.12, 1.0 - anisotropy * 0.85)
 
-        cx = xx / cell_px
-        cy = yy / cell_px
+        # drift translation along the ridge direction (pixels)
+        drift_px = _t * 8.0 if anim_mode == "drift" else 0.0
+        # pulse (amplitude breathing) is applied AFTER normalization so it is
+        # not divided back out by the per-frame std (avoids a silent dead
+        # animation — pitfall #19).
 
-        acc = np.zeros((H, W), dtype=np.float32)
-        w0 = math.radians(orientation_deg) + phase * 0.3
+        # ── Sparse Gabor Convolution over octaves ──
+        acc = np.zeros((Hpx, Wpx), dtype=np.float64)
+        R = min(4, int(max(2, math.ceil(3.0 * sigma_par / S))) + 1)
+        for o in range(octaves):
+            So = S / (2.0 ** o)
+            Fm = Fmag * (2.0 ** o)
+            spo = sigma_par / (2.0 ** o) * bwf
+            spe = sigma_perp / (2.0 ** o)
+            amp = 1.0 / (2.0 ** o)
+            cio = np.floor(xx / So).astype(np.int64)
+            cjo = np.floor(yy / So).astype(np.int64)
+            for di in range(-R, R + 1):
+                for dj in range(-R, R + 1):
+                    nci = cio + di
+                    ncj = cjo + dj
+                    jx = (_hash2(nci, ncj, seed + o * 1013) - 0.5) * So
+                    jy = (_hash2(nci + 131, ncj + 517, seed + o * 1013) - 0.5) * So
+                    ipx = nci * So + jx
+                    ipy = ncj * So + jy
+                    phase = _hash2(nci + 977, ncj + 331, seed + o * 1013) * (2.0 * math.pi)
+                    dx = xx - ipx
+                    dy = yy - ipy
+                    dpar = dx * ux + dy * uy - drift_px
+                    dper = dx * (-uy) + dy * ux
+                    env = np.exp(-math.pi * (dpar * dpar / (spo * spo) + dper * dper / (spe * spe)))
+                    acc += amp * env * np.cos(2.0 * math.pi * Fm * dpar + phase)
+        # ── Normalize zero-mean field -> [-1, 1] (fixed reference, not animated) ──
+        sd = acc.std() + 1e-6
+        v = np.clip(acc / (sd * 2.6), -1.0, 1.0)
 
-        rng = np.random.default_rng(seed & 0x7FFFFFFF)
+        # ── Pulse (amplitude breathing) applied post-normalization ──
+        if anim_mode == "pulse":
+            v = v * (0.5 + 0.5 * math.sin(_t * 0.6))
 
-        # Precompute integer cell index per pixel
-        icx = np.floor(cx).astype(np.int32)
-        icy = np.floor(cy).astype(np.int32)
+        # ── Color mapping ──
+        if colormode == "mono":
+            g = np.clip(0.5 + 0.5 * v, 0.0, 1.0)
+            rgb = np.stack([g, g, g], axis=-1)
+        elif colormode == "inferno":
+            rgb = _inferno(0.5 + 0.5 * v)
+        else:  # spectral (Inigo-Quilez cosine palette)
+            rgb = 0.5 + 0.5 * np.cos(
+                2.0 * math.pi * (0.5 + 0.5 * v)[:, :, None]
+                + np.array([0.0, 0.33, 0.67])[None, None, :]
+            )
+        rgb = rgb.astype(np.float32)
 
-        # For each cell, generate a deterministic set of impulses (seeded by cell
-        # coords) and splat kernels into pixels whose cell is within radius.
-        cell_reach = int(math.ceil(radius)) + 1
-        for gy in range(cells_y):
-            for gx in range(cells_x):
-                # Deterministic per-cell RNG so noise is stable/tileable
-                cseed = (seed ^ (gx * 0x9E3779B1) ^ (gy * 0x85EBCA77)) & 0x7FFFFFFF
-                crng = np.random.default_rng(cseed)
-                n_imp = crng.poisson(impulses)
-                if n_imp <= 0:
-                    continue
-                # Impulse positions within the cell (cell units)
-                ix = gx + crng.random(n_imp).astype(np.float32)
-                iy = gy + crng.random(n_imp).astype(np.float32)
-                # Random weights, phases; orientation per aniso mode
-                wgt = crng.uniform(-1.0, 1.0, n_imp).astype(np.float32)
-                phi = crng.uniform(0, 2 * math.pi, n_imp).astype(np.float32) + phase
-                if aniso == "isotropic":
-                    omega = crng.uniform(0, 2 * math.pi, n_imp).astype(np.float32)
-                else:
-                    omega = np.full(n_imp, w0, dtype=np.float32)
+        # ── Provenance / fields (Rule 4 / Rule 5) ──
+        write_scalars(out_dir,
+                      mean=round(float(v.mean()), 4),
+                      std=round(float(v.std()), 4),
+                      peak=round(float(np.abs(v).max()), 4),
+                      impulse_spacing_px=round(float(S), 2))
+        write_field(out_dir, v.astype(np.float32))
 
-                # Only touch pixels in cells near this one
-                sel = (np.abs(icx - gx) <= cell_reach) & (np.abs(icy - gy) <= cell_reach)
-                if not np.any(sel):
-                    continue
-                pcx = cx[sel]
-                pcy = cy[sel]
-                sub = np.zeros(pcx.shape[0], dtype=np.float32)
-                for k in range(n_imp):
-                    dx = pcx - ix[k]
-                    dy = pcy - iy[k]
-                    r2 = dx * dx + dy * dy
-                    env = np.exp(-math.pi * a * a * r2)
-                    proj = dx * math.cos(omega[k]) + dy * math.sin(omega[k])
-                    sub += wgt[k] * env * np.cos(2 * math.pi * F0 * proj + phi[k])
-                acc[sel] += sub
-
-        # Normalize: divide by sqrt of impulse count for stable variance
-        acc /= max(1.0, math.sqrt(impulses))
-        field = acc.astype(np.float32)  # signed FIELD
-
-        no = norm(acc)  # [0,1] for rendering
-
-        # ── Render ──
-        if style == "colormap":
-            try:
-                from matplotlib import cm
-                rgb = cm.get_cmap(pal)(no)[:, :, :3].astype(np.float32)
-            except Exception:
-                rgb = np.stack([no, no, no], axis=-1)
-        elif style == "signed":
-            # blue negative, red positive around neutral gray
-            s = np.clip(acc / (np.abs(acc).max() + 1e-6), -1, 1)
-            pos = np.clip(s, 0, 1)
-            neg = np.clip(-s, 0, 1)
-            rgb = np.stack([0.5 + pos * 0.5, 0.5 - (pos + neg) * 0.3, 0.5 + neg * 0.5], axis=-1).astype(np.float32)
-        else:
-            rgb = np.stack([no, no, no], axis=-1).astype(np.float32)
-
-        rgb = np.clip(rgb, 0, 1).astype(np.float32)
-
-        capture_frame("25", rgb)
-        try:
-            write_field(out_dir, field)
-        except Exception:
-            pass
-        save(rgb, mn(25, "gabor-noise"), out_dir)
-        return {"image": rgb, "luminance": field}
+        capture_frame("477", rgb)
+        save(rgb, mn(477, f"Gabor Noise t={_t:.2f}"), out_dir)
+        return rgb
     except Exception as exc:
-        import traceback as _tb
-        _tb.print_exc()
-        print(f"[method_25] ERROR: {exc}")
-        save(_ERROR_IMG, mn(25, "Gabor Noise"), out_dir)
-        return {"image": _ERROR_IMG.astype(np.float32) / 255.0}
+        fallback = np.zeros((int(H), int(W), 3), dtype=np.float32)
+        save(fallback, mn(477, "Gabor Noise"), out_dir)
+        print(f"[method_477] ERROR: {exc}")
+        return fallback

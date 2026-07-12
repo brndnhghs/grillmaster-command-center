@@ -46,7 +46,7 @@ from image_pipeline.methods.gpu_shaders import GPU_SHADER_NODE_MAP
 # 221 -> 228: +7 categorical-coverage client-GPU shims wiring closed-form
 #             typed twins onto existing CPU nodes (16, 65, 78, 56, 81,
 #             406, 409 — math_art / patterns categories).
-EXPECTED_MAP_ENTRIES = 235
+EXPECTED_MAP_ENTRIES = 236
 
 # Simulations-category CPU nodes that are intentionally NOT GPU-mirrored yet.
 # These are Architecture-A stateful sims (discrete CA, agent/particle systems,
@@ -56,7 +56,7 @@ EXPECTED_MAP_ENTRIES = 235
 DEFERRED_SIM_IDS = set(
     "20 34 35 36 55 79 83 84 86 88 89 90 92 94 97 98 101 102 103 "
     "107 109 110 111 112 113 114 116 117 123 129 130 131 134 "
-    "136 145 147 149 151 152 158 159 167 337 343 429 440 448 922".split()
+    "136 145 147 149 151 152 158 159 167 337 343 429 440 448 922 310".split()
 )
 # 448 Differential Growth (Lomas "Primordial"): Arch-A agent/particle growth
 # sim (mesh sprouting + Laplacian smoothing, explicit Euler over a node graph).
@@ -67,6 +67,10 @@ DEFERRED_SIM_IDS = set(
 # Its honest GPU twin is a WebGL2 ping-pong sim needing browser parity -- same
 # deferral class as the other RD/CA/PDE sims above. Out of scope for headless
 # verification until P2 (WebGPU compute) is signed off.
+# 310 Blue Noise Sampling: Arch-A Poisson-disk (Bridson) sampler -- generates a
+# blue-noise point set / dither mask via dart-throwing, not a closed-form
+# f(uv,t) field. Its honest GPU twin is a WebGL2 ping-pong sim needing browser
+# parity, so it is deferred alongside the other Arch-A sims above.
 
 # CPU categories that MUST have a GPU mirror (coverage by category).
 # patterns / fractals / filters / math_art / codegen are fully mirrored by the
