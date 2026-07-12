@@ -47,3 +47,4 @@ from . import gabor_filter
 from . import droste
 from . import diffraction
 from . import retinex_msrcr
+from . import mean_shift
