@@ -21,6 +21,7 @@ from typing import Callable
 from . import store, taste
 from . import utilization
 from .config import ShootoutConfig, DEFAULT_CONFIG
+from .cost_model import partition_by_budget, refresh_cost_model
 from .evaluator import render_many
 from .evolve import next_generation
 from .features import genome_features
@@ -210,7 +211,42 @@ def _run_generation_locked(session_id, cfg, progress_cb, rng) -> dict:
     batch = candidates
     all_rendered: list[dict] = []
     need = cfg.show_n - len(elites)
+    # Rebuild the empirical cost model from the corpus so this generation's
+    # gate reflects timings logged by every prior render.
+    _cm = refresh_cost_model()
+    if _cm.get("n_samples", 0):
+        _p(f"  cost model: {len(_cm.get('per_method', {}))} methods "
+           f"from {_cm['n_samples']} timed genomes")
+    gated_total = 0  # skips consume their own attempt budget (avoid infinite retry)
     while batch:
+        # Cheaply cull graphs the cost model predicts will time out — they
+        # would burn the full render budget only to be discarded.
+        batch, over_budget = partition_by_budget(batch, cfg)
+        for g in over_budget:
+            store.save_genome(g)
+            all_rendered.append(g)
+            dead += 1
+            gated_total += 1
+            est = (g.get("liveness") or {}).get("est_s")
+            n_nodes = len(g.get("graph", {}).get("nodes", []))
+            _p(f"  ⊘ {g['genome_id']}  {n_nodes} nodes  "
+               f"→ SKIPPED (over-budget, est {est}s)")
+        if not batch:
+            if (len(alive) >= need or rendered_total >= max_total
+                    or gated_total >= max_total):
+                break
+            # Everything got gated; sample fresh explorers and retry.
+            n_more = min(max(2 * (need - len(alive)), 2),
+                         max_total - rendered_total)
+            if n_more <= 0:
+                break
+            _p(f"  all candidates over-budget — sampling {n_more} more explorers")
+            for _ in range(n_more):
+                g = sample_valid_genome(pool, cfg, rng, origin="explorer",
+                                        bias=explorer_bias)
+                g["generation"] = gen_index
+                batch.append(g)
+            continue
         _p(f"▶ rendering {len(batch)} candidate(s) "
            f"[{rendered_total + len(batch)}/{max_total} budget]")
         _rt0 = _time.time()

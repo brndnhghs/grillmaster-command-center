@@ -77,6 +77,17 @@ class ShootoutConfig:
     # a slow tail frame shouldn't discard an otherwise-good dynamic clip.
     min_render_frames_frac: float = 0.5
 
+    # ── Pre-render cost gate (cost_model.py) ──────────────────────
+    # Empirical per-method ms/frame model estimates a genome's wall time
+    # before rendering. Guaranteed-timeout graphs (est > render_timeout_s *
+    # cost_skip_factor) are culled cheaply as 'over-budget' instead of burning
+    # the full render budget only to be discarded. Gate stays OFF until the
+    # model has enough logged timings (MIN_SAMPLES_TO_GATE) — cold start
+    # renders everything, unchanged. Timeout genomes empirically estimate
+    # ~270s vs ~30s for survivors, so 0.9 leaves a wide safety margin.
+    cost_gate_enabled: bool = True
+    cost_skip_factor: float = 0.9
+
     # ── Gene pool ─────────────────────────────────────────────────
     # client_3d renders in the browser (no server-side cook), ml_models are
     # heavy model loads, io needs uploaded assets, cli_tools shell out to
@@ -133,6 +144,8 @@ TUNABLE_FIELDS: dict[str, tuple[str, float | None, float | None]] = {
     "crossover_ratio":   ("Of bred offspring, fraction made by splicing two parents (rest are mutations)", 0.0, 1.0),
     "min_rating_to_parent": ("Clips rated below this never breed", 1, 5),
     "render_timeout_s":  ("Per-clip render budget (seconds) — slower graphs are culled as 'timeout'", 10, 3600),
+    "cost_gate_enabled": ("Skip guaranteed-timeout graphs before rendering, using the empirical cost model", None, None),
+    "cost_skip_factor":  ("Cost gate strictness: skip when estimated render > render_timeout_s × this (lower = stricter)", 0.1, 2.0),
     "render_concurrency": ("Clips rendered in parallel", 1, 8),
     "advisor_enabled":   ("Interpret your pros/cons notes with the LLM advisor to steer breeding", None, None),
     "temporal_var_min":  ("Liveness: minimum motion required — lower lets calmer clips through", 0.0, 0.5),
