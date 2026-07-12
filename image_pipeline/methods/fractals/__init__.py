@@ -1,17 +1,8 @@
-"""Fractals methods."""
-from . import fractal
-from . import buddhabrot
-from . import barnsley_fern
-from . import burning_ship
-from . import newton_fractal
-from . import julia_set
-from . import lyapunov
-from . import fractal_flame
-from . import chaos_game
-from . import plasma
-from . import sierpinski
-from . import pythagorean_tree
-from . import lsystem
-from . import kaleidoscopic_ifs
-from . import symmetric_icon
-from . import mandelbulb
+"""Fractal methods (Julia, Mandelbrot, IFS, flames, etc.). Auto-imports every sibling module so new methods register automatically."""
+import importlib
+import os
+import pkgutil
+
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+for _finder, _name, _ispkg in pkgutil.iter_modules([_THIS_DIR]):
+    importlib.import_module(f"{__name__}.{_name}")

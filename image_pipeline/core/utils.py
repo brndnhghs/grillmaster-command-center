@@ -684,3 +684,32 @@ def load_input(
     img = _PILI.open(str(p)).convert("RGB")
     img = img.resize((int(tw), int(th)), _PILI.LANCZOS)
     return np.array(img, dtype=np.float32) / 255.0
+
+
+def wired_source_rgb(params: dict, w: int, h: int) -> np.ndarray | None:
+    """Return the wired upstream image as float32 [0,1] (H,W,3), or None.
+
+    Generators that can take an image "as a source" call this once near their
+    field/seed initialization. Returns None when nothing is wired (so the
+    method falls back to its procedural generation). Mirrors the Rule-#12
+    contract used by filter nodes (a wired image overrides internal gen).
+    """
+    p = params.get("input_image", "")
+    if not p:
+        return None
+    try:
+        return load_input(p, w, h)
+    except (FileNotFoundError, OSError, ValueError):
+        return None
+
+
+def wired_source_lum(params: dict, w: int, h: int) -> np.ndarray | None:
+    """Return the wired upstream image's luminance as float32 [0,1] (H,W), or None.
+
+    Convenience for simulations / fields / fractals that seed from a scalar
+    field: the image's brightness becomes the seed/initial-condition field.
+    """
+    rgb = wired_source_rgb(params, w, h)
+    if rgb is None:
+        return None
+    return (0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]).astype(np.float32)

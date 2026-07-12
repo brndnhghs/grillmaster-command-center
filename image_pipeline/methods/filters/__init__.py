@@ -1,57 +1,8 @@
-"""Filters methods."""
-from . import glitch
-from . import dither
-from . import pixelsort
-from . import oil_paint
-from . import hdr
-from . import data_bending
-from . import slitscan
-from . import edge_halftone
-from . import cmyk_halftone
-from . import swirl
-from . import pixel_mosaic
-from . import cross_stitch
-from . import kuwahara
-from . import chromatic_aberration
-from . import transform
-from . import weighted_voronoi_stippling
-from . import line_integral_convolution
-from . import seam_carving
-from . import guided_filter
-from . import xdog
-from . import coherent_line_drawing
-from . import tonal_hatching
-from . import anisotropic_diffusion
-from . import poisson_editing
-from . import bilateral_grid
-from . import rolling_guidance
-from . import l0_smoothing
-from . import wls_smoothing
-from . import fxaa
-from . import domain_transform
-from . import low_poly
-from . import bloom
-from . import non_local_means
-from . import thin_film
-from . import bokeh
-from . import palette_posterize
-from . import image_quilting
-from . import tone_mapping
-from . import rolling_shutter
-from . import lens_flare
-from . import god_rays
-from . import clahe
-from . import marbling
-from . import subsurface
-from . import gabor_filter
-from . import droste
-from . import diffraction
-from . import retinex_msrcr
-from . import mean_shift
-from . import shock_filter
-from . import relative_total_variation
-from . import kaleidoscope_mirror
-from . import cel_shading
-from . import adaptive_lut
-from . import matcap_relight
-from . import fast_bilateral_solver
+"""Filter methods (NPR, stylization, denoise, halftone, etc.). Auto-imports every sibling module so new methods register automatically."""
+import importlib
+import os
+import pkgutil
+
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+for _finder, _name, _ispkg in pkgutil.iter_modules([_THIS_DIR]):
+    importlib.import_module(f"{__name__}.{_name}")

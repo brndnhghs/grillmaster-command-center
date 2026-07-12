@@ -1,2 +1,8 @@
-"""Compositing methods — merge nodes for IMAGE, SCALAR, FIELD, PARTICLES, and MASK wires."""
-from . import blend, math_merge, field_combine, particle_merge, apply_mask, test_node, image_to_mask, noise_node
+"""Compositing methods (blend, merge, mask). Auto-imports every sibling module so new methods register automatically."""
+import importlib
+import os
+import pkgutil
+
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+for _finder, _name, _ispkg in pkgutil.iter_modules([_THIS_DIR]):
+    importlib.import_module(f"{__name__}.{_name}")

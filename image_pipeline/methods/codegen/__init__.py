@@ -1,17 +1,8 @@
-"""Code-gen methods — 12 modules split from codegen.py."""
-from . import (
-    ascii_art,
-    geometric_abstraction,
-    typography,
-    gradient,
-    kaleidoscope,
-    color_palette,
-    qr_code,
-    voronoi_tiles,
-    svg_vector,
-    collage,
-    posterize,
-    false_color_ir,
-    flow_field,
-    simulations,
-)
+"""Code-gen methods (split from codegen.py). Auto-imports every sibling module so new methods register automatically."""
+import importlib
+import os
+import pkgutil
+
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+for _finder, _name, _ispkg in pkgutil.iter_modules([_THIS_DIR]):
+    importlib.import_module(f"{__name__}.{_name}")

@@ -36,7 +36,7 @@ import numpy as np
 from PIL import Image
 
 from ...core.registry import method
-from ...core.utils import save, mn, seed_all, W, H, write_field
+from ...core.utils import save, mn, seed_all, W, H, write_field, wired_source_lum
 from ...core.animation import capture_frame
 from PIL import ImageFilter
 
@@ -164,7 +164,13 @@ DEFAULT_REGIME = "spots"
     tags=["physics", "reaction-diffusion", "turing", "patterns", "autocatalytic"],
     timeout=300,
     outputs={"image": "IMAGE", "field": "FIELD"},
+    inputs={"image_in": "IMAGE"},
     params={
+        "source": {
+            "description": "initial-condition seed: random patches or the wired upstream image's luminance",
+            "choices": ["random", "input_image"],
+            "default": "random",
+        },
         "diff_u": {
             "description": "diffusion coefficient for substrate U",
             "min": 0.01, "max": 1.0, "default": 0.16,
@@ -289,18 +295,27 @@ def method_gray_scott(out_dir: Path, seed: int, params=None):
     U = np.ones((h, w), dtype=np.float64)
     V = np.zeros((h, w), dtype=np.float64)
 
-    # Seed V with small random patches (except phase_diagram)
-    if anim_mode == "phase_diagram":
-        V = rng.random((h, w)).astype(np.float64) * 0.3  # stronger seed
-        U = np.ones((h, w), dtype=np.float64) * 0.85
+    # Seed from a wired upstream image's luminance when source == "input_image"
+    src_lum = None
+    if str(params.get("source", "random")) == "input_image":
+        src_lum = wired_source_lum(params, w, h)
+    if src_lum is not None:
+        # bright pixels → high activator V (pattern nucleates there)
+        V = np.clip(src_lum.astype(np.float64), 0.0, 1.0)
+        print("  Seeded initial V from wired input image luminance")
     else:
-        n_seeds = int(params.get("n_seeds", 20))
-        for s in range(n_seeds):
-            sx = int(rng.uniform(w * 0.05, w * 0.95))
-            sy = int(rng.uniform(h * 0.05, h * 0.95))
-            yy, xx = np.ogrid[:h, :w]
-            dist2 = (xx - sx)**2 + (yy - sy)**2
-            V += 0.5 * rng.random() * np.exp(-dist2 / (w * 0.002 * w + 5.0))
+        # Seed V with small random patches (except phase_diagram)
+        if anim_mode == "phase_diagram":
+            V = rng.random((h, w)).astype(np.float64) * 0.3  # stronger seed
+            U = np.ones((h, w), dtype=np.float64) * 0.85
+        else:
+            n_seeds = int(params.get("n_seeds", 20))
+            for s in range(n_seeds):
+                sx = int(rng.uniform(w * 0.05, w * 0.95))
+                sy = int(rng.uniform(h * 0.05, h * 0.95))
+                yy, xx = np.ogrid[:h, :w]
+                dist2 = (xx - sx)**2 + (yy - sy)**2
+                V += 0.5 * rng.random() * np.exp(-dist2 / (w * 0.002 * w + 5.0))
 
     # Clamp V to [0, 1]
     V = np.clip(V, 0, 1)

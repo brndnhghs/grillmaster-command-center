@@ -1,21 +1,8 @@
-"""Math art methods — Ulam Spiral, Maze, Circle Packing, etc."""
-from . import ulam_spiral
-from . import maze
-from . import lowpoly
-from . import binary_counter
-from . import circle_packing
-from . import chaotic_map
-from . import waveform
-from . import fft_art
-from . import density_heatmap
-from . import fourier_circles
-from . import dataviz
-from . import strange_attractors
-from . import spherical_harmonics
-from . import polytope_4d
-from . import domain_coloring
-from . import marching_squares_contours
-from . import fast_marching_geodesic
-from . import space_colonization
-from . import poincare_tessellation
-from . import nishita_sky
+"""Math-art methods (Ulam, Maze, Circle Packing, etc.). Auto-imports every sibling module so new methods register automatically."""
+import importlib
+import os
+import pkgutil
+
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+for _finder, _name, _ispkg in pkgutil.iter_modules([_THIS_DIR]):
+    importlib.import_module(f"{__name__}.{_name}")
