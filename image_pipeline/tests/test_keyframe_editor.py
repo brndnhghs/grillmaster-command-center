@@ -126,7 +126,7 @@ class TestKeyframeUIRoundtrip:
     def _load_graph_with_kfs(self, page):
         graph = {
             "nodes": [{
-                "id": "p", "method_id": "175",
+                "id": "p", "method_id": "33",
                 "params": {"p1": 0.5, "p2": 0.6, "p3": 0.3, "p4": 0.4, "time_scale": 1.0},
                 "paramKeyframes": {
                     "p1": [
