@@ -347,8 +347,9 @@ for o in imported:
     o.scale = (o.scale[0] * fit * {size},
                o.scale[1] * fit * {size},
                o.scale[2] * fit * {size})
-    # Spin about Y (not Z) so Z-symmetric models actually animate.
-    o.rotation_euler = (0.0, {spin} * math.pi / 180.0, 0.0)
+    # Spin about X (not Y): the camera views along +Y, so a Y-spin would be a
+    # turntable seen head-on and barely move.  X tumbles the model visibly.
+    o.rotation_euler = ({spin} * math.pi / 180.0, 0.0, 0.0)
 
 # Apply the node's PBR material to every imported mesh when requested.
 {material_block}
@@ -492,10 +493,10 @@ _wn.links.new(_bg.outputs[0], _out.inputs["Surface"])
 obj = next((o for o in bpy.data.objects if o.type == "MESH"), None)
 if obj is None:
     raise RuntimeError("Blender Render: mesh primitive failed to create object")
-# NOTE: we rotate the mesh about Y (see the mesh-spin block above).  A Z-spin
-# is invisible for Z-symmetric primitives (torus hole-axis, cylinder/cones),
-# and a Z-camera-orbit is likewise invisible for them — so a Y rotation is the
-# correct, visible animation for every non-spherical primitive.
+# NOTE: the mesh is spun about X (see the mesh-spin block below).  The camera
+# views along +Y, so a Y-spin would be a turntable seen head-on (near-invisible).
+# An X-spin tumbles the object and is clearly visible for every non-spherical
+# primitive; a uniform sphere is spin-static by symmetry (expected).
 
 # ── Material (Principled BSDF) ──
 mat = bpy.data.materials.new(name="GrillMat")
@@ -507,12 +508,15 @@ if bsdf is not None:
     bsdf.inputs["Roughness"].default_value = {roughness}
 obj.data.materials.append(mat)
 
-# ── Mesh spin (about Y, NOT Z) ──
-# Most primitives are symmetric about Z, so a Z-spin (or Z-camera-orbit) maps
-# the silhouette onto itself and shows NO motion.  Rotating about Y breaks that
-# symmetry and is clearly visible for torus/cube/cylinder/cone/ico/monkey/plane.
-# (A uniform sphere is spherically symmetric, so any spin is inherently static.)
-obj.rotation_euler = (0.0, {spin} * math.pi / 180.0, 0.0)
+# ── Mesh spin (about X) ──
+# The camera is placed at (0, -cam_z, cam_y) looking toward the origin, i.e. its
+# view axis is essentially +Y.  Spinning the mesh about Y would therefore rotate
+# it around the *camera's view axis* (a turntable seen head-on) and show almost
+# no motion.  Spinning about X (the screen-horizontal axis) tumbles the object
+# and is clearly visible for every primitive including torus/cube/monkey.
+# NOTE: a uniform sphere is spherically symmetric, so any spin is inherently
+# static — that is expected, not a bug.
+obj.rotation_euler = ({spin} * math.pi / 180.0, 0.0, 0.0)
 
 # ── Light ──
 bpy.ops.object.light_add(type="POINT", location=(4, -4, 6))
