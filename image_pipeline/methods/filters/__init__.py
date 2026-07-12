@@ -42,3 +42,4 @@ from . import lens_flare
 from . import clahe
 from . import marbling
 from . import subsurface
+from . import gabor_filter
