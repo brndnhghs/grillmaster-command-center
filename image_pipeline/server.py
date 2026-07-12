@@ -2644,7 +2644,7 @@ complaint     : {complaint}
         }]
 
     return StreamingResponse(
-        _nd_stream(system, messages, timeout=180), media_type="text/event-stream",
+        _nd_stream(system, messages, timeout=300), media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
