@@ -61,21 +61,20 @@ def _ssss_blur(src: np.ndarray, radius: float, samples: int,
     For a homogeneous medium the dipole diffusion profile reduces (along any
     axis) to a sum of exponentials. Jimenez's "Separable SSSS" uses a *sharp
     core* term (the surface) plus a *broad halo* term (the subsurface bleed).
-    `radius` is the overall scatter reach (sampling extent). `falloff` is the
-    core↔halo mix: low falloff keeps a tight, sharp surface; high falloff
-    lets the broad subsurface bleed dominate. Sampling both terms at `samples`
-    evenly-spaced offsets and reflecting across the centre gives the separable
-    scatter kernel; two passes (X, Y) reproduce the 2-D diffusion tail.
+    `radius` is the base scatter scale; `falloff` is a sharpness control — low
+    falloff gives a tight, sharp-surface kernel, high falloff a broad,
+    diffuse subsurface bleed — sampled over a fixed reach of `radius * 3` so
+    the sharp<->broad swing has a large dynamic range (and stays live). Both
+    terms are sampled at `samples` evenly-spaced offsets and reflected across
+    the centre; two passes (X, Y) reproduce the 2-D diffusion tail.
     """
-    extent = max(1e-3, radius)                         # overall scatter reach
+    extent = max(1e-3, radius * 3.0)                     # fixed sampling reach
     step = max(1e-3, extent / max(1, samples))
     offsets = (np.arange(samples) + 0.5) * step
-    core_scale = extent                                # core decays over the reach
-    halo_scale = extent * 3.0                          # halo decays slowly (broad)
-    mix = falloff / (1.0 + falloff)                    # 0..~0.85: surface vs bleed
-    core = np.exp(-offsets / core_scale)
-    halo_w = np.exp(-offsets / halo_scale)
-    weights = (1.0 - mix) * core + mix * halo_w
+    cs = max(1e-3, radius * max(0.1, falloff))          # core sharpness (falloff)
+    core = np.exp(-offsets / cs)                        # sharp surface term
+    halo_w = np.exp(-offsets / (cs * 2.5))              # broad subsurface term
+    weights = core + 0.5 * halo_w
     total = 1.0 + 2.0 * float(weights.sum())
     inv = 1.0 / total
     out = src.astype(np.float64)
@@ -150,7 +149,7 @@ def _source(kind: str, rng: np.random.Generator, noise_amp: float,
             "min": 4, "max": 25, "default": 11,
         },
         "falloff": {
-            "description": "profile sharpness (higher = tighter core, less bleed)",
+            "description": "profile sharpness (low = tight sharp surface, high = broad diffuse subsurface bleed)",
             "min": 0.2, "max": 6.0, "default": 1.4,
         },
         "strength": {
