@@ -60,6 +60,16 @@ def method_counter(out_dir: Path, seed: int, params=None):
     if reset_val is not None:
         frame = int(reset_val)
 
+    # The GraphExecutor injects a per-frame Timeline (params["_timeline"]) but
+    # does NOT inject an integer `frame` for CHOP generators. Derive the live
+    # frame from the Timeline so the counter advances on every rendered frame
+    # instead of staying pinned at frame 0 (which froze driver-driven graphs
+    # and culled them as static in the shootout liveness gate).
+    if frame == 0:
+        _tl = params.get("_timeline")
+        if _tl is not None:
+            frame = int(getattr(_tl, "global_frame", 0))
+
     step_override = params.get("step")
     if step_override is not None:
         step_size = max(1, int(round(step_override)))
@@ -122,6 +132,12 @@ def method_ramp(out_dir: Path, seed: int, params=None):
     trigger_val = params.get("trigger")
     if trigger_val is not None:
         frame = int(trigger_val)
+
+    # Derive the live frame from the injected Timeline (see Counter for why).
+    if frame == 0:
+        _tl = params.get("_timeline")
+        if _tl is not None:
+            frame = int(getattr(_tl, "global_frame", 0))
 
     speed_override = params.get("speed")
     if speed_override is not None:
@@ -278,6 +294,12 @@ def method_beats(out_dir: Path, seed: int, params=None):
     if swing_override is not None:
         swing = float(swing_override)
 
+    # Derive the live frame from the injected Timeline (see Counter for why).
+    if frame == 0:
+        _tl = params.get("_timeline")
+        if _tl is not None:
+            frame = int(getattr(_tl, "global_frame", 0))
+
     frames_per_beat = fps * 60.0 / bpm
     total_beats = frame / frames_per_beat
 
@@ -408,6 +430,12 @@ def method_envelope(out_dir: Path, seed: int, params=None):
     # SCALAR overrides
     trigger_val = params.get("trigger")
     gate_val = params.get("gate")
+
+    # Derive the live frame from the injected Timeline (see Counter for why).
+    if frame == 0:
+        _tl = params.get("_timeline")
+        if _tl is not None:
+            frame = int(getattr(_tl, "global_frame", 0))
 
     # Simple model: trigger starts attack, gate holds sustain
     if trigger_val is not None and trigger_val > 0:
