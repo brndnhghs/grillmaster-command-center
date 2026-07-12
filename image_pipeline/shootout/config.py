@@ -63,8 +63,14 @@ class ShootoutConfig:
     # ── Rendering ─────────────────────────────────────────────────
     render_concurrency: int = 3
     stat_stride: int = 4       # spatial subsampling stride for liveness stats
-    render_timeout_s: float = 150.0   # cooperative per-candidate wall clock;
-                                      # slow graphs are culled, not awaited
+    # Cooperative per-candidate wall clock; slow graphs are culled, not awaited.
+    # Empirics (315-genome scan, 2026-07-11): 61 genomes were culled as
+    # 'timeout' with wall_s min=150 / median=157 / max=547. 60 of 61 fell in
+    # [150, 300)s — i.e. they rendered in ~7s over the old 150s cap, not because
+    # they were bad but because the cap was set a hair too tight. Raising to 300
+    # recovers ~19% of the whole corpus (60 good clips) from arbitrary culling;
+    # only the single 547s outlier stays culled, which is the intended behaviour.
+    render_timeout_s: float = 300.0
 
     # ── Gene pool ─────────────────────────────────────────────────
     # client_3d renders in the browser (no server-side cook), ml_models are
