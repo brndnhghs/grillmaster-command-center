@@ -56,12 +56,17 @@ EXPECTED_MAP_ENTRIES = 235
 DEFERRED_SIM_IDS = set(
     "20 34 35 36 55 79 83 84 86 88 89 90 92 94 97 98 101 102 103 "
     "107 109 110 111 112 113 114 116 117 123 129 130 131 134 "
-    "136 145 147 149 151 152 158 159 167 337 343 429 440 448".split()
+    "136 145 147 149 151 152 158 159 167 337 343 429 440 448 922".split()
 )
 # 448 Differential Growth (Lomas "Primordial"): Arch-A agent/particle growth
 # sim (mesh sprouting + Laplacian smoothing, explicit Euler over a node graph).
 # Not a closed-form f(uv,t) field, so its honest GPU twin is a WebGL2 ping-pong
 # sim needing browser parity -- out of scope for headless verification.
+# 922 Brusselator: Arch-A stateful two-species reaction-diffusion PDE sim
+# (5-point Laplacian + explicit Euler over many substeps, capture_frame per frame).
+# Its honest GPU twin is a WebGL2 ping-pong sim needing browser parity -- same
+# deferral class as the other RD/CA/PDE sims above. Out of scope for headless
+# verification until P2 (WebGPU compute) is signed off.
 
 # CPU categories that MUST have a GPU mirror (coverage by category).
 # patterns / fractals / filters / math_art / codegen are fully mirrored by the
