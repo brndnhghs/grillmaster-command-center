@@ -157,7 +157,7 @@ def test_gpu_shader_node_map_resolves():
     #   419 Thin-Film Interference) = 221.
     # +7 categorical-coverage client-GPU shims (16, 65, 78, 56, 81, 406,
     #   409 — math_art / patterns) = 228.
-    assert len(GPU_SHADER_NODE_MAP) == 234, len(GPU_SHADER_NODE_MAP)
+    assert len(GPU_SHADER_NODE_MAP) == 235, len(GPU_SHADER_NODE_MAP)
     for mid, entry in GPU_SHADER_NODE_MAP.items():
         if entry.get("type") == "sim":
             # P1 ping-pong sim: seed/step/display must all resolve to shaders.

@@ -282,7 +282,10 @@ _TYPED_SHADER_NODES = [
     ("304", "crystal_typed",     "GPU Crystal Diffraction"),
     ("305", "apollonian_typed",  "GPU Apollonian Gasket"),
     ("306", "parabola_typed",    "GPU Parabola Family"),
-    ("307", "hyperbolic_typed",  "GPU Hyperbolic Tiling"),
+    ("307", "hyperbolic_typed", "GPU Hyperbolic Tiling"),
+    # Categorical coverage pt.14 (2026-07-12): real-time volumetric clouds —
+    # screen-space fbm density raymarch with single-scatter sun lighting.
+    ("308", "clouds_typed", "GPU Volumetric Clouds"),
 ]
 
 _TIME_SCALE_PARAM = {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0}
