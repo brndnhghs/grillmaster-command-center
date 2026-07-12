@@ -54,3 +54,4 @@ from . import kaleidoscope_mirror
 from . import cel_shading
 from . import adaptive_lut
 from . import matcap_relight
+from . import fast_bilateral_solver
