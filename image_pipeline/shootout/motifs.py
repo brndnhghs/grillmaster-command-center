@@ -367,11 +367,52 @@ def _configure_driver(b: Builder, drv_id: str, drv_mid: str,
             if "mode" in params else params.get("mode", "loop")
 
 
+def _terminal_animated_floor(b: Builder) -> None:
+    """Safety net (Route 8, 2026-07-12): a time-varying node that has NEITHER
+    a control-node driver NOR a live ``anim_mode`` is born frozen and gets
+    culled as ``static`` by the liveness gate even though it *could* animate.
+
+    For every TV node not driven by a control node, ensure its animation-mode
+    enum (one whose choices include ``"none"``) is set to a live (non-``none``)
+    choice. ``apply_driver_policy`` already attaches drivers with high
+    probability, but this catches the residual case (p_drive_primary < 1) and
+    the fallback ``random_graph`` path, guaranteeing TV nodes are born
+    animated. Does not touch nodes that already have a driver or a non-none
+    mode — so it only ever ADDS motion, never removes it.
+    """
+    pool, rng = b.pool, b.rng
+    fed = b.fed_ports()
+    driver_ids = {n["id"] for n in b.nodes
+                  if n["method_id"] in pool.scalar_drivers}
+    for n in b.nodes:
+        if n["method_id"] in driver_ids:
+            continue
+        if not pool.defs[n["method_id"]].get("is_time_varying"):
+            continue
+        driven = any((n["id"], p) in fed for p, _ in
+                     _drivable_params(pool, b.cfg, n["method_id"]))
+        if driven:
+            continue
+        schema = pool.defs[n["method_id"]].get("params") or {}
+        for pname, spec in schema.items():
+            if not isinstance(spec, dict):
+                continue
+            choices = spec.get("choices")
+            if not choices or "none" not in choices:
+                continue
+            if n["params"].get(pname, "none") == "none":
+                live = [c for c in choices if c != "none"]
+                if live:
+                    n["params"][pname] = rng.choice(live)
+
+
 def apply_driver_policy(b: Builder) -> None:
     """All animation control-node driven when possible: give every
     non-driver node a driver on its most animation-relevant param
     (p_drive_primary), sometimes a second (p_drive_secondary), and
-    occasionally fan one driver across two related params."""
+    occasionally fan one driver across two related params. Then guarantee
+    every time-varying node is born animated even if no driver attached.
+    """
     pool, cfg, rng = b.pool, b.cfg, b.rng
     available = set(pool.scalar_drivers)
     if not available:
@@ -403,6 +444,9 @@ def apply_driver_policy(b: Builder) -> None:
                    n["id"], pname)
             fed.add((n["id"], pname))
             prev_driver = (drv_id, drv_mid)
+
+    # Safety net: guarantee every TV node is born animated (Route 8).
+    _terminal_animated_floor(b)
 
 
 # ── Composer ──────────────────────────────────────────────────────────

@@ -230,8 +230,19 @@ def sample_params(pool: GenePool, cfg: ShootoutConfig, rng: random.Random,
                   method_id: str, has_image_input: bool) -> dict:
     """Sample a node's params from its schema (plan §6.3): numeric biased
     toward default ± spread, enums uniform, bools coin-flip, occasional
-    extremes for surprise."""
+    extremes for surprise.
+
+    Time-varying nodes: if the schema exposes an animation-mode enum that
+    includes ``"none"`` (e.g. ``anim_mode``), sampling ``"none"`` freezes the
+    node's internal animation entirely — so even with no driver the clip reads
+    as static and gets culled by the liveness gate. We bias those picks toward
+    a real (non-``none``) mode so a time-varying node is born animated (a
+    driver, when present, modulates ON TOP of that). Route 8 fix (2026-07-12):
+    the corpus showed ~41% of TV nodes were sampled to a frozen ``none`` mode,
+    the dominant cause of fresh ``static``/``flat`` rejections.
+    """
     out: dict = {}
+    is_tv = bool(pool.defs[method_id].get("is_time_varying"))
     for pname, spec in (pool.defs[method_id].get("params") or {}).items():
         if not isinstance(spec, dict):
             continue
@@ -244,6 +255,16 @@ def sample_params(pool: GenePool, cfg: ShootoutConfig, rng: random.Random,
         if choices:
             opts = [c for c in choices if c != "input_image" or has_image_input]
             if opts:
+                # Bias a time-varying node's animation-mode enum away from the
+                # frozen "none" choice so it is born animated. Applies to every
+                # enum whose choices include "none" (anim_mode, animation_mode,
+                # effect, glitch_type, …) — a "none" mode freezes that aspect of
+                # an otherwise animation-capable node.
+                if is_tv and "none" in opts:
+                    live = [c for c in opts if c != "none"]
+                    if live:
+                        out[pname] = rng.choice(live)
+                        continue
                 out[pname] = rng.choice(opts)
             continue
         if isinstance(default, bool):
