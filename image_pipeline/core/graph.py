@@ -165,6 +165,8 @@ _THREEJS_POSTFX_PARAMS: dict[str, dict] = {
     "vignette_radius":  {"description": "vignette radius", "min": 0.2, "max": 1.2, "default": 0.85},
     "vignette_softness":{"description": "vignette edge softness", "min": 0.05, "max": 1, "default": 0.5},
     "fxaa":             {"description": "FXAA edge anti-alias (0 = off)", "min": 0, "max": 1, "default": 0},
+    "grain":            {"description": "film grain strength (0 = off); blue-noise/IGN-dithered ISO noise", "min": 0, "max": 1.5, "default": 0},
+    "grain_size":       {"description": "grain dot size in px (1 = per-pixel fine grain)", "min": 1, "max": 4, "default": 1.0},
     "chromatic":        {"description": "radial chromatic aberration strength (0 = off)", "min": 0, "max": 1, "default": 0},
     "chromatic_scale":  {"description": "chromatic aberration radial falloff power", "min": 0.25, "max": 4, "default": 1.0},
 }

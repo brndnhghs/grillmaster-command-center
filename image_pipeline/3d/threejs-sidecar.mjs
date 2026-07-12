@@ -420,6 +420,8 @@ function buildScene(nodes, edges, frame = 0) {
           fxaa:            resolveParam(node, 'fxaa', 0),
           chromatic:       resolveParam(node, 'chromatic', 0),
           chromatic_scale: resolveParam(node, 'chromatic_scale', 1.0),
+          grain:           resolveParam(node, 'grain', 0),
+          grain_size:      resolveParam(node, 'grain_size', 1.0),
         };
 
         for (const [port, obj] of Object.entries(wired)) {
@@ -665,6 +667,34 @@ void main() {
 }
 `;
 
+// Film grain -- blue-noise / IGN-dithered ISO noise (real-time, temporally stable).
+// Interleaved Gradient Noise (Jimenez 2014) is a cheap, well-distributed screen-space
+// hash that approximates blue noise, avoiding the "boiling" of white-noise grain.
+// Strength is luma-weighted so highlights stay clean.
+// Ref: Heitz 2022 "A Low-Discrepancy Blue Noise" / NVIDIA spatiotemporal blue-noise
+//      masks (EGSR 2022): https://developer.nvidia.com/blog/rendering-in-real-time-with-spatiotemporal-blue-noise-textures-part-1/
+const _GRAIN = `
+uniform sampler2D tDiffuse;
+uniform float uAmount;   // grain strength (0 = off)
+uniform float uSize;     // grain dot size in px (>=1)
+uniform vec2 uResolution;
+varying vec2 vUv;
+float ign(vec2 p) {
+  return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
+}
+void main() {
+  vec4 base = texture2D(tDiffuse, vUv);
+  vec2 px = vUv * uResolution;
+  vec2 gp = floor(px / max(uSize, 1.0));        // grain cell
+  float n = ign(gp + 0.5);                       // [0,1)
+  float g = (n - 0.5) * uAmount;                // centered noise
+  float l = dot(base.rgb, vec3(0.2126, 0.7152, 0.0722));
+  float w = mix(1.1, 0.7, clamp(l, 0.0, 1.0));  // more grain in shadows/mids
+  vec3 col = base.rgb + g * w;
+  gl_FragColor = vec4(clamp(col, 0.0, 1.0), base.a);
+}
+`;
+
 function renderWithPostFX(renderer, scene, camera, w, h, fx) {
   const rtOpts = {
     minFilter: THREE.LinearFilter,
@@ -715,7 +745,7 @@ function renderWithPostFX(renderer, scene, camera, w, h, fx) {
     bloomRTs = [a, b];
   }
 
-  const needsCompositeRT = fx.fxaa > 0 || fx.chromatic > 0;
+  const needsCompositeRT = fx.fxaa > 0 || fx.chromatic > 0 || fx.grain > 0;
   const compositeTarget = needsCompositeRT
     ? new THREE.WebGLRenderTarget(w, h, { ...rtOpts, depthBuffer: false })
     : null;
@@ -749,6 +779,20 @@ function renderWithPostFX(renderer, scene, camera, w, h, fx) {
     finalTex = caRT.texture;
   }
 
+  // -- Film grain (blue-noise / IGN-dithered ISO noise) --
+  let grainRT = null;
+  if (fx.grain > 0 && finalTex) {
+    grainRT = new THREE.WebGLRenderTarget(w, h, { ...rtOpts, depthBuffer: false });
+    const grainMat = _fsMat(_GRAIN, {
+      tDiffuse: { value: finalTex },
+      uAmount: { value: fx.grain },
+      uSize: { value: fx.grain_size },
+      uResolution: { value: new THREE.Vector2(w, h) },
+    });
+    _fsRender(renderer, grainRT, grainMat);
+    finalTex = grainRT.texture;
+  }
+
   if (finalTex) {
     if (fx.fxaa > 0) {
       const fxaa = _fsMat(_FXAA, {
@@ -769,6 +813,7 @@ function renderWithPostFX(renderer, scene, camera, w, h, fx) {
   if (bloomRTs) bloomRTs.forEach(rt => rt.dispose());
   if (compositeTarget) compositeTarget.dispose();
   if (caRT) caRT.dispose();
+  if (grainRT) grainRT.dispose();
   renderer.setRenderTarget(null);
 }
 
@@ -813,7 +858,7 @@ function renderSceneToPng(graphNodes, graphEdges, width, height, frame) {
   // unchanged direct render, so this feature is purely additive. Any
   // non-default value engages the render-target pipeline.
   const fx = scene._gmPostFX || {};
-  const fxEngaged = !!(fx.bloom || fx.vignette || fx.fxaa || fx.chromatic ||
+  const fxEngaged = !!(fx.bloom || fx.vignette || fx.fxaa || fx.chromatic || fx.grain ||
       fx.brightness !== 1 || fx.contrast !== 1 || fx.saturation !== 1);
 
   if (fxEngaged) {

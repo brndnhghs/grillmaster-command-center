@@ -279,3 +279,44 @@ def test_multi_object_scene_renders_both():
     has_red = bool((img[..., 0] > img[..., 2] + 0.12).any())
     assert has_blue, "blue mesh (object_a) missing from multi-object render"
     assert has_red, "red mesh (object_b) missing from multi-object render"
+
+
+def test_grain_postfx_changes_render():
+    """Engaging film grain is NOT a no-op: the blue-noise/IGN-dithered ISO
+    noise perturbs every pixel (including the background), so the frame differs
+    from the off state. Locks in the grain pass so a future edit that silently
+    drops its engagement is caught. It is disabled by default.
+    """
+    off = _render(_build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0,
+        "fx_brightness": 1.0, "fx_contrast": 1.0, "fx_saturation": 1.0,
+        "chromatic": 0.0, "grain": 0.0,
+    }))
+    on = _render(_build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0,
+        "fx_brightness": 1.0, "fx_contrast": 1.0, "fx_saturation": 1.0,
+        "chromatic": 0.0, "grain": 1.0, "grain_size": 1.0,
+    }))
+    delta = float(np.mean(np.abs(on - off)))
+    assert delta > 0.02, f"film grain did not change the render (Δ={delta})"
+
+
+def test_grain_strength_is_live():
+    """The grain `amount` parameter actually drives the output: a stronger
+    grain produces a larger departure from the off state than a weak one.
+    """
+    off = _render(_build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0, "chromatic": 0.0, "grain": 0.0,
+    }))
+    weak = _render(_build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0, "chromatic": 0.0,
+        "grain": 0.3, "grain_size": 1.0,
+    }))
+    strong = _render(_build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0, "chromatic": 0.0,
+        "grain": 1.2, "grain_size": 1.0,
+    }))
+    d_weak = float(np.mean(np.abs(weak - off)))
+    d_strong = float(np.mean(np.abs(strong - off)))
+    assert d_weak > 0.02, f"weak grain did not change render (Δ={d_weak})"
+    assert d_strong > d_weak, f"grain not live: strong Δ={d_strong} <= weak Δ={d_weak}"
