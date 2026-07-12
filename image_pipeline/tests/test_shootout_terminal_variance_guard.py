@@ -11,8 +11,9 @@ This test proves ``Builder.ensure_terminal_variance`` (wired into
     changed by the guard and its temporal variance rises toward the liveness
     floor (best-effort rescue — the guard improves variance, it does not
     guarantee every producer fully clears the bar on a 2-frame probe);
-  * sim-heads: sim terminals (n_frames param) are intentionally skipped and
-    must stay structurally valid;
+  * sim-heads: sim terminals (n_frames param) get best-effort structural
+    repair (head-motion boost + upstream-source reroll) instead of being
+    silently skipped — they must stay structurally valid;
   * non-regression A/B: generating the same base genomes with the guard off vs
     on never makes an already-alive clip dead;
   * validity: the guard never breaks graph structure (ports/type/DAG).
@@ -146,21 +147,94 @@ def test_terminal_variance_guard_fixes_static_head():
     assert tv1 > tv0, f"guard did not improve temporal variance: {tv0} -> {tv1}"
 
 
-def test_terminal_variance_guard_skips_sim_heads():
-    """Sim heads (n_frames param) are intentionally left to structural bias;
-    the guard must NOT claim to rescue them (it returns without breaking)."""
+def test_terminal_variance_guard_repairs_sim_heads():
+    """Sim heads (n_frames param) no longer bail silently: the guard applies
+    best-effort structural repair (head-motion boost + upstream-source
+    reroll) and must keep the graph structurally valid.
+
+    Regression guard for the 2026-07-12 bug where _probe_terminal_variance
+    returned None for any sim-headed subgraph and ensure_terminal_variance
+    then `return`ed without applying any repair — leaving flat-fed sims
+    unrescued.
+    """
     cfg = _tiny_cfg(True)
     pool = build_gene_pool(cfg)
     sim_mid = next((m for m, d in pool.defs.items()
                     if "n_frames" in (d.get("params") or {})), None)
     if sim_mid is None:
         pytest.skip("no sim head available")
+    # Build a sim head fed by a low-variance, undriven source so the guard has
+    # something to improve.
     params = dict(pool.defs[sim_mid].get("defaults") or {})
     node = {"id": "n1", "method_id": sim_mid, "render": True, "params": params}
     graph = {"nodes": [node], "edges": []}
     guarded = _apply_guard({"graph": graph}, cfg, seed=0xC0FFEE)
     assert validate_graph(guarded["graph"], pool, cfg) == [], \
         "guard produced an invalid graph for a sim head"
+    # The guard must have exercised its repair path (mutated the graph) even
+    # when the probe returns None — it must NOT silently leave it untouched.
+    g_nodes = {n["id"]: n for n in guarded["graph"]["nodes"]}
+    head = g_nodes["n1"]
+    driven = any(e["dst_node"] == "n1"
+                 and head is not None
+                 and pool.defs.get(e["src_node"], {}).get("method_id")
+                 in pool.scalar_drivers
+                 for e in guarded["graph"]["edges"])
+    # Either a driver was attached to the sim head, or its params were rerolled
+    # (motion knob changed). Either proves the guard ran its repair branch.
+    motion_changed = (head["params"].get("time_scale", 1.0) !=
+                      params.get("time_scale", 1.0)) or \
+                     (head["params"].get("speed", 1.0) !=
+                      params.get("speed", 1.0))
+    assert driven or motion_changed or len(guarded["graph"]["nodes"]) > 1, \
+        "guard silently skipped repair on a sim head (None-bail bug)"
+
+
+def test_terminal_variance_guard_none_probe_still_repairs():
+    """The probe returning None (timeout / sim ancestor / render error) must
+    NOT cause ensure_terminal_variance to bail. It must fall through to
+    best-effort structural repair.
+
+    This is the exact defect fixed 2026-07-12: a genome whose ancestor
+    subgraph contained a sim (n_frames) made _probe_terminal_variance return
+    None in 0.00s, and the old `if probe is None: return` then discarded all
+    repair — shipping the flat graph unrepaired.
+    """
+    cfg = _tiny_cfg(True)
+    pool = build_gene_pool(cfg)
+    rng = random.Random(0x5CA7)
+    # A sim producer feeding a filter head: head is non-sim, but the ancestor
+    # subgraph contains a sim, so the probe returns None.
+    sim_mid = next((m for m, d in pool.defs.items()
+                    if "n_frames" in (d.get("params") or {})), None)
+    if sim_mid is None:
+        pytest.skip("no sim head available")
+    sim_params = dict(pool.defs[sim_mid].get("defaults") or {})
+    b = Builder(pool, cfg, rng, None)
+    sim_node = b.add(sim_mid)
+    b.node(sim_node)["params"] = sim_params
+    # pick a filter head that accepts an image input
+    filt_mid = next((m for m, d in pool.defs.items()
+                     if d.get("is_time_varying")
+                     and (d.get("inputs") or {}).get("image_in") is not None
+                     and "n_frames" not in (d.get("params") or {})
+                     and (d.get("outputs") or {}).get("image")), None)
+    if filt_mid is None:
+        pytest.skip("no filter head available")
+    head = b.add(filt_mid)
+    b.wire(sim_node, "image", head, "image_in")
+    b.node(head)["render"] = True
+    before_nodes = len(b.nodes)
+    b.ensure_terminal_variance(cfg, rng)
+    # Guard must not raise and must have either attached a driver to the head
+    # or rerolled the upstream sim's params (structural repair ran).
+    driven = any(e["dst_node"] == head
+                 and pool.defs.get(e["src_node"], {}).get("method_id")
+                 in pool.scalar_drivers
+                 for e in b.edges)
+    sim_rerolled = b.node(sim_node)["params"] != sim_params
+    assert driven or sim_rerolled or len(b.nodes) != before_nodes, \
+        "guard bailed on None-probe (sim ancestor) without repairing"
 
 
 def test_terminal_variance_guard_nonregression_ab():

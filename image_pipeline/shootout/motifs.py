@@ -331,12 +331,25 @@ class Builder:
                 self._reroll_upstream_sources(rng)
                 return
         if "n_frames" in (self.pool.defs[head_mid].get("params") or {}):
-            return  # sim head: structural bias only
+            # Sim head: structural bias only. DON'T bail — still apply best-effort
+            # structural repair (boost head motion / reroll upstream sources) so a
+            # sim fed by a flat source gets a varied input. The probe can't measure
+            # sims cheaply, so we lean on the structural heuristics and return.
+            self._boost_head_motion(rng)
+            self._reroll_upstream_sources(rng)
+            return
         # Up to `retries` fix cycles: re-roll head + upstream sources, re-probe.
         for _ in range(max(1, cfg.terminal_variance_retries)):
             probe = self._probe_terminal_variance(cfg)
             if probe is None:
-                return
+                # Probe failed/timed out (heavy subgraph, sim ancestor, or render
+                # error). NEVER bail — apply best-effort structural repair so the
+                # genome still ships variance-friendly. A flat clip is far more
+                # likely if we do nothing.
+                self._boost_head_motion(rng)
+                self._reroll_head_params(rng)
+                self._reroll_upstream_sources(rng)
+                continue
             spatial, temporal = probe
             if (spatial >= cfg.spatial_var_min * 1.5
                     and temporal >= cfg.temporal_var_min * 1.5):
@@ -356,6 +369,8 @@ class Builder:
             self._reroll_head_params(rng)
             probe = self._probe_terminal_variance(cfg)
             if probe is None:
+                # Probe unavailable — keep the swapped filter (it's inherently
+                # high-variance) and stop. Do NOT discard the improvement.
                 return
             spatial, temporal = probe
             if (spatial >= cfg.spatial_var_min * 1.5
