@@ -14,3 +14,4 @@ from . import strange_attractors
 from . import spherical_harmonics
 from . import polytope_4d
 from . import domain_coloring
+from . import marching_squares_contours
