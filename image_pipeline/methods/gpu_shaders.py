@@ -722,6 +722,17 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "reset_on": ["seed", "param", "loop", "resize"],
         "param_map": {"feed": "p1", "kill": "p2", "diff_u": "p3", "diff_v": "p4"},
     },
+    # ── Node 106: Dielectric Breakdown Model (GPU sim twin) ──
+    "106": {
+        "type": "sim",
+        "seed": "dbm_seed",
+        "step": "dbm_step",
+        "display": "dbm_display",
+        "state_channels": 3,
+        "substeps": 6,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"eta": "p1", "growth_rate": "p2", "cool_rate": "p3", "dielectric": "p4"},
+    },
     # ── P1.1 textbook sims (reuse the proven ping-pong machinery) ──
     # 32 Reaction-Diffusion: same Gray-Scott engine, parametric preset.
     "32": {
