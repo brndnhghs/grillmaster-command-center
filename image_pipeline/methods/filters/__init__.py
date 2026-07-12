@@ -46,3 +46,4 @@ from . import subsurface
 from . import gabor_filter
 from . import droste
 from . import diffraction
+from . import retinex_msrcr
