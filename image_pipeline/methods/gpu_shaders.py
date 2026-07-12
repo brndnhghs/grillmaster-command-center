@@ -375,7 +375,8 @@ for _mid, _sname, _mname in _PROC_SHADERS:
     GPU_SHADER_NODE_MAP[_mid] = {"shader": _sname,
                                  "type": SHADERS[_sname]["type"], "typed": True}
 for _mid, _sname, _mname in _FILT_SHADERS:
-    GPU_SHADER_NODE_MAP[_mid] = {"shader": _sname, "type": "filter"}
+    GPU_SHADER_NODE_MAP[_mid] = {"shader": _sname, "type": "filter",
+                                 "typed": bool(SHADERS.get(_sname, {}).get("uniforms"))}
 for _mid, _sname, _mname in _TYPED_SHADER_NODES:
     # typed: client sets u_<name> uniforms from node params (no p1..p4).
     GPU_SHADER_NODE_MAP[_mid] = {"shader": _sname,
@@ -451,9 +452,9 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # 17 Glitch Art → existing GPU twin (214). intensity p1.
     "17": {"shader": "shader_glitch_gpu", "type": "filter",
             "param_map": {"intensity": "p1"}},
-    # 41 Oil Paint → existing GPU twin (216). radius p1.
+    # 41 Oil Paint → existing GPU twin (216). radius drives u_radius named uniform.
     "41": {"shader": "shader_oil_gpu", "type": "filter",
-            "param_map": {"radius": "p1"}},
+           "param_map": {"radius": "radius"}},
     # 80 Pixel Mosaic → existing GPU twin (208). tile_size p1.
     "80": {"shader": "shader_mosaic_gpu", "type": "filter",
             "param_map": {"tile_size": "p1"}},

@@ -1195,8 +1195,9 @@ _register("shader_edge_detect_gpu", "GPU Sobel edge detection", "filter", _filte
     "strength": {"glsl": "float", "min": 0.0, "max": 2.0, "default": 1.0, "description": "edge blend"},
 })
 
-_register("shader_warhol", "GPU Warhol 4-panel duotone", "filter", _filter_shader('''
+_register("shader_warhol", "GPU Warhol 4-panel duotone", "filter", _filter_typed('''
     float gray = dot(orig.rgb, vec3(0.299, 0.587, 0.114));
+    gray = clamp(pow(gray, u_gamma), 0.0, 1.0);
     vec2 p = floor(uv * 2.0);
     vec3 c1, c2;
     if (p.x < 1.0 && p.y < 1.0) { c1 = vec3(0.8, 0.2, 0.2); c2 = vec3(1.0, 1.0, 0.4); }
@@ -1204,7 +1205,9 @@ _register("shader_warhol", "GPU Warhol 4-panel duotone", "filter", _filter_shade
     else if (p.x < 1.0 && p.y >= 1.0) { c1 = vec3(0.2, 0.8, 0.2); c2 = vec3(0.4, 0.2, 0.8); }
     else { c1 = vec3(0.8, 0.6, 0.2); c2 = vec3(0.8, 0.2, 0.2); }
     f_color = vec4(mix(c1, c2, gray), 1.0);
-'''))
+'''), uniforms={
+    "gamma": {"glsl": "float", "min": 0.25, "max": 3.0, "default": 1.0, "description": "panel contrast gamma (1.0 = classic)"},
+})
 
 _register("shader_duotone_gpu", "GPU duotone with color controls", "filter", _filter_typed('''
     float gray = dot(orig.rgb, vec3(0.299, 0.587, 0.114));
@@ -1967,19 +1970,22 @@ void main() {
     )
 
 
-_register("shader_oil_gpu", "GPU oil painting simulation", "filter", _filter_shader('''
-    float radius = 2.0 + u_params.x * 4.0;
+_register("shader_oil_gpu", "GPU oil painting simulation", "filter", _filter_typed('''
+    float radius = u_radius;
     vec3 sum = vec3(0.0); float total = 0.0;
+    float scale = radius / 4.0;
     for (int x = -3; x <= 3; x++) {
         for (int y = -3; y <= 3; y++) {
-            vec2 off = vec2(float(x), float(y)) * step;
+            vec2 off = vec2(float(x), float(y)) * step * scale;
             float w = exp(-float(x*x + y*y) / (radius * radius));
             sum += texture(u_texture, uv + off).rgb * w;
             total += w;
         }
     }
     f_color = vec4(sum / total, 1.0);
-'''))
+'''), uniforms={
+    "radius": {"glsl": "float", "min": 1.0, "max": 8.0, "default": 4.0, "description": "brush radius"},
+})
 
 # Anisotropic Kuwahara — coherence-enhancing painterly abstraction (node 68 twin).
 # A rotated, elongated Gaussian kernel is oriented along the local structure-tensor
@@ -2068,7 +2074,7 @@ _register("dither_palette_gpu", "GPU palette posterize with ordered dither (clie
     f_color = vec4(clamp(q, 0.0, 1.0), 1.0);
 '''))
 
-_register("shader_neon_gpu", "GPU neon glow on edges", "filter", _filter_shader('''
+_register("shader_neon_gpu", "GPU neon glow on edges", "filter", _filter_typed('''
     float gx = 0.0, gy = 0.0;
     for (int x = -1; x <= 1; x++) {
         for (int y = -1; y <= 1; y++) {
@@ -2078,12 +2084,14 @@ _register("shader_neon_gpu", "GPU neon glow on edges", "filter", _filter_shader(
         }
     }
     float edge = sqrt(gx*gx + gy*gy);
-    float glow = edge * u_params.x * 3.0;
+    float glow = edge * u_intensity * 3.0;
     vec3 neon = vec3(glow * 0.8, glow * 0.3, glow);
     f_color = vec4(orig.rgb + neon, 1.0);
-'''))
+'''), uniforms={
+    "intensity": {"glsl": "float", "min": 0.0, "max": 2.0, "default": 0.5, "description": "neon glow intensity"},
+})
 
-_register("shader_pencil_gpu", "GPU pencil sketch", "filter", _filter_shader('''
+_register("shader_pencil_gpu", "GPU pencil sketch", "filter", _filter_typed('''
     float gx = 0.0, gy = 0.0;
     for (int x = -1; x <= 1; x++) {
         for (int y = -1; y <= 1; y++) {
@@ -2094,12 +2102,14 @@ _register("shader_pencil_gpu", "GPU pencil sketch", "filter", _filter_shader('''
     }
     float edge = sqrt(gx*gx + gy*gy);
     float sketch = 1.0 - edge * 4.0;
-    f_color = vec4(mix(orig.rgb, vec3(sketch), u_params.x), 1.0);
-'''))
+    f_color = vec4(mix(orig.rgb, vec3(sketch), u_strength), 1.0);
+'''), uniforms={
+    "strength": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "pencil strength"},
+})
 
-_register("shader_motion_blur_gpu", "GPU directional motion blur", "filter", _filter_shader('''
-    float angle = u_params.x * 6.2832;
-    float dist = 10.0 + u_params.y * 20.0;
+_register("shader_motion_blur_gpu", "GPU directional motion blur", "filter", _filter_typed('''
+    float angle = u_angle;
+    float dist = u_dist;
     vec2 dir = vec2(cos(angle), sin(angle)) * step * dist;
     vec3 col = vec3(0.0);
     for (int i = -5; i <= 5; i++) {
@@ -2107,7 +2117,10 @@ _register("shader_motion_blur_gpu", "GPU directional motion blur", "filter", _fi
         col += texture(u_texture, uv + dir * t).rgb * (1.0 - abs(t));
     }
     f_color = vec4(col / 3.5, 1.0);
-'''))
+'''), uniforms={
+    "angle": {"glsl": "float", "min": 0.0, "max": 6.2831853, "default": 3.14159265, "description": "blur direction (rad)"},
+    "dist":  {"glsl": "float", "min": 0.0, "max": 30.0, "default": 20.0, "description": "blur length (px)"},
+})
 
 # ── P0.4 client-GPU twin shaders for existing CPU filter nodes ──
 # Each maps a pre-existing CPU filter node's LIVE preview onto a GLSL twin.
