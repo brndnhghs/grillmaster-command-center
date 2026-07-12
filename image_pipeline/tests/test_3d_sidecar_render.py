@@ -209,6 +209,28 @@ def test_bloom_postfx_changes_render():
     assert delta > 0.02, f"bloom engagement did not change the render (Δ={delta})"
 
 
+def test_chromatic_aberration_changes_render():
+    """Engaging radial chromatic aberration is NOT a no-op: the per-channel
+    radial split shifts high-frequency color edges (e.g. a bright torusknot
+    against a dark background), so the frame differs from the off state.
+
+    Locks in the new chromatic-aberration pass so a future edit that silently
+    drops its engagement is caught. It is disabled by default.
+    """
+    off = _render(_build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0,
+        "fx_brightness": 1.0, "fx_contrast": 1.0, "fx_saturation": 1.0,
+        "chromatic": 0.0,
+    }))
+    on = _render(_build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0,
+        "fx_brightness": 1.0, "fx_contrast": 1.0, "fx_saturation": 1.0,
+        "chromatic": 1.0, "chromatic_scale": 1.5,
+    }))
+    delta = float(np.mean(np.abs(on - off)))
+    assert delta > 0.02, f"chromatic aberration did not change the render (Δ={delta})"
+
+
 def test_transparent_bg_preserves_alpha():
     """bg_mode='transparent' keeps the background alpha=0, object alpha=255.
 

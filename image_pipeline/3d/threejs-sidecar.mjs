@@ -418,6 +418,8 @@ function buildScene(nodes, edges, frame = 0) {
           vignette_radius: resolveParam(node, 'vignette_radius', 0.85),
           vignette_softness: resolveParam(node, 'vignette_softness', 0.5),
           fxaa:            resolveParam(node, 'fxaa', 0),
+          chromatic:       resolveParam(node, 'chromatic', 0),
+          chromatic_scale: resolveParam(node, 'chromatic_scale', 1.0),
         };
 
         for (const [port, obj] of Object.entries(wired)) {
@@ -643,6 +645,26 @@ void main() {
 }
 `;
 
+const _CHROMATIC = `
+uniform sampler2D tDiffuse;
+uniform float uAmount;   // strength (0 = off)
+uniform float uScale;    // radial falloff power
+uniform vec2 uResolution;
+varying vec2 vUv;
+void main() {
+  vec2 center = vec2(0.5);
+  vec2 dir = vUv - center;
+  float dist = length(dir);
+  float power = pow(max(dist, 0.0), max(uScale, 0.001));
+  vec2 offset = dir * (uAmount * power * 0.08);
+  float r = texture2D(tDiffuse, vUv + offset).r;
+  float g = texture2D(tDiffuse, vUv).g;
+  float b = texture2D(tDiffuse, vUv - offset).b;
+  float a = texture2D(tDiffuse, vUv).a;
+  gl_FragColor = vec4(r, g, b, a);
+}
+`;
+
 function renderWithPostFX(renderer, scene, camera, w, h, fx) {
   const rtOpts = {
     minFilter: THREE.LinearFilter,
@@ -693,7 +715,8 @@ function renderWithPostFX(renderer, scene, camera, w, h, fx) {
     bloomRTs = [a, b];
   }
 
-  const compositeTarget = fx.fxaa > 0
+  const needsCompositeRT = fx.fxaa > 0 || fx.chromatic > 0;
+  const compositeTarget = needsCompositeRT
     ? new THREE.WebGLRenderTarget(w, h, { ...rtOpts, depthBuffer: false })
     : null;
 
@@ -711,23 +734,41 @@ function renderWithPostFX(renderer, scene, camera, w, h, fx) {
   });
   _fsRender(renderer, compositeTarget, comp);
 
-  if (fx.fxaa > 0) {
-    const fxaa = _fsMat(_FXAA, {
-      tDiffuse: { value: compositeTarget.texture },
+  // ── Chromatic aberration (radial lens RGB split) ──
+  let caRT = null;
+  let finalTex = compositeTarget ? compositeTarget.texture : null;
+  if (fx.chromatic > 0 && finalTex) {
+    caRT = new THREE.WebGLRenderTarget(w, h, { ...rtOpts, depthBuffer: false });
+    const caMat = _fsMat(_CHROMATIC, {
+      tDiffuse: { value: finalTex },
+      uAmount: { value: fx.chromatic },
+      uScale: { value: fx.chromatic_scale },
       uResolution: { value: new THREE.Vector2(w, h) },
     });
-    _fsRender(renderer, null, fxaa);
-  } else if (compositeTarget) {
-    // blit composite RT → canvas (FXAA off but composite went through a RT)
-    const blit = _fsMat(`uniform sampler2D tDiffuse; varying vec2 vUv;
-      void main(){ gl_FragColor = texture2D(tDiffuse, vUv); }`,
-      { tDiffuse: { value: compositeTarget.texture } });
-    _fsRender(renderer, null, blit);
+    _fsRender(renderer, caRT, caMat);
+    finalTex = caRT.texture;
+  }
+
+  if (finalTex) {
+    if (fx.fxaa > 0) {
+      const fxaa = _fsMat(_FXAA, {
+        tDiffuse: { value: finalTex },
+        uResolution: { value: new THREE.Vector2(w, h) },
+      });
+      _fsRender(renderer, null, fxaa);
+    } else {
+      // blit composite RT → canvas (FXAA off but composite went through a RT)
+      const blit = _fsMat(`uniform sampler2D tDiffuse; varying vec2 vUv;
+        void main(){ gl_FragColor = texture2D(tDiffuse, vUv); }`,
+        { tDiffuse: { value: finalTex } });
+      _fsRender(renderer, null, blit);
+    }
   }
 
   sceneRT.dispose();
   if (bloomRTs) bloomRTs.forEach(rt => rt.dispose());
   if (compositeTarget) compositeTarget.dispose();
+  if (caRT) caRT.dispose();
   renderer.setRenderTarget(null);
 }
 
@@ -772,7 +813,7 @@ function renderSceneToPng(graphNodes, graphEdges, width, height, frame) {
   // unchanged direct render, so this feature is purely additive. Any
   // non-default value engages the render-target pipeline.
   const fx = scene._gmPostFX || {};
-  const fxEngaged = !!(fx.bloom || fx.vignette || fx.fxaa ||
+  const fxEngaged = !!(fx.bloom || fx.vignette || fx.fxaa || fx.chromatic ||
       fx.brightness !== 1 || fx.contrast !== 1 || fx.saturation !== 1);
 
   if (fxEngaged) {

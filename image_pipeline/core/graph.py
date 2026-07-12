@@ -148,8 +148,9 @@ _MODEL_PLACEMENT_PARAMS: dict[str, dict] = {
 
 # Shared post-processing params for the 3D Scene Render / Scene (legacy) nodes.
 # The headless sidecar runs a core-three.js-only multi-pass stack (bloom +
-# grade + vignette + FXAA); all values sit at their neutral default so the
-# default render path is unchanged unless the user opts in.
+# grade + vignette + FXAA + radial chromatic aberration); all values sit at
+# their neutral default so the default render path is unchanged unless the
+# user opts in.
 _THREEJS_POSTFX_PARAMS: dict[str, dict] = {
     "bloom":            {"description": "bloom glow strength (0 = off)", "min": 0, "max": 2, "default": 0},
     "bloom_threshold":  {"description": "bloom luminance threshold", "min": 0, "max": 2, "default": 0.8},
@@ -164,6 +165,8 @@ _THREEJS_POSTFX_PARAMS: dict[str, dict] = {
     "vignette_radius":  {"description": "vignette radius", "min": 0.2, "max": 1.2, "default": 0.85},
     "vignette_softness":{"description": "vignette edge softness", "min": 0.05, "max": 1, "default": 0.5},
     "fxaa":             {"description": "FXAA edge anti-alias (0 = off)", "min": 0, "max": 1, "default": 0},
+    "chromatic":        {"description": "radial chromatic aberration strength (0 = off)", "min": 0, "max": 1, "default": 0},
+    "chromatic_scale":  {"description": "chromatic aberration radial falloff power", "min": 0.25, "max": 4, "default": 1.0},
 }
 
 _THREEJS_3D_NODE_DEFS: dict[str, dict] = {
