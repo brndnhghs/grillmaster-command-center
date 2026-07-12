@@ -639,6 +639,26 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
             "param_map": {"thickness": "thickness", "thickness_range": "thickness_range",
                           "ior": "ior", "angle": "angle",
                           "strength": "strength", "saturation": "saturation"}},
+    # 408 Bloom / Glow → bloom_glow_gpu (typed). Uniform names match node 408's
+    # real numeric params: threshold/softness/intensity/radius/streak. source/
+    # palette/anim_mode are choice/string (pitfall #14) and stay unmapped.
+    "408": {"shader": "bloom_glow_gpu", "type": "filter", "typed": True,
+            "param_map": {"threshold": "threshold", "softness": "softness",
+                          "intensity": "intensity", "radius": "radius",
+                          "streak": "streak"}},
+    # 420 Bokeh Lens Blur → bokeh_gpu (typed). radius/blades/anamorphic/rotation/
+    # brightness/highlight match node 420's real params. aperture_shape/source/
+    # palette/anim_mode are choice/string (pitfall #14) and stay unmapped.
+    "420": {"shader": "bokeh_gpu", "type": "filter", "typed": True,
+            "param_map": {"radius": "radius", "blades": "blades",
+                          "anamorphic": "anamorphic", "rotation": "rotation",
+                          "brightness": "brightness", "highlight": "highlight"}},
+    # 345 Bilateral Grid → bilateral_grid_gpu (typed). grid_scale/sigma_s/
+    # sigma_r/blend match node 345's real params. source/palette/anim_mode are
+    # choice/string (pitfall #14) and stay unmapped.
+    "345": {"shader": "bilateral_grid_gpu", "type": "filter", "typed": True,
+            "param_map": {"grid_scale": "grid_scale", "sigma_s": "sigma_s",
+                          "sigma_r": "sigma_r", "blend": "blend"}},
     # ── Categorical coverage expansion (2026-07-11): wire clean name-matching
     # closed-form typed twins onto their existing CPU nodes so the math_art /
     # patterns GPU-source mirror grows by category. Each pairing maps ONLY the
