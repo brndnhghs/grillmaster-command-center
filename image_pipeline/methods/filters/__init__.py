@@ -53,3 +53,4 @@ from . import relative_total_variation
 from . import kaleidoscope_mirror
 from . import cel_shading
 from . import adaptive_lut
+from . import matcap_relight
