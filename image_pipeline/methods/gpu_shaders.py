@@ -296,6 +296,10 @@ _TYPED_SHADER_NODES = [
     # Categorical coverage pt.16 (2026-07-13): closed-form procedural — classic
     # Perlin-turbulence marble veining with domain warp (typed, node 320).
     ("320", "marble_typed",         "GPU Marble"),
+    # Node 321: Smooth-min Metaballs — Quilez exponential smin union of
+    # orbiting SDF spheres. Distinct from node 53 (sum-of-inverse-square
+    # field): true SDF + smin so `blend` (k) controls edge softness.
+    ("321", "smin_metaballs_gpu",   "GPU Smooth-min Metaballs"),
 ]
 
 _TIME_SCALE_PARAM = {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0}
