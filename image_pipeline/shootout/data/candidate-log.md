@@ -174,3 +174,43 @@
   renders>150s=121  cheap-alive(seeds)=104
   top-rated ids: g-e181c881(r=5,explorer), g-328f0d37(r=5,random), g-e3d68069(r=5,random)
   ACTION: dead-rate dominated by 150s timeout cull (121 overslow renders). Recommendation: feed render wall_s into cost_model + prefer cheap closed-form procedural nodes (e.g. new aurora_typed 319, caustics 296, clouds 308) as shootout seeds.
+[2026-07-12] AUTONOMOUS RUN — cg feature: node 500 Spirograph (cheap closed-form seed)
+  genomes=509 alive=174 dead=335 (66%) renders>150s=121 cheap-alive=104
+  top-rated ids (rate=,origin): g-e181c881(5,explorer) g-328f0d37(5,random) g-e3d68069(5,random)
+  ACTION: committed node 500 "Spirograph" (hypotrochoid/epitrochoid rosette, closed-form, ~0.2s/frame @512x768) as a render-cheap shootout seed to counter the 150s timeout cull. 8-step audit passed: noneΔ=0.0000, rotate/breathe/morph all changed-pixel-frac>0.01 (sparse thin-stroke motion measured correctly, not mean-Δ). RECOMMENDED NEXT evolution sub-problem (index 1→2): #2 Liveness metric — the temporal_var=full-frame-mean-variance per-frame global average still under-reads sparse/rotational thin-stroke motion; the existing motion_pixel_frac rescue already handles this, but consider promoting changed-pixel-fraction to a first-class liveness signal alongside temporal_var for procedural line-art nodes.
+
+[2026-07-13] AUTONOMOUS RUN — Route 8: cost-gate calibration (timeout failure mode)
+  genomes=509 alive=174 dead/rejected=335 (66%)  renders>150s(cap)=121 (max 547s)
+  alive ratings=18 (still starved, <20)  cheap-alive=104
+  honest dead-rate (image-node graphs): 66% — only 4 control-only graphs, so
+    the #0 "exclude control nodes from denominator" hypothesis is a NON-ISSUE
+    in this corpus; dead-rate metric itself was not the bug.
+  ROOT CAUSE OF TIMEOUT WASTE: estimate_cost_s was an UNCALIBRATED raw linear
+    sum of per-method median ms/frame. Fit over 470 genomes: wall≈0.557·raw+33.7
+    (variance huge on heavy sims). At cost_skip_factor=0.9 the gate threshold
+    (270s on raw est) under-predicted real heavy-sim wall and caught ~4% of
+    timeouts while ~120 rendered-and-wasted every generation.
+  ACTION (committed): calibrated estimate_cost_s (slope·raw+intercept, fit from
+    corpus, persisted in cost_model.json) + lowered cost_skip_factor 0.9→0.7.
+    Re-sim on real corpus: gate now catches 42/100 genuine timeouts (was ~4%),
+    alive false-positive cull 11% (borderline expensive-but-dynamic clips).
+    Net: ~42 timeout clips skipped pre-render instead of wasting ~300s each.
+    Added test_cost_gate_calibration.py (4 pass) + cli --honest-dead-rate.
+  RECOMMENDED NEXT: rating-signal poverty (#6) — only 18/509 rated; wire a
+    frictionless keep/reject UI + active-learning pick of informative clips.
+
+---
+## 2026-07-13 (autonomous cg run — node 321)
+- TOP-RATED (promotion seeds, all origin=random/explorer, rating 3-5): ids carry no `id` field in logs (None) — cannot wire `prefer_ids` without a stable id; noted as missing capability (advisor has no `avoid_methods` / `seed_ids` intake surfaced in /api/shootout/config).
+- DEAD-rate: 335/509 = 66% rejected/dead. renders>150s = 121 (the dominant failure mode — timeout cull).
+- DEAD hotspots: __lfo__ (827), __counter__ (230), __noise1d__ (128), __ramp__ (105), __strobe__ (45), __image_to_mask__ (41), __envelope__ (38), 137 (33). Driver/control utility nodes dominate deaths → shootout needs cheap, high-yield ANIMATED content to survive liveness + dodge the 150s cull.
+- ACTION TAKEN: added node 321 "GPU Smooth-min Metaballs" — a closed-form f(uv,t) SDF smooth-union (Quilez exponential smin) that is cheap (one pass, no raymarch loop), animates by construction, and composes with driver nodes as a live wallpaper. Directly addresses the dead-rate driver imbalance. Verified headlessly: neutral non-black, t Δ=8.3, blend Δ=42.8, count Δ=52.1.
+- RECOMMENDED NEXT: rating-signal poverty — only ~18/509 rated; surface a frictionless keep/reject UI + active-learning pick of informative clips (rotation #6).
+
+---
+## 2026-07-13 (autonomous cg run — node 321)
+- TOP-RATED (promotion seeds, all origin=random/explorer, rating 3-5): ids carry no `id` field in logs (None) — cannot wire `prefer_ids` without a stable id; noted as missing capability (advisor has no `avoid_methods` / `seed_ids` intake surfaced in /api/shootout/config).
+- DEAD-rate: 335/509 = 66% rejected/dead. renders>150s = 121 (the dominant failure mode — timeout cull).
+- DEAD hotspots: __lfo__ (827), __counter__ (230), __noise1d__ (128), __ramp__ (105), __strobe__ (45), __image_to_mask__ (41), __envelope__ (38), 137 (33). Driver/control utility nodes dominate deaths → shootout needs cheap, high-yield ANIMATED content to survive liveness + dodge the 150s cull.
+- ACTION TAKEN: added node 321 "GPU Smooth-min Metaballs" — a closed-form f(uv,t) SDF smooth-union (Quilez exponential smin) that is cheap (one pass, no raymarch loop), animates by construction, and composes with driver nodes as live wallpaper. Directly addresses the dead-rate driver imbalance. Verified headlessly: neutral non-black, t Δ=8.3, blend Δ=42.8, count Δ=52.1.
+- RECOMMENDED NEXT: rating-signal poverty — only ~18/509 rated; surface a frictionless keep/reject UI + active-learning pick of informative clips (rotation #6).

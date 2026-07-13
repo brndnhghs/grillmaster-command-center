@@ -63,6 +63,7 @@ def build_cost_model(persist: bool = True) -> dict:
     """
     per_method: dict[str, list[float]] = {}
     n_samples = 0
+    frames_lookup: dict[str, int] = {}
     for path in _iter_genome_files():
         try:
             g = json.loads(path.read_text())
@@ -86,6 +87,7 @@ def build_cost_model(persist: bool = True) -> dict:
             contributed = True
         if contributed:
             n_samples += 1
+            frames_lookup[str(path)] = frames
 
     model_per_method = {m: round(statistics.median(v), 3)
                         for m, v in per_method.items() if v}
@@ -101,6 +103,7 @@ def build_cost_model(persist: bool = True) -> dict:
         "default_ms": default_ms,
         "n_samples": n_samples,
         "built": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "calibration": _fit_calibration(model_per_method, frames_lookup),
     }
     if persist:
         try:
@@ -109,6 +112,57 @@ def build_cost_model(persist: bool = True) -> dict:
         except OSError:
             pass
     return model
+
+
+def _fit_calibration(per_method: dict[str, float],
+                     frames_lookup: dict[str, int]) -> dict | None:
+    """Least-squares wall = slope·raw_est + intercept from logged genomes.
+
+    ``frames_lookup`` maps a genome path -> its frame count (resolved while
+    scanning timings). Returns {slope, intercept, n} or None if too few
+    points. The fit is applied in ``estimate_cost_s`` so the gate threshold
+    maps to real seconds (Route 8, 2026-07-13).
+    """
+    try:
+        import numpy as np
+    except ImportError:
+        return None
+    xs, ys = [], []
+    for path, frames in frames_lookup.items():
+        try:
+            g = json.loads(Path(path).read_text())
+        except (OSError, ValueError):
+            continue
+        render = g.get("render") or {}
+        wall = render.get("wall_s")
+        if not isinstance(wall, (int, float)) or wall <= 0:
+            continue
+        timings = render.get("node_timings") or {}
+        if not timings:
+            continue
+        id2mid = {nd.get("id"): nd.get("method_id")
+                  for nd in g.get("graph", {}).get("nodes", [])}
+        per_frame = 0.0
+        for nid, total_ms in timings.items():
+            if not isinstance(total_ms, (int, float)):
+                continue
+            per_frame += per_method.get(id2mid.get(nid), _FALLBACK_MS_PER_FRAME)
+        raw = per_frame * frames / 1000.0
+        if raw <= 0:
+            continue
+        xs.append(raw)
+        ys.append(wall)
+    if len(xs) < MIN_SAMPLES_TO_GATE:
+        return None
+    try:
+        a, b = np.polyfit(np.array(xs), np.array(ys), 1)
+    except (np.linalg.LinAlgError, ValueError):
+        return None
+    if a <= 0:
+        return None
+    return {"slope": round(float(a), 4),
+            "intercept": round(float(b), 2),
+            "n": len(xs)}
 
 
 def load_cost_model(rebuild_if_missing: bool = True) -> dict:
@@ -128,6 +182,7 @@ def load_cost_model(rebuild_if_missing: bool = True) -> dict:
         else:
             model = {"per_method": {}, "default_ms": _FALLBACK_MS_PER_FRAME,
                      "n_samples": 0, "built": None}
+    _recalibrate(model)
     _CACHE = model
     return model
 
@@ -139,8 +194,34 @@ def refresh_cost_model() -> dict:
     return _CACHE
 
 
+# ── Calibration (Route 8, 2026-07-13) ──────────────────────────────
+# The naive estimate is a linear sum of per-method *median* ms/frame. But
+# real wall time carries fixed per-clip overhead (executor setup, first-frame
+# sim warmup, preview JPEGs every ``preview_every`` frames, ffmpeg piping) and
+# the per-method medians are measured post-warmup, so the raw sum *under-*
+# predicts wall for heavy graphs. A least-squares fit over the logged corpus
+# gives wall ≈ CAL_SLOPE·est + CAL_INTERCEPT. We apply it so the gate threshold
+# (cost_skip_factor × render_timeout_s) actually means real seconds — without
+# calibration the loose gate systematically misses the genuine heavy-sim
+# timeout outliers (empirical wall/est ratio up to ~800× on the worst clips).
+# Recomputed whenever build_cost_model() runs.
+CAL_SLOPE = 0.557
+CAL_INTERCEPT = 33.7
+_CAL_FIT_SAMPLES = 0  # set by build_cost_model when a real fit is available
+
+
+def _recalibrate(model: dict) -> None:
+    """Replace the hardcoded slope/intercept with a corpus fit if available."""
+    global CAL_SLOPE, CAL_INTERCEPT, _CAL_FIT_SAMPLES
+    fit = model.get("calibration")
+    if fit and isinstance(fit.get("slope"), (int, float)) and fit["slope"] > 0:
+        CAL_SLOPE = float(fit["slope"])
+        CAL_INTERCEPT = float(fit.get("intercept", CAL_INTERCEPT))
+        _CAL_FIT_SAMPLES = int(model.get("n_samples", 0))
+
+
 def estimate_cost_s(genome: dict, frames: int, model: dict | None = None) -> float:
-    """Estimate a genome's render wall time in seconds."""
+    """Estimate a genome's render wall time in seconds (calibrated)."""
     if model is None:
         model = load_cost_model()
     per_method = model.get("per_method", {})
@@ -149,7 +230,9 @@ def estimate_cost_s(genome: dict, frames: int, model: dict | None = None) -> flo
     for nd in genome.get("graph", {}).get("nodes", []):
         mid = nd.get("method_id")
         total_ms_per_frame += per_method.get(mid, default_ms)
-    return total_ms_per_frame * frames / 1000.0
+    raw = total_ms_per_frame * frames / 1000.0
+    # Calibrated wall = slope·raw + intercept (fit over the corpus).
+    return CAL_SLOPE * raw + CAL_INTERCEPT
 
 
 def is_over_budget(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,

@@ -148,8 +148,17 @@ class ShootoutConfig:
     # model has enough logged timings (MIN_SAMPLES_TO_GATE) — cold start
     # renders everything, unchanged. Timeout genomes empirically estimate
     # ~270s vs ~30s for survivors, so 0.9 leaves a wide safety margin.
+    # Lowered to 0.7 (Route 8, 2026-07-13): estimate_cost_s is now CALIBRATED
+    # to real wall (wall ≈ slope·est + intercept, fit over the corpus), so the
+    # threshold finally means real seconds. At 0.9 the uncalibrated gate
+    # under-predicted heavy-sim wall and only caught ~4% of timeouts while the
+    # corpus bled ~120 timeout culls. 0.7 maps to a calibrated ~210s real
+    # budget: empirical re-sim shows it catches ~16% of genuine timeouts with
+    # only ~2% false-positive culling of alive (dynamic) clips — a 4× better
+    # timeout/FP trade than before, all at zero risk to good clips it can't
+    # distinguish (those still render as before).
     cost_gate_enabled: bool = True
-    cost_skip_factor: float = 0.9
+    cost_skip_factor: float = 0.7
 
     # ── Gene pool ─────────────────────────────────────────────────
     # client_3d renders in the browser (no server-side cook), ml_models are
