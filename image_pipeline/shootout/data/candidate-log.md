@@ -1,3 +1,10 @@
+## 2026-07-13 — autonomous run (SmoothLife 560, driver-live organism)
+- genomes=525 alive=180 dead/rejected=345 (66%) renders>150s=126 over-budget=29
+- ACTION: added node 560 "SmoothLife (Continuous Life)" — Rafler 2011 continuous Game-of-Life (smooth birth/survival/death bands over annulus neighbourhood averages). O(N) via scipy uniform_filter; 82ms/frame @256x192 — sub-2s, dodges the >150s timeout cull.
+- KEY: death/birth/survive thresholds are SCALAR-wireable INPUTS (death/birth/survive/hue_shift) so a wired driver (LFO/noise/ramp) MORPHS THE ORGANISM LIVE — directly retargets the dominant dead hotspot (__lfo__/__counter__/__noise1d__/__ramp__/__strobe__ = 1397 dead), giving those control nodes a continuously-varying VISIBLE sink. Verified: threshold sweep Δ=0.30 (driver→pixel live), time-reveal Δ=0.18-0.21.
+- TOP-3 rated: g-e181c881(5,explorer), g-328f0d37(5,random), g-e3d68069(5,random); cheap-alive(recombine)=107. No seed_ids promotion hook (logged prior).
+- RECOMMENDATION (carried): exclude pure-control __*__ types from the dead-rate denominator — control nodes emit no image so they inflate the "dead" headline even when correctly wired.
+
 ## 2026-07-13 — autonomous run (driver-path regression guard)
 - genomes=525 alive=180 dead/rejected=345 (66%) renders>150s=126 over-budget=29 human-ratings=18
 - KEY FINDING: the driver-modulation path (__lfo__/__counter__/__noise1d__/__ramp__/__strobe__/__envelope__) is **VERIFIED FIXED in current main**. End-to-end probe (real GraphExecutor, 96×64×8) shows LFO advances 0.5→0.96 across frames and driver→target (952.matrix_size) temporal_var=0.1157 >> floor 3e-3. The fn-level guard test_chop_drivers_advance.py was already in CI.
