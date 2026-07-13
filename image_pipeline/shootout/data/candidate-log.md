@@ -291,3 +291,21 @@
 - dead hotspots: [('__lfo__',868),('__counter__',239),('__noise1d__',134),('__ramp__',108),('__strobe__',48),('__envelope__',41),('__image_to_mask__',41),('137',34)]
 - ACTION: feed the pure control/signal utility nodes (__lfo__,__counter__,__noise1d__,__ramp__,__strobe__,__envelope__) as avoid-guidance to advisor.extract_guidance — they dominate the dead-rate but emit no image, so counting them as 'dead methods' inflates the 66% rejection. Propose excluding pure-control types from the dead-rate denominator (consistent with 2026-07-12 entries). If advisor lacks an avoid_methods intake, that is a real gap to log. Also: genome['id']=null means the rated-genome promotion hook (POST /api/shootout/config seed_ids) cannot be wired this run — another corpus gap.
 
+
+## 2026-07-13 (Route 8 #2 cost-gate audit)
+- dead-rate: 345/525 (66%) rejected; 126/525 render >150s (max 547s); 18 human ratings.
+- Cost-gate audit (177-genome measured corpus, node_timings + wall + liveness):
+  - Gate is a BLUNT instrument: heavy graphs (est>thresh) are ~45% alive — 3-clip
+    concurrent renders inflate real wall ~2-3x beyond summed node timings the
+    single global linear fit can't see, so it can't tell slow-dynamic from
+    slow-static. At cost_skip_factor=0.7: catches ~17 dead-timeouts, culls ~14
+    dynamic clips = only ~0.3/gen (render_pool over-generates 12->6 shown) for
+    ~8 min compute saved — reasonable trade.
+  - Tightening to 0.5 (initial attempt) catches ~28 but culls ~20 dynamic clips
+    -> NET WORSE for survivor pool. REVERTED; kept 0.7.
+- ACTION: (a) fixed stale config comment (claimed "16% catch / 2% FP" — false);
+  (b) added regression test test_cost_gate_protects_survivor_pool locking
+  alive-skipped<=25% of alive, gate net-beneficial, not inert. Prevents future
+  over-tightening that would gut the survivor pool.
+- FUTURE WORK: liveness-prior model (predict dynamic from graph structure) would
+  let the gate skip static-heavy timeouts without ever touching a dynamic clip.

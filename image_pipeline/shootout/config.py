@@ -196,13 +196,23 @@ class ShootoutConfig:
     # ~270s vs ~30s for survivors, so 0.9 leaves a wide safety margin.
     # Lowered to 0.7 (Route 8, 2026-07-13): estimate_cost_s is now CALIBRATED
     # to real wall (wall ≈ slope·est + intercept, fit over the corpus), so the
-    # threshold finally means real seconds. At 0.9 the uncalibrated gate
-    # under-predicted heavy-sim wall and only caught ~4% of timeouts while the
-    # corpus bled ~120 timeout culls. 0.7 maps to a calibrated ~210s real
-    # budget: empirical re-sim shows it catches ~16% of genuine timeouts with
-    # only ~2% false-positive culling of alive (dynamic) clips — a 4× better
-    # timeout/FP trade than before, all at zero risk to good clips it can't
-    # distinguish (those still render as before).
+    # threshold finally means real seconds instead of the old uncalibrated
+    # linear sum that caught only ~4% of timeouts. KEPT at 0.7 (Route 8 cost-gate
+    # audit, 2026-07-13): an empirical sweep over the 177-genome measured corpus
+    # shows the gate is a BLUNT instrument — heavy graphs (summed est beyond the
+    # threshold) are ~45% alive (dynamic), because 3-clip concurrent renders
+    # inflate real wall ~2-3× beyond the summed node timings the single global
+    # linear fit can't see. So the gate cannot distinguish a slow-dynamic clip
+    # from a slow-static timeout. At 0.7 it catches ~17 genuine dead-timeouts
+    # cheaply while culling ~14 dynamic clips — but spread over a generation that
+    # is only ~0.3 dynamic clips lost (render_pool over-generates 12→6 shown)
+    # for ~8 min of compute saved, a reasonable trade. Tightening to 0.5 catches
+    # more timeouts (~28) but culls ~20 dynamic clips — net WORSE for the survivor
+    # pool — so 0.7 is the balanced point. Survivor-pool protection is locked by
+    # test_cost_gate_calibration::test_gate_recall_floor_at_configured_factor
+    # (alive-skipped ≤ 25% of alive, gate net-beneficial, not inert). FUTURE WORK:
+    # a liveness-prior model (predict dynamic from graph structure) would let the
+    # gate skip static-heavy timeouts without ever touching a dynamic clip.
     cost_gate_enabled: bool = True
     cost_skip_factor: float = 0.7
 

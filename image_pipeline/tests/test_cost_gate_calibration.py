@@ -135,3 +135,68 @@ def _safe(p: Path) -> dict | None:
         return json.loads(p.read_text())
     except (OSError, ValueError):
         return None
+
+
+def test_cost_gate_protects_survivor_pool():
+    """Route 8 (#2 timeout failure mode) — the cost gate must save compute on
+    heavy renders WITHOUT destroying the dynamic survivor pool.
+
+    The gate is a BLUNT instrument: heavy graphs (est beyond the threshold) are
+    ~45% alive because 3-clip concurrent renders inflate real wall beyond the
+    summed node timings the single global linear fit can't see, so it can't tell
+    a slow-dynamic clip from a slow-static timeout. The right behaviour (audited
+    2026-07-13 on the 177-genome corpus): at ``cost_skip_factor=0.7`` the gate
+    catches ~17 dead-timeouts cheaply while culling ~14 dynamic clips — only
+    ~0.3 per generation (render_pool over-generates 12→6 shown), a reasonable
+    trade. This test locks that trade so a future OVER-TIGHTENING (e.g. 0.3,
+    which skips 30+ dynamic clips) can't silently gut the survivor pool, and an
+    OVER-LOOSENING can't silently disable the gate:
+      • alive-skipped (dynamic clips the gate would cull) ≤ 25% of alive —
+        guards the survivor pool (catches factor ≲ 0.55);
+      • timeout-caught ≥ alive-skipped — gate is net-beneficial, not net-harmful;
+      • timeout_caught ≥ 5 — gate isn't inert (still catches extreme outliers).
+    """
+    m = cm.load_cost_model(rebuild_if_missing=False)
+    cfg = DEFAULT_CONFIG
+    th = cfg.render_timeout_s * cfg.cost_skip_factor
+
+    caught = fn = alive_skipped = n_alive = 0
+    for p in cm._iter_genome_files():
+        g = _safe(p)
+        if not g:
+            continue
+        r = g.get("render") or {}
+        timings = r.get("node_timings")
+        wall = r.get("wall_s")
+        if not timings or not isinstance(wall, (int, float)):
+            continue
+        est = cm.estimate_cost_s(g, cfg.frames, m)
+        if est <= 0:
+            continue
+        alive = bool((g.get("liveness") or {}).get("alive"))
+        if alive:
+            n_alive += 1
+            if est > th:
+                alive_skipped += 1
+        else:
+            heavy = wall > th
+            if heavy and est > th:
+                caught += 1
+            elif heavy and est <= th:
+                fn += 1
+
+    if n_alive == 0:
+        pytest.skip("no alive genomes in corpus")
+    assert alive_skipped <= 0.25 * n_alive, (
+        f"cost-gate culls {alive_skipped} dynamic clips "
+        f"({100.0 * alive_skipped / n_alive:.0f}% of {n_alive} alive) at factor "
+        f"{cfg.cost_skip_factor} — over-tightening harms the survivor pool"
+    )
+    assert caught >= alive_skipped, (
+        f"cost-gate catches {caught} dead-timeouts but culls {alive_skipped} "
+        f"dynamic clips at factor {cfg.cost_skip_factor} — net-harmful"
+    )
+    assert caught >= 5, (
+        f"cost-gate catches only {caught} dead-timeouts at factor "
+        f"{cfg.cost_skip_factor} — gate is effectively inert"
+    )
