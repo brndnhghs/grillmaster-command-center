@@ -3,10 +3,14 @@
 Guarantees after repair:
   * every node's method_id exists in the catalog
   * every edge is port-type-legal (src output accepted by dst input/param)
-  * the non-feedback edge set is a DAG
+  * the non-feedback edge set is a DAG (feedback edges are stripped — the
+    pipeline has no layering node to render an image-into-input loop)
   * exactly one node has render:true and it produces IMAGE
   * every node is an ancestor of the terminal (no dead islands)
   * params are clamped/coerced to their schema
+
+Runtime node errors (a method that raises at render) are NOT caught here —
+they're culled downstream by the evaluator (cfg.reject_node_errors).
 
 Returns None when the graph cannot be made renderable — caller resamples.
 """
@@ -180,8 +184,12 @@ def repair_graph(graph: dict, pool: GenePool | None = None,
         return None
     nodes_by_id = {n["id"]: n for n in nodes}
 
+    # Feedback edges (a terminal's image looped back into an upstream image
+    # port) are illegal in generated graphs: the pipeline has no
+    # layering/accumulation node to render them correctly, so drop them rather
+    # than preserve them. Feedback is a manual/UI-only concept.
     edges = [dict(e) for e in graph.get("edges", [])
-             if _edge_legal(pool, nodes_by_id, e)]
+             if _edge_legal(pool, nodes_by_id, e) and not e.get("feedback")]
     edges = _dagify(nodes, edges)
 
     # ── Terminal: exactly one render:true IMAGE producer ─────────────
@@ -265,9 +273,16 @@ def validate_graph(graph: dict, pool: GenePool | None = None,
             issues.append(f"illegal edge {e.get('src_node')}.{e.get('src_port')}"
                           f" → {e.get('dst_node')}.{e.get('dst_port')}")
 
-    # Cycle check (non-feedback edges)
-    kept = _dagify(nodes, [e for e in edges])
-    if len(kept) != len(edges):
+    # Feedback edges are not supported in generated graphs (no layering node
+    # to render an image-output-into-input loop) — any is a hard reject.
+    fb = [e for e in edges if e.get("feedback")]
+    if fb:
+        issues.append(f"{len(fb)} feedback edge(s) not allowed")
+
+    # Cycle check (forward edges only; feedback already flagged above)
+    forward = [e for e in edges if not e.get("feedback")]
+    kept = _dagify(nodes, forward)
+    if len(kept) != len(forward):
         issues.append("cycle in non-feedback edges")
 
     terminals = [n for n in nodes if n.get("render")]
@@ -276,6 +291,12 @@ def validate_graph(graph: dict, pool: GenePool | None = None,
     elif "image" not in (pool.defs.get(terminals[0]["method_id"], {})
                          .get("outputs") or {}).values():
         issues.append("terminal is not an IMAGE producer")
+    else:
+        # Dead islands: every node must feed forward into the single terminal.
+        reachable = _ancestors_of(terminals[0]["id"], edges) | {terminals[0]["id"]}
+        orphans = [n["id"] for n in nodes if n["id"] not in reachable]
+        if orphans:
+            issues.append(f"{len(orphans)} node(s) not connected to terminal")
 
     # Param ranges
     for n in nodes:
@@ -300,7 +321,14 @@ def validate_graph(graph: dict, pool: GenePool | None = None,
 def sample_valid_genome(pool: GenePool, cfg: ShootoutConfig,
                         rng: random.Random, origin: str = "random",
                         max_tries: int = 20, bias=None) -> dict:
-    """random_genome + repair, resampling until valid (plan §7 last bullet)."""
+    """random_genome + repair, resampling until structurally valid (plan §7).
+
+    This gate is *static* (see validate_graph). Runtime node errors — inter-param
+    bugs like randrange(hi, lo), OpenCV bad-args, index-out-of-bounds — can't be
+    caught cheaply here (a probe render can't be both cheap and complete when a
+    sim ignores the n_frames pin), so they are rejected downstream at render time
+    by the evaluator (cfg.reject_node_errors), which renders every frame anyway.
+    """
     from .generator import random_genome
     for _ in range(max_tries):
         g = repair_genome(random_genome(pool, cfg, rng, origin=origin,

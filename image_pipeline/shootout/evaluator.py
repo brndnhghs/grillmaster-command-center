@@ -276,6 +276,11 @@ def render_genome(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
     t0 = time.time()
     timed_out = False
     skipped = False
+    # Node-error tracking: a method that raises at render (inter-param bugs,
+    # OpenCV bad-args, index errors) yields an error-placeholder frame. Record
+    # which nodes threw so the clip can be culled instead of shipped.
+    node_error_nodes: set[str] = set()
+    node_error_sample: str = ""
     # Per-node compute, summed across every rendered frame. The executor
     # reports ms-per-node for the *last* frame only (last_frame_stats), so
     # we fold each frame's timings in here to get total compute per node.
@@ -284,7 +289,7 @@ def render_genome(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
     from image_pipeline.core.animation import JobCancelled
 
     def _frame_gen():
-        nonlocal timed_out, skipped
+        nonlocal timed_out, skipped, node_error_sample
         for frame in range(cfg.frames):
             if skip_ev.is_set():
                 skipped = True
@@ -304,13 +309,26 @@ def render_genome(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
                 # Fold this frame's per-node compute into the running total.
                 for nid, ms in (executor.last_frame_stats.get("node_timings") or {}).items():
                     node_ms[nid] = node_ms.get(nid, 0.0) + ms
+                # A node that raised is reported here (execute() swaps in an
+                # error placeholder and keeps going). Record it so a graph with
+                # a broken method gets culled rather than shipped.
+                if _errs:
+                    node_error_nodes.update(_errs)
+                    if not node_error_sample:
+                        node_error_sample = str(next(iter(_errs.values()))).splitlines()[0][:120]
                 arr = _terminal_image(flat, terminal_id, nodes)
             except JobCancelled:  # skip button / watchdog aborted a wedged node
                 skipped = True
                 if progress_cb:
                     progress_cb(f"{gid}: skipped mid-frame {frame}")
                 return
-            except Exception as exc:  # cycle / unknown method — dead clip
+            except Exception as exc:  # Arch-A raise / cycle / unknown — dead clip
+                # Unlike Arch-B node failures (reported via _errs), an exception
+                # that escapes execute() isn't tied to a node id — record it so
+                # the clip is culled as node_error, not merely "no-output".
+                node_error_nodes.add("_exec")
+                if not node_error_sample:
+                    node_error_sample = str(exc).splitlines()[0][:120]
                 if progress_cb:
                     progress_cb(f"{gid}: frame {frame} error: {exc}")
             acc.add(arr)
@@ -355,6 +373,15 @@ def render_genome(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
                         "reason": liveness.get("reason")}
         else:
             liveness = {**liveness, "alive": False, "reason": "timeout"}
+
+    # A node that raised means the clip is showing error placeholders — cull it
+    # (unless the user hand-skipped, which already set its own reason). This is
+    # the render-time backstop for runtime errors that static validation can't
+    # catch; see cfg.reject_node_errors.
+    if cfg.reject_node_errors and node_error_nodes and not skipped:
+        liveness = {**liveness, "alive": False, "reason": "node_error",
+                    "node_error_nodes": sorted(node_error_nodes),
+                    "node_error": node_error_sample}
 
     # The _work dir holds per-node transport PNGs from Arch-A sims — the mp4
     # is the durable artifact, so drop the scratch.

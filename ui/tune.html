@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Tuning — teach the graph</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#161b22; --panel2:#1c2230; --line:#2b333f;
+    --fg:#e6edf3; --dim:#8b98a5; --accent:#4f8cff; --accent2:#7ee787;
+    --warn:#ff7b72; --gold:#ffca28;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  header{display:flex;align-items:center;gap:14px;padding:12px 18px;
+    border-bottom:1px solid var(--line);background:var(--panel)}
+  header h1{font-size:16px;margin:0;font-weight:600}
+  header .sub{color:var(--dim);font-size:12px}
+  header .spacer{flex:1}
+  header a{color:var(--accent);text-decoration:none;font-size:13px}
+  .wrap{display:grid;grid-template-columns:320px 1fr 340px;gap:0;
+    height:calc(100vh - 49px)}
+  .col{padding:16px;overflow:auto}
+  .col.left{border-right:1px solid var(--line);background:var(--panel)}
+  .col.right{border-left:1px solid var(--line);background:var(--panel)}
+  label{display:block;font-size:12px;color:var(--dim);margin:14px 0 5px}
+  textarea,input[type=text]{width:100%;background:var(--panel2);color:var(--fg);
+    border:1px solid var(--line);border-radius:8px;padding:9px 11px;font:inherit;resize:vertical}
+  textarea{min-height:70px}
+  button{background:var(--accent);color:#fff;border:0;border-radius:8px;
+    padding:9px 14px;font:inherit;font-weight:600;cursor:pointer}
+  button.secondary{background:var(--panel2);color:var(--fg);border:1px solid var(--line)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);
+    margin:0 0 10px;font-weight:600}
+  .preview{background:var(--panel2);border:1px solid var(--line);border-radius:12px;
+    min-height:320px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .preview img,.preview video{max-width:100%;max-height:60vh;display:block}
+  .preview .placeholder{color:var(--dim);font-size:13px;text-align:center;padding:40px}
+  .status{color:var(--dim);font-size:12px;margin-top:10px;min-height:16px}
+  .status.err{color:var(--warn)}
+  .rationale{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:12px 14px;margin-top:14px;font-size:13px;white-space:pre-wrap}
+  .rationale h3{margin:0 0 6px;font-size:12px;color:var(--accent2);text-transform:uppercase;
+    letter-spacing:.05em}
+  .gsummary{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
+    color:var(--dim);white-space:pre-wrap;margin-top:8px}
+  .stars{display:flex;gap:4px;margin-top:6px}
+  .stars span{font-size:22px;color:#414c5a;cursor:pointer;transition:color .1s}
+  .stars span.on{color:var(--gold)}
+  .playbook{font-size:13px}
+  .playbook h1{font-size:15px;margin:0 0 8px}
+  .playbook h2,.playbook h3{font-size:12.5px;color:var(--accent2);margin:14px 0 5px;
+    text-transform:uppercase;letter-spacing:.04em}
+  .playbook ul{margin:4px 0 4px 0;padding-left:18px}
+  .playbook li{margin:3px 0}
+  .playbook p{margin:5px 0;color:var(--dim)}
+  .lesson-toast{background:rgba(126,231,135,.09);border:1px solid #2ea04366;
+    border-radius:8px;padding:9px 12px;margin-top:12px;font-size:12.5px}
+  .lesson-toast b{color:var(--accent2)}
+  .hint{color:var(--dim);font-size:11.5px;margin-top:4px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🎛️ Tuning</h1>
+  <span class="sub" id="sessionLabel">starting session…</span>
+  <span class="spacer"></span>
+  <a href="/shootout">Shootout →</a>
+  <a href="/">Editor →</a>
+</header>
+
+<div class="wrap">
+  <!-- LEFT: brief + critique + rating -->
+  <div class="col left">
+    <h2>Propose an image</h2>
+    <label>Brief</label>
+    <textarea id="brief" placeholder="e.g. text over a warping background · sparkling particles rotating a noisy circle · dripping rainbow"></textarea>
+    <div class="row">
+      <button id="buildBtn">Build it</button>
+    </div>
+    <div class="hint">Hermes picks nodes, wires them, and renders a still.</div>
+
+    <div id="critiqueSection" style="display:none">
+      <label>Critique — what to fix</label>
+      <textarea id="critique" placeholder="e.g. the warp is too strong and the text is unreadable; make the motion slower"></textarea>
+      <div class="row">
+        <button id="reviseBtn" class="secondary">Revise ↻</button>
+        <button id="animateBtn" class="secondary">Animate ▶</button>
+      </div>
+
+      <label>Rate this attempt &amp; teach the agent</label>
+      <div class="stars" id="stars">
+        <span data-v="1">★</span><span data-v="2">★</span><span data-v="3">★</span>
+        <span data-v="4">★</span><span data-v="5">★</span>
+      </div>
+      <div class="row">
+        <button id="rateBtn" class="secondary">Rate &amp; Learn ✓</button>
+      </div>
+      <div class="hint">Rating + critique become a durable lesson in the playbook.</div>
+      <div id="lessonToast"></div>
+    </div>
+
+    <div class="row" style="margin-top:18px">
+      <button id="openEditorBtn" class="secondary" style="display:none">Open in editor</button>
+      <button id="saveBtn" class="secondary" style="display:none">Save graph</button>
+    </div>
+  </div>
+
+  <!-- CENTER: preview + rationale -->
+  <div class="col center">
+    <h2>Result</h2>
+    <div class="preview" id="preview">
+      <div class="placeholder">Describe an image on the left and hit <b>Build it</b>.</div>
+    </div>
+    <div class="status" id="status"></div>
+    <div class="rationale" id="rationale" style="display:none">
+      <h3>Why this graph</h3>
+      <div id="rationaleText"></div>
+      <div class="gsummary" id="graphSummary"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT: playbook -->
+  <div class="col right">
+    <h2>What I've learned</h2>
+    <div class="playbook" id="playbook"></div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+let SESSION = null, RATING = 0, CURRENT_GRAPH = null, LAST_JOB = null;
+
+// ── tiny markdown-lite for the playbook ──────────────────────────────
+function mdToHtml(md){
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const lines = (md||'').split('\n'); let html=''; let inList=false;
+  const closeList=()=>{ if(inList){ html+='</ul>'; inList=false; } };
+  for(const raw of lines){
+    const l = raw.replace(/\s+$/,'');
+    if(/^#\s+/.test(l)){ closeList(); html+='<h1>'+esc(l.replace(/^#\s+/,''))+'</h1>'; }
+    else if(/^##\s+/.test(l)){ closeList(); html+='<h2>'+esc(l.replace(/^##\s+/,''))+'</h2>'; }
+    else if(/^###\s+/.test(l)){ closeList(); html+='<h3>'+esc(l.replace(/^###\s+/,''))+'</h3>'; }
+    else if(/^[-*]\s+/.test(l)){ if(!inList){ html+='<ul>'; inList=true; }
+      html+='<li>'+esc(l.replace(/^[-*]\s+/,''))+'</li>'; }
+    else if(l.trim()===''){ closeList(); }
+    else { closeList(); html+='<p>'+esc(l.replace(/^_|_$/g,''))+'</p>'; }
+  }
+  closeList(); return html;
+}
+function renderPlaybook(text){ $('#playbook').innerHTML = mdToHtml(text); }
+
+async function api(path, body){
+  const r = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body||{})});
+  return r.json();
+}
+
+// ── session bootstrap ────────────────────────────────────────────────
+async function initSession(){
+  const s = await api('/api/tune/session', {session_id: localStorage.getItem('tune-session')||null});
+  SESSION = s.session_id;
+  localStorage.setItem('tune-session', SESSION);
+  $('#sessionLabel').textContent = 'session ' + SESSION;
+  renderPlaybook(s.playbook);
+}
+
+// ── render a job's still into the preview ────────────────────────────
+function watchJob(jobId, onDone){
+  LAST_JOB = jobId;
+  setStatus('rendering…');
+  const es = new EventSource('/api/jobs/'+jobId+'/stream');
+  es.addEventListener('progress', e=>{ try{ setStatus('rendering… '+JSON.parse(e.data).message);}catch{} });
+  es.addEventListener('done', ()=>{
+    es.close();
+    $('#preview').innerHTML = '<img src="/api/jobs/'+jobId+'/result?t='+Date.now()+'"/>';
+    setStatus('');
+    onDone && onDone();
+  });
+  es.addEventListener('error', e=>{
+    es.close();
+    let m='render failed'; try{ m=JSON.parse(e.data).message; }catch{}
+    setStatus(m, true);
+  });
+}
+function setStatus(msg, err){ const el=$('#status'); el.textContent=msg||''; el.className='status'+(err?' err':''); }
+
+function showResult(res){
+  CURRENT_GRAPH = res.graph;
+  $('#rationale').style.display='block';
+  $('#rationaleText').textContent = res.rationale || '(no rationale given)';
+  $('#graphSummary').textContent = res.graph_summary || '';
+  $('#critiqueSection').style.display='block';
+  $('#openEditorBtn').style.display='';
+  $('#saveBtn').style.display='';
+}
+
+// ── build ────────────────────────────────────────────────────────────
+async function build(){
+  const brief = $('#brief').value.trim();
+  if(!brief){ setStatus('Enter a brief first.', true); return; }
+  $('#buildBtn').disabled=true; setStatus('Hermes is building the graph…');
+  $('#preview').innerHTML='<div class="placeholder">🛠️ building &amp; rendering…</div>';
+  try{
+    const res = await api('/api/tune/build', {session_id:SESSION, brief});
+    if(!res.ok){ setStatus(res.error||'build failed', true);
+      $('#preview').innerHTML='<div class="placeholder">'+(res.error||'build failed')+'</div>'; return; }
+    SESSION = res.session_id; localStorage.setItem('tune-session', SESSION);
+    showResult(res); resetStars(); $('#lessonToast').innerHTML='';
+    watchJob(res.job_id);
+  } finally { $('#buildBtn').disabled=false; }
+}
+
+// ── revise ───────────────────────────────────────────────────────────
+async function revise(){
+  const critique = $('#critique').value.trim();
+  if(!critique){ setStatus('Enter a critique to revise.', true); return; }
+  $('#reviseBtn').disabled=true; setStatus('Hermes is revising…');
+  $('#preview').innerHTML='<div class="placeholder">↻ revising &amp; rendering…</div>';
+  try{
+    const res = await api('/api/tune/revise', {session_id:SESSION, critique});
+    if(!res.ok){ setStatus(res.error||'revise failed', true); return; }
+    showResult(res); watchJob(res.job_id);
+  } finally { $('#reviseBtn').disabled=false; }
+}
+
+// ── rate & learn ─────────────────────────────────────────────────────
+function resetStars(){ RATING=0; document.querySelectorAll('#stars span').forEach(s=>s.classList.remove('on')); }
+document.querySelectorAll('#stars span').forEach(s=>{
+  s.onclick=()=>{ RATING=+s.dataset.v;
+    document.querySelectorAll('#stars span').forEach(x=>x.classList.toggle('on', +x.dataset.v<=RATING)); };
+});
+async function rate(){
+  if(!RATING){ setStatus('Pick a star rating first.', true); return; }
+  const critique = $('#critique').value.trim();
+  $('#rateBtn').disabled=true; setStatus('distilling a lesson…');
+  try{
+    const res = await api('/api/tune/rate', {session_id:SESSION, rating:RATING, critique});
+    if(!res.ok){ setStatus(res.error||'rate failed', true); return; }
+    setStatus('');
+    $('#lessonToast').innerHTML = res.written
+      ? '<div class="lesson-toast"><b>Learned</b> ['+res.section+']<br>'+res.lesson+'</div>'
+      : '<div class="lesson-toast">Lesson already known — no change.</div>';
+    renderPlaybook(res.playbook);
+    $('#critique').value='';
+  } finally { $('#rateBtn').disabled=false; }
+}
+
+// ── animate ──────────────────────────────────────────────────────────
+async function animate(){
+  $('#animateBtn').disabled=true; setStatus('rendering animation (this takes longer)…');
+  $('#preview').innerHTML='<div class="placeholder">▶ rendering clip…</div>';
+  try{
+    const res = await api('/api/tune/animate', {session_id:SESSION});
+    if(!res.ok){ setStatus(res.error||'animate failed', true); return; }
+    $('#preview').innerHTML='<video src="'+res.video_url+'" autoplay loop muted playsinline></video>';
+    setStatus('');
+  } finally { $('#animateBtn').disabled=false; }
+}
+
+// ── open / save ──────────────────────────────────────────────────────
+function openInEditor(){
+  if(!CURRENT_GRAPH) return;
+  localStorage.setItem('tune-handoff', JSON.stringify(CURRENT_GRAPH));
+  window.open('/', '_blank');
+}
+async function saveGraph(){
+  if(!CURRENT_GRAPH) return;
+  const name = prompt('Save graph as:', CURRENT_GRAPH.name || 'tuned');
+  if(!name) return;
+  await api('/api/graph/save', {name, graph:{...CURRENT_GRAPH, name}});
+  setStatus('saved as '+name);
+}
+
+$('#buildBtn').onclick=build;
+$('#reviseBtn').onclick=revise;
+$('#rateBtn').onclick=rate;
+$('#animateBtn').onclick=animate;
+$('#openEditorBtn').onclick=openInEditor;
+$('#saveBtn').onclick=saveGraph;
+$('#brief').addEventListener('keydown', e=>{ if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)) build(); });
+
+initSession();
+</script>
+</body>
+</html>

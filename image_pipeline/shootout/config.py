@@ -132,6 +132,14 @@ class ShootoutConfig:
     terminal_variance_probe: bool = True
     terminal_variance_retries: int = 3  # re-roll/swap attempts before giving up
 
+    # ── Node-error reject (2026-07-12) ──
+    # The evaluator renders every frame and collects per-node errors. When a
+    # node raises — inter-param bugs like randrange(hi, lo), OpenCV bad-args,
+    # index-out-of-bounds — the whole clip is culled (alive=False,
+    # reason="node_error") instead of shipping error-placeholder frames. Static
+    # param validation can't catch these; this is the render-time backstop.
+    reject_node_errors: bool = True
+
     # ── Pre-render cost gate (cost_model.py) ──────────────────────
     # Empirical per-method ms/frame model estimates a genome's wall time
     # before rendering. Guaranteed-timeout graphs (est > render_timeout_s *

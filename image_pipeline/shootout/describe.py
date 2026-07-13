@@ -21,7 +21,6 @@ _MOTIF_LABELS = {
     "masked_composite": "one texture masked by another",
     "field_modulate": "a field spatially modulating a node",
     "post_fx": "a post-fx extension of the chain",
-    "feedback_loop": "a feedback loop (trails / decay)",
 }
 
 # How to describe a driver method by id fragment.

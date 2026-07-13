@@ -64,13 +64,13 @@ class Builder:
         })
         return nid
 
-    def wire(self, src_id: str, src_port: str, dst_id: str, dst_port: str,
-             feedback: bool = False) -> None:
-        e = {"src_node": src_id, "src_port": src_port,
-             "dst_node": dst_id, "dst_port": dst_port}
-        if feedback:
-            e["feedback"] = True
-        self.edges.append(e)
+    def wire(self, src_id: str, src_port: str, dst_id: str, dst_port: str) -> None:
+        # No `feedback` option by design: the auto-generator must never emit a
+        # feedback edge (image output looped back to an upstream input). The
+        # pipeline has no layering/accumulation node to make that render
+        # correctly, so feedback stays a manual/UI-only concept.
+        self.edges.append({"src_node": src_id, "src_port": src_port,
+                           "dst_node": dst_id, "dst_port": dst_port})
 
     def node(self, nid: str) -> dict:
         return next(n for n in self.nodes if n["id"] == nid)
@@ -460,23 +460,12 @@ def m_post_fx(b: Builder, budget: int) -> str | None:
     return head
 
 
-def m_feedback_loop(b: Builder, budget: int) -> str | None:
-    """Terminal image fed back (previous frame) into an early image port —
-    trails, decay, self-similarity. Risky but occasionally gorgeous."""
-    term = b.terminal_id()
-    if term is None:
-        return None
-    fed = b.fed_ports()
-    early = [(n, p) for n in b.nodes if n["id"] != term
-             for p, t in _fillable_ports(b.pool.defs[n["method_id"]])
-             if t == "image" and (n["id"], p) not in fed]
-    if not early:
-        return None
-    tgt, port = b.rng.choice(early)
-    b.wire(term, b.pool.output_port_for(b.mid(term), "image"),
-           tgt["id"], port, feedback=True)
-    return None
-
+# NOTE: there is deliberately no image-feedback motif. Feeding a terminal's
+# image output back into an upstream image port (a "feedback loop") requires
+# layering/accumulation nodes the pipeline does not yet have, so an
+# auto-generated feedback edge renders incorrectly. repair.py strips any
+# feedback edge and validate_graph rejects one — see BUG "auto feedback loops".
+# Re-introduce a feedback motif here only once real layering nodes exist.
 
 _BACKBONES = ["sim_backbone", "pattern_blend", "masked_composite"]
 
@@ -487,7 +476,6 @@ _MOTIFS: dict[str, tuple] = {
     "masked_composite":  (m_masked_composite,  1.2),
     "field_modulate":    (m_field_modulate,    1.2),
     "post_fx":           (m_post_fx,           2.0),
-    "feedback_loop":     (m_feedback_loop,     0.5),
 }
 
 

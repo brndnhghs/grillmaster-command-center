@@ -503,6 +503,11 @@ def serve_shootout_ui():
     return FileResponse(str(UI_DIR / "shootout.html"))
 
 
+@app.get("/tune")
+def serve_tune_ui():
+    return FileResponse(str(UI_DIR / "tune.html"))
+
+
 @app.get("/health")
 def health():
     return {"ok": True}
@@ -1318,6 +1323,188 @@ def shootout_timeout_blame():
     cfg = _shootout_config.effective_config()
     rep = _tb.report(cfg)
     return rep
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Tuning mode — directed brief → Hermes-built graph → critique → learned
+# node-craft. The directed inverse of shootout. Endpoints are thin wrappers
+# over image_pipeline.tuning.session. REGISTERED BEFORE the dynamic
+# /api/graph/{gid} route below (FastAPI matches in registration order).
+# ══════════════════════════════════════════════════════════════════════
+from image_pipeline.tuning import session as _tune_session
+from image_pipeline.tuning import store as _tune_store
+from image_pipeline.tuning import catalog as _tune_catalog
+from image_pipeline.tuning.hermes import hermes_available as _tune_hermes_ok
+from image_pipeline.tuning.hermes import unavailable_message as _tune_hermes_msg
+
+
+class TuneSessionRequest(BaseModel):
+    session_id: str | None = None
+
+
+class TuneBuildRequest(BaseModel):
+    session_id: str | None = None
+    brief: str = ""
+    seed: int = 42
+    width: int = 768
+    height: int = 512
+
+
+class TuneReviseRequest(BaseModel):
+    session_id: str
+    critique: str = ""
+    seed: int = 42
+    width: int = 768
+    height: int = 512
+
+
+class TuneRateRequest(BaseModel):
+    session_id: str
+    rating: int = 3
+    critique: str = ""
+
+
+def _tune_render_still(graph: dict, seed: int, width: int, height: int) -> str:
+    """Kick off a single-frame render job for a graph; return its job_id.
+
+    Reuses the existing job path (execute_graph) so the UI streams progress via
+    /api/jobs/{id}/stream and fetches the PNG at /api/jobs/{id}/result."""
+    req = GraphRequest(nodes=graph.get("nodes", []), edges=graph.get("edges", []),
+                       seed=seed, frames=1, frame=0, width=width, height=height)
+    return execute_graph(req)["job_id"]
+
+
+@app.post("/api/tune/session")
+def tune_session(req: TuneSessionRequest):
+    """Start a new tuning session, or resume one by id."""
+    s = _tune_session.start(req.session_id)
+    return {"session_id": s["session_id"],
+            "current_brief": s.get("current_brief", ""),
+            "playbook": _tune_store.read_playbook()}
+
+
+@app.get("/api/tune/playbook")
+def tune_playbook():
+    """The accumulated node-craft playbook (the agent's growing understanding)."""
+    return {"playbook": _tune_store.read_playbook()}
+
+
+@app.get("/api/tune/session/{session_id}")
+def tune_session_state(session_id: str):
+    s = _tune_store.load_session(session_id)
+    if s is None:
+        raise HTTPException(404, f"Session '{session_id}' not found")
+    return {"session_id": s["session_id"],
+            "current_brief": s.get("current_brief", ""),
+            "current_graph": s.get("current_graph"),
+            "critique_history": s.get("critique_history", []),
+            "attempts": len(s.get("attempts", []))}
+
+
+@app.post("/api/tune/build")
+def tune_build(req: TuneBuildRequest):
+    """Hermes builds a graph from the brief, it is repaired to validity, and a
+    still is rendered. Returns the graph, rationale, and the render job_id."""
+    if not _tune_hermes_ok():
+        return {"ok": False, "error": _tune_hermes_msg()}
+    if not (req.brief or "").strip():
+        raise HTTPException(400, "brief is required")
+
+    res = _tune_session.build(req.session_id or "", req.brief)
+    if not res["ok"]:
+        return {"ok": False, "session_id": res.get("session_id"),
+                "rationale": res.get("rationale", ""), "error": res["error"]}
+
+    job_id = _tune_render_still(res["graph"], req.seed, req.width, req.height)
+    return {"ok": True, "session_id": res["session_id"],
+            "attempt_id": res["attempt_id"], "graph": res["graph"],
+            "rationale": res["rationale"],
+            "graph_summary": _tune_catalog.describe_graph(res["graph"]),
+            "job_id": job_id}
+
+
+@app.post("/api/tune/revise")
+def tune_revise(req: TuneReviseRequest):
+    """Hermes revises the session's current graph given a critique, re-renders."""
+    if not _tune_hermes_ok():
+        return {"ok": False, "error": _tune_hermes_msg()}
+    if not (req.critique or "").strip():
+        raise HTTPException(400, "critique is required")
+
+    res = _tune_session.revise(req.session_id, req.critique)
+    if not res["ok"]:
+        return {"ok": False, "session_id": req.session_id,
+                "rationale": res.get("rationale", ""), "error": res["error"]}
+
+    job_id = _tune_render_still(res["graph"], req.seed, req.width, req.height)
+    return {"ok": True, "session_id": res["session_id"],
+            "attempt_id": res["attempt_id"], "graph": res["graph"],
+            "rationale": res["rationale"],
+            "graph_summary": _tune_catalog.describe_graph(res["graph"]),
+            "job_id": job_id}
+
+
+@app.post("/api/tune/rate")
+def tune_rate(req: TuneRateRequest):
+    """Rate the current attempt; Hermes distills one durable lesson into the
+    playbook. Returns the lesson and the refreshed playbook."""
+    if not _tune_hermes_ok():
+        return {"ok": False, "error": _tune_hermes_msg()}
+    res = _tune_session.rate(req.session_id, req.rating, req.critique)
+    if not res["ok"]:
+        return {"ok": False, "error": res.get("error", "rate failed")}
+    return {"ok": True, "section": res["section"], "lesson": res["lesson"],
+            "written": res["written"], "playbook": _tune_store.read_playbook()}
+
+
+@app.post("/api/tune/animate")
+def tune_animate(req: TuneSessionRequest, frames: int = 48, fps: int = 24,
+                 width: int = 768, height: int = 512):
+    """Render the session's current graph as a short mp4 (blocking).
+
+    Renders each frame via GraphExecutor (mirroring the sequence worker) and
+    pipes to frames_to_mp4. Served from the standard sequences path."""
+    s = _tune_store.load_session(req.session_id or "")
+    if s is None or not s.get("current_graph"):
+        return {"ok": False, "error": "no current graph to animate"}
+
+    graph = s["current_graph"]
+    nodes = [dict(n) for n in graph.get("nodes", [])]
+    edges = graph.get("edges", [])
+    seed = graph.get("seed", 42)
+    name = re.sub(r'[^a-zA-Z0-9_-]', '_', f"tune-{req.session_id}")
+    seq_dir = SEQUENCES_DIR / name
+    work_dir = seq_dir / "_work"
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    from image_pipeline.core.utils import set_canvas as _set_canvas
+    from image_pipeline.core.animation import frames_to_mp4 as _frames_to_mp4
+
+    # Set the canvas BEFORE frames_to_mp4 — it reads W/H when building the ffmpeg
+    # command, ahead of the first frame being pulled from the generator.
+    _set_canvas(width, height)
+
+    def _frame_gen():
+        executor = GraphExecutor(work_dir, fps=fps, in_memory=True)
+        for n in nodes:
+            n["dirty"] = True
+        for frame in range(frames):
+            flat_outputs, terminal_id, _err = executor.execute(
+                nodes, edges, seed, frame=frame, frames=frames)
+            render_id = next((n["id"] for n in nodes if n.get("render")), None)
+            if render_id and render_id in flat_outputs:
+                terminal_id = render_id
+            arr = (flat_outputs.get(terminal_id) or {}).get("image") if terminal_id else None
+            if arr is not None:
+                yield arr
+
+    try:
+        out = _frames_to_mp4(_frame_gen(), seq_dir / "output.mp4", fps=fps)
+    except Exception as exc:
+        return {"ok": False, "error": f"animate failed: {exc}"}
+    if out is None:
+        return {"ok": False, "error": "no frames rendered"}
+    return {"ok": True, "video_url": f"/api/sequences/{name}/video.mp4?t={int(time.time())}"}
 
 
 @app.get("/api/graph/{gid}")
