@@ -172,6 +172,7 @@ def _render(grid, age_grid, gw, gh, frame):
 
 
 @method(
+    inputs={},
     id="101",
     name="Viscous Fingering",
     category="simulations",

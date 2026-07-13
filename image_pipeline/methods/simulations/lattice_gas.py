@@ -238,6 +238,7 @@ def _render(state: np.ndarray) -> Image.Image:
 # ── Method ────────────────────────────────────────────────────────────
 
 @method(
+    inputs={},
     id="92",
     name="Lattice Gas",
     category="simulations",

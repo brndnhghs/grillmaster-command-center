@@ -122,6 +122,7 @@ def _compute_anisotropy(phi: np.ndarray,
 
 
 @method(
+    inputs={},
     id="122",
     name="Dendritic Solidification",
     category="simulations",

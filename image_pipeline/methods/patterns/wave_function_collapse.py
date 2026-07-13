@@ -224,6 +224,7 @@ def _resize(canvas: np.ndarray, w: int, h: int) -> np.ndarray:
 
 
 @method(
+    inputs={},
     id="476",
     name="Wave Function Collapse",
     category="patterns",

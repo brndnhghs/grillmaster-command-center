@@ -27,6 +27,7 @@ from ...core.animation import capture_frame
 
 
 @method(
+    inputs={},
     id="161",
     name="Spectral Tapestry",
     category="simulations",

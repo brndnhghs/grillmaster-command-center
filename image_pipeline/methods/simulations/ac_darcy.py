@@ -37,6 +37,7 @@ def _render(u):
 
 
 @method(
+    inputs={},
     id="159",
     name="Phase Separation + Darcy Advection",
     category="simulations",

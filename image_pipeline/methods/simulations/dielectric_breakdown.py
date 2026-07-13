@@ -375,6 +375,7 @@ def _cool_cells(temp: np.ndarray, mask: np.ndarray, rate: float):
 # ── @method decorator ───────────────────────────────────────────────
 
 @method(
+    inputs={},
     id="106",
     name="Dielectric Breakdown",
     category="simulations",

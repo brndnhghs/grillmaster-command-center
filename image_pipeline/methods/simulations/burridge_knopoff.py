@@ -239,6 +239,7 @@ def _render_fracture(
 # ═══════════════════════════════════════════════════════════════
 
 @method(
+    inputs={},
     id="131",
     name="Burridge-Knopoff Earthquakes",
     category="simulations",

@@ -121,7 +121,8 @@ def _render_langton_frame(grid, visited, age_grid, pal_arr, bg_color,
     return np.clip(img, 0.0, 1.0)
 
 
-@method(id="83", name="Langton's Ant", category="simulations",
+@method(
+    inputs={},id="83", name="Langton's Ant", category="simulations",
          tags=["agents", "turmite", "emergent", "animation", "expanded"],
          timeout=120,
          outputs={"image": "IMAGE", "luminance": "SCALAR", "particles": "PARTICLES", "field": "FIELD"},

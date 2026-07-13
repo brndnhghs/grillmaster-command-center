@@ -76,7 +76,8 @@ def _render_frame(grid: np.ndarray, n_states: int,
 
 # ─── Method ────────────────────────────────────────────────────────────────
 
-@method(id="87", name="Cyclic CA", category="simulations",
+@method(
+    inputs={},id="87", name="Cyclic CA", category="simulations",
          tags=["cellular", "rock-paper-scissors", "spirals", "animation",
                "emergent"],
          timeout=120,

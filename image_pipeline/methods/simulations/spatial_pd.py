@@ -389,6 +389,7 @@ def _hsv2rgb(h, s, v):
 # ═══════════════════════════════════════════════════════════════
 
 @method(
+    inputs={},
     id="153",
     name="Spatial Prisoner's Dilemma",
     category="simulations",

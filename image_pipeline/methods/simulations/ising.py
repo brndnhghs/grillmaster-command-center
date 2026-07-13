@@ -176,6 +176,7 @@ def _render_frame(spins: np.ndarray) -> Image.Image:
 # ── Registered method ──────────────────────────────────────────────────
 
 @method(
+    inputs={},
     id="93",
     name="Ising Model",
     category="simulations",

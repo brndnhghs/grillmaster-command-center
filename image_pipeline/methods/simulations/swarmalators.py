@@ -223,6 +223,7 @@ def _render(pos: np.ndarray, theta: np.ndarray, bicolor: bool = False) -> np.nda
 # ── @method decorator ──────────────────────────────────────────────────
 
 @method(
+    inputs={},
     id="102",
     name="Swarmalators",
     category="simulations",

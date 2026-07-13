@@ -43,6 +43,7 @@ for _i in range(256):
 
 
 @method(
+    inputs={},
     id="90",
     name="Lenia",
     category="simulations",

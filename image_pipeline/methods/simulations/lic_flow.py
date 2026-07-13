@@ -494,6 +494,7 @@ def _compute_tracers(gh, gw, u, v, _t, n_particles, seed, ds):
 
 
 @method(
+    inputs={},
     id="123",
     name="Animated LIC Flow",
     category="simulations",

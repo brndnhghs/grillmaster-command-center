@@ -253,6 +253,7 @@ def _add_boundary_spiral(A: np.ndarray, frame: int,
 # ════════════════════════════════════════════════════════════
 
 @method(
+    inputs={},
     id="126",
     name="Complex Ginzburg-Landau",
     category="simulations",

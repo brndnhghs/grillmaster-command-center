@@ -126,6 +126,7 @@ def _render_whitecap(h: np.ndarray, hx: np.ndarray, hy: np.ndarray,
 # ═══════════════════════════════════════════════════════════════
 
 @method(
+    inputs={},
     id="167",
     name="Spectral Ocean Synthesis",
     category="simulations",

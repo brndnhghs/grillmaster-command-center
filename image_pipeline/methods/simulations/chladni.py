@@ -159,6 +159,7 @@ def _mode_sequence(n_frames: int,
 
 
 @method(
+    inputs={},
     id="125",
     name="Chladni Eigenmode Morphing",
     category="simulations",

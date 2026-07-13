@@ -14,7 +14,8 @@ from ...core.animation import capture_frame
 
 # --- 30 SVG Vector ---
 
-@method(id="30", name="SVG Vector", category="codegen",
+@method(
+    inputs={},id="30", name="SVG Vector", category="codegen",
          tags=["vector", "svg", "geometric", "animation"],
          params={
              "pattern": {"description": "SVG pattern type", "choices": ["grid", "circles", "stars", "waves", "mandala"], "default": "grid"},

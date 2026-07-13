@@ -15,7 +15,8 @@ from ...core.registry import method
 from ...core.utils import save, mn, seed_all, W, H
 from ...core.animation import capture_frame
 
-@method(id="164", name="Moiré Patterns", category="simulations",
+@method(
+    inputs={},id="164", name="Moiré Patterns", category="simulations",
         tags=["moire", "interference", "hypnotic", "procedural"], timeout=300,
         params={
             "mode": {"choices": ["radial", "linear", "spiral", "hex"], "default": "radial"},

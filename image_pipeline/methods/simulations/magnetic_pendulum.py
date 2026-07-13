@@ -66,6 +66,7 @@ def _rk4_step(state: np.ndarray, dt: float, magnet_pos: list,
 
 
 @method(
+    inputs={},
     id="107",
     name="Magnetic Pendulum",
     category="simulations",

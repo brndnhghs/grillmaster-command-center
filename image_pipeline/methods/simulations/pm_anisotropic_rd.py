@@ -15,7 +15,8 @@ from ...core.registry import method
 from ...core.utils import save, mn, seed_all, W, H
 from ...core.animation import capture_frame
 
-@method(id="168", name="PM Anisotropic RD", category="simulations",
+@method(
+    inputs={},id="168", name="PM Anisotropic RD", category="simulations",
         tags=["cgl", "takeover", "bias-ramp"], timeout=600,
         params={
             "b": {"min": 0.0, "max": 3.0, "default": 1.0},

@@ -17,7 +17,8 @@ from ...core.registry import method
 from ...core.utils import save, mn, seed_all, W, H
 from ...core.animation import capture_frame
 
-@method(id="170", name="Phase Field Crystal", category="simulations",
+@method(
+    inputs={},id="170", name="Phase Field Crystal", category="simulations",
         tags=["pfc", "crystal", "coarsening", "phase-field"], timeout=600,
         params={
             "epsilon": {"min": 0.01, "max": 0.5, "default": 0.1, "description": "Undercooling (0=crystal, 0.5=liquid)"},

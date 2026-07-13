@@ -172,6 +172,7 @@ def _run_lbm(nx: int, ny: int, U: float, tau: float, obstacle_r: int,
 
 
 @method(
+    inputs={},
     id="440",
     name="Lattice Boltzmann Fluid",
     category="simulations",

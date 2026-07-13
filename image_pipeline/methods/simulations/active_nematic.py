@@ -255,6 +255,7 @@ def _render(Qxx: np.ndarray, Qxy: np.ndarray) -> np.ndarray:
 # ── @method decorator ──────────────────────────────────────────────────
 
 @method(
+    inputs={},
     id="99",
     name="Active Nematic Liquid Crystals",
     category="simulations",

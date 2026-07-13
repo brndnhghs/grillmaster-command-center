@@ -158,6 +158,7 @@ def _render_voronoi(
 # ══════════════════════════════════════════════════════════════════════════
 
 @method(
+    inputs={},
     id="97",
     name="Lloyd's Algorithm",
     category="simulations",

@@ -32,6 +32,7 @@ def _render(f):
 
 
 @method(
+    inputs={},
     id="158",
     name="Darcy-Bénard Porous Convection",
     category="simulations",

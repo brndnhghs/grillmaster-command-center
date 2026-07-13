@@ -76,6 +76,7 @@ def _hex_sdf(qx, qy):
 
 
 @method(
+    inputs={},
     id="426",
     name="Smooth Truchet (SDF)",
     category="patterns",

@@ -26,7 +26,8 @@ PARTICLE_LIFE_COLORS = np.array([
 DARK_BG = (6, 6, 18)
 
 
-@method(id="88", name="Particle Life", category="simulations",
+@method(
+    inputs={},id="88", name="Particle Life", category="simulations",
          tags=["particles", "emergence", "organic"],
          outputs={"image": "IMAGE", "luminance": "SCALAR", "particles": "PARTICLES"},
          params={

@@ -99,6 +99,7 @@ def _render_smooth_cloth(mesh, gy, gx, palette_name, color_by):
 
 
 @method(
+    inputs={},
     id="114",
     name="Spring-Mass Network",
     category="simulations",

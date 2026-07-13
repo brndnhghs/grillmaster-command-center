@@ -150,6 +150,7 @@ def _render_nutrient(n: np.ndarray, c: np.ndarray, sh: int, sw: int) -> Image.Im
 # ═══════════════════════════════════════════════════════════════
 
 @method(
+    inputs={},
     id="160",
     name="Bacterial Colony Morphogenesis",
     category="simulations",

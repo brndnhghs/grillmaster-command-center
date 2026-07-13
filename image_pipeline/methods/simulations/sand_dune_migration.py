@@ -119,6 +119,7 @@ def _make_colormap() -> np.ndarray:
 
 
 @method(
+    inputs={},
     id="172",
     name="Sand Dune Migration",
     category="simulations",

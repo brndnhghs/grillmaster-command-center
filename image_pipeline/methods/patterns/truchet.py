@@ -11,7 +11,8 @@ from ...core.utils import save, norm, mn, seed_all, W, H
 from ...core.animation import capture_frame
 from ...core.utils import PALETTES
 
-@method(id="07", name="Truchet Tiles", category="patterns",
+@method(
+    inputs={},id="07", name="Truchet Tiles", category="patterns",
          tags=["classic", "tiling", "fast", "expanded", "animation"],
          params={
     "tile_type": {"description": "tile pattern (arcs/diagonals/crosses/chevrons/circles/quadrants/spirals/hexagons/rings/weave)", "default": "arcs"},

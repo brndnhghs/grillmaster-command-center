@@ -25,6 +25,7 @@ def _render(f):
 
 
 @method(
+    inputs={},
     id="157",
     name="Swift-Hohenberg Pattern Formation",
     category="simulations",

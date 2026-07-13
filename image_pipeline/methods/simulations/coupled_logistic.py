@@ -84,6 +84,7 @@ def _render_frame(state: np.ndarray, smooth: int = 2) -> np.ndarray:
 
 
 @method(
+    inputs={},
     id="95",
     name="Coupled Logistic",
     category="simulations",

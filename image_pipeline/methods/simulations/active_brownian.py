@@ -59,6 +59,7 @@ def _render_field(u: np.ndarray) -> np.ndarray:
 # ═══════════════════════════════════════════════════════════════
 
 @method(
+    inputs={},
     id="128",
     name="Swift-Hohenberg Pattern Formation",
     category="simulations",

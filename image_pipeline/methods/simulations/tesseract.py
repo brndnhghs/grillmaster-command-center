@@ -353,7 +353,8 @@ PARAMS = {"polytope": {
 
 # ── Main method ─────────────────────────────────────────────────
 
-@method(id="151", name="4D Polytope", category="simulations",
+@method(
+    inputs={},id="151", name="4D Polytope", category="simulations",
         tags=["geometric", "4d", "hyperspace", "animation"],
         params=PARAMS)
 def method_4d_polytope(out_dir, seed, params=None):

@@ -302,6 +302,7 @@ def _init_gaussian(rng: np.random.Generator, n_packets: int = 3,
 # ── Method ──
 
 @method(
+    inputs={},
     id="124",
     name="Nonlinear Schrödinger Equation",
     category="simulations",

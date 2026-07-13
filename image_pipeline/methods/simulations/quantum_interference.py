@@ -105,6 +105,7 @@ def _upscale(arr, target_h, target_w):
     return out
 
 @method(
+    inputs={},
     id="84",
     name="Quantum Wave Interference",
     category="simulations",

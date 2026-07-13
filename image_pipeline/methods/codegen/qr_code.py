@@ -11,7 +11,8 @@ from ...core.utils import save, mn, seed_all, get_font, W, H
 from ...core.animation import capture_frame
 
 
-@method(id="09", name="QR Code", category="codegen",
+@method(
+    inputs={},id="09", name="QR Code", category="codegen",
          tags=["qr", "code", "fast", "animation", "expanded"],
          params={
     "content": {"description": "text content to encode as QR", "default": "HELLO"},

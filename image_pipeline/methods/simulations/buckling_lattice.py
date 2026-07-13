@@ -41,6 +41,7 @@ from ...core.animation import capture_frame
 # ═══════════════════════════════════════════════════════════════
 
 @method(
+    inputs={},
     id="147",
     name="Viscoelastic Buckling Lattice",
     category="simulations",

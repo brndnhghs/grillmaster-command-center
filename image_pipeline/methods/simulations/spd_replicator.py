@@ -154,6 +154,7 @@ INIT_MODES = {
 # ═══════════════════════════════════════════════════════════════
 
 @method(
+    inputs={},
     id="154",
     name="Continuous Spatial PD (Replicator Dynamics)",
     category="simulations",

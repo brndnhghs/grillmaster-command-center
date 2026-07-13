@@ -24,6 +24,7 @@ from ...core.animation import capture_frame
 
 
 @method(
+    inputs={},
     id="142",
     name="Coupled Map Lattice",
     category="simulations",

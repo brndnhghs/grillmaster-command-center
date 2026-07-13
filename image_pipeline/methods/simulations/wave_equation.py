@@ -139,6 +139,7 @@ def apply_colormap(data_normalized, name="plasma"):
 # ══════════════════════════════════════════════════════════════════════
 
 @method(
+    inputs={},
     id="100",
     name="Wave Equation",
     category="simulations",

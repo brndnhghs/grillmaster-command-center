@@ -42,6 +42,7 @@ from ...core.animation import capture_frame
 # ═══════════════════════════════════════════════════════════════
 
 @method(
+    inputs={},
     id="149",
     name="Ferrofluid Rosensweig Instability",
     category="simulations",

@@ -232,6 +232,7 @@ def _render_velocity(u: np.ndarray, v: np.ndarray) -> Image.Image:
 
 
 @method(
+    inputs={},
     id="132",
     name="Shallow Water Waves",
     category="simulations",

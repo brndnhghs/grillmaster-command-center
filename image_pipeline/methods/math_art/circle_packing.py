@@ -16,7 +16,8 @@ try:
 except ImportError:
     _has_cv2 = False
 
-@method(id="78", name="Circle Packing", category="math_art", tags=["packing","fast", "expanded"],
+@method(
+    inputs={},id="78", name="Circle Packing", category="math_art", tags=["packing","fast", "expanded"],
          params={"max_circles":{"description":"max circles","min":50,"max":500,"default":200},
                 "min_radius":{"description":"min radius","min":2,"max":15,"default":4},
                 "max_radius":{"description":"max radius","min":10,"max":50,"default":25},

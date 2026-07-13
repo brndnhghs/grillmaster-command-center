@@ -11,7 +11,8 @@ from ...core.utils import save, norm, mn, seed_all, W, H
 from ...core.animation import capture_frame
 from ...core.utils import PALETTES
 
-@method(id="08", name="Phyllotaxis", category="patterns",
+@method(
+    inputs={},id="08", name="Phyllotaxis", category="patterns",
         tags=["classic", "nature", "fast", "animated", "expanded"],
         params={
     "points": {"description": "number of points", "min": 100, "max": 50000, "default": 4000},

@@ -43,6 +43,7 @@ from ...core.animation import capture_frame
 # ═══════════════════════════════════════════════════════════════
 
 @method(
+    inputs={},
     id="148",
     name="GPE Quantum Vortex Turbulence",
     category="simulations",

@@ -180,6 +180,7 @@ def _render_scroll(x: np.ndarray, y: np.ndarray, z: np.ndarray,
 # ════════════════════════════════════════════════════════════════
 
 @method(
+    inputs={},
     id="162",
     name="Rössler Oscillator Array",
     category="simulations",

@@ -81,6 +81,7 @@ def lookup_color(norm_val: float, palette: np.ndarray) -> tuple[int, int, int]:
 
 
 @method(
+    inputs={},
     id="98",
     name="Smoothed Particle Hydrodynamics",
     category="simulations",

@@ -122,6 +122,7 @@ def _init_voronoi(gh: int, gw: int, ncells: int,
 # ═══════════════════════════════════════════════════════════════
 
 @method(
+    inputs={},
     id="129",
     name="Cellular Potts Model",
     category="simulations",

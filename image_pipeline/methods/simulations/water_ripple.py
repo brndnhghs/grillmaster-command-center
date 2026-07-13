@@ -109,6 +109,7 @@ def _render(cur: np.ndarray, height_scale: float, specular: float,
 
 
 @method(
+    inputs={},
     id="429",
     name="Water Ripple (2D Wave Equation)",
     category="simulations",
