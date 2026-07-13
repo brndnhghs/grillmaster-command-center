@@ -372,3 +372,8 @@
 - DEAD hotspots: __lfo__ (868), __counter__ (239), __noise1d__ (134), __ramp__ (108) -> feed as avoid_methods to advisor.extract_guidance (per-node, no LLM).
 - CHEAP-ALIVE recombine seeds: 107 alive renders <30s -> keep explore_ratio intact.
 - ACTION TAKEN (this run): implemented a NEW 3D-sidecar PostFX pass (radial blur) rather than promoting candidates — note: no session.py seed_ids/prefer_ids hook was exercised; gap remains if hook absent.
+- [2026-07-13T13:35Z] genomes=525 alive=180 dead=345 (66%) rated=18 (3.4%)
+- TOP-3 rated (promotion seeds): g-e181c881(5), g-328f0d37(5), g-e3d68069(5) — all origins explorer/random; genome metadata (motifs/drivers) sparse/None.
+- DEAD hotspots unchanged: __lfo__(868), __counter__(239), __noise1d__(134), __ramp__(108), __strobe__(48) — control/terminal scalar nodes ending graphs yield no image. Feed as avoid_methods to advisor.extract_guidance (per-node, no LLM) IF hook exists; otherwise log gap.
+- CHEAP-ALIVE recombine seeds: 107 alive renders <30s -> keep explore_ratio (~0.45) intact.
+- ACTION TAKEN (this run): Added 3D-sidecar **lens-distortion** PostFX pass (barrel/pincushion + optional breathing) to fight the liveness cull on still scenes; 17/17 sidecar tests pass. Did NOT promote candidates (no prefer_ids hook exercised this run).
