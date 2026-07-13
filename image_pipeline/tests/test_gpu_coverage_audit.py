@@ -46,7 +46,7 @@ from image_pipeline.methods.gpu_shaders import GPU_SHADER_NODE_MAP
 # 221 -> 228: +7 categorical-coverage client-GPU shims wiring closed-form
 #             typed twins onto existing CPU nodes (16, 65, 78, 56, 81,
 #             406, 409 — math_art / patterns categories).
-EXPECTED_MAP_ENTRIES = 236
+EXPECTED_MAP_ENTRIES = 237
 
 # Simulations-category CPU nodes that are intentionally NOT GPU-mirrored yet.
 # These are Architecture-A stateful sims (discrete CA, agent/particle systems,

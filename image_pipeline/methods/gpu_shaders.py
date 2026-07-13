@@ -725,6 +725,14 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     "477": {"shader": "gabor_gpu", "type": "procedural",
             "param_map": {"orientation": "p1", "anisotropy": "p2",
                           "frequency": "p3", "bandwidth": "p4"}},
+    # 480 Lens Distortion -> closed-form filter twin (live-preview path; the
+    # CPU numpy node stays authoritative for exact export).  REAL numeric
+    # params amount/k2/center/aspect/chromatic mapped to the twin's typed
+    # uniforms (GPU-First contract #5).
+    "480": {"shader": "lens_distort_gpu", "type": "filter", "typed": True,
+            "param_map": {"amount": "amount", "k2": "k2",
+                          "center_x": "center_x", "center_y": "center_y",
+                          "aspect": "aspect", "chromatic": "chromatic"}},
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SHIMS)
 
