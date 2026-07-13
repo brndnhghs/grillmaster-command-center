@@ -300,6 +300,12 @@ _TYPED_SHADER_NODES = [
     # orbiting SDF spheres. Distinct from node 53 (sum-of-inverse-square
     # field): true SDF + smin so `blend` (k) controls edge softness.
     ("321", "smin_metaballs_gpu",   "GPU Smooth-min Metaballs"),
+    # Node 322: Procedural Phasor Noise (Tricard 2019) — sum of complex Gabor
+    # kernels; the ARGUMENT (phase) of the accumulated phasor field gives
+    # intensity-decoupled oscillating ridges (fingerprint/wood-grain) with
+    # locally controllable frequency + orientation. Renders the PHASE, not the
+    # magnitude — distinct from any Perlin/Gabor magnitude node.
+    ("322", "phasor_noise_gpu",      "GPU Phasor Noise"),
 ]
 
 _TIME_SCALE_PARAM = {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0}

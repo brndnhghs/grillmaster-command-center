@@ -1866,6 +1866,85 @@ void main() {
     }
     )
 
+# ── Node 322: Procedural Phasor Noise (closed-form f(uv,t)) ──
+# Research technique: "Procedural Phasor Noise", Tricard, Efremov, Zanni, Neyret,
+# Martínez, Lefebvre — ACM TOG / SIGGRAPH 2019.
+# Reference: http://thibaulttricard.fr/project_page/phasor_noise/phasor.html
+# Phasor noise reformulates Gabor noise as a complex PHASOR field: a sum of
+# complex-valued Gabor kernels g_i(x) = A_i·exp(-π b²|x-x_i|²)·exp(i·2π f·(x-x_i)).
+# Summing kernels accumulates real+imag parts; the ARGUMENT (phase) of the sum is
+# the phasor field. Taking sin(phase) yields oscillating ridge patterns whose
+# CONTRAST is decoupled from local intensity (unlike raw Gabor noise), giving the
+# characteristic fingerprint/wood-grain ridges with locally controllable
+# frequency and orientation. Closed-form per pixel → exact GPU live preview;
+# CPU numpy stays authoritative for export.
+_register("phasor_noise_gpu",
+          "Procedural Phasor Noise — Tricard 2019 sum-of-complex-Gabor-kernel phasor field (node 322)",
+          "procedural", _inferno_local('') + '''
+// One complex Gabor kernel: returns vec2(real, imag).
+// p       = sample point (kernel-local grid space)
+// center  = kernel center
+// freq    = spatial frequency (cycles per unit)
+// theta   = kernel orientation (radians)
+// bw      = Gaussian bandwidth (kernel spatial extent)
+vec2 gabor_kernel(vec2 p, vec2 center, float freq, float theta, float bw) {
+    vec2 d = p - center;
+    float g = exp(-3.14159265 * bw * bw * dot(d, d));   // Gaussian envelope
+    vec2 f = vec2(cos(theta), sin(theta)) * freq;       // frequency vector
+    float phase = 6.2831853 * dot(f, d);                // 2π f·(x-x_i)
+    return g * vec2(cos(phase), sin(phase));            // complex kernel
+}
+void main() {
+    // 0.5-neutral encoding → node defaults (pitfall #15).
+    float freq   = mix(2.0, 22.0, u_frequency);   // ridge frequency
+    float theta0 = u_orientation * 6.2831853;      // base orientation
+    float spread = u_spread * 3.14159265;          // orientation randomness
+    float bw     = mix(2.6, 1.2, u_bandwidth);     // kernel extent (lower=broader)
+    float hue    = u_hue;
+    float t = u_time * 0.15;
+
+    // Work in a jittered grid so kernels tile the plane. cell size ~ 1 kernel.
+    float scale = 6.0;                 // grid resolution across the [0,1] canvas
+    vec2 pg = v_uv * scale;
+    vec2 base = floor(pg);
+    vec2 accum = vec2(0.0);            // accumulated complex phasor
+    // Sum kernels from the 3x3 neighborhood of grid cells (support radius).
+    for (int j = -1; j <= 1; j++) {
+        for (int i = -1; i <= 1; i++) {
+            vec2 cell = base + vec2(float(i), float(j));
+            vec2 h = vec2(hash21(cell), hash21(cell + 17.3));
+            vec2 center = cell + h;                       // jittered kernel center
+            // Per-kernel orientation: base + random spread, slowly rotating in t.
+            float th = theta0 + (h.x - 0.5) * 2.0 * spread + t * (0.3 + 0.4 * h.y);
+            float amp = 0.6 + 0.4 * hash21(cell + 5.1);
+            accum += amp * gabor_kernel(pg, center, freq, th, bw);
+        }
+    }
+    // Phasor field = argument (phase) of the accumulated complex sum.
+    float phase = atan(accum.y, accum.x);
+    // sin(phase) → oscillating ridges with intensity-decoupled contrast.
+    float osc = 0.5 + 0.5 * sin(phase);
+    // Local intensity (magnitude) gently modulates brightness at kernel gaps.
+    float mag = clamp(length(accum), 0.0, 1.0);
+    float val = clamp(osc * (0.55 + 0.45 * mag), 0.0, 1.0);
+
+    vec3 col = inferno(val);
+    // Hue control tints the ridges via a cosine palette blended on the ridge band.
+    float ridge = smoothstep(0.35, 0.65, osc);
+    vec3 tint = 0.5 + 0.5 * cos(6.2831853 * (hue + val) + vec3(0.0, 2.0, 4.0));
+    col = mix(col, col * (0.5 + 1.0 * tint), 0.4 * ridge);
+    f_color = vec4(clamp(col, 0.0, 1.0), 1.0);
+}
+''',
+    uniforms={
+    "frequency": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "ridge frequency (cycles per kernel)"},
+    "orientation": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "base ridge orientation"},
+    "spread": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "orientation randomness (0=aligned, 1=isotropic)"},
+    "bandwidth": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "kernel bandwidth (higher=sharper/narrower kernels)"},
+    "hue": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "ridge tint hue"}
+    }
+    )
+
 _register("heatmap_gpu",
           "Density heatmap (client-GPU twin of node 43)",
           "procedural", _inferno_local('') + '''
