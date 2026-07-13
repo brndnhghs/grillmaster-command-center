@@ -417,3 +417,10 @@
 - CHEAP-ALIVE recombine seeds=107; RATED=18 (still rating-signal poor). Top ratings all 3-5 with no motifs tagged; no seed_ids/prefer_ids promotion hook confirmed present — NOTED as missing capability (unchanged).
 - Feature THIS run is CG-facing, not shootout-facing: raymarched 3D gyroid TPMS.
 - ACTION taken: recorded manifest; no evolution machinery change this run (rotated research index untouched — CG feature took the slot).
+
+## 2026-07-13T22:19Z
+- genomes=525 alive=180 dead=345 (66%) rated=18 cheap_alive=107
+- render >150s(cap)=126 >100s=152 max=547s
+- top_rated: None=5, None=5, None=5
+- dead_hotspot: __lfo__:868, __counter__:239, __noise1d__:134, __ramp__:108, __strobe__:48
+- action: carried forward prior dead-hotspot avoidance (CONTROL/DRIVER nodes) via advisor avoid list; top-rated survivors seed next generation via config seed_ids if hook present
