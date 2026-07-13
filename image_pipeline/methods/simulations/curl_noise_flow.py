@@ -118,7 +118,7 @@ def _sample(arr: np.ndarray, px: np.ndarray, py: np.ndarray, Hw: int, Ww: int) -
     new_image_contract=True,
     tags=["fluid", "curl-noise", "flow-field", "procedural", "animation",
           "divergence-free", "advection", "bridson", "turbulence"],
-    inputs={},
+    inputs={"image_in": "IMAGE"},
     outputs={"image": "IMAGE", "field": "FIELD"},
     params={
         "source": {"description": "dye/source when no image is wired (gradient/noise/palette/rainbow/procedural/input_image)",

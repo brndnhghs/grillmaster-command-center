@@ -252,7 +252,7 @@ def _build_obstacles(N, n_obs, rng):
     new_image_contract=True,
     tags=["fluid", "navier-stokes", "stam", "simulation", "advection",
           "turbulence", "dye", "realtime", "physics"],
-    inputs={},
+    inputs={"image_in": "IMAGE"},
     outputs={"image": "IMAGE", "density": "FIELD", "luminance": "SCALAR",
              "particles": "PARTICLES"},
     params={

@@ -140,7 +140,7 @@ def _build_scene(source: str, hh: int, ww: int, rng: np.random.Generator, seed: 
     category="filters",
     new_image_contract=True,
     tags=["toon", "cel", "npr", "stylization", "shading", "quantize", "animation"],
-    inputs={},
+    inputs={"image_in": "IMAGE"},
     outputs={"image": "IMAGE", "field": "FIELD", "mask": "MASK"},
     params={
         "source": {"description": "generated scene when no image is wired (spheres/terrain/torus_ground)",

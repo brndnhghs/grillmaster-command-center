@@ -1,21 +1,21 @@
 # Image-Input Wiring Report
 
-- generated: 2026-07-13T20:19:20.306046+00:00
+- generated: 2026-07-13T22:04:51.677364+00:00
 - graphs scanned: 47
-- errors: 14
-- warnings: 31
+- errors: 13
+- warnings: 32
 
 ```
 ========================================================================
  IMAGE-INPUT WIRING VALIDATION
 ========================================================================
  graphs scanned : 47
- ERROR findings : 14
- WARN  findings : 31
+ ERROR findings : 13
+ WARN  findings : 32
 
-── graph: active   (1 ERROR / 0 WARN) ──
-  [ERROR] E_DANGLING_REQUIRED @ nmrjgaaf84 (922)
-        image_in has no inbound edge and the method consumes the wired image — will run without an upstream image (broken)
+── graph: active   (0 ERROR / 1 WARN) ──
+  [WARN] W_DEAD_PORT @ n1 (91)
+        image_in unwired but method never reads the wired image (dead/optional port — safe but worth pruning)
 
 ── graph: age_density   (0 ERROR / 1 WARN) ──
   [WARN] W_OPTIONAL_UNWIRED @ n54 (18)

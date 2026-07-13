@@ -172,7 +172,7 @@ def _apply_clahe(img: np.ndarray, tile: int, clip_frac: float,
     new_image_contract=True,
     tags=["filter", "contrast", "clahe", "histogram", "adaptive", "local-contrast",
           "medical-imaging", "astrophotography", "enhancement", "animation"],
-    inputs={},
+    inputs={"image_in": "IMAGE"},
     outputs={"image": "IMAGE", "field": "FIELD"},
     params={
         "source": {"description": "source when no image is wired (gradient/noise/palette/rainbow/procedural/input_image)",

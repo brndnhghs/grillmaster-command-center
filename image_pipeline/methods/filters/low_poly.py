@@ -217,7 +217,7 @@ def _render_triangles(hh, ww, verts, tris, src, edge_width, edge_color):
     category="filters",
     new_image_contract=True,
     tags=["low-poly", "triangulation", "delaunay", "stylization", "abstraction", "expanded", "animation"],
-    inputs={},
+    inputs={"image_in": "IMAGE"},
     outputs={"image": "IMAGE", "field": "FIELD", "particles": "PARTICLES"},
     params={
         "source": {

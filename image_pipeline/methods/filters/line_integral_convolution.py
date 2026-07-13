@@ -70,7 +70,7 @@ def _build_streamfunction(yy, xx, rng, flow_scale, octaves):
     new_image_contract=True,
     category="filters",
     tags=["flow", "texture", "vector-field", "lic", "animation"],
-    inputs={},
+    inputs={"image_in": "IMAGE"},
     outputs={"image": "IMAGE", "luminance": "FIELD", "field": "FIELD"},
     params={
         "source": {"description": "flow source (flow_field/input_gradient)", "choices": ["flow_field", "input_gradient"], "default": "flow_field"},

@@ -19,8 +19,8 @@ from ...core.animation import capture_frame
     category="filters",
     new_image_contract=True,
     tags=["stippling", "stochastic", "abstraction", "lloyd", "expanded", "animation"],
-    inputs={},
-    outputs={"image": "IMAGE"},
+    inputs={"image_in": "IMAGE"},
+    outputs={"image": "IMAGE", "mask": "MASK"},
     params={
         "source": {"description": "stipple source: noise, gradient, input_image, palette, rainbow, procedural", "default": "gradient"},
         "density_mode": {"description": "which tonal regions receive more dots: dark, bright", "choices": ["dark", "bright"], "default": "dark"},

@@ -109,7 +109,7 @@ def _fxaa_cpu(img: np.ndarray, edge_threshold: float) -> np.ndarray:
     category="filters",
     new_image_contract=True,
     tags=["antialiasing", "post-process", "edge", "real-time", "expanded", "animation"],
-    inputs={},
+    inputs={"image_in": "IMAGE"},
     outputs={"image": "IMAGE"},
     params={
         "source": {"description": "test pattern / wired input (checker/procedural/rings/noise/gradient/palette/rainbow/input_image)", "default": "checker"},

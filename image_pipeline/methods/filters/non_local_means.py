@@ -22,7 +22,7 @@ except ImportError:
     category="filters",
     new_image_contract=True,
     tags=["denoising", "edge-preserving", "smoothing", "fast", "expanded", "animation"],
-    inputs={},
+    inputs={"image_in": "IMAGE"},
     outputs={"image": "IMAGE", "smoothing": "FIELD"},
     params={
         "source": {"description": "clean base source (noise/gradient/palette/rainbow/procedural)", "default": "noise"},

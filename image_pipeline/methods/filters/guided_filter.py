@@ -16,7 +16,7 @@ from ...core.animation import capture_frame
     category="filters",
     new_image_contract=True,
     tags=["smoothing", "edge-preserving", "detail", "abstraction", "expanded", "animation"],
-    inputs={},
+    inputs={"image_in": "IMAGE"},
     outputs={"image": "IMAGE", "mask": "MASK"},
     params={
         "source": {"description": "source (noise/gradient/input_image/palette/rainbow/procedural)", "default": "noise"},

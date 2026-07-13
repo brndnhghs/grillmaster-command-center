@@ -104,7 +104,7 @@ def _joint_bilateral(guide_lum: np.ndarray, src: np.ndarray, r: int,
     category="filters",
     new_image_contract=True,
     tags=["abstraction", "edge-aware", "smoothing", "cartoon", "painterly", "expanded", "animation"],
-    inputs={},
+    inputs={"image_in": "IMAGE"},
     outputs={"image": "IMAGE"},
     params={
         "source": {"description": "source (procedural/noise/gradient/input_image/palette/rainbow)", "default": "procedural"},

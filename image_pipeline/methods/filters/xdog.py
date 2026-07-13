@@ -33,7 +33,7 @@ _INK = {
     category="filters",
     new_image_contract=True,
     tags=["sketch", "stylization", "npr", "edge-preserving", "pencil", "expanded", "animation"],
-    inputs={},
+    inputs={"image_in": "IMAGE"},
     outputs={"image": "IMAGE", "mask": "MASK"},
     params={
         "source": {"description": "source (noise/gradient/input_image/palette/rainbow/procedural)", "default": "gradient"},

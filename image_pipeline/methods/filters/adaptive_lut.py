@@ -43,7 +43,7 @@ _LOOKS = [
     category="filters",
     new_image_contract=True,
     tags=["color-grading", "3d-lut", "color", "cinematic", "expanded", "animation"],
-    inputs={},
+    inputs={"image_in": "IMAGE"},
     outputs={"image": "IMAGE"},
     params={
         "source": {"description": "source (noise/gradient/input_image/palette/rainbow/procedural)", "default": "noise"},

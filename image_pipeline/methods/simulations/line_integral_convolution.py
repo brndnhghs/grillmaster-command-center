@@ -226,7 +226,7 @@ def _lic(noise, Xg, Yg, Hw, Ww, ud, vd, steps, step_size, kernel,
     new_image_contract=True,
     tags=["lic", "flow-visualization", "vector-field", "post-process",
           "cabral-leedom", "procedural", "animation", "streamlines", "alic"],
-    inputs={},
+    inputs={"image_in": "IMAGE"},
     outputs={"image": "IMAGE", "field": "FIELD"},
     params={
         "flow_source": {"description": "vector field generator (curl/swirl/radial/perlin_gradient/turbulent)",

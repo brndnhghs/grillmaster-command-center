@@ -129,7 +129,7 @@ def _fdog(L: np.ndarray, tx: np.ndarray, ty: np.ndarray,
     category="filters",
     new_image_contract=True,
     tags=["sketch", "stylization", "npr", "line-drawing", "flow", "etf", "fdog", "edge", "animation"],
-    inputs={},
+    inputs={"image_in": "IMAGE"},
     outputs={"image": "IMAGE", "mask": "MASK"},
     params={
         "source": {"description": "source (noise/gradient/input_image/palette/rainbow/procedural)", "default": "gradient"},

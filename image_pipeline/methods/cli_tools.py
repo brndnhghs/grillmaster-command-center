@@ -463,7 +463,8 @@ def method_img2txt(out_dir: Path, seed: int, params=None):
 
 
 @method(id="45", name="Graphviz", category="cli_tools", tags=["graph", "expanded"],
-        inputs={"anim_speed": "SCALAR",
+        inputs={"image_in": "IMAGE",
+                "anim_speed": "SCALAR",
                 "edge_density": "FIELD",
                 "node_count": "FIELD",
                 "edge_len": "FIELD",

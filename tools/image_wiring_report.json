@@ -1,16 +1,16 @@
 {
-  "generated_at": "2026-07-13T20:19:20.306046+00:00",
+  "generated_at": "2026-07-13T22:04:51.677364+00:00",
   "graphs_scanned": 47,
-  "error_count": 14,
-  "warn_count": 31,
+  "error_count": 13,
+  "warn_count": 32,
   "findings": [
     {
       "graph": "active",
-      "node_id": "nmrjgaaf84",
-      "method_id": "922",
-      "severity": "ERROR",
-      "code": "E_DANGLING_REQUIRED",
-      "message": "image_in has no inbound edge and the method consumes the wired image \u2014 will run without an upstream image (broken)"
+      "node_id": "n1",
+      "method_id": "91",
+      "severity": "WARN",
+      "code": "W_DEAD_PORT",
+      "message": "image_in unwired but method never reads the wired image (dead/optional port \u2014 safe but worth pruning)"
     },
     {
       "graph": "age_density",
