@@ -1029,6 +1029,40 @@ def test_parent_selection_power_sharpens():
     assert p5_share(3.0) > p5_share(1.0), "power didn't sharpen star weighting"
 
 
+def test_select_parents_liveness_fallback():
+    """Route 8 (2026-07-13): when human ratings are starved (no rating-eligible
+    parents), select_parents must fall back to a liveness-fitness parent pool so
+    the evolution can still progress instead of collapsing to fresh randoms
+    (the gen-0 stagnation seen in the corpus). Static/dead clips must NEVER
+    become parents (floor on the liveness fitness)."""
+    from image_pipeline.shootout import evolve, config as cfg_mod
+
+    def mk(gid, alive, tvar, mpf, rating=None):
+        return {"genome_id": gid, "generation": 1, "rating": rating,
+                "liveness": {"alive": alive, "temporal_var": tvar,
+                              "motion_pixel_frac": mpf}}
+
+    # No rated parents: a clearly-dynamic alive clip, a dead/static clip, and a
+    # barely-alive clip that sits below the fitness floor.
+    rated = [
+        mk("dyn", True, 0.05, 0.4, rating=None),
+        mk("stat", False, 0.0, 0.0, rating=None),
+        mk("weak", True, 0.0005, 0.01, rating=None),
+    ]
+    cfg_on = cfg_mod.ShootoutConfig(); cfg_on.liveness_breed_fallback = True
+    cfg_off = cfg_mod.ShootoutConfig(); cfg_off.liveness_breed_fallback = False
+
+    p_off, _ = evolve.select_parents(rated, cfg_off)
+    assert p_off == [], "no fallback -> no parents when unrated"
+
+    p_on, w_on = evolve.select_parents(rated, cfg_on)
+    ids = {g["genome_id"] for g in p_on}
+    assert "dyn" in ids, "dynamic alive clip should breed under fallback"
+    assert "stat" not in ids, "dead clip must never breed"
+    assert "weak" not in ids, "barely-alive clip below fitness floor must not breed"
+    assert any(w > 0 for w in w_on), "dynamic parent must carry real weight"
+
+
 def test_survivor_view_carries_explainer_fields():
     from image_pipeline.shootout import session as sess, describe as d
     rng = random.Random(79)
