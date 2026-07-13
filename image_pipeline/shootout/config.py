@@ -70,19 +70,26 @@ class ShootoutConfig:
     temporal_var_min: float = 3e-3     # per-pixel variance across time below this → static
     flicker_corr_max: float = 0.05     # consecutive-frame correlation below this AND
     flicker_var_min: float = 0.02      # temporal variance above this → pure noise/flicker
-    # ── Perceptual-liveness rescue (Route 8 follow-up, 2026-07-12) ──
+    # ── Perceptual-liveness rescue (Route 8 follow-up, 2026-07-12; corrected 2026-07-12) ──
     # Global temporal_var averages LOCALIZED motion (drift / rotation / thin
     # strokes / a single moving blob) down to ~0 and wrongly culls it as
-    # 'static' (86/288 dead genomes are 'static' — the #2 dead reason). A
-    # per-pixel changed-fraction catches that real motion. Rescue a clip the
-    # variance metric would call static/flat ONLY when a meaningful fraction
-    # of pixels actually move frame-to-frame AND the motion is temporally
-    # structured (frame_corr below rescue_corr_max) — so random dither,
-    # already handled by the flicker gate, is never admitted. Strictly
-    # non-destructive: it can only flip static/flat -> alive, never reverse.
+    # 'static' (the #1 dead reason in the 467-genome scan). A per-pixel
+    # changed-fraction catches that real motion. Rescue a clip the variance
+    # metric would call static/flat ONLY when a meaningful fraction of pixels
+    # actually move frame-to-frame AND the motion is temporally STRUCTURED —
+    # i.e. frame_corr is well above the flicker floor (>= rescue_corr_max, a
+    # LOW threshold ~0.2, not a near-1.0 ceiling). Smooth driver-driven motion
+    # (rotation/phase/zoom, including small translating objects) has frame_corr
+    # ~0.7–0.99; random dither/flicker has frame_corr ~0, so the low-correlation
+    # gate keeps flicker dead while admitting real structured animation. The
+    # original code used `frame_corr < rescue_corr_max` with rescue_corr_max=0.98,
+    # which ONLY rescued flicker (low corr) and let every smooth control-node
+    # clip stay culled — the inverted sign is what produced the 61% static/flat
+    # dead-rate. Strictly non-destructive: it can only flip static/flat -> alive,
+    # never reverse.
     motion_thresh: float = 0.03          # per-pixel abs frame-diff to count as "changed"
     motion_pixel_frac_min: float = 0.03  # changed-pixel fraction implying real motion
-    rescue_corr_max: float = 0.98        # frame_corr must be below this for rescue
+    rescue_corr_max: float = 0.2         # frame_corr must be >= this (more temporally coherent than flicker) for rescue
 
     # ── Rendering ─────────────────────────────────────────────────
     render_concurrency: int = 3

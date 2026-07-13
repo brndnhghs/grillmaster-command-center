@@ -101,13 +101,26 @@ class LivenessAccumulator:
         if self.nan:
             reason = "nan"
         elif temporal_var < cfg.temporal_var_min:
-            # Not moving by the variance metric. Try a perceptual rescue:
-            # if a meaningful fraction of pixels actually change frame to
-            # frame AND the motion is temporally structured (not random
-            # dither, which the flicker gate already rejects), keep it.
-            # This only ever FLIPS static/flat -> alive, never the reverse.
+            # Not moving by the global variance metric. Try a perceptual
+            # rescue: if a meaningful fraction of pixels actually change
+            # frame-to-frame AND the motion is temporally STRUCTURED (high
+            # consecutive-frame correlation — e.g. a smooth rotation, phase
+            # shift, or zoom driven by a control node), keep it.
+            #
+            # NOTE the correlation sign: ``frame_corr`` is the mean
+            # consecutive-frame Pearson correlation over pixels. Smooth
+            # structured motion has frame_corr ~0.7–0.99 (each frame is nearly
+            # the last, just nudged; even small translating objects overlap
+            # most of their area); random flicker/dither has frame_corr ~0.0.
+            # The rescue must therefore require frame_corr ABOVE the flicker
+            # floor (>= rescue_corr_max, a low threshold ~0.2), NOT below it —
+            # a low-correlation clip is flicker, which the flicker gate already
+            # handles, and admitting it here would resurrect dead noise. A
+            # static clip has frame_corr~1.0 too, but its motion_pixel_frac is
+            # ~0 so the first conjunct rejects it. This only ever FLIPS
+            # static/flat -> alive, never the reverse.
             if (motion_pixel_frac >= cfg.motion_pixel_frac_min
-                    and frame_corr < cfg.rescue_corr_max):
+                    and frame_corr >= cfg.rescue_corr_max):
                 reason = None
             else:
                 # Not moving. If it is also spatially degenerate
