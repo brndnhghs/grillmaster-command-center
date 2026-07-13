@@ -110,3 +110,10 @@
   the two dominant shootout failure modes: the >150s render-cost cull and the
   contrast-only liveness cull. Pushed as its own commit.
 - 2026-07-12 | dead=315/467 (67%) | cheap-alive=94/152 | top-rated=[g-e181c881@5, g-328f0d37@5, g-97f1158a@5] | action=added node 483 (Curl Noise Flow) — divergence-free flow that churns structurally (80% px move) + palette-cycle for robust liveness; counters the dominance of dead driver/control nodes in the genome pool
+
+## 2026-07-12 (Line Integral Convolution run, node 484)
+- Diagnostic re-run this run: genomes=467, dead/rejected=315/467 (67%), renders>150s=113 (26%), mean_wall=76.7s, nan=0.
+- Cheap-alive recombine seeds: 94 (explore_ratio intact, fresh randoms still entering).
+- Dead hotspots (attribution artifact of the image-liveness metric): __lfo__ 750, __counter__ 206, __noise1d__ 119, __ramp__ 98, __strobe__ 43, __image_to_mask__ 39, __envelope__ 35; genuine numeric hotspot: node 137 (Image Blend, 33 dead refs).
+- Top-rated survivors (promotion seeds): g-e181c881 (5), g-97f1158a (5), g-328f0d37 (5). Rating-signal poverty persists: 17/467 rated (3.6%).
+- Action taken: implemented node 484 Line Integral Convolution — Cabral and Leedom 1993 streamline texture convolution. Cheap (2.0s/frame at 512x768), strong structural liveness (flow_phase delta=0.154, field delta=0.150, none delta=0.0), param-responsive (scale delta=0.156, flow_source delta=0.184). Directly addresses the 150s render-cost cull (cheap) and the contrast-only liveness cull (field evolves in every active mode). CPU-only node (no GPU count-guard risk); GPU twin left as next topic. Pushed as its own commit.
