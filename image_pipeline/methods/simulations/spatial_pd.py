@@ -79,13 +79,23 @@ def _update_imitate_best(state, payoffs_tbl, gh, gw, rng, mutation_rate, offsets
     Vectorized: neighbor payoffs/strategies are gathered via np.roll over the
     offset list, then a running max picks the best neighbor per cell. Ties are
     adopted with 25% probability per neighbor (RNG drawn per offset).
+
+    The neighbor arrays are rolled once into stacked tensors (as the Fermi/Moran
+    rules already do) instead of re-rolling inside the offset loop — this halves
+    the np.roll count per step. The RNG draw order per offset is preserved
+    exactly, so output is bit-identical.
     """
     payoffs = _play_round(state, payoffs_tbl, gh, gw, offsets)
     best_payoff = payoffs.copy()
     best_strategy = state.copy()
-    for dy, dx in offsets:
-        nb_p = np.roll(payoffs, shift=(-dy, -dx), axis=(0, 1))
-        nb_s = np.roll(state, shift=(-dy, -dx), axis=(0, 1))
+    # Roll every neighbor once, up front.
+    rolls_p = np.stack([np.roll(payoffs, shift=(-dy, -dx), axis=(0, 1)) for dy, dx in offsets])
+    rolls_s = np.stack([np.roll(state, shift=(-dy, -dx), axis=(0, 1)) for dy, dx in offsets])
+    gi = np.arange(gh)[:, None]
+    gj = np.arange(gw)[None, :]
+    for k, (dy, dx) in enumerate(offsets):
+        nb_p = rolls_p[k, gi, gj]
+        nb_s = rolls_s[k, gi, gj]
         better = nb_p > best_payoff
         best_payoff[better] = nb_p[better]
         best_strategy[better] = nb_s[better]
@@ -531,31 +541,35 @@ def method_spatial_pd(out_dir: Path, seed: int, params=None):
     capture_frame("125", result)
 
     for frame in range(1, n_frames):
+        # The payoff matrix only depends on `frame` (sweep modes) or is
+        # constant across the inner sub-steps. Build it ONCE per frame
+        # instead of re-copying base_payoffs on every sub-step — identical
+        # math, fewer redundant array copies.
+        current_payoffs = np.array(base_payoffs, copy=True)
+
+        if anim_mode == "sweep_temptation":
+            current_payoffs[DEFECT, COOP] = 1.0 + (temptation - 1.0) * (frame / n_frames)
+
+        mr = mutation_rate
+        if anim_mode == "sweep_mutation":
+            mr = mutation_rate * (frame / n_frames)
+        if anim_mode == "sweep_S":
+            current_payoffs[COOP, DEFECT] = sucker_payoff * (frame / n_frames)
+
+        # Periodic stir: inject a random disturbance
+        if anim_mode == "periodic_stir" and frame % 15 == 0:
+            stir_r = max(3, min(gh, gw) // 10)
+            si = rng.integers(stir_r, gh - stir_r)
+            sj = rng.integers(stir_r, gw - stir_r)
+            y, x = np.ogrid[-si:gh - si, -sj:gw - sj]
+            mask = x * x + y * y < stir_r * stir_r
+            state[mask] = 1 - state[mask]
+
+        if anim_mode == "invasion":
+            # Keep re-seeding the defector patch
+            pass  # initial seed was set at init
+
         for _ in range(steps_per_frame):
-            current_payoffs = base_payoffs.copy()
-
-            if anim_mode == "sweep_temptation":
-                current_payoffs[DEFECT, COOP] = 1.0 + (temptation - 1.0) * (frame / n_frames)
-
-            mr = mutation_rate
-            if anim_mode == "sweep_mutation":
-                mr = mutation_rate * (frame / n_frames)
-            if anim_mode == "sweep_S":
-                current_payoffs[COOP, DEFECT] = sucker_payoff * (frame / n_frames)
-
-            # Periodic stir: inject a random disturbance
-            if anim_mode == "periodic_stir" and frame % 15 == 0:
-                stir_r = max(3, min(gh, gw) // 10)
-                si = rng.integers(stir_r, gh - stir_r)
-                sj = rng.integers(stir_r, gw - stir_r)
-                y, x = np.ogrid[-si:gh - si, -sj:gw - sj]
-                mask = x * x + y * y < stir_r * stir_r
-                state[mask] = 1 - state[mask]
-
-            if anim_mode == "invasion":
-                # Keep re-seeding the defector patch
-                pass  # initial seed was set at init
-
             state, payoffs = update_fn(state, current_payoffs, gh, gw, rng, mr, offsets, fermi_K)
 
         # Render & capture

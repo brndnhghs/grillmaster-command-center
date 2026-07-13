@@ -450,18 +450,33 @@ def method_nlse(out_dir: Path, seed: int, params=None):
 
     img = None
 
-    # ══════════════════════════════════════════
+    # ── Trap potential ──
+    # In non-rotate modes V_ext is spatially constant across all frames, so
+    # precompute it once instead of re-deriving the (identical) harmonic trap
+    # every frame. Only "rotate" mode changes it per frame.
+    if anim_mode == "rotate":
+        precomputed_V = None  # recomputed each frame below
+    else:
+        precomputed_V = _harmonic_trap(X, Y, strength=trap_strength,
+                                       rotation=0.0, anisotropy=0.0)
+
+    # Static snapshots only ever use the final frame's render (capture_frame
+    # is only reached at the very end), so we skip the per-frame render and
+    # gaussian_filter entirely until the last frame. Animations still render
+    # every frame because each is captured.
+    render_every_frame = is_evolve
+
+    # ══════════════════════════════════════════════════════
     #  SIMULATION LOOP
-    # ══════════════════════════════════════════
+    # ══════════════════════════════════════════════════════
     for frame in range(n_frames):
         # Update trap rotation for "rotate" mode
-        if anim_mode == "rotate":
+        if precomputed_V is None:
             rot_angle = frame * 0.02  # slowly rotate
             V_ext = _harmonic_trap(X, Y, strength=trap_strength,
                                    rotation=rot_angle, anisotropy=0.3)
         else:
-            V_ext = _harmonic_trap(X, Y, strength=trap_strength,
-                                   rotation=0.0, anisotropy=0.0)
+            V_ext = precomputed_V
 
         for _ in range(substeps):
             # Seed for substep-level noise consistency in animations
@@ -483,18 +498,19 @@ def method_nlse(out_dir: Path, seed: int, params=None):
             psi = np.fft.ifft2(psi_hat)
 
             # Split-step is unitary — norm conserved naturally
-            
+
             # Optional: clip extreme growth
             if np.any(np.abs(psi) > 1e6):
                 psi = np.clip(np.abs(psi), 0, 1e6) * np.exp(1j * np.angle(psi))
 
         # ── Render ──
-        canvas = _render_nlse(psi, render_style=render_style, phase_strength=phase_strength)
-        img = canvas
+        if render_every_frame or frame == n_frames - 1:
+            canvas = _render_nlse(psi, render_style=render_style, phase_strength=phase_strength)
+            img = canvas
 
-        # ── Capture ──
-        if is_evolve:
-            capture_frame("124", np.array(img, dtype=np.float32) / 255.0)
+            # ── Capture ──
+            if is_evolve:
+                capture_frame("124", np.array(img, dtype=np.float32) / 255.0)
 
     # ── Final ──
     if img is None:

@@ -233,13 +233,75 @@ def _lic_pixel(ci, cj, u, v, noise, clen, ds):
 
 
 def _compute_lic(u, v, noise, clen, ds):
-    """Full LIC computation on a grid."""
+    """Full LIC computation on a grid (vectorized over all pixels).
+
+    Reproduces the per-pixel RK4 streamline trace in ``_lic_pixel`` exactly:
+    every pixel is advected forward and backward ``clen`` steps, sampling the
+    noise texture at ``int()``-truncated positions (truncation toward zero,
+    matching Python's ``int()`` so the integer-index math is bit-identical to
+    the scalar loop). Out-of-grid samples contribute nothing and stop
+    accumulating for that pixel. The mean of the collected samples is the LIC
+    intensity. This runs the whole gh×gw field in a handful of numpy passes
+    instead of ~393K Python calls.
+    """
     gh, gw = noise.shape
-    result = np.zeros((gh, gw), dtype=np.uint8)
-    for ci in range(gh):
-        for cj in range(gw):
-            result[ci, cj] = _lic_pixel(ci, cj, u, v, noise, clen, ds)
-    return result
+    # Coordinate grids (float64 for stable RK4 accumulation)
+    ci = np.arange(gh, dtype=np.float64)[:, None]
+    cj = np.arange(gw, dtype=np.float64)[None, :]
+
+    def _trace(forward: bool) -> tuple[np.ndarray, np.ndarray]:
+        s = 1.0 if forward else -1.0
+        x = cj.copy()
+        y = ci.copy()
+        acc = np.zeros((gh, gw), dtype=np.float64)
+        count = np.zeros((gh, gw), dtype=np.int64)
+        alive = np.ones((gh, gw), dtype=bool)  # becomes False once off-grid (mirrors per-pixel break)
+        for _ in range(clen):
+            ix = np.trunc(x).astype(np.int64)
+            iy = np.trunc(y).astype(np.int64)
+            inside = (ix >= 0) & (ix < gw) & (iy >= 0) & (iy < gh)
+            # A pixel that has already left the grid stays dead (scalar loop broke).
+            inside = inside & alive
+            ixg = np.clip(ix, 0, gw - 1)
+            iyg = np.clip(iy, 0, gh - 1)
+            samp = noise[iyg, ixg].astype(np.float64)
+            acc += np.where(inside, samp, 0.0)
+            count += np.where(inside, 1, 0)
+            alive = alive & (np.trunc(x).astype(np.int64) >= 0) & (np.trunc(x).astype(np.int64) < gw) \
+                    & (np.trunc(y).astype(np.int64) >= 0) & (np.trunc(y).astype(np.int64) < gh)
+            # RK4 stages (mirror _lic_pixel's half-step probes, with sign s).
+            # The gate MUST use the *raw* truncated index (as the scalar loop
+            # does) so an off-grid probe yields 0 — clipping to the edge would
+            # leak wrapped samples into the streamline (a real divergence).
+            u1 = np.where(inside, u[iyg, ixg], 0.0) * s
+            v1 = np.where(inside, v[iyg, ixg], 0.0) * s
+            x2 = x + ds * 0.5; y2 = y + ds * 0.5
+            ix2r = np.trunc(x2).astype(np.int64); iy2r = np.trunc(y2).astype(np.int64)
+            g2 = (ix2r >= 0) & (ix2r < gw) & (iy2r >= 0) & (iy2r < gh)
+            u2 = np.where(g2, u[np.clip(iy2r, 0, gh - 1), np.clip(ix2r, 0, gw - 1)], 0.0) * s
+            v2 = np.where(g2, v[np.clip(iy2r, 0, gh - 1), np.clip(ix2r, 0, gw - 1)], 0.0) * s
+            x3 = x + ds * 0.5; y3 = y + ds * 0.5
+            ix3r = np.trunc(x3).astype(np.int64); iy3r = np.trunc(y3).astype(np.int64)
+            g3 = (ix3r >= 0) & (ix3r < gw) & (iy3r >= 0) & (iy3r < gh)
+            u3 = np.where(g3, u[np.clip(iy3r, 0, gh - 1), np.clip(ix3r, 0, gw - 1)], 0.0) * s
+            v3 = np.where(g3, v[np.clip(iy3r, 0, gh - 1), np.clip(ix3r, 0, gw - 1)], 0.0) * s
+            x4 = x + ds; y4 = y + ds
+            ix4r = np.trunc(x4).astype(np.int64); iy4r = np.trunc(y4).astype(np.int64)
+            g4 = (ix4r >= 0) & (ix4r < gw) & (iy4r >= 0) & (iy4r < gh)
+            u4 = np.where(g4, u[np.clip(iy4r, 0, gh - 1), np.clip(ix4r, 0, gw - 1)], 0.0) * s
+            v4 = np.where(g4, v[np.clip(iy4r, 0, gh - 1), np.clip(ix4r, 0, gw - 1)], 0.0) * s
+            kx = (u1 + 2.0 * u2 + 2.0 * u3 + u4) / 6.0
+            ky = (v1 + 2.0 * v2 + 2.0 * v3 + v4) / 6.0
+            x = x + kx * ds
+            y = y + ky * ds
+        return acc, count
+
+    acc_f, cnt_f = _trace(True)
+    acc_b, cnt_b = _trace(False)
+    total = cnt_f + cnt_b
+    with np.errstate(divide="ignore", invalid="ignore"):
+        mean = np.where(total > 0, (acc_f + acc_b) / total.astype(np.float64), 128.0)
+    return mean.astype(np.uint8)
 
 
 # ── Coloring ──

@@ -278,6 +278,11 @@ def method_lv_3species(out_dir: Path, seed: int, params=None):
 
     img = None
 
+    # Static snapshots (anim_mode="none") only use the final frame's render,
+    # so skip the per-frame render + GaussianBlur entirely until the last
+    # frame. Animations still render every frame because each is captured.
+    render_every_frame = is_evolve
+
     # ══════════════════════════════════════════
     #  SIMULATION LOOP
     # ══════════════════════════════════════════
@@ -309,22 +314,23 @@ def method_lv_3species(out_dir: Path, seed: int, params=None):
             v2 = np.clip(v2, 0, None)
 
         # ── Render ──
-        if render_style == "prey":
-            canvas = _render_species_channel(u, v1, v2, "prey")
-        elif render_style == "specialist":
-            canvas = _render_species_channel(u, v1, v2, "specialist")
-        elif render_style == "generalist":
-            canvas = _render_species_channel(u, v1, v2, "generalist")
-        else:
-            canvas = _render_3species(u, v1, v2)
+        if render_every_frame or frame == n_frames - 1:
+            if render_style == "prey":
+                canvas = _render_species_channel(u, v1, v2, "prey")
+            elif render_style == "specialist":
+                canvas = _render_species_channel(u, v1, v2, "specialist")
+            elif render_style == "generalist":
+                canvas = _render_species_channel(u, v1, v2, "generalist")
+            else:
+                canvas = _render_3species(u, v1, v2)
 
-        if frame % 3 == 0:
-            canvas = canvas.filter(ImageFilter.GaussianBlur(radius=0.4))
+            if frame % 3 == 0:
+                canvas = canvas.filter(ImageFilter.GaussianBlur(radius=0.4))
 
-        img = canvas
+            img = canvas
 
-        if is_evolve:
-            capture_frame("120", np.array(img, dtype=np.float32) / 255.0)
+            if is_evolve:
+                capture_frame("120", np.array(img, dtype=np.float32) / 255.0)
 
     # ── Final ──
     if img is None:

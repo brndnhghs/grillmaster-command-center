@@ -303,11 +303,22 @@ def method_langtons_ant(out_dir: Path, seed: int, params=None):
     ant_xs = np.array([a["x"] for a in ants], dtype=np.int32)
     ant_dirs = np.array([a["dir"] for a in ants], dtype=np.int32)
 
+    # ── Hoisted invariants (depend only on _t, fixed across the sim) ──
+    # Unfold: stop early based on progress (constant for the whole run).
+    step_limit = steps  # only used when anim_mode == "unfold"
+    if anim_mode == "unfold":
+        progress = min(1.0, 0.5 + 0.5 * math.sin(_t * 0.5))
+        step_limit = int(steps * progress)
+    # Ant swarm: active ant count varies with _t but not with step index.
+    if anim_mode == "ant_swarm":
+        current_count = max(1, int(1 + (ant_count - 1) * (0.5 + 0.5 * math.sin(_t * 2.0))))
+        active_n = min(current_count, N)
+    else:
+        active_n = N
+
     for s in range(steps):
         # ── Unfold: stop early based on progress ──
         if anim_mode == "unfold":
-            progress = min(1.0, 0.5 + 0.5 * math.sin(_t * 0.5))
-            step_limit = int(steps * progress)
             if s >= step_limit:
                 break
 
@@ -323,13 +334,6 @@ def method_langtons_ant(out_dir: Path, seed: int, params=None):
                 for i, ch in enumerate(rule_str):
                     turn_lookup[i] = 1 if ch == 'R' else -1
                 grid[:] = grid % max(n_colors, 1)
-
-        # ── Ant swarm: vary active ant count ──
-        if anim_mode == "ant_swarm":
-            current_count = max(1, int(1 + (ant_count - 1) * (0.5 + 0.5 * math.sin(_t * 2.0))))
-            active_n = min(current_count, N)
-        else:
-            active_n = N
 
         # ── Batch step for active ants ──
         if active_n > 0:

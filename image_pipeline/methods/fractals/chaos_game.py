@@ -486,7 +486,12 @@ def method_chaos_game(out_dir: Path, seed: int, params=None):
 
         elif preset.get("vertices") is not None:
             verts = preset["vertices"]
+            verts_np = np.asarray(verts, dtype=np.float64)  # (nv, 2)
             nv = len(verts)
+            # Per-vertex color basis: row vi = [vi/(nv-1), 1-|2vi/(nv-1)-1|, 1-vi/(nv-1)]
+            denom = max(nv - 1, 1)
+            _f = np.arange(nv, dtype=np.float64) / denom
+            _basis = np.stack([_f, 1.0 - np.abs(2.0 * _f - 1.0), 1.0 - _f], axis=1)  # (nv, 3)
             # Build weighted vertex probabilities
             if weighted > 0:
                 weights = [1.0 + weighted * (math.sin(t + vi * 2.0) if anim_mode == "vertex_cycle" else 0.0) for vi in range(nv)]
@@ -522,18 +527,15 @@ def method_chaos_game(out_dir: Path, seed: int, params=None):
                 if 0 <= ix < W and 0 <= iy < H:
                     density_arr[iy, ix] = min(1.0, density_arr[iy, ix] + d_inc)
                     age_arr[iy, ix] = max(age_arr[iy, ix], (start_idx + i) / max(growth_limit, 1))
-                    # Vertex color blend
-                    vertex_color = np.array([0.3, 0.3, 0.3], dtype=np.float32)
-                    for vi in range(nv):
-                        dst = math.hypot(x - verts[vi][0], y - verts[vi][1])
-                        vertex_color += np.array([math.exp(-dst * 4)] * 3) * np.array([
-                            (vi / max(nv - 1, 1)),
-                            (1 - abs(2 * vi / max(nv - 1, 1) - 1)),
-                            (1 - vi / max(nv - 1, 1)),
-                        ])
-                    vertex_color = np.clip(vertex_color, 0, 1)
-                    for ch in range(3):
-                        vc_map[iy, ix, ch] = max(vc_map[iy, ix, ch], vertex_color[ch])
+                    # Vertex color blend — vectorized over vertices:
+                    # w_i = exp(-4 * dist_i) ; vertex_color = sum_i w_i * basis_i
+                    d = np.hypot(x - verts_np[:, 0], y - verts_np[:, 1])  # (nv,)
+                    w = np.exp(-4.0 * d)                                  # (nv,)
+                    # matches original: start from [0.3,0.3,0.3] then add w_i*basis_i
+                    vertex_color = np.clip(0.3 + (w[:, None] * _basis).sum(axis=0), 0.0, 1.0)
+                    vc_map[iy, ix, 0] = max(vc_map[iy, ix, 0], vertex_color[0])
+                    vc_map[iy, ix, 1] = max(vc_map[iy, ix, 1], vertex_color[1])
+                    vc_map[iy, ix, 2] = max(vc_map[iy, ix, 2], vertex_color[2])
 
                     if render_style == "scatter" and rng.random() < 0.05:
                         scatter_pts.append((ix, iy))
