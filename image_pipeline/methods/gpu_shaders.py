@@ -293,6 +293,9 @@ _TYPED_SHADER_NODES = [
     ("317", "stained_glass_typed", "GPU Stained Glass"),
     ("318", "opart_typed",         "GPU Op-Art Waves"),
     ("319", "aurora_typed",        "GPU Aurora Borealis"),
+    # Categorical coverage pt.16 (2026-07-13): closed-form procedural — classic
+    # Perlin-turbulence marble veining with domain warp (typed, node 320).
+    ("320", "marble_typed",         "GPU Marble"),
 ]
 
 _TIME_SCALE_PARAM = {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0}
