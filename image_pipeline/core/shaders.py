@@ -357,24 +357,31 @@ void main() {
 }
 ''')
 
-_register("julia", "Julia set fractal", "procedural", '''
+_register("julia", "Julia set fractal (client-GPU twin of node 66)", "procedural",
+          '''
 void main() {
     vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);
-    vec2 c = vec2(-0.7269 + (u_params.x - 0.5) * 0.4, 0.1889 + (u_params.y - 0.5) * 0.4);
-    vec2 z = uv * exp((u_params.z - 0.5) * 3.0) * 3.0;  // 0.5 -> full view (±1.5)
+    vec2 c = vec2(-0.7269, 0.1889);  // node 66's famous default constant (string param unmapped)
+    vec2 z = uv * 3.0;              // fixed full view (node 66 has no zoom param)
     int n = 0;
     float last2 = 0.0;
-    const float MAXI = 200.0;
-    for (int i = 0; i < 200; i++) {
+    const float MAXI = 500.0;
+    for (int i = 0; i < 500; i++) {
         z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
         last2 = dot(z, z);
-        if (last2 > 16.0) break;
+        if (last2 > u_escape_radius * u_escape_radius || n >= u_iterations) break;
         n++;
     }
-    float t = (n >= MAXI - 0.5) ? 0.0 : clamp((n + 1.0 - log(max(log(last2)*0.5, 1.0001))/log(2.0)) / MAXI, 0.0, 1.0);
+    float t = (n >= u_iterations - 0.5) ? 0.0
+            : clamp((n + 1.0 - log(max(log(last2)*0.5, 1.0001))/log(2.0)) / u_iterations, 0.0, 1.0);
     f_color = vec4(0.5 + 0.5 * cos(t * 6.28318 + vec3(0.0, 2.0, 4.0)), 1.0);
 }
-''')
+''',
+    uniforms={
+    "iterations": {"glsl": "float", "min": 30.0, "max": 500.0, "default": 100, "description": "max iterations"},
+    "escape_radius": {"glsl": "float", "min": 1.5, "max": 10.0, "default": 2.0, "description": "escape radius"}
+}
+    )
 
 _register("plasma", "Multi-octave colored plasma", "procedural", '''
 void main() {
@@ -412,10 +419,8 @@ _register("mandelbrot_gpu", "Mandelbrot set (client-GPU twin of node 33)", "proc
           _FRACTAL_HELPERS + '''
 void main() {
     vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);
-    // p1 = zoom (0.5 = full view), p2 = color_shift, p3 = center_x, p4 = center_y.
-    float zoom = u_zoom;
     vec2 ctr = vec2(u_center_x, u_center_y);
-    vec2 c = ctr + uv * zoom;
+    vec2 c = ctr + uv * u_zoom;
     vec2 z = vec2(0.0);
     float n = 0.0;
     float last2 = 0.0;
@@ -423,18 +428,19 @@ void main() {
     for (int i = 0; i < 200; i++) {
         z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
         last2 = dot(z, z);
-        if (last2 > 16.0) break;
+        if (last2 > 16.0 || n >= u_iterations) break;
         n += 1.0;
     }
-    float t = (n >= MAXI - 0.5) ? 0.0 : smooth_iter(n, last2, MAXI);
+    float t = (n >= u_iterations - 0.5) ? 0.0 : smooth_iter(n, last2, u_iterations);
     f_color = vec4(fractal_palette(t + u_color_shift), 1.0);
 }
 ''',
     uniforms={
-    "zoom": {"glsl": "float", "min": 0.05, "max": 20.0, "default": 1.0, "description": "zoom (0.5=1x full view)"},
-    "color_shift": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "palette color offset"},
-    "center_x": {"glsl": "float", "min": -1.5, "max": 1.5, "default": 0.5, "description": "center x"},
-    "center_y": {"glsl": "float", "min": -1.5, "max": 1.5, "default": 0.5, "description": "center y"}
+    "zoom": {"glsl": "float", "min": 0.5, "max": 100000.0, "default": 1.0, "description": "zoom (1 = full view)"},
+    "center_x": {"glsl": "float", "min": -2.5, "max": 2.5, "default": -0.5, "description": "center x"},
+    "center_y": {"glsl": "float", "min": -2.0, "max": 2.0, "default": 0.0, "description": "center y"},
+    "iterations": {"glsl": "float", "min": 50.0, "max": 2000.0, "default": 200, "description": "max iterations"},
+    "color_shift": {"glsl": "float", "min": 0.0, "max": 6.28, "default": 0.0, "description": "palette color offset"}
 }
     )
 
@@ -442,28 +448,27 @@ _register("burning_ship_gpu", "Burning Ship fractal (client-GPU twin of node 51)
           _FRACTAL_HELPERS + '''
 void main() {
     vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);
-    // p1 = zoom (0.5 = full view), p2 = color_shift, p3 = center_x, p4 = center_y.
-    float zoom = exp((u_color_speed - 0.5) * 6.0);
     vec2 ctr = vec2(0.5, 0.5);
-    vec2 c = ctr + uv * zoom;
+    vec2 c = ctr + uv * 1.0;  // fixed full view (node 51 has no zoom param)
     vec2 z = vec2(0.0);
     float n = 0.0;
     float last2 = 0.0;
-    const float MAXI = 200.0;
-    for (int i = 0; i < 200; i++) {
+    const float MAXI = 500.0;
+    for (int i = 0; i < 500; i++) {
         z = vec2(abs(z.x) - 1.0, abs(z.y)) * abs(z.x) + c; // abs-squared ship map
         z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y);
         last2 = dot(z, z);
-        if (last2 > 16.0) break;
+        if (last2 > 16.0 || n >= u_iterations) break;
         n += 1.0;
     }
-    float t = (n >= MAXI - 0.5) ? 0.0 : smooth_iter(n, last2, MAXI);
-    f_color = vec4(fractal_palette(t + u_color_offset), 1.0);
+    float t = (n >= u_iterations - 0.5) ? 0.0 : smooth_iter(n, last2, u_iterations);
+    f_color = vec4(fractal_palette(t * (0.6 + 0.4 * u_color_speed) + u_color_offset), 1.0);
 }
 ''',
     uniforms={
-    "color_speed": {"glsl": "float", "min": 0.0, "max": 2.0, "default": 0.5, "description": "palette color speed"},
-    "color_offset": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "palette color offset"}
+    "iterations": {"glsl": "float", "min": 30.0, "max": 500.0, "default": 100, "description": "max iterations"},
+    "color_speed": {"glsl": "float", "min": 0.5, "max": 8.0, "default": 2.0, "description": "palette color speed"},
+    "color_offset": {"glsl": "float", "min": 0.0, "max": 6.28, "default": 0.0, "description": "palette color offset"}
 }
     )
 
@@ -471,11 +476,10 @@ _register("newton_gpu", "Newton fractal basins (client-GPU twin of node 52)", "p
           _FRACTAL_HELPERS + '''
 void main() {
     vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);
-    // p1 = color_speed, p2 = color_offset, p3 = zoom (0.5 = full view), p4 = unused.
-    vec2 z = uv * 2.2;
-    const float MAXI = 60.0;
+    vec2 z = uv * 2.2;  // fixed full view (node 52 has no zoom param)
+    const float MAXI = 200.0;
     float n = 0.0;
-    for (int i = 0; i < 60; i++) {
+    for (int i = 0; i < 200; i++) {
         // Newton for z^3 - 1: z - (z^3 - 1) / (3 z^2)
         vec2 z2 = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y);
         vec2 z3 = vec2(z2.x*z.x - z2.y*z.y, 2.0*z2.x*z.y);
@@ -485,7 +489,7 @@ void main() {
         vec2 step = vec2(f.x*dz.x + f.y*dz.y, f.y*dz.x - f.x*dz.y) / denom;
         z -= step;
         n += 1.0;
-        if (dot(step, step) < 1e-6) break;
+        if (dot(step, step) < 1e-6 || n >= u_max_iter) break;
     }
     // Color by nearest of the 3 cube roots of unity (angle quantization).
     float ang = atan(z.y, z.x);
@@ -495,8 +499,9 @@ void main() {
 }
 ''',
     uniforms={
-    "color_speed": {"glsl": "float", "min": 0.0, "max": 2.0, "default": 0.5, "description": "palette color speed"},
-    "color_offset": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "palette color offset"}
+    "max_iter": {"glsl": "float", "min": 10.0, "max": 200.0, "default": 50, "description": "max Newton iterations"},
+    "color_speed": {"glsl": "float", "min": 0.5, "max": 8.0, "default": 2.0, "description": "palette color speed"},
+    "color_offset": {"glsl": "float", "min": 0.0, "max": 6.28, "default": 0.0, "description": "palette color offset"}
 }
     )
 
@@ -601,7 +606,9 @@ _register("lyapunov_gpu", "Lyapunov exponent map (client-GPU twin of node 69)", 
           _FRACTAL_HELPERS + '''
 void main() {
     vec2 uv = v_uv;
-    // p1 = r_min, p2 = r_max, p3 = color_mode(0=lyapunov), p4 = color_shift.
+    // r_min / r_max are the logistic r-range (match node 69's real params);
+    // the A/B perturbation sequence and warmup/measure counts are choice/int
+    // controls (pitfall #14) left unmapped — the twin renders the default ABAB map.
     vec2 rmin = vec2(u_r_min, u_r_min);
     vec2 rmax = vec2(u_r_max, u_r_max);
     vec2 r = mix(rmin, rmax, uv);
@@ -8238,35 +8245,40 @@ _register("mandelbrot", 'Mandelbrot set zoom region', "procedural", '\nvoid main
   }
 })
 
-_register("julia", 'Julia set fractal', "procedural", '\nvoid main() {\n    vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);\n    vec2 c = vec2(u_c_re, u_c_im);\n    vec2 z = uv * exp((u_zoom - 0.5) * 3.0) * 3.0;\n    int n = 0;\n    float last2 = 0.0;\n    const float MAXI = 200.0;\n    for (int i = 0; i < 200; i++) {\n        z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;\n        last2 = dot(z, z);\n        if (last2 > 16.0) break;\n        n++;\n    }\n    float t = (n >= MAXI - 0.5) ? 0.0 : clamp((n + 1.0 - log(max(log(last2)*0.5, 1.0001))/log(2.0)) / MAXI, 0.0, 1.0);\n    f_color = vec4(0.5 + 0.5 * cos(t * 6.28318 + vec3(0.0, 2.0, 4.0) + u_color_shift * 6.28), 1.0);\n}\n',
+_register("julia", 'Julia set fractal (client-GPU twin of node 66)', "procedural",
+          '''
+void main() {
+    vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);
+    vec2 c = vec2(-0.7269, 0.1889);  // node 66's famous default constant (string param unmapped)
+    vec2 z = uv * 3.0;              // fixed full view (node 66 has no zoom param)
+    int n = 0;
+    float last2 = 0.0;
+    const float MAXI = 500.0;
+    for (int i = 0; i < 500; i++) {
+        z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
+        last2 = dot(z, z);
+        if (last2 > u_escape_radius * u_escape_radius || n >= u_iterations) break;
+        n++;
+    }
+    float t = (n >= u_iterations - 0.5) ? 0.0
+            : clamp((n + 1.0 - log(max(log(last2)*0.5, 1.0001))/log(2.0)) / u_iterations, 0.0, 1.0);
+    f_color = vec4(0.5 + 0.5 * cos(t * 6.28318 + vec3(0.0, 2.0, 4.0)), 1.0);
+}
+''',
           uniforms={
-  "c_re": {
+  "iterations": {
     "glsl": "float",
-    "min": -1.0,
-    "max": 1.0,
-    "default": -0.7269,
-    "description": "Julia constant real"
+    "min": 30.0,
+    "max": 500.0,
+    "default": 100,
+    "description": "max iterations"
   },
-  "c_im": {
+  "escape_radius": {
     "glsl": "float",
-    "min": -1.0,
-    "max": 1.0,
-    "default": 0.1889,
-    "description": "Julia constant imaginary"
-  },
-  "zoom": {
-    "glsl": "float",
-    "min": 0.0,
-    "max": 1.0,
-    "default": 0.5,
-    "description": "zoom (0.5 = full view)"
-  },
-  "color_shift": {
-    "glsl": "float",
-    "min": 0.0,
-    "max": 1.0,
-    "default": 0.5,
-    "description": "hue rotation"
+    "min": 1.5,
+    "max": 10.0,
+    "default": 2.0,
+    "description": "escape radius"
   }
 })
 

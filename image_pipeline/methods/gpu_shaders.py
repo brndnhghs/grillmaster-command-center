@@ -440,37 +440,46 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     "29": {"shader": "voronoi", "type": "procedural",
            "param_map": {"n_cells": "p1", "jitter": "p2"}},
     # ── P0.3 escape-time / deterministic fractals ──
-    # 33 Fractal Explorer (mandelbrot default): zoom via p1, color_shift p2,
-    # center p3/p4. Defaults (0.5) map to full view at center (-0.5, 0).
-    "33": {"shader": "mandelbrot_gpu", "type": "procedural",
-           "param_map": {"zoom": "p1", "color_shift": "p2",
-                         "center_x": "p3", "center_y": "p4"}},
-    # 51 Burning Ship: color_speed p1 (palette rotation), color_offset p2 (hue
-    # shift). The shader has no zoom uniform (it renders a fixed view), so zoom
-    # is intentionally NOT mapped. color_speed/color_offset are real params.
-    "51": {"shader": "burning_ship_gpu", "type": "procedural",
-           "param_map": {"color_speed": "p1", "color_offset": "p2"}},
-    # 52 Newton: color_speed p1 (palette rotation), color_offset p2 (hue
-    # shift). The shader's p3 slot is the internal zoom exp term with no
-    # corresponding user param (fixed view), so zoom is intentionally NOT
-    # mapped. color_speed/color_offset are real params.
-    "52": {"shader": "newton_gpu", "type": "procedural",
-           "param_map": {"color_speed": "p1", "color_offset": "p2"}},
-    # 66 Julia Set: p3 drives the shader's internal zoom exp term (0.5 = full
-    # view). No real "zoom" param exists (fixed view), so it is intentionally
-    # left unmapped. The Julia constant is a string param (pitfall #14) and is
-    # not mapped; the shader uses its own famous constant.
-    "66": {"shader": "julia", "type": "procedural",
-           "param_map": {}},
-    # 67 Sierpinski Carpet: depth p1 (1-7 detail). color_shift p2 was a stale
-    # key — the shader's p2 slot is a hue/color-offset term with no matching
-    # "color_shift" param; color_mode/palette_name are choice strings (pitfall
-    # #14) left unmapped. depth is the sole real numeric param.
-    "67": {"shader": "sierpinski_gpu", "type": "procedural",
-           "param_map": {"depth": "p1"}},
-    # 69 Lyapunov: r_min p1, r_max p2. color_mode/color_shift via p3/p4 if added.
-    "69": {"shader": "lyapunov_gpu", "type": "procedural",
-           "param_map": {"r_min": "p1", "r_max": "p2"}},
+    # Each legacy twin now carries `uniforms=` whose NAMES match the CPU node's
+    # REAL numeric params (contract #6: client typed-branch fills u_<name> from
+    # params[name], so the uniform name MUST equal the node param name or the
+    # live-preview slider is dead). `warp_strength`/`source`/choice params are
+    # string/domain-warp controls (pitfall #14) intentionally left unmapped —
+    # the twin is the closed-form parity preview; CPU numpy node is authoritative.
+    # 33 Fractal Explorer → mandelbrot_gpu. zoom/center_x/center_y/color_shift
+    # already match node 33; `iterations` added to the twin so the iter slider
+    # drives the preview (was frozen at MAXI=200).
+    "33": {"shader": "mandelbrot_gpu", "type": "procedural", "typed": True,
+           "param_map": {"zoom": "zoom", "center_x": "center_x",
+                         "center_y": "center_y", "iterations": "iterations",
+                         "color_shift": "color_shift"}},
+    # 51 Burning Ship → burning_ship_gpu. color_speed/color_offset already match
+    # node 51; `iterations` added so the iter slider is live (was frozen).
+    "51": {"shader": "burning_ship_gpu", "type": "procedural", "typed": True,
+           "param_map": {"color_speed": "color_speed", "color_offset": "color_offset",
+                         "iterations": "iterations"}},
+    # 52 Newton Fractal → newton_gpu. color_speed/color_offset match node 52;
+    # `max_iter` added so the iter slider is live (was frozen at MAXI=60).
+    "52": {"shader": "newton_gpu", "type": "procedural", "typed": True,
+           "param_map": {"color_speed": "color_speed", "color_offset": "color_offset",
+                         "max_iter": "max_iter"}},
+    # 66 Julia Set → julia. The old shader had NO uniforms= spec, so its
+    # live preview was FROZEN at the neutral zoom/center (Route #15 branch-1
+    # silent-bypass). Rewritten to carry `iterations`/`escape_radius` matching
+    # node 66's REAL numeric params; the Julia `constant` is a STRING param
+    # (pitfall #14) and uses the twin's own famous constant for the preview.
+    "66": {"shader": "julia", "type": "procedural", "typed": True,
+           "param_map": {"iterations": "iterations", "escape_radius": "escape_radius"}},
+    # 67 Sierpinski Carpet → sierpinski_gpu. `depth` matches node 67's REAL
+    # numeric param depth (1-7). `fractal_type`/`color_mode` are choice strings
+    # (pitfall #14) left unmapped.
+    "67": {"shader": "sierpinski_gpu", "type": "procedural", "typed": True,
+           "param_map": {"depth": "depth"}},
+    # 69 Lyapunov Fractal → lyapunov_gpu. r_min/r_max match node 69; `r_max`
+    # was read by the body but never declared in uniforms= (dead slider) — now
+    # declared. `sequence`/`warmup`/`measure` are choice/int (pitfall #14).
+    "69": {"shader": "lyapunov_gpu", "type": "procedural", "typed": True,
+           "param_map": {"r_min": "r_min", "r_max": "r_max"}},
     # ── P0.4 per-pixel filters ──
     # 12 Kaleidoscope → existing GPU twin (200). segments p1.
     "12": {"shader": "shader_kaleidoscope", "type": "filter",
