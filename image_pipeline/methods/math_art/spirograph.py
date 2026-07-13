@@ -173,9 +173,19 @@ def method_spirograph(out_dir, seed: int, params=None):
         N = min(200_000, max(4000, int(theta_max * 150.0)))
         d_eff = d0
         if anim_mode == "morph":
-            # Smooth pen oscillation — no cusp (offset sine).
-            d_eff = d0 * (0.35 + 0.65 * (0.5 + 0.5 * math.sin(_t * 0.4)))
+            # Smooth pen oscillation — no cusp (offset sine). Wide swing so the
+            # rosette visibly opens/closes across the animation.
+            d_eff = d0 * (0.1 + 0.9 * (0.5 + 0.5 * math.sin(_t * 0.5)))
         x, y = _spiro_points(R, r, d_eff, mode, theta_max, N)
+
+        # ── Fixed reference span (base geometry) ──
+        # CRITICAL (pitfall #19): normalize by a FIXED reference span derived
+        # from the BASE geometry (d0), never from the animated quantities. If we
+        # let d_eff or the post-animation span into the denominator, the breathe
+        # scale / morph pen-swing is divided straight back out and the slider
+        # does nothing (Δ≈0). With a fixed span, every animated frame is a real
+        # size/shape change that reaches the pixels.
+        base_span = ((R - r) + d0) if mode == "hypotrochoid" else ((R + r) + d0)
 
         # ── Animation transforms (continuous, no cusps) ──
         if anim_mode == "rotate":
@@ -183,11 +193,11 @@ def method_spirograph(out_dir, seed: int, params=None):
             ca, sa = math.cos(ang), math.sin(ang)
             x, y = x * ca - y * sa, x * sa + y * ca
         elif anim_mode == "breathe":
-            s = 0.55 + 0.45 * (0.5 + 0.5 * math.sin(_t * 0.5))
+            s = 0.4 + 0.6 * (0.5 + 0.5 * math.sin(_t * 0.5))
             x, y = x * s, y * s
 
-        # ── Map abstract units → centred pixels ──
-        span = max(np.abs(x).max(), np.abs(y).max()) + 1e-6
+        # ── Map abstract units → centred pixels (fixed span) ──
+        span = base_span + 1e-6
         scale = (0.46 * min(W, H)) / span
         cx, cy = W / 2.0, H / 2.0
         px = (x * scale + cx).astype(np.float64)
