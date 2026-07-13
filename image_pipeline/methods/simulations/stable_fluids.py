@@ -1,3 +1,49 @@
+"""#517 — Stable Fluids (real-time Navier–Stokes, Jos Stam 1999).
+
+A genuine grid-based incompressible-fluid solver — distinct from the
+*static* divergence-free ``curl_noise`` field (node 510) and the
+*particle* screen-space fluid surface (``screen_fluid``). This node
+advects a velocity field and a dye (density) field through a semi-Lagrangian
+stable solver with a Jacobi pressure-projection step, so the fluid genuinely
+*flows*, swirls, and mixes under moving force sources.
+
+Algorithm (Stam, "Real-Time Fluid Dynamics for Games", 1999):
+
+    ∂u/∂t = -(u·∇)u + ν∇²u - ∇p          (momentum, advected semi-Lagrangian)
+    ∇·u = 0                              (Hodge projection removes divergence)
+    ∂d/∂t = -(u·∇)d + κ∇²d + s           (dye/density advected by the flow)
+
+Step order per frame:
+    1. add force + dye sources (moving "splats")
+    2. diffuse velocity (viscosity) + project (make divergence-free)
+    3. self-advect velocity + project
+    4. diffuse + advect density
+    5. (optional) zero velocity/density inside circular obstacles
+
+The solver is unconditionally stable (semi-Lagrangian backtrace), so large
+time steps never blow up. The simulation runs on an internal square grid
+``N×N`` and is upscaled to the canvas.
+
+Animation — dual-phase (see grillmaster 8-step audit, pitfall #7):
+  * ``anim_mode != "none"`` → the executor re-calls this method once per
+    video frame with an increasing ``time`` value. The forcing *phase* is
+    driven by ``time * anim_speed``, so every re-call yields a different
+    developed fluid state → a valid (parameter-swept) animation.
+  * ``anim_mode == "none"`` (frame-capture path) → the executor calls once
+    and collects the frames captured *inside* the internal loop, whose phase
+    advances with ``frame/steps`` so the fluid continuously evolves.
+  Either way the clip moves; the "none" path is a seamless continuous flow,
+  the active modes sweep the stirring pattern.
+
+A wired upstream IMAGE (Rule 12) seeds the initial dye field from its
+luminance, so the fluid can be driven by / composited over another node.
+
+References:
+  - Stam, "Stable Fluids", SIGGRAPH 1999; "Real-Time Fluid Dynamics for
+    Games", GDC 2003.
+  - Bridson, "Fluid Simulation for Computer Graphics", 2nd ed., 2015.
+"""
+
 from __future__ import annotations
 
 import math
@@ -8,464 +54,445 @@ from PIL import Image
 
 from ...core.registry import method
 from ...core.utils import (
-    save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES, write_field, write_scalars,
+    save, mn, seed_all, W, H, BG_DEFAULT,
+    write_scalars, write_field, write_particles, wired_source_rgb,
 )
 from ...core.animation import capture_frame
 
 
-# ── Palette sampling ────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+#  Colour ramps (self-contained; no external palette dependency)
+# ─────────────────────────────────────────────────────────────────────────────
 
-def _sample_palette(pal: list[tuple[int, int, int]], t: float) -> tuple[int, int, int]:
-    """Sample a discrete RGB palette at float position t in [0, 1] (linear interp)."""
-    n = len(pal)
-    if n == 0:
-        return (200, 200, 200)
-    if n == 1:
-        return pal[0]
-    t = min(0.999999, max(0.0, t))
-    x = t * (n - 1)
-    i = int(x)
-    f = x - i
-    c0 = pal[i]
-    c1 = pal[min(i + 1, n - 1)]
-    return (
-        int(c0[0] * (1 - f) + c1[0] * f),
-        int(c0[1] * (1 - f) + c1[1] * f),
-        int(c0[2] * (1 - f) + c1[2] * f),
+_PALETTES = {
+    "inferno": [(0.0, (0.0, 0.0, 0.0)), (0.25, (0.30, 0.0, 0.45)),
+                (0.5, (0.80, 0.10, 0.20)), (0.75, (0.96, 0.50, 0.05)),
+                (1.0, (1.0, 1.0, 0.82))],
+    "turbo":   [(0.0, (0.10, 0.10, 0.55)), (0.25, (0.0, 0.70, 0.90)),
+                (0.5, (0.10, 0.85, 0.35)), (0.75, (0.95, 0.90, 0.10)),
+                (1.0, (0.80, 0.10, 0.05))],
+    "viridis": [(0.0, (0.13, 0.07, 0.30)), (0.33, (0.27, 0.40, 0.50)),
+                (0.66, (0.20, 0.70, 0.45)), (1.0, (0.98, 0.90, 0.20))],
+    "ice":     [(0.0, (0.0, 0.02, 0.09)), (0.4, (0.0, 0.25, 0.62)),
+                (0.75, (0.30, 0.75, 0.95)), (1.0, (0.96, 1.0, 1.0))],
+    "fire":    [(0.0, (0.0, 0.0, 0.0)), (0.3, (0.60, 0.05, 0.0)),
+                (0.6, (1.0, 0.40, 0.0)), (0.85, (1.0, 0.85, 0.20)),
+                (1.0, (1.0, 1.0, 0.90))],
+}
+
+
+def _ramp(name: str, t: np.ndarray) -> np.ndarray:
+    """Map t∈[0,1] (2D) to an RGB float image via piecewise-linear stops."""
+    stops = _PALETTES.get(name, _PALETTES["inferno"])
+    xs = np.array([s[0] for s in stops], dtype=np.float64)
+    cs = np.array([s[1] for s in stops], dtype=np.float64)
+    tv = t.ravel()
+    out = np.empty((tv.shape[0], 3), dtype=np.float64)
+    for c in range(3):
+        out[:, c] = np.interp(tv, xs, cs[:, c])
+    return out.reshape(t.shape[0], t.shape[1], 3).astype(np.float32)
+
+
+def _diverging(t: np.ndarray) -> np.ndarray:
+    """Map t∈[-1,1] (vorticity) to blue(−) → dark(0) → red(+) RGB."""
+    t = np.clip(t, -1.0, 1.0)
+    r = np.clip(t, 0.0, 1.0)
+    b = np.clip(-t, 0.0, 1.0)
+    g = 0.12 * np.ones_like(t)
+    return np.stack([r, g, b], axis=-1).astype(np.float32)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Stam stable-solver primitives (vectorised on the (N+2)² grid)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _set_bnd(N: int, b: int, x: np.ndarray) -> None:
+    """Boundary conditions. b: 0 scalar, 1 u (x-vel, reflect L/R), 2 v (y-vel)."""
+    if b == 1:
+        x[0, 1:N + 1] = -x[1, 1:N + 1]
+        x[N + 1, 1:N + 1] = -x[N, 1:N + 1]
+    else:
+        x[0, 1:N + 1] = x[1, 1:N + 1]
+        x[N + 1, 1:N + 1] = x[N, 1:N + 1]
+    if b == 2:
+        x[1:N + 1, 0] = -x[1:N + 1, 1]
+        x[1:N + 1, N + 1] = -x[1:N + 1, N]
+    else:
+        x[1:N + 1, 0] = x[1:N + 1, 1]
+        x[1:N + 1, N + 1] = x[1:N + 1, N]
+    x[0, 0] = 0.5 * (x[1, 0] + x[0, 1])
+    x[0, N + 1] = 0.5 * (x[1, N + 1] + x[0, N])
+    x[N + 1, 0] = 0.5 * (x[N, 0] + x[N + 1, 1])
+    x[N + 1, N + 1] = 0.5 * (x[N, N + 1] + x[N + 1, N])
+
+
+def _lin_solve(N: int, b: int, x: np.ndarray, x0: np.ndarray,
+               a: float, c: float, iters: int) -> None:
+    for _ in range(iters):
+        x[1:N + 1, 1:N + 1] = (
+            x0[1:N + 1, 1:N + 1]
+            + a * (x[2:, 1:N + 1] + x[:-2, 1:N + 1]
+                   + x[1:N + 1, 2:] + x[1:N + 1, :-2])
+        ) / c
+        _set_bnd(N, b, x)
+
+
+def _diffuse(N: int, b: int, x: np.ndarray, x0: np.ndarray,
+             diff: float, dt: float, iters: int) -> None:
+    a = dt * diff * N * N
+    if a <= 0.0:
+        x[1:N + 1, 1:N + 1] = x0[1:N + 1, 1:N + 1]
+        _set_bnd(N, b, x)
+        return
+    _lin_solve(N, b, x, x0, a, 1.0 + 4.0 * a, iters)
+
+
+def _advect(N: int, b: int, d: np.ndarray, d0: np.ndarray,
+            u: np.ndarray, v: np.ndarray, dt: float) -> None:
+    dt0 = dt * N
+    uu = u[1:N + 1, 1:N + 1]
+    vv = v[1:N + 1, 1:N + 1]
+    yy, xx = np.meshgrid(np.arange(1, N + 1), np.arange(1, N + 1), indexing="ij")
+    xb = xx - dt0 * uu
+    yb = yy - dt0 * vv
+    i0 = np.clip(np.floor(xb).astype(np.int64), 1, N)
+    i1 = np.clip(i0 + 1, 1, N)
+    j0 = np.clip(np.floor(yb).astype(np.int64), 1, N)
+    j1 = np.clip(j0 + 1, 1, N)
+    s1 = xb - np.floor(xb)
+    s0 = 1.0 - s1
+    t1 = yb - np.floor(yb)
+    t0 = 1.0 - t1
+    d00 = d0[j0, i0]
+    d01 = d0[j1, i0]
+    d10 = d0[j0, i1]
+    d11 = d0[j1, i1]
+    val = s0 * (t0 * d00 + t1 * d01) + s1 * (t0 * d10 + t1 * d11)
+    d[1:N + 1, 1:N + 1] = val
+    _set_bnd(N, b, d)
+
+
+def _project(N: int, u: np.ndarray, v: np.ndarray, p: np.ndarray,
+             div: np.ndarray, iters: int) -> None:
+    div[1:N + 1, 1:N + 1] = (
+        -0.5 * (u[2:, 1:N + 1] - u[:-2, 1:N + 1]
+                + v[1:N + 1, 2:] - v[1:N + 1, :-2]) / N
     )
+    p[1:N + 1, 1:N + 1] = 0.0
+    _set_bnd(N, 0, div)
+    _set_bnd(N, 0, p)
+    _lin_solve(N, 0, p, div, 1.0, 4.0, iters)
+    u[1:N + 1, 1:N + 1] -= 0.5 * N * (p[1:N + 1, 2:] - p[1:N + 1, :-2])
+    v[1:N + 1, 1:N + 1] -= 0.5 * N * (p[2:, 1:N + 1] - p[:-2, 1:N + 1])
+    _set_bnd(N, 1, u)
+    _set_bnd(N, 2, v)
 
 
-# ── Stable Fluids core (semi-Lagrangian, Stam 1999) ─────────────────────
-
-class _Fluid:
-    """Minimal 2D incompressible Navier-Stokes solver using Stam's stable
-    semi-Lagrangian advection with a Gauss-Seidel pressure projection.
-
-    Grid is (N+2) x (N+2): a 1-cell solid border surrounds an N x N interior.
-    Vectorized over the interior; the relaxation iterations are unrolled as
-    whole-grid array updates so they run at numpy speed.
-    """
-
-    def __init__(self, N: int):
-        self.N = N
-        self.size = N + 2
-        self.u = np.zeros((self.size, self.size), dtype=np.float32)
-        self.v = np.zeros((self.size, self.size), dtype=np.float32)
-        self.u0 = np.zeros((self.size, self.size), dtype=np.float32)
-        self.v0 = np.zeros((self.size, self.size), dtype=np.float32)
-        self.dens = np.zeros((self.size, self.size), dtype=np.float32)
-        self.dens0 = np.zeros((self.size, self.size), dtype=np.float32)
-        self.curl = np.zeros((self.size, self.size), dtype=np.float32)
-        self.wrap = False
-
-    # ── Boundary conditions ──
-    def set_bnd(self, b: int, x: np.ndarray) -> None:
-        s = self.size
-        if self.wrap:
-            # periodic
-            x[0, :] = x[s - 2, :]
-            x[s - 1, :] = x[1, :]
-            x[:, 0] = x[:, s - 2]
-            x[:, s - 1] = x[:, 1]
-            return
-        # walls: b==1 reflects x-velocity, b==2 reflects y-velocity
-        if b == 1:
-            x[0, :] = -x[1, :]
-            x[s - 1, :] = -x[s - 2, :]
-        elif b == 2:
-            x[:, 0] = -x[:, 1]
-            x[:, s - 1] = -x[:, s - 2]
-        else:
-            x[0, :] = x[1, :]
-            x[s - 1, :] = x[s - 2, :]
-        if b == 1:
-            x[:, 0] = -x[:, 1]
-            x[:, s - 1] = -x[:, s - 2]
-        elif b == 2:
-            x[0, :] = -x[1, :]
-            x[s - 1, :] = -x[s - 2, :]
-        else:
-            x[:, 0] = x[:, 1]
-            x[:, s - 1] = x[:, s - 2]
-        # corners
-        x[0, 0] = 0.5 * (x[1, 0] + x[0, 1])
-        x[0, s - 1] = 0.5 * (x[1, s - 1] + x[0, s - 2])
-        x[s - 1, 0] = 0.5 * (x[s - 2, 0] + x[s - 1, 1])
-        x[s - 1, s - 1] = 0.5 * (x[s - 2, s - 1] + x[s - 1, s - 2])
-
-    def lin_solve(self, b: int, x: np.ndarray, x0: np.ndarray, a: float, c: float, iters: int) -> None:
-        inv_c = 1.0 / c
-        for _ in range(iters):
-            x[1:-1, 1:-1] = (
-                x0[1:-1, 1:-1]
-                + a * (
-                    x[2:, 1:-1] + x[:-2, 1:-1]
-                    + x[1:-1, 2:] + x[1:-1, :-2]
-                )
-            ) * inv_c
-            self.set_bnd(b, x)
-
-    def diffuse(self, b: int, x: np.ndarray, x0: np.ndarray, diff: float, dt: float, iters: int) -> None:
-        a = dt * diff * self.N * self.N if diff > 0 else 0.0
-        if a == 0.0:
-            x[...] = x0
-            self.set_bnd(b, x)
-            return
-        self.lin_solve(b, x, x0, a, 1.0 + 4.0 * a, iters)
-
-    def advect(self, b: int, d: np.ndarray, d0: np.ndarray, u: np.ndarray, v: np.ndarray, dt: float) -> None:
-        N = self.N
-        dt0 = dt * N
-        x = np.arange(1, N + 1, dtype=np.float32)
-        # backtrace coordinate grids
-        bx = np.clip(x.reshape(1, -1) - dt0 * u[1:-1, 1:-1], 0.5, N + 0.5)
-        by = np.clip(x.reshape(-1, 1) - dt0 * v[1:-1, 1:-1], 0.5, N + 0.5)
-        i0 = bx.astype(np.int32)
-        j0 = by.astype(np.int32)
-        i1 = i0 + 1
-        j1 = j0 + 1
-        s1 = bx - i0
-        s0 = 1.0 - s1
-        t1 = by - j0
-        t0 = 1.0 - t1
-        d[1:-1, 1:-1] = (
-            s0 * (t0 * d0[i0, j0] + t1 * d0[i0, j1])
-            + s1 * (t0 * d0[i1, j0] + t1 * d0[i1, j1])
-        )
-        self.set_bnd(b, d)
-
-    def project(self, u: np.ndarray, v: np.ndarray, p: np.ndarray, div: np.ndarray, iters: int) -> None:
-        N = self.N
-        h = 1.0 / N
-        div[1:-1, 1:-1] = (
-            -0.5 * h * (
-                u[2:, 1:-1] - u[:-2, 1:-1]
-                + v[1:-1, 2:] - v[1:-1, :-2]
-            )
-        )
-        p[1:-1, 1:-1] = 0.0
-        self.set_bnd(0, div)
-        self.set_bnd(0, p)
-        self.lin_solve(0, p, div, 1.0, 4.0, iters)
-        u[1:-1, 1:-1] -= 0.5 * (p[2:, 1:-1] - p[:-2, 1:-1]) / h
-        v[1:-1, 1:-1] -= 0.5 * (p[1:-1, 2:] - p[1:-1, :-2]) / h
-        self.set_bnd(1, u)
-        self.set_bnd(2, v)
-
-    # ── Vorticity confinement (Fedkiw et al. 2001) ──
-    def vorticity_confinement(self, eps: float, dt: float) -> None:
-        if eps <= 0.0:
-            return
-        N = self.N
-        u = self.u
-        v = self.v
-        # curl w = dv/dx - du/dy
-        self.curl[1:-1, 1:-1] = (
-            0.5 * (
-                v[2:, 1:-1] - v[:-2, 1:-1]
-                - (u[1:-1, 2:] - u[1:-1, :-2])
-            )
-        )
-        w = self.curl
-        # gradient of |w| (interior only)
-        dw_dx = np.zeros_like(w)
-        dw_dy = np.zeros_like(w)
-        dw_dx[1:-1, 1:-1] = 0.5 * (np.abs(w[2:, 1:-1]) - np.abs(w[:-2, 1:-1]))
-        dw_dy[1:-1, 1:-1] = 0.5 * (np.abs(w[1:-1, 2:]) - np.abs(w[1:-1, :-2]))
-        mag = np.sqrt(dw_dx**2 + dw_dy**2) + 1e-5
-        nx = dw_dx / mag
-        ny = dw_dy / mag
-        # force = eps * (N_hat x w) , N_hat = (nx, ny); only interior contributes
-        w_int = w[1:-1, 1:-1]
-        fx = eps * dt * (ny[1:-1, 1:-1] * w_int)
-        fy = eps * dt * (-nx[1:-1, 1:-1] * w_int)
-        u[1:-1, 1:-1] += fx
-        v[1:-1, 1:-1] += fy
-        self.set_bnd(1, u)
-        self.set_bnd(2, v)
-
-    def step(self, dt: float, visc: float, diff: float, vorticity: float, iters: int, dissipation: float = 0.0) -> None:
-        # velocity step
-        self.vorticity_confinement(vorticity, dt)
-        self.u0[...] = self.u
-        self.v0[...] = self.v
-        self.diffuse(1, self.u0, self.u, visc, dt, iters)
-        self.diffuse(2, self.v0, self.v, visc, dt, iters)
-        self.project(self.u0, self.v0, self.u, self.v, iters)
-        self.advect(1, self.u, self.u0, self.u0, self.v0, dt)
-        self.advect(2, self.v, self.v0, self.u0, self.v0, dt)
-        self.project(self.u, self.v, self.u0, self.v0, iters)
-        if dissipation > 0.0:
-            damp = 1.0 - min(0.5, dissipation)
-            self.u[1:-1, 1:-1] *= damp
-            self.v[1:-1, 1:-1] *= damp
-        # safety clamp on speed (keeps the advection CFL-bounded & stable for all params)
-        sp = np.sqrt(self.u[1:-1, 1:-1] ** 2 + self.v[1:-1, 1:-1] ** 2)
-        cap = 50.0
-        over = sp > cap
-        if over.any():
-            self.u[1:-1, 1:-1][over] *= cap / sp[over]
-            self.v[1:-1, 1:-1][over] *= cap / sp[over]
-        # density step
-        self.dens0[...] = self.dens
-        self.diffuse(0, self.dens0, self.dens, diff, dt, iters)
-        self.advect(0, self.dens, self.dens0, self.u, self.v, dt)
+def _vel_step(N, u, v, u0, v0, visc, dt, iters):
+    # NOTE: Stam's C code SWAP()s pointers so the caller sees the swap. In numpy
+    # a local ``u, u0 = u0, u`` only rebinds names — the caller's arrays are
+    # unchanged — so we must keep the FINAL result in the passed-in u/v arrays
+    # by choosing buffer roles explicitly (no name-swapping). Getting this wrong
+    # leaves the result in the scratch buffer and makes the projection
+    # inconsistent → the velocity field diverges (umax → 1e15).
+    u += dt * u0                                  # add forces (u0/v0 = force)
+    v += dt * v0
+    _diffuse(N, 1, u0, u, visc, dt, iters)        # u0 = diffuse(source=u)
+    _diffuse(N, 2, v0, v, visc, dt, iters)        # v0 = diffuse(source=v)
+    _project(N, u0, v0, u, v, iters)              # make u0/v0 divergence-free
+    _advect(N, 1, u, u0, u0, v0, dt)              # u = advect(u0) along u0/v0
+    _advect(N, 2, v, v0, u0, v0, dt)              # v = advect(v0) along u0/v0
+    _project(N, u, v, u0, v0, iters)              # final divergence-free u/v
 
 
-@method(id="343", name="Stable Fluids", category="simulations", new_image_contract=True,
-        tags=["fluid", "navier-stokes", "smoke", "animation", "expanded"],
-        params={
-            "grid": {"description": "simulation resolution (interior cells)", "min": 64, "max": 256, "default": 192},
-            "iterations": {"description": "pressure/diffusion solver iterations", "min": 4, "max": 40, "default": 18},
-            "dt": {"description": "timestep", "min": 0.05, "max": 0.3, "default": 0.12},
-            "viscosity": {"description": "kinematic viscosity", "min": 0.0, "max": 0.0005, "default": 0.00001},
-            "diffusion": {"description": "dye diffusion", "min": 0.0, "max": 0.0002, "default": 0.00001},
-            "vorticity": {"description": "vorticity confinement strength", "min": 0.0, "max": 3.0, "default": 0.35},
-            "dissipation": {"description": "velocity damping per frame", "min": 0.0, "max": 0.1, "default": 0.01},
-            "force_scale": {"description": "injection force magnitude", "min": 0.2, "max": 6.0, "default": 1.8},
-            "fade": {"description": "dye fade per frame", "min": 0.0, "max": 0.05, "default": 0.004},
-            "emitter_mode": {"description": "force/dye injection pattern",
-                             "choices": ["dual_jet", "single_source", "shear_layer", "vortex_pair", "random"],
-                             "default": "dual_jet"},
-            "color_mode": {"description": "dye coloring",
-                           "choices": ["density", "speed", "vorticity", "curl"], "default": "density"},
-            "palette": {"description": "color palette name (vapor, cool, warm, sepia, amber, green, ...)", "default": "vapor"},
-            "boundary": {"description": "domain boundary", "choices": ["walls", "wrap"], "default": "walls"},
-            "anim_mode": {"description": "animation mode",
-                          "choices": ["none", "pulse", "rotate", "turbulence", "shear_osc",
-                                      "wander", "swirl", "force_sweep"], "default": "none"},
-            "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
-        },
-        outputs={"image": "IMAGE", "luminance": "SCALAR", "density": "FIELD"})
-def method_stable_fluids(out_dir: Path, seed: int, params: dict | None = None) -> Image.Image:
-    """Stable Fluids — real-time semi-Lagrangian Navier-Stokes (Stam 1999).
+def _dens_step(N, x, x0, u, v, diff, dt, iters):
+    x += dt * x0                                  # add dye source (x0)
+    _diffuse(N, 0, x0, x, diff, dt, iters)        # x0 = diffuse(source=x)
+    _advect(N, 0, x, x0, u, v, dt)                # x = advect(x0) along u/v
 
-    Solves the incompressible 2D Navier-Stokes equations on a grid using
-    Jos Stam's "Stable Fluids" method: unconditionally stable semi-Lagrangian
-    advection, Gauss-Seidel diffusion, and a pressure-projection step that
-    enforces a divergence-free velocity field. Enhanced with Fedkiw vorticity
-    confinement (2001) to restore the small-scale turbulent swirls that
-    numerical diffusion would otherwise smear out.
 
-    Dye is injected through animated emitters and advected by the velocity
-    field, producing smoke / ink-in-water visuals. Multiple emitter patterns
-    (dual-jet shear layer, single source plume, vortex pair, random) and
-    animation modes (pulse, rotate, turbulence, swirl, force sweep) drive the
-    flow over time.
+# ─────────────────────────────────────────────────────────────────────────────
+#  Force injection
+# ─────────────────────────────────────────────────────────────────────────────
 
-    Animation modes:
-      - none:       run to a settled state, output a single static frame
-      - pulse:      emitters breathe in/out (smooth sine)
-      - rotate:     emitter direction sweeps a full circle
-      - turbulence: stochastic forcing whose strength oscillates in time
-      - shear_osc:  shear-layer jet strength oscillates (Kelvin-Helmholtz roll-ups)
-      - wander:     jet center wanders along a Lissajous path
-      - swirl:      a global rotational bias spins the whole domain
-      - force_sweep: emitter position sweeps across the canvas
+def _inject(u0, v0, d0, N, cx, cy, fx, fy, dens_amp, radius):
+    y, x = np.ogrid[1:N + 1, 1:N + 1]
+    d2 = (x - cx) ** 2 + (y - cy) ** 2
+    bump = np.exp(-d2 / (2.0 * max(radius, 1e-3) ** 2))
+    d0[1:N + 1, 1:N + 1] += dens_amp * bump
+    u0[1:N + 1, 1:N + 1] += fx * bump
+    v0[1:N + 1, 1:N + 1] += fy * bump
+
+
+def _build_obstacles(N, n_obs, rng):
+    """Return a boolean (N+2,N+2) mask of obstacle cells (empty if n_obs==0)."""
+    if n_obs <= 0:
+        return None
+    mask = np.zeros((N + 2, N + 2), dtype=bool)
+    cx = N / 2.0
+    for _ in range(n_obs):
+        ang = rng.random() * 2 * math.pi
+        rad = (0.15 + 0.30 * rng.random()) * N / 2.0
+        ox = cx + rad * math.cos(ang)
+        oy = cx + rad * math.sin(ang)
+        r = (0.04 + 0.05 * rng.random()) * N
+        y, x = np.ogrid[1:N + 1, 1:N + 1]
+        mask[1:N + 1, 1:N + 1] |= (x - ox) ** 2 + (y - oy) ** 2 < r * r
+    return mask
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Main method
+# ─────────────────────────────────────────────────────────────────────────────
+
+@method(
+    id="517",
+    name="Stable Fluids",
+    category="simulations",
+    new_image_contract=True,
+    tags=["fluid", "navier-stokes", "stam", "simulation", "advection",
+          "turbulence", "dye", "realtime", "physics"],
+    inputs={},
+    outputs={"image": "IMAGE", "density": "FIELD", "luminance": "SCALAR",
+             "particles": "PARTICLES"},
+    params={
+        "resolution": {"description": "internal simulation grid (N×N, upscaled to canvas)",
+                       "min": 64, "max": 200, "default": 128},
+        "steps": {"description": "simulation steps per render (develops the fluid)",
+                  "min": 20, "max": 300, "default": 100},
+        "dt": {"description": "time step (larger = faster flow, stay < 0.4)",
+               "min": 0.04, "max": 0.35, "default": 0.12},
+        "viscosity": {"description": "velocity diffusion (higher = thicker/smoother)",
+                      "min": 0.0, "max": 0.0008, "default": 0.00002},
+        "diffusion": {"description": "dye diffusion (higher = blurrier dye)",
+                      "min": 0.0, "max": 0.0008, "default": 0.00002},
+        "force": {"description": "stirring force magnitude",
+                  "min": 0.5, "max": 12.0, "default": 5.0},
+        "density_amount": {"description": "dye injected per splat",
+                           "min": 0.2, "max": 12.0, "default": 3.0},
+        "splats": {"description": "number of moving force/dye sources",
+                   "min": 1, "max": 8, "default": 2},
+        "color_mode": {"description": "what to visualise",
+                       "choices": ["density", "speed", "vorticity"], "default": "density"},
+        "palette": {"description": "colour ramp for density/speed",
+                    "choices": ["inferno", "turbo", "viridis", "ice", "fire"],
+                    "default": "inferno"},
+        "obstacles": {"description": "circular obstacles the flow must avoid",
+                      "min": 0, "max": 8, "default": 0},
+        "anim_mode": {"description": "how the stirring pattern evolves across frames",
+                      "choices": ["none", "orbit", "pulse", "wander", "vortex"],
+                      "default": "orbit"},
+        "anim_speed": {"description": "animation speed multiplier",
+                       "min": 0.1, "max": 5.0, "default": 1.0},
+        "time": {"description": "animation phase [0, 2π) — set by the executor",
+                 "min": 0.0, "max": 6.2832, "default": 0.0},
+    },
+)
+def method_stable_fluids(out_dir: Path, seed: int, params=None):
+    """Stable Fluids — real-time semi-Lagrangian Navier–Stokes dye simulation.
+
+    Runs a grid-based incompressible-fluid solver (Stam 1999): a velocity field
+    and a dye/density field are advected, the velocity is made divergence-free
+    by a Jacobi pressure projection, and moving force "splats" stir the dye into
+    evolving swirls. The internal grid is N×N and upscaled to the canvas.
 
     Args:
-        out_dir: Output directory for the generated image.
-        seed: Random seed for deterministic output.
-        params: Dict with parameter overrides (see @method decorator).
+        out_dir: output directory.
+        seed: random seed for deterministic obstacle/splat layout.
+        params: see the ``params`` dict on the decorator.
     """
-    if params is None:
-        params = {}
+    try:
+        if params is None:
+            params = {}
 
-    # ── Param extraction ──
-    N = int(params.get("grid", 192))
-    N = max(64, min(256, N))
-    iters = int(params.get("iterations", 18))
-    iters = max(4, min(40, iters))
-    dt = float(params.get("dt", 0.12))
-    visc = float(params.get("viscosity", 0.00001))
-    diff = float(params.get("diffusion", 0.00001))
-    vorticity = float(params.get("vorticity", 0.35))
-    dissipation = float(params.get("dissipation", 0.01))
-    force_scale = float(params.get("force_scale", 1.8))
-    fade = float(params.get("fade", 0.004))
-    emitter_mode = params.get("emitter_mode", "dual_jet")
-    color_mode = params.get("color_mode", "density")
-    palette_name = params.get("palette", "plasma")
-    boundary = params.get("boundary", "walls")
-    anim_mode = params.get("anim_mode", "none")
-    anim_speed = float(params.get("anim_speed", 1.0))
-    n_frames = int(params.get("n_frames", 140))
-    n_frames = max(40, min(400, n_frames))
+        # ── Step 1: seed wiring ──
+        seed_all(seed)
+        rng = np.random.default_rng(seed)
 
-    anim_time = float(params.get("time", 0.0))
+        N = int(params.get("resolution", 128))
+        N = max(32, min(256, N))
+        steps = int(params.get("steps", 100))
+        steps = max(10, min(400, steps))
+        dt = float(params.get("dt", 0.12))
+        visc = float(params.get("viscosity", 0.00002))
+        diff = float(params.get("diffusion", 0.00002))
+        force = float(params.get("force", 5.0))
+        dens_amp = float(params.get("density_amount", 3.0))
+        n_splats = int(params.get("splats", 2))
+        color_mode = str(params.get("color_mode", "density"))
+        palette = str(params.get("palette", "inferno"))
+        n_obs = int(params.get("obstacles", 0))
+        anim_mode = str(params.get("anim_mode", "orbit"))
+        anim_speed = float(params.get("anim_speed", 1.0))
+        time = float(params.get("time", 0.0))
 
-    # ── Seed wiring ──
-    seed_all(seed)
-    rng = np.random.default_rng(seed)
+        iters = 14
+        vel_damp = 0.99
+        dens_damp = 0.999
+        # Keep the semi-Lagrangian backtrace within the grid (prevents the
+        # velocity field from blowing up to Inf/NaN on long continuous runs):
+        # a cell moving at vmax travels vmax·dt·N < N cells per step.
+        vmax = 0.9 / dt
 
-    # ── Palette ──
-    # "plasma" is not a key in PALETTES; fall back to a valid named ramp so the
-    # user-selectable palette system is actually used.
-    pal = PALETTES.get(palette_name) or PALETTES.get("vapor") or [
-        (20, 20, 60), (200, 60, 120), (250, 220, 120)
-    ]
+        # ── Fields (N+2)² with boundary ghost cells ──
+        u = np.zeros((N + 2, N + 2), dtype=np.float64)
+        v = np.zeros((N + 2, N + 2), dtype=np.float64)
+        dens = np.zeros((N + 2, N + 2), dtype=np.float64)
+        u0 = np.zeros((N + 2, N + 2), dtype=np.float64)
+        v0 = np.zeros((N + 2, N + 2), dtype=np.float64)
+        d0 = np.zeros((N + 2, N + 2), dtype=np.float64)
 
-    # ── Solver ──
-    f = _Fluid(N)
-    f.wrap = (boundary == "wrap")
+        obs_mask = _build_obstacles(N, n_obs, rng)
 
-    is_anim = anim_mode != "none"
-
-    # Emitter setup
-    s = f.size
-    cx = N // 2 + 1
-    cy = N // 2 + 1
-
-    def make_emitters(t_local: float):
-        """Return list of (gx, gy, fx, fy, dx, dy) injector specs for time t_local."""
-        inj = []
-        fs = force_scale
-        if emitter_mode == "dual_jet":
-            # two horizontal jets facing each other (shear layer) -> KH rollups
-            y1 = int(N * 0.5)
-            inj.append((int(N * 0.18), y1, fs, 0.0))
-            inj.append((int(N * 0.82), y1, -fs, 0.0))
-        elif emitter_mode == "single_source":
-            inj.append((cx, int(N * 0.7), 0.0, -fs * 1.4))
-        elif emitter_mode == "shear_layer":
-            for k in range(1, 6):
-                yy = int(N * k / 6.0)
-                inj.append((int(N * 0.15), yy, fs, 0.0))
-                inj.append((int(N * 0.85), yy, -fs, 0.0))
-        elif emitter_mode == "vortex_pair":
-            inj.append((int(N * 0.35), cy, 0.0, -fs))
-            inj.append((int(N * 0.65), cy, 0.0, fs))
-        else:  # random
-            for _ in range(3):
-                gx = int(rng.integers(8, N - 8))
-                gy = int(rng.integers(8, N - 8))
-                ang = rng.uniform(0, 2 * math.pi)
-                inj.append((gx, gy, math.cos(ang) * fs, math.sin(ang) * fs))
-        # animate emitter direction/position
-        out = []
-        for (gx, gy, fxv, fyv) in inj:
-            if anim_mode == "rotate":
-                ang = t_local * 0.5
-                fxv, fyv = fxv * math.cos(ang) - fyv * math.sin(ang), fxv * math.sin(ang) + fyv * math.cos(ang)
-            elif anim_mode == "force_sweep":
-                gx = int(N * (0.5 + 0.35 * math.sin(t_local * 0.4)))
-                gy = int(N * (0.5 + 0.35 * math.cos(t_local * 0.33)))
-            elif anim_mode == "wander":
-                gx = int(N * (0.5 + 0.35 * math.sin(t_local * 0.37 + 1.3)))
-                gy = int(N * (0.5 + 0.35 * math.cos(t_local * 0.29)))
-            out.append((gx, gy, fxv, fyv))
-        return out
-
-    def apply_injectors(inj, scale: float, dye: float):
-        for (gx, gy, fxv, fyv) in inj:
-            r = 4
-            for dy in range(-r, r + 1):
-                for dx in range(-r, r + 1):
-                    x = gx + dx
-                    y = gy + dy
-                    if 1 <= x < s - 1 and 1 <= y < s - 1:
-                        d = math.hypot(dx, dy)
-                        wgt = math.exp(-(d * d) / (r * r))
-                        f.u[y, x] += fxv * scale * wgt
-                        f.v[y, x] += fyv * scale * wgt
-                        f.dens[y, x] = min(1.0, f.dens[y, x] + dye * wgt)
-
-    # render helper — applies a contrast curve so the low-density, well-mixed
-    # dye field still reveals fine filament structure (smoke / ink wisps).
-    def _contrast(d_in: np.ndarray) -> np.ndarray:
-        return np.clip(np.power(np.clip(d_in, 0.0, 1.0), 0.45), 0.0, 1.0)
-
-    def render() -> np.ndarray:
-        interior = f.dens[1:-1, 1:-1]
-        d = _contrast(interior)
-        # background gray
-        bg = np.array(BG_DEFAULT, dtype=np.float32) / 255.0
-        rgb = np.empty((N, N, 3), dtype=np.float32)
-        if color_mode == "speed" or color_mode == "vorticity" or color_mode == "curl":
-            sp = np.sqrt(f.u[1:-1, 1:-1] ** 2 + f.v[1:-1, 1:-1] ** 2)
-            if color_mode == "vorticity" or color_mode == "curl":
-                sp = np.abs(f.curl[1:-1, 1:-1])
-            sv = norm(sp)
-            for c in range(3):
-                col = np.array([_sample_palette(pal, t)[c] for t in np.linspace(0, 1, len(pal))])
-                idx = np.clip(sv * (len(pal) - 1), 0, len(pal) - 1)
-                i0 = idx.astype(np.int32)
-                fr = idx - i0
-                ch = (1 - fr) * col[i0] + fr * col[np.minimum(i0 + 1, len(pal) - 1)]
-                rgb[:, :, c] = bg[c] + (ch / 255.0 - bg[c]) * d
-        else:  # density
-            for c in range(3):
-                col = np.array([pc[c] for pc in pal], dtype=np.float32)
-                idx = np.clip(d * (len(pal) - 1), 0, len(pal) - 1)
-                i0 = idx.astype(np.int32)
-                fr = idx - i0
-                ch = (1 - fr) * col[i0] + fr * col[np.minimum(i0 + 1, len(pal) - 1)]
-                rgb[:, :, c] = ch / 255.0
-        out = np.clip(rgb, 0.0, 1.0)
-        return out
-
-    # ══════════════ SIMULATION LOOP ══════════════
-    final_img = None
-    for frame in range(n_frames):
-        if is_anim:
-            _t = anim_time * anim_speed + (frame / max(1, n_frames)) * 4 * math.pi * anim_speed
+        # ── Wired upstream image seeds the initial dye (Rule 12) ──
+        wired = wired_source_rgb(params, N, N)
+        if wired is not None and wired.size > 0:
+            lum = wired[..., :3].mean(axis=-1).astype(np.float64)
+            lum = (lum - lum.min()) / (lum.max() - lum.min() + 1e-8)
+            dens[1:N + 1, 1:N + 1] = lum
         else:
-            _t = 0.0
+            # Seed a broad initial dye field so the velocity stirs it into
+            # rich marbling (otherwise a tiny splat is instantly shredded into
+            # near-invisible filaments). Seeded by rng for determinism.
+            for _ in range(n_splats + 2):
+                bx = rng.uniform(N * 0.2, N * 0.8)
+                by = rng.uniform(N * 0.2, N * 0.8)
+                rr = N * 0.13
+                y, x = np.ogrid[1:N + 1, 1:N + 1]
+                dens[1:N + 1, 1:N + 1] += 0.7 * np.exp(
+                    -((x - bx) ** 2 + (y - by) ** 2) / (2.0 * rr * rr))
+            dens[1:N + 1, 1:N + 1] = np.clip(dens[1:N + 1, 1:N + 1], 0.0, 1.0)
 
-        # per-frame emitter modulation
-        if anim_mode == "pulse":
-            scale = 0.6 + 0.4 * (0.5 + 0.5 * math.sin(_t * 0.6))
-            dye = 0.04 + 0.02 * (0.5 + 0.5 * math.sin(_t * 0.6))
-        elif anim_mode == "turbulence":
-            scale = 0.5 + 0.5 * (0.5 + 0.5 * math.sin(_t * 0.9))
-            dye = 0.04
-        elif anim_mode == "shear_osc":
-            scale = 0.5 + 0.5 * (0.5 + 0.5 * math.sin(_t * 0.8))
-            dye = 0.04
-        elif anim_mode == "swirl":
-            scale = 1.0
-            dye = 0.04
-        else:
-            scale = 1.0
-            dye = 0.04
+        cx0 = N / 2.0
+        cy0 = N / 2.0
+        orbit_r = N * 0.28
+        radius = max(3.0, N * 0.05)
 
-        inj = make_emitters(_t if is_anim else 0.0)
-        apply_injectors(inj, scale, dye)
+        # current splat positions (for PARTICLES output, final frame)
+        splat_pos = []
 
-        # global swirl bias
-        if anim_mode == "swirl":
-            yy, xx = np.mgrid[1:s - 1, 1:s - 1]
-            cyv = N / 2.0
-            cxv = N / 2.0
-            dy = yy - cyv
-            dx = xx - cxv
-            normv = np.sqrt(dx**2 + dy**2) + 1e-5
-            spin = 0.6 * (0.5 + 0.5 * math.sin(_t * 0.3))
-            f.u[1:-1, 1:-1] += (-dy / normv) * spin
-            f.v[1:-1, 1:-1] += (dx / normv) * spin
+        # ── Simulation + capture loop (Architecture A) ──
+        for fi in range(steps):
+            # Phase: re-call path uses external time; frame-capture path uses
+            # the internal step index so the fluid evolves continuously.
+            if anim_mode != "none":
+                _tp = time * anim_speed
+            else:
+                _tp = (fi / max(1, steps - 1)) * anim_speed
 
-        f.step(dt, visc, diff, vorticity, iters, dissipation)
+            u0.fill(0.0)
+            v0.fill(0.0)
+            d0.fill(0.0)
+            splat_pos = []
+            for k in range(n_splats):
+                phase = 2.0 * math.pi * k / max(1, n_splats)
+                if anim_mode == "pulse":
+                    ang = phase
+                    cx = cx0 + orbit_r * math.cos(ang)
+                    cy = cy0 + orbit_r * math.sin(ang)
+                    pulse = force * (0.2 + 0.8 * (0.5 + 0.5 * math.sin(_tp * 2.0 * math.pi * 2.0)))
+                    fx = -math.sin(ang) * pulse
+                    fy = math.cos(ang) * pulse
+                elif anim_mode == "wander":
+                    cx = cx0 + orbit_r * math.sin(3.0 * _tp * 2.0 * math.pi + phase)
+                    cy = cy0 + orbit_r * math.sin(2.0 * _tp * 2.0 * math.pi + phase * 1.3)
+                    fx = math.cos(3.0 * _tp * 2.0 * math.pi + phase) * force
+                    fy = math.cos(2.0 * _tp * 2.0 * math.pi + phase * 1.3) * force
+                elif anim_mode == "vortex":
+                    cx = cx0
+                    cy = cy0
+                    fx = -math.sin(phase) * force
+                    fy = math.cos(phase) * force
+                else:  # "orbit" and "none" use an orbiting source
+                    ang = phase + _tp * 2.0 * math.pi
+                    cx = cx0 + orbit_r * math.cos(ang)
+                    cy = cy0 + orbit_r * math.sin(ang)
+                    fx = -math.sin(ang) * force
+                    fy = math.cos(ang) * force
+                _inject(u0, v0, d0, N, cx, cy, fx, fy, dens_amp, radius)
+                splat_pos.append((cx, cy, fx, fy))
 
-        if fade > 0:
-            f.dens *= (1.0 - fade)
+            if anim_mode == "vortex":
+                # global rotational body force about the centre
+                yy, xx = np.ogrid[1:N + 1, 1:N + 1]
+                rx = xx - cx0
+                ry = yy - cy0
+                u0[1:N + 1, 1:N + 1] += (-ry) * force * 0.02
+                v0[1:N + 1, 1:N + 1] += (rx) * force * 0.02
 
-        if is_anim or frame == n_frames - 1:
-            arr = render()
-            final_img = Image.fromarray((np.clip(arr, 0, 1) * 255).astype(np.uint8))
-            if is_anim:
-                capture_frame("343", arr)
+            u *= vel_damp
+            v *= vel_damp
+            dens *= dens_damp
 
-    if final_img is None:
-        arr = render()
-        final_img = Image.fromarray((np.clip(arr, 0, 1) * 255).astype(np.uint8))
+            _vel_step(N, u, v, u0, v0, visc, dt, iters)
+            u = np.clip(u, -vmax, vmax)
+            v = np.clip(v, -vmax, vmax)
+            _dens_step(N, dens, d0, u, v, diff, dt, iters)
 
-    # ── Outputs ──
-    # Field output: density (H x W)
-    field = f.dens[1:-1, 1:-1]
-    if field.shape != (H, W):
-        tmp = Image.fromarray((np.clip(field, 0, 1) * 255).astype(np.uint8)).resize((W, H), Image.Resampling.BILINEAR)
-        field = np.array(tmp, dtype=np.float32) / 255.0
-    write_field(out_dir, field)
-    write_scalars(out_dir, mean_density=float(np.mean(field)))
-    save(final_img, mn(343, "Stable Fluids"), out_dir)
-    return final_img
+            if obs_mask is not None:
+                u[obs_mask] = 0.0
+                v[obs_mask] = 0.0
+                dens[obs_mask] = 0.0
+
+            # ── Render this frame ──
+            rgb = _render(N, u, v, dens, color_mode, palette)
+            capture_frame("517", rgb)
+
+        # ── Final composed output (canvas-sized) ──
+        rgb = _render(N, u, v, dens, color_mode, palette)
+        Wn, Hn = int(W), int(H)
+        pil = Image.fromarray((np.clip(rgb, 0.0, 1.0) * 255.0).astype(np.uint8))
+        out = np.array(pil.resize((Wn, Hn), Image.LANCZOS), dtype=np.float32) / 255.0
+
+        # ── Auxiliary outputs ──
+        dens_i = dens[1:N + 1, 1:N + 1]
+        write_field(out_dir, dens_i.astype(np.float32))
+        spd = np.sqrt(u[1:N + 1, 1:N + 1] ** 2 + v[1:N + 1, 1:N + 1] ** 2)
+        write_scalars(
+            out_dir,
+            max_speed=float(float(spd.max())),
+            kinetic_energy=float(float((spd ** 2).mean())),
+            mean_density=float(float(dens_i.mean())),
+            n_splats=float(n_splats),
+        )
+        if splat_pos:
+            arr = np.array(splat_pos, dtype=np.float32)  # (k,4): cx,cy,fx,fy
+            px = (arr[:, 0] / N * Wn).reshape(-1, 1)
+            py = (arr[:, 1] / N * Hn).reshape(-1, 1)
+            vx = arr[:, 2].reshape(-1, 1)
+            vy = arr[:, 3].reshape(-1, 1)
+            parts = np.concatenate([px, py, vx, vy], axis=-1).astype(np.float32)
+            write_particles(out_dir, parts)
+
+        save(out, mn(517, f"Stable Fluids {anim_mode}"), out_dir)
+        return out
+    except Exception as exc:
+        fallback = np.full((int(H), int(W), 3), 18, dtype=np.uint8)
+        save(fallback, mn(517, "Stable Fluids"), out_dir)
+        print(f"[method_517] ERROR: {exc}")
+        return fallback
+
+
+def _render(N, u, v, dens, color_mode, palette):
+    """Compose an N×N RGB float image in [0,1] from the current fields."""
+    if color_mode == "speed":
+        spd = np.sqrt(u[1:N + 1, 1:N + 1] ** 2 + v[1:N + 1, 1:N + 1] ** 2)
+        p99 = np.percentile(spd, 99) + 1e-6
+        t01 = np.clip(spd / p99, 0.0, 1.0)
+        rgb = _ramp(palette, t01)
+    elif color_mode == "vorticity":
+        u_int = u[1:N + 1, 1:N + 1]
+        v_int = v[1:N + 1, 1:N + 1]
+        dvdx = (v_int[:, 2:] - v_int[:, :-2]) * 0.5
+        dudy = (u_int[2:, :] - u_int[:-2, :]) * 0.5
+        curl = dvdx[1:-1, :] - dudy[:, 1:-1]  # (N-2, N-2)
+        cv = np.zeros((N, N), dtype=np.float64)
+        cv[1:-1, 1:-1] = curl
+        p99 = np.percentile(np.abs(cv), 99) + 1e-6
+        rgb = _diverging(cv / p99)
+    else:  # density
+        d = dens[1:N + 1, 1:N + 1]
+        dmax = d.max()
+        t01 = np.clip(d / (dmax + 1e-8), 0.0, 1.0) if dmax > 1e-6 else d * 0.0
+        rgb = _ramp(palette, t01)
+    return rgb.astype(np.float32)
