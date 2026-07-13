@@ -62,26 +62,84 @@ def _uncharted2(c: np.ndarray, key: float) -> np.ndarray:
     return np.clip(out, 0.0, 1.0)
 
 
+def _srgb_encode(c: np.ndarray) -> np.ndarray:
+    # sRGB OETF (linear [0,1] → sRGB display [0,1]).
+    c = np.clip(c, 0.0, 1.0)
+    return np.where(c <= 0.0031308, c * 12.92, 1.055 * (c ** (1.0 / 2.4)) - 0.055)
+
+
+# ── AgX (Troy Sobotka / Filament, adopted by Blender 4.0, 2023) ──
+# A scene-linear, matrix-based filmic tone mapper tuned for desaturation and
+# pleasant highlight rolloff. Three matrices: linear→AgX space, the look matrix
+# (optional grade), and AgX space→linear. The per-channel contrast approximation
+# is Filament's polynomial fit. Output is sRGB-encoded (display-ready).
+_AGX_M = np.array([
+    [0.842479062853662, 0.0423282422610123, 0.0423756542741196],
+    [0.0784335999999992, 0.878468636469662, 0.0784336],
+    [0.079223745147764, 0.0791661274605434, 0.879142973793104],
+], dtype=np.float32)
+_AGX_M_INV = np.array([
+    [1.19687900512017, -0.0528968517574562, -0.0529716355146663],
+    [-0.0980208811401368, 1.15190312990417, -0.0980434501171241],
+    [-0.0990297440797205, -0.0989611768448433, 1.15107367264116],
+], dtype=np.float32)
+_AGX_LOOKS = {
+    "none": np.eye(3, dtype=np.float32),
+    # "AgX Golden": warmer, slightly lifted
+    "golden": np.array([
+        [1.147220982, -0.042192627, -0.105131429],
+        [0.014661568, 1.035746895, -0.049728253],
+        [-0.001343032, 0.009162349, 0.919066668],
+    ], dtype=np.float32),
+    # "AgX Punchy": more saturation/contrast
+    "punchy": np.array([
+        [1.125599268, -0.038983671, -0.086685761],
+        [0.010284708, 1.056097987, -0.066294175],
+        [-0.004264267, 0.022689565, 0.871606535],
+    ], dtype=np.float32),
+}
+
+
+def _agx(c: np.ndarray, look: str = "none") -> np.ndarray:
+    """AgX filmic tone mapping. `c` is linear (exposure-pre-scaled), returns
+    sRGB-encoded display values in [0,1]."""
+    c = np.clip(np.asarray(c, dtype=np.float32), 0.0, None)
+    x = c @ _AGX_M.T
+    x2 = x * x
+    x4 = x2 * x2
+    # Filament contrast-approximation polynomial (per channel)
+    out = (15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4
+           - 6.868 * x2 * x + 0.4298 * x2 + 0.1191 * x - 0.00232)
+    out = np.clip(out, 0.0, None)
+    lm = _AGX_LOOKS.get(look, _AGX_LOOKS["none"])
+    out = out @ lm.T
+    out = np.clip(out, 0.0, None)
+    out = out @ _AGX_M_INV.T
+    out = np.clip(out, 0.0, None)
+    return _srgb_encode(out)
+
+
 _OPERATORS = {
     "reinhard": lambda c, p: _reinhard(c, p["key"]),
     "reinhard_ext": lambda c, p: _reinhard_ext(c, p["key"], p["lum"], p["white"]),
     "drago": lambda c, p: _drago(c, p["key"], p["bias"], p["max_lum"]),
     "aces": lambda c, p: _aces_filmic(c),
     "uncharted2": lambda c, p: _uncharted2(c, p["key"]),
+    "agx": lambda c, p: _agx(c, p["look"]),
 }
 
 
-@method(id='428', name='Photographic Tone Mapping', category='filters', new_image_contract=True, tags=['tonemap', 'hdr', 'exposure', 'photographic', 'color', 'expanded', 'animation'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE'}, params={'source': {'description': 'source (noise/gradient/input_image/palette/rainbow/procedural)', 'default': 'gradient'}, 'operator': {'description': 'tone mapping operator (reinhard/reinhard_ext/drago/aces/uncharted2)', 'choices': ['reinhard', 'reinhard_ext', 'drago', 'aces', 'uncharted2'], 'default': 'aces'}, 'exposure': {'description': 'exposure multiplier applied before the operator (EV, log2-ish)', 'min': 0.1, 'max': 8.0, 'default': 1.6}, 'gamma': {'description': 'output gamma (display encoding; 1.0=linear, 2.2=approx sRGB)', 'min': 0.6, 'max': 3.0, 'default': 2.2}, 'saturation': {'description': 'color saturation boost after tonemap (0=gray, 1.5=punchy)', 'min': 0.0, 'max': 2.0, 'default': 1.15}, 'key': {'description': 'Reinhard family brightness key (operator scale)', 'min': 0.3, 'max': 3.0, 'default': 1.0}, 'white': {'description': 'shoulder white point for reinhard_ext (high=brighter highlights)', 'min': 1.0, 'max': 16.0, 'default': 8.0}, 'lum': {'description': 'shoulder luminance rolloff for reinhard_ext', 'min': 0.5, 'max': 1.5, 'default': 1.0}, 'bias': {'description': 'Drago log bias (lower=brighter midtones)', 'min': 0.3, 'max': 0.9, 'default': 0.85}, 'noise_amp': {'description': 'noise amplitude for generated sources', 'min': 0.1, 'max': 1.0, 'default': 0.8}, 'blur_sigma': {'description': 'gaussian blur sigma for noise source', 'min': 5, 'max': 80, 'default': 30}, 'palette': {'description': 'palette name for palette source', 'default': 'vapor'}, 'anim_mode': {'description': 'animation mode (none/exposure_sweep/operator_cycle/gamma_pulse)', 'choices': ['none', 'exposure_sweep', 'operator_cycle', 'gamma_pulse'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 5.0, 'default': 1.0}})
+@method(id='428', name='Photographic Tone Mapping', category='filters', new_image_contract=True, tags=['tonemap', 'hdr', 'exposure', 'photographic', 'color', 'expanded', 'animation'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE'}, params={'source': {'description': 'source (noise/gradient/input_image/palette/rainbow/procedural)', 'default': 'gradient'}, 'operator': {'description': 'tone mapping operator (reinhard/reinhard_ext/drago/aces/uncharted2/agx)', 'choices': ['reinhard', 'reinhard_ext', 'drago', 'aces', 'uncharted2', 'agx'], 'default': 'aces'}, 'exposure': {'description': 'exposure multiplier applied before the operator (EV, log2-ish)', 'min': 0.1, 'max': 8.0, 'default': 1.6}, 'gamma': {'description': 'output gamma (display encoding; 1.0=linear, 2.2=approx sRGB)', 'min': 0.6, 'max': 3.0, 'default': 2.2}, 'saturation': {'description': 'color saturation boost after tonemap (0=gray, 1.5=punchy)', 'min': 0.0, 'max': 2.0, 'default': 1.15}, 'look': {'description': 'AgX look grade (none/golden/punchy) — only used when operator=agx', 'choices': ['none', 'golden', 'punchy'], 'default': 'none'}, 'key': {'description': 'Reinhard family brightness key (operator scale)', 'min': 0.3, 'max': 3.0, 'default': 1.0}, 'white': {'description': 'shoulder white point for reinhard_ext (high=brighter highlights)', 'min': 1.0, 'max': 16.0, 'default': 8.0}, 'lum': {'description': 'shoulder luminance rolloff for reinhard_ext', 'min': 0.5, 'max': 1.5, 'default': 1.0}, 'bias': {'description': 'Drago log bias (lower=brighter midtones)', 'min': 0.3, 'max': 0.9, 'default': 0.85}, 'noise_amp': {'description': 'noise amplitude for generated sources', 'min': 0.1, 'max': 1.0, 'default': 0.8}, 'blur_sigma': {'description': 'gaussian blur sigma for noise source', 'min': 5, 'max': 80, 'default': 30}, 'palette': {'description': 'palette name for palette source', 'default': 'vapor'}, 'anim_mode': {'description': 'animation mode (none/exposure_sweep/operator_cycle/gamma_pulse)', 'choices': ['none', 'exposure_sweep', 'operator_cycle', 'gamma_pulse'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 5.0, 'default': 1.0}})
 def method_tone_mapping(out_dir: Path, seed: int, params=None):
     """Photographic Tone Mapping — map HDR-ish radiance to a displayable LDR image.
 
     Implements the classic photographic tone-mapping operators that turn a
     high-dynamic-range luminance field into a perceptually-tuned low-dynamic-range
     picture (Reinhard 2002; Drago et al. 2003; the ACES filmic fit of Narkowicz
-    2016; and the Uncharted-2 / Hable filmic curve). These are the "look" curves
-    behind every HDR photo and real-time renderer — and they also make a great
-    stylizing pass on ordinary LDR images: a gradient or noise field run through
-    ACES or Uncharted-2 gets a filmic shoulder and a punchy, contrasty look.
+    2016; the Uncharted-2 / Hable filmic curve; and AgX — Troy Sobotka's
+    scene-linear matrix filmic operator adopted by Blender 4.0 in 2023). These
+    are the "look" curves behind every HDR photo and real-time renderer — and
+    they also make a great stylizing pass on ordinary LDR images.
 
     Pipeline: build/resolve a source field → scale by exposure → apply the chosen
     operator (per-channel, which is the standard real-time approximation; for the
@@ -91,7 +149,8 @@ def method_tone_mapping(out_dir: Path, seed: int, params=None):
 
     Params:
         source:    generated source type (noise/gradient/input_image/palette/rainbow/procedural)
-        operator:  reinhard / reinhard_ext / drago / aces / uncharted2
+        operator:  reinhard / reinhard_ext / drago / aces / uncharted2 / agx
+        look:      AgX look grade (none/golden/punchy); only used when operator=agx
         exposure:  pre-operator EV multiplier (0.1-8, default 1.6)
         gamma:     output display gamma (0.6-3.0, default 2.2)
         saturation: post-tonemap saturation (0-2, default 1.15)
@@ -117,6 +176,9 @@ def method_tone_mapping(out_dir: Path, seed: int, params=None):
         exposure = float(params.get("exposure", 1.6))
         gamma = float(params.get("gamma", 2.2))
         saturation = float(params.get("saturation", 1.15))
+        look = str(params.get("look", "none"))
+        if look not in _AGX_LOOKS:
+            look = "none"
         key = float(params.get("key", 1.0))
         white = float(params.get("white", 8.0))
         lum = float(params.get("lum", 1.0))
@@ -192,13 +254,16 @@ def method_tone_mapping(out_dir: Path, seed: int, params=None):
             op_name = names[int((_t / (2 * math.pi)) * len(names)) % len(names)]
 
         op_params = {"key": key, "lum": lum, "white": white, "bias": bias,
-                     "max_lum": float(np.maximum(img, 1e-4).max())}
+                     "max_lum": float(np.maximum(img, 1e-4).max()),
+                     "look": look}
         mapped = _OPERATORS[op_name](img, op_params)
 
         # ── Per-channel Reinhard variants are luminance-equivalent for our
-        # tonal sources; keep channels then gamma + saturation. ──
+        # tonal sources; keep channels then gamma + saturation. AgX already
+        # returns sRGB-encoded display values, so skip the gamma power for it. ──
         out = np.clip(mapped, 0.0, 1.0)
-        out = np.power(out, 1.0 / max(0.01, gamma))
+        if op_name != "agx":
+            out = np.power(out, 1.0 / max(0.01, gamma))
 
         # Saturation: lerp around luminance
         if saturation != 1.0:
