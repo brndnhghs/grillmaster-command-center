@@ -270,3 +270,10 @@
 - ACTION THIS RUN: implemented SUB-PROBLEM 3 (liveness metric) — Spectral-Liveness Rescue in evaluator.py + config.py. Coherent low-amplitude oscillation (slow breathe/phase-shift) is amplitude-invisible to temporal_var and motion_pixel_frac, so it was culled as static/flat; the new FFT temporal-spectrum check (sharp normalized peak over AC-active pixels) rescues it. Verified headlessly: low-amp coherent (global + localized) → ALIVE (spec_peak 0.98–1.0) while frozen (active_frac=0) and flat-noise (spec_peak 0.09) stay DEAD. 4 new regression tests in test_shootout.py, all 9 evaluator tests pass. Added UI knob spectral_corr_min to TUNABLE_FIELDS. Expected effect: lower the static/flat dead-rate without reviving flicker/noise.
 - RECOMMENDED NEXT: sub-problem 4 (mutation/crossover operators — grammar-aware semantic edits: swap a motif, retarget a driver — vs numeric noise) OR persist top-rated genome_ids into /api/shootout/config seed_ids + advisor.avoid_methods intake (both still-open capability gaps; avoid_methods would let the static/flat signal feed back WITHOUT an LLM).
 
+
+## 2026-07-13T00:00Z — autonomous run (AgX tone mapping added to node 428)
+- top-3 rated ids (real probe): g-e181c881(5), g-328f0d37(5), g-e3d68069(5) — origin mix explorer/random, gen 0
+- dead-rate: 345/525 = 66%; renders >150s (watchdog-culled): 126
+- cheap-alive (wall<30s, recombine seeds): 107 / 180 alive
+- evolution stuck at gen 0–1 (451 gen0, 74 gen1) → stagnation signal; recommend widening explore_ratio / mutation count via /api/shootout/config
+- action taken this run: implemented AgX (Blender 4.0 filmic) operator on existing node 428; not a new node (avoid adding to dead-count). Candidate promotion left to config hook (no seed_ids intake confirmed present; noted gap).

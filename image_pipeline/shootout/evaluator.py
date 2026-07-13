@@ -121,6 +121,12 @@ class LivenessAccumulator:
         spec = np.abs(np.fft.rfft(centered, axis=0))                # (k, h, w)
         spec = spec[1:] if spec.shape[0] > 1 else spec             # drop DC bin
         ac_energy = spec.sum(axis=0)                                # (h, w) total AC
+        # NOTE: spectral_ac is the GLOBAL mean AC over every pixel, so a
+        # localized oscillation (small moving object on a dark canvas) has a
+        # near-zero global AC and fails any absolute-AC floor — that is the
+        # bug this fix addresses. ``spectral_ac_active`` measures the mean AC
+        # ONLY over pixels that actually carry AC energy, which is the real
+        # "is there a genuine oscillation somewhere" signal.
         spectral_ac = float(ac_energy.mean()) if ac_energy.size else 0.0
         if ac_energy.size and ac_energy.max() > 0:
             # Normalized peak per pixel (0 where there is no AC energy).
@@ -129,10 +135,12 @@ class LivenessAccumulator:
             norm[nz] = spec.max(axis=0)[nz] / ac_energy[nz]
             active_frac = float(nz.mean())
             spectral_peak = float(norm[nz].mean()) if nz.any() else 0.0
+            spectral_ac_active = float(ac_energy[nz].mean()) if nz.any() else 0.0
         else:
             norm = np.zeros_like(ac_energy) if ac_energy.size else np.zeros((1,), np.float32)
             active_frac = 0.0
             spectral_peak = 0.0
+            spectral_ac_active = 0.0
 
         reason = None
         if self.nan:
@@ -160,8 +168,8 @@ class LivenessAccumulator:
                     and frame_corr >= cfg.rescue_corr_max):
                 reason = None
             elif (spectral_peak >= cfg.spectral_corr_min
-                    and spectral_ac >= cfg.spectral_ac_min
-                    and active_frac >= cfg.motion_pixel_frac_min):
+                    and spectral_ac_active >= cfg.spectral_ac_min
+                    and active_frac >= cfg.spectral_coverage_min):
                 # Amplitude metrics (temporal_var, motion_pixel_frac) missed this
                 # clip because the motion is LOW-AMPLITUDE but COHERENT (a sharp
                 # spectral peak over a meaningful fraction of the frame). A
@@ -196,6 +204,7 @@ class LivenessAccumulator:
             "motion_pixel_frac": round(motion_pixel_frac, 4),
             "spectral_peak": round(spectral_peak, 4),
             "spectral_ac": round(spectral_ac, 6),
+            "spectral_ac_active": round(spectral_ac_active, 6),
             "spectral_active_frac": round(active_frac, 4),
             "frame_drop": self.missing,
         }

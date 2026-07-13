@@ -159,6 +159,38 @@ def test_evaluator_spectral_rescue_localized_coherent():
     assert s["spectral_peak"] >= CFG.spectral_corr_min, s
 
 
+def test_evaluator_spectral_rescue_sparse_small_coverage():
+    """Regression (Route 8, 2026-07-13): a SMALL localized coherent breathing
+    blob whose coverage is BELOW the 3% motion-rescue floor (≈1.3% of pixels)
+    is genuinely alive but was wrongly culled as 'flat'/'static' under the old
+    spectral rescue, which reused ``motion_pixel_frac_min`` (0.03) as its
+    coverage floor. The dedicated ``spectral_coverage_min`` (0.01) + per-active-
+    pixel AC floor must now rescue it, while a single flickering pixel
+    (coverage < 0.01) must stay dead. This is exactly the pipeline's
+    sparse-content niche (thin strokes / small particles, pitfall #13)."""
+    yy, xx = np.mgrid[0:64, 0:96]
+    m = ((yy - 32) ** 2 + (xx - 48) ** 2) <= 25   # ~81 px / 6144 ≈ 1.3%
+    def f(i):
+        a = np.full((64, 96, 3), 0.05, np.float32)
+        # clean unclipped coherent breathe: dot oscillates 0.1..0.9 (stays in [0,1])
+        a[m] = 0.5 + 0.4 * float(np.sin(2 * np.pi * i / 16.0))
+        return a
+    s = evaluate_frames(_stack(f, n=48), CFG)
+    assert s["alive"], s
+    assert s["spectral_peak"] >= CFG.spectral_corr_min, s
+    # coverage must be under the old 3% floor or this test does not exercise
+    # the bug it claims to (it would pass on the old code too).
+    assert s["spectral_active_frac"] < CFG.motion_pixel_frac_min, s
+
+    # Control: a single periodic pixel (~1.6e-5 coverage) must NOT be rescued.
+    def g(i):
+        a = np.full((64, 96, 3), 0.05, np.float32)
+        a[10, 20] = 0.05 + 0.4 * (0.5 + 0.5 * float(np.sin(2 * np.pi * i / 8.0)))
+        return a
+    s2 = evaluate_frames(_stack(g, n=48), CFG)
+    assert not s2["alive"], s2
+
+
 def test_evaluator_frozen_not_spectral_rescued():
     """A frozen frame has no AC energy, so the spectral rescue must NOT admit
     it (guards against a spurious numerical single-bin FFT peak)."""

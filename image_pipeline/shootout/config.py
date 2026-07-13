@@ -110,7 +110,20 @@ class ShootoutConfig:
     # admitted). Strictly non-destructive: only ever flips static/flat ->
     # alive, never reverse.
     spectral_corr_min: float = 0.7    # mean normalized spectral-peak above this ⇒ coherent oscillation
-    spectral_ac_min: float = 1e-4     # absolute AC-energy floor so a frozen frame is never rescued
+    spectral_ac_min: float = 1e-4     # absolute AC-energy floor (over ACTIVE pixels) so a frozen frame is never rescued
+    # Coverage floor for the SPECTRAL rescue, decoupled from
+    # ``motion_pixel_frac_min`` (which gates the perceptual motion rescue). A
+    # localized coherent oscillation — a single translating particle, a thin
+    # stroke being drawn, a small bright element breathing on a dark canvas —
+    # is exactly this pipeline's niche (see pitfall #13: keep lines/dots thin)
+    # but covers < 3% of the frame, so the motion rescue's 3% floor wrongly
+    # culls it as "flat"/"static". The spectral rescue already proves the
+    # motion is REAL via a sharp normalized peak (flicker can't fake it) and
+    # via per-active-pixel AC energy (a frozen frame has no active pixels), so
+    # a small coverage floor here only has to stop a single flickering pixel
+    # from being admitted — 1% is plenty. Lowering it from 3% (the shared
+    # floor) rescues sparse-but-genuinely-alive content without reviving noise.
+    spectral_coverage_min: float = 0.01
 
     # ── Rendering ─────────────────────────────────────────────────
     render_concurrency: int = 3
