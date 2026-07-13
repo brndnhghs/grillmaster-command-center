@@ -50,7 +50,7 @@ from image_pipeline.methods.gpu_shaders import GPU_SHADER_NODE_MAP
 #             161, 477, 480 ...) + P1 sim additions.
 # 237 -> 241: +4 categorical-coverage client-GPU shims for recent
 #             gpu-twin-candidate CPU nodes (431, 432, 433, 464).
-EXPECTED_MAP_ENTRIES = 250
+EXPECTED_MAP_ENTRIES = 251
 
 # Simulations-category CPU nodes that are intentionally NOT GPU-mirrored yet.
 # These are Architecture-A stateful sims (discrete CA, agent/particle systems,
@@ -60,9 +60,15 @@ EXPECTED_MAP_ENTRIES = 250
 DEFERRED_SIM_IDS = set(
     "20 34 35 36 55 79 83 84 86 88 89 90 92 94 97 98 101 102 103 "
     "107 109 110 111 112 113 114 116 117 123 129 130 131 134 "
-    "136 145 147 149 151 152 158 159 167 337 343 429 440 448 922 310 "
-    "483 484".split()
+    "136 145 147 149 151 152 158 159 167 337 429 440 448 922 310 "
+    "483 484 517".split()
 )
+# 517 Stable Fluids: Arch-A Stam semi-Lagrangian Navier-Stokes solver (advect
+# velocity + pressure-projection Jacobian iteration, explicit over many
+# substeps, capture_frame per frame). Its honest GPU twin is a WebGL2 ping-pong
+# sim needing browser parity -- same deferral class as the other RD/CA/PDE
+# sims above. Out of scope for headless verification until P2 (WebGPU compute)
+# is signed off.
 # 484 Animated Line Integral Convolution: Arch-A flow-visualization sim that
 # advects a dense noise texture along streamlines of a time-evolving curl-noise
 # field (per-pixel forward/backward streamline integration + convolution gather,

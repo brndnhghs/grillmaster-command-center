@@ -161,7 +161,7 @@ def test_gpu_shader_node_map_resolves():
     #             302-308) and P1 sim additions.
     # 237 -> 241: +4 categorical-coverage client-GPU shims for recent
     #             gpu-twin-candidate CPU nodes (431, 432, 433, 464).
-    assert len(GPU_SHADER_NODE_MAP) == 250, len(GPU_SHADER_NODE_MAP)
+    assert len(GPU_SHADER_NODE_MAP) == 251, len(GPU_SHADER_NODE_MAP)
     for mid, entry in GPU_SHADER_NODE_MAP.items():
         if entry.get("type") == "sim":
             # P1 ping-pong sim: seed/step/display must all resolve to shaders.

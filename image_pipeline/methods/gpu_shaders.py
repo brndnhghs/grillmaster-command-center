@@ -528,6 +528,15 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # `use_lab`/`palette`/`dither` are string choices (pitfall #14), unmapped.
     "422": {"shader": "dither_palette_gpu", "type": "filter", "typed": True,
             "param_map": {"levels": "levels", "dither_scale": "dither_scale"}},
+    # 339 Tonal Hatching → typed-uniform twin (tonal_hatching_gpu). The node's
+    # REAL numeric params are mapped by name (contract #5); `paper`/`ink_tone`
+    # are string choices left unmapped (pitfall #14) so the preview uses the
+    # canonical light-paper / black-ink look. CPU fn stays authoritative for
+    # every paper/ink palette + the flow/weave/breathe animation modes.
+    "339": {"shader": "tonal_hatching_gpu", "type": "filter", "typed": True,
+            "param_map": {"spacing": "spacing", "line_width": "line_width",
+                          "layers": "layers", "angle": "angle",
+                          "contrast": "contrast"}},
     # ── P0.5 LUT / color ──
     # 11 Gradient: cx/cy are already in [0,1] so they map cleanly onto the
     # twin's center params (0.5 = middle). `direction` (0-360°) and
