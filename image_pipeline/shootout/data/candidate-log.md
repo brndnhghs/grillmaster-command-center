@@ -109,3 +109,4 @@
   -> good liveness, low render cost, strong driver modulation. Directly addresses
   the two dominant shootout failure modes: the >150s render-cost cull and the
   contrast-only liveness cull. Pushed as its own commit.
+- 2026-07-12 | dead=315/467 (67%) | cheap-alive=94/152 | top-rated=[g-e181c881@5, g-328f0d37@5, g-97f1158a@5] | action=added node 483 (Curl Noise Flow) — divergence-free flow that churns structurally (80% px move) + palette-cycle for robust liveness; counters the dominance of dead driver/control nodes in the genome pool
