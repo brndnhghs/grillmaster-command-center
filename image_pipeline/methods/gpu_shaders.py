@@ -306,6 +306,11 @@ _TYPED_SHADER_NODES = [
     # locally controllable frequency + orientation. Renders the PHASE, not the
     # magnitude — distinct from any Perlin/Gabor magnitude node.
     ("322", "phasor_noise_gpu",      "GPU Phasor Noise"),
+    # Node 323: Raymarched 3D Gyroid TPMS — sphere-traced triply-periodic
+    # minimal surface with lambert+specular shading and orbiting camera.
+    # Distinct from node 301 (flat 2D scalar-field slice): full 3D volume with
+    # depth, self-occlusion and lighting.
+    ("323", "gyroid_raymarch_typed", "GPU Raymarched Gyroid"),
 ]
 
 _TIME_SCALE_PARAM = {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0}

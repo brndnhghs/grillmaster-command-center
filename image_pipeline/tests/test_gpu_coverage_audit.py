@@ -50,7 +50,7 @@ from image_pipeline.methods.gpu_shaders import GPU_SHADER_NODE_MAP
 #             161, 477, 480 ...) + P1 sim additions.
 # 237 -> 241: +4 categorical-coverage client-GPU shims for recent
 #             gpu-twin-candidate CPU nodes (431, 432, 433, 464).
-EXPECTED_MAP_ENTRIES = 251
+EXPECTED_MAP_ENTRIES = 252
 
 # Simulations-category CPU nodes that are intentionally NOT GPU-mirrored yet.
 # These are Architecture-A stateful sims (discrete CA, agent/particle systems,

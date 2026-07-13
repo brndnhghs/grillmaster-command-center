@@ -411,3 +411,9 @@
 - TESTS: added `test_terminal_variance_guard_alive_probe_timeout_does_not_wedge` — monkeypatches `evaluator.render_stack` to HANG 30s, sets `terminal_variance_alive_timeout_s=1.0`, asserts `ensure_terminal_variance` returns in <5s (proves the timeout, not a fast exception, bounds the call). New test passes in 2.1s; sim-head repair tests still pass (1.26s); `from image_pipeline.server import app` imports clean (Rule 8).
 - ACTION: verified headlessly and committed the orphaned batch as one coherent feat(shootout) commit. Did NOT bundle any unrelated tree changes.
 - RECOMMENDATION (carried): dead-rate headline still partly misleading (control/signal utility nodes emit no image). Next honest Route-8 step = exclude pure-control __*__ types from the dead-rate denominator (evolution-research.md sub-problem #3) before declaring Route 8 done.
+
+## 2026-07-13 — autonomous run (feat: raymarched 3D gyroid TPMS, node 323)
+- Shootout corpus: genomes=525 alive=180 dead/rejected=345 (66%) renders>150s=126 human-ratings=18. Dead hotspots are pure-control utility nodes (__lfo__ 868, __counter__ 239, __noise1d__ 134, __ramp__ 108) which emit NO image — a metric artifact (dead-rate denominator includes control nodes). Carried recommendation stands: exclude pure-control __*__ types from the dead-rate denominator (evolution-research.md #3).
+- CHEAP-ALIVE recombine seeds=107; RATED=18 (still rating-signal poor). Top ratings all 3-5 with no motifs tagged; no seed_ids/prefer_ids promotion hook confirmed present — NOTED as missing capability (unchanged).
+- Feature THIS run is CG-facing, not shootout-facing: raymarched 3D gyroid TPMS.
+- ACTION taken: recorded manifest; no evolution machinery change this run (rotated research index untouched — CG feature took the slot).
