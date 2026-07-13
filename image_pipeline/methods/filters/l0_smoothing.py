@@ -79,26 +79,7 @@ def _l0_smooth_channel(S: np.ndarray, lam: float, beta_max: float = 1e5) -> np.n
     return np.clip(Sbar, 0.0, 1.0).astype(np.float32)
 
 
-@method(
-    id="347",
-    name="L0 Smooth",
-    category="filters",
-    new_image_contract=True,
-    tags=["abstraction", "edge-aware", "smoothing", "cartoon", "pencil", "expanded", "animation"],
-    inputs={},
-    outputs={"image": "IMAGE"},
-    params={
-        "source": {"description": "source (noise/gradient/input_image/palette/rainbow/procedural)", "default": "procedural"},
-        "lambda": {"description": "L0 gradient sparsity weight — LOWER = stronger smoothing (fewer edges kept)", "min": 0.004, "max": 0.08, "default": 0.02},
-        "blend": {"description": "mix original source back in (0=pure L0 smooth, 1=original)", "min": 0.0, "max": 1.0, "default": 0.0},
-        "noise_amp": {"description": "noise amplitude for generated sources", "min": 0.1, "max": 1.0, "default": 0.35},
-        "blur_sigma": {"description": "gaussian blur sigma for noise source (more detail for L0 to flatten)", "min": 2, "max": 80, "default": 12},
-        "palette": {"description": "palette name for palette source", "default": "vapor"},
-        "time": {"min": 0.0, "max": 6.28, "default": 0.0},
-        "anim_mode": {"description": "animation mode (none/lambda_sweep/blend_sweep)", "choices": ["none", "lambda_sweep", "blend_sweep"], "default": "none"},
-        "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
-    },
-)
+@method(id='347', name='L0 Smooth', category='filters', new_image_contract=True, tags=['abstraction', 'edge-aware', 'smoothing', 'cartoon', 'pencil', 'expanded', 'animation'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE'}, params={'source': {'description': 'source (noise/gradient/input_image/palette/rainbow/procedural)', 'default': 'procedural'}, 'lambda': {'description': 'L0 gradient sparsity weight — LOWER = stronger smoothing (fewer edges kept)', 'min': 0.004, 'max': 0.08, 'default': 0.02}, 'blend': {'description': 'mix original source back in (0=pure L0 smooth, 1=original)', 'min': 0.0, 'max': 1.0, 'default': 0.0}, 'noise_amp': {'description': 'noise amplitude for generated sources', 'min': 0.1, 'max': 1.0, 'default': 0.35}, 'blur_sigma': {'description': 'gaussian blur sigma for noise source (more detail for L0 to flatten)', 'min': 2, 'max': 80, 'default': 12}, 'palette': {'description': 'palette name for palette source', 'default': 'vapor'}, 'time': {'min': 0.0, 'max': 6.28, 'default': 0.0}, 'anim_mode': {'description': 'animation mode (none/lambda_sweep/blend_sweep)', 'choices': ['none', 'lambda_sweep', 'blend_sweep'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 5.0, 'default': 1.0}})
 def method_l0_smooth(out_dir: Path, seed: int, params=None):
     """L0 Gradient Minimization Smoothing — edge-preserving structure abstraction.
 

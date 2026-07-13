@@ -19,27 +19,7 @@ from ...core.animation import capture_frame
 _MAX_SIDE = 220
 
 
-@method(
-    id="449",
-    name="Mean Shift Filter",
-    category="filters",
-    new_image_contract=True,
-    tags=["smoothing", "segmentation", "painterly", "edge-preserving", "fast", "expanded", "animation"],
-    inputs={},
-    outputs={"image": "IMAGE"},
-    params={
-        "source": {"description": "source (perlin/gradient/rainbow/input_image)", "default": "perlin"},
-        "spatial_radius": {"description": "spatial window radius in px (smoothing extent)", "min": 2, "max": 12, "default": 6},
-        "range_radius": {"description": "color-range radius as % of [0,1] (coarser = flatter regions)", "min": 2, "max": 60, "default": 20},
-        "iterations": {"description": "mean-shift iterations (mode-convergence passes)", "min": 1, "max": 8, "default": 5},
-        "noise_amp": {"description": "detail amplitude for generated sources", "min": 0.1, "max": 1.0, "default": 0.9},
-        "blur_sigma": {"description": "pre-blur sigma for generated source", "min": 0.0, "max": 12.0, "default": 0.0},
-        "mode": {"description": "output mode (smooth=filtered, edges=what was removed)", "choices": ["smooth", "edges"], "default": "smooth"},
-        "anim_mode": {"description": "animation mode (none/hr_breathe/mix_pulse)", "choices": ["none", "hr_breathe", "mix_pulse"], "default": "none"},
-        "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
-        "time": {"description": "animation clock [0, 2pi)", "min": 0.0, "max": 6.28, "default": 0.0},
-    },
-)
+@method(id='449', name='Mean Shift Filter', category='filters', new_image_contract=True, tags=['smoothing', 'segmentation', 'painterly', 'edge-preserving', 'fast', 'expanded', 'animation'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE'}, params={'source': {'description': 'source (perlin/gradient/rainbow/input_image)', 'default': 'perlin'}, 'spatial_radius': {'description': 'spatial window radius in px (smoothing extent)', 'min': 2, 'max': 12, 'default': 6}, 'range_radius': {'description': 'color-range radius as % of [0,1] (coarser = flatter regions)', 'min': 2, 'max': 60, 'default': 20}, 'iterations': {'description': 'mean-shift iterations (mode-convergence passes)', 'min': 1, 'max': 8, 'default': 5}, 'noise_amp': {'description': 'detail amplitude for generated sources', 'min': 0.1, 'max': 1.0, 'default': 0.9}, 'blur_sigma': {'description': 'pre-blur sigma for generated source', 'min': 0.0, 'max': 12.0, 'default': 0.0}, 'mode': {'description': 'output mode (smooth=filtered, edges=what was removed)', 'choices': ['smooth', 'edges'], 'default': 'smooth'}, 'anim_mode': {'description': 'animation mode (none/hr_breathe/mix_pulse)', 'choices': ['none', 'hr_breathe', 'mix_pulse'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 5.0, 'default': 1.0}, 'time': {'description': 'animation clock [0, 2pi)', 'min': 0.0, 'max': 6.28, 'default': 0.0}})
 def method_mean_shift(out_dir: Path, seed: int, params=None):
     """Edge-preserving mean-shift filter (Comaniciu & Meer, 2002).
 

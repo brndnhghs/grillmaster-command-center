@@ -16,26 +16,7 @@ except ImportError:
     _has_cv2 = False
 
 
-@method(
-    id="423",
-    name="Image Quilting",
-    category="filters",
-    new_image_contract=True,
-    tags=["texture", "synthesis", "quilting", "npr", "efros-leung", "expanded"],
-    inputs={},
-    outputs={"image": "IMAGE"},
-    params={
-        "exemplar": {"description": "exemplar texture when no image is wired in (procedural/noise/checker/voronoi)",
-                     "choices": ["procedural", "noise", "checker", "voronoi"], "default": "procedural"},
-        "tile_size": {"description": "quilt patch size in px", "min": 16, "max": 128, "default": 48},
-        "overlap": {"description": "overlap between adjacent patches in px (seam-cut region)", "min": 4, "max": 32, "default": 16},
-        "candidates": {"description": "number of random exemplar patches searched per quilt position", "min": 20, "max": 600, "default": 200},
-        "noise_amp": {"description": "detail amplitude for generated exemplars", "min": 0.1, "max": 1.0, "default": 0.5},
-        "anim_mode": {"description": "animation mode (none=static / reseed=re-synthesize each frame from a per-frame seed)",
-                      "choices": ["none", "reseed"], "default": "none"},
-        "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
-    },
-)
+@method(id='423', name='Image Quilting', category='filters', new_image_contract=True, tags=['texture', 'synthesis', 'quilting', 'npr', 'efros-leung', 'expanded'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE'}, params={'exemplar': {'description': 'exemplar texture when no image is wired in (procedural/noise/checker/voronoi)', 'choices': ['procedural', 'noise', 'checker', 'voronoi'], 'default': 'procedural'}, 'tile_size': {'description': 'quilt patch size in px', 'min': 16, 'max': 128, 'default': 48}, 'overlap': {'description': 'overlap between adjacent patches in px (seam-cut region)', 'min': 4, 'max': 32, 'default': 16}, 'candidates': {'description': 'number of random exemplar patches searched per quilt position', 'min': 20, 'max': 600, 'default': 200}, 'noise_amp': {'description': 'detail amplitude for generated exemplars', 'min': 0.1, 'max': 1.0, 'default': 0.5}, 'anim_mode': {'description': 'animation mode (none=static / reseed=re-synthesize each frame from a per-frame seed)', 'choices': ['none', 'reseed'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 5.0, 'default': 1.0}, 'source': {'description': 'wired upstream image as a domain-warp / seed source', 'choices': ['none', 'input_image'], 'default': 'none'}})
 def method_image_quilting(out_dir: Path, seed: int, params=None):
     """Image Quilting — example-based texture synthesis.
 

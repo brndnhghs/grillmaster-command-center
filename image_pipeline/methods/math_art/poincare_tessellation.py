@@ -217,6 +217,9 @@ def method_poincare_tessellation(out_dir: Path, seed: int, params=None):
         seed_all(seed)
         rng = np.random.default_rng(seed)
 
+        # ── Wired image as a luminance modulation source ──
+        _src_lum = wired_source_lum(params, int(W), int(H)) if str(params.get("source", "none")) == "input_image" else None
+
         p = int(np.clip(params.get("p", 7), 3, 12))
         q = int(np.clip(params.get("q", 3), 3, 12))
         p, q = _valid_pq(p, q)
@@ -341,6 +344,8 @@ def method_poincare_tessellation(out_dir: Path, seed: int, params=None):
         write_mask(out_dir, mask.astype(np.float32))
 
         capture_frame("452", canvas)
+        if _src_lum is not None:
+            canvas = np.clip(canvas * (0.4 + 0.6 * _src_lum[..., None]), 0.0, 1.0)
         save(canvas, mn(452, f"Poincaré Tessellation t={_t:.2f}"), out_dir)
         return canvas
     except Exception as exc:

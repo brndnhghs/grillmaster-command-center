@@ -115,29 +115,7 @@ def _sample(arr: np.ndarray, px: np.ndarray, py: np.ndarray,
             + arr[y1c, x0c] * w01 + arr[y1c, x1c] * w11)
 
 
-@method(id="425", name="Horizon Ambient Occlusion", category="patterns",
-        tags=["procedural", "ao", "ambient-occlusion", "hillshade", "relief",
-              "height-field", "rendering", "animation"],
-        inputs={"field_in": "FIELD"},
-        outputs={"image": "IMAGE", "ao": "FIELD", "height": "FIELD"},
-        params={
-    "freq": {"description": "noise frequency of the procedural height field", "min": 1.0, "max": 12.0, "default": 5.0},
-    "octaves": {"description": "fbm octaves for the procedural height field", "min": 1, "max": 6, "default": 4},
-    "height_scale": {"description": "world height per unit luminance — drives AO strength", "min": 0.2, "max": 6.0, "default": 2.0},
-    "radius": {"description": "AO sampling radius in pixels", "min": 4, "max": 64, "default": 24},
-    "directions": {"description": "number of azimuth rays (more = smoother, slower)", "min": 3, "max": 16, "default": 8},
-    "steps": {"description": "horizon samples per ray", "min": 4, "max": 32, "default": 16},
-    "jitter": {"description": "per-pixel disk rotation amount (breaks banding)", "min": 0.0, "max": 1.0, "default": 1.0},
-    "mode": {"description": "output composition: ao, shaded, or height", "default": "shaded"},
-    "light_az": {"description": "light azimuth in degrees (shaded / rotate_light)", "min": 0, "max": 360, "default": 135},
-    "light_el": {"description": "light elevation in degrees", "min": 5, "max": 85, "default": 45},
-    "ambient": {"description": "ambient term of the hillshade combine", "min": 0.0, "max": 1.0, "default": 0.3},
-    "contrast": {"description": "tone contrast of the AO display", "min": 0.5, "max": 3.0, "default": 1.0},
-    "colormode": {"description": "output color (grayscale/steel/amber/inferno/spectral)", "default": "steel"},
-    "anim_mode": {"description": "animation mode: none, evolve, drift, rotate_light", "default": "none"},
-    "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
-    "time": {"description": "animation phase [0, 2pi)", "min": 0.0, "max": 6.28, "default": 0.0},
-})
+@method(id='425', name='Horizon Ambient Occlusion', category='patterns', tags=['procedural', 'ao', 'ambient-occlusion', 'hillshade', 'relief', 'height-field', 'rendering', 'animation'], inputs={'field_in': 'FIELD', 'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'ao': 'FIELD', 'height': 'FIELD'}, params={'freq': {'description': 'noise frequency of the procedural height field', 'min': 1.0, 'max': 12.0, 'default': 5.0}, 'octaves': {'description': 'fbm octaves for the procedural height field', 'min': 1, 'max': 6, 'default': 4}, 'height_scale': {'description': 'world height per unit luminance — drives AO strength', 'min': 0.2, 'max': 6.0, 'default': 2.0}, 'radius': {'description': 'AO sampling radius in pixels', 'min': 4, 'max': 64, 'default': 24}, 'directions': {'description': 'number of azimuth rays (more = smoother, slower)', 'min': 3, 'max': 16, 'default': 8}, 'steps': {'description': 'horizon samples per ray', 'min': 4, 'max': 32, 'default': 16}, 'jitter': {'description': 'per-pixel disk rotation amount (breaks banding)', 'min': 0.0, 'max': 1.0, 'default': 1.0}, 'mode': {'description': 'output composition: ao, shaded, or height', 'default': 'shaded'}, 'light_az': {'description': 'light azimuth in degrees (shaded / rotate_light)', 'min': 0, 'max': 360, 'default': 135}, 'light_el': {'description': 'light elevation in degrees', 'min': 5, 'max': 85, 'default': 45}, 'ambient': {'description': 'ambient term of the hillshade combine', 'min': 0.0, 'max': 1.0, 'default': 0.3}, 'contrast': {'description': 'tone contrast of the AO display', 'min': 0.5, 'max': 3.0, 'default': 1.0}, 'colormode': {'description': 'output color (grayscale/steel/amber/inferno/spectral)', 'default': 'steel'}, 'anim_mode': {'description': 'animation mode: none, evolve, drift, rotate_light', 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 3.0, 'default': 1.0}, 'time': {'description': 'animation phase [0, 2pi)', 'min': 0.0, 'max': 6.28, 'default': 0.0}, 'source': {'description': 'wired upstream image as a domain-warp / seed source', 'choices': ['none', 'input_image'], 'default': 'none'}})
 def method_horizon_ao(out_dir, seed: int, params=None):
     """Horizon-Based Ambient Occlusion (HBAO) for a height field.
 

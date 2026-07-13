@@ -262,6 +262,9 @@ def method_spherical_harmonics(out_dir: Path, seed: int, params=None):
     seed_all(seed)
     rng = np.random.default_rng(seed)
 
+    # ── Wired image as a luminance modulation source ──
+    _src_lum = wired_source_lum(params, int(W), int(H)) if str(params.get("source", "none")) == "input_image" else None
+
     is_evolve = anim_mode != "none"
     if is_evolve and t > 0.01:
         n_frames = max(60, int(60 + t * anim_speed * 25))
@@ -446,6 +449,10 @@ def method_spherical_harmonics(out_dir: Path, seed: int, params=None):
 
     if img is None:
         img = Image.new("RGB", (W, H), DARK_BG)
+    if _src_lum is not None:
+        _ia = np.array(img, dtype=np.float32) / 255.0
+        _ia = np.clip(_ia * (0.4 + 0.6 * _src_lum[..., None]), 0.0, 1.0)
+        img = Image.fromarray((_ia * 255.0).astype(np.uint8))
     capture_frame("104", np.array(img, dtype=np.float32) / 255.0)
     save(img, mn(104, "Spherical Harmonics"), out_dir)
     return img

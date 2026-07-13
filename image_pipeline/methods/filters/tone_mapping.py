@@ -71,31 +71,7 @@ _OPERATORS = {
 }
 
 
-@method(
-    id="428",
-    name="Photographic Tone Mapping",
-    category="filters",
-    new_image_contract=True,
-    tags=["tonemap", "hdr", "exposure", "photographic", "color", "expanded", "animation"],
-    inputs={},
-    outputs={"image": "IMAGE"},
-    params={
-        "source": {"description": "source (noise/gradient/input_image/palette/rainbow/procedural)", "default": "gradient"},
-        "operator": {"description": "tone mapping operator (reinhard/reinhard_ext/drago/aces/uncharted2)", "choices": ["reinhard", "reinhard_ext", "drago", "aces", "uncharted2"], "default": "aces"},
-        "exposure": {"description": "exposure multiplier applied before the operator (EV, log2-ish)", "min": 0.1, "max": 8.0, "default": 1.6},
-        "gamma": {"description": "output gamma (display encoding; 1.0=linear, 2.2=approx sRGB)", "min": 0.6, "max": 3.0, "default": 2.2},
-        "saturation": {"description": "color saturation boost after tonemap (0=gray, 1.5=punchy)", "min": 0.0, "max": 2.0, "default": 1.15},
-        "key": {"description": "Reinhard family brightness key (operator scale)", "min": 0.3, "max": 3.0, "default": 1.0},
-        "white": {"description": "shoulder white point for reinhard_ext (high=brighter highlights)", "min": 1.0, "max": 16.0, "default": 8.0},
-        "lum": {"description": "shoulder luminance rolloff for reinhard_ext", "min": 0.5, "max": 1.5, "default": 1.0},
-        "bias": {"description": "Drago log bias (lower=brighter midtones)", "min": 0.3, "max": 0.9, "default": 0.85},
-        "noise_amp": {"description": "noise amplitude for generated sources", "min": 0.1, "max": 1.0, "default": 0.8},
-        "blur_sigma": {"description": "gaussian blur sigma for noise source", "min": 5, "max": 80, "default": 30},
-        "palette": {"description": "palette name for palette source", "default": "vapor"},
-        "anim_mode": {"description": "animation mode (none/exposure_sweep/operator_cycle/gamma_pulse)", "choices": ["none", "exposure_sweep", "operator_cycle", "gamma_pulse"], "default": "none"},
-        "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
-    },
-)
+@method(id='428', name='Photographic Tone Mapping', category='filters', new_image_contract=True, tags=['tonemap', 'hdr', 'exposure', 'photographic', 'color', 'expanded', 'animation'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE'}, params={'source': {'description': 'source (noise/gradient/input_image/palette/rainbow/procedural)', 'default': 'gradient'}, 'operator': {'description': 'tone mapping operator (reinhard/reinhard_ext/drago/aces/uncharted2)', 'choices': ['reinhard', 'reinhard_ext', 'drago', 'aces', 'uncharted2'], 'default': 'aces'}, 'exposure': {'description': 'exposure multiplier applied before the operator (EV, log2-ish)', 'min': 0.1, 'max': 8.0, 'default': 1.6}, 'gamma': {'description': 'output gamma (display encoding; 1.0=linear, 2.2=approx sRGB)', 'min': 0.6, 'max': 3.0, 'default': 2.2}, 'saturation': {'description': 'color saturation boost after tonemap (0=gray, 1.5=punchy)', 'min': 0.0, 'max': 2.0, 'default': 1.15}, 'key': {'description': 'Reinhard family brightness key (operator scale)', 'min': 0.3, 'max': 3.0, 'default': 1.0}, 'white': {'description': 'shoulder white point for reinhard_ext (high=brighter highlights)', 'min': 1.0, 'max': 16.0, 'default': 8.0}, 'lum': {'description': 'shoulder luminance rolloff for reinhard_ext', 'min': 0.5, 'max': 1.5, 'default': 1.0}, 'bias': {'description': 'Drago log bias (lower=brighter midtones)', 'min': 0.3, 'max': 0.9, 'default': 0.85}, 'noise_amp': {'description': 'noise amplitude for generated sources', 'min': 0.1, 'max': 1.0, 'default': 0.8}, 'blur_sigma': {'description': 'gaussian blur sigma for noise source', 'min': 5, 'max': 80, 'default': 30}, 'palette': {'description': 'palette name for palette source', 'default': 'vapor'}, 'anim_mode': {'description': 'animation mode (none/exposure_sweep/operator_cycle/gamma_pulse)', 'choices': ['none', 'exposure_sweep', 'operator_cycle', 'gamma_pulse'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 5.0, 'default': 1.0}})
 def method_tone_mapping(out_dir: Path, seed: int, params=None):
     """Photographic Tone Mapping — map HDR-ish radiance to a displayable LDR image.
 

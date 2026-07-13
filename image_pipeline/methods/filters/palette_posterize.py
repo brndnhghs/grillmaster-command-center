@@ -28,32 +28,7 @@ _BAYER = np.array([
 ], dtype=np.float32)
 
 
-@method(
-    id="422",
-    name="Palette Posterize",
-    category="filters",
-    new_image_contract=True,
-    tags=["posterize", "quantize", "palette", "dither", "abstraction", "fast", "expanded"],
-    inputs={},
-    outputs={"image": "IMAGE"},
-    params={
-        "source": {"description": "source (noise/gradient/input_image/palette/rainbow/procedural)",
-                   "default": "noise"},
-        "levels": {"description": "palette size / color levels per channel (2-32)", "min": 2, "max": 32, "default": 16},
-        "dither": {"description": "dither mode (none/ordered/floyd_steinberg)",
-                   "choices": ["none", "ordered", "floyd_steinberg"], "default": "ordered"},
-        "dither_scale": {"description": "dither amplitude (0=hard quantization, 4=strong spread)",
-                         "min": 0.0, "max": 4.0, "default": 2.0},
-        "palette": {"description": "palette for palette-quantize mode (none=rgb quantization)", "default": "vapor"},
-        "use_lab": {"description": "quantize in perceptual CIELAB space (vs RGB)",
-                    "choices": ["true", "false"], "default": "true"},
-        "noise_amp": {"description": "noise amplitude for generated sources", "min": 0.1, "max": 1.0, "default": 0.35},
-        "blur_sigma": {"description": "gaussian blur sigma for noise source", "min": 5, "max": 80, "default": 30},
-        "anim_mode": {"description": "animation mode (none/palette_cycle)",
-                      "choices": ["none", "palette_cycle"], "default": "none"},
-        "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
-    },
-)
+@method(id='422', name='Palette Posterize', category='filters', new_image_contract=True, tags=['posterize', 'quantize', 'palette', 'dither', 'abstraction', 'fast', 'expanded'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE'}, params={'source': {'description': 'source (noise/gradient/input_image/palette/rainbow/procedural)', 'default': 'noise'}, 'levels': {'description': 'palette size / color levels per channel (2-32)', 'min': 2, 'max': 32, 'default': 16}, 'dither': {'description': 'dither mode (none/ordered/floyd_steinberg)', 'choices': ['none', 'ordered', 'floyd_steinberg'], 'default': 'ordered'}, 'dither_scale': {'description': 'dither amplitude (0=hard quantization, 4=strong spread)', 'min': 0.0, 'max': 4.0, 'default': 2.0}, 'palette': {'description': 'palette for palette-quantize mode (none=rgb quantization)', 'default': 'vapor'}, 'use_lab': {'description': 'quantize in perceptual CIELAB space (vs RGB)', 'choices': ['true', 'false'], 'default': 'true'}, 'noise_amp': {'description': 'noise amplitude for generated sources', 'min': 0.1, 'max': 1.0, 'default': 0.35}, 'blur_sigma': {'description': 'gaussian blur sigma for noise source', 'min': 5, 'max': 80, 'default': 30}, 'anim_mode': {'description': 'animation mode (none/palette_cycle)', 'choices': ['none', 'palette_cycle'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 5.0, 'default': 1.0}})
 def method_palette_posterize(out_dir: Path, seed: int, params=None):
     """Palette Posterize — perceptual color quantization with dithering.
 

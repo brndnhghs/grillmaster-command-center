@@ -120,25 +120,7 @@ def _carve_vertical(img: np.ndarray, n: int, energy_mode: str) -> np.ndarray:
     return cur
 
 
-@method(
-    id="334",
-    name="Seam Carving",
-    category="filters",
-    new_image_contract=True,
-    tags=["content-aware", "resizing", "seam", "abstraction", "retargeting"],
-    inputs={},
-    outputs={"image": "IMAGE"},
-    params={
-        "source": {"description": "source (noise/gradient/input_image/palette/rainbow/procedural)", "default": "procedural"},
-        "operation": {"description": "what to do with the found seams (show_seams/carve_out)", "choices": ["show_seams", "carve_out"], "default": "show_seams"},
-        "orientation": {"description": "seam direction (vertical/horizontal)", "choices": ["vertical", "horizontal"], "default": "vertical"},
-        "energy": {"description": "energy function (gradient=backward/forward)", "choices": ["gradient", "forward"], "default": "gradient"},
-        "seams": {"description": "number of seams to find/remove", "min": 0, "max": 80, "default": 25},
-        "noise_amp": {"description": "noise amplitude for generated sources", "min": 0.1, "max": 1.0, "default": 0.35},
-        "blur_sigma": {"description": "gaussian blur sigma for noise source", "min": 5, "max": 80, "default": 30},
-        "palette": {"description": "palette name for palette source", "default": "vapor"},
-    },
-)
+@method(id='334', name='Seam Carving', category='filters', new_image_contract=True, tags=['content-aware', 'resizing', 'seam', 'abstraction', 'retargeting'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE'}, params={'source': {'description': 'source (noise/gradient/input_image/palette/rainbow/procedural)', 'default': 'procedural'}, 'operation': {'description': 'what to do with the found seams (show_seams/carve_out)', 'choices': ['show_seams', 'carve_out'], 'default': 'show_seams'}, 'orientation': {'description': 'seam direction (vertical/horizontal)', 'choices': ['vertical', 'horizontal'], 'default': 'vertical'}, 'energy': {'description': 'energy function (gradient=backward/forward)', 'choices': ['gradient', 'forward'], 'default': 'gradient'}, 'seams': {'description': 'number of seams to find/remove', 'min': 0, 'max': 80, 'default': 25}, 'noise_amp': {'description': 'noise amplitude for generated sources', 'min': 0.1, 'max': 1.0, 'default': 0.35}, 'blur_sigma': {'description': 'gaussian blur sigma for noise source', 'min': 5, 'max': 80, 'default': 30}, 'palette': {'description': 'palette name for palette source', 'default': 'vapor'}})
 def method_seam_carving(out_dir: Path, seed: int, params=None):
     """Seam Carving — content-aware image retargeting (Avidan & Shamir, 2007).
 

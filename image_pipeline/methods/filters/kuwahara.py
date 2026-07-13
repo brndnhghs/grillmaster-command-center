@@ -15,27 +15,7 @@ except ImportError:
     _has_cv2 = False
 
 
-@method(
-    id="68",
-    name="Anisotropic Kuwahara",
-    category="filters",
-    new_image_contract=True,
-    tags=["painterly", "abstraction", "smoothing", "fast", "expanded", "animation"],
-    inputs={},
-    outputs={"image": "IMAGE"},
-    params={
-        "source": {"description": "source (noise/gradient/input_image/palette/rainbow/procedural)", "default": "noise"},
-        "radius": {"description": "Kuwahara kernel radius in px (structure-coherence smoothing extent)", "min": 2, "max": 15, "default": 8},
-        "anisotropy": {"description": "anisotropic kernel elongation ratio (1=isotropic, 12=strongly structure-following)", "min": 1, "max": 12, "default": 4},
-        "blend": {"description": "blend original source back in (0=pure Kuwahara, 1=original)", "min": 0.0, "max": 1.0, "default": 0.0},
-        "presmooth": {"description": "pre-blur sigma of source before filtering", "min": 0.0, "max": 6.0, "default": 1.0},
-        "noise_amp": {"description": "noise amplitude for generated sources", "min": 0.1, "max": 1.0, "default": 0.35},
-        "blur_sigma": {"description": "gaussian blur sigma for noise source", "min": 5, "max": 80, "default": 30},
-        "palette": {"description": "palette name for palette source", "default": "vapor"},
-        "anim_mode": {"description": "animation mode (none/radius_pulse/aniso_pulse/blend_sweep)", "choices": ["none", "radius_pulse", "aniso_pulse", "blend_sweep"], "default": "none"},
-        "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
-    },
-)
+@method(id='68', name='Anisotropic Kuwahara', category='filters', new_image_contract=True, tags=['painterly', 'abstraction', 'smoothing', 'fast', 'expanded', 'animation'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE'}, params={'source': {'description': 'source (noise/gradient/input_image/palette/rainbow/procedural)', 'default': 'noise'}, 'radius': {'description': 'Kuwahara kernel radius in px (structure-coherence smoothing extent)', 'min': 2, 'max': 15, 'default': 8}, 'anisotropy': {'description': 'anisotropic kernel elongation ratio (1=isotropic, 12=strongly structure-following)', 'min': 1, 'max': 12, 'default': 4}, 'blend': {'description': 'blend original source back in (0=pure Kuwahara, 1=original)', 'min': 0.0, 'max': 1.0, 'default': 0.0}, 'presmooth': {'description': 'pre-blur sigma of source before filtering', 'min': 0.0, 'max': 6.0, 'default': 1.0}, 'noise_amp': {'description': 'noise amplitude for generated sources', 'min': 0.1, 'max': 1.0, 'default': 0.35}, 'blur_sigma': {'description': 'gaussian blur sigma for noise source', 'min': 5, 'max': 80, 'default': 30}, 'palette': {'description': 'palette name for palette source', 'default': 'vapor'}, 'anim_mode': {'description': 'animation mode (none/radius_pulse/aniso_pulse/blend_sweep)', 'choices': ['none', 'radius_pulse', 'aniso_pulse', 'blend_sweep'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 5.0, 'default': 1.0}})
 def method_kuwahara(out_dir: Path, seed: int, params=None):
     """Anisotropic Kuwahara painterly abstraction filter.
 

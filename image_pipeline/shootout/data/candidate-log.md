@@ -89,3 +89,23 @@
 - Action taken: implemented node 480 (CPU @method + GPU filter twin) and pushed
   (commit 7e77348). No shootout-config change this run. Recommendation: only
   widen explore_ratio / mutations_per_offspring if cheap-alive drops below ~80.
+
+## 2026-07-12 (Spatiotemporal Blue Noise run, node 481)
+- Diagnostic re-run this run: genomes=467, dead/rejected=67% (315/467),
+  renders>150s=113 (24%). rated=17/467 (3.6%) — rating-signal poverty persists.
+- Cheap-alive recombine seeds: 94 (explore_ratio intact, fresh randoms entering).
+- Dead hotspots dominated by system/util driver nodes (__lfo__ 750, __counter__ 206,
+  __noise1d__ 119, __ramp__ 98, __strobe__ 43, __image_to_mask__ 39) — attribution
+  artifact of the image-liveness metric (temporal_var_min residual), not method
+  breakage. Genuine numeric-method hotspot: node 137 (Image Blend, 33 dead refs).
+- Top-rated survivors (promotion seeds): g-328f0d37 (5), g-97f1158a (5),
+  g-e181c881 (5), g-9636245b (4). Nodes observed across top survivors:
+  174,98,49,36,__lfo__,__counter__,30,162,96,91,143,__strobe__,__noise1d__,
+  __ramp__,248,122,112,15,151,202,50,234,442,172,141,156,118,313,114,263,125,13,62,56,48,101.
+- Action taken: implemented node 481 Spatiotemporal Blue Noise — 3D void-and-cluster
+  (Wolfe & He, HPG 2022). Cheap generator (3D VAC build ~1-2s at 48^3, then cached)
+  with strong spatial AND temporal structure (verified headlessly: spatial blue
+  tilt mid>inner, temporal lag-1 autocorrelation 0.44, mean frame-to-frame Δ 0.26)
+  -> good liveness, low render cost, strong driver modulation. Directly addresses
+  the two dominant shootout failure modes: the >150s render-cost cull and the
+  contrast-only liveness cull. Pushed as its own commit.
