@@ -360,9 +360,18 @@ def render_genome(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
     captured = acc.total - acc.missing
     min_frames = int(cfg.frames * cfg.min_render_frames_frac)
     if skipped:
-        # Manually skipped or watchdog-aborted: cull, but keep whatever the
-        # liveness stats saw so the log can show how far it got.
-        liveness = {**liveness, "alive": False, "reason": "skipped"}
+        # Watchdog hard-wall aborts (total elapsed past the budget) should be
+        # treated like a timeout — recover the clip as "truncated" if it
+        # captured enough frames and passes liveness, rather than discarding a
+        # slow-but-dynamic animation as a plain skip. A manual/frame-stuck skip
+        # (elapsed still under the hard wall) stays a plain cull.
+        wall_limit = cfg.render_timeout_s * getattr(cfg, "hard_wall_factor", 1.15)
+        hard_walled = (time.time() - t0) >= wall_limit
+        if hard_walled and captured >= min_frames and liveness.get("alive"):
+            liveness = {**liveness, "truncated": True,
+                        "reason": liveness.get("reason")}
+        else:
+            liveness = {**liveness, "alive": False, "reason": "skipped"}
     elif timed_out:
         # Recover good clips: only cull as "timeout" when we captured too few
         # frames to form a meaningful clip. If most frames rendered and the
@@ -448,6 +457,22 @@ def render_many(genomes: list[dict], cfg: ShootoutConfig = DEFAULT_CONFIG,
                     _safe_progress(
                         f"⏹ {gid}: auto-skip — frame stuck {on_frame:.0f}s "
                         f"(> {limit:.0f}s), likely a wedged node")
+                    continue
+                # Hard total-wall watchdog: a clip that keeps progressing but is
+                # simply slow (each frame < the per-frame limit) never trips the
+                # check above and sails past the render budget — empirically up
+                # to ~547s against a 300s cap. Force-skip once total elapsed
+                # exceeds render_timeout_s × hard_wall_factor so the over-run
+                # compute is reclaimed instead of wasted on a clip that will be
+                # culled as timeout anyway.
+                elapsed = now - s.get("t0", now)
+                wall_limit = cfg.render_timeout_s * getattr(
+                    cfg, "hard_wall_factor", 1.15)
+                if elapsed > wall_limit:
+                    progress.MONITOR.request_skip(gid)
+                    _safe_progress(
+                        f"⏹ {gid}: auto-skip — total render {elapsed:.0f}s "
+                        f"(> {wall_limit:.0f}s hard wall), reclaiming budget")
 
     hb = threading.Thread(target=_heartbeat, daemon=True)
     hb.start()

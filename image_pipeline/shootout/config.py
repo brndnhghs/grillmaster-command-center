@@ -196,6 +196,16 @@ class ShootoutConfig:
     heartbeat_s: float = 1.0
     frame_hang_s: float = 15.0
     auto_skip_frame_hang_s: float = 0.0
+    # Hard total-wall watchdog: the between-frame timeout (line 299) can only
+    # fire between frames, and the per-frame watchdog only catches a clip
+    # *wedged on a single frame*. A clip that keeps progressing but is simply
+    # slow (many heavy frames, each < the per-frame limit) sails past the
+    # render budget — empirically up to ~547s against a 300s cap, wasting the
+    # over-run compute only to be culled anyway. This factor force-skips ANY
+    # genome whose *total* elapsed wall exceeds render_timeout_s × this,
+    # regardless of per-frame progress. Slightly above 1.0 so a clip finishing
+    # its final frame right at the cap isn't killed a hair early.
+    hard_wall_factor: float = 1.15
 
     # ── Advisor (user notes → breeding guidance via the Hermes LLM) ──
     advisor_enabled: bool = True
@@ -240,6 +250,7 @@ TUNABLE_FIELDS: dict[str, tuple[str, float | None, float | None]] = {
     "preview_w":        ("Live preview thumbnail width (px)", 64, 512),
     "frame_hang_s":      ("Flag a clip ⚠ SLOW in the live log when a single frame exceeds this (seconds)", 1, 600),
     "auto_skip_frame_hang_s": ("Auto-skip a clip whose current frame exceeds this (seconds); 0 = manual skip only", 0, 3600),
+    "hard_wall_factor":  ("Hard total-wall watchdog: force-skip any clip whose TOTAL render exceeds render_timeout_s × this (catches slow-but-progressing clips the per-frame watchdog misses)", 1.0, 3.0),
     "advisor_enabled":   ("Interpret your pros/cons notes with the LLM advisor to steer breeding", None, None),
     "temporal_var_min":  ("Liveness: minimum motion required — lower lets calmer clips through", 0.0, 0.5),
     "spatial_var_min":   ("Liveness: minimum spatial detail — lower lets flatter clips through", 0.0, 0.5),
