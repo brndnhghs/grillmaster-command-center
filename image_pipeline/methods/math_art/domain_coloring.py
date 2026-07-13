@@ -113,6 +113,7 @@ def method_domain_coloring(out_dir: Path, seed: int, params=None):
     CPU path is the authoritative export; the closed-form f(uv,t) makes a clean
     client-GPU twin. Pure source node (inputs={}) — no upstream wire.
     """
+    _src_lum = wired_source_lum(params, int(W), int(H)) if str(params.get("source", "none")) == "input_image" else None
     try:
         if params is None:
             params = {}
@@ -193,6 +194,8 @@ def method_domain_coloring(out_dir: Path, seed: int, params=None):
         rr, gg, bb = _cos_pal(hue, 0.0)
         rgb = np.stack([rr * light, gg * light, bb * light], axis=-1)
         rgb = np.clip(rgb, 0.0, 1.0).astype(np.float32)
+        if _src_lum is not None:
+            rgb = np.clip(rgb * (0.4 + 0.6 * _src_lum[..., None]), 0.0, 1.0)
 
         capture_frame("431", rgb)
         save(rgb, mn(431, "Domain Coloring"), out_dir)

@@ -57,6 +57,9 @@ def method_waveform(out_dir: Path, seed: int, params=None):
     t = float(params.get("time", 0.0))
     seed_all(seed)
     rng = random.Random(seed)
+
+    # ── Wired image as a luminance modulation source ──
+    _src_lum = wired_source_lum(params, int(W), int(H)) if str(params.get("source", "none")) == "input_image" else None
     np_rng = np.random.default_rng(seed)
 
     wt = str(params.get("wave_type", "sine"))
@@ -84,6 +87,8 @@ def method_waveform(out_dir: Path, seed: int, params=None):
     if not _has_cv2:
         img = np.zeros((H, W, 3), dtype=np.float32)
         img[:, :, :] = 0.05
+        if _src_lum is not None:
+            img = np.clip(img * (0.4 + 0.6 * _src_lum[..., None]), 0.0, 1.0)
         capture_frame("65", img)
         save(img, mn(65, "Waveform"), out_dir)
         return
@@ -221,5 +226,7 @@ def method_waveform(out_dir: Path, seed: int, params=None):
             col = [0.8-tr*0.04,0.6-tr*0.02,0.1+tr*0.02]
             for i in range(len(pts)-1): cv2.line(img,pts[i],pts[i+1],col,1)
     if pal_name and pal_name in PALETTES: img = quantize_to_palette(img.clip(0,1),pal_name)
+    if _src_lum is not None:
+        img = np.clip(img * (0.4 + 0.6 * _src_lum[..., None]), 0.0, 1.0)
     capture_frame('65', img); save(img.clip(0,1), mn(65,"Waveform"), out_dir)
 

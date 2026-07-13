@@ -75,3 +75,17 @@
 - Cheap-alive recombine seeds: 92 (explore_ratio ~0.45 intact — fresh randoms still entering).
 - Dead hotspots dominated by system/util driver nodes (__lfo__ 744, __counter__ 206, __noise1d__ 118, __ramp__ 97, __strobe__ 43, __image_to_mask__ 38). SCALAR/FIELD/MASK-only nodes mis-flagged by the image-liveness metric (temporal_var_min residual) — attribution artifact, not method breakage. Genuine numeric-method hotspot: node 137 (Image Blend, 33 dead refs) — investigate separately.
 - Action taken: implemented node 472 Poisson Image Edit (Perez et al. SIGGRAPH 2003 gradient-domain seamless cloning) + wired-source in-memory ndarray support in core/utils.py. Verified headlessly: re-lighting toward target confirmed (seamless mean pulls from source 0.50,0.15,0.75 toward target 0.35,0.40,0.30 while preserving source texture), param-live (placement shift Δ=0.063), mixing-gradient mode runs.
+
+## 2026-07-12 (Lens Distortion run, node 480)
+- New technique added (CG-technique node, not a shootout-evolution change):
+  Lens Distortion — Brown–Conrady radial (barrel/pincushion) + optional radial
+  chromatic split, node 480. Fills a missing post-process gap; it is cheap and
+  animatable (breathe/drift/spin) so it is a good cheap recombination seed for
+  the shootout.
+- Diagnostic re-run this run: genomes=467, dead/rejected=67% (315/467),
+  renders>150s=113 (24%), mean_wall=76.7s. Cheap-alive=94 (explore_ratio intact).
+  Dead hotspots dominated by system/util scalar nodes (expected attribution
+  artifact of the image-liveness metric, not method breakage).
+- Action taken: implemented node 480 (CPU @method + GPU filter twin) and pushed
+  (commit 7e77348). No shootout-config change this run. Recommendation: only
+  widen explore_ratio / mutations_per_offspring if cheap-alive drops below ~80.
