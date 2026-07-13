@@ -169,6 +169,8 @@ _THREEJS_POSTFX_PARAMS: dict[str, dict] = {
     "grain_size":       {"description": "grain dot size in px (1 = per-pixel fine grain)", "min": 1, "max": 4, "default": 1.0},
     "chromatic":        {"description": "radial chromatic aberration strength (0 = off)", "min": 0, "max": 1, "default": 0},
     "chromatic_scale":  {"description": "chromatic aberration radial falloff power", "min": 0.25, "max": 4, "default": 1.0},
+    "radial_blur":      {"description": "radial (dolly-zoom) blur strength (0 = off)", "min": 0, "max": 1, "default": 0},
+    "radial_blur_falloff": {"description": "radial blur sharpness at center (higher = tighter focus point)", "min": 0.25, "max": 4, "default": 1.0},
 }
 
 _THREEJS_3D_NODE_DEFS: dict[str, dict] = {

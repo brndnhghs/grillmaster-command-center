@@ -71,6 +71,7 @@ _SCENE_BASE = dict(
     bloom_intensity=0.6, bloom_radius=1.0,
     fx_brightness=1.0, fx_contrast=1.0, fx_saturation=1.0,
     vignette=0.0, vignette_radius=0.85, vignette_softness=0.5, fxaa=0,
+    radial_blur=0.0, radial_blur_falloff=1.0,
 )
 
 
@@ -320,3 +321,73 @@ def test_grain_strength_is_live():
     d_strong = float(np.mean(np.abs(strong - off)))
     assert d_weak > 0.02, f"weak grain did not change render (Δ={d_weak})"
     assert d_strong > d_weak, f"grain not live: strong Δ={d_strong} <= weak Δ={d_weak}"
+
+
+def test_radial_blur_postfx_changes_render():
+    """Engaging the radial (dolly-zoom) blur is NOT a no-op: pixels away from
+    the screen center are smeared along the ray to the center, so the frame
+    differs from the off state. Locks in the radial-blur pass so a future edit
+    that silently drops its engagement is caught. It is disabled by default.
+    """
+    off = _render(_build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0,
+        "fx_brightness": 1.0, "fx_contrast": 1.0, "fx_saturation": 1.0,
+        "chromatic": 0.0, "grain": 0.0,
+        "radial_blur": 0.0,
+    }))
+    on = _render(_build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0,
+        "fx_brightness": 1.0, "fx_contrast": 1.0, "fx_saturation": 1.0,
+        "chromatic": 0.0, "grain": 0.0,
+        "radial_blur": 1.0, "radial_blur_falloff": 1.0,
+    }))
+    delta = float(np.mean(np.abs(on - off)))
+    assert delta > 0.02, f"radial blur did not change the render (Δ={delta})"
+
+
+def test_radial_blur_strength_is_live():
+    """The radial_blur `amount` parameter actually drives the output: a stronger
+    blur produces a larger departure from the off state than a weak one.
+    """
+    off = _render(_build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0, "chromatic": 0.0, "grain": 0.0,
+        "radial_blur": 0.0,
+    }))
+    weak = _render(_build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0, "chromatic": 0.0, "grain": 0.0,
+        "radial_blur": 0.4, "radial_blur_falloff": 1.0,
+    }))
+    strong = _render(_build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0, "chromatic": 0.0, "grain": 0.0,
+        "radial_blur": 1.0, "radial_blur_falloff": 1.0,
+    }))
+    d_weak = float(np.mean(np.abs(weak - off)))
+    d_strong = float(np.mean(np.abs(strong - off)))
+    assert d_weak > 0.02, f"weak radial blur did not change render (Δ={d_weak})"
+    assert d_strong > d_weak, f"radial blur not live: strong Δ={d_strong} <= weak Δ={d_weak}"
+
+
+def test_radial_blur_preserves_center():
+    """The radial blur preserves the exact focus point regardless of strength:
+    the screen-center pixel is the accumulation origin (t=0 sample, dir=0), so
+    its color is invariant to `radial_blur` amount. This is the defining
+    property of a radial/zoom blur vs a full-frame box blur, and must not
+    regress.
+
+    Both renders are ENGAGED (so they go through the identical RT-resample
+    pipeline), isolating the blur property from the direct-vs-RT MSAA
+    resampling that would otherwise perturb a single center pixel on a mesh
+    edge. We compare the center across two different strengths.
+    """
+    weak = _render(_build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0, "chromatic": 0.0, "grain": 0.0,
+        "radial_blur": 0.4, "radial_blur_falloff": 1.0,
+    }))
+    strong = _render(_build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0, "chromatic": 0.0, "grain": 0.0,
+        "radial_blur": 1.0, "radial_blur_falloff": 1.0,
+    }))
+    H, W = weak.shape[:2]
+    cy, cx = H // 2, W // 2
+    err = float(np.max(np.abs(strong[cy, cx] - weak[cy, cx])))
+    assert err < 0.02, f"radial blur moved the focus point (center Δ={err})"

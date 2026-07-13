@@ -422,6 +422,8 @@ function buildScene(nodes, edges, frame = 0) {
           chromatic_scale: resolveParam(node, 'chromatic_scale', 1.0),
           grain:           resolveParam(node, 'grain', 0),
           grain_size:      resolveParam(node, 'grain_size', 1.0),
+          radial_blur:     resolveParam(node, 'radial_blur', 0),
+          radial_blur_falloff: resolveParam(node, 'radial_blur_falloff', 1.0),
         };
 
         for (const [port, obj] of Object.entries(wired)) {
@@ -695,6 +697,41 @@ void main() {
 }
 `;
 
+// Radial (dolly-zoom) blur -- real-time streak toward the screen center.
+// Classic radial/zoom/rotational blur: for each pixel we take a handful of
+// samples along the ray from the pixel to the image center, accumulating them.
+// The sample count scales with the radial distance under a `falloff` power, so
+// the focus point stays crisp while the periphery smears toward the center --
+// the motion "speed" implied by the streak gives the dolly-zoom / hyperspace
+// look. Center-weighted so the focal point is preserved (unlike a full-frame
+// box blur). Runs in WebGL1 GLSL (texture2D / gl_FragColor, no loops over
+// non-constant bounds -- fixed 12-tap).
+// Ref: radial blur family used in real-time post (Hensley et al. GPU Gems,
+//      "Motion Blur"; radial variant common in demoscene / UE scene captures).
+const _RADIAL_BLUR = `
+uniform sampler2D tDiffuse;
+uniform float uAmount;     // strength (0 = off)
+uniform float uFalloff;    // center sharpness (higher = tighter focus point)
+uniform vec2 uResolution;
+varying vec2 vUv;
+void main() {
+  vec2 center = vec2(0.5);
+  vec2 dir = vUv - center;
+  float dist = length(dir);
+  // Per-pixel sample radius along the ray to the center, shrinking near focus.
+  float r = uAmount * 0.5 * pow(max(dist, 0.0), max(uFalloff, 0.001));
+  vec4 sum = texture2D(tDiffuse, vUv);
+  const int TAPS = 12;
+  for (int i = 1; i <= TAPS; i++) {
+    float t = float(i) / float(TAPS);          // 0..1 toward center
+    vec2 uv = vUv - dir * (r * t);
+    sum += texture2D(tDiffuse, uv);
+  }
+  sum /= float(TAPS + 1);
+  gl_FragColor = vec4(clamp(sum.rgb, 0.0, 1.0), texture2D(tDiffuse, vUv).a);
+}
+`;
+
 function renderWithPostFX(renderer, scene, camera, w, h, fx) {
   const rtOpts = {
     minFilter: THREE.LinearFilter,
@@ -745,7 +782,7 @@ function renderWithPostFX(renderer, scene, camera, w, h, fx) {
     bloomRTs = [a, b];
   }
 
-  const needsCompositeRT = fx.fxaa > 0 || fx.chromatic > 0 || fx.grain > 0;
+  const needsCompositeRT = fx.fxaa > 0 || fx.chromatic > 0 || fx.grain > 0 || fx.radial_blur > 0;
   const compositeTarget = needsCompositeRT
     ? new THREE.WebGLRenderTarget(w, h, { ...rtOpts, depthBuffer: false })
     : null;
@@ -793,6 +830,20 @@ function renderWithPostFX(renderer, scene, camera, w, h, fx) {
     finalTex = grainRT.texture;
   }
 
+  // ── Radial (dolly-zoom) blur ──
+  let radialRT = null;
+  if (fx.radial_blur > 0 && finalTex) {
+    radialRT = new THREE.WebGLRenderTarget(w, h, { ...rtOpts, depthBuffer: false });
+    const rbMat = _fsMat(_RADIAL_BLUR, {
+      tDiffuse: { value: finalTex },
+      uAmount: { value: fx.radial_blur },
+      uFalloff: { value: fx.radial_blur_falloff },
+      uResolution: { value: new THREE.Vector2(w, h) },
+    });
+    _fsRender(renderer, radialRT, rbMat);
+    finalTex = radialRT.texture;
+  }
+
   if (finalTex) {
     if (fx.fxaa > 0) {
       const fxaa = _fsMat(_FXAA, {
@@ -814,6 +865,7 @@ function renderWithPostFX(renderer, scene, camera, w, h, fx) {
   if (compositeTarget) compositeTarget.dispose();
   if (caRT) caRT.dispose();
   if (grainRT) grainRT.dispose();
+  if (radialRT) radialRT.dispose();
   renderer.setRenderTarget(null);
 }
 
@@ -858,7 +910,7 @@ function renderSceneToPng(graphNodes, graphEdges, width, height, frame) {
   // unchanged direct render, so this feature is purely additive. Any
   // non-default value engages the render-target pipeline.
   const fx = scene._gmPostFX || {};
-  const fxEngaged = !!(fx.bloom || fx.vignette || fx.fxaa || fx.chromatic || fx.grain ||
+  const fxEngaged = !!(fx.bloom || fx.vignette || fx.fxaa || fx.chromatic || fx.grain || fx.radial_blur ||
       fx.brightness !== 1 || fx.contrast !== 1 || fx.saturation !== 1);
 
   if (fxEngaged) {
