@@ -629,6 +629,8 @@ class GraphExecutor:
         # Simulation state cache: keyed by (node_id, seed) → list of ndarray frames
         self._sim_cache: dict[tuple[str, int], list] = {}
         self._sim_params_hash: dict[str, int] = {}
+        # node_ids of the graph currently in execute() — never evicted mid-clip.
+        self._active_node_ids: set[str] = set()
         # Cached sub-executors for group nodes, keyed by group node id.
         # A fresh executor per frame would lose feedback state and re-run
         # Arch-A sims inside groups from scratch every frame (BUG-6).
@@ -645,8 +647,21 @@ class GraphExecutor:
         self.cancel_event = None
         self.node_progress = None
 
-    def _evict_sim_cache(self) -> None:
-        """Drop oldest sim-cache entries until under the byte budget."""
+    def _evict_sim_cache(self, protect: set[str] | None = None) -> None:
+        """Drop oldest sim-cache entries until under the byte budget.
+
+        Entries whose node_id is in `protect` — the sims of the graph currently
+        rendering — are NEVER evicted. Every output frame of a clip re-reads all
+        of that graph's sims, so dropping one guarantees a full re-cook on the
+        next frame: O(frames × sim_len) compute instead of O(sim_len), which is
+        exactly the `sim */N` on every frame symptom (BUG-8b). Eviction only
+        reclaims sims left behind by *previous* graphs. Memory stays bounded
+        because the protected set is a single graph's worth of sims; if those
+        alone exceed the budget we keep them anyway — re-cooking is strictly
+        worse than briefly overshooting the cap.
+        """
+        protect = protect or set()
+
         def _entry_bytes(frames: list) -> int:
             total = 0
             for f in frames:
@@ -656,10 +671,13 @@ class GraphExecutor:
             return total
 
         total = sum(_entry_bytes(v) for v in self._sim_cache.values())
-        while total > self.SIM_CACHE_MAX_BYTES and len(self._sim_cache) > 1:
-            oldest_key = next(iter(self._sim_cache))
-            total -= _entry_bytes(self._sim_cache.pop(oldest_key))
-            self._sim_params_hash.pop(oldest_key[0], None)
+        for key in list(self._sim_cache):  # oldest-first (dict preserves insertion)
+            if total <= self.SIM_CACHE_MAX_BYTES:
+                break
+            if key[0] in protect:
+                continue
+            total -= _entry_bytes(self._sim_cache.pop(key))
+            self._sim_params_hash.pop(key[0], None)
 
     def execute(
         self,
@@ -680,6 +698,12 @@ class GraphExecutor:
         # Stop execution at the terminal — don't run downstream nodes
         if terminal_id and terminal_id in order:
             order = order[: order.index(terminal_id) + 1]
+
+        # Sims belonging to THIS graph must survive the whole clip: every output
+        # frame re-reads all of them from _sim_cache, so the eviction pass must
+        # never drop one mid-render (doing so re-cooks the full sim every frame —
+        # BUG-8b). Only sims from *previous* graphs are evictable.
+        self._active_node_ids = set(node_map)
 
         # ── Build global Timeline for this frame ──────────────────────
         # Check for a Timeline node in the graph — its params override defaults
@@ -955,7 +979,7 @@ class GraphExecutor:
                 if sim_frames:
                     self._sim_cache[sim_cache_key] = sim_frames
                     self._sim_params_hash[node_id] = params_hash
-                    self._evict_sim_cache()
+                    self._evict_sim_cache(self._active_node_ids)
 
                     # Loop the cooked frames (matches the cache-hit path above).
                     arr = sim_frames[frame % len(sim_frames)]
