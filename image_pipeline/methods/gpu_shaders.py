@@ -286,6 +286,12 @@ _TYPED_SHADER_NODES = [
     # Categorical coverage pt.14 (2026-07-12): real-time volumetric clouds —
     # screen-space fbm density raymarch with single-scatter sun lighting.
     ("308", "clouds_typed", "GPU Volumetric Clouds"),
+    # Categorical coverage pt.15 (2026-07-12): closed-form procedural patterns
+    # with NAMED typed controls — Droste log-spiral, Voronoi stained glass,
+    # Op-Art sinusoidal band distortion. (309 free; 310-315 are CPU method ids.)
+    ("316", "droste_typed",        "GPU Droste Spiral"),
+    ("317", "stained_glass_typed", "GPU Stained Glass"),
+    ("318", "opart_typed",         "GPU Op-Art Waves"),
 ]
 
 _TIME_SCALE_PARAM = {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0}
