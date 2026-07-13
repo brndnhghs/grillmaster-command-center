@@ -1,6 +1,6 @@
 # Image-Input Wiring Report
 
-- generated: 2026-07-13T15:14:42.683103+00:00
+- generated: 2026-07-13T16:18:03.229420+00:00
 - graphs scanned: 45
 - errors: 9
 - warnings: 32
