@@ -35,7 +35,7 @@ import numpy as np
 from PIL import Image
 
 from ...core.registry import method
-from ...core.utils import save, mn, seed_all, W, H, write_scalars
+from ...core.utils import save, mn, seed_all, W, H, write_scalars, wired_source_lum
 from ...core.animation import capture_frame
 
 # ── Physical constants (SI, metres) ──
@@ -243,6 +243,7 @@ def _sun_direction(elevation_deg: float, azimuth_deg: float) -> np.ndarray:
             "min": 0.0, "max": 6.2831853, "default": 0.0,
         },
     },
+    inputs={'image_in': 'IMAGE'},
 )
 def method_nishita_sky(out_dir: Path, seed: int, params=None):
     """Nishita atmospheric-scattering sky.
@@ -272,6 +273,8 @@ def method_nishita_sky(out_dir: Path, seed: int, params=None):
 
     seed_all(seed)
 
+    _src_lum = wired_source_lum(params, W, H)
+
     w, h = W, H
     is_anim = anim_mode != "none" or t > 0.01
 
@@ -287,6 +290,8 @@ def method_nishita_sky(out_dir: Path, seed: int, params=None):
 
     if not is_anim:
         img_arr = _render_frame(sun_elev, sun_az)
+        if _src_lum is not None:
+            img_arr = (np.clip(img_arr.astype(np.float32) / 255.0 * (0.4 + 0.6 * _src_lum[..., None]), 0.0, 1.0) * 255.0).astype(np.uint8)
         img = Image.fromarray(img_arr, mode="RGB")
         capture_frame("471", img_arr.astype(np.float32) / 255.0)
         write_scalars(out_dir, sun_elevation=sun_elev, sun_azimuth=sun_az,
@@ -315,6 +320,8 @@ def method_nishita_sky(out_dir: Path, seed: int, params=None):
         elev = max(-10.0, min(90.0, elev))
 
         img_arr = _render_frame(elev, az)
+        if _src_lum is not None:
+            img_arr = (np.clip(img_arr.astype(np.float32) / 255.0 * (0.4 + 0.6 * _src_lum[..., None]), 0.0, 1.0) * 255.0).astype(np.uint8)
         last_img = img_arr
         capture_frame("471", img_arr.astype(np.float32) / 255.0)
 

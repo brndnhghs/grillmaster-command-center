@@ -19,7 +19,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from ...core.registry import method
-from ...core.utils import save, mn, seed_all, W, H
+from ...core.utils import save, mn, seed_all, W, H, wired_source_lum
 from ...core.animation import capture_frame
 
 
@@ -218,7 +218,7 @@ def _hsv(h, s=0.85, v=0.9):
     "anim_mode": {"description": "animation mode", "default": "spin",
                   "choices": ["spin", "swap"]},
     "anim_speed": {"description": "animation speed", "min": 0.1, "max": 4.0, "default": 1.0},
-    "n_frames": {"description": "frames", "min": 50, "max": 400, "default": 180},})
+    "n_frames": {"description": "frames", "min": 50, "max": 400, "default": 180}, }, inputs={'image_in': 'IMAGE'})
 def method_4d_hypercube(out_dir: Path, seed: int, params=None):
     """4D Hypercube (Tesseract) — classic nested-cube projection.
 
@@ -289,5 +289,11 @@ def method_4d_hypercube(out_dir: Path, seed: int, params=None):
                                BG, ic_rgb, oc_rgb, sc_rgb, id_rgb, od_rgb, lw=lw)
         capture_frame("108", np.array(img, dtype=np.float32) / 255.0)
 
+    # ── Wired upstream image as luminance modulation source (Rule #12) ──
+    _src_lum = wired_source_lum(params, W, H)
+    if _src_lum is not None:
+        _arr = np.array(img, dtype=np.float32) / 255.0
+        _arr = np.clip(_arr * (0.4 + 0.6 * _src_lum[..., None]), 0.0, 1.0)
+        img = Image.fromarray((_arr * 255).astype(np.uint8), "RGB")
     save(img, mn(108, "4d-hypercube"), out_dir)
     return np.array(img, dtype=np.float32) / 255.0

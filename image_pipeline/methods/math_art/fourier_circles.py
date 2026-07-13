@@ -66,6 +66,9 @@ def method_fourier_circles(out_dir: Path, seed: int, params=None):
     raw_time = float(params.get("time", 0.0))
     t = raw_time * anim_speed
 
+    # ── Wired image as a luminance modulation source ──
+    _src_lum = wired_source_lum(params, int(W), int(H)) if str(params.get("source", "none")) == "input_image" else None
+
     # ── Background ──
     if bg == "light":
         img = np.ones((H, W, 3), dtype=np.float32) * 0.95
@@ -297,6 +300,9 @@ def method_fourier_circles(out_dir: Path, seed: int, params=None):
         hue_shift = (math.sin(t * 0.5) * 0.5 + 0.5) * 0.3
         img = np.roll(img * 255, int(hue_shift * 255), axis=-1) / 255.0
 
+    if _src_lum is not None:
+        # modulate the artwork's brightness by the wired image luminance
+        img = np.clip(img * (0.4 + 0.6 * _src_lum[..., None]), 0.0, 1.0)
     capture_frame("81", np.clip(img, 0, 1))
     save(np.clip(img, 0, 1), mn(81, "Fourier Circles"), out_dir)
 

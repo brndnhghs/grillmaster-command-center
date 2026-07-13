@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw, ImageFont
 from ...core.registry import method
 from ...core.utils import (
     save, norm, mn, seed_all, get_font, BG_DEFAULT, W, H,
-    write_scalars, write_field, PALETTES,
+    write_scalars, write_field, PALETTES, wired_source_lum,
 )
 from ...core.animation import capture_frame
 
@@ -242,7 +242,8 @@ def _hsv_to_rgb(h, s, v):
             "description": "animation speed multiplier",
             "min": 0.1, "max": 3.0, "default": 1.0,
         },
-    }
+    },
+    inputs={'image_in': 'IMAGE'},
 )
 def method_strange_attractors(out_dir: Path, seed: int, params=None):
     """Render strange attractor density maps — chaotic iteration accumulation.
@@ -480,6 +481,14 @@ def method_strange_attractors(out_dir: Path, seed: int, params=None):
             pass
 
         # ── Capture + save + return ──
+        # ── Wired upstream image as luminance modulation source (Rule #12) ──
+        _src_lum = wired_source_lum(params, W, H)
+        if _src_lum is not None:
+            img = np.clip(
+                img.astype(np.float32) / 255.0 * (0.4 + 0.6 * _src_lum[..., None]),
+                0.0, 1.0,
+            )
+            img = (img * 255).astype(np.uint8)
         capture_frame("85", img)
         save(img, mn(85, "Strange Attractors"), out_dir)
         return img

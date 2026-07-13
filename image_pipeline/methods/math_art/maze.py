@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, get_font, BG_DEFAULT, W, H, write_field
+from ...core.utils import save, norm, mn, seed_all, get_font, BG_DEFAULT, W, H, write_field, wired_source_lum
 from ...core.animation import capture_frame
 
 try:
@@ -35,7 +35,7 @@ except ImportError:
              "color_saturation": {"description": "color intensity", "min": 0.3, "max": 1.5, "default": 0.9, "step": 0.1},
              "rings": {"description": "polar/circular ring count (0=auto)", "min": 0, "max": 60, "default": 0},"anim_mode": {"description": "animation mode", "choices": ["none", "color_cycle"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
-         })
+             }, inputs={'image_in': 'IMAGE'})
 def method_maze(out_dir: Path, seed: int, params=None):
     """Render Maze — procedurally generated maze with multiple algorithms.
 
@@ -356,5 +356,9 @@ def method_maze(out_dir: Path, seed: int, params=None):
     if ent_marks=="yes":
         img[1:cs-1,1:cs-1] = np.array([0.1,0.8,0.1],dtype=np.float32)
         img[H-cs+1:H-1, W-cs+1:W-1] = np.array([0.8,0.1,0.1],dtype=np.float32)
+    # ── Wired upstream image as luminance modulation source (Rule #12) ──
+    _src_lum = wired_source_lum(params, W, H)
+    if _src_lum is not None:
+        img = np.clip(img * (0.4 + 0.6 * _src_lum[..., None]), 0.0, 1.0)
     capture_frame('56', img); save(img.clip(0,1), mn(56,"Maze"), out_dir)
 
