@@ -57,6 +57,18 @@ class ShootoutConfig:
     min_divergence: float = 0.3        # breeder aims for this graph-distance (0..1) from the parent
     max_divergence_attempts: int = 5   # mutation retries to hit min_divergence before accepting best-so-far
     min_rating_to_parent: int = 2      # genomes rated below this never breed
+    # Liveness-breeding fallback (Route 8, 2026-07-13): when human ratings are
+    # starved (the corpus had only ~18 ratings / 525 genomes), ``select_parents``
+    # finds NO rating-eligible parents and every generation degrades to fresh
+    # randoms — the gen-0 stagnation seen in the data (451 gen0 / 44 evolved).
+    # This fallback uses the *liveness* signal (alive + real motion richness)
+    # as a fitness proxy so the evolution can still progress and compound,
+    # instead of re-exploring random graphs forever. Only genuinely-dynamic
+    # clips qualify (a floor on the liveness fitness), so static/flat clips
+    # never breed; the floor is below the rating path so once users DO rate,
+    # rating-weighted parents take over (the fallback only triggers when there
+    # are no rating-eligible parents). 45% explorer randoms keep diversity up.
+    liveness_breed_fallback: bool = True
 
     # ── Liveness rejection (tuned on the first empirical batch — plan §7) ──
     # Empirics: random nodegraphs render with temporal_var spanning
