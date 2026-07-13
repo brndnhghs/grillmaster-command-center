@@ -362,13 +362,32 @@ class Builder:
         # so a clip that is alive on the full gate is left byte-for-byte
         # untouched — the guard cannot turn it dead.
         def _alive() -> bool:
-            try:
-                from .evaluator import render_stack
-                acc = render_stack(self.nodes, self.edges,
-                                  self.rng.randint(0, 2**31), cfg, cfg.frames)
-                return bool(acc.stats().get("alive"))
-            except Exception:
-                return False
+            # Full-clip liveness render (matches the gate the tests use). Run in
+            # a worker thread with a hard timeout: a slow/hanging sim (e.g.
+            # Langton's Ant) would otherwise wedge generation forever. On timeout
+            # or any error we treat the genome as NOT alive, so the guard falls
+            # through to best-effort (additive) variance repair rather than
+            # bailing — same as the existing except: return False path. Seed is
+            # drawn before the thread so rng advancement stays deterministic
+            # regardless of whether the render finishes.
+            import threading
+
+            seed = self.rng.randint(0, 2**31)
+            res: dict = {}
+
+            def _run() -> None:
+                try:
+                    from .evaluator import render_stack
+                    acc = render_stack(self.nodes, self.edges, seed, cfg,
+                                       cfg.frames)
+                    res["alive"] = bool(acc.stats().get("alive"))
+                except Exception:
+                    res["alive"] = False
+
+            th = threading.Thread(target=_run, daemon=True)
+            th.start()
+            th.join(timeout=cfg.terminal_variance_alive_timeout_s)
+            return res.get("alive", False)
 
         if _alive():
             return  # already alive -> never touch (non-regression)

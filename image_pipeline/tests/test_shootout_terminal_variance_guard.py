@@ -304,3 +304,52 @@ def test_terminal_variance_guard_keeps_graph_valid():
         assert g is not None
         issues = validate_graph(g["graph"], pool, cfg)
         assert not issues, f"guard produced invalid graph: {issues}"
+
+
+def test_terminal_variance_guard_alive_probe_timeout_does_not_wedge():
+    """The full-clip liveness probe inside ``ensure_terminal_variance`` runs
+    ``render_stack`` in a worker thread bounded by
+    ``terminal_variance_alive_timeout_s``. A slow/hanging sim (e.g. Langton's
+    Ant) must NOT wedge generation forever: the guard must return within the
+    timeout and fall through to best-effort repair (same as the error path).
+
+    Regression guard for the 2026-07-13 timeout addition (Route 8 item: a
+    hanging ``render_stack`` previously blocked generation indefinitely). The
+    test forces ``render_stack`` to HANG far longer than the timeout so we prove
+    the *timeout* (not a fast exception) is what bounds the call.
+    """
+    import time as _time
+
+    from image_pipeline.shootout import evaluator as _eval
+
+    cfg = _tiny_cfg(True)
+    cfg.terminal_variance_alive_timeout_s = 1.0
+    cfg.terminal_variance_retries = 1
+    pool = build_gene_pool(cfg)
+    sim_mid = next((m for m, d in pool.defs.items()
+                    if "n_frames" in (d.get("params") or {})), None)
+    if sim_mid is None:
+        pytest.skip("no sim head available")
+    rng = random.Random(0xDEAD)
+
+    # Force render_stack to HANG far longer than the timeout.
+    real_render_stack = _eval.render_stack
+
+    def _hang(*a, **k):
+        _time.sleep(30)
+        return real_render_stack(*a, **k)
+
+    _eval.render_stack = _hang
+    try:
+        b = Builder(pool, cfg, rng, None)
+        node = b.add(sim_mid, render=True)
+        b.node(node)["params"] = dict(pool.defs[sim_mid].get("defaults") or {})
+
+        t0 = _time.monotonic()
+        b.ensure_terminal_variance(cfg, rng)  # must NOT block for 30s
+        elapsed = _time.monotonic() - t0
+    finally:
+        _eval.render_stack = real_render_stack
+
+    # Bounded by the 1.0s alive-timeout + the fast sim-head repair path.
+    assert elapsed < 5.0, f"guard wedged: {elapsed:.1f}s (expected < 5s)"

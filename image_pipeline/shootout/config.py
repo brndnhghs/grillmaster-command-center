@@ -177,6 +177,11 @@ class ShootoutConfig:
     # boring random graphs. Set terminal_variance_probe=False to disable.
     terminal_variance_probe: bool = True
     terminal_variance_retries: int = 3  # re-roll/swap attempts before giving up
+    # Hard wall-clock cap for the guard's full-clip _alive() liveness render.
+    # Without it a slow/hanging sim (e.g. Langton's Ant) wedges generation
+    # forever. On timeout the genome is treated as not-alive so the guard
+    # proceeds with best-effort (additive) variance repair rather than blocking.
+    terminal_variance_alive_timeout_s: float = 15.0
 
     # ── Node-error reject (2026-07-12) ──
     # The evaluator renders every frame and collects per-node errors. When a
