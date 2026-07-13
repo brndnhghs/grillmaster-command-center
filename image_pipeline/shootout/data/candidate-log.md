@@ -309,3 +309,7 @@
   over-tightening that would gut the survivor pool.
 - FUTURE WORK: liveness-prior model (predict dynamic from graph structure) would
   let the gate skip static-heavy timeouts without ever touching a dynamic clip.
+
+## 2026-07-13 — autonomous run (cg feature: node 930 Skeletonize)
+- genomes=525 alive=180 dead=345 (66%) renders>150s=126
+- ACTION: added node 930 "Skeletonize" (Zhang-Suen medial-axis thinning, ACM 1984) — a topology-preserving NPR structure filter that pairs with the line-art family (#421 CLD, #68 Kuwahara). O(W·H) scipy thinning, no heavy compute, so it dodges the >150s timeout cull. Verified: registered, none-mode static, GROW/PULSE animate (changed-px 4-6%), threshold sweep =59% changed px, PRUNE live on spur-rich sources. Outputs IMAGE+MASK(skeleton)+FIELD(distance transform).
