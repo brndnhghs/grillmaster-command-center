@@ -1073,55 +1073,34 @@ try {
   .ctx-item:hover { background: var(--bg3); }
   .ctx-item.danger { color: var(--err); }
 
-  /* ── Param right-click menu + Complain popover ──────── */
-  #param-ctx-menu {
+  /* ── Per-parameter flyout menu (dropdown) ──────────── */
+  #param-flyout-menu {
     position: fixed; background: var(--bg2); border: 1px solid var(--border);
-    border-radius: 7px; z-index: 1100; min-width: 220px; display: none;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.5); overflow: hidden;
+    border-radius: 8px; z-index: 1200; min-width: 210px; display: none;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.55); overflow: hidden; padding: 4px;
   }
-  #param-ctx-menu .ctx-item.warn { color: #f59e0b; }
-  #param-ctx-menu .ctx-item.warn:hover { background: var(--bg3); }
+  #param-flyout-menu .ndpm-title {
+    font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--muted); padding: 6px 10px 4px; font-weight: 700;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #param-flyout-menu .ndpm-item {
+    display: block; width: 100%; text-align: left; background: none; border: none;
+    color: var(--text); font-size: 12.5px; font-family: inherit; cursor: pointer;
+    padding: 8px 10px; border-radius: 6px; line-height: 1.2;
+  }
+  #param-flyout-menu .ndpm-item:hover { background: var(--bg3); }
 
-  #complain-popover {
-    position: fixed; z-index: 1200; width: 340px; display: none;
-    background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
-    box-shadow: 0 12px 40px rgba(0,0,0,0.6); padding: 16px; color: var(--text);
+  /* kebab button on each param row */
+  .param-row { position: relative; }
+  .ndpm-btn {
+    position: absolute; top: 50%; right: 4px; transform: translateY(-50%);
+    width: 22px; height: 22px; line-height: 1; padding: 0; cursor: pointer;
+    background: transparent; border: 1px solid transparent; border-radius: 5px;
+    color: var(--muted); font-size: 15px; opacity: 0; transition: opacity 0.12s, background 0.12s;
   }
-  #complain-popover h3 { font-size: 14px; margin: 0 0 3px; }
-  #complain-popover .cp-sub { font-size: 11px; color: var(--muted); margin-bottom: 10px; }
-  #complain-popover textarea {
-    width: 100%; min-height: 84px; resize: vertical; box-sizing: border-box;
-    background: var(--bg1); color: var(--text); border: 1px solid var(--border);
-    border-radius: 7px; padding: 8px; font-size: 12px; font-family: inherit;
-  }
-  #complain-popover .cp-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
-  #complain-popover .cp-chip {
-    font-size: 11px; padding: 4px 9px; border-radius: 20px; cursor: pointer;
-    background: var(--bg3); border: 1px solid var(--border); color: var(--text);
-  }
-  #complain-popover .cp-chip:hover { border-color: #f59e0b; color: #f59e0b; }
-  #complain-popover .cp-msg { font-size: 11px; color: var(--muted); margin-top: 8px; min-height: 14px; white-space: pre-wrap; }
-  #complain-popover .cp-msg.cp-err { color: var(--err); }
-  #complain-popover .cp-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
-  .cp-btn {
-    padding: 7px 14px; border-radius: 7px; border: 1px solid var(--border);
-    background: var(--bg3); color: var(--text); font-size: 12px; cursor: pointer; font-weight: 600;
-  }
-  .cp-btn.primary { background: #f59e0b; border-color: #f59e0b; color: #1a1a1a; }
-  .cp-btn.primary:disabled { opacity: 0.5; cursor: default; }
-  .cp-btn:hover:not(:disabled) { filter: brightness(1.1); }
-
-  .param-row.complaining { position: relative; }
-  .param-row.complaining::before {
-    content: ''; position: absolute; left: -10px; top: 0; bottom: 0; width: 3px;
-    background: #f59e0b; border-radius: 2px;
-  }
-  .param-row.complaint-flash { animation: cpflash 1.1s ease; }
-  @keyframes cpflash {
-    0% { background: rgba(52,211,153,0.0); }
-    20% { background: rgba(52,211,153,0.25); }
-    100% { background: rgba(52,211,153,0.0); }
-  }
+  .param-row:hover .ndpm-btn { opacity: 0.8; }
+  .ndpm-btn:hover { opacity: 1; background: var(--bg3); color: var(--text); }
 
   /* ── Wire inspector tooltip ─────────────────────────── */
   #wire-tooltip {
@@ -1785,7 +1764,6 @@ try {
         <button id="nd-apply-btn">Apply changes</button>
         <button id="nd-undo-btn">↩ Undo</button>
       </div>
-      <div id="nd-chips" style="display:flex;flex-wrap:wrap;gap:5px;padding:6px 8px 0;"></div>
       <div id="nd-input-row">
         <textarea id="nd-input" placeholder="Describe the issue or what you want to change…" rows="2"></textarea>
         <button id="nd-send-btn" title="Send">↑</button>
@@ -1914,23 +1892,13 @@ try {
   <div class="ctx-item" id="ctx-ungroup" style="display:none">⊟ Ungroup</div>
 </div>
 
-<!-- Param right-click menu (Complain feature) -->
-<div id="param-ctx-menu">
-  <div class="ctx-item warn" id="param-ctx-complain">⚠ Complain about this parameter</div>
-</div>
-
-<!-- Complain popover -->
-<div id="complain-popover">
-  <h3>Complain about parameter</h3>
-  <div class="cp-sub" id="complain-param-name"></div>
-  <textarea id="complain-text" placeholder="e.g. parameter should be float not int; this parameter is not working; runs too fast; does not produce image; no effect on image…"></textarea>
-  <div class="cp-chips" id="complain-chips"></div>
-  <div class="cp-msg" id="complain-msg"></div>
-  <div class="cp-actions">
-    <button class="cp-btn" id="complain-fix-all" style="display:none">⚕ Fix all complaints</button>
-    <button class="cp-btn" id="complain-cancel">Cancel</button>
-    <button class="cp-btn primary" id="complain-submit">Submit complaint</button>
-  </div>
+<!-- Param flyout menu (dropdown) -->
+<div id="param-flyout-menu">
+  <div class="ndpm-title" id="ndpm-title">Parameter</div>
+  <button class="ndpm-item" id="ndpm-issue">💬 Describe an issue…</button>
+  <button class="ndpm-item" id="ndpm-open">🩺 Open in Node Doctor</button>
+  <button class="ndpm-item" id="ndpm-reset">↺ Reset to default</button>
+  <button class="ndpm-item" id="ndpm-copy">⧉ Copy name</button>
 </div>
 
 <!-- Group expand modal -->
@@ -5085,14 +5053,22 @@ function gShowNodeParams(node) {
     ? entries.map(([k,s]) => renderParamField(k, s)).join('')
     : '<p style="font-size:12px;color:var(--muted)">No parameters.</p>';
 
-  // Tag each param-row with its key so the right-click "Complain" flow
-  // knows which parameter was clicked.
+  // Tag each param-row with its key and add a ⋮ flyout button.
   gParamsForm.querySelectorAll('.param-row').forEach(row => {
     if (row.dataset.param) return;
     const input = row.querySelector('[id^="p_"]');
     if (!input) return;
     const key = input.id.replace(/^p_/, '').replace(/_swatch$/, '');
     row.dataset.param = key;
+
+    // Small kebab button to open the per-parameter flyout menu.
+    const menuBtn = document.createElement('button');
+    menuBtn.className = 'ndpm-btn';
+    menuBtn.type = 'button';
+    menuBtn.title = 'Parameter actions';
+    menuBtn.textContent = '⋯';
+    menuBtn.setAttribute('aria-label', 'Parameter actions');
+    row.appendChild(menuBtn);
   });
 
   // ── Test Node: show report section ──────────────────────────────
@@ -8278,346 +8254,115 @@ function gConnectEvents() {
 }
 gConnectEvents();
 
-// ── Shared complaint state (used by the popover + Node Doctor chips) ──
-// window.__complaints: Map<nodeId, Array<{param_key, complaint, row}>>
-window.__complaints = window.__complaints || new Map();
-
-const COMMON_COMPLAINTS = [
-  'parameter should be float not int',
-  'this parameter is not working',
-  'no effect on image',
-  'does not produce image',
-  'runs too fast',
-  'runs too slow',
-];
-
-function cpAdd(nodeId, paramKey, complaint, row) {
-  if (!window.__complaints.has(nodeId)) window.__complaints.set(nodeId, []);
-  const list = window.__complaints.get(nodeId);
-  const existing = list.find(c => c.param_key === paramKey);
-  if (existing) { existing.complaint = complaint; existing.row = row; }
-  else list.push({ param_key: paramKey, complaint, row });
-}
-
-// Clear a node's accumulated complaints once a rewrite is applied.
-function cpClear(nodeId) { window.__complaints.delete(nodeId); }
-
-// ── COMPLAIN feature: right-click a param → rewrite via Node Doctor ──
+// ── Per-parameter flyout menu (dropdown) ───────────────────────────
+// Right-click (or click the ⋮ button) a parameter row to open a small
+// menu. "Describe an issue…" routes straight into the Node Doctor chat,
+// which keeps conversation history — so it can iterate as many times as
+// you like and actually applies the rewrite. No complaint accumulation.
 (function() {
-  const paramCtx   = document.getElementById('param-ctx-menu');
-  const cpPop      = document.getElementById('complain-popover');
-  const cpName     = document.getElementById('complain-param-name');
-  const cpText     = document.getElementById('complain-text');
-  const cpChips    = document.getElementById('complain-chips');
-  const cpMsg      = document.getElementById('complain-msg');
-  const cpSubmit   = document.getElementById('complain-submit');
-  const cpCancel   = document.getElementById('complain-cancel');
+  const menu = document.getElementById('param-flyout-menu');
 
-  let ctxParam = null;   // param key last right-clicked
-  let ctxRow   = null;   // param-row element last right-clicked
+  let ctxParam = null;   // param key last targeted
+  let ctxRow   = null;   // param-row element last targeted
 
-  // Seed the quick-pick chips
-  COMMON_COMPLAINTS.forEach(c => {
-    const chip = document.createElement('div');
-    chip.className = 'cp-chip';
-    chip.textContent = c;
-    chip.addEventListener('click', () => {
-      cpText.value = cpText.value.trim()
-        ? cpText.value.trim().replace(/[.;]*$/, '; ') + c
-        : c;
-      cpText.focus();
-    });
-    cpChips.appendChild(chip);
-  });
+  function hideMenu() { menu.style.display = 'none'; ctxParam = null; ctxRow = null; }
 
-  function hideParamCtx() { paramCtx.style.display = 'none'; }
-  function hidePopover() {
-    cpPop.style.display = 'none';
-    document.querySelectorAll('.param-row.complaining').forEach(r => r.classList.remove('complaining'));
-    ctxParam = null; ctxRow = null;
+  function showMenu(row, x, y) {
+    ctxRow   = row;
+    ctxParam = row.dataset.param;
+    const titleEl = document.getElementById('ndpm-title');
+    if (titleEl) titleEl.textContent = ctxParam ? `“${ctxParam}”` : 'Parameter';
+    menu.style.display = 'block';
+    const mw = menu.offsetWidth, mh = menu.offsetHeight;
+    menu.style.left = Math.min(x, window.innerWidth  - mw - 4) + 'px';
+    menu.style.top  = Math.min(y, window.innerHeight - mh - 4) + 'px';
   }
 
-  // Highlight the row under complaint
-  function markComplaining(row) {
-    document.querySelectorAll('.param-row.complaining').forEach(r => r.classList.remove('complaining'));
-    if (row) row.classList.add('complaining');
-  }
-
-  // Right-click on a parameter row → open param context menu
+  // Open the menu on right-click of any parameter row.
   gParamsForm.addEventListener('contextmenu', e => {
     const row = e.target.closest('.param-row');
     if (!row || !row.dataset.param) return;   // let non-param right-clicks bubble
     e.preventDefault();
     e.stopPropagation();
-    ctxParam = row.dataset.param;
-    ctxRow   = row;
-    hidePopover();
-    paramCtx.style.left = e.clientX + 'px';
-    paramCtx.style.top  = e.clientY + 'px';
-    paramCtx.style.display = '';
+    showMenu(row, e.clientX, e.clientY);
   });
 
-  // Suppress the graph-level context menu when right-clicking inside the
-  // params panel so only the param menu shows.
+  // Keep the graph-level context menu from also firing inside the panel.
   gParamsForm.addEventListener('contextmenu', e => e.stopPropagation(), true);
 
-  document.getElementById('param-ctx-complain').addEventListener('click', () => {
-    hideParamCtx();
-    if (!ctxParam || !gSelectedNode) return;
-    const node = gNodes.find(n => n.id === gSelectedNode);
-    if (!node) return;
-    const def = gNodeDefs[node.method_id];
-    cpName.textContent = `“${ctxParam}”  ·  ${def ? def.name : node.method_id}`;
-    cpText.value = '';
-    cpMsg.textContent = '';
-    cpMsg.classList.remove('cp-err');
-    cpSubmit.disabled = false;
-    markComplaining(ctxRow);
-    // Position popover near the row, kept on-screen
-    const r = ctxRow.getBoundingClientRect();
-    let x = Math.min(r.left, window.innerWidth - 360);
-    let y = Math.min(r.bottom + 6, window.innerHeight - 320);
-    cpPop.style.left = Math.max(8, x) + 'px';
-    cpPop.style.top  = Math.max(8, y) + 'px';
-    cpPop.style.display = '';
-    cpText.focus();
+  // ⋮ button injected into each param row (built in gShowNodeParams).
+  gParamsForm.addEventListener('click', e => {
+    const btn = e.target.closest('.ndpm-btn');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const row = btn.closest('.param-row');
+    if (row) {
+      const r = btn.getBoundingClientRect();
+      showMenu(row, r.left, r.bottom + 4);
+    }
   });
 
-  cpCancel.addEventListener('click', hidePopover);
-
-  // Close popover / param menu when clicking elsewhere
+  // Close on outside click / Escape.
   document.addEventListener('click', e => {
-    if (cpPop.style.display === '' &&
-        !cpPop.contains(e.target) && e.target.id !== 'param-ctx-complain') {
-      hidePopover();
-    }
-    if (paramCtx.style.display === '' && !paramCtx.contains(e.target)) hideParamCtx();
+    if (menu.style.display === 'block' && !menu.contains(e.target) && !e.target.closest('.ndpm-btn'))
+      hideMenu();
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') hideMenu(); });
+
+  function currentNode() { return gNodes.find(n => n.id === gSelectedNode); }
+
+  document.getElementById('ndpm-issue').addEventListener('click', e => {
+    e.stopPropagation();
+    const node = currentNode();
+    if (!node || !ctxParam) { hideMenu(); return; }
+    const def  = gNodeDefs[node.method_id];
+    const spec = (def && def.params && def.params[ctxParam]) || {};
+    const prompt =
+      `Issue with parameter "${ctxParam}" on node "${def ? def.name : node.method_id}".\n` +
+      `Current value: ${JSON.stringify(node.params ? node.params[ctxParam] : undefined)}\n` +
+      `Spec: ${JSON.stringify(spec)}\n\n` +
+      `Describe what you want changed and rewrite the node to fix it. ` +
+      `Keep the rest of the node intact and honor the node/dataflow hygiene contract. ` +
+      `Output the full updated file.`;
+    ndPrefill(prompt);
+    hideMenu();
   });
 
-  cpSubmit.addEventListener('click', async () => {
-    const complaint = cpText.value.trim();
-    if (!complaint) { cpMsg.textContent = 'Describe the problem first.'; cpMsg.classList.add('cp-err'); return; }
-    const node = gNodes.find(n => n.id === gSelectedNode);
-    if (!node) { hidePopover(); return; }
-    const def = gNodeDefs[node.method_id];
-
-    // Accumulate this complaint for the "Fix all" batch (keyed by node + param).
-    cpAdd(node.id, ctxParam, complaint, ctxRow);
-
-    cpSubmit.disabled = true;
-    cpMsg.classList.remove('cp-err');
-    cpMsg.textContent = '⏳ Agent is rewriting the node…';
-
-    // Build a live message area inside the popover so the user sees the
-    // streaming agent response (and can Apply when code is ready).
-    let live = document.getElementById('complain-live');
-    if (!live) {
-      live = document.createElement('div');
-      live.id = 'complain-live';
-      live.style.cssText = 'margin-top:10px;max-height:220px;overflow:auto;font-size:11px;' +
-        'line-height:1.5;white-space:pre-wrap;background:var(--bg1);border:1px solid var(--border);' +
-        'border-radius:7px;padding:8px;';
-      cpPop.insertBefore(live, cpMsg);
+  document.getElementById('ndpm-reset').addEventListener('click', e => {
+    e.stopPropagation();
+    const node = currentNode();
+    if (!node || !ctxParam) { hideMenu(); return; }
+    const def  = gNodeDefs[node.method_id];
+    const spec = (def && def.params && def.params[ctxParam]) || {};
+    if (!('default' in spec)) { gShowToast('No default for this parameter', true); hideMenu(); return; }
+    const el = document.getElementById('p_' + ctxParam) || document.getElementById('p_' + ctxParam + '_swatch');
+    if (el) {
+      if (el.type === 'checkbox') el.checked = !!spec.default;
+      else el.value = spec.default;
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    } else {
+      gUpdateNodeParam(node.id, ctxParam, spec.default);
     }
-    live.textContent = '';
-    live.style.display = '';
-
-    let botText = '';
-    let pendingCode = null;
-    let applyBtn, undoBtn;
-
-    function ensureApplyRow() {
-      if (document.getElementById('complain-apply-row')) return;
-      const row = document.createElement('div');
-      row.id = 'complain-apply-row';
-      row.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:8px;';
-      applyBtn = document.createElement('button');
-      applyBtn.className = 'cp-btn primary';
-      applyBtn.textContent = 'Apply rewrite';
-      applyBtn.disabled = true;
-      undoBtn = document.createElement('button');
-      undoBtn.className = 'cp-btn';
-      undoBtn.textContent = '↩ Undo';
-      undoBtn.style.display = 'none';
-      row.appendChild(applyBtn);
-      row.appendChild(undoBtn);
-      cpPop.insertBefore(row, cpMsg);
-
-      applyBtn.addEventListener('click', async () => {
-        if (!pendingCode) return;
-        applyBtn.disabled = true;
-        cpMsg.textContent = '⏳ Applying & hot-reloading…';
-        try {
-          const r = await fetch('/api/node-doctor/apply', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ method_id: node.method_id, source: pendingCode }),
-          });
-          const data = await r.json();
-          if (!data.ok) throw new Error(data.error || 'apply failed');
-          const backupId = data.backup_id;
-          const confirmed = await new Promise(res => {
-            const t = setTimeout(() => res(false), 5000);
-            window.addEventListener('nd-hot-reload', () => { clearTimeout(t); res(true); }, { once: true });
-          });
-          cpMsg.textContent = confirmed
-            ? '✓ Rewrite applied — node updated.'
-            : '⚠ Applied, but hot-reload not confirmed (server may need restart).';
-          if (ctxRow) { ctxRow.classList.add('complaint-flash'); }
-          cpClear(node.id);          // drop accumulated complaints for this node
-          refreshFixAll();           // hide "Fix all" now that they're cleared
-          undoBtn.style.display = '';
-          undoBtn.onclick = async () => {
-            undoBtn.disabled = true;
-            const u = await fetch(`/api/node-doctor/undo/${backupId}`, { method: 'POST' });
-            const d = await u.json();
-            if (d.ok) { undoBtn.style.display = 'none'; applyBtn.disabled = false; cpMsg.textContent = '↩ Reverted.'; }
-            else { undoBtn.disabled = false; cpMsg.textContent = '⚠ Undo failed: ' + (d.error || ''); }
-          };
-        } catch (err) {
-          cpMsg.textContent = '⚠ ' + err.message;
-          applyBtn.disabled = false;
-        }
-      });
-    }
-
-    try {
-      const resp = await fetch('/api/node-doctor/complain', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          method_id: node.method_id,
-          node_def: def || {},
-          node_params: node.params || {},
-          param_key: ctxParam,
-          complaint: complaint,
-        }),
-      });
-      if (!resp.ok) throw new Error('Server error ' + resp.status);
-      const reader = resp.body.getReader();
-      const dec = new TextDecoder();
-      let buf = '';
-      while (true) {
-        const { value, done: d } = await reader.read();
-        if (d) break;
-        buf += dec.decode(value, { stream: true });
-        const lines = buf.split('\n');
-        buf = lines.pop();
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          try {
-            const j = JSON.parse(line.slice(6));
-            if (j.done) break;
-            if (j.text) { botText += j.text; live.textContent = botText; live.scrollTop = live.scrollHeight; }
-          } catch {}
-        }
-      }
-      // Extract python block if present
-      const m = botText.match(/```python\s*([\s\S]*?)```/);
-      pendingCode = m ? m[1].trim() : null;
-      if (pendingCode) {
-        ensureApplyRow();
-        applyBtn.disabled = false;
-        cpMsg.textContent = '⚠ Review the rewrite below, then Apply.';
-      } else {
-        cpMsg.textContent = '⚠ Agent responded but no rewritten file was found — see message above.';
-      }
-    } catch (err) {
-      cpMsg.textContent = '⚠ ' + err.message;
-      cpMsg.classList.add('cp-err');
-    } finally {
-      cpSubmit.disabled = false;
-    }
+    gShowToast(`Reset "${ctxParam}" to default`);
+    hideMenu();
   });
 
-  // ── Fix all accumulated complaints for this node in one rewrite ──
-  const cpFixAll = document.getElementById('complain-fix-all');
-  function refreshFixAll() {
-    const node = gNodes.find(n => n.id === gSelectedNode);
-    const list = node ? (window.__complaints.get(node.id) || []) : [];
-    if (cpFixAll) {
-      cpFixAll.style.display = list.length ? '' : 'none';
-      cpFixAll.textContent = `⚕ Fix all ${list.length} complaint${list.length === 1 ? '' : 's'}`;
-    }
-  }
+  document.getElementById('ndpm-copy').addEventListener('click', e => {
+    e.stopPropagation();
+    if (ctxParam && navigator.clipboard) navigator.clipboard.writeText(ctxParam).then(
+      () => gShowToast('Copied parameter name'),
+      () => gShowToast('Copy failed', true)
+    );
+    hideMenu();
+  });
 
-  // Reveal/count the batch button whenever a param row is right-clicked.
-  gParamsForm.addEventListener('contextmenu', () => refreshFixAll());
-
-  if (cpFixAll) {
-    cpFixAll.addEventListener('click', async () => {
-      const node = gNodes.find(n => n.id === gSelectedNode);
-      if (!node) return;
-      const list = window.__complaints.get(node.id) || [];
-      if (!list.length) return;
-      const def = gNodeDefs[node.method_id];
-      cpSubmit.disabled = true;
-      cpMsg.classList.remove('cp-err');
-      cpMsg.textContent = `⏳ Agent is rewriting the node to fix ${list.length} complaints…`;
-
-      let live = document.getElementById('complain-live');
-      if (!live) {
-        live = document.createElement('div');
-        live.id = 'complain-live';
-        live.style.cssText = 'margin-top:10px;max-height:220px;overflow:auto;font-size:11px;' +
-          'line-height:1.5;white-space:pre-wrap;background:var(--bg1);border:1px solid var(--border);' +
-          'border-radius:7px;padding:8px;';
-        cpPop.insertBefore(live, cpMsg);
-      }
-      live.textContent = '';
-      live.style.display = '';
-      // Open popover so the user sees progress (in case it was closed).
-      cpPop.style.display = '';
-
-      let botText = '';
-      let pendingCode = null;
-      try {
-        const resp = await fetch('/api/node-doctor/complain', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            method_id: node.method_id,
-            node_def: def || {},
-            node_params: node.params || {},
-            complaints: list.map(c => ({ param_key: c.param_key, complaint: c.complaint })),
-          }),
-        });
-        if (!resp.ok) throw new Error('Server error ' + resp.status);
-        const reader = resp.body.getReader();
-        const dec = new TextDecoder();
-        let buf = '';
-        while (true) {
-          const { value, done: d } = await reader.read();
-          if (d) break;
-          buf += dec.decode(value, { stream: true });
-          const lines = buf.split('\n');
-          buf = lines.pop();
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue;
-            try {
-              const j = JSON.parse(line.slice(6));
-              if (j.done) break;
-              if (j.text) { botText += j.text; live.textContent = botText; live.scrollTop = live.scrollHeight; }
-            } catch {}
-          }
-        }
-        const m = botText.match(/```python\s*([\s\S]*?)```/);
-        pendingCode = m ? m[1].trim() : null;
-        if (pendingCode) {
-          ensureApplyRow();
-          applyBtn.disabled = false;
-          cpMsg.textContent = '⚠ Review the batched rewrite below, then Apply.';
-        } else {
-          cpMsg.textContent = '⚠ Agent responded but no rewritten file was found — see message above.';
-        }
-      } catch (err) {
-        cpMsg.textContent = '⚠ ' + err.message;
-        cpMsg.classList.add('cp-err');
-      } finally {
-        cpSubmit.disabled = false;
-      }
-    });
-  }
+  document.getElementById('ndpm-open').addEventListener('click', e => {
+    e.stopPropagation();
+    ndOpenPanel();
+    if (ctxParam) ndPrefill(`Parameter "${ctxParam}" — what would you like to change?`);
+    hideMenu();
+  });
 })();
 
 // ── Load palette now (graph is the default view) ──────────────
@@ -8642,25 +8387,18 @@ gLoadGroupPresets();
   const ndApplyBtn   = document.getElementById('nd-apply-btn');
   const ndUndoBtn    = document.getElementById('nd-undo-btn');
 
-  // ── Pre-fill chips: fire a common complaint straight into Node Doctor ──
-  const ndChipsEl = document.getElementById('nd-chips');
-  if (ndChipsEl) {
-    COMMON_COMPLAINTS.forEach(c => {
-      const chip = document.createElement('div');
-      chip.className = 'cp-chip';
-      chip.textContent = c;
-      chip.addEventListener('click', () => {
-        if (!ndIsOpen()) ndOpenPanel();
-        // Append to whatever the user already typed (or set if empty).
-        const cur = ndInput.value.trim();
-        ndInput.value = cur
-          ? cur.replace(/[.;]*$/, '; ') + c
-          : c;
-        ndInput.focus();
-      });
-      ndChipsEl.appendChild(chip);
-    });
+  // ── Pre-fill the chat input (used by the per-parameter flyout) ──
+  // Appends to whatever is already typed, opens the panel, and focuses.
+  function ndPrefill(text) {
+    if (!text) return;
+    if (!ndIsOpen()) ndOpenPanel();
+    const cur = ndInput.value.trim();
+    ndInput.value = cur ? cur + '\n\n' + text : text;
+    ndInput.focus();
+    // Move caret to the end.
+    ndInput.selectionStart = ndInput.selectionEnd = ndInput.value.length;
   }
+  window.ndPrefill = ndPrefill;   // exposed for the flyout menu handler
 
   function ndIsOpen() { return ndPanel.classList.contains('nd-open'); }
 

@@ -2746,7 +2746,7 @@ else:
     )
 
 
-# ── Shared Hermes streaming helper (used by chat + complain) ────────
+# ── Shared Hermes streaming helper (used by the Node Doctor chat) ────────
 async def _nd_stream(system: str, messages: list, timeout: int = 120):
     """Stream a Node Doctor agent run as SSE text events."""
     if not _HERMES_PY.exists():
@@ -2796,7 +2796,7 @@ async def _nd_stream(system: str, messages: list, timeout: int = 120):
 
 def _nd_system_for(method_id: str, node_def: dict, node_params: dict,
                    extra: str = "") -> str:
-    """Build the node-context system prompt shared by chat/complain."""
+    """Build the node-context system prompt shared by the Node Doctor chat."""
     source = ""
     path = _get_method_path(method_id)
     if path and path.exists():
@@ -2828,140 +2828,6 @@ async def nd_chat(payload: dict):
 
     return StreamingResponse(
         _nd_stream(system, messages), media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
-
-
-# ── Complain: right-click a parameter, request a targeted rewrite ──
-_ND_COMPLAIN_SYSTEM = """\
-You are NODE DOCTOR — COMPLAINT MODE. A user has right-clicked a specific
-PARAMETER on a node and filed a complaint about it. Your job is to rewrite the
-node's Python method so the complaint is fixed, while respecting the node /
-dataflow HYGIENE contract below.
-
-THE COMPLAINT is scoped to one parameter (param_key + complaint text). Fix that
-parameter and its downstream effects, but DO NOT touch unrelated parameters
-unless the fix genuinely requires it.
-
-HARD RULES (same as Node Doctor):
-- Always output the COMPLETE, runnable Python file — never partial snippets.
-- Preserve the method signature exactly:
-      fn(out_dir: Path | str, seed: int, params: dict | None = None)
-- Methods must write at least one PNG to out_dir/ if they have an IMAGE output
-  port.
-- For sidecar outputs use only: write_scalars(out_dir, {...}),
-  write_field(out_dir, arr), write_particles(out_dir, arr) imported from
-  image_pipeline.core.utils.
-- Every param MUST have a default so existing graphs keep working.
-- Never remove existing params or break existing port contracts.
-
-NODE / DATAFLOW HYGIENE CONTRACT (CHECK YOUR REWRITE AGAINST THESE):
-1. Type correctness — the parameter's type must match its behavior. If the
-   complaint says "should be float not int" the default must be a float
-   (e.g. 1.0) and any int() coercion in the body removed. A number box with no
-   min/max becomes a SCALAR input port; an int default is a SCALAR too but
-   silently truncates — honor the requested type.
-2. Every declared param must AFFECT the output. If the complaint is "no effect
-   on image" / "does not produce image", wire the parameter into the compute
-   (or the body must explain why it cannot). No dead parameters.
-3. No fallback generation on pure processors — a node that transforms an input
-   must not silently synthesize a standalone image when the input is missing,
-   unless that is the node's stated purpose.
-4. Declared outputs= must match what the node actually writes. If you add a
-   sidecar (field/particles/scalar), declare it in outputs=; if the node writes
-   nothing of a declared type, remove the dead declaration.
-5. No unused imports, no dead code paths. The rewrite must be minimal and
-   clean.
-6. Speed complaints ("runs too slow" / "runs too fast"): adjust work size /
-   iteration counts / quality factors driven by the parameter; do not add
-   unrelated behavior.
-
-PORT TYPES: IMAGE (H×W×3 float32 [0,1]), SCALAR (float), FIELD (H×W float32),
-PARTICLES (N×4 float32 [x,y,vx,vy]).
-
-RESPONSE FORMAT:
-- Reply conversationally first — state the current behavior, then exactly what
-  you changed about param_key and why it resolves the complaint.
-- End your response with the COMPLETE rewritten file in a single ```python
-  block.
-"""
-
-
-@app.post("/api/node-doctor/complain")
-async def nd_complain(payload: dict):
-    method_id   = payload.get("method_id", "")
-    node_def    = payload.get("node_def", {})
-    node_params = payload.get("node_params", {})
-    complaints  = payload.get("complaints")      # list of {param_key, complaint}
-    param_key   = payload.get("param_key", "")
-    complaint   = (payload.get("complaint", "") or "").strip()
-    messages    = payload.get("messages", [])
-
-    # Normalize to a list of (param_key, complaint) tuples.
-    items = []
-    if isinstance(complaints, list):
-        for c in complaints:
-            pk = (c.get("param_key") if isinstance(c, dict) else "") or ""
-            ct = (c.get("complaint") if isinstance(c, dict) else "") or ""
-            ct = ct.strip()
-            if pk and ct:
-                items.append((pk, ct))
-    if not items and param_key and complaint:
-        items.append((param_key, complaint))
-
-    if not items:
-        return {"error": "at least one (param_key, complaint) pair is required"}
-
-    # Build the COMPLAINT SCOPE block for every item.
-    scope_lines = ["--- COMPLAINT SCOPE ---"]
-    for pk, ct in items:
-        spec = (node_def.get("params", {}) or {}).get(pk, {})
-        scope_lines.append(f"""
-parameter_key : {pk}
-parameter_spec: {json.dumps(spec)}
-current_value : {json.dumps(node_params.get(pk))}
-complaint     : {ct}""")
-    param_ctx = "\n".join(scope_lines) + "\n"
-
-    # The hygiene contract body already says "scoped to one parameter"; when
-    # there are several, generalize that framing.
-    extra = _ND_COMPLAIN_SYSTEM
-    if len(items) > 1:
-        extra = _ND_COMPLAIN_SYSTEM.replace(
-            "THE COMPLAINT is scoped to one parameter (param_key + complaint text). "
-            "Fix that parameter and its downstream effects, but DO NOT touch "
-            "unrelated parameters unless the fix genuinely requires it.",
-            "THESE COMPLAINTS are scoped to a set of parameters. Fix each one and "
-            "its downstream effects, but DO NOT touch other unrelated parameters "
-            "unless a fix genuinely requires it. Resolve every complaint in a single "
-            "coherent rewrite.",
-        )
-        extra = extra.replace(
-            "state the current behavior, then exactly what\n  you changed about param_key and why it resolves the complaint.",
-            "state the current behavior, then exactly what you changed about each "
-            "complained parameter and why it resolves the complaint.",
-        )
-
-    system = _nd_system_for(method_id, node_def, node_params, extra + param_ctx)
-
-    # Complain flows as a single user turn. If a prior conversation exists
-    # (follow-ups), append; otherwise seed a focused first message.
-    if not messages:
-        if len(items) == 1:
-            pk, ct = items[0]
-            first = (f'Complaint about parameter "{pk}": {ct}\n\n'
-                     "Rewrite the node to resolve this, keeping the rest of the node "
-                     "intact and honoring node/dataflow hygiene. Output the full file.")
-        else:
-            bullets = "\n".join(f'  - "{pk}": {ct}' for pk, ct in items)
-            first = (f"Complaints about multiple parameters:\n{bullets}\n\n"
-                     "Rewrite the node to resolve all of them in one coherent change, "
-                     "keeping the rest intact and honoring node/dataflow hygiene. "
-                     "Output the full file.")
-        messages = [{"role": "user", "content": first}]
-
-    return StreamingResponse(
-        _nd_stream(system, messages, timeout=300), media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
