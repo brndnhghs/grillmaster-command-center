@@ -1,0 +1,328 @@
+{
+  "generated_at": "2026-07-13T06:28:58.161638+00:00",
+  "graphs_scanned": 45,
+  "error_count": 9,
+  "warn_count": 31,
+  "findings": [
+    {
+      "graph": "age_density",
+      "node_id": "n54",
+      "method_id": "18",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "breed",
+      "node_id": "n32",
+      "method_id": "18",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "color_cycle",
+      "node_id": "n12",
+      "method_id": "18",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "color_pulse",
+      "node_id": "n44",
+      "method_id": "18",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "density_sweep",
+      "node_id": "n8",
+      "method_id": "18",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "domination",
+      "node_id": "n36",
+      "method_id": "18",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "edge_growth",
+      "node_id": "n29",
+      "method_id": "18",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "explosion",
+      "node_id": "n22",
+      "method_id": "18",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "f2l",
+      "node_id": "n3",
+      "method_id": "18",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "freeze_frame",
+      "node_id": "n24",
+      "method_id": "18",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "freeze_rule_cycle",
+      "node_id": "n51",
+      "method_id": "18",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "glider_stream",
+      "node_id": "n18",
+      "method_id": "18",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "glider_swarm",
+      "node_id": "n41",
+      "method_id": "18",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "invasion",
+      "node_id": "n33",
+      "method_id": "18",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "life_music",
+      "node_id": "n20",
+      "method_id": "18",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "maze_generator",
+      "node_id": "n37",
+      "method_id": "18",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "pulse",
+      "node_id": "n14",
+      "method_id": "18",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "rain",
+      "node_id": "n26",
+      "method_id": "18",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "roundtrip-test",
+      "node_id": null,
+      "method_id": null,
+      "severity": "ERROR",
+      "code": "E_DST_MISSING",
+      "message": "edge src=sn1->sn2:image_in references missing dst node"
+    },
+    {
+      "graph": "roundtrip-test",
+      "node_id": "sn1",
+      "method_id": "gradient",
+      "severity": "ERROR",
+      "code": "E_ORPHAN_NODE",
+      "message": "node references unknown method_id 'gradient' (no NodeDef)"
+    },
+    {
+      "graph": "rt-server-test",
+      "node_id": "x1",
+      "method_id": "10",
+      "severity": "ERROR",
+      "code": "E_DANGLING_REQUIRED",
+      "message": "image_in has no inbound edge and the method consumes the wired image \u2014 will run without an upstream image (broken)"
+    },
+    {
+      "graph": "rule_cycle",
+      "node_id": "n6",
+      "method_id": "18",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "sandpile",
+      "node_id": "n28",
+      "method_id": "18",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "shootout-g-06f260d7",
+      "node_id": "n1",
+      "method_id": "170",
+      "severity": "WARN",
+      "code": "W_DEAD_PORT",
+      "message": "image_in unwired but method never reads the wired image (dead/optional port \u2014 safe but worth pruning)"
+    },
+    {
+      "graph": "shootout-g-18612554",
+      "node_id": "n1",
+      "method_id": "156",
+      "severity": "ERROR",
+      "code": "E_ORPHAN_NODE",
+      "message": "node references unknown method_id '156' (no NodeDef)"
+    },
+    {
+      "graph": "shootout-g-2661455a",
+      "node_id": "n1",
+      "method_id": "42",
+      "severity": "ERROR",
+      "code": "E_DANGLING_REQUIRED",
+      "message": "image_in has no inbound edge and the method consumes the wired image \u2014 will run without an upstream image (broken)"
+    },
+    {
+      "graph": "shootout-g-2661455a",
+      "node_id": "n5",
+      "method_id": "37",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'image_2' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "shootout-g-2661455a",
+      "node_id": "n5",
+      "method_id": "37",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'image_3' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "shootout-g-2661455a",
+      "node_id": "n5",
+      "method_id": "37",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'image_4' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "shootout-g-47679b1a",
+      "node_id": "n4",
+      "method_id": "159",
+      "severity": "WARN",
+      "code": "W_DEAD_PORT",
+      "message": "image_in unwired but method never reads the wired image (dead/optional port \u2014 safe but worth pruning)"
+    },
+    {
+      "graph": "shootout-g-a4d26afb",
+      "node_id": "n1",
+      "method_id": "114",
+      "severity": "WARN",
+      "code": "W_DEAD_PORT",
+      "message": "image_in unwired but method never reads the wired image (dead/optional port \u2014 safe but worth pruning)"
+    },
+    {
+      "graph": "shootout-g-a4d26afb",
+      "node_id": "n2",
+      "method_id": "43",
+      "severity": "ERROR",
+      "code": "E_DANGLING_REQUIRED",
+      "message": "image_in has no inbound edge and the method consumes the wired image \u2014 will run without an upstream image (broken)"
+    },
+    {
+      "graph": "shootout-g-daf71c35",
+      "node_id": "n2",
+      "method_id": "119",
+      "severity": "ERROR",
+      "code": "E_DANGLING_REQUIRED",
+      "message": "image_in has no inbound edge and the method consumes the wired image \u2014 will run without an upstream image (broken)"
+    },
+    {
+      "graph": "shootout-g-f5d79c35",
+      "node_id": "n1",
+      "method_id": "434",
+      "severity": "ERROR",
+      "code": "E_DANGLING_REQUIRED",
+      "message": "image_in has no inbound edge and the method consumes the wired image \u2014 will run without an upstream image (broken)"
+    },
+    {
+      "graph": "simulate",
+      "node_id": "n1",
+      "method_id": "18",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "size_morph",
+      "node_id": "n10",
+      "method_id": "18",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "spark",
+      "node_id": "n30",
+      "method_id": "18",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "test-edge-rt",
+      "node_id": "nmr18e379",
+      "method_id": "10",
+      "severity": "ERROR",
+      "code": "E_DANGLING_REQUIRED",
+      "message": "image_in has no inbound edge and the method consumes the wired image \u2014 will run without an upstream image (broken)"
+    },
+    {
+      "graph": "tune-smoke",
+      "node_id": "n1",
+      "method_id": "18",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "wave_explosion",
+      "node_id": "n47",
+      "method_id": "18",
+      "severity": "WARN",
+      "code": "W_OPTIONAL_UNWIRED",
+      "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
+    }
+  ]
+}

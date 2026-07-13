@@ -169,3 +169,8 @@
 - RECOMMENDED NEXT: Route 8 still open — the dead-rate denominator should exclude pure-control (non-IMAGE) node types (evolution-research.md sub-problem #3); and a headless test that renders a driver→filter graph and asserts temporal_var above the floor already exists (test_shootout_driver_modulation.py) — keep it as the regression guard.
 - New feature committed: node 497 "Weighted Voronoi Stippling" (Secord 2002, NPAR). cKDTree-accelerated CVT/Lloyd relaxation; mono/source/density color modes; drift/breathe/pulse animation; emits FIELD/MASK/PARTICLES. Verified headlessly (8-step audit + param sweeps), <1s render, registered in /api/node-defs.
 - ACTION: no shootout-advisor code change this run (feature was pipeline-facing, not evolution-machinery). Next cg topic worth doing: GPU twin of 497 (GLSL jump-flood weighted CVT) or a fresh fluid/SPH technique.
+[2026-07-12] AUTONOMOUS RUN — candidate scan
+  genomes=509 alive=174 dead=335 (65%)
+  renders>150s=121  cheap-alive(seeds)=104
+  top-rated ids: g-e181c881(r=5,explorer), g-328f0d37(r=5,random), g-e3d68069(r=5,random)
+  ACTION: dead-rate dominated by 150s timeout cull (121 overslow renders). Recommendation: feed render wall_s into cost_model + prefer cheap closed-form procedural nodes (e.g. new aurora_typed 319, caustics 296, clouds 308) as shootout seeds.

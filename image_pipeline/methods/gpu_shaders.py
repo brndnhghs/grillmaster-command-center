@@ -292,6 +292,7 @@ _TYPED_SHADER_NODES = [
     ("316", "droste_typed",        "GPU Droste Spiral"),
     ("317", "stained_glass_typed", "GPU Stained Glass"),
     ("318", "opart_typed",         "GPU Op-Art Waves"),
+    ("319", "aurora_typed",        "GPU Aurora Borealis"),
 ]
 
 _TIME_SCALE_PARAM = {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0}
@@ -924,6 +925,15 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "reset_on": ["seed", "param", "loop", "resize"],
         "param_map": {"wave_speed": "p1", "damping": "p2",
                       "source_frequency": "p3", "source_amplitude": "p4"},
+    },
+    # 499 Sine-Gordon: p1=wave_speed, p2=damping, p3=coupling G, p4=drive_amplitude A.
+    "499": {
+        "type": "sim",
+        "seed": "sine_gordon_seed", "step": "sine_gordon_step", "display": "sine_gordon_display",
+        "state_channels": 2, "substeps": 4,
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"wave_speed": "p1", "damping": "p2",
+                      "coupling": "p3", "drive_amplitude": "p4"},
     },
     # 144 Faraday Waves: p1=amplitude, p2=omega0, p3=damping, p4=capillary.
     "144": {

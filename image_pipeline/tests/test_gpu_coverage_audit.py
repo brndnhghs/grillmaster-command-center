@@ -50,7 +50,7 @@ from image_pipeline.methods.gpu_shaders import GPU_SHADER_NODE_MAP
 #             161, 477, 480 ...) + P1 sim additions.
 # 237 -> 241: +4 categorical-coverage client-GPU shims for recent
 #             gpu-twin-candidate CPU nodes (431, 432, 433, 464).
-EXPECTED_MAP_ENTRIES = 244
+EXPECTED_MAP_ENTRIES = 246
 
 # Simulations-category CPU nodes that are intentionally NOT GPU-mirrored yet.
 # These are Architecture-A stateful sims (discrete CA, agent/particle systems,
@@ -59,7 +59,7 @@ EXPECTED_MAP_ENTRIES = 244
 # one, remove it from this set AND add the appropriate CLIENT_GPU_SIMS entry.
 DEFERRED_SIM_IDS = set(
     "20 34 35 36 55 79 83 84 86 88 89 90 92 94 97 98 101 102 103 "
-    "107 109 110 111 112 113 114 116 117 123 129 130 131 134 "
+    "107 109 110 111 112 113 114 116 117 123 129 130 131 134 499 "
     "136 145 147 149 151 152 158 159 167 337 343 429 440 448 922 310 "
     "483 484".split()
 )
@@ -89,6 +89,11 @@ DEFERRED_SIM_IDS = set(
 # blue-noise point set / dither mask via dart-throwing, not a closed-form
 # f(uv,t) field. Its honest GPU twin is a WebGL2 ping-pong sim needing browser
 # parity, so it is deferred alongside the other Arch-A sims above.
+# 499 Sine-Gordon Equation: Arch-A 2D Sine-Gordon FDTD (leapfrog time-stepping
+# of an HxW field + 5-point Laplacian, capture_frame per frame). A genuine
+# stateful PDE sim whose honest GPU twin is a WebGL2 ping-pong sim needing
+# browser parity -- same deferral class as the Brusselator (922) RD sim above.
+# Out of scope for headless verification until P2 (WebGPU compute) is signed off.
 
 # CPU categories that MUST have a GPU mirror (coverage by category).
 # patterns / fractals / filters / math_art / codegen are fully mirrored by the
