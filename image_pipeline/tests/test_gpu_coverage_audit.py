@@ -45,8 +45,12 @@ from image_pipeline.methods.gpu_shaders import GPU_SHADER_NODE_MAP
 #             419 Thin-Film Interference) as client-GPU shims.
 # 221 -> 228: +7 categorical-coverage client-GPU shims wiring closed-form
 #             typed twins onto existing CPU nodes (16, 65, 78, 56, 81,
-#             406, 409 — math_art / patterns categories).
-EXPECTED_MAP_ENTRIES = 237
+#             406, 409 — math_art / patterns).
+# 228 -> 237: typed shims (417, 419, 402, 399, 350, 311, 312, 314, 68, 104,
+#             161, 477, 480 ...) + P1 sim additions.
+# 237 -> 241: +4 categorical-coverage client-GPU shims for recent
+#             gpu-twin-candidate CPU nodes (431, 432, 433, 464).
+EXPECTED_MAP_ENTRIES = 241
 
 # Simulations-category CPU nodes that are intentionally NOT GPU-mirrored yet.
 # These are Architecture-A stateful sims (discrete CA, agent/particle systems,
@@ -56,8 +60,14 @@ EXPECTED_MAP_ENTRIES = 237
 DEFERRED_SIM_IDS = set(
     "20 34 35 36 55 79 83 84 86 88 89 90 92 94 97 98 101 102 103 "
     "107 109 110 111 112 113 114 116 117 123 129 130 131 134 "
-    "136 145 147 149 151 152 158 159 167 337 343 429 440 448 922 310".split()
+    "136 145 147 149 151 152 158 159 167 337 343 429 440 448 922 310 "
+    "483".split()
 )
+# 483 Curl Noise Flow: Arch-A curl-noise advected particle/field sim (real-time
+# N-body-ish flow integration), not a closed-form f(uv,t) field. Its honest GPU
+# twin is a WebGL2 ping-pong sim needing browser parity, same deferral class as
+# the other RD/CA/PDE sims above. The closed-form cousin 314 Curl-Noise is
+# already mirrored; 483 is the full simulation and stays deferred until P2.
 # 448 Differential Growth (Lomas "Primordial"): Arch-A agent/particle growth
 # sim (mesh sprouting + Laplacian smoothing, explicit Euler over a node graph).
 # Not a closed-form f(uv,t) field, so its honest GPU twin is a WebGL2 ping-pong

@@ -729,10 +729,28 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # CPU numpy node stays authoritative for exact export).  REAL numeric
     # params amount/k2/center/aspect/chromatic mapped to the twin's typed
     # uniforms (GPU-First contract #5).
-    "480": {"shader": "lens_distort_gpu", "type": "filter", "typed": True,
-            "param_map": {"amount": "amount", "k2": "k2",
-                          "center_x": "center_x", "center_y": "center_y",
-                          "aspect": "aspect", "chromatic": "chromatic"}},
+    '480': {'shader': 'lens_distort_gpu', 'type': 'filter', 'typed': True,
+            'param_map': {'amount': 'amount', 'k2': 'k2',
+                          'center_x': 'center_x', 'center_y': 'center_y',
+                          'aspect': 'aspect', 'chromatic': 'chromatic'}},
+    # ── Categorical coverage (2026-07-12): recent CPU nodes tagged
+    # gpu-twin-candidate (431/432/433/464). Each routes its live preview to a
+    # closed-form f(uv,t) GPU twin; the CPU numpy node stays authoritative for
+    # export (two-tier precision). Typed-True shims map the node's REAL numeric
+    # params 1:1 to the shader's u_<name> uniforms (contract #5). Choice/string
+    # params are intentionally left unmapped (pitfall #14).
+    '431': {'shader': 'domain_coloring_typed', 'type': 'procedural', 'typed': False,
+            'param_map': {'exponent': 'exponent', 'scale': 'scale',
+                          'center_x': 'center_x', 'center_y': 'center_y'}},
+    '432': {'shader': 'maurer_rose_typed', 'type': 'procedural', 'typed': False,
+            'param_map': {'k': 'petals', 'd': 'deg', 'n_lines': 'steps',
+                          'line_width': 'thick', 'anim_speed': 'speed'}},
+    '433': {'shader': 'low_discrepancy_typed', 'type': 'procedural', 'typed': False,
+            'param_map': {'count': 'count', 'radius': 'radius', 'anim_speed': 'speed'}},
+    '464': {'shader': 'thin_film_gpu', 'type': 'filter', 'typed': False,
+            'param_map': {'thickness': 'thickness', 'thickness_scale': 'thickness_range',
+                          'ior': 'ior', 'tilt': 'angle',
+                          'intensity': 'strength', 'saturation': 'saturation'}},
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SHIMS)
 

@@ -155,9 +155,13 @@ def test_gpu_shader_node_map_resolves():
     # +1 P0.4 filter twin (422 Palette Posterize) = 219.
     # +2 typed-uniform filter twins (417 Chromatic Aberration,
     #   419 Thin-Film Interference) = 221.
-    # +7 categorical-coverage client-GPU shims (16, 65, 78, 56, 81, 406,
-    #   409 — math_art / patterns) = 228.
-    assert len(GPU_SHADER_NODE_MAP) == 237, len(GPU_SHADER_NODE_MAP)
+    #    409 — math_art / patterns) = 228.
+    # 228 -> 237: typed shims for 417/419 + categorical shims (402, 399, 350,
+    #             311, 312, 314, 68, 104, 161, 477, 480, and pt.13 pattern nodes
+    #             302-308) and P1 sim additions.
+    # 237 -> 241: +4 categorical-coverage client-GPU shims for recent
+    #             gpu-twin-candidate CPU nodes (431, 432, 433, 464).
+    assert len(GPU_SHADER_NODE_MAP) == 241, len(GPU_SHADER_NODE_MAP)
     for mid, entry in GPU_SHADER_NODE_MAP.items():
         if entry.get("type") == "sim":
             # P1 ping-pong sim: seed/step/display must all resolve to shaders.

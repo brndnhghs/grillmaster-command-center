@@ -8740,3 +8740,97 @@ _register("clouds_typed",
     "sky_bottom":{"glsl": "color", "default": "#cfe3f2", "description": "horizon sky color"},
 })
 
+# ── GPU-First categorical coverage: recent CPU nodes tagged gpu-twin-candidate ──
+# 431 Domain Coloring / 433 Low-Discrepancy Field. Closed-form f(uv,t) twins so
+# the recent CPU nodes get a client-GPU live-preview mirror. CPU numpy node stays
+# authoritative for export (two-tier precision). NAMED typed uniforms equal the
+# CPU node's real numeric params (contract #5).
+
+_register("domain_coloring_typed",
+          "Domain coloring of complex functions: phase portrait + contour grid (typed, node 431)",
+          "procedural", '''void main() {
+    // Complex plane: uv in [-scale, scale] around (center_x, center_y).
+    vec2 uv = (v_uv - 0.5) * 2.0;
+    uv.x *= u_resolution.x / u_resolution.y;
+    vec2 z = uv * u_scale + vec2(u_center_x, u_center_y);
+    // Animate: rotate the plane around the origin (rotate) or drift center.
+    float a = u_anim * 6.2831853;
+    if (u_anim_mode > 0.5) {
+        float ca = cos(a), sa = sin(a);
+        z = mat2(ca, -sa, sa, ca) * z;
+    } else if (u_anim_mode > 1.5) {
+        z += vec2(sin(a), cos(a * 0.7)) * u_scale * 0.15;
+    }
+    // f(z) = z^n (the node default 'poly' with exponent n == z_n family).
+    float n = max(u_exponent, 2.0);
+    float r = length(z), th = atan(z.y, z.x);
+    vec2 f = pow(r, n) * vec2(cos(n * th), sin(n * th));
+    // Phase portrait: hue = arg f / 2pi; lightness = (2/pi) atan|f|.
+    float arg = atan(f.y, f.x) / 6.2831853 + 0.5;
+    float mag = atan(length(f)) * 2.0 / 3.14159265;
+    vec3 col = 0.5 + 0.5 * cos(6.2831853 * (arg + vec3(0.0, 0.333, 0.667)));
+    // 'enhanced'/'grid' contour: darken on log|f| & phase lattice lines.
+    float gl = abs(fract(log(length(f) + 1e-3) * 3.0) - 0.5);
+    float lp = abs(fract(arg * 12.0) - 0.5);
+    float grid = smoothstep(0.02, 0.12, min(gl, lp));
+    col *= mix(1.0, grid, u_grid);
+    col *= mag;
+    f_color = vec4(clamp(col, 0.0, 1.0), 1.0);
+}
+''', uniforms={
+    "exponent":  {"glsl": "float", "min": 2.0, "max": 12.0, "default": 3.0,
+                  "description": "power n for z^n"},
+    "scale":     {"glsl": "float", "min": 0.5, "max": 8.0, "default": 3.0,
+                  "description": "view half-extent in the complex plane"},
+    "center_x":  {"glsl": "float", "min": -4.0, "max": 4.0, "default": 0.0,
+                  "description": "real part of view center"},
+    "center_y":  {"glsl": "float", "min": -4.0, "max": 4.0, "default": 0.0,
+                  "description": "imaginary part of view center"},
+    "grid":      {"glsl": "float", "min": 0.0, "max": 1.0, "default": 1.0,
+                  "description": "contour/grid overlay strength"},
+    "anim":      {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.0,
+                  "description": "animation phase in [0,1)"},
+    "anim_mode": {"glsl": "float", "min": 0.0, "max": 2.0, "default": 0.0,
+                  "description": "0=none, 1=rotate, 2=drift"},
+})
+
+_register("low_discrepancy_typed",
+          "Low-discrepancy (R2) point field: stipple / dot pattern (typed, node 433)",
+          "procedural", _INFERNO_GPU + '''void main() {
+    vec2 p = (v_uv - 0.5);
+    p.x *= u_resolution.x / u_resolution.y;
+    float t = u_time * 0.15 * u_speed;
+    vec3 col = u_bg;
+    // R2 low-discrepancy sequence (Roberts 2018): alpha = (1/phi^2, 1/phi^3).
+    vec2 alpha = vec2(0.7548776662, 0.5698402909);
+    int N = int(u_count);
+    float best = 1e9;
+    // Rasterise N dots; highlight the single nearest dot per pixel.
+    for (int i = 0; i < 20000; i++) {
+        if (i >= N) break;
+        float fi = float(i);
+        vec2 q = fract(alpha * fi + vec2(u_ox, u_oy) + t * 0.05);
+        q -= 0.5; q.x *= u_resolution.x / u_resolution.y;
+        // gentle rotation so animation is visible on the point cloud
+        float ca = cos(t * 0.3), sa = sin(t * 0.3);
+        q = mat2(ca, -sa, sa, ca) * q;
+        best = min(best, length(p - q));
+    }
+    float dot = smoothstep(u_radius, u_radius * 0.3, best);
+    col = mix(u_bg, inferno(clamp(1.0 - best * 1.5, 0.0, 1.0)), dot);
+    f_color = vec4(col, 1.0);
+}
+''', uniforms={
+    "count":   {"glsl": "int", "min": 50, "max": 20000, "default": 2000,
+                "description": "number of sampled points N"},
+    "radius":  {"glsl": "float", "min": 0.5, "max": 8.0, "default": 1.5,
+                "description": "dot radius in px"},
+    "ox":      {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.0,
+                "description": "sequence x offset (seed)"},
+    "oy":      {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.0,
+                "description": "sequence y offset (seed)"},
+    "speed":   {"glsl": "float", "min": 0.0, "max": 6.0, "default": 1.0,
+                "description": "rotation speed"},
+    "bg":      {"glsl": "color", "default": "#05060c", "description": "background"},
+})
+
