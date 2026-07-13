@@ -240,7 +240,7 @@ class Builder:
             drv_mid = _driver_for(pname, rng, set(self.pool.scalar_drivers))
             if drv_mid is not None:
                 drv_id = self.add(drv_mid)
-                _configure_driver(self, drv_id, drv_mid, spec)
+                _configure_driver(self, drv_id, drv_mid, spec, pname)
                 self.wire(drv_id,
                           self.pool.output_port_for(drv_mid, "scalar") or "value",
                           head, pname)
@@ -592,22 +592,88 @@ def _drivable_params(pool: GenePool, cfg: ShootoutConfig,
     return [(p, spec) for _, p, spec in out]
 
 
+# Per-kind default oscillation half-width for wireable params that have a
+# numeric default but NO schema min/max. The generator's _drivable_params
+# (and the executor's port wiring) expose many such params — phase, morph,
+# offset_x, rotation, zoom, wobble, color_shift, … — that accept ANY python
+# float. An LFO stuck at its node default 0..1 barely nudges these (a 0..1
+# sweep into a phase that's happy at ~5.0 is invisible → the clip reads
+# static and gets culled). When the target schema has no range to map onto,
+# centre the driver on the param's own default and widen it by an amount
+# appropriate to the kind of quantity, so the oscillation actually moves the
+# rendered output. Empirics (Route 8, 2026-07-12): this single change lifts
+# LFO→phase/morph/rotation graphs from temporal_var≈1e-4 (dead) to
+# temporal_var≈1e-2 (alive) across the whole 96-frame clip.
+_DRIVER_DEFAULT_SPAN: dict[tuple, float] = {
+    # (kind frag substrings, half-width). Calibrated so an LFO sweeping the
+    # param at rate≈0.6 over a 96-frame clip clears the shootout liveness
+    # floor (temporal_var >= 3e-3, changed-pixel frac >= 0.03) on node 05:
+    #   phase/morph half-span 3.0 → tvar≈2e-3 (DEAD); 6.0 → tvar≈6e-3 (alive);
+    #   10.0 → tvar≈1.4e-2 (comfortably alive). Pad well above the floor.
+    ("phase", "offset", "warp", "drift", "morph", "wobble"): 8.0,
+    ("rotation", "rot", "angle", "orient", "dir"): 2.0,
+    ("zoom", "scale", "size"): 3.0,
+    ("color_shift", "hue", "shift", "tint"): 1.5,
+    ("speed", "rate", "vel", "flow", "freq"): 1.5,
+    ("amp", "strength", "intensity", "gain", "amount"): 1.0,
+    ("threshold", "cutoff", "level", "density", "mix", "blend"): 0.8,
+}
+_DRIVER_DEFAULT_FALLBACK = 1.0  # absolute span if no kind matches
+
+
+def _default_span_for(param_name: str) -> float:
+    ln = param_name.lower()
+    for frags, span in _DRIVER_DEFAULT_SPAN.items():
+        if any(f in ln for f in frags):
+            return span
+    return _DRIVER_DEFAULT_FALLBACK
+
+
 def _configure_driver(b: Builder, drv_id: str, drv_mid: str,
-                      target_spec: dict | None) -> None:
-    """Map the driver's output range onto the target param's schema range
-    and pick a musically-sane rate. Without this, an 0..1 LFO into a 0..500
-    param 'drives' nothing."""
+                      target_spec: dict | None,
+                      target_param_name: str | None = None) -> None:
+    """Map the driver's output range onto the target param and pick a
+    musically-sane rate. Without this, an 0..1 LFO into a 0..500 param (or a
+    wireable param with no schema range) 'drives' nothing.
+
+    ``target_param_name`` MUST be passed (the param being driven); the edge may
+    not exist yet when this runs, so it cannot be looked up from the graph. It
+    selects the per-kind oscillation span for Case 2 below.
+
+    Range mapping priority:
+      1. Target schema has min/max → map onto that range (sub-window).
+      2. Target has a numeric default but no min/max (the common case for
+         wireable port params like phase/rotation/zoom) → centre the driver on
+         the default and widen by a per-kind span so the oscillation is visible.
+      3. No usable target info → leave the driver at its node default (0..1);
+         this is the weak case the headless test documents as a regression risk.
+    """
     rng = b.rng
     params = b.node(drv_id)["params"]
-    if target_spec is not None and drv_mid in _DRIVER_RANGE_PARAMS:
+    if drv_mid in _DRIVER_RANGE_PARAMS:
         lo_k, hi_k = _DRIVER_RANGE_PARAMS[drv_mid]
-        lo, hi = float(target_spec["min"]), float(target_spec["max"])
-        span = hi - lo
-        # random sub-window covering 30–100% of the param's range
-        width = span * rng.uniform(0.3, 1.0)
-        start = lo + rng.uniform(0, span - width)
-        params[lo_k] = round(start, 4)
-        params[hi_k] = round(start + width, 4)
+        # Case 1: target schema exposes a range.
+        if target_spec is not None and target_spec.get("min") is not None \
+                and target_spec.get("max") is not None \
+                and float(target_spec["max"]) > float(target_spec["min"]):
+            lo, hi = float(target_spec["min"]), float(target_spec["max"])
+            span = hi - lo
+            width = span * rng.uniform(0.3, 1.0)
+            start = lo + rng.uniform(0, span - width)
+            params[lo_k] = round(start, 4)
+            params[hi_k] = round(start + width, 4)
+        # Case 2: no schema range, but the target has a numeric default we can
+        # centre on (phase=0.0 → oscillate around 0 over a kind-appropriate
+        # span; rotation=0.0 → ±1.5; zoom=1.0 → ~0..3; …).
+        elif target_spec is not None:
+            default = target_spec.get("default")
+            if isinstance(default, (int, float)) and not isinstance(default, bool):
+                centre = float(default)
+                half = _default_span_for(target_param_name or "")
+                lo = round(centre - half, 4)
+                hi = round(centre + half, 4)
+                params[lo_k] = lo
+                params[hi_k] = hi
     if drv_mid in ("__lfo__", "__noise1d__", "__strobe__"):
         params["rate"] = round(rng.uniform(0.1, 1.5), 3)   # gentle cycles
     if drv_mid == "__ramp__":
@@ -688,7 +754,12 @@ def apply_driver_policy(b: Builder) -> None:
                 if drv_mid is None:
                     continue
                 drv_id = b.add(drv_mid)
-                _configure_driver(b, drv_id, drv_mid, spec)
+                # Pass the FULL param schema (not the ranged-filtered spec that
+                # _drivable_params returns) so _configure_driver can read the
+                # param's default for drivers targeting wireable params that
+                # have no min/max (e.g. phase, morph, rotation).
+                full_spec = (pool.defs[n["method_id"]].get("params") or {}).get(pname)
+                _configure_driver(b, drv_id, drv_mid, full_spec, pname)
             b.wire(drv_id, pool.output_port_for(drv_mid, "scalar") or "value",
                    n["id"], pname)
             fed.add((n["id"], pname))

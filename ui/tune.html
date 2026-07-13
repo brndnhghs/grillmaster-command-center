@@ -262,17 +262,24 @@ async function animate(){
 }
 
 // ── open / save ──────────────────────────────────────────────────────
-function openInEditor(){
-  if(!CURRENT_GRAPH) return;
-  localStorage.setItem('tune-handoff', JSON.stringify(CURRENT_GRAPH));
+// The editor loads graphs from its Saved menu (/api/graph/saved/{name}), so
+// both actions go through /api/graph/save; "Open in editor" also opens the app.
+async function saveNamed(defaultName){
+  if(!CURRENT_GRAPH) return null;
+  const name = (prompt('Save graph as:', CURRENT_GRAPH.name || defaultName) || '').trim();
+  if(!name) return null;
+  await api('/api/graph/save', {name, graph:{...CURRENT_GRAPH, name}});
+  return name;
+}
+async function openInEditor(){
+  const name = await saveNamed('tuned');
+  if(!name) return;
+  setStatus('saved as "'+name+'" — load it from the editor’s Saved menu');
   window.open('/', '_blank');
 }
 async function saveGraph(){
-  if(!CURRENT_GRAPH) return;
-  const name = prompt('Save graph as:', CURRENT_GRAPH.name || 'tuned');
-  if(!name) return;
-  await api('/api/graph/save', {name, graph:{...CURRENT_GRAPH, name}});
-  setStatus('saved as '+name);
+  const name = await saveNamed('tuned');
+  if(name) setStatus('saved as "'+name+'"');
 }
 
 $('#buildBtn').onclick=build;

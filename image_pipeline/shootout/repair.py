@@ -247,6 +247,21 @@ def repair_genome(genome: dict, pool: GenePool | None = None,
             fixed = {**fixed, "nodes": b.nodes, "edges": b.edges}
         except Exception:
             pass
+        # ensure_terminal_variance can rewire or swap the render head (e.g. a
+        # head swap that drops a now-mismatched image-in edge) and orphan part
+        # of the upstream. Re-prune to the terminal's ancestors so the
+        # no-dead-islands guarantee holds regardless of what the variance pass
+        # did — otherwise validate_graph rejects the genome and it's resampled.
+        if fixed is not None:
+            term = next((n for n in fixed["nodes"] if n.get("render")), None)
+            if term is not None:
+                keep = _ancestors_of(term["id"], fixed["edges"]) | {term["id"]}
+                fixed = {
+                    **fixed,
+                    "nodes": [n for n in fixed["nodes"] if n["id"] in keep],
+                    "edges": [e for e in fixed["edges"]
+                              if e["src_node"] in keep and e["dst_node"] in keep],
+                }
     if fixed is not None and validate_graph(fixed, pool, cfg):
         # issues present → discard (next_generation resamples)
         fixed = None

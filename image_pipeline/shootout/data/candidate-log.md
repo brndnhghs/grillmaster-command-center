@@ -46,6 +46,13 @@
 - verification: 3 passed in 1.07s (`env -u PYTHONPATH .venv/bin/python -m pytest image_pipeline/tests/test_shootout_structural_mutation.py`); /api/node-defs still 200 (no routing regression).
 - ACTION: committed the evolve.py guarantee + the test as one coherent feat(shootout) commit. Did NOT bundle the unrelated artifacts.
 
+## 2026-07-12 — autonomous run (Local Laplacian Filters node 496)
+- genomes=497 alive=166 dead/rejected=331 (67%) renders>150s=119 (of timed)
+- TOP-3 rated (schema-corrected): g-None(r=5,origin=explorer), g-None(r=5,origin=random), g-None(r=4,origin=explorer) — rating ids still None (genome_id schema; promotion-by-id hook still missing, see evolution-research.md #6)
+- cheap-alive(recombine seeds)=100
+- dead hotspots: [('__lfo__',824),('__counter__',228),('__noise1d__',128),('__ramp__',104),('__strobe__',45),('__image_to_mask__',41),('__envelope__',37),('137',33)]
+- ACTION: added node 496 "Local Laplacian (edge-aware tone/detail)" — Paris et al. 2011. Edge-aware multi-scale detail/tone via a Laplacian pyramid + value-dependent local-linear operator. Render-cheap (≤512px cap, per-frame ~80-90ms). With detail_breathe/tone_sweep animation modes it is always-moving (changed-pixel-fraction 25%/16%), directly fighting the 67% dead-rate. Verification headless (probe removed): registered; non-black; none-mode static Δ=0; both animation modes move ≥10% of pixels; detail/tone params live (changed-px 36%/16%). Did NOT bundle the unrelated in-flight repair.py + tune.html (different feature).
+
 ## 2026-07-12 — autonomous run (perceptual liveness rescue + finalize evolve batch)
 - genomes=418 alive=130 dead/rejected=288 (69%) renders>150s=101 human-ratings=15
 - dead reasons: timeout=87, flat=87, static=86, over-budget=15, flicker=5
@@ -148,3 +155,17 @@
 - No fresh cg technique this run: the working tree held an in-progress prior-run batch (per leftover-batch rule, finished it rather than starting anew). Batch contents: (1) node 494 "Screen-Space Fluid" — van der Laan/Green/Sainz SI3D 2009 splat→bilateral-smooth→liquid-shading (https://doi.org/10.1145/1507149.1507164); (2) `image_pipeline/tuning/` directed-brief→graph→critique→learned-playbook subsystem + `/tune` UI + API in server.py; (3) shootout evaluator `reject_node_errors` backstop + repair.py hardening (feedback-edge strip, dead-island detection, frame-0 render gate).
 - FIX during verification: node 494 had a pitfall-#19 silent-dead control — the per-frame max-mean normaliser cancelled `radius`/`particles`. Replaced with a FIXED reference-density normaliser (D0) + radius-driven area cutoff; verified MASK body-area now responds (radius 2→18: 47.6%→63.1%; particles 16k→40k: 56.4%→69.5%). Animation: flow/swirl/waves all move (>14% of pixels); none-mode static (frac 0.0000).
 - Verified headlessly: repo AST parse 0 errors; node 494 registered (/api/node-defs); non-black render (std>0.07); tuned test_tuning.py 11 passed. Committed + pushed as one cohesive batch. Next: resume cg-research thread — GPU twin of node 484 LIC, or a fresh fluid/SPH or GPU post-process technique.
+
+## 2026-07-12 (cg technique run — Weighted Voronoi Stippling node 497)
+- Diagnostic: genomes=509 alive=174 dead=335 (66%), renders>150s=121. Dead hotspots still dominated by control/utility nodes: __lfo__(827)/__counter__(230)/__noise1d__(128)/__ramp__(105)/__strobe__(45)/__image_to_mask__(41)/__envelope__(38)/137(33). Reconfirms the denominator should exclude pure-control (non-IMAGE) node types — alive-rate is structurally depressed by wiring-only nodes.
+- TOP-3 rated (promotion seeds, real ratings): g-328f0d37 / g-97f1158a / g-e181c881 (rating=5 each). CHEAP-ALIVE(recombine seeds)=104 of 174 alive — explorer randoms keep entering, explore_ratio intact.
+
+## 2026-07-12 (finalize orphaned Route-8 evolution batch — driver span + repair re-prune)
+- This run found an UNCOMMITTED prior-run batch in the working tree (HEAD==origin/main, so not yet pushed). Per the leftover-batch rule it is the task, not a starting point. 3 coherent files, one Route-8 theme:
+  1. **motifs.py / _configure_driver** — Case 2: when a wireable target param has a numeric default but NO schema min/max (phase/morph/rotation/zoom/wobble/color_shift/…), centre the LFO driver on the param's own default and widen by a per-kind span (`_DRIVER_DEFAULT_SPAN`) instead of the weak 0..1 sweep that read as static. Empirics: lifts LFO→phase/rotation graphs from temporal_var≈1e-4 (dead) to ≈1e-2 (alive) on node 05. `apply_driver_policy` now passes the FULL param schema (not the ranged-filtered spec) so the default is readable.
+  2. **repair.py** — after `ensure_terminal_variance` rewires/swaps the render head (which can orphan upstream nodes), re-prune to the terminal's ancestors so the no-dead-islands guarantee holds and `validate_graph` accepts the genome (else it was resampled/discarded).
+  3. **ui/tune.html** — unify Save/Open-in-Editor through `/api/graph/save` (the editor loads from its Saved menu), so "open in editor" no longer relies on a localStorage handoff that the editor ignored.
+- Verification: `test_shootout_driver_modulation.py` 3 passed; `test_shootout.py::test_repair_fixes_broken_graphs` + `::test_repair_discards_unrenderable` 2 passed; `node-defs` still 200 on throwaway :7871; tune.html JS braces balanced; py_compile clean. Did NOT bundle the separate in-flight artifacts (jump_flood_voronoi.py, tools/image_wiring_*, scripts/Grillmaster.app).
+- RECOMMENDED NEXT: Route 8 still open — the dead-rate denominator should exclude pure-control (non-IMAGE) node types (evolution-research.md sub-problem #3); and a headless test that renders a driver→filter graph and asserts temporal_var above the floor already exists (test_shootout_driver_modulation.py) — keep it as the regression guard.
+- New feature committed: node 497 "Weighted Voronoi Stippling" (Secord 2002, NPAR). cKDTree-accelerated CVT/Lloyd relaxation; mono/source/density color modes; drift/breathe/pulse animation; emits FIELD/MASK/PARTICLES. Verified headlessly (8-step audit + param sweeps), <1s render, registered in /api/node-defs.
+- ACTION: no shootout-advisor code change this run (feature was pipeline-facing, not evolution-machinery). Next cg topic worth doing: GPU twin of 497 (GLSL jump-flood weighted CVT) or a fresh fluid/SPH technique.
