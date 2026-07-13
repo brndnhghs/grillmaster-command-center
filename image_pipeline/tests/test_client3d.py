@@ -177,3 +177,45 @@ def test_edge_transport_surfaced_and_consumed():
     html = Path("ui/index.html").read_text()
     assert "edgeTransport: d.edge_transport" in html
     assert "_gOvlTele.edgeTransport" in html
+
+
+# ── 7. Typed-shim param_map rename resolves (frozen-preview class) ────────────
+
+def test_typed_shim_param_map_values_are_real_uniforms():
+    """A client-GPU shim that points an existing CPU node at a typed twin
+    (shader carries `uniforms=`) may RENAME a CPU param to a differently-named
+    shader uniform via param_map ({cpu_param: uniform_name}). The client's
+    typed branch (client3d.js renderGpuShader) inverts param_map to source the
+    value from the correct node param — so every non-p-slot param_map VALUE
+    must be a real uniform of the target shader, else the reverse lookup maps
+    to a nonexistent u_<name> and the slider stays dead (frozen-preview class,
+    nodes 65/78/56/406/432/433/464)."""
+    from image_pipeline.core import shaders as S
+    from image_pipeline.methods.gpu_shaders import CLIENT_GPU_SHIMS
+
+    bad = []
+    for nid, entry in CLIENT_GPU_SHIMS.items():
+        spec = S.SHADERS.get(entry.get("shader"), {})
+        uni = spec.get("uniforms")
+        if not uni:
+            continue  # legacy p1..p4 twin — reverse lookup is a no-op
+        for cpu_param, slot in entry.get("param_map", {}).items():
+            if slot in ("p1", "p2", "p3", "p4"):
+                continue
+            if slot not in uni:
+                bad.append(f"{nid}:{entry['shader']} {cpu_param}->{slot}")
+    assert not bad, (
+        "typed-shim param_map values must be real shader uniforms "
+        f"(else the client reverse lookup is dead): {bad}"
+    )
+
+
+def test_client_typed_branch_honors_param_map_rename():
+    """The client's typed-uniform branch must invert param_map so a renamed
+    CPU param reaches its shader uniform. Locks the reverse-lookup code so a
+    future refactor can't silently re-freeze the mismatched-name shims."""
+    js = Path("ui/js/client3d.js").read_text()
+    # The reverse map (uniform-name -> cpu-param) and its use in the typed loop.
+    assert "uniToParam" in js, "typed branch lost the param_map reverse lookup"
+    assert "uniToParam[pm[cpuName]] = cpuName" in js
+    assert "uniToParam[uname]" in js

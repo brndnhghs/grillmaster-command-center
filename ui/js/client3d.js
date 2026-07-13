@@ -571,10 +571,23 @@ void main(){ f_color = texture(u_texture, vec2(v_uv.x, 1.0 - v_uv.y)).bgra; }`,
     if (uspec) {
       // Typed-uniform shader: set u_<name> per declared spec from node params
       // (falling back to each variable's declared default).
+      //
+      // A client-GPU shim wiring an existing CPU node onto a typed twin can have
+      // a param_map that RENAMES a CPU param to a differently-named shader
+      // uniform (e.g. node 65 `freq1` -> uniform `k1`). param_map is
+      // {cpu_param: uniform_name}, so invert it to look up the value from the
+      // correct node param. Without this reverse lookup, params[uname] is
+      // undefined for renamed shims and the live-preview slider is dead (the
+      // twin freezes at the uniform's default) — the frozen-typed class.
+      const pm = entry.param_map || {};
+      const uniToParam = {};
+      for (const cpuName in pm) uniToParam[pm[cpuName]] = cpuName;
       for (const [uname, spec] of Object.entries(uspec)) {
         const u = mat.uniforms['u_' + uname];
         if (!u) continue;
-        const v = this._coerceUniform(spec, params[uname]);
+        const srcName = (uniToParam[uname] !== undefined) ? uniToParam[uname] : uname;
+        const raw = (params[srcName] !== undefined) ? params[srcName] : params[uname];
+        const v = this._coerceUniform(spec, raw);
         if (spec.glsl === 'color') u.value.copy(v); else u.value = v;
       }
       mat.uniforms.u_texture.value = inputTex || this._blackTex;
