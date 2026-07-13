@@ -229,3 +229,10 @@
 - ACTION TAKEN: added node 505 "Metaballs" — classic real-time implicit blobby surfaces (scalar field F=Σ rᵢ²/|p−cᵢ|², thresholded at T≈1; soft smoothstep edge + density-weighted hue blend so blobs merge gooey). Vectorized, render-cheap: 32 ms/frame @512x512 → directly counters the 150s timeout cull. Verified headlessly (8-step audit): none-mode static Δ=0.0000; orbit Δ=0.1658; pulse Δ=0.1633; param-live threshold Δ=0.3828, balls Δ=0.4058, color_mode Δ=0.1444; registered in /api/node-defs; Rule8 server import clean. Emits IMAGE/FIELD/MASK (goo-coverage mask).
 - NOTE: first attempted Weighted Voronoi Stippling but node 338 already implements it (JFA-based) — dup avoided, pivoted to Metaballs.
 - RECOMMENDED NEXT: rating-signal poverty (rotation #6): frictionless keep/reject UI + active-learning pick of informative clips; only ~18/509 genomes rated.
+
+## 2026-07-13 — autonomous run (Leverage Tier: test/perf pass + cost-gate test repair)
+- genomes=509 alive=174 dead/rejected=335 (66%) renders>150s=121 max=547s human-ratings=18
+- TOP-3 rated (promotion seeds): g-e181c881(r=5), g-328f0d37(r=5), g-e3d68069(r=5)
+- cheap-alive(recombine seeds)=104
+- dead hotspots: [('__lfo__',827),('__counter__',230),('__noise1d__',128),('__ramp__',105),('__strobe__',45),('__image_to_mask__',41),('__envelope__',38),('137',33),('141',28),('123',11)]
+- ACTION: Verified driver/control path is CORRECT — test_driver_animation_reaches_pixels + test_shootout_driver_modulation PASS; shootout calls GraphExecutor.execute per frame with time injected, so LFO/Counter/Noise1D modulation reaches pixels. GPU live-preview suite GREEN (820 passed). Found + fixed 2 STALE cost-gate tests broken by the 2026-07-13 cost-gate recalibration (estimate_cost_s now applies slope*raw+intercept); updated to import CAL_SLOPE/CAL_INTERCEPT so they verify the new contract instead of the old linear sum. RECOMMENDATION (open): exclude pure control/signal node types from the dead-rate denominator — control nodes emit no image by design and inflate the 66% figure; and add a seed_ids/avoid_methods promotion hook (still absent in session/config — logged gap).

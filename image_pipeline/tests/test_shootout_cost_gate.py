@@ -5,7 +5,9 @@ Route 8 timeout failure mode (2026-07-11): ~21% of shootout genomes render
 past render_timeout_s and get culled as 'timeout' — pure wasted compute. The
 cost model estimates wall time from logged per-node timings so the sampler can
 skip guaranteed-timeouts before rendering. These tests pin the gate contract:
-  A) estimate is additive over nodes and scales with the frame budget,
+  A) estimate's raw component is additive over nodes and scales with the frame
+     budget; the returned estimate additionally applies the corpus calibration
+     (slope·raw + intercept) introduced by the 2026-07-13 cost-gate recalibration,
   B) an over-budget graph is skipped, an affordable one is not,
   C) cold start (too few samples) never gates,
   D) cost_gate_enabled=False disables the gate,
@@ -33,22 +35,29 @@ def _model(per_method: dict[str, float], n_samples: int, default_ms: float = 5.0
             "n_samples": n_samples, "built": "test"}
 
 
-def test_estimate_is_additive_and_scales_with_frames():
+def test_estimate_raw_scales_with_frames_and_calibrates():
     model = _model({"heavy": 1000.0, "light": 1.0}, n_samples=50)
     g = _genome("g-x", ["heavy", "light", "light"])
-    # (1000 + 1 + 1) ms/frame * 96 frames / 1000 = 96.19 s
+    # Raw sum = (1000 + 1 + 1) ms/frame = 1002 ms/frame.
+    raw1 = (1000.0 + 1.0 + 1.0) * 96 / 1000.0          # 96.192 s
+    raw2 = (1000.0 + 1.0 + 1.0) * 192 / 1000.0         # 192.384 s
     est = cm.estimate_cost_s(g, frames=96, model=model)
-    assert abs(est - (1002.0 * 96 / 1000.0)) < 1e-6
-    # Doubling frames doubles the estimate.
     est2 = cm.estimate_cost_s(g, frames=192, model=model)
-    assert abs(est2 - 2 * est) < 1e-6
+    # The returned estimate applies the corpus calibration (slope·raw + intercept).
+    assert abs(est - (cm.CAL_SLOPE * raw1 + cm.CAL_INTERCEPT)) < 1e-6
+    assert abs(est2 - (cm.CAL_SLOPE * raw2 + cm.CAL_INTERCEPT)) < 1e-6
+    # The RAW component is additive over nodes and scales linearly with frames:
+    # the per-frame intercept is constant, so the frame-step delta is slope·Δraw.
+    assert abs((est2 - est) - cm.CAL_SLOPE * (raw2 - raw1)) < 1e-6
 
 
 def test_unknown_method_uses_default():
     model = _model({}, n_samples=50, default_ms=42.0)
     g = _genome("g-u", ["never_seen", "also_new"])
+    # Unknown methods fall back to default_ms: 2 * 42 = 84 ms/frame.
+    raw = (42.0 + 42.0) * 100 / 1000.0                  # 8.4 s
     est = cm.estimate_cost_s(g, frames=100, model=model)
-    assert abs(est - (84.0 * 100 / 1000.0)) < 1e-6
+    assert abs(est - (cm.CAL_SLOPE * raw + cm.CAL_INTERCEPT)) < 1e-6
 
 
 def test_over_budget_graph_is_gated():

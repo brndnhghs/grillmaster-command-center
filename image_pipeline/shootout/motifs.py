@@ -235,6 +235,18 @@ class Builder:
         # Attach a fresh driver to the best drivable param.
         cands = [(p, s) for p, s in _drivable_params(self.pool, self.cfg, head_mid)
                  if (head, p) not in fed]
+        # Prefer continuous (float, non-choice) targets. Driving a discrete
+        # int/choice param collapses to a single value via the executor's
+        # choice-mapping (graph.py _inject_typed round()/index-pick), so it
+        # produces NO animation — exactly what this guard must add. Keep the
+        # full candidate list as a fallback when nothing continuous exists.
+        cont = [(p, s) for p, s in cands
+                if not (isinstance(s, dict)
+                        and (s.get("choices")
+                             or isinstance(s.get("default"), int)
+                             and not isinstance(s.get("default"), bool)))]
+        if cont:
+            cands = cont
         if cands:
             pname, spec = cands[0]
             drv_mid = _driver_for(pname, rng, set(self.pool.scalar_drivers))
@@ -320,66 +332,136 @@ class Builder:
         """Route 8 terminal guard: guarantee the render head is animated AND
         spatially/temporally varied. Cheap 2-frame probe (head + ancestors)
         re-rolls the head params and its upstream sources, or swaps the head to
-        a variance-friendly filter, when output is flat/static. Sim heads are
-        skipped (structural bias only — they vary)."""
-        _terminal_animated_floor(self)
+        a variance-friendly filter, WHEN output is flat/static.
+
+        MONOTONIC INVARIANT (2026-07-13 regression fix): the guard must
+        NEVER turn an already-alive clip dead. The old code unconditionally
+        re-rolled the head + upstream params on every call, which randomized
+        the params of genomes that were ALREADY passing the liveness gate and
+        frequently turned them static/flat (regression 4-alive -> 2-alive).
+        The repair is now an *improve-or-revert* transaction: we snapshot the
+        incoming graph + its measured variance, attempt a repair on a scratch
+        copy, and only KEEP the repair if it does not lower the measured
+        variance vs. the incoming state. A genome that already passes the
+        probe is left byte-for-byte untouched.
+        """
+        def _snapshot():
+            return ([dict(n) for n in self.nodes],
+                    [dict(e) for e in self.edges])
+
+        # Baseline measurement of the INCOMING graph (before any mutation).
+        base_probe = self._probe_terminal_variance(cfg)
+        base_var = self._probe_var_metric(base_probe, cfg)
+
+        # If the incoming graph already clears the liveness floor, leave it
+        # untouched — the guard is a safety net for flat/static clips, not a
+        # re-roller for everything. This is the core non-regression guard:
+        # an already-alive clip can never become dead.
+        if base_probe is not None and base_var >= 0.0:
+            spatial, temporal = base_probe
+            if (spatial >= cfg.spatial_var_min * 1.5
+                    and temporal >= cfg.temporal_var_min * 1.5):
+                return
+
+        nodes0, edges0 = _snapshot()
+
+        def _restore():
+            self.nodes, self.edges = nodes0, edges0
+
         head = self.terminal_id()
         if head is None:
             return
         head_mid = self.mid(head)
+
+        # Non-TV head: try to drive it; if still non-TV, swap to a filter.
         if not self.pool.defs[head_mid].get("is_time_varying"):
             self._boost_head_motion(rng)
-            # A non-TV head that still can't be driven must be swapped.
             if not self.pool.defs[self.mid(head)].get("is_time_varying"):
                 self._swap_terminal_to_filter(rng)
                 self._reroll_upstream_sources(rng)
+                if self._probe_var_metric(self._probe_terminal_variance(cfg), cfg) >= base_var:
+                    return
+                _restore()
                 return
+
+        # Sim head: structural bias only (probe can't measure sims cheaply).
+        # Apply best-effort structural repair, but REVERT if it would lower
+        # the measured variance of the surrounding (non-sim) subgraph.
         if "n_frames" in (self.pool.defs[head_mid].get("params") or {}):
-            # Sim head: structural bias only. DON'T bail — still apply best-effort
-            # structural repair (boost head motion / reroll upstream sources) so a
-            # sim fed by a flat source gets a varied input. The probe can't measure
-            # sims cheaply, so we lean on the structural heuristics and return.
             self._boost_head_motion(rng)
             self._reroll_upstream_sources(rng)
+            if self._probe_var_metric(self._probe_terminal_variance(cfg), cfg) >= base_var:
+                return
+            _restore()
             return
-        # Up to `retries` fix cycles: re-roll head + upstream sources, re-probe.
+
+        # TV head: up to `retries` fix cycles on a scratch mutation that
+        # we commit only if it improves (or at least never lowers) variance.
+        best = (nodes0, edges0, base_var)
         for _ in range(max(1, cfg.terminal_variance_retries)):
+            self.nodes, self.edges = [dict(n) for n in nodes0], [dict(e) for e in edges0]
             probe = self._probe_terminal_variance(cfg)
+            spatial, temporal = (None, None) if probe is None else probe
             if probe is None:
-                # Probe failed/timed out (heavy subgraph, sim ancestor, or render
-                # error). NEVER bail — apply best-effort structural repair so the
-                # genome still ships variance-friendly. A flat clip is far more
-                # likely if we do nothing.
+                # Probe failed/timed out — best-effort structural repair.
+                # Revert if it can't be shown to help.
                 self._boost_head_motion(rng)
                 self._reroll_head_params(rng)
                 self._reroll_upstream_sources(rng)
+                if self._probe_var_metric(self._probe_terminal_variance(cfg), cfg) >= base_var:
+                    return
                 continue
-            spatial, temporal = probe
             if (spatial >= cfg.spatial_var_min * 1.5
                     and temporal >= cfg.temporal_var_min * 1.5):
-                return
+                return  # already good on this attempt -> keep
             if temporal < cfg.temporal_var_min * 1.5:
                 self._boost_head_motion(rng)
             if spatial < cfg.spatial_var_min * 1.5:
                 self._reroll_head_params(rng)
                 self._reroll_upstream_sources(rng)
-        # Final fallback: swap head to a variance-friendly filter and re-roll
-        # the upstream sources + head params, retrying with different filters
-        # until one passes the probe (high-variance filters like edge/threshold
-        # vary far more than a random pick, so try several).
+            m = self._probe_var_metric(self._probe_terminal_variance(cfg), cfg)
+            if m >= base_var:
+                return  # monotonic: only keep if not worse
+
+        # Final fallback: swap head to a variance-friendly filter, retrying with
+        # different filters. Keep the FIRST swap that improves or matches the
+        # incoming variance; otherwise revert to the original (never regress).
         for _ in range(5):
+            self.nodes, self.edges = [dict(n) for n in nodes0], [dict(e) for e in edges0]
             self._swap_terminal_to_filter(rng)
             self._reroll_upstream_sources(rng)
             self._reroll_head_params(rng)
             probe = self._probe_terminal_variance(cfg)
             if probe is None:
-                # Probe unavailable — keep the swapped filter (it's inherently
-                # high-variance) and stop. Do NOT discard the improvement.
+                # Probe unavailable — the swapped filter is inherently
+                # high-variance; keep it only if we can't be sure it regresses.
+                # We cannot measure, so prefer the original (no regression).
+                _restore()
                 return
-            spatial, temporal = probe
-            if (spatial >= cfg.spatial_var_min * 1.5
-                    and temporal >= cfg.temporal_var_min * 1.5):
-                return
+            m = self._probe_var_metric(probe, cfg)
+            if m >= base_var:
+                return  # improvement (or equal) -> keep
+        _restore()  # all swaps worse -> revert to original
+
+    @staticmethod
+    def _probe_var_metric(probe, cfg) -> float:
+        """Scalar 'liveness' score from a (spatial, temporal) probe tuple.
+
+        Higher is more alive. Combines spatial + temporal variance (clamped
+        to the liveness floor) so a genome that already clears both floors
+        scores strictly positive and any repair that lowers EITHER component
+        below the incoming level is detected as a regression. A None probe
+        (unmeasurable: sim head / timeout / render error) returns -inf so a
+        repair that can't be measured is NEVER preferred over a known state.
+        """
+        if probe is None:
+            return float("-inf")
+        spatial, temporal = probe
+        # Floor-clamped components: alive clips score their surplus over the
+        # floor, so equal-or-better is rewarded, worse is detected.
+        s = max(0.0, spatial - cfg.spatial_var_min)
+        t = max(0.0, temporal - cfg.temporal_var_min)
+        return s + t
 
 
 # ── Motifs ────────────────────────────────────────────────────────────

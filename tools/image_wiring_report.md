@@ -1,9 +1,9 @@
 # Image-Input Wiring Report
 
-- generated: 2026-07-13T06:28:58.161638+00:00
+- generated: 2026-07-13T09:48:32.233222+00:00
 - graphs scanned: 45
 - errors: 9
-- warnings: 31
+- warnings: 32
 
 ```
 ========================================================================
@@ -11,7 +11,11 @@
 ========================================================================
  graphs scanned : 45
  ERROR findings : 9
- WARN  findings : 31
+ WARN  findings : 32
+
+── graph: active   (0 ERROR / 1 WARN) ──
+  [WARN] W_DEAD_PORT @ n1 (91)
+        image_in unwired but method never reads the wired image (dead/optional port — safe but worth pruning)
 
 ── graph: age_density   (0 ERROR / 1 WARN) ──
   [WARN] W_OPTIONAL_UNWIRED @ n54 (18)
