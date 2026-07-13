@@ -5228,7 +5228,10 @@ void main() {
     // soap-bubble / oil-slick ring pattern over the wired substrate.
     vec2 p = v_uv - 0.5;
     float r = length(p) * 1.4;
-    float d = u_thickness + u_thickness_range * r;
+    // Live-preview animation: advance the radial thickness with the preview
+    // clock u_time so the iridescent bands drift (mirrors the CPU node's
+    // anim_mode/time). The client feeds u_time every frame.
+    float d = u_thickness + u_thickness_range * (r + 0.06 * sin(u_time * 0.6));
     float ang = radians(u_angle);
     float sin_a = sin(ang);
     float c = sin_a / max(u_ior, 1.001);
@@ -8753,14 +8756,13 @@ _register("domain_coloring_typed",
     vec2 uv = (v_uv - 0.5) * 2.0;
     uv.x *= u_resolution.x / u_resolution.y;
     vec2 z = uv * u_scale + vec2(u_center_x, u_center_y);
-    // Animate: rotate the plane around the origin (rotate) or drift center.
-    float a = u_anim * 6.2831853;
-    if (u_anim_mode > 0.5) {
-        float ca = cos(a), sa = sin(a);
-        z = mat2(ca, -sa, sa, ca) * z;
-    } else if (u_anim_mode > 1.5) {
-        z += vec2(sin(a), cos(a * 0.7)) * u_scale * 0.15;
-    }
+    // Animate via the live-preview clock u_time (the client advances it so the
+    // live preview moves). Rotate the plane while gently drifting the center —
+    // mirrors the CPU node's rotate/drift anim modes without a dead phase param.
+    float a = u_time * 0.4;
+    float ca = cos(a), sa = sin(a);
+    z = mat2(ca, -sa, sa, ca) * z;
+    z += vec2(sin(u_time * 0.3), cos(u_time * 0.22)) * u_scale * 0.12;
     // f(z) = z^n (the node default 'poly' with exponent n == z_n family).
     float n = max(u_exponent, 2.0);
     float r = length(z), th = atan(z.y, z.x);
@@ -8787,11 +8789,7 @@ _register("domain_coloring_typed",
     "center_y":  {"glsl": "float", "min": -4.0, "max": 4.0, "default": 0.0,
                   "description": "imaginary part of view center"},
     "grid":      {"glsl": "float", "min": 0.0, "max": 1.0, "default": 1.0,
-                  "description": "contour/grid overlay strength"},
-    "anim":      {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.0,
-                  "description": "animation phase in [0,1)"},
-    "anim_mode": {"glsl": "float", "min": 0.0, "max": 2.0, "default": 0.0,
-                  "description": "0=none, 1=rotate, 2=drift"},
+                  "description": "contour/grid overlay strength (artistic knob; CPU 'coloring' is a string mode, not a float synonym)"},
 })
 
 _register("low_discrepancy_typed",

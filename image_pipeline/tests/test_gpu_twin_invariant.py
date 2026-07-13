@@ -305,7 +305,24 @@ _TWIN_UNIFORM_ALLOW = {
     "406": "harmonograph_typed: decay/turns/steps/thick/bg/fg are shader knobs; "
           "freq1/freq2/phase/scale map to CPU node 406",
     "409": "superformula_typed: n/b/c/p/scale/thick/bg are shader knobs; only `m` "
-          "maps to CPU node 409",
+           "maps to CPU node 409",
+    "431": "domain_coloring_typed: `grid` is a shader-only contour-overlay strength; "
+           "the CPU node's `coloring` is a string mode ('grid'/'none'/...), not a "
+           "float synonym. exponent/scale/center_x/center_y map 1:1 to CPU node 431; "
+           "animation is driven by the live-preview clock u_time (not a CPU param).",
+    # gpu-twin-candidate CPU nodes (431/432/433/464) — closed-form f(uv,t) live
+    # previews. Each routes real numeric params 1:1 via param_map; remaining
+    # shader uniforms are artistic knobs with no CPU-node float synonym (the CPU
+    # node is a different/serial algorithm), same pattern as 16/65/78 above.
+    "432": "maurer_rose_typed: k/d/n_lines/line_width/brightness/hue animate via "
+           "param_map (petals/deg/steps/thick + anim_speed->speed); `bg`/`scale` are "
+           "shader-only render knobs (background->bg bridged, `scale` not in CPU 432)",
+    "433": "low_discrepancy_typed: count/radius/anim_speed map 1:1; `bg`/`ox`/`oy` are "
+           "shader-only seed/background knobs with no CPU-node float synonym",
+    "464": "thin_film_gpu: thickness/thickness_scale/ior/tilt/intensity/saturation map "
+           "via param_map (thickness_range/angle/strength/saturation); the twin names "
+           "them by optical role (thickness_range/angle/strength) rather than the CPU "
+           "param names (thickness_scale/tilt/intensity) — all bridged, no dead control",
 }
 
 
