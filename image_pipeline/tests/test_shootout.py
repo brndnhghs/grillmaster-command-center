@@ -1215,3 +1215,62 @@ def test_timeout_blame_endpoint(client, tmp_store):
     assert d["n_timeout"] == 2 and d["n_timed"] == 2
     pids = {m["method_id"] for m in d["problematic"]}
     assert pids == {"141"}
+
+
+# ── node 496 (Local Laplacian) headless feature test ────────────────────────
+# Edge-aware tone/detail (Paris et al. 2011). Subtle filters read a small
+# mean-Δ, so we assert on CHANGED-PIXEL-FRACTION (the same metric the shootout
+# liveness accumulator uses) — mean-Δ is a known false-negative here.
+
+def _render_496(params: dict) -> np.ndarray:
+    import image_pipeline.methods  # noqa: F401  (register nodes)
+    from image_pipeline.methods.filters.local_laplacian import (
+        method_local_laplacian,
+    )
+    from pathlib import Path
+    out = Path("/tmp/_t_llf_496")
+    out.mkdir(parents=True, exist_ok=True)
+    for p in out.glob("*.png"):
+        p.unlink()
+    return np.asarray(method_local_laplacian(out_dir=out, seed=42, params=params))
+
+
+def _changed_frac(a: np.ndarray, b: np.ndarray, thr: float = 0.05) -> float:
+    diffs = np.abs(a.astype(np.float64) - b.astype(np.float64))
+    return float((diffs > thr).mean())
+
+
+def test_local_laplacian_registered_and_nonblack():
+    import image_pipeline.methods  # noqa: F401
+    from image_pipeline.core.graph import get_all_node_defs
+    defs = get_all_node_defs()
+    assert "496" in defs
+    out = _render_496({"anim_mode": "none", "source": "noise",
+                       "detail": 1.0, "tone": 0.0})
+    assert out.std() > 0.02  # non-black
+
+
+def test_local_laplacian_none_mode_static():
+    a = _render_496({"anim_mode": "none", "source": "noise",
+                     "detail": 1.0, "tone": 0.0, "time": 0.0})
+    b = _render_496({"anim_mode": "none", "source": "noise",
+                     "detail": 1.0, "tone": 0.0, "time": 3.14})
+    assert np.mean(np.abs(a.astype(np.float64) - b.astype(np.float64))) < 0.01
+
+
+def test_local_laplacian_animation_moves_pixels():
+    for mode in ("detail_breathe", "tone_sweep"):
+        m0 = _render_496({"anim_mode": mode, "source": "noise", "time": 0.0})
+        m1 = _render_496({"anim_mode": mode, "source": "noise", "time": 1.57})
+        assert _changed_frac(m0, m1) > 0.10, f"{mode} not animating"
+
+
+def test_local_laplacian_params_live():
+    base = _render_496({"anim_mode": "none", "source": "noise",
+                        "detail": 1.0, "tone": 0.0})
+    detail3 = _render_496({"anim_mode": "none", "source": "noise",
+                           "detail": 3.0, "tone": 0.0})
+    tone1 = _render_496({"anim_mode": "none", "source": "noise",
+                         "detail": 1.0, "tone": 1.0})
+    assert _changed_frac(base, detail3) > 0.10
+    assert _changed_frac(base, tone1) > 0.10
