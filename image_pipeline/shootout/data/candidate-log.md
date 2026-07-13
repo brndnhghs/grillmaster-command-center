@@ -424,3 +424,27 @@
 - top_rated: None=5, None=5, None=5
 - dead_hotspot: __lfo__:868, __counter__:239, __noise1d__:134, __ramp__:108, __strobe__:48
 - action: carried forward prior dead-hotspot avoidance (CONTROL/DRIVER nodes) via advisor avoid list; top-rated survivors seed next generation via config seed_ids if hook present
+
+## 2026-07-13T23 — cron run (dead-RATE uniformity; auto-avoid rejected)
+- genomes=525 alive=180 dead=345 (66%) rated=18. Recomputed death-RATE per method
+  (dead-genomes-containing ÷ total-genomes-containing), not raw counts:
+  `__lfo__` 206/304=0.68, `__counter__` 129/188=0.69, `__noise1d__` 93/139=0.67,
+  `__ramp__` 86/119=0.72, `__image_to_mask__` 41/55=0.75, `__envelope__` 38/51=0.75,
+  `137` 33/43=0.77, `141` 28/39=0.72, `51` 10/13=0.77, `123` 11/12=0.92(sup12),
+  `52` 11/12=0.92(sup12), `92` 11/13=0.85(sup13). **Uniform 0.67–0.77 across ALL
+  methods; NO method exceeds 0.85 at support≥20.**
+- This QUANTIFIES the sibling's control-node-inflation note AND shows it is NOT
+  only control nodes: image-producing methods (137/141/51/92/123/52) are all
+  ~0.7 too. So the 66% dead rate is generation-WIDE, not method-specific.
+- VERIFIED: the 8 driver→pixel regression tests PASS (LFO 0.5→0.96 across
+  frames; driver→952.matrix_size temporal_var=0.1157≫3e-3 floor). Driver
+  plumbing is correct; the drivers simply aren't reliably wired to animate the
+  terminal in most bred graphs.
+- DECISION: auto-feeding top-dead methods as `avoid_methods` (advisor has the
+  intake; SamplingBias→sample_valid_genome) is REJECTED — death-rate is uniform,
+  so there is no bad-method signal; pruning would only remove useful drivers.
+- ROOT CAUSE / NEXT STEP: evolution engine emits predominantly static graphs.
+  Fix on the GENERATION side (safe — shootout module, not core executor):
+  guarantee every bred/explored genome is "born animated" (≥1 driver→animatable
+  SCALAR-port wiring, or ≥1 node with anim_mode≠none). Detailed proposal +
+  headless test plan in evolution-research.md (2026-07-13 entry).
