@@ -126,7 +126,61 @@ def test_evaluator_black_is_flat():
     assert not s["alive"] and s["reason"] == "flat"
 
 
-def test_evaluator_static_is_dead():
+def test_evaluator_spectral_rescue_low_amplitude_coherent():
+    """A full-frame tiny-amplitude coherent oscillation (slow breathe) has
+    temporal_var and motion_pixel_frac both below the amplitude floors yet is
+    genuinely animating. The spectral-liveness rescue must detect the sharp FFT
+    spectral peak and keep it alive (Route 8 follow-up, 2026-07-13)."""
+    amp = 0.015  # below motion_thresh (0.03)
+    grad = (np.arange(96, dtype=np.float32) / 96.0)[None, :]
+    def f(i):
+        a = np.zeros((64, 96, 3), np.float32)
+        a[:] = grad[:, :, None]
+        a[:] += amp * float(np.sin(2 * np.pi * i / 24.0))
+        return np.clip(a, 0, 1)
+    s = evaluate_frames(_stack(f, n=48), CFG)
+    assert s["alive"], s
+    assert s["spectral_peak"] >= CFG.spectral_corr_min, s
+
+
+def test_evaluator_spectral_rescue_localized_coherent():
+    """A localized low-amplitude coherent breathing blob is also rescued —
+    the mean normalized spectral peak is computed only over AC-active pixels so
+    a static background does not dilute it."""
+    amp = 0.015
+    yy, xx = np.mgrid[0:64, 0:96]
+    m = ((yy - 32) ** 2 + (xx - 48) ** 2) < 200
+    def f(i):
+        a = np.full((64, 96, 3), 0.4, np.float32)
+        a[m] += amp * float(np.sin(2 * np.pi * i / 16.0))
+        return np.clip(a, 0, 1)
+    s = evaluate_frames(_stack(f, n=48), CFG)
+    assert s["alive"], s
+    assert s["spectral_peak"] >= CFG.spectral_corr_min, s
+
+
+def test_evaluator_frozen_not_spectral_rescued():
+    """A frozen frame has no AC energy, so the spectral rescue must NOT admit
+    it (guards against a spurious numerical single-bin FFT peak)."""
+    grad = (np.arange(96, dtype=np.float32) / 96.0)[None, :]
+    def f(i):
+        a = np.zeros((64, 96, 3), np.float32)
+        a[:] = grad[:, :, None]
+        return a
+    s = evaluate_frames(_stack(f, n=48), CFG)
+    assert not s["alive"], s
+    assert s["spectral_active_frac"] == 0.0, s
+
+
+def test_evaluator_flicker_not_spectral_rescued():
+    """Flat (white) noise has a flat temporal spectrum — normalized peak ~1/K —
+    so the spectral rescue must not admit it either."""
+    rng = np.random.default_rng(5)
+    s = evaluate_frames(
+        _stack(lambda i: rng.random((64, 96, 3)).astype(np.float32) * 0.02 + 0.4,
+               n=48), CFG)
+    assert not s["alive"], s
+    assert s["spectral_peak"] < CFG.spectral_corr_min, s
     rng = np.random.default_rng(0)
     img = rng.random((64, 96, 3), dtype=np.float32)
     s = evaluate_frames(_stack(lambda i: img), CFG)

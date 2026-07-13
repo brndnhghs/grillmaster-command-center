@@ -97,6 +97,43 @@ class LivenessAccumulator:
         changed = (diffs > cfg.motion_thresh).mean(axis=0)  # (h, w) per-pixel frac
         motion_pixel_frac = float((changed > 0).mean())
 
+        # ── Spectral-liveness rescue signal (FFT temporal spectrum) ──
+        # Amplitude metrics (temporal_var, motion_pixel_frac) miss LOW-AMPLITUDE
+        # COHERENT OSCILLATION: a slow breathe / phase-shift / gentle zoom whose
+        # per-frame step is below motion_thresh and whose global variance is
+        # below temporal_var_min. Coherent periodic motion concentrates its
+        # temporal energy into ONE discrete FFT bin (period = T/k frames); frozen
+        # noise spreads energy across all bins. For each pixel, take the rFFT of
+        # its temporal trace, drop the DC bin, and normalize the magnitude by the
+        # total AC energy so the peak bin is ~1.0 for a perfect sine and ~1/K for
+        # K bins of flat noise. We take the MEAN of that normalized peak ONLY
+        # over pixels that actually carry AC energy (ac_energy >= spectral_ac_min)
+        # so a static background does not dilute a localized coherently-oscillating
+        # region, and we require that active region to cover a non-trivial
+        # fraction of the frame (>= motion_pixel_frac_min) so a single imperceptible
+        # flickering pixel can never trigger a rescue. The mean over active pixels
+        # of the normalized peak is the spectral-coherence score: ~1.0 for a clean
+        # periodic signal, ~1/K for K bins of flat noise. A frozen frame has no
+        # active pixels and stays dead.
+        T = stack.shape[0]
+        centered = stack - stack.mean(axis=0, keepdims=True)        # (T, h, w)
+        k = (T // 2) + 1                                            # rFFT bins
+        spec = np.abs(np.fft.rfft(centered, axis=0))                # (k, h, w)
+        spec = spec[1:] if spec.shape[0] > 1 else spec             # drop DC bin
+        ac_energy = spec.sum(axis=0)                                # (h, w) total AC
+        spectral_ac = float(ac_energy.mean()) if ac_energy.size else 0.0
+        if ac_energy.size and ac_energy.max() > 0:
+            # Normalized peak per pixel (0 where there is no AC energy).
+            norm = np.zeros_like(ac_energy)
+            nz = ac_energy > 0
+            norm[nz] = spec.max(axis=0)[nz] / ac_energy[nz]
+            active_frac = float(nz.mean())
+            spectral_peak = float(norm[nz].mean()) if nz.any() else 0.0
+        else:
+            norm = np.zeros_like(ac_energy) if ac_energy.size else np.zeros((1,), np.float32)
+            active_frac = 0.0
+            spectral_peak = 0.0
+
         reason = None
         if self.nan:
             reason = "nan"
@@ -121,6 +158,16 @@ class LivenessAccumulator:
             # static/flat -> alive, never the reverse.
             if (motion_pixel_frac >= cfg.motion_pixel_frac_min
                     and frame_corr >= cfg.rescue_corr_max):
+                reason = None
+            elif (spectral_peak >= cfg.spectral_corr_min
+                    and spectral_ac >= cfg.spectral_ac_min
+                    and active_frac >= cfg.motion_pixel_frac_min):
+                # Amplitude metrics (temporal_var, motion_pixel_frac) missed this
+                # clip because the motion is LOW-AMPLITUDE but COHERENT (a sharp
+                # spectral peak over a meaningful fraction of the frame). A
+                # genuine oscillation: rescue it. The spectral_ac floor and the
+                # active_frac coverage floor keep a truly frozen frame (no AC
+                # energy) or a single flickering pixel (negligible coverage) dead.
                 reason = None
             else:
                 # Not moving. If it is also spatially degenerate
@@ -147,6 +194,9 @@ class LivenessAccumulator:
             "spatial_var": round(spatial_var, 6),
             "frame_corr": round(frame_corr, 4),
             "motion_pixel_frac": round(motion_pixel_frac, 4),
+            "spectral_peak": round(spectral_peak, 4),
+            "spectral_ac": round(spectral_ac, 6),
+            "spectral_active_frac": round(active_frac, 4),
             "frame_drop": self.missing,
         }
 

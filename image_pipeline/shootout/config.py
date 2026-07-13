@@ -90,6 +90,27 @@ class ShootoutConfig:
     motion_thresh: float = 0.03          # per-pixel abs frame-diff to count as "changed"
     motion_pixel_frac_min: float = 0.03  # changed-pixel fraction implying real motion
     rescue_corr_max: float = 0.2         # frame_corr must be >= this (more temporally coherent than flicker) for rescue
+    # ── Spectral-liveness rescue (Route 8 follow-up, 2026-07-13) ──
+    # The variance + perceptual rescues still miss LOW-AMPLITUDE COHERENT
+    # OSCILLATION: a slow breathe / phase-shift / gentle zoom whose per-frame
+    # step is below motion_thresh and whose global temporal_var is below
+    # temporal_var_min. Both metrics are amplitude-weighted, so a clip that is
+    # *genuinely animating but quietly* looks "static"/"flat" and gets culled
+    # (this is the residual of the #1 dead class even after the perceptual
+    # rescue landed). Coherent periodic motion concentrates its temporal
+    # energy into ONE discrete FFT bin (period = N/k frames), whereas frozen
+    # noise spreads energy across all bins (flat spectrum). Normalizing each
+    # pixel's temporal spectrum by its total AC energy, the peak normalized
+    # bin is ~1.0 for a perfect sine and ~1/K for K bins of flat noise — so a
+    # sharp peak is an amplitude-independent signature of real coherent
+    # motion. Rescue a clip the amplitude metrics would call static/flat ONLY
+    # when the mean normalized spectral peak is sharp (>= spectral_corr_min)
+    # AND there is a non-trivial absolute AC floor (>= spectral_ac_min, so a
+    # truly frozen frame whose FFT has a spurious numerical peak is never
+    # admitted). Strictly non-destructive: only ever flips static/flat ->
+    # alive, never reverse.
+    spectral_corr_min: float = 0.7    # mean normalized spectral-peak above this ⇒ coherent oscillation
+    spectral_ac_min: float = 1e-4     # absolute AC-energy floor so a frozen frame is never rescued
 
     # ── Rendering ─────────────────────────────────────────────────
     render_concurrency: int = 3
@@ -254,6 +275,7 @@ TUNABLE_FIELDS: dict[str, tuple[str, float | None, float | None]] = {
     "advisor_enabled":   ("Interpret your pros/cons notes with the LLM advisor to steer breeding", None, None),
     "temporal_var_min":  ("Liveness: minimum motion required — lower lets calmer clips through", 0.0, 0.5),
     "spatial_var_min":   ("Liveness: minimum spatial detail — lower lets flatter clips through", 0.0, 0.5),
+    "spectral_corr_min": ("Liveness: coherent-oscillation rescue — peak normalized FFT-bin; higher admits only sharp periodic motion", 0.3, 0.95),
 }
 
 

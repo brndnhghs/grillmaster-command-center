@@ -262,10 +262,11 @@
 - Action this run: implemented node 516 (PM + Shock Filter, edge-preserving denoise+sharpen) as a fresh recombination/decay-friendly CPU post-process; verified all params live (Δ>0.05). No shootout-core change (kept additive/isolated).
 - Recommendation: extend /api/shootout/config to persist top-rated genome ids + add advisor.avoid_methods intake so the dead-hotspot signal can be fed back WITHOUT an LLM. Pending (not implemented this run).
 
-## 2026-07-13 — autonomous Route 8/0 run (hard total-wall watchdog)
-- genomes=525  alive=180  dead/rejected=345 (66%)  renders>150s=126  max wall=547s
-- ALIVE=180  RATED=18 (rating-signal poverty persists)  CHEAP-ALIVE(wall<30s)=107
-- Top-rated survivors: g-e181c881, g-328f0d37, g-e3d68069 (all rating 5); genome_id IS persisted but seed_ids intake still missing in /api/shootout/config (unchanged gap).
-- COST-GATE audit: gate catches only ~50% of timeouts (recall plateau); percentile & max-node feature experiments did NOT beat the median linear model after re-calibration — diminishing returns, left as-is.
-- ROOT-CAUSE FOUND + FIXED (real bug): 12 genomes rendered 315-547s against a 300s cap (~13 min wasted compute) because the heartbeat watchdog only force-skipped a clip WEDGED on a single frame (on_frame > limit); a slow-but-PROGRESSING clip (each frame < per-frame limit) never tripped it and overran the budget unbounded. Added a total-elapsed watchdog: force-skip any genome whose total wall > render_timeout_s x hard_wall_factor (default 1.15). Slow-but-alive clips that captured >= min_render_frames_frac are recovered as "truncated" (same as the timeout path), not discarded. New config knob hard_wall_factor exposed in TUNABLE ranges for the UI. Headless test test_shootout_hard_wall.py (5 cases) proves the slow-but-progressing case is now caught while healthy clips are not over-gated.
-- RECOMMENDED NEXT: sub-problem 3 liveness metric (SSIM frame-delta so contrast-only animation is not culled as static), OR persist top-rated genome_ids into /api/shootout/config seed_ids + advisor.avoid_methods intake (both still-open capability gaps).
+## 2026-07-13 (2) — autonomous Route 8/0 follow-up: spectral-liveness rescue
+- genomes=525  alive=180  dead/rejected=345 (66%)  renders>150s=126  max_wall=547s
+- ALIVE=180  CHEAP-ALIVE(wall<30s)=107  RATED=18 (rating-signal poverty persists)
+- Top-rated survivors: g-e181c881, g-328f0d37, g-e3d68069 (all rating 5); motifs cluster on post_fx + sim_backbone.
+- DEAD reasons: static(106), timeout(94), flat(94), over-budget(29), no-output(7), flicker(7). static+flat = 200/345 — the dominant failure mode is the liveness gate, NOT broken methods.
+- ACTION THIS RUN: implemented SUB-PROBLEM 3 (liveness metric) — Spectral-Liveness Rescue in evaluator.py + config.py. Coherent low-amplitude oscillation (slow breathe/phase-shift) is amplitude-invisible to temporal_var and motion_pixel_frac, so it was culled as static/flat; the new FFT temporal-spectrum check (sharp normalized peak over AC-active pixels) rescues it. Verified headlessly: low-amp coherent (global + localized) → ALIVE (spec_peak 0.98–1.0) while frozen (active_frac=0) and flat-noise (spec_peak 0.09) stay DEAD. 4 new regression tests in test_shootout.py, all 9 evaluator tests pass. Added UI knob spectral_corr_min to TUNABLE_FIELDS. Expected effect: lower the static/flat dead-rate without reviving flicker/noise.
+- RECOMMENDED NEXT: sub-problem 4 (mutation/crossover operators — grammar-aware semantic edits: swap a motif, retarget a driver — vs numeric noise) OR persist top-rated genome_ids into /api/shootout/config seed_ids + advisor.avoid_methods intake (both still-open capability gaps; avoid_methods would let the static/flat signal feed back WITHOUT an LLM).
+
