@@ -313,3 +313,10 @@
 ## 2026-07-13 — autonomous run (cg feature: node 930 Skeletonize)
 - genomes=525 alive=180 dead=345 (66%) renders>150s=126
 - ACTION: added node 930 "Skeletonize" (Zhang-Suen medial-axis thinning, ACM 1984) — a topology-preserving NPR structure filter that pairs with the line-art family (#421 CLD, #68 Kuwahara). O(W·H) scipy thinning, no heavy compute, so it dodges the >150s timeout cull. Verified: registered, none-mode static, GROW/PULSE animate (changed-px 4-6%), threshold sweep =59% changed px, PRUNE live on spur-rich sources. Outputs IMAGE+MASK(skeleton)+FIELD(distance transform).
+
+## 2026-07-13 — Route 8 #3: finish in-progress CHOP-driver liveness batch
+- Found in working tree at start of run (git diff: channels.py +44, langtons_ant.py +18, new test_chop_drivers_advance.py). Diagnosed as the SAME root cause the 2026-07-12 runs flagged: `__lfo__`/`__noise1d__`/`__strobe__` read `time`/`frame` which the GraphExecutor never injects for CHOP generators, so they stayed pinned at frame 0 → constant SCALAR → driver-driven graphs froze and were culled as static.
+- FIX (already in tree, verified this run): the three nodes now fall back to `_timeline.global_frame` (NOT `.phase`, which make_timeline() leaves 0) to derive the live phase, matching the already-correct `__counter__`/`__ramp__`/`__beats__`/`__envelope__`.
+- Langton's Ant (node 83) age-grid refactor: replaced per-step O(H·W) `age_grid[visited]+=1` with a flat `last_visit` scatter + lazy `(s-last_visit)` derived only at capture frames — removes the dominant cost at 200k+ steps. Smoke-tested: renders (512x768, std=4.5).
+- VERIFY: test_chop_drivers_advance.py 6 passed; all 3 target files py_compile clean; server /api/node-defs 200.
+- dead hotspots still show `__lfo__` at 868 — but that count is from BEFORE this fix landed (older genomes); new generations should stop freezing. ACTION: committed as feat(shootout): CHOP driver timeline-advance + Langton age-grid fix.

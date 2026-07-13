@@ -194,6 +194,24 @@ def method_lfo(out_dir: Path, seed: int, params=None):
     frame = int(params.get("frame", 0))
     fps = float(params.get("fps", 24.0))
 
+    # The GraphExecutor injects a per-frame Timeline (params["_timeline"]) but
+    # does NOT inject an integer `frame` (nor a `time`) for CHOP generators.
+    # Derive the live frame from the Timeline's global_frame (which advances
+    # every rendered frame) so the LFO advances instead of staying pinned at
+    # frame 0. NOTE: we use global_frame, not the Timeline's `phase` attribute,
+    # because the executor's make_timeline() does not set phase (it stays 0),
+    # whereas global_frame is always correct. The other CHOP nodes (__counter__,
+    # __ramp__, __beats__, __envelope__) already derive frame this way.
+    total_frames_for_phase = int(params.get("total_frames", 24))
+    if frame == 0:
+        _tl = params.get("_timeline")
+        if _tl is not None:
+            frame = int(getattr(_tl, "global_frame", 0))
+            fps = float(getattr(_tl, "fps", fps))
+            total_frames_for_phase = int(getattr(_tl, "total_frames", total_frames_for_phase))
+    # Derive the cyclic phase from the live frame so t advances per frame.
+    t = (frame / max(1, total_frames_for_phase - 1)) * (2.0 * math.pi)
+
     waveform = params.get("waveform", "sine")
     min_val = float(params.get("min", 0.0))
     max_val = float(params.get("max", 1.0))
@@ -348,6 +366,20 @@ def method_noise1d(out_dir: Path, seed: int, params=None):
     max_val = float(params.get("max", 1.0))
     rate = float(params.get("rate", 0.5))
     smooth = int(params.get("smooth", 2))
+
+    # The GraphExecutor injects a per-frame Timeline (params["_timeline"]) but
+    # does NOT inject a `time` for CHOP generators. Derive the live phase from
+    # the Timeline's global_frame (which advances every rendered frame) so the
+    # noise advances instead of staying pinned at t=0 (which froze
+    # driver-driven graphs and culled them as static — see __counter__ /
+    # __lfo__ / __strobe__). NOTE: use global_frame, not the Timeline's `phase`
+    # attribute, because make_timeline() does not set phase (it stays 0).
+    if t == 0.0:
+        _tl = params.get("_timeline")
+        if _tl is not None:
+            _gf = int(getattr(_tl, "global_frame", 0))
+            _tf = int(getattr(_tl, "total_frames", 24))
+            t = (_gf / max(1, _tf - 1)) * (2.0 * math.pi)
 
     # SCALAR overrides
     rate_override = params.get("rate")
@@ -742,6 +774,18 @@ def method_strobe(out_dir: Path, seed: int, params=None):
     duty = float(params.get("duty_cycle", 0.5))
     on_val = float(params.get("on_value", 1.0))
     off_val = float(params.get("off_value", 0.0))
+
+    # The GraphExecutor injects a per-frame Timeline (params["_timeline"]) but
+    # does NOT inject a `time` for CHOP generators. Derive the live phase from
+    # the Timeline's global_frame so the strobe advances every rendered frame
+    # instead of staying pinned at t=0 (which froze driver-driven graphs and
+    # culled them as static — see __counter__ / __lfo__ / __noise1d__).
+    if t == 0.0:
+        _tl = params.get("_timeline")
+        if _tl is not None:
+            _gf = int(getattr(_tl, "global_frame", 0))
+            _tf = int(getattr(_tl, "total_frames", 24))
+            t = (_gf / max(1, _tf - 1)) * (2.0 * math.pi)
 
     # SCALAR overrides
     rate_override = params.get("rate")

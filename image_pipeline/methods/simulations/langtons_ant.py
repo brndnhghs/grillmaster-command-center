@@ -199,7 +199,10 @@ def method_langtons_ant(out_dir: Path, seed: int, params=None):
     # ── Grid ──
     grid = np.zeros((H, W), dtype=np.uint8)
     visited = np.zeros((H, W), dtype=bool)
-    age_grid = np.ones((H, W), dtype=np.int32) * 999999  # large = never visited
+    # last_visit[s] = simulation step index at which cell (x,y) was last
+    # touched; -1 means never visited. We store this as a 1-D flat index so a
+    # single np.maximum.reduceat-free update per step is a vectorized scatter.
+    last_visit = np.full(H * W, -1, dtype=np.int32)
 
     # ── Animation: grid_morph initial condition ──
     if anim_mode == "grid_morph":
@@ -248,7 +251,7 @@ def method_langtons_ant(out_dir: Path, seed: int, params=None):
         d = rng.randint(0, 4)
         ants.append({"x": x, "y": y, "dir": d})
         visited[y, x] = True
-        age_grid[y, x] = 0
+        last_visit[y * W + x] = 0
 
     # Direction vectors: 0=up, 1=right, 2=down, 3=left
     DX = np.array([0, 1, 0, -1], dtype=np.int32)
@@ -343,7 +346,7 @@ def method_langtons_ant(out_dir: Path, seed: int, params=None):
             new_states = ((states + 1) % n_colors).astype(np.uint8)
             grid[ys, xs] = new_states
             visited[ys, xs] = True
-            age_grid[ys, xs] = 0
+            last_visit[ys * W + xs] = s
 
             # Move forward with wrap
             ant_xs[:active_n] = (xs + DX[dirs]) % W
@@ -351,13 +354,13 @@ def method_langtons_ant(out_dir: Path, seed: int, params=None):
             ant_dirs[:active_n] = dirs
 
             visited[ant_ys[:active_n], ant_xs[:active_n]] = True
-            age_grid[ant_ys[:active_n], ant_xs[:active_n]] = 0
-
-        # Increment age for all visited cells
-        age_grid[visited] += 1
+            last_visit[ant_ys[:active_n] * W + ant_xs[:active_n]] = s
 
         # ── Capture frame ──
         if s % cap_interval == 0 or s == steps - 1:
+            # age_grid is derived lazily from last_visit (avoids an O(H·W)
+            # increment every step, which dominated the cost at 200k+ steps).
+            age_grid = (s - last_visit).clip(0, 999999).reshape(H, W)
             frame = _render_langton_frame(
                 grid, visited, age_grid, use_pal_arr, bg_color,
                 color_mode, render_style, n_colors
@@ -365,6 +368,7 @@ def method_langtons_ant(out_dir: Path, seed: int, params=None):
             capture_frame("83", frame)
 
     # ── Final render ──
+    age_grid = (steps - 1 - last_visit).clip(0, 999999).reshape(H, W)
     img = _render_langton_frame(
         grid, visited, age_grid, use_pal_arr, bg_color,
         color_mode, render_style, n_colors
