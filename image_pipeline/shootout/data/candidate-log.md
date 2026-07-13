@@ -284,3 +284,10 @@
 - cheap-alive (wall<30s, recombine seeds): 107 / 180 alive
 - NOTE: working tree already held an in-flight Route-8 batch (spectral-liveness rescue); a concurrent finalizer committed it (HEAD==UP, 10 evaluator tests green). Residual orphaned config knob `liveness_breed_fallback` (wired into evolve.select_parents/_liveness_fitness) committed separately to complete that batch.
 - action taken this run: added Poisson Disk Sampling as new node 526 (Bridson 2007 fast Poisson-disk blue-noise generator, category patterns) — verified headlessly non-black, spacing-live, reveal grows, none static, wired input_mask honoured. Fixed a particle-buffer sizing bug for intermediate reveal frames caught by the probe. Next: de-dup check confirmed Space Colonization (443) and Poisson Cloning (341) already exist, so chose Poisson-disk (genuinely absent).
+## 2026-07-13 — autonomous run (cg feature: node 950 SDF Scene)
+- genomes=525 alive=180 dead/rejected=345 (66%) renders>150s=126
+- TOP-3 rated: ids NOT recorded in genome JSON (genome['id']=null across corpus); ratings seen: 3×r=5, 1×r=4, 3×r=3. PROBE GAP: cannot promote-by-id until advisor logs genome ids.
+- cheap-alive(recombine seeds)=107
+- dead hotspots: [('__lfo__',868),('__counter__',239),('__noise1d__',134),('__ramp__',108),('__strobe__',48),('__envelope__',41),('__image_to_mask__',41),('137',34)]
+- ACTION: feed the pure control/signal utility nodes (__lfo__,__counter__,__noise1d__,__ramp__,__strobe__,__envelope__) as avoid-guidance to advisor.extract_guidance — they dominate the dead-rate but emit no image, so counting them as 'dead methods' inflates the 66% rejection. Propose excluding pure-control types from the dead-rate denominator (consistent with 2026-07-12 entries). If advisor lacks an avoid_methods intake, that is a real gap to log. Also: genome['id']=null means the rated-genome promotion hook (POST /api/shootout/config seed_ids) cannot be wired this run — another corpus gap.
+
