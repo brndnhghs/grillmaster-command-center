@@ -277,3 +277,10 @@
 - cheap-alive (wall<30s, recombine seeds): 107 / 180 alive
 - evolution stuck at gen 0–1 (451 gen0, 74 gen1) → stagnation signal; recommend widening explore_ratio / mutation count via /api/shootout/config
 - action taken this run: implemented AgX (Blender 4.0 filmic) operator on existing node 428; not a new node (avoid adding to dead-count). Candidate promotion left to config hook (no seed_ids intake confirmed present; noted gap).
+
+## 2026-07-13T(autonomous) — run (Poisson Disk Sampling node 526)
+- top-3 rated ids (real probe): g-e181c881(5), g-328f0d37(5), g-e3d68069(5) — origin explorer/random, gen 0
+- dead-rate: 345/525 = 66%; renders >150s (watchdog-culled): 126; median wall 23.6s
+- cheap-alive (wall<30s, recombine seeds): 107 / 180 alive
+- NOTE: working tree already held an in-flight Route-8 batch (spectral-liveness rescue); a concurrent finalizer committed it (HEAD==UP, 10 evaluator tests green). Residual orphaned config knob `liveness_breed_fallback` (wired into evolve.select_parents/_liveness_fitness) committed separately to complete that batch.
+- action taken this run: added Poisson Disk Sampling as new node 526 (Bridson 2007 fast Poisson-disk blue-noise generator, category patterns) — verified headlessly non-black, spacing-live, reveal grows, none static, wired input_mask honoured. Fixed a particle-buffer sizing bug for intermediate reveal frames caught by the probe. Next: de-dup check confirmed Space Colonization (443) and Poisson Cloning (341) already exist, so chose Poisson-disk (genuinely absent).

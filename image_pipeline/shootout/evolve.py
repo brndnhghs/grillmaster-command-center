@@ -543,12 +543,50 @@ def select_parents(rated: list[dict], cfg: ShootoutConfig) -> tuple[list[dict], 
 
     weight = (rating/5)**cfg.parent_selection_power, so a higher power sharpens
     preference for the winning forms without ever carrying a clip forward verbatim.
+
+    When human ratings are starved the rating-eligible pool is empty and the
+    evolution would collapse to fresh randoms every generation (gen-0
+    stagnation). If ``cfg.liveness_breed_fallback`` is set AND there are no
+    rating-eligible parents, fall back to a liveness-fitness parent pool so
+    genuinely-dynamic clips can still breed and the evolution compounds.
     """
     parents = [g for g in rated
                if isinstance(g.get("rating"), (int, float))
                and g["rating"] >= cfg.min_rating_to_parent]
     weights = [(g["rating"] / 5.0) ** cfg.parent_selection_power for g in parents]
+    if not parents and cfg.liveness_breed_fallback:
+        fb, fbw = _liveness_parent_pool(rated, cfg)
+        if fb:
+            parents, weights = fb, fbw
     return parents, weights
+
+
+def _liveness_fitness(g: dict, cfg: ShootoutConfig) -> float:
+    """Fitness proxy from the liveness stats: 0 for dead/static, up to 1 for a
+    clearly-dynamic clip. Blends temporal variance and changed-pixel fraction
+    (both already exclude flicker via the alive gate's frame_corr check)."""
+    liv = g.get("liveness") or {}
+    if not liv.get("alive"):
+        return 0.0
+    tvar = float(liv.get("temporal_var") or 0.0)
+    mpf = float(liv.get("motion_pixel_frac") or 0.0)
+    f_t = min(1.0, tvar / max(cfg.temporal_var_min * 8.0, 1e-6))
+    f_m = min(1.0, mpf / 0.3)
+    return 0.5 * f_t + 0.5 * f_m
+
+
+def _liveness_parent_pool(rated: list[dict], cfg: ShootoutConfig) -> tuple[list[dict], list[float]]:
+    """Build a parent pool from alive clips whose liveness fitness clears a
+    floor, weighted by fitness**power. Only triggered when no rating-eligible
+    parents exist (see select_parents)."""
+    pool: list[dict] = []
+    weights: list[float] = []
+    for g in rated:
+        fit = _liveness_fitness(g, cfg)
+        if fit >= 0.15:
+            pool.append(g)
+            weights.append(fit ** cfg.parent_selection_power)
+    return pool, weights
 
 
 def next_generation(rated: list[dict], generation: int,
