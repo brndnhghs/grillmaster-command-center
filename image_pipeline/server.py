@@ -1336,6 +1336,7 @@ from image_pipeline.tuning import store as _tune_store
 from image_pipeline.tuning import catalog as _tune_catalog
 from image_pipeline.tuning.hermes import hermes_available as _tune_hermes_ok
 from image_pipeline.tuning.hermes import unavailable_message as _tune_hermes_msg
+from image_pipeline.tuning.builder import is_motion_brief as _tune_is_motion
 
 
 class TuneSessionRequest(BaseModel):
@@ -1372,6 +1373,68 @@ def _tune_render_still(graph: dict, seed: int, width: int, height: int) -> str:
     req = GraphRequest(nodes=graph.get("nodes", []), edges=graph.get("edges", []),
                        seed=seed, frames=1, frame=0, width=width, height=height)
     return execute_graph(req)["job_id"]
+
+
+def _tune_render_clip(graph: dict, session_id: str, frames: int = 48, fps: int = 24,
+                      width: int = 768, height: int = 512) -> str | None:
+    """Render a graph to a short mp4 (blocking) and return its video_url, or None.
+
+    Mirrors the sequence worker: renders each frame via GraphExecutor and pipes to
+    frames_to_mp4. Shared by the animate endpoint and the motion-brief auto-animate
+    path in build/revise."""
+    nodes = [dict(n) for n in graph.get("nodes", [])]
+    edges = graph.get("edges", [])
+    seed = graph.get("seed", 42)
+    name = re.sub(r'[^a-zA-Z0-9_-]', '_', f"tune-{session_id}")
+    seq_dir = SEQUENCES_DIR / name
+    work_dir = seq_dir / "_work"
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    from image_pipeline.core.utils import set_canvas as _set_canvas
+    from image_pipeline.core.animation import frames_to_mp4 as _frames_to_mp4
+
+    # Set the canvas BEFORE frames_to_mp4 — it reads W/H when building the ffmpeg
+    # command, ahead of the first frame being pulled from the generator.
+    _set_canvas(width, height)
+
+    def _frame_gen():
+        executor = GraphExecutor(work_dir, fps=fps, in_memory=True)
+        for n in nodes:
+            n["dirty"] = True
+        for frame in range(frames):
+            flat_outputs, terminal_id, _err = executor.execute(
+                nodes, edges, seed, frame=frame, frames=frames)
+            render_id = next((n["id"] for n in nodes if n.get("render")), None)
+            if render_id and render_id in flat_outputs:
+                terminal_id = render_id
+            arr = (flat_outputs.get(terminal_id) or {}).get("image") if terminal_id else None
+            if arr is not None:
+                yield arr
+
+    out = _frames_to_mp4(_frame_gen(), seq_dir / "output.mp4", fps=fps)
+    if out is None:
+        return None
+    return f"/api/sequences/{name}/video.mp4?t={int(time.time())}"
+
+
+def _tune_render_response(res: dict, brief: str, seed: int,
+                          width: int, height: int) -> dict:
+    """Build the build/revise response, auto-animating when the brief is about
+    motion. Falls back to a still if the clip render fails."""
+    base = {"ok": True, "session_id": res["session_id"],
+            "attempt_id": res["attempt_id"], "graph": res["graph"],
+            "rationale": res["rationale"],
+            "graph_summary": _tune_catalog.describe_graph(res["graph"])}
+    if _tune_is_motion(brief):
+        try:
+            url = _tune_render_clip(res["graph"], res["session_id"],
+                                    width=width, height=height)
+        except Exception:
+            url = None
+        if url:
+            return {**base, "animated": True, "video_url": url}
+    job_id = _tune_render_still(res["graph"], seed, width, height)
+    return {**base, "job_id": job_id}
 
 
 @app.post("/api/tune/session")
@@ -1415,12 +1478,7 @@ def tune_build(req: TuneBuildRequest):
         return {"ok": False, "session_id": res.get("session_id"),
                 "rationale": res.get("rationale", ""), "error": res["error"]}
 
-    job_id = _tune_render_still(res["graph"], req.seed, req.width, req.height)
-    return {"ok": True, "session_id": res["session_id"],
-            "attempt_id": res["attempt_id"], "graph": res["graph"],
-            "rationale": res["rationale"],
-            "graph_summary": _tune_catalog.describe_graph(res["graph"]),
-            "job_id": job_id}
+    return _tune_render_response(res, req.brief, req.seed, req.width, req.height)
 
 
 @app.post("/api/tune/revise")
@@ -1436,12 +1494,10 @@ def tune_revise(req: TuneReviseRequest):
         return {"ok": False, "session_id": req.session_id,
                 "rationale": res.get("rationale", ""), "error": res["error"]}
 
-    job_id = _tune_render_still(res["graph"], req.seed, req.width, req.height)
-    return {"ok": True, "session_id": res["session_id"],
-            "attempt_id": res["attempt_id"], "graph": res["graph"],
-            "rationale": res["rationale"],
-            "graph_summary": _tune_catalog.describe_graph(res["graph"]),
-            "job_id": job_id}
+    # Same motion → animate rule as build, keyed off the session's original brief.
+    s = _tune_store.load_session(req.session_id) or {}
+    brief = s.get("current_brief", "")
+    return _tune_render_response(res, brief, req.seed, req.width, req.height)
 
 
 @app.post("/api/tune/rate")
@@ -1468,43 +1524,14 @@ def tune_animate(req: TuneSessionRequest, frames: int = 48, fps: int = 24,
     if s is None or not s.get("current_graph"):
         return {"ok": False, "error": "no current graph to animate"}
 
-    graph = s["current_graph"]
-    nodes = [dict(n) for n in graph.get("nodes", [])]
-    edges = graph.get("edges", [])
-    seed = graph.get("seed", 42)
-    name = re.sub(r'[^a-zA-Z0-9_-]', '_', f"tune-{req.session_id}")
-    seq_dir = SEQUENCES_DIR / name
-    work_dir = seq_dir / "_work"
-    work_dir.mkdir(parents=True, exist_ok=True)
-
-    from image_pipeline.core.utils import set_canvas as _set_canvas
-    from image_pipeline.core.animation import frames_to_mp4 as _frames_to_mp4
-
-    # Set the canvas BEFORE frames_to_mp4 — it reads W/H when building the ffmpeg
-    # command, ahead of the first frame being pulled from the generator.
-    _set_canvas(width, height)
-
-    def _frame_gen():
-        executor = GraphExecutor(work_dir, fps=fps, in_memory=True)
-        for n in nodes:
-            n["dirty"] = True
-        for frame in range(frames):
-            flat_outputs, terminal_id, _err = executor.execute(
-                nodes, edges, seed, frame=frame, frames=frames)
-            render_id = next((n["id"] for n in nodes if n.get("render")), None)
-            if render_id and render_id in flat_outputs:
-                terminal_id = render_id
-            arr = (flat_outputs.get(terminal_id) or {}).get("image") if terminal_id else None
-            if arr is not None:
-                yield arr
-
     try:
-        out = _frames_to_mp4(_frame_gen(), seq_dir / "output.mp4", fps=fps)
+        url = _tune_render_clip(s["current_graph"], req.session_id or "",
+                                frames=frames, fps=fps, width=width, height=height)
     except Exception as exc:
         return {"ok": False, "error": f"animate failed: {exc}"}
-    if out is None:
+    if url is None:
         return {"ok": False, "error": "no frames rendered"}
-    return {"ok": True, "video_url": f"/api/sequences/{name}/video.mp4?t={int(time.time())}"}
+    return {"ok": True, "video_url": url}
 
 
 @app.get("/api/graph/{gid}")

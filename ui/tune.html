@@ -81,7 +81,8 @@
     <div class="row">
       <button id="buildBtn">Build it</button>
     </div>
-    <div class="hint">Hermes picks nodes, wires them, and renders a still.</div>
+    <div class="hint">Hermes picks nodes, wires them, and renders. Motion briefs
+      (sparkle, rotate, drip, warp…) auto-render an animated clip.</div>
 
     <div id="critiqueSection" style="display:none">
       <label>Critique — what to fix</label>
@@ -198,6 +199,19 @@ function showResult(res){
   $('#saveBtn').style.display='';
 }
 
+// Motion briefs come back already animated (video_url); everything else renders
+// a still job we watch over SSE.
+function renderResult(res){
+  if(res.animated && res.video_url){
+    $('#preview').innerHTML='<video src="'+res.video_url+'" autoplay loop muted playsinline></video>';
+    setStatus('animated — motion brief');
+  } else if(res.job_id){
+    watchJob(res.job_id);
+  } else {
+    setStatus('nothing to render', true);
+  }
+}
+
 // ── build ────────────────────────────────────────────────────────────
 async function build(){
   const brief = $('#brief').value.trim();
@@ -210,7 +224,7 @@ async function build(){
       $('#preview').innerHTML='<div class="placeholder">'+(res.error||'build failed')+'</div>'; return; }
     SESSION = res.session_id; localStorage.setItem('tune-session', SESSION);
     showResult(res); resetStars(); $('#lessonToast').innerHTML='';
-    watchJob(res.job_id);
+    renderResult(res);
   } finally { $('#buildBtn').disabled=false; }
 }
 
@@ -223,7 +237,7 @@ async function revise(){
   try{
     const res = await api('/api/tune/revise', {session_id:SESSION, critique});
     if(!res.ok){ setStatus(res.error||'revise failed', true); return; }
-    showResult(res); watchJob(res.job_id);
+    showResult(res); renderResult(res);
   } finally { $('#reviseBtn').disabled=false; }
 }
 

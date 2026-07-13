@@ -112,6 +112,22 @@ def test_build_graph_repairs_malformed(tmp_store):
     assert sum(1 for n in res["graph"]["nodes"] if n.get("render")) == 1
 
 
+def test_is_motion_brief():
+    assert builder.is_motion_brief("sparkling particles rotating a noisy circle")
+    assert builder.is_motion_brief("a dripping rainbow")
+    assert builder.is_motion_brief("text over a WARPING background")
+    assert not builder.is_motion_brief("a calm still portrait of a mountain")
+    assert not builder.is_motion_brief("")
+
+
+def test_starter_playbook_has_lessons(tmp_store):
+    text = store.read_playbook()
+    assert "## Text overlay" in text
+    assert "## Motion & animation" in text
+    # Real bullets, not just the placeholder.
+    assert text.count("\n- ") >= 6
+
+
 def test_build_graph_gives_up_on_junk(tmp_store):
     res = builder.build_graph("x", runner=lambda s, m: "no json here at all",
                               catalog_digest="d", playbook_text="p")

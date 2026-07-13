@@ -257,6 +257,43 @@ def test_terminal_variance_guard_nonregression_ab():
         f"guard regressed alive rate: {alive_on} < {alive_off}")
 
 
+def test_terminal_variance_guard_leaves_alive_untouched():
+    """The monotonic invariant, stated directly: when the guard's own probe
+    (and the full liveness gate) already marks the incoming genome
+    alive, `ensure_terminal_variance` MUST return the graph
+    byte-for-byte unchanged.
+
+    This is the regression that broke main on 2026-07-13: the old
+    guard unconditionally re-rolled the head + upstream params, which
+    randomized already-alive genomes and turned 4/6 of them dead
+    (test_terminal_variance_guard_nonregression_ab saw alive_on=2 < 4).
+    The fix adds an early-return when `_alive()` is already True.
+    """
+    cfg = _tiny_cfg(True)
+    pool = build_gene_pool(cfg)
+    rng = random.Random(0xC0FFEE)
+    # Sample until we get an ALIVE genome — then replay the guard on it.
+    for _ in range(40):
+        g = repair_genome(_raw_sample(pool, cfg, rng), pool, cfg)
+        if g is None:
+            continue
+        if _alive(g, cfg):
+            break
+    else:
+        pytest.skip("no alive genome sampled in budget")
+    before = {n["id"]: dict(n) for n in g["graph"]["nodes"]}
+    before_edges = [dict(e) for e in g["graph"]["edges"]]
+    guarded = _apply_guard(g, cfg, seed=0xC0FFEE)
+    after_nodes = {n["id"]: n for n in guarded["graph"]["nodes"]}
+    after_edges = guarded["graph"]["edges"]
+    # Every node preserved exactly (no re-roll, no swap).
+    assert after_nodes.keys() == before.keys(), "guard added/removed nodes on an alive graph"
+    for nid, bnode in before.items():
+        assert after_nodes[nid] == bnode, (
+            f"guard mutated alive node {nid}: {bnode} -> {after_nodes[nid]}")
+    assert after_edges == before_edges, "guard rewired edges on an alive graph"
+
+
 def test_terminal_variance_guard_keeps_graph_valid():
     """The guard must not break graph validity (ports/type/DAG)."""
     cfg = _tiny_cfg(True)

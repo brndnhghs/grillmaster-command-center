@@ -20,6 +20,29 @@ Runner = Callable[[str, list[dict]], str]
 
 _JSON_BLOCK = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 
+# Words that signal the brief is about MOTION, so the build should render an
+# animated clip by default rather than a still (matched on word boundaries).
+_MOTION_WORDS = {
+    "sparkle", "sparkling", "sparkles", "rotate", "rotating", "rotation",
+    "spin", "spinning", "drip", "dripping", "drips", "warp", "warping",
+    "pulse", "pulsing", "pulsate", "pulsating", "flow", "flowing", "swirl",
+    "swirling", "orbit", "orbiting", "flicker", "flickering", "wave", "waves",
+    "waving", "ripple", "rippling", "bounce", "bouncing", "cycle", "cycling",
+    "morph", "morphing", "breathe", "breathing", "shimmer", "shimmering",
+    "drift", "drifting", "animate", "animated", "animation", "motion",
+    "moving", "twinkle", "twinkling", "undulate", "undulating", "oscillate",
+    "oscillating", "falling", "raining", "scroll", "scrolling", "twist",
+    "twisting", "churn", "churning", "boil", "boiling", "dance", "dancing",
+    "loop", "looping", "evolve", "evolving", "glowing",
+}
+
+_WORD_RE = re.compile(r"[a-z]+")
+
+
+def is_motion_brief(brief: str) -> bool:
+    """True when the brief describes motion, so the build should auto-animate."""
+    return any(w in _MOTION_WORDS for w in _WORD_RE.findall((brief or "").lower()))
+
 
 def extract_graph(text: str) -> dict | None:
     """Pull the graph dict out of a Hermes reply.

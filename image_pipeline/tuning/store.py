@@ -53,7 +53,50 @@ is fed back into the graph-builder every attempt — it is how the agent improve
 
 ## General craft
 
-_(no lessons yet — they accumulate here as sessions run)_
+- Keep graphs small (2–5 nodes) and purposeful: a generator or two, an optional
+  filter, and one compositing/terminal node. Every node should visibly serve the
+  brief — unused nodes just slow the render.
+- Exactly one node is the render terminal and it MUST output IMAGE — usually the
+  final blend or filter in the chain.
+
+## Text overlay
+
+- To put legible text over a busy background, render the words with Typography
+  (15) and composite them over the background with Image Blend (137). A "screen"
+  blend makes bright/white text pop on a dark or mid-toned field; "over" works
+  when the text already has its own alpha. Wire background→image_a, text→image_b.
+- Keep the background's contrast and palette restrained *under* the text — a
+  loud, high-saturation field fights the letterforms even when they're on top.
+
+## Warping backgrounds
+
+- GPU Domain Warp (176) produces an organic, liquid-looking field — a strong
+  default for "warping"/"flowing" backgrounds. Keep its warp strength moderate
+  (≈0.3); high strength smears any overlaid shape or text into illegibility.
+- A high `hue_shift` on a warp field reads as a distracting rainbow behind text;
+  drive hue_shift toward 0 (or desaturate) so an overlay stays the focal point.
+
+## Glow / bloom
+
+- To give a bright shape a soft luminous halo, run the generator through GPU
+  Bloom (229) as the last filter before the terminal. Bloom only lifts pixels
+  that are already bright, so make the source shape bright on a dark field first.
+
+## Spirals & radial
+
+- GPU Spiral (184) with `arms=1` draws a single clean logarithmic spiral;
+  increase `arms` for concentric/rosette structure. Pair it with Bloom (229) for
+  a glowing spiral on black.
+
+## Motion & animation
+
+- A still generator only moves in an animated render if it reads time. To force
+  motion, wire a DRIVER into an animatable param: LFO (`__lfo__`) for smooth
+  looping motion (rotation, phase, warp amount), Counter (`__counter__`) or Ramp
+  (`__ramp__`) for continuous one-way drift.
+- Route a driver's SCALAR output into the exact param port you want to animate
+  (e.g. LFO → a rotation or `phase` param). One well-chosen driver usually reads
+  as "alive"; several competing drivers read as chaotic.
 """
 
 
@@ -111,7 +154,10 @@ def append_lesson(section: str, lesson: str) -> bool:
         heading = f"## {section}"
         bullet = f"- {lesson}"
 
-        if heading in text:
+        # Exact heading-LINE match — substring would conflate "## Warping" with
+        # "## Warping backgrounds" and then drop the bullet (the insert loop
+        # below matches the full line).
+        if any(l.strip() == heading for l in text.splitlines()):
             # Insert the bullet at the end of that section (before the next
             # heading or EOF). Strip a placeholder line if present.
             lines = text.splitlines()
