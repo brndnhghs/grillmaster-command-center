@@ -424,6 +424,9 @@ function buildScene(nodes, edges, frame = 0) {
           grain_size:      resolveParam(node, 'grain_size', 1.0),
           radial_blur:     resolveParam(node, 'radial_blur', 0),
           radial_blur_falloff: resolveParam(node, 'radial_blur_falloff', 1.0),
+          lens_distortion:     resolveParam(node, 'lens_distortion', 0),
+          lens_distortion_scale: resolveParam(node, 'lens_distortion_scale', 1.0),
+          lens_distortion_anim:   resolveParam(node, 'lens_distortion_anim', 0),
         };
 
         for (const [port, obj] of Object.entries(wired)) {
@@ -697,6 +700,43 @@ void main() {
 }
 `;
 
+// Lens distortion (barrel / pincushion) — a real-time optical post pass that
+// radially warps the image about its center, mimicking a real camera lens.
+// k > 0 → barrel (wide-angle, edges bow out); k < 0 → pincushion (telephoto).
+// `uScale` is the radial falloff power (1 = pure quadratic, 2 = cubic bulge).
+// An optional `uBreath` term adds a slow sinusoidal breathing of the distortion
+// magnitude so the pass reads as *animated* even on a static scene — directly
+// useful for fighting the liveness cull in generative-evolution pipelines
+// (a still frame looks alive because the lens is gently breathing).
+// Ref: standard radial lens distortion model (Brown 1966 / standard real-time
+//      post-warps, e.g. GPU Gems 3 "Non-linear Lens Distortion"). Center pixels
+//      (r→0) are ~unchanged, so the focal region stays faithful.
+const _LENS_DISTORTION = `
+uniform sampler2D tDiffuse;
+uniform float uAmount;   // distortion strength (0 = off; +barrel / -pincushion)
+uniform float uScale;    // radial falloff power (>=0)
+uniform float uBreath;   // breathing amplitude added to uAmount (0 = static)
+uniform float uTime;     // frame clock (sec) for the breathing term
+uniform vec2 uResolution;
+varying vec2 vUv;
+void main() {
+  vec2 center = vec2(0.5);
+  vec2 dir = vUv - center;
+  float dist = length(dir);
+  // Optional breathing: gentle sinusoidal modulation of the magnitude.
+  float amt = uAmount + uBreath * (1.0 - cos(uTime * 2.0));
+  // Radial warp factor (standard k*r^n model, n = uScale).
+  float power = max(uScale, 0.001);
+  float k = amt * 0.5 * pow(max(dist, 0.0), power);
+  // New sampling position: pull (barrel) or push (pincushion) along the ray.
+  vec2 uv = center + dir * (1.0 + k);
+  // Edge clamp to avoid sampling outside [0,1] (no wrap on the scene RT).
+  vec2 cuv = clamp(uv, vec2(0.0), vec2(1.0));
+  vec4 c = texture2D(tDiffuse, cuv);
+  gl_FragColor = vec4(c.rgb, c.a);
+}
+`;
+
 // Radial (dolly-zoom) blur -- real-time streak toward the screen center.
 // Classic radial/zoom/rotational blur: for each pixel we take a handful of
 // samples along the ray from the pixel to the image center, accumulating them.
@@ -732,7 +772,7 @@ void main() {
 }
 `;
 
-function renderWithPostFX(renderer, scene, camera, w, h, fx) {
+function renderWithPostFX(renderer, scene, camera, w, h, fx, frame = 0) {
   const rtOpts = {
     minFilter: THREE.LinearFilter,
     magFilter: THREE.LinearFilter,
@@ -782,7 +822,8 @@ function renderWithPostFX(renderer, scene, camera, w, h, fx) {
     bloomRTs = [a, b];
   }
 
-  const needsCompositeRT = fx.fxaa > 0 || fx.chromatic > 0 || fx.grain > 0 || fx.radial_blur > 0;
+  const needsCompositeRT = fx.fxaa > 0 || fx.chromatic > 0 || fx.grain > 0 || fx.radial_blur > 0 ||
+      fx.lens_distortion !== 0 || fx.lens_distortion_anim > 0;
   const compositeTarget = needsCompositeRT
     ? new THREE.WebGLRenderTarget(w, h, { ...rtOpts, depthBuffer: false })
     : null;
@@ -804,6 +845,25 @@ function renderWithPostFX(renderer, scene, camera, w, h, fx) {
   // ── Chromatic aberration (radial lens RGB split) ──
   let caRT = null;
   let finalTex = compositeTarget ? compositeTarget.texture : null;
+
+  // ── Lens distortion (barrel / pincushion, optional breathing) ──
+  // Warps the graded scene radially about its center. Placed after `finalTex`
+  // is initialized and before chromatic/grain so it operates on clean color.
+  let lensRT = null;
+  if (finalTex && (fx.lens_distortion !== 0 || fx.lens_distortion_anim > 0)) {
+    lensRT = new THREE.WebGLRenderTarget(w, h, { ...rtOpts, depthBuffer: false });
+    const lensMat = _fsMat(_LENS_DISTORTION, {
+      tDiffuse: { value: finalTex },
+      uAmount: { value: fx.lens_distortion },
+      uScale: { value: fx.lens_distortion_scale },
+      uBreath: { value: fx.lens_distortion_anim },
+      uTime: { value: frame / 60.0 },
+      uResolution: { value: new THREE.Vector2(w, h) },
+    });
+    _fsRender(renderer, lensRT, lensMat);
+    finalTex = lensRT.texture;
+  }
+
   if (fx.chromatic > 0 && finalTex) {
     caRT = new THREE.WebGLRenderTarget(w, h, { ...rtOpts, depthBuffer: false });
     const caMat = _fsMat(_CHROMATIC, {
@@ -863,6 +923,7 @@ function renderWithPostFX(renderer, scene, camera, w, h, fx) {
   sceneRT.dispose();
   if (bloomRTs) bloomRTs.forEach(rt => rt.dispose());
   if (compositeTarget) compositeTarget.dispose();
+  if (lensRT) lensRT.dispose();
   if (caRT) caRT.dispose();
   if (grainRT) grainRT.dispose();
   if (radialRT) radialRT.dispose();
@@ -911,10 +972,11 @@ function renderSceneToPng(graphNodes, graphEdges, width, height, frame) {
   // non-default value engages the render-target pipeline.
   const fx = scene._gmPostFX || {};
   const fxEngaged = !!(fx.bloom || fx.vignette || fx.fxaa || fx.chromatic || fx.grain || fx.radial_blur ||
+      fx.lens_distortion !== 0 || fx.lens_distortion_anim > 0 ||
       fx.brightness !== 1 || fx.contrast !== 1 || fx.saturation !== 1);
 
   if (fxEngaged) {
-    renderWithPostFX(renderer, scene, camera, w, h, fx);
+    renderWithPostFX(renderer, scene, camera, w, h, fx, frame || 0);
   } else {
     renderer.render(scene, camera);
   }

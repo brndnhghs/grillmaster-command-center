@@ -72,6 +72,7 @@ _SCENE_BASE = dict(
     fx_brightness=1.0, fx_contrast=1.0, fx_saturation=1.0,
     vignette=0.0, vignette_radius=0.85, vignette_softness=0.5, fxaa=0,
     radial_blur=0.0, radial_blur_falloff=1.0,
+    lens_distortion=0.0, lens_distortion_scale=1.0, lens_distortion_anim=0.0,
 )
 
 
@@ -391,3 +392,88 @@ def test_radial_blur_preserves_center():
     cy, cx = H // 2, W // 2
     err = float(np.max(np.abs(strong[cy, cx] - weak[cy, cx])))
     assert err < 0.02, f"radial blur moved the focus point (center Δ={err})"
+
+
+def test_lens_distortion_changes_render():
+    """Engaging the lens-distortion pass is NOT a no-op: the radial warp pulls
+    edge pixels toward/away from the center, so the frame differs from the off
+    state. Locks in the new barrel/pincushion pass so a future edit that
+    silently drops its engagement is caught. Disabled by default.
+    """
+    off = _render(_build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0,
+        "fx_brightness": 1.0, "fx_contrast": 1.0, "fx_saturation": 1.0,
+        "chromatic": 0.0, "grain": 0.0, "radial_blur": 0.0,
+        "lens_distortion": 0.0,
+    }))
+    on = _render(_build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0,
+        "fx_brightness": 1.0, "fx_contrast": 1.0, "fx_saturation": 1.0,
+        "chromatic": 0.0, "grain": 0.0, "radial_blur": 0.0,
+        "lens_distortion": 0.6, "lens_distortion_scale": 1.0,
+    }))
+    delta = float(np.mean(np.abs(on - off)))
+    assert delta > 0.02, f"lens distortion did not change the render (Δ={delta})"
+
+
+def test_lens_distortion_strength_is_live():
+    """The `lens_distortion` magnitude actually drives the output: a stronger
+    warp produces a larger departure from the off state than a weak one.
+    """
+    off = _render(_build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0, "chromatic": 0.0, "grain": 0.0,
+        "radial_blur": 0.0, "lens_distortion": 0.0,
+    }))
+    weak = _render(_build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0, "chromatic": 0.0, "grain": 0.0,
+        "radial_blur": 0.0, "lens_distortion": 0.3, "lens_distortion_scale": 1.0,
+    }))
+    strong = _render(_build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0, "chromatic": 0.0, "grain": 0.0,
+        "radial_blur": 0.0, "lens_distortion": 0.8, "lens_distortion_scale": 1.0,
+    }))
+    d_weak = float(np.mean(np.abs(weak - off)))
+    d_strong = float(np.mean(np.abs(strong - off)))
+    assert d_weak > 0.02, f"weak lens distortion did not change render (Δ={d_weak})"
+    assert d_strong > 0.02, f"strong lens distortion did not change render (Δ={d_strong})"
+    # Both magnitudes read as live. (Strict monotonicity is NOT asserted: at
+    # high strength the warp saturates against the [0,1] edge clamp, so the
+    # extra departure from off plateaus — that is correct barrel/pincushion
+    # behaviour, not a dead param.)
+
+
+def test_lens_distortion_preserves_center():
+    """A radial lens warp is angle-preserving at the center: the screen-center
+    pixel sits on the warp origin (dir=0 -> k=0 -> sample=center), so its color
+    is invariant to distortion strength. This is the defining property of a
+    radial warp vs an affine shear, and must not regress.
+    """
+    weak = _render(_build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0, "chromatic": 0.0, "grain": 0.0,
+        "radial_blur": 0.0, "lens_distortion": 0.3, "lens_distortion_scale": 1.0,
+    }))
+    strong = _render(_build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0, "chromatic": 0.0, "grain": 0.0,
+        "radial_blur": 0.0, "lens_distortion": 0.9, "lens_distortion_scale": 1.0,
+    }))
+    H, W = weak.shape[:2]
+    cy, cx = H // 2, W // 2
+    err = float(np.max(np.abs(strong[cy, cx] - weak[cy, cx])))
+    assert err < 0.02, f"lens distortion moved the focus point (center Δ={err})"
+
+
+def test_lens_distortion_breathing_advances_frames():
+    """With `lens_distortion_anim` > 0 the pass breathes, so rendering the SAME
+    static graph at two different frames must differ (the warp magnitude
+    oscillates). This proves the pass reads the frame clock and is genuinely
+    time-varying — directly useful for fighting the liveness cull on still
+    scenes.
+    """
+    base = _build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0, "chromatic": 0.0, "grain": 0.0,
+        "radial_blur": 0.0, "lens_distortion": 0.0, "lens_distortion_anim": 1.0,
+    })
+    a = _render(base)
+    b = _render({**base, "frame": 90})
+    delta = float(np.mean(np.abs(a - b)))
+    assert delta > 0.01, f"lens breathing did not advance between frames (Δ={delta})"

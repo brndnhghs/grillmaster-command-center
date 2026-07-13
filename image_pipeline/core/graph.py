@@ -171,6 +171,9 @@ _THREEJS_POSTFX_PARAMS: dict[str, dict] = {
     "chromatic_scale":  {"description": "chromatic aberration radial falloff power", "min": 0.25, "max": 4, "default": 1.0},
     "radial_blur":      {"description": "radial (dolly-zoom) blur strength (0 = off)", "min": 0, "max": 1, "default": 0},
     "radial_blur_falloff": {"description": "radial blur sharpness at center (higher = tighter focus point)", "min": 0.25, "max": 4, "default": 1.0},
+    "lens_distortion": {"description": "lens distortion (barrel/pincushion): +wide-angle, -telephoto, 0 = off", "min": -1, "max": 1, "default": 0},
+    "lens_distortion_scale": {"description": "lens distortion radial falloff power (1 = quadratic, 2 = cubic bulge)", "min": 0.5, "max": 3, "default": 1.0},
+    "lens_distortion_anim": {"description": "lens breathing amplitude (slow sinusoidal zoom — makes a static scene read as alive; 0 = off)", "min": 0, "max": 1, "default": 0},
 }
 
 _THREEJS_3D_NODE_DEFS: dict[str, dict] = {

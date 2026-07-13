@@ -1,16 +1,16 @@
 {
-  "generated_at": "2026-07-13T16:18:03.229420+00:00",
-  "graphs_scanned": 45,
-  "error_count": 9,
-  "warn_count": 32,
+  "generated_at": "2026-07-13T20:19:20.306046+00:00",
+  "graphs_scanned": 47,
+  "error_count": 14,
+  "warn_count": 31,
   "findings": [
     {
       "graph": "active",
-      "node_id": "n1",
-      "method_id": "91",
-      "severity": "WARN",
-      "code": "W_DEAD_PORT",
-      "message": "image_in unwired but method never reads the wired image (dead/optional port \u2014 safe but worth pruning)"
+      "node_id": "nmrjgaaf84",
+      "method_id": "922",
+      "severity": "ERROR",
+      "code": "E_DANGLING_REQUIRED",
+      "message": "image_in has no inbound edge and the method consumes the wired image \u2014 will run without an upstream image (broken)"
     },
     {
       "graph": "age_density",
@@ -115,6 +115,22 @@
       "severity": "WARN",
       "code": "W_OPTIONAL_UNWIRED",
       "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "grillmaster-pulse",
+      "node_id": "n1",
+      "method_id": "35",
+      "severity": "ERROR",
+      "code": "E_DANGLING_REQUIRED",
+      "message": "image_in has no inbound edge and the method consumes the wired image \u2014 will run without an upstream image (broken)"
+    },
+    {
+      "graph": "hello-hue-circle",
+      "node_id": "n2",
+      "method_id": "248",
+      "severity": "ERROR",
+      "code": "E_DANGLING_REQUIRED",
+      "message": "image_in has no inbound edge and the method consumes the wired image \u2014 will run without an upstream image (broken)"
     },
     {
       "graph": "invasion",
@@ -243,6 +259,22 @@
       "severity": "WARN",
       "code": "W_OPTIONAL_UNWIRED",
       "message": "optional image port 'image_4' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "shootout-g-2efffd14",
+      "node_id": "n4",
+      "method_id": "343",
+      "severity": "ERROR",
+      "code": "E_ORPHAN_NODE",
+      "message": "node references unknown method_id '343' (no NodeDef)"
+    },
+    {
+      "graph": "shootout-g-2efffd14",
+      "node_id": "n5",
+      "method_id": "233",
+      "severity": "ERROR",
+      "code": "E_EDGE_NOT_TANGIBLE",
+      "message": "image port 'image_in' wired from n4:image \u2014 src-method-unknown (source does not emit a real image on that port)"
     },
     {
       "graph": "shootout-g-47679b1a",

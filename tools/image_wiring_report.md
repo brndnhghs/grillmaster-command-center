@@ -1,21 +1,21 @@
 # Image-Input Wiring Report
 
-- generated: 2026-07-13T16:18:03.229420+00:00
-- graphs scanned: 45
-- errors: 9
-- warnings: 32
+- generated: 2026-07-13T20:19:20.306046+00:00
+- graphs scanned: 47
+- errors: 14
+- warnings: 31
 
 ```
 ========================================================================
  IMAGE-INPUT WIRING VALIDATION
 ========================================================================
- graphs scanned : 45
- ERROR findings : 9
- WARN  findings : 32
+ graphs scanned : 47
+ ERROR findings : 14
+ WARN  findings : 31
 
-── graph: active   (0 ERROR / 1 WARN) ──
-  [WARN] W_DEAD_PORT @ n1 (91)
-        image_in unwired but method never reads the wired image (dead/optional port — safe but worth pruning)
+── graph: active   (1 ERROR / 0 WARN) ──
+  [ERROR] E_DANGLING_REQUIRED @ nmrjgaaf84 (922)
+        image_in has no inbound edge and the method consumes the wired image — will run without an upstream image (broken)
 
 ── graph: age_density   (0 ERROR / 1 WARN) ──
   [WARN] W_OPTIONAL_UNWIRED @ n54 (18)
@@ -68,6 +68,14 @@
 ── graph: glider_swarm   (0 ERROR / 1 WARN) ──
   [WARN] W_OPTIONAL_UNWIRED @ n41 (18)
         optional image port 'seed_image' is unwired (method may fall back to an internal/default source)
+
+── graph: grillmaster-pulse   (1 ERROR / 0 WARN) ──
+  [ERROR] E_DANGLING_REQUIRED @ n1 (35)
+        image_in has no inbound edge and the method consumes the wired image — will run without an upstream image (broken)
+
+── graph: hello-hue-circle   (1 ERROR / 0 WARN) ──
+  [ERROR] E_DANGLING_REQUIRED @ n2 (248)
+        image_in has no inbound edge and the method consumes the wired image — will run without an upstream image (broken)
 
 ── graph: invasion   (0 ERROR / 1 WARN) ──
   [WARN] W_OPTIONAL_UNWIRED @ n33 (18)
@@ -124,6 +132,12 @@
         optional image port 'image_3' is unwired (method may fall back to an internal/default source)
   [WARN] W_OPTIONAL_UNWIRED @ n5 (37)
         optional image port 'image_4' is unwired (method may fall back to an internal/default source)
+
+── graph: shootout-g-2efffd14   (2 ERROR / 0 WARN) ──
+  [ERROR] E_ORPHAN_NODE @ n4 (343)
+        node references unknown method_id '343' (no NodeDef)
+  [ERROR] E_EDGE_NOT_TANGIBLE @ n5 (233)
+        image port 'image_in' wired from n4:image — src-method-unknown (source does not emit a real image on that port)
 
 ── graph: shootout-g-47679b1a   (0 ERROR / 1 WARN) ──
   [WARN] W_DEAD_PORT @ n4 (159)
