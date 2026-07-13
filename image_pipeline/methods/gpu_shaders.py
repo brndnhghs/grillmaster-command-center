@@ -771,6 +771,13 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
             'param_map': {'thickness': 'thickness', 'thickness_scale': 'thickness_range',
                           'ior': 'ior', 'tilt': 'angle',
                           'intensity': 'strength', 'saturation': 'saturation'}},
+    # 503 Conformal Warp -> closed-form Möbius conformal-map twin (live-preview
+    # path; the CPU numpy node 503 stays authoritative for export). REAL numeric
+    # params scale/warp/anim_speed mapped to the twin's p1/p2/p4. The string
+    # choice `function` (moebius/z2/z3/exp/sin/joukowsky) is intentionally
+    # left unmapped (pitfall #14) — the twin renders the canonical Möbius map.
+    "503": {"shader": "conformal_gpu", "type": "procedural",
+            "param_map": {"scale": "p1", "warp": "p2", "anim_speed": "p4"}},
 }
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SHIMS)
 
