@@ -58,11 +58,18 @@ EXPECTED_MAP_ENTRIES = 256
 # browser WebGL2 parity — out of scope for headless verification. If you port
 # one, remove it from this set AND add the appropriate CLIENT_GPU_SIMS entry.
 DEFERRED_SIM_IDS = set(
-    "20 34 35 36 55 79 83 84 86 88 89 90 92 94 97 98 101 102 103 "
+    "20 34 35 36 55 79 83 84 88 89 90 92 94 97 98 101 102 103 "
     "107 109 110 111 112 113 114 116 117 123 129 130 131 134 "
     "136 145 147 149 151 152 158 159 167 337 429 440 448 922 310 "
-    "483 484 517 951 966 560 518".split()
+    "483 484 517 951 966 560 518 530".split()
 )
+# 530 Physarum Transport Network: Arch-A agent-based slime-mold foraging sim
+# (thousands of agents sensing a deposited trail-map, box-blur diffusion,
+# capture_frame per frame). Same deferral class as the other agent/trail-map
+# stateful sims — its honest GPU twin is a WebGL2 ping-pong state sim needing
+# browser parity, out of scope for headless verification until P2 (WebGPU
+# compute) is signed off. Was committed (be43c26) without a mirror or deferral
+# entry; added here so the exhaustive-deferral guard holds again.
 # 518 Larger Than Life: discrete range-neighborhood cellular automaton (stateful
 # across frames; its honest GPU twin is a WebGL2 ping-pong sim needing browser
 # parity -- same deferral class as 87/96/93 cyclic-CA and 55/92/129 sandpile/Potts.

@@ -89,7 +89,7 @@ def _grab_frame(client, wait_fresh=True, timeout=5.0):
 def test_live_loop_runs_with_body_only_no_doc_put(client):
     """Starting live the browser way (body-only POST, empty shared doc) must
     actually run the loop, not break on frame 1."""
-    _start(client, "86")  # Physarum — heavy Arch-A sim, slow first cook
+    _start(client, "530")  # Physarum — heavy Arch-A sim, slow first cook
     # Poll: the loop is seeded from the body even though the shared doc started
     # empty. Physarum's first cook is ~2.5s, so wait up to 15s for frame>1.
     deadline = time.time() + 15.0
@@ -105,7 +105,7 @@ def test_live_loop_runs_with_body_only_no_doc_put(client):
     # And the shared doc must now be seeded from the body so the loop has a
     # source of truth.
     doc = client.get("/api/graph/active").json()
-    assert doc["nodes"] and doc["nodes"][0]["method_id"] == "86"
+    assert doc["nodes"] and doc["nodes"][0]["method_id"] == "530"
 
 
 def _wait_running(client, timeout=15.0):
@@ -124,7 +124,7 @@ def _wait_running(client, timeout=15.0):
 def test_swap_sim_node_changes_rendered_frame(client):
     """Swapping one Arch-A sim for another on the same node_id must change the
     rendered frame (regression for the method_id-omitted cache key)."""
-    _start(client, "86")  # Physarum
+    _start(client, "530")  # Physarum
     st = _wait_running(client)
     assert st is not None and st.get("frame", 0) > 1, f"first node never ran: {st}"
     a = _grab_frame(client)
