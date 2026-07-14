@@ -1,221 +1,238 @@
 from __future__ import annotations
+
 import math
-from pathlib import Path
 
 import numpy as np
-from scipy.ndimage import uniform_filter
+from PIL import Image
 
 from ...core.registry import method
-from ...core.utils import (save, norm, mn, seed_all, W, H, PALETTES, load_input)
+from ...core.utils import save, mn, seed_all, W, H, write_scalars, write_field, wired_source_rgb
 from ...core.animation import capture_frame
 
 
-@method(
-    id="335",
-    name="Guided Image Filter",
-    category="filters",
-    new_image_contract=True,
-    tags=["smoothing", "edge-preserving", "detail", "abstraction", "expanded", "animation"],
-    inputs={"image_in": "IMAGE"},
-    outputs={"image": "IMAGE", "mask": "MASK"},
-    params={
-        "source": {"description": "source (noise/gradient/input_image/palette/rainbow/procedural)", "default": "noise"},
-        "radius": {"description": "guided-filter box radius in px (smoothing spatial extent)", "min": 1, "max": 30, "default": 8},
-        "epsilon": {"description": "regularization: larger = flatter smoothing (1e-4..0.5)", "min": 0.0001, "max": 0.5, "default": 0.02},
-        "guide": {"description": "guidance image (self = guide with full color, luminance = coherent grayscale guide)", "choices": ["self", "luminance"], "default": "luminance"},
-        "mode": {"description": "output (smooth = edge-preserving filtered, detail = extracted residual, enhance = src + amount*residual)", "choices": ["smooth", "detail", "enhance"], "default": "smooth"},
-        "amount": {"description": "detail/enhance strength (0-2)", "min": 0.0, "max": 2.0, "default": 1.0},
-        "noise_amp": {"description": "noise amplitude for generated sources", "min": 0.1, "max": 1.0, "default": 0.6},
-        "blur_sigma": {"description": "gaussian blur sigma for noise source", "min": 5, "max": 80, "default": 30},
-        "palette": {"description": "palette name for palette source", "default": "vapor"},
-        "anim_mode": {"description": "animation mode (none/radius_pulse/epsilon_pulse/mode_cycle)", "choices": ["none", "radius_pulse", "epsilon_pulse", "mode_cycle"], "default": "none"},
-        "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
-    },
-)
-def method_guided_filter(out_dir: Path, seed: int, params=None):
-    """Guided Image Filter — O(N) edge-preserving smoothing (He, Sun & Tang, ECCV 2010 / TPAMI 2013).
+# ── Vectorized value noise (deterministic, seed-stable) for procedural sources ──
+def _hash_corner(ix: np.ndarray, iy: np.ndarray, seed: int) -> np.ndarray:
+    ix = ix.astype(np.uint64)
+    iy = iy.astype(np.uint64)
+    n = (ix * np.uint64(73856093)) ^ (iy * np.uint64(19349663)) ^ (np.uint64(seed) * np.uint64(83492791))
+    n = (n ^ (n >> np.uint64(13))) * np.uint64(1274126177)
+    n = n ^ (n >> np.uint64(16))
+    return (n & np.uint64(0x7FFFFFFF)).astype(np.float64) / 2147483647.0
 
-    Unlike the Kuwahara filter (which picks the lowest-variance sector of an
-    oriented window), the guided filter models the output as a *local linear
-    transform* of a guidance image I inside each window. Solving the
-    regularization
 
-        min  sum((a_k*I_i + b_k - p_i)^2 + eps*a_k^2)
+def _value_noise(x: np.ndarray, y: np.ndarray, seed: int) -> np.ndarray:
+    xi = np.floor(x).astype(np.int64)
+    yi = np.floor(y).astype(np.int64)
+    xf = x - xi
+    yf = y - yi
+    u = xf * xf * (3.0 - 2.0 * xf)
+    v = yf * yf * (3.0 - 2.0 * yf)
+    h00 = _hash_corner(xi, yi, seed)
+    h10 = _hash_corner(xi + 1, yi, seed)
+    h01 = _hash_corner(xi, yi + 1, seed)
+    h11 = _hash_corner(xi + 1, yi + 1, seed)
+    a = h00 + (h10 - h00) * u
+    b = h01 + (h11 - h01) * u
+    return (a + (b - a) * v) * 2.0 - 1.0
 
-    over a window k gives, per channel,
 
-        a = cov(I,p) / (var(I) + eps)
-        b = mean(p) - a*mean(I)
+def _fbm(x: np.ndarray, y: np.ndarray, seed: int, octaves: int,
+         lacunarity: float, gain: float) -> np.ndarray:
+    amp = 1.0
+    freq = 1.0
+    total = np.zeros_like(x, dtype=np.float64)
+    norm = 0.0
+    for o in range(octaves):
+        total += amp * _value_noise(x * freq, y * freq, seed + o * 101)
+        norm += amp
+        amp *= gain
+        freq *= lacunarity
+    return total / norm if norm > 0 else total
 
-    and the output is the box-filtered (mean) of a*I + b. Because the model is
-    linear in I, the filter exactly preserves edges in I (no gradient
-    reversal) and has O(N) cost via two box-filter passes — the basis for
-    structure-preserving smoothing, detail/structure separation, joint
-    upsampling, and haze removal.
 
-    CPU path is the authoritative export. The method is fully self-contained
-    (scipy box filters, no cv2).
+def _proc_source(source: str, seed: int, w: int, h: int) -> np.ndarray:
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float64)
+    if source == "checkerboard":
+        cs = max(8, w // 24)
+        cell = ((xx // cs + yy // cs) % 2)
+        v = np.where(cell == 0, 0.30, 0.72)
+        img = np.stack([v, v, v], axis=-1)
+    elif source in ("perlin", "noise"):
+        v = _fbm(xx / 40.0, yy / 40.0, seed, 5, 2.0, 0.5)
+        v = (v + 1.0) * 0.5
+        if source == "noise":
+            v2 = _fbm(xx / 12.0, yy / 12.0, seed + 7, 3, 2.0, 0.5)
+            v = np.clip(v * 0.7 + (v2 + 1.0) * 0.15, 0.0, 1.0)
+        img = np.stack([v, v ** 1.3 * 0.9 + 0.05, v ** 0.7 * 0.7], axis=-1)
+    else:  # gradient (default)
+        r = xx / max(1, w - 1)
+        g = yy / max(1, h - 1)
+        b = (xx + yy) / max(1, w + h - 2)
+        img = np.stack([r, g, b], axis=-1)
+    return img.astype(np.float32)
 
-    Params:
-        source:     generated source type (noise/gradient/input_image/palette/rainbow/procedural)
-        radius:     box radius in px (1-30, default 8)
-        epsilon:    regularization; larger flattens (1e-4..0.5, default 0.02)
-        guide:      self (per-channel color guidance) or luminance (coherent grayscale guidance)
-        mode:       smooth / detail (residual) / enhance (unsharp via guided residual)
-        amount:     detail/enhance strength (0-2, default 1)
-        noise_amp:  amplitude for generated sources (0.1-1.0)
-        blur_sigma: blur sigma for noise source (5-80)
-        palette:    palette name for palette source
-        time:       animation clock (0-6.28)
-        anim_mode:  none / radius_pulse / epsilon_pulse / mode_cycle
-        anim_speed: animation speed (0.1-5.0)
+
+# ── Box (mean) filter via integral images — O(N), edge-aware window shrink ──
+def _make_box(r: int, hh: int, ww: int):
+    ii = np.arange(hh)
+    jj = np.arange(ww)
+    r0 = np.clip(ii - r, 0, hh - 1)
+    r1 = np.clip(ii + r, 0, hh - 1)
+    c0 = np.clip(jj - r, 0, ww - 1)
+    c1 = np.clip(jj + r, 0, ww - 1)
+    r0g, c0g = np.meshgrid(r0, c0, indexing="ij")
+    r1g, c1g = np.meshgrid(r1, c1, indexing="ij")
+    area = (r1g - r0g + 1) * (c1g - c0g + 1)
+    return r0g, c0g, r1g, c1g, area
+
+
+def _box(I: np.ndarray, idx) -> np.ndarray:
+    C = np.zeros((I.shape[0] + 1, I.shape[1] + 1), dtype=np.float64)
+    C[1:, 1:] = np.cumsum(np.cumsum(I, axis=0), axis=1)
+    r0g, c0g, r1g, c1g, area = idx
+    S = C[r1g + 1, c1g + 1] - C[r0g, c1g + 1] - C[r1g + 1, c0g] + C[r0g, c0g]
+    return S / area
+
+
+def _guided_channel(I: np.ndarray, p: np.ndarray, r: int, eps: float,
+                     idx) -> np.ndarray:
+    """He, Sun & Tang (ECCV 2010) guided filter for one 2D channel.
+
+    The output is a local linear transform of the guidance ``I``:
+      q = a_k * I + b_k   inside window k, with a,b chosen so q best matches p.
+    Averaging a,b over all windows makes q edge-preserving in I yet smooth in p.
+    """
+    mean_I = _box(I, idx)
+    mean_p = _box(p, idx)
+    mean_II = _box(I * I, idx)
+    mean_Ip = _box(I * p, idx)
+    cov_Ip = mean_Ip - mean_I * mean_p
+    var_I = mean_II - mean_I * mean_I
+    a = cov_Ip / (var_I + eps)
+    b = mean_p - a * mean_I
+    mean_a = _box(a, idx)
+    mean_b = _box(b, idx)
+    return mean_a * I + mean_b
+
+
+@method(id='488', name='Guided Filter', category='filters',
+        tags=['guided-filter', 'edge-preserving', 'smoothing', 'detail-enhancement',
+              'hdr', 'joint-upsampling', 'he-2010', 'fast', 'expanded', 'animation'],
+        params={
+            'source': {'description': "procedural source used when no image is wired in",
+                       'choices': ['gradient', 'perlin', 'noise', 'checkerboard', 'input_image'],
+                       'default': 'noise'},
+            'mode': {'description': 'guided-filter output: edge-preserving smooth, detail-enhance, or detail-flatten',
+                     'choices': ['smooth', 'detail', 'flatten'], 'default': 'smooth'},
+            'radius': {'description': 'box-filter window radius (px) — smoothing extent',
+                       'min': 1, 'max': 40, 'default': 8},
+            'eps': {'description': 'regularisation ε — SMALLER keeps more edges (less smoothing), LARGER flattens more',
+                    'min': 0.001, 'max': 0.5, 'default': 0.05},
+            'amount': {'description': 'detail strength for detail/flatten modes (0=off, 1=neutral, >1=boost)',
+                       'min': 0.0, 'max': 3.0, 'default': 1.0},
+            'anim_mode': {'description': 'animation mode (none / radius_grow — the smoothing window breathes)',
+                          'default': 'none'},
+            'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 3.0, 'default': 1.0},
+            'time': {'description': 'animation phase [0, 2pi)', 'min': 0.0, 'max': 6.28, 'default': 0.0},
+        },
+        inputs={'image_in': 'IMAGE'},
+        outputs={'image': 'IMAGE', 'field': 'FIELD'})
+def method_guided_filter(out_dir, seed: int, params=None):
+    """Guided Image Filtering (He, Sun & Tang — ECCV 2010 / TPAMI 2013).
+
+    A local-linear edge-preserving smoother that runs in O(N) using box
+    (mean) filters via integral images. Unlike the bilateral filter it has
+    no gradient reversal and is exactly the workhorse behind:
+
+      * HDR detail enhancement / tone-mapping (Eisemann & Durand style)
+      * image matting (closed-form alpha)
+      * joint / guided upsampling (depth → colour)
+      * haze / fog removal
+
+    Math (per channel, self-guided I = p = input):
+      mean_I, mean_p, mean_II, mean_Ip  = box-filtered stats over a (2r+1)² window
+      a = (mean_Ip − mean_I·mean_p) / (var_I + ε)      var_I = mean_II − mean_I²
+      b = mean_p − a·mean_I
+      q = box(a)·I + box(b)                            (re-average a,b → edge-preserving)
+
+    Self-guided, so every pixel is smoothed yet sharp edges survive: inside a
+    flat region a≈0, b≈local mean (blur); across an edge var_I is large so a≈1
+    (pass-through). Three output modes re-purpose the base/structure layer:
+
+      smooth  → q            (edge-preserving smoothing, removes fine texture/haze)
+      detail  → q + amount·(I − q)   (boost fine detail, HDR-style)
+      flatten → q − amount·(I − q)   (suppress detail → poster/flat look)
+
+    Closed-form per frame (no state) → Architecture B, re-called per frame.
+    The ``field`` output is the smoothed base-layer luminance (the structure
+    the filter extracted), a useful wire for downstream masking/edge work.
     """
     try:
         if params is None:
             params = {}
-        anim_time = float(params.get("time", 0.0))
-        anim_mode = str(params.get("anim_mode", "none"))
-        anim_speed = float(params.get("anim_speed", 1.0))
         seed_all(seed)
-        rng = np.random.default_rng(seed)
 
-        source = str(params.get("source", "noise"))
+        mode = params.get("mode", "smooth")
         radius = int(params.get("radius", 8))
-        radius = max(1, min(30, radius))
-        eps = float(params.get("epsilon", 0.02))
-        eps = max(1e-4, min(0.5, eps))
-        guide = str(params.get("guide", "luminance"))
-        mode = str(params.get("mode", "smooth"))
+        eps = float(params.get("eps", 0.05))
         amount = float(params.get("amount", 1.0))
-        noise_amp = float(params.get("noise_amp", 0.6))
-        blur_sigma = float(params.get("blur_sigma", 30))
-        pal_name = str(params.get("palette", "vapor"))
+        anim_mode = params.get("anim_mode", "none")
+        anim_speed = float(params.get("anim_speed", 1.0))
+        t = float(params.get("time", 0.0))
+        _t = 0.0 if anim_mode == "none" else t * anim_speed
+        source = params.get("source", "noise")
 
-        # ── Animation (rename t to avoid shadowing the time param) ──
-        _t = anim_time * anim_speed
-        if anim_mode == "radius_pulse":
-            # smooth oscillation, never below 1
-            radius = max(1, int(radius * (0.4 + 0.6 * (0.5 + 0.5 * math.sin(_t * 0.3)))))
-        elif anim_mode == "epsilon_pulse":
-            eps = max(1e-4, eps * (0.3 + 0.7 * (0.5 + 0.5 * math.sin(_t * 0.4))))
-        elif anim_mode == "mode_cycle":
-            # smooth / detail / enhance cycle (intentional discrete content switch)
-            idx = int((_t / 2.094)) % 3
-            mode = ["smooth", "detail", "enhance"][idx]
-        # else: none — static
-
-        # ── Resolve source image (float32 [0,1], H×W×3) ──
-        # A wired upstream image always overrides source generation (Rule #12).
-        src = None
-        wired_path = params.get("input_image", "")
-        if wired_path:
-            try:
-                src = load_input(wired_path, int(W), int(H))
-            except (FileNotFoundError, OSError):
-                src = None
-
-        if src is None:
-            if source == "gradient":
-                yy, xx = np.mgrid[:H, :W].astype(np.float32)
-                r = np.sqrt((xx - W / 2) ** 2 + (yy - H / 2) ** 2)
-                g = norm(r)
-                src = np.stack([g, g * 0.7, 1 - g], axis=-1).clip(0, 1)
-            elif source == "palette":
-                pal = PALETTES.get(pal_name, list(PALETTES.values())[0])
-                yy, xx = np.mgrid[:H, :W].astype(np.float32)
-                r = norm(np.sqrt((xx - W / 2) ** 2 + (yy - H / 2) ** 2))
-                idx = (r * (len(pal) - 1)).astype(np.int32)
-                src = np.array(pal, dtype=np.float32)[idx] / 255.0
-            elif source == "rainbow":
-                yy, xx = np.mgrid[:H, :W].astype(np.float32)
-                r = norm(np.sqrt((xx - W / 2) ** 2 + (yy - H / 2) ** 2))
-                hue = r * 2 * math.pi
-                src = np.stack([
-                    np.sin(hue) * 0.5 + 0.5,
-                    np.sin(hue + 2.094) * 0.5 + 0.5,
-                    np.sin(hue + 4.189) * 0.5 + 0.5,
-                ], axis=-1).astype(np.float32)
-            elif source == "procedural":
-                yy, xx = np.mgrid[:H, :W].astype(np.float32)
-                g = np.sin(xx * 0.03 + yy * 0.02 + _t * 0.5) * \
-                    np.cos(xx * 0.02 - yy * 0.03 + _t * 0.3) * 0.5 + 0.5
-                src = np.stack([g, g * 0.6, 1 - g * 0.8], axis=-1).astype(np.float32)
-            else:  # noise / input_image fallback
-                n = rng.standard_normal((H, W, 3)).astype(np.float32) * noise_amp + 0.5
-                n = uniform_filter(n, size=max(3, int(blur_sigma)), mode="reflect")
-                src = norm(n)
-
-        src = np.clip(src, 0.0, 1.0).astype(np.float32)
-
-        # ── Guided filter core ──
-        gray = (0.299 * src[:, :, 0] + 0.587 * src[:, :, 1] + 0.114 * src[:, :, 2]).astype(np.float32)
-        if guide == "luminance":
-            guide_img = gray  # single-channel coherent guidance for all channels
+        # ── Animation: breathe the window radius (smooth, no cusps) ──
+        # Cos-based full-cycle oscillation (0.5 - 0.5*cos): r spans 1px (sharp,
+        # near-passthrough) at t=0 up to 3x nominal (heavy smoothing) at t=pi and
+        # back. The cos form has no abs(sin) cusp, and anchoring the SHARP end at
+        # t=0 keeps the frame-to-frame Δ clearly visible (the guided filter is
+        # near-converged at large radii, so a mid-band sweep would read static).
+        if anim_mode == "radius_grow":
+            frac = 0.5 - 0.5 * math.cos(_t)           # 0 at t=0, 1 at t=pi
+            r_min = 1
+            r_max = max(r_min + 1, int(round(radius * 3.0)))
+            r_eff = max(r_min, int(round(r_min + (r_max - r_min) * frac)))
         else:
-            guide_img = None   # self-guided: each channel guides its own output
+            r_eff = max(1, radius)
 
-        smoothed = np.empty_like(src)
+        # ── Rule #12: a wired image always wins over the procedural source ──
+        wired = wired_source_rgb(params, int(W), int(H))
+        if wired is not None:
+            rgb = wired.astype(np.float32)
+        else:
+            rgb = _proc_source(source, seed, int(W), int(H))
+
+        rgb = rgb.astype(np.float64)
+        hh, ww = rgb.shape[0], rgb.shape[1]
+        idx = _make_box(r_eff, hh, ww)
+
+        # Self-guided per channel (colour guided filter).
+        base = np.empty_like(rgb)
         for c in range(3):
-            p = src[:, :, c]
-            g = guide_img if guide_img is not None else p
-            smoothed[:, :, c] = _guided_filter_1d(g, p, radius, eps)
+            base[..., c] = _guided_channel(rgb[..., c], rgb[..., c], r_eff, eps, idx)
 
-        # ── Compose output ──
-        residual = src - smoothed
-        detail_energy = float(np.mean(np.abs(residual)))
-        if mode == "detail":
-            out = np.clip(0.5 + amount * residual, 0.0, 1.0).astype(np.float32)
-        elif mode == "enhance":
-            out = np.clip(src + amount * residual, 0.0, 1.0).astype(np.float32)
-        else:  # smooth
-            out = np.clip(smoothed, 0.0, 1.0).astype(np.float32)
+        if mode == "smooth":
+            result = base
+        elif mode == "detail":
+            result = base + amount * (rgb - base)
+        else:  # flatten
+            result = base - amount * (rgb - base)
 
-        # ── Mask: edge-strength map = magnitude of the detail residual ──
-        mask = np.clip(np.mean(np.abs(residual), axis=-1), 0.0, 1.0).astype(np.float32)
+        result = np.clip(result, 0.0, 1.0).astype(np.float32)
+        base_lum = (0.299 * base[..., 0] + 0.587 * base[..., 1] + 0.114 * base[..., 2]).astype(np.float32)
+        detail_energy = float(np.mean(np.abs(rgb - base)))
 
-        capture_frame("335", out)
-        save(out, mn(335, "Guided Image Filter"), out_dir)
-        try:
-            from ...core.utils import write_scalars, write_mask
-            write_scalars(out_dir, radius=float(radius), epsilon=float(eps),
-                          detail_energy=detail_energy)
-            write_mask(out_dir, mask)
-        except Exception:
-            pass
-        return out
+        # ── Scalars (Rule #4) + Field (Rule #5) ──
+        write_scalars(out_dir, radius=float(r_eff), eps=eps,
+                      detail_energy=detail_energy, mean_base=float(base_lum.mean()))
+        write_field(out_dir, base_lum)
+
+        capture_frame("488", result)
+        save(result, mn(488, f"Guided Filter {mode} r={r_eff} eps={eps:.3f}"), out_dir)
+        return result
     except Exception as exc:
-        fallback = np.full((H, W, 3), 0.5, dtype=np.float32)
-        save(fallback, mn(335, "Guided Image Filter"), out_dir)
-        print(f"[method_335] ERROR: {exc}")
+        fallback = np.full((int(H), int(W), 3), 128, dtype=np.uint8)
+        save(fallback, mn(488, "Guided Filter"), out_dir)
+        print(f"[method_488] ERROR: {exc}")
         return fallback
-
-
-def _guided_filter_1d(g: np.ndarray, p: np.ndarray, r: int, eps: float) -> np.ndarray:
-    """Single-channel O(N) guided filter.
-
-    g, p are (H, W) float32 in [0,1]; r is box radius, eps is regularization.
-    Two box-filter (mean) passes give O(N) cost. Boundary handled by reflect.
-    """
-    if g is p:
-        # self-guided: a = var / (var + eps), b = mean(p) - a*mean(g) == mean(p)*(1-a)
-        mean_g = uniform_filter(g, size=2 * r + 1, mode="reflect")
-        mean_gg = uniform_filter(g * g, size=2 * r + 1, mode="reflect")
-        var_g = np.maximum(mean_gg - mean_g * mean_g, 0.0)
-        mean_p = uniform_filter(p, size=2 * r + 1, mode="reflect")
-        a = var_g / (var_g + eps)
-        b = mean_p * (1.0 - a)
-        mean_a = uniform_filter(a, size=2 * r + 1, mode="reflect")
-        mean_b = uniform_filter(b, size=2 * r + 1, mode="reflect")
-        return mean_a * g + mean_b
-    else:
-        mean_g = uniform_filter(g, size=2 * r + 1, mode="reflect")
-        mean_p = uniform_filter(p, size=2 * r + 1, mode="reflect")
-        mean_gp = uniform_filter(g * p, size=2 * r + 1, mode="reflect")
-        mean_gg = uniform_filter(g * g, size=2 * r + 1, mode="reflect")
-        cov_gp = mean_gp - mean_g * mean_p          # cov(I, p)
-        var_g = np.maximum(mean_gg - mean_g * mean_g, 0.0)
-        a = cov_gp / (var_g + eps)
-        b = mean_p - a * mean_g
-        mean_a = uniform_filter(a, size=2 * r + 1, mode="reflect")
-        mean_b = uniform_filter(b, size=2 * r + 1, mode="reflect")
-        return mean_a * g + mean_b

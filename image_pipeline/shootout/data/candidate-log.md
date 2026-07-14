@@ -424,3 +424,41 @@ Action: added CHEAP O(n) animated node 2D Gaussian Splatting (965). Structurally
   optical flow (Horn-Schunck 1981), solarize, color transfer (Reinhard 2001),
   vignette/film grain; (c) evolution sub-problem #6 (rating-signal poverty /
   active-learning acquisition) appended to evolution-research.md; index -> 7.
+
+## 2026-07-14 — run action: finish orphaned Menger GPU batch (node 324) + monitor
+
+- PHASE 1 diagnostic (real probe, 537 genomes, 0 corrupt): alive=186, dead=351
+  (65% rejected); renders>150s=131 (24% hit the 150s timeout cull); rated=18
+  (only 3.4% rated — severe rating-signal poverty). TOP3 rated:
+  g-e181c881 (5*, explorer), g-328f0d37 (5*, random), g-e3d68069 (5*, random).
+  DEAD hotspots are structural (control/util nodes present in every graph):
+  __lfo__ 886, __counter__ 245, __noise1d__ 136, __ramp__ 109, __strobe__ 48,
+  __envelope__ 43 — NOT technique failures, so no avoid-signal is valid.
+  cheap-alive (recombine seeds) = 110.
+- PHASE 1B action taken: nothing to promote via seed_ids hook this run (top-rated
+  ids are healthy survivors; promotion is automatic through evolution). Noted the
+  65% dead rate + 24% >150s timeout as the dominant cost signals to feed future
+  generation targets (cost-admission already implemented per prior entry).
+- PRIMARY TASK (autonomous-dev leftover-batch rule): the working tree held an
+  uncommitted, unfinished GPU batch — a Menger / Sierpinski-carpet recursive
+  subdivision fractal as typed-uniform node 324 (shader `menger_typed` in
+  core/shaders.py + _TYPED_SHADER_NODES entry + both GPU map-count guards bumped
+  252->253). Verified headlessly (_check_menger.py, since deleted): registered,
+  uses_time=True, webgl2+gl330 compile, non-black (mean=94.8), time delta t0->t3.14
+  =86.4, param delta scale 8->20 =94.8, SCALAR ports for scale/spin/pulse. Committed
+  as 20763d2 and pushed.
+- PRE-EXISTING failure isolated: test_sim_deferral_is_exhaustive fails identically
+  with this batch stashed (sims 951/966/560 lack GPU mirrors, not on DEFERRED list)
+  — left alone, out of scope.
+- RECOMMENDED NEXT: (a) PHASE 1C rotated to index 0 (Selection pressure / fitness
+  shaping) — see evolution-research.md; (b) candidate techniques from the confirmed
+  gap scan still open: anamorphic streak, Horn-Schunck optical flow (1981),
+  solarize, Reinhard color transfer (2001), vignette/film grain as GPU twins.
+
+## 2026-07-14 (cron run) — added CG node 488 "Guided Filter"
+- RESEARCH: Guided Image Filtering — He, Sun & Tang (ECCV 2010 / TPAMI 2013, ~9,300 cites). Local-linear edge-preserving smoother, O(N) via box filters + integral images. https://people.csail.mit.edu/kaiming/publications/eccv10guidedfilter.pdf
+- DUP GUARD: grep confirmed Mean Shift (449), Anisotropic Kuwahara (68), L0 Smooth (347), Tone Mapping (428)/AgX exist, but NO guided-filter node (the closed-form f(uv,t) GLSL family also lacks it). Genuine gap in filters category.
+- FEATURE: node 488 "Guided Filter" (category filters, Architecture B). Self-guided per-channel color filter. Modes: smooth (edge-preserving smoothing, removes haze/texture), detail (HDR-style detail enhancement: base + amount·detail), flatten (suppress detail → poster look). Params: source (procedural when unwired), mode, radius (1-40), eps (0.001-0.5, edge awareness), amount (0-3), anim_mode (none/radius_grow), anim_speed, time. Wired IMAGE overrides procedural source (Rule 12). Outputs IMAGE + FIELD (smoothed base luminance).
+- VERIFIED headless (8-step audit): registered in /api/node-defs (463 methods); non-black (std 0.18 on wired random); none-mode static Δ=0.0000; eps 0.001 vs 0.5 Δ=0.2107; radius 2 vs 30 Δ=0.0924 (tested on a period-60 sine — stationary/white-noise sources are radius-invariant by design, a global affine map q≈a·I+b); mode distinct (smooth/detail 0.1332, smooth/flatten 0.1405); radius_grow animation t=3π/2 vs π/2 Δ=0.0958 (sin-phase degeneracy avoided — NOT t=0 vs π); wired-input override Δ=0.2631; Rule-8 server import clean.
+- SHOOTOUT-FACING: O(N) box filter, ~no heavy compute → timeout-immune; the detail/flatten modes are cheap high-contrast post-processes that help the 201 static/flat dead bucket if wired into graphs.
+- RECOMMENDED NEXT: (a) a typed-uniform GPU twin (the guided filter is a cheap per-pixel op ideal for the client-GPU live path); (b) evolution sub-problem #6 (rating-signal poverty / active-learning acquisition — only 18/537 rated).

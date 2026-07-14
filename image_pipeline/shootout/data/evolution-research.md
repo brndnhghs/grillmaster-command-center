@@ -4,61 +4,6 @@ Each entry: technique, authors/year, core mechanism, target module, expected
 effect, verification step. Real citations only; no invented results.
 
 ---
-
-## 2026-07-13 — Root cause of the 66% dead rate: generation-side, not driver/executor
-
-**Finding (measured, not hypothesized).** Across 525 genomes the liveness
-rejection rate is 66% and is **uniform across every method** (death-rate
-0.67–0.77 for all, no method >0.85 even at small support). The CHOP driver
-nodes (`__lfo__`, `__counter__`, `__noise1d__`, `__ramp__`, `__strobe__`,
-`__envelope__`) have a 0.68 death-rate — identical to the global average. The
-8 driver→pixel regression tests in `image_pipeline/tests/` PASS, proving the
-executor correctly feeds a driver's SCALAR output into the target param every
-frame (it sets `Timeline.global_frame=frame` per frame; the LFO derives its
-phase from it) and the clip clears the liveness floor.
-
-**So the bottleneck is NOT:**
-- driver→param plumbing (verified working),
-- a specific bad method (death-rate is uniform → no avoid-signal),
-- the liveness gate itself (it already rescues structural + coherent-oscillation
-  motion via `motion_pixel_frac` + `spectral_ac_active`).
-
-**The bottleneck IS:** the *evolution engine produces predominantly static
-graphs*. Most bred/explored genomes render one unchanging frame (no time
-variation reaches the terminal), so they are correctly culled. The drivers
-exist and work, but generation does not reliably wire them to produce motion.
-
-**Recommended concrete fix (generation side — safe to modify; it is the
-shootout module, NOT the core GraphExecutor):**
-1. In `evolve.py` / `repair.py` `sample_valid_genome`, guarantee every fresh
-   (explore) genome is **born animated**: ensure ≥1 node with an animatable
-   param receives a driver wire (`__lfo__`/`__noise1d__`/`__ramp__` → a numeric
-   SCALAR port), OR ≥1 node declares `anim_mode != "none"` / emits time-varying
-   output. Reuse the existing `motifs.py` driver→param affinity tables
-   (`_DRIVER_FALLBACK`, the `(param-keywords, [drivers])` maps) to pick a valid
-   target port.
-2. In mutation/crossover, preserve at least one animation source when editing a
-   parent (don't mutate the only driver wire into a dead end).
-3. Add a `test_shootout_born_animated.py` headless guard: build N random
-   genomes via the repaired sampler, render each through `render_stack`, and
-   assert the alive-rate rises materially above the current 66% (target e.g.
-   <40% dead) without inflating the >150s timeout rate.
-
-**Expected effect:** dead-rate drops because static graphs stop being
-generated, not because methods are pruned. Rating corpus (18) starts growing
-once more clips survive.
-
-**Verification:** run a small fresh generation (e.g. render_pool=24) before/after
-and compare dead-rate on the SAME seed; assert improvement + no timeout blow-up.
-Avoid changing the liveness gate thresholds (they are correct).
-
-**Why not auto-avoid:** `avoid_methods` guidance exists (`advisor.bias_from_guidance`
-→ `SamplingBias.avoid_methods` → `sample_valid_genome`), but feeding the raw
-top-dead methods is WRONG here — their death-rate equals the global mean, so
-pruning them removes useful drivers while leaving the static-graph problem
-untouched. Logged as explicitly rejected 2026-07-13.
-
-
 ## 2026-07-13 — topic index 2: Liveness metric (dead-rate denominator + structural liveness)
 - EVIDENCE (this run's diagnostics): genomes=525, dead/rejected=345 (66 percent). The dead hotspots are dominated by pure-control utility nodes: __lfo__ (868), __counter__ (239), __noise1d__ (134), __ramp__ (108), __strobe__ (48), __envelope__ (41), __image_to_mask__ (41). These emit SCALAR/MASK, not IMAGE — the liveness check (which needs a visible image output) therefore marks them dead regardless of correct wiring. The 66 percent headline is inflated by control nodes, not by image methods failing.
 - PROPOSAL: (a) Exclude non-IMAGE-output node types (the __*__ control/util family) from the dead-rate denominator so the headline reflects image-method health. (b) Where the gate IS applied to image methods, replace mean-luminance temporal variance with a structural/perceptual signal — changed-pixel-fraction (fraction of pixels differing by >0.08) or optical-flow magnitude variance — so displacement-type animation (stereograms, LIC flow, domain warps, droste) is not culled as "static" even when the mean luminance barely moves. This is the pipeline's own localized/region-delta audit rule, promoted to the shootout liveness gate.
@@ -298,3 +243,30 @@ set.
 
 **Rotate index -> 7** (drift / stagnation detection: detect flat dead-rate +
 flat rating mean and auto-trigger wider explore_ratio or a fresh-random reset).
+## 2026-07-14 — Sub-problem #0 (rotate from 7): Selection pressure / fitness shaping
+
+- EVIDENCE (this run's diagnostics): 537 genomes, 351 dead (65%), but only 18 are
+  rated (3.4% rating coverage) — a near-empty fitness signal. Of those, 3 sit at
+  5 stars and the rest spread 1-4. With such sparse, non-normalized ratings, the
+  current raw-rating to survivor weighting lets a single 5-star outlier dominate
+  next-generation sampling, while the 519 unrated genomes get no gradient at all.
+- PROPOSAL (rank-based fitness shaping): Jiao et al. (2024), "When large language
+  models meet evolutionary algorithms," arXiv:2401.10510v2, draw the direct
+  parallel position-encoding <-> fitness-shaping and position-embedding <->
+  selection. Adopt rank-based fitness shaping (Whitley 1989 linear rank, or an
+  exponential rank transform) in evolve.next_generation: map the sorted, rated
+  survivors to a monotonic transform so the top genome is rewarded but the 2nd..Nth
+  keep non-trivial selection probability (prevents premature convergence onto one
+  5-star clip). For the 519 unrated genomes, keep the explore_ratio path (do NOT
+  assign them the mean rating, which would inject a false gradient). Add a
+  lightweight ELO-style running update in evaluator.py so ratings arriving across
+  generations are comparable (sparse, temporally-staggered 1-5 scores are not on a
+  stable absolute scale).
+- EXPECTED EFFECT: selection pressure stays diverse instead of collapsing onto the
+  few rated clips; the untrained taste model's sparsity no longer over-steers
+  evolution; the cheap-alive recombine pool (110 this run) stays broad.
+- VERIFICATION: synthetic population — one genome rated 5, ten rated 1-2, rest
+  unrated — assert rank-shaped survivor weights are spread (Gini < raw-rating Gini)
+  and that a newly-arriving 5-star in a later generation shifts weights smoothly
+  rather than wiping prior survivors. Add a stub to tests/test_shootout.py.
+- ROTATE index -> 0 (this entry); next run takes index 1.
