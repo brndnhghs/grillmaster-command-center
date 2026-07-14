@@ -486,7 +486,7 @@ void main(){ f_color = texture(u_texture, vec2(v_uv.x, 1.0 - v_uv.y)).bgra; }`,
     const glsl = params.glsl_code || 'void main(){ f_color = texture(u_texture, v_uv); }';
     const mat = this._filterMaterial(glsl);
     mat.uniforms.u_resolution.value.set(this.width, this.height);
-    mat.uniforms.u_time.value = time * num(params.time_scale, 1);
+    mat.uniforms.u_time.value = time;
     mat.uniforms.u_params.value.set(
       num(params.p1, 0.5), num(params.p2, 0.5), num(params.p3, 0.5), num(params.p4, 0.5),
     );
@@ -567,7 +567,7 @@ void main(){ f_color = texture(u_texture, vec2(v_uv.x, 1.0 - v_uv.y)).bgra; }`,
     const uspec = info.uniforms && Object.keys(info.uniforms).length ? info.uniforms : null;
     const mat = this._gpuMaterial(info.fragment, uspec);
     mat.uniforms.u_resolution.value.set(this.width, this.height);
-    mat.uniforms.u_time.value = time * num(params.time_scale, 1);
+    mat.uniforms.u_time.value = time;
     if (uspec) {
       // Typed-uniform shader: set u_<name> per declared spec from node params
       // (falling back to each variable's declared default).

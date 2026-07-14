@@ -850,7 +850,7 @@ void main() {
     float expected = depth - s.z * r * 0.5;   // depth along the normal hemisphere
     // Soft (continuous) occlusion weight: a closer neighbour contributes
     // proportionally to how much closer it is, instead of a hard on/off step.
-    // This keeps `uIntensity` (strength) genuinely live — a low strength gives
+    // This keeps uIntensity (strength) genuinely live: a low strength gives
     // gentle crevice darkening, a high strength approaches full contact shadow,
     // without the per-sample count saturating at 16/16.
     float w = clamp((expected - sd) / max(uBias, 1e-4), 0.0, 1.0);

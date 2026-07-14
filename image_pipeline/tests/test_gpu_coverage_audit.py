@@ -286,14 +286,14 @@ def test_param_map_keys_resolve_to_node_params():
 def test_param_map_values_resolve_to_uniforms_or_pslots():
     """GPU Node Coverage mandate point 4: every param_map VALUE is wired.
 
-    A non-typed shim routes a node param to a legacy p-slot (p1..p4 /
-    time_scale). A typed shim routes it to a named shader uniform. A value that
+    A non-typed shim routes a node param to a legacy p-slot (p1..p4).
+    A typed shim routes it to a named shader uniform. A value that
     is neither means the client writes to a slot/uniform that does not exist --
     another silent no-op that leaves the preview frozen at defaults.
     """
     import image_pipeline.methods  # noqa: F401 — ensure registration
 
-    VALID_PSLOTS = {"p1", "p2", "p3", "p4", "time_scale"}
+    VALID_PSLOTS = {"p1", "p2", "p3", "p4"}
     breaches = []
     for mid, entry in GPU_SHADER_NODE_MAP.items():
         pm = entry.get("param_map") or {}

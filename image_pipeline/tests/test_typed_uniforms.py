@@ -505,11 +505,12 @@ def _registration_is_typed(method_id: str) -> bool:
     d = defs.get(method_id)
     if d is None:
         return False
-    # The legacy generic path uses these exact four param keys with no named
-    # variables; a typed node carries the shader's real variable names instead.
+    # Legacy generic nodes use exactly the four generic p-slots and no named
+    # variables; a typed node carries the shader's real variable names
+    # (beyond p1..p4). Detect legacy by "params are a subset of p1..p4".
     legacy = {"p1", "p2", "p3", "p4"}
-    return not (legacy.issubset(set(d["params"].keys())) and
-                "time_scale" in d["params"])
+    return not (set(d["params"].keys()) <= legacy and
+                len(d["params"]) > 0)
 
 
 @needs_gpu

@@ -82,13 +82,11 @@ _PROC_PARAMS = {
     "p2": {"description": "shader param 2", "min": 0.0, "max": 1.0, "default": 0.5},
     "p3": {"description": "shader param 3", "min": 0.0, "max": 1.0, "default": 0.5},
     "p4": {"description": "shader param 4", "min": 0.0, "max": 1.0, "default": 0.5},
-    "time_scale": {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0},
 }
 
 _FILT_PARAMS = {
     "strength": {"description": "effect strength", "min": 0.0, "max": 1.0, "default": 0.5},
     "p2": {"description": "shader param 2", "min": 0.0, "max": 1.0, "default": 0.5},
-    "time_scale": {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0},
 }
 
 
@@ -103,7 +101,7 @@ def _make_proc(method_id: str, shader_name: str, method_name: str):
     def _fn(out_dir: Path, seed: int, params=None):
         if params is None:
             params = {}
-        t = float(params.get("time", 0.0)) * float(params.get("time_scale", 1.0))
+        t = float(params.get("time", 0.0))
         p = tuple(float(params.get(f"p{i}", 0.5)) for i in range(1, 5))
         cw, ch = get_canvas()
         img = render_shader(shader_name, (cw, ch), p, t)
@@ -129,7 +127,7 @@ def _make_filt(method_id: str, shader_name: str, method_name: str):
         if params is None:
             params = {}
         inp = params.get("_input_image")  # float32 [0,1] or None
-        t = float(params.get("time", 0.0)) * float(params.get("time_scale", 1.0))
+        t = float(params.get("time", 0.0))
         strength = float(params.get("strength", 0.5))
         p2 = float(params.get("p2", 0.5))
         p = (strength, p2, 0.5, 0.5)
@@ -323,8 +321,6 @@ _TYPED_SHADER_NODES = [
     ("325", "nishita_sky_gpu", "GPU Nishita Sky"),
 ]
 
-_TIME_SCALE_PARAM = {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0}
-
 
 def _param_from_uniform(spec: dict) -> dict:
     """Node param spec from a typed uniform spec (same shape the UI expects)."""
@@ -350,7 +346,6 @@ def _make_typed(method_id: str, shader_name: str, method_name: str):
     is_filter = info["type"] == "filter"
 
     params = {uname: _param_from_uniform(spec) for uname, spec in uspec.items()}
-    params["time_scale"] = dict(_TIME_SCALE_PARAM)
 
     inputs: dict[str, str] = {}
     if is_filter:
@@ -371,7 +366,7 @@ def _make_typed(method_id: str, shader_name: str, method_name: str):
             _shader=shader_name, _uspec=uspec, _is_filter=is_filter):
         if params is None:
             params = {}
-        t = float(params.get("time", 0.0)) * float(params.get("time_scale", 1.0))
+        t = float(params.get("time", 0.0))
         named = {u: params.get(u, spec.get("default"))
                  for u, spec in _uspec.items()}
         inp = params.get("_input_image") if _is_filter else None

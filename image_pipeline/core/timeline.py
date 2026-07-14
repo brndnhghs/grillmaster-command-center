@@ -8,8 +8,11 @@ Usage in a method:
     if tl is not None:
         t = tl.t          # normalized [0, 1]
         phase = tl.phase  # [0, 2π) for cyclic methods
-        speed = tl.speed  # speed multiplier (default 1.0)
-        # Adjust timestep: dt = base_dt * speed
+        # Animation pace: one operation per frame. The legacy `speed`
+        # multiplier is fixed at 1.0 — playback speed is no longer a
+        # parameter. To vary pace, wire a driver (e.g. __lfo__ rate) or
+        # set per-node `total_substeps` (substeps per output frame).
+        # Adjust timestep: dt = base_dt (speed == 1.0 always)
 """
 
 from __future__ import annotations
@@ -39,7 +42,11 @@ class Timeline:
 
     # ── Output config ────────────────────────────────────────────────
     fps: int = 24               # output frames per second
-    speed: float = 1.0          # speed multiplier (methods opt in by reading this)
+    # speed is retained only for backward-compatible injection into run_params
+    # (graph.py sets anim_speed = timeline.speed). It is FIXED at 1.0: the
+    # playback-speed multiplier was removed — pace is one op/frame, varied via
+    # wired drivers or per-node total_substeps, not a float multiplier.
+    speed: float = 1.0          # FIXED — do not expose as a user knob
 
     # ── Subdivision (per-node substeps) ──────────────────────────────
     substep: int = 0            # which substep within this frame (0 = first)

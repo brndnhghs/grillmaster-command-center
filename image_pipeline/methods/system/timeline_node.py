@@ -1,17 +1,18 @@
 """Timeline Node — global animation clock source.
 
-Provides t, phase, speed, beat, and segment as SCALAR output ports.
+Provides t, phase, beat, and segment as SCALAR output ports.
 This is the single source of truth for animation timing in the graph.
 When present, all other nodes inherit their timing from this node.
 
 Outputs:
   t:        SCALAR — normalized position [0, 1]
   phase:    SCALAR — cyclic phase [0, 2π)
-  speed:    SCALAR — speed multiplier (default 1.0)
   beat:     SCALAR — 1.0 on beat frames, 0.0 otherwise
   segment:  SCALAR — which segment index (0, 1, 2, ...)
 
 No image output — this is a pure data source node.
+Note: animation pace is one operation per frame; speed control lives in
+wired drivers (e.g. __lfo__ rate) and per-node substeps, not a multiplier.
 """
 
 from __future__ import annotations
@@ -35,7 +36,6 @@ from ...core.utils import save, mn, seed_all, W, H, write_scalars
     outputs={
         "t":       "SCALAR",
         "phase":   "SCALAR",
-        "speed":   "SCALAR",
         "beat":    "SCALAR",
         "segment": "SCALAR",
     },
@@ -47,10 +47,6 @@ from ...core.utils import save, mn, seed_all, W, H, write_scalars
         "fps": {
             "description": "Frames per second",
             "min": 1, "max": 60, "default": 24,
-        },
-        "speed": {
-            "description": "Speed multiplier (methods opt in)",
-            "min": 0.1, "max": 5.0, "default": 1.0,
         },
         "loop": {
             "description": "Loop animation (wrap t back to 0 at end)",
@@ -82,13 +78,11 @@ def method_timeline(out_dir: Path, seed: int, params=None):
     if tl is not None:
         t_val = tl.t
         phase_val = tl.phase
-        speed_val = tl.speed
         total_frames = tl.total_frames
         fps_val = tl.fps
     else:
         t_val = float(params.get("t", 0.0))
         phase_val = float(params.get("phase", t_val * 2.0 * math.pi))
-        speed_val = float(params.get("speed", 1.0))
         total_frames = int(params.get("total_frames", 120))
         fps_val = int(params.get("fps", 24))
 
@@ -112,7 +106,6 @@ def method_timeline(out_dir: Path, seed: int, params=None):
         out_dir,
         t=t_val,
         phase=phase_val,
-        speed=speed_val,
         beat=beat_val,
         segment=float(segment_val),
     )

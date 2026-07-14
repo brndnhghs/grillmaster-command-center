@@ -127,7 +127,7 @@ class TestKeyframeUIRoundtrip:
         graph = {
             "nodes": [{
                 "id": "p", "method_id": "33",
-                "params": {"p1": 0.5, "p2": 0.6, "p3": 0.3, "p4": 0.4, "time_scale": 1.0},
+                "params": {"p1": 0.5, "p2": 0.6, "p3": 0.3, "p4": 0.4},
                 "paramKeyframes": {
                     "p1": [
                         {"frame": 1,  "value": 0.1, "easing": "linear",      "handle_in": None, "handle_out": None},

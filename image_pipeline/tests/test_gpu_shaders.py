@@ -90,7 +90,7 @@ def test_gpu_procedural_ndarray_range():
         ex = GraphExecutor(out, in_memory=True)
         nodes = [{"id": "n", "method_id": "175",  # GPU Plasma
                   "params": {"p1": 0.5, "p2": 0.5, "p3": 0.5, "p4": 0.5,
-                              "time_scale": 1.0, "time": 0.0},
+                              "time": 0.0},
                   "dirty": True}]
         result, _, errs = ex.execute(nodes, [], 42, frame=0, frames=1)
         assert not errs, errs

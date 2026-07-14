@@ -1,17 +1,9 @@
 {
-  "generated_at": "2026-07-13T22:04:51.677364+00:00",
+  "generated_at": "2026-07-14T16:04:23.198745+00:00",
   "graphs_scanned": 47,
-  "error_count": 13,
-  "warn_count": 32,
+  "error_count": 12,
+  "warn_count": 28,
   "findings": [
-    {
-      "graph": "active",
-      "node_id": "n1",
-      "method_id": "91",
-      "severity": "WARN",
-      "code": "W_DEAD_PORT",
-      "message": "image_in unwired but method never reads the wired image (dead/optional port \u2014 safe but worth pruning)"
-    },
     {
       "graph": "age_density",
       "node_id": "n54",
@@ -213,20 +205,20 @@
       "message": "optional image port 'seed_image' is unwired (method may fall back to an internal/default source)"
     },
     {
-      "graph": "shootout-g-06f260d7",
-      "node_id": "n1",
-      "method_id": "170",
-      "severity": "WARN",
-      "code": "W_DEAD_PORT",
-      "message": "image_in unwired but method never reads the wired image (dead/optional port \u2014 safe but worth pruning)"
-    },
-    {
       "graph": "shootout-g-18612554",
       "node_id": "n1",
       "method_id": "156",
       "severity": "ERROR",
       "code": "E_ORPHAN_NODE",
       "message": "node references unknown method_id '156' (no NodeDef)"
+    },
+    {
+      "graph": "shootout-g-18612554",
+      "node_id": "n3",
+      "method_id": "313",
+      "severity": "ERROR",
+      "code": "E_DANGLING_REQUIRED",
+      "message": "image_in has no inbound edge and the method consumes the wired image \u2014 will run without an upstream image (broken)"
     },
     {
       "graph": "shootout-g-2661455a",
@@ -259,38 +251,6 @@
       "severity": "WARN",
       "code": "W_OPTIONAL_UNWIRED",
       "message": "optional image port 'image_4' is unwired (method may fall back to an internal/default source)"
-    },
-    {
-      "graph": "shootout-g-2efffd14",
-      "node_id": "n4",
-      "method_id": "343",
-      "severity": "ERROR",
-      "code": "E_ORPHAN_NODE",
-      "message": "node references unknown method_id '343' (no NodeDef)"
-    },
-    {
-      "graph": "shootout-g-2efffd14",
-      "node_id": "n5",
-      "method_id": "233",
-      "severity": "ERROR",
-      "code": "E_EDGE_NOT_TANGIBLE",
-      "message": "image port 'image_in' wired from n4:image \u2014 src-method-unknown (source does not emit a real image on that port)"
-    },
-    {
-      "graph": "shootout-g-47679b1a",
-      "node_id": "n4",
-      "method_id": "159",
-      "severity": "WARN",
-      "code": "W_DEAD_PORT",
-      "message": "image_in unwired but method never reads the wired image (dead/optional port \u2014 safe but worth pruning)"
-    },
-    {
-      "graph": "shootout-g-a4d26afb",
-      "node_id": "n1",
-      "method_id": "114",
-      "severity": "WARN",
-      "code": "W_DEAD_PORT",
-      "message": "image_in unwired but method never reads the wired image (dead/optional port \u2014 safe but worth pruning)"
     },
     {
       "graph": "shootout-g-a4d26afb",

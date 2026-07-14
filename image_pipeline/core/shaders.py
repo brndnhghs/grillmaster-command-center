@@ -9610,8 +9610,10 @@ void main() {
 # per-pixel ray-march (no ping-pong state) so it verifies headlessly. Works in
 # km units so the scale-height exponentials stay in a fp32-safe range (the CPU
 # node's metre units would underflow exp() in fp32). The sun rides a day-arc
-# driven by u_time (which already carries time_scale), so the live preview
-# animates; sun_elevation/sun_azimuth are the base pose the graph can also wire
+# driven by u_time (which advances one step per frame; pace is set by the
+# graph's wired drivers/substeps, not a time_scale multiplier), so the live
+# preview animates; sun_elevation/sun_azimuth are the base pose the graph can
+# also wire
 # CHOP generators into. CPU numpy node stays authoritative for export. ──
 _register("nishita_sky_gpu",
           "Nishita atmospheric single-scattering sky (GPU twin of CPU node 471) "
@@ -9627,7 +9629,8 @@ _register("nishita_sky_gpu",
     vec3 ro = vec3(0.0, 6361.0, 0.0);
 
     // Animated sun: a day-arc around the node's base elevation/azimuth.
-    // u_time already carries time_scale, so the live preview moves smoothly.
+    // u_time advances one step per frame (pace via wired drivers/substeps),
+    // so the live preview moves smoothly.
     float baseEl = radians(u_sun_elevation);
     float baseAz = radians(u_sun_azimuth);
     float el = clamp(baseEl + sin(u_time) * radians(40.0), -1.4, 1.55);

@@ -270,3 +270,42 @@ flat rating mean and auto-trigger wider explore_ratio or a fresh-random reset).
   and that a newly-arriving 5-star in a later generation shifts weights smoothly
   rather than wiping prior survivors. Add a stub to tests/test_shootout.py.
 - ROTATE index -> 0 (this entry); next run takes index 1.
+
+---
+
+## 2026-07-14 — topic index 6: Rating-signal poverty (IMPLEMENTED, server-side)
+- CONTEXT (from this run's PHASE 1 diagnostics): genomes=537, alive=186 (35%),
+  dead=351 (65%); human ratings=18 (starved, <20). The taste model (ridge,
+  `taste.py`) IS trained (MIN_SAMPLES=8) but the corpus is too small for it to
+  drive generation — `select_parents` falls back to `liveness_breed_fallback`
+  whenever fewer than `min_rating_to_parent` rated genomes exist. The driver
+  → pixel path and liveness gate are verified sound (prior runs), so the
+  blocker is not wiring but HUMAN-EFFORT ALLOCATION: the user has no efficient
+  way to know WHICH clips are worth rating, so ratings accrue at ~1/30 genomes.
+- TECHNIQUE (cold-start active learning for acquisition): with an untrained/
+  weak model, the highest-information clips to label are those that MAXIMIZE
+  COVERAGE of the design space (representativeness / core-set sampling) plus
+  NOVELTY relative to the already-labelled set (model-change surrogate).
+  * Diversity: biased farthest-point (k-center) greedy over the normalized
+    `genome_features` cloud — Sener & Savarey 2018, "Active Learning for
+    Convolutional Neural Networks: A Core-Set Approach"
+    (https://arxiv.org/abs/1708.00489).
+  * Novelty: Euclidean distance of each candidate's feature vector from the
+    centroid of ALREADY-RATED genomes — the cold-start surrogate for
+    MacKay 1992 "Information-based objective functions" (model-change /
+    information-gain uncertainty, https://doi.org/10.1007/BF00992696).
+  * Fitness bias: prefer dynamic survivors (higher temporal_var) so suggested
+    clips are aesthetically worth judging, not frozen noise.
+- IMPLEMENTATION: `image_pipeline/shootout/rating_suggest.py::suggest_for_rating(k)`
+  (pure, reads only genome JSON — no render; deterministic). Surfaced via
+  `GET /api/shootout/suggest-ratings?k=N`. Guarded by `tests/test_rating_suggest.py`
+  (5 tests: count / exclude-dead+rated / diversity / novelty-bias / empty+clamp)
+  — all pass; verified live on a throwaway :7871 server.
+- EXPECTED EFFECT: a curated "rate these next" queue of high-information-gain
+  clips. If the UI surfaces it as a one-click rating strip, the corpus can grow
+  efficiently past the ~20+ threshold so the taste model starts biasing
+  generation. No ratings fabricated.
+- VERIFICATION (done): headless tests + live endpoint probe on :7871 returned 5
+  diverse suggestions (mix of "novel" and "dynamic survivor" reasons).
+- ROTATE index -> 2 (Diversity maintenance: MAP-Elites / crowding to stop
+  convergence — carried recommendation). #6 acquisition is now implemented.

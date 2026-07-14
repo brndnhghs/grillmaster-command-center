@@ -35,7 +35,6 @@ from ..core.shaders import render_custom_shader, CUSTOM_SHADER_TEMPLATE
         "p2": {"description": "param 2 → u_params.y", "min": 0.0, "max": 1.0, "default": 0.5},
         "p3": {"description": "param 3 → u_params.z", "min": 0.0, "max": 1.0, "default": 0.5},
         "p4": {"description": "param 4 → u_params.w", "min": 0.0, "max": 1.0, "default": 0.5},
-        "time_scale": {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0},
     },
 )
 def method_custom_shader(out_dir: Path, seed: int, params=None):
@@ -48,7 +47,7 @@ def method_custom_shader(out_dir: Path, seed: int, params=None):
         params = {}
 
     glsl_body = params.get("glsl_code", CUSTOM_SHADER_TEMPLATE)
-    t = float(params.get("time", 0.0)) * float(params.get("time_scale", 1.0))
+    t = float(params.get("time", 0.0))
     p = tuple(float(params.get(f"p{i}", 0.5)) for i in range(1, 5))
     inp = params.get("_input_image")
     cw, ch = get_canvas()

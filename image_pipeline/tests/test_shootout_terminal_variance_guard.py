@@ -92,7 +92,7 @@ def _force_static(graph: dict, pool) -> dict:
         if isinstance(spec, dict) and "none" in (spec.get("choices") or []):
             term["params"][k] = "none"
     # Zero motion knobs so time-varying heads that don't use anim_mode freeze.
-    for k in ("time_scale", "speed"):
+    for k in ("speed",):
         if k in term["params"]:
             term["params"][k] = 0.0
     return {"nodes": nodes, "edges": edges}
@@ -182,10 +182,8 @@ def test_terminal_variance_guard_repairs_sim_heads():
                  for e in guarded["graph"]["edges"])
     # Either a driver was attached to the sim head, or its params were rerolled
     # (motion knob changed). Either proves the guard ran its repair branch.
-    motion_changed = (head["params"].get("time_scale", 1.0) !=
-                      params.get("time_scale", 1.0)) or \
-                     (head["params"].get("speed", 1.0) !=
-                      params.get("speed", 1.0))
+    motion_changed = (head["params"].get("speed", 1.0) !=
+                     params.get("speed", 1.0))
     assert driven or motion_changed or len(guarded["graph"]["nodes"]) > 1, \
         "guard silently skipped repair on a sim head (None-bail bug)"
 

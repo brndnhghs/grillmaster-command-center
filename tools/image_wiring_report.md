@@ -1,21 +1,17 @@
 # Image-Input Wiring Report
 
-- generated: 2026-07-13T22:04:51.677364+00:00
+- generated: 2026-07-14T16:04:23.198745+00:00
 - graphs scanned: 47
-- errors: 13
-- warnings: 32
+- errors: 12
+- warnings: 28
 
 ```
 ========================================================================
  IMAGE-INPUT WIRING VALIDATION
 ========================================================================
  graphs scanned : 47
- ERROR findings : 13
- WARN  findings : 32
-
-── graph: active   (0 ERROR / 1 WARN) ──
-  [WARN] W_DEAD_PORT @ n1 (91)
-        image_in unwired but method never reads the wired image (dead/optional port — safe but worth pruning)
+ ERROR findings : 12
+ WARN  findings : 28
 
 ── graph: age_density   (0 ERROR / 1 WARN) ──
   [WARN] W_OPTIONAL_UNWIRED @ n54 (18)
@@ -115,13 +111,11 @@
   [WARN] W_OPTIONAL_UNWIRED @ n28 (18)
         optional image port 'seed_image' is unwired (method may fall back to an internal/default source)
 
-── graph: shootout-g-06f260d7   (0 ERROR / 1 WARN) ──
-  [WARN] W_DEAD_PORT @ n1 (170)
-        image_in unwired but method never reads the wired image (dead/optional port — safe but worth pruning)
-
-── graph: shootout-g-18612554   (1 ERROR / 0 WARN) ──
+── graph: shootout-g-18612554   (2 ERROR / 0 WARN) ──
   [ERROR] E_ORPHAN_NODE @ n1 (156)
         node references unknown method_id '156' (no NodeDef)
+  [ERROR] E_DANGLING_REQUIRED @ n3 (313)
+        image_in has no inbound edge and the method consumes the wired image — will run without an upstream image (broken)
 
 ── graph: shootout-g-2661455a   (1 ERROR / 3 WARN) ──
   [ERROR] E_DANGLING_REQUIRED @ n1 (42)
@@ -133,19 +127,7 @@
   [WARN] W_OPTIONAL_UNWIRED @ n5 (37)
         optional image port 'image_4' is unwired (method may fall back to an internal/default source)
 
-── graph: shootout-g-2efffd14   (2 ERROR / 0 WARN) ──
-  [ERROR] E_ORPHAN_NODE @ n4 (343)
-        node references unknown method_id '343' (no NodeDef)
-  [ERROR] E_EDGE_NOT_TANGIBLE @ n5 (233)
-        image port 'image_in' wired from n4:image — src-method-unknown (source does not emit a real image on that port)
-
-── graph: shootout-g-47679b1a   (0 ERROR / 1 WARN) ──
-  [WARN] W_DEAD_PORT @ n4 (159)
-        image_in unwired but method never reads the wired image (dead/optional port — safe but worth pruning)
-
-── graph: shootout-g-a4d26afb   (1 ERROR / 1 WARN) ──
-  [WARN] W_DEAD_PORT @ n1 (114)
-        image_in unwired but method never reads the wired image (dead/optional port — safe but worth pruning)
+── graph: shootout-g-a4d26afb   (1 ERROR / 0 WARN) ──
   [ERROR] E_DANGLING_REQUIRED @ n2 (43)
         image_in has no inbound edge and the method consumes the wired image — will run without an upstream image (broken)
 
