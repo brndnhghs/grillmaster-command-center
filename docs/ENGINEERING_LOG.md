@@ -117,3 +117,37 @@ dropped before newest; evicted param hashes cleared.
   eviction) are now under regression guard.
 - Next: R6 (graph save/load persistence) or R4 (param-keyframe edge cases) — both
   cheap, high-value, and prerequisites for the architecture refactors.
+
+---
+
+## Iteration 4 — 2026-07-14
+
+### Context
+R6 / TD-06 (graph save/load persistence). The active-graph doc layer
+(`_persist_graph_doc` / `_load_graph_doc` / `_graph_path`) is the shared
+user↔agent source of truth and had no regression test. A silent desync or
+broken round-trip would corrupt graphs.
+
+### Decision
+Drive the *real* functions on `image_pipeline.server` (no mocks): round-trip a
+sample doc; prove a reload-after-cache-drop reads from disk; prove missing docs
+normalize to defaults; prove the in-memory cache returns the mutated object;
+and prove gid sanitization blocks path traversal. Use unique ids/names and
+clean up artifacts. The named-graph routes (`save_graph` is async) are exercised
+via `asyncio.run` so the real write path runs.
+
+### Action
+- Added `image_pipeline/tests/test_graph_persistence.py` (6 tests).
+- First run: the named-graph test failed because `save_graph` is an async route
+  and was called without awaiting (no-op). Fixed by driving it through the event
+  loop. The other 5 passed on first run.
+- Verified: `pytest ... -q` → 6 passed in 1.18s.
+- Updated TECHNICAL_DEBT (TD-06 → closed), ROADMAP (R6), CHANGELOG,
+  ENGINEERING_LOG, .agent_state.json.
+
+### Resulting State
+- Four of the top testing gaps (TD-01, TD-02, TD-03-test, TD-06) closed this
+  session. The executor's riskiest branches plus the graph persistence layer are
+  now under regression guard.
+- Next: R4 (param-keyframe edge cases) or R5 (group-node execution) — both cheap,
+  high-value, and prerequisites for the architecture refactors (R8–R14).

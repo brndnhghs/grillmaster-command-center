@@ -28,6 +28,13 @@
   entries are dropped oldest-first until under budget, protected (current-graph)
   sims survive even when over budget (BUG-8b invariant), and evicted nodes' param
   hashes are cleared so a re-cook isn't mistaken for a cache hit. 4 tests, ~0.1s.
+- **Added** `image_pipeline/tests/test_graph_persistence.py` — closes the
+  graph-save/load persistence gap (TD-06): drives the real `_persist_graph_doc` /
+  `_load_graph_doc` / `_graph_path` and the `save_graph` / `load_saved_graph`
+  named-graph routes. Asserts doc round-trip (nodes/edges/canvas preserved),
+  disk durability (reload from file after cache drop), default normalization for
+  missing docs, in-memory cache returns the mutated object, and gid sanitization
+  (path-traversal guard). 6 tests, ~1.2s.
 
 ## Pre-history (selected, from git log)
 

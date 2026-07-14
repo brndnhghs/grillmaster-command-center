@@ -18,7 +18,7 @@
 | TD-03 | No sim-cache eviction / per-node budget test | Testing/Perf | Med | Low | Low | Eviction test ✅ done; per-node cap (feature) still open | Eviction test ✅ Closed 2026-07-14 · feature Open |
 | TD-04 | No param-keyframe edge-case test | Testing | Med | Low | Low | Add `_evaluate_param_track` tests | Open |
 | TD-05 | No group-node execution test | Testing | Med | Low | Low | Add recursive-subgraph test | Open |
-| TD-06 | No graph save/load persistence test | Testing | Med | Low | Low | Add `_load_graph_doc`/`_persist` tests | Open |
+| TD-06 | No graph save/load persistence test | Testing | Med | Low | Low | `test_graph_persistence.py` | ✅ Closed 2026-07-14 (commit pending) |
 | TD-07 | `core/graph.py` holds 3D node defs (~130+ lines, client-side concern) | Architecture | Low | Med | Low | Extract to `core/threejs_nodes.py` | Open |
 | TD-08 | `server.py` monolith (3k lines, ~30 endpoints) | Architecture | Med | High | Med | Split into `routes/` package | Open |
 | TD-09 | `core/shaders.py` monolith (9.4k lines) | Architecture | Low | High | Low | Split procedurals/postprocess/engine | Open |
