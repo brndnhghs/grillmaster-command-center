@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-07-14T16:04:23.198745+00:00",
-  "graphs_scanned": 47,
-  "error_count": 12,
+  "generated_at": "2026-07-14T18:04:00.679541+00:00",
+  "graphs_scanned": 49,
+  "error_count": 13,
   "warn_count": 28,
   "findings": [
     {
@@ -256,6 +256,14 @@
       "graph": "shootout-g-a4d26afb",
       "node_id": "n2",
       "method_id": "43",
+      "severity": "ERROR",
+      "code": "E_DANGLING_REQUIRED",
+      "message": "image_in has no inbound edge and the method consumes the wired image \u2014 will run without an upstream image (broken)"
+    },
+    {
+      "graph": "shootout-g-bfb1b2e8",
+      "node_id": "n2",
+      "method_id": "105",
       "severity": "ERROR",
       "code": "E_DANGLING_REQUIRED",
       "message": "image_in has no inbound edge and the method consumes the wired image \u2014 will run without an upstream image (broken)"

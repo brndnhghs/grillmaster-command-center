@@ -1,16 +1,16 @@
 # Image-Input Wiring Report
 
-- generated: 2026-07-14T16:04:23.198745+00:00
-- graphs scanned: 47
-- errors: 12
+- generated: 2026-07-14T18:04:00.679541+00:00
+- graphs scanned: 49
+- errors: 13
 - warnings: 28
 
 ```
 ========================================================================
  IMAGE-INPUT WIRING VALIDATION
 ========================================================================
- graphs scanned : 47
- ERROR findings : 12
+ graphs scanned : 49
+ ERROR findings : 13
  WARN  findings : 28
 
 ── graph: age_density   (0 ERROR / 1 WARN) ──
@@ -129,6 +129,10 @@
 
 ── graph: shootout-g-a4d26afb   (1 ERROR / 0 WARN) ──
   [ERROR] E_DANGLING_REQUIRED @ n2 (43)
+        image_in has no inbound edge and the method consumes the wired image — will run without an upstream image (broken)
+
+── graph: shootout-g-bfb1b2e8   (1 ERROR / 0 WARN) ──
+  [ERROR] E_DANGLING_REQUIRED @ n2 (105)
         image_in has no inbound edge and the method consumes the wired image — will run without an upstream image (broken)
 
 ── graph: shootout-g-daf71c35   (1 ERROR / 0 WARN) ──
