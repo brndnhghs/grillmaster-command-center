@@ -35,6 +35,16 @@
   disk durability (reload from file after cache drop), default normalization for
   missing docs, in-memory cache returns the mutated object, and gid sanitization
   (path-traversal guard). 6 tests, ~1.2s.
+- **Added** `image_pipeline/tests/test_param_keyframe.py` — closes the
+  param-keyframe gap (TD-04): unit-tests the pure `_evaluate_param_track()`
+  across every branch (empty→None, before-first/after-last hold, single-kf
+  hold, linear midpoint, eased interpolation, zero-length window snap,
+  non-numeric midpoint snap). Also pinpoints two silent-correctness contracts
+  now recorded as TD-15: easing is read from the SEGMENT'S END keyframe, and an
+  unknown easing name silently falls back to linear. 9 tests, ~0.1s.
+- **Logged TD-15** — keyframe easing footguns (end-keyframe read; silent linear
+  fallback on misspelled names). Captured during test authoring; not yet fixed
+  (a behavioral change to animation; deferred with documentation).
 
 ## Pre-history (selected, from git log)
 

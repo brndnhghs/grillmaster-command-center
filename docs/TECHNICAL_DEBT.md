@@ -27,6 +27,7 @@
 | TD-12 | `print()` calls in production code (`graph.py`, `runner.py`, `registry.py`, `server.py`) | Quality | Low | Low | Low | Route through `logging` | Open |
 | TD-13 | 15+ bare `except Exception:` in `server.py` swallow real errors | Stability | Med | Low | Low | Narrow + log | Open |
 | TD-14 | CLI-only modules (`quality`, `annotator`, `postprocess`) not wired to server | Feature | Med | Med | Low | Expose via render-sequence / admin | Open |
+| TD-15 | Keyframe easing contract footguns: (a) easing is read from the SEGMENT'S END keyframe (`kf_b`), so an easing set on the *start* keyframe is silently ignored; (b) an unknown/misspelled easing name (e.g. `"ease_in"` instead of `"ease-in"`) silently falls back to linear with no warning. Both are silent-correctness traps. Fix: normalize/validate easing names at keyframe ingest and document the end-keyframe convention (or switch to start-keyframe convention). | Quality | Low | Low | Low | Add normalization + warn; document contract | Open |
 
 ---
 

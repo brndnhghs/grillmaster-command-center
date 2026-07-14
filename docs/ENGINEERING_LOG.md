@@ -151,3 +151,48 @@ via `asyncio.run` so the real write path runs.
   now under regression guard.
 - Next: R4 (param-keyframe edge cases) or R5 (group-node execution) — both cheap,
   high-value, and prerequisites for the architecture refactors (R8–R14).
+
+---
+
+## Iteration 5 — 2026-07-14
+
+### Context
+R4 / TD-04 (param-keyframe edge cases). `_evaluate_param_track()` is the pure
+interpolation function called for every animated param inside `execute()`. The
+testing.md gap noted no dedicated test for non-numeric values, single keyframes,
+zero-length segments, or cubic-bezier easing.
+
+### Decision
+Unit-test the pure function directly across every documented branch. During
+authoring, two real, non-obvious contracts surfaced and were turned into test
+assertions + a debt item rather than papered over:
+
+  1. **Easing is read from the SEGMENT'S END keyframe (`kf_b`)**, not the
+     start. A UI that sets `easing` on the start keyframe is silently ignored.
+  2. **An unknown/misspelled easing name (e.g. `"ease_in"` vs `"ease-in"`)
+     silently falls back to linear** with no warning — a correctness trap. The
+     test probes at t=0.25 (not 0.5, where every curve passes through 0.5 and
+     would mask the bug).
+
+### Action
+- Added `image_pipeline/tests/test_param_keyframe.py` (9 tests): empty→None,
+  before-first/after-last hold, single-kf hold, linear midpoint, eased
+  interpolation (ease-in below linear, ease-out above, at t=0.25), zero-length
+  window snap, non-numeric midpoint snap.
+- Logged TD-15 (easing footguns). Deferred the fix: normalizing/validating
+  easing names and/or switching to start-keyframe easing is a behavioral change
+  to animation output and must be done deliberately with documentation + a
+  migration note, not silently. The tests now pin the current contract so any
+  future change is caught.
+- First run caught two test-authoring mistakes (wrong easing-key placement,
+  `isclose` float precision) AND confirmed the genuine end-keyframe contract.
+- Verified: `pytest ... -q` → 9 passed in 0.12s.
+- Updated TECHNICAL_DEBT (TD-15 added), ROADMAP (R4 done + TD-15), CHANGELOG,
+  ENGINEERING_LOG, .agent_state.json.
+
+### Resulting State
+- Five top testing gaps closed (TD-01, TD-02, TD-03-test, TD-06, TD-04). The
+  executor's riskiest branches + graph persistence + keyframe interpolation are
+  now under regression guard. TD-15 captured a real footgun for later.
+- Next: R5 (group-node execution) — the last cheap, high-value test gap before
+  the architecture refactors.

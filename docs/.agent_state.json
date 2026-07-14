@@ -4,26 +4,27 @@
   "owner": "autonomous-engineering-agent",
   "created": "2026-07-14",
   "updated": "2026-07-14",
-  "loop_iteration": 4,
-  "health_score": 7.9,
-  "current_focus": "Close top testing gaps in core/graph.py executor + persistence (R1/R2/R3-test/R6 done; R4/R5 next)",
+  "loop_iteration": 5,
+  "health_score": 8.0,
+  "current_focus": "Close top testing gaps (R1/R2/R3-test/R4/R6 done; R5 next; TD-15 logged)",
   "last_completed": [
     "R1/TD-01: end-to-end graph execution test (4 tests, pass)",
     "R2/TD-02: feedback-edge regression test (2 tests, pass)",
     "R3/TD-03 test-half: sim-cache eviction guard (4 tests, pass)",
     "R6/TD-06: graph save/load persistence test (6 tests, pass)",
+    "R4/TD-04: param-keyframe edge-case test (9 tests, pass); TD-15 easing footguns logged",
     "Bootstrap loop memory files (ROADMAP/TECHNICAL_DEBT/FEATURE_BACKLOG/IDEAS/CHANGELOG/ENGINEERING_LOG/DECISIONS/.agent_state.json)"
   ],
   "next_up": [
-    "R4/TD-04: param-keyframe edge-case test",
-    "R5/TD-05: group-node execution test",
-    "R3 feature: per-node sim-cache byte budget (after test guard exists)"
+    "R5/TD-05: group-node execution test (recursive subgraph)",
+    "R3 feature: per-node sim-cache byte budget",
+    "TD-15: normalize/validate keyframe easing names + document end-keyframe convention"
   ],
   "open_blockers": [],
   "metrics": {
     "source_lines_python": 142738,
-    "test_files": 44,
-    "e2e_graph_tests": 16,
+    "test_files": 45,
+    "e2e_graph_tests": 25,
     "health_baseline": 7.5
   },
   "policy": {
