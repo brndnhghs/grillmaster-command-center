@@ -191,6 +191,33 @@ def _run_generation_locked(session_id, cfg, progress_cb, rng) -> dict:
     for c in candidates:
         c["generation"] = gen_index
 
+    # ── Promotion seeds (Route 8 / PHASE 1B) ────────────────────────────
+    # Roll explicitly-requested genomes forward (verbatim) into THIS
+    # generation's candidate pool. The breeder has no verbatim survivors by
+    # design, so this is the opt-in escape hatch to keep a known-good form
+    # in play. seed_ids is set via /api/shootout/config overrides (the
+    # auto-loop rewires top-rated ids each run). Each seed is deep-copied
+    # with a fresh id + origin="promotion" so it re-renders cleanly and is
+    # distinguishable from bred offspring; prior liveness/render/rating are
+    # stripped so it is judged on its own merits this generation.
+    import copy
+    _seed_ids = list(getattr(cfg, "seed_ids", []) or [])
+    for _sid in _seed_ids:
+        _seed = store.load_genome(_sid)
+        if _seed is None:
+            _p(f"  ⚠ promotion seed {_sid} not found — skipping")
+            continue
+        _promo = copy.deepcopy(_seed)
+        _promo["genome_id"] = f"g-{uuid.uuid4().hex[:8]}"
+        _promo["origin"] = "promotion"
+        _promo["generation"] = gen_index
+        _promo["seed_source"] = _sid
+        _promo.pop("liveness", None)
+        _promo.pop("render", None)
+        _promo.pop("rating", None)
+        candidates.insert(0, _promo)
+        _p(f"  ★ promotion seed {_sid} → injected as {_promo['genome_id']}")
+
     # ── Candidate composition breakdown (the "what's being bred" readout) ──
     if gen_index > 0:
         kinds = {}

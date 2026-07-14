@@ -70,6 +70,16 @@ class ShootoutConfig:
     # are no rating-eligible parents). 45% explorer randoms keep diversity up.
     liveness_breed_fallback: bool = True
 
+    # ── Promotion seeds (Route 8 / PHASE 1B) ──────────────────────────
+    # Opt-in list of genome ids to roll forward (verbatim) into the NEXT
+    # generation's candidate pool. The evolution has no verbatim survivors
+    # by design (every bred offspring is a star-weighted variation), so this
+    # is the explicit escape hatch: wire top-rated / known-good forms here
+    # to keep them in play even when the breeder would otherwise discard
+    # them. Set via /api/shootout/config {"overrides":{"seed_ids":[...]}}.
+    # Persists until changed or reset; the auto-loop rewires it each run.
+    seed_ids: list[str] = field(default_factory=list)
+
     # ── Liveness rejection (tuned on the first empirical batch — plan §7) ──
     # Empirics: random nodegraphs render with temporal_var spanning
     # 1.5e-5 (frozen, frame_corr≈0.9999) to 4e-2 (clearly moving,
@@ -357,16 +367,39 @@ def _coerce(name: str, value):
     return v
 
 
+def _coerce_seed_ids(value) -> list[str] | None:
+    """Validate a ``seed_ids`` override: a list of non-empty genome-id
+    strings. Returns the cleaned list, or None if invalid (so a bad value is
+    dropped rather than crashing the override load)."""
+    if not isinstance(value, (list, tuple)):
+        return None
+    out: list[str] = []
+    for item in value:
+        if isinstance(item, str) and item.strip():
+            out.append(item.strip())
+    return out  # empty list is valid (clears seeds)
+
+
 def save_overrides(overrides: dict) -> dict:
     """Validate, persist, and return the accepted overrides. Unknown keys
     and un-coercible values are dropped silently; values equal to the
     default are dropped too, so 'overridden' always means 'differs from
-    the code default' (and typing the default back removes the override)."""
+    the code default' (and typing the default back removes the override).
+
+    ``seed_ids`` is a special non-numeric override (a list of genome ids)
+    handled separately from the tunable numeric/bool fields.
+    """
     accepted = {}
+    seed_ids = None
     for k, v in (overrides or {}).items():
+        if k == "seed_ids":
+            seed_ids = _coerce_seed_ids(v)
+            continue
         cv = _coerce(k, v)
         if cv is not None and cv != getattr(DEFAULT_CONFIG, k):
             accepted[k] = cv
+    if seed_ids is not None:
+        accepted["seed_ids"] = seed_ids
     _OVERRIDES_PATH.parent.mkdir(parents=True, exist_ok=True)
     _OVERRIDES_PATH.write_text(json.dumps(accepted, indent=1))
     return accepted
@@ -381,6 +414,11 @@ def effective_config() -> ShootoutConfig:
     """Dataclass defaults + persisted overrides."""
     cfg = ShootoutConfig()
     for k, v in load_overrides().items():
+        if k == "seed_ids":
+            cleaned = _coerce_seed_ids(v)
+            if cleaned is not None:
+                cfg.seed_ids = cleaned
+            continue
         cv = _coerce(k, v)
         if cv is not None:
             setattr(cfg, k, cv)
@@ -404,4 +442,4 @@ def config_info() -> dict:
             "overridden": name in overrides,
             "help": help_text,
         })
-    return {"fields": out}
+    return {"fields": out, "seed_ids": cfg.seed_ids}
