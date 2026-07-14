@@ -1,111 +1,3 @@
-## 2026-07-13 (autonomous cg run — node 321)
-- genomes=525 alive=180 dead=345 (66%); timeout(94)+over-budget(29)=123 culled (23%, dominant fixable failure mode); static(106)+flat(94)=200 (38%); top-rated ids still null.
-- DISCOVERED IN-PROGRESS BATCH: `git diff` shows 5 of 8 timeout-blame sims already edited (ising/scipy uniform_filter magnet, lv_3species + nlse render-skip-on-static, reaction_diffusion cv2 Laplacian prealloc, spatial_pd roll-stack). Per autonomous-dev "finish the leftover batch" rule, COMPLETED it: verified headless vs HEAD with field/returned-image delta.
-- RESULTS (current vs HEAD, headless probe, seed=42):
-  - nlse: 1.65x speedup, output identical (field/returned diff 0.0)
-  - lv_3species: 1.81x, identical (diff 0.0)
-  - reaction_diffusion: 1.47x, identical
-  - ising: scipy uniform_filter replaces np.roll box-sum — field byte-identical (diff 0.0); the edit comment's <1e-6 claim verified at field level
-  - spatial_pd: 0.93x (net-neutral, regression-free — roll-stack overhead > savings on its small grid); left as-is (valid, no output change)
-- ACTION (this run, in flight): delegated the 3 REMAINING timeout-blame sims to parallel subagents — node 83 Langton's Ant (709ms, hoist loop invariants), node 123 LIC (271ms, vectorize per-pixel streamline + coloring), node 71 Chaos Game (271ms, vectorize per-particle vertex-color inner loop). Each constrained: no math/iteration/default/@method change, visual output preserved, no commit. Verify headlessly (timing + near-identical pixels) before committing the whole 8-sim batch.
-- EXPECTED EFFECT: faster sims => fewer timeout/over-budget culls => more survivors => better evolution signal. timeout_blame weights for 83/123/71 should drop next scan.
-- RECOMMENDED NEXT (Route 8 #3, sub-problem #6): rating corpus still 18/525 (~3.4%); implement advisor.suggest_for_rating + POST /api/shootout/suggest-rating + one-click rating chip (active-learning acquisition). genome['id'] still null blocks seed_ids promotion.
-
-## 2026-07-13 | node 952 Blue-Noise Dither added
-- CORPUS: genomes=525 alive=180 dead=345 (66%); cheap-alive(wall<30s)=107. top-rated ids NOT persisted in corpus (None/5). dead hotspots = control/signal utility nodes (attribution artifact, not method defects; only one real numbered method, 137, appeared).
-- DUPLICATE-TECHNIQUE GUARD: confirmed Blue-Noise Mask (435) *generates* the VAC ranked threshold field but does NOT consume an image; Dither (13) only does Bayer + error-diffusion; no node *applies ordered blue-noise dithering* to an image. Genuine gap.
-- ACTION: added node 952 "Blue-Noise Dither" — the *application* half of Ulichney 1993 void-and-cluster (ordered dithering with the blue-noise threshold matrix). Generates a memoized VAC ranked matrix (superfast incremental energy stamp, exact argmin/argmax selection) and applies ordered dither (binary N-level + per-channel color) to a wired IMAGE (Rule 12 override) or a procedural source (perlin/gradient/radial/plasma). Animated via Architecture B: drift (matrix slides) + pulse (cyclic threshold shift). Outputs IMAGE/FIELD/MASK. Verified headlessly: non-black (std 0.44); none Δ=0.00000 (static); drift Δ=0.22, pulse Δ=0.31 (>0.05); param liveness levels Δ=0.32, matrix 64 vs 256 Δ=0.07, colormode Δ=0.06; wired-input override produces output. Rule-8 server import clean; registered in /api/node-defs with outputs [image,field,mask].
-- RECOMMENDED NEXT: (a) a GLSL-twin / CLIENT_GPU_SHIMS entry for 952 (ordered dither is a cheap per-pixel op, ideal for the client-GPU live path); (b) chain 435 (matrix) -> 952 (apply) as a reusable halftone subgraph; (c) rating-signal poverty (#6): only ~18/525 rated.
-## 2026-07-13 20:03 UTC — run: Radial/Zoom Blur (3D sidecar PostFX)
-- genomes=525 alive=180 dead=345 (66%)  renders>150s=126
-- TOP-3 rated (promotion seeds): rating=5 x4 (origins: explorer/random), motifs/drivers sparse (None) -> ratings exist but genome metadata thin; recommend wiring top-rated ids into advisor.prefer_ids if hook exists.
-- DEAD hotspots: __lfo__ (868), __counter__ (239), __noise1d__ (134), __ramp__ (108) -> feed as avoid_methods to advisor.extract_guidance (per-node, no LLM).
-- CHEAP-ALIVE recombine seeds: 107 alive renders <30s -> keep explore_ratio intact.
-- ACTION TAKEN (this run): implemented a NEW 3D-sidecar PostFX pass (radial blur) rather than promoting candidates — note: no session.py seed_ids/prefer_ids hook was exercised; gap remains if hook absent.
-- [2026-07-13T13:35Z] genomes=525 alive=180 dead=345 (66%) rated=18 (3.4%)
-- TOP-3 rated (promotion seeds): g-e181c881(5), g-328f0d37(5), g-e3d68069(5) — all origins explorer/random; genome metadata (motifs/drivers) sparse/None.
-- DEAD hotspots unchanged: __lfo__(868), __counter__(239), __noise1d__(134), __ramp__(108), __strobe__(48) — control/terminal scalar nodes ending graphs yield no image. Feed as avoid_methods to advisor.extract_guidance (per-node, no LLM) IF hook exists; otherwise log gap.
-- CHEAP-ALIVE recombine seeds: 107 alive renders <30s -> keep explore_ratio (~0.45) intact.
-- ACTION TAKEN (this run): Added 3D-sidecar **lens-distortion** PostFX pass (barrel/pincushion + optional breathing) to fight the liveness cull on still scenes; 17/17 sidecar tests pass. Did NOT promote candidates (no prefer_ids hook exercised this run).
-
-## 2026-07-13 — autonomous run (GPU P0.3 fractal typed-uniform wire-up)
-- genomes=525 alive=180 dead/rejected=345 (66%) renders>150s=126 over-budget=29 human-ratings=18. Dead hotspots unchanged (__lfo__ 868, __counter__ 239, __noise1d__ 134, __ramp__ 108 — historically rendered under PRE-FIX code; driver path verified fixed in earlier run this session).
-- ACTION: completed GPU-First contract #6 for the 6 P0.3 fractal shims (nodes 33/51/52/66/67/69). They were the last on the legacy untyped p1..p4 path; because client3d.js typed-branch fills u_<name> from params[name] and ignores param_map, mismatched uniform names froze the live preview (66 Julia had NO uniforms= spec at all; 69 Lyapunov's r_max was read but never declared). Gave each twin a uniforms= spec whose names match the CPU node's REAL numeric params, flipped shims to typed:True, made bodies consume iterations/max_iter/escape_radius/color_speed/color_offset/depth/r_min/r_max. Headless: all 6 compile (webgl2+gl330), render non-black, respond to every bound uniform (maxParamΔ 25-150). test_typed_uniforms_exposed_as_params passes; GPU coverage+shader parity 594 passed (1 pre-existing unrelated failure test_sim_deferral_is_exhaustive left out-of-scope). CPU nodes stay authoritative.
-- RECOMMENDATION (carried): dead-rate headline is partly misleading (control nodes emit no image). Next honest GPU chunk = sweep remaining zero-match client-GPU shims (nodes 03/07/29/65/10/77/__image_to_mask__/473/432 and the *_typed shims 65/78/56/432) whose uniform names don't match CPU params — same frozen-preview class. This is contract #6 completion work, not Route 8.
-
-## 2026-07-13 — autonomous run (GPU typed-shim param_map rename fix)
-- Route: Leverage Tier / GPU-First contract #6 completion (the exact chunk the prior run recommended).
-- ROOT CAUSE: client3d.js `renderGpuShader` typed branch (uspec truthy) read `params[uniform_name]` directly and IGNORED `param_map`. For shims where the CPU node's param names ≠ the twin's uniform names (65 freq1→k1, 78 min_radius→min_r, 56 wall_thickness→wall, 406 freq1→fx, 432 k→petals, 433 count→count/anim_speed→speed, 464 tilt→angle) the value was undefined → live-preview slider dead (frozen-typed class).
-- FIX (additive, client-only): invert param_map ({cpu_param:uniform_name}) into uniToParam and source each u_<name> from the correct node param, falling back to params[uname]. Matching-name shims unaffected. No server/CPU/export path touched.
-- TESTS: added test_typed_shim_param_map_values_are_real_uniforms (headless invariant: every non-p-slot param_map value is a real shader uniform) + test_client_typed_branch_honors_param_map_rename (locks the reverse-lookup code). 823 pass (client3d+parity+gpu_shaders+gpu_parity). node --check clean, /api/node-defs 200.
-- NEXT: audit remaining categorical GPU coverage gaps (nodes lacking any GPU source in ascii/text + gradient/derivative categories) OR Route 8 driver-path liveness (dead-rate still ~66%, control nodes dominate).
-
-## 2026-07-13 — autonomous run (finalize orphaned Route-8 liveness-probe timeout batch)
-- genomes=525 alive=180 dead/rejected=345 (66%) renders>150s=126 max=547s human-ratings=18. Dead hotspots unchanged (__lfo__ 868, __counter__ 239, __noise1d__ 134, __ramp__ 108 — historically rendered under PRE-FIX code; driver path verified fixed earlier this session).
-- THIS RUN THEME: finish the IN-PROGRESS shootout batch found in the working tree (image_pipeline/shootout/config.py + motifs.py) — NOT a fresh bolt-on. The orphaned change wraps `Builder._alive()`'s full-clip `render_stack` call in a worker thread bounded by a new `terminal_variance_alive_timeout_s` (default 15.0s). Without it a slow/hanging sim (e.g. Langton's Ant) wedged generation forever; on timeout the genome is now treated as not-alive so the guard falls through to best-effort (additive) variance repair rather than blocking — same behavior as the existing `except: return False` path.
-- Changes: (a) config.py — added `terminal_variance_alive_timeout_s: float = 15.0` with doc comment; (b) motifs.py — `_alive()` now runs `render_stack` in a `threading.Thread` joined with `timeout=cfg.terminal_variance_alive_timeout_s`; seed drawn before the thread so rng advancement stays deterministic; returns `res.get("alive", False)` on timeout/error. `_probe_terminal_variance` already had its own `th.join(timeout=2.5)` bound, so the whole guard is now wall-clock-bounded.
-- TESTS: added `test_terminal_variance_guard_alive_probe_timeout_does_not_wedge` — monkeypatches `evaluator.render_stack` to HANG 30s, sets `terminal_variance_alive_timeout_s=1.0`, asserts `ensure_terminal_variance` returns in <5s (proves the timeout, not a fast exception, bounds the call). New test passes in 2.1s; sim-head repair tests still pass (1.26s); `from image_pipeline.server import app` imports clean (Rule 8).
-- ACTION: verified headlessly and committed the orphaned batch as one coherent feat(shootout) commit. Did NOT bundle any unrelated tree changes.
-- RECOMMENDATION (carried): dead-rate headline still partly misleading (control/signal utility nodes emit no image). Next honest Route-8 step = exclude pure-control __*__ types from the dead-rate denominator (evolution-research.md sub-problem #3) before declaring Route 8 done.
-
-## 2026-07-13 — autonomous run (feat: raymarched 3D gyroid TPMS, node 323)
-- Shootout corpus: genomes=525 alive=180 dead/rejected=345 (66%) renders>150s=126 human-ratings=18. Dead hotspots are pure-control utility nodes (__lfo__ 868, __counter__ 239, __noise1d__ 134, __ramp__ 108) which emit NO image — a metric artifact (dead-rate denominator includes control nodes). Carried recommendation stands: exclude pure-control __*__ types from the dead-rate denominator (evolution-research.md #3).
-- CHEAP-ALIVE recombine seeds=107; RATED=18 (still rating-signal poor). Top ratings all 3-5 with no motifs tagged; no seed_ids/prefer_ids promotion hook confirmed present — NOTED as missing capability (unchanged).
-- Feature THIS run is CG-facing, not shootout-facing: raymarched 3D gyroid TPMS.
-- ACTION taken: recorded manifest; no evolution machinery change this run (rotated research index untouched — CG feature took the slot).
-
-## 2026-07-13T22:19Z
-- genomes=525 alive=180 dead=345 (66%) rated=18 cheap_alive=107
-- render >150s(cap)=126 >100s=152 max=547s
-- top_rated: None=5, None=5, None=5
-- dead_hotspot: __lfo__:868, __counter__:239, __noise1d__:134, __ramp__:108, __strobe__:48
-- action: carried forward prior dead-hotspot avoidance (CONTROL/DRIVER nodes) via advisor avoid list; top-rated survivors seed next generation via config seed_ids if hook present
-
-## 2026-07-13T23 — cron run (dead-RATE uniformity; auto-avoid rejected)
-- genomes=525 alive=180 dead=345 (66%) rated=18. Recomputed death-RATE per method
-  (dead-genomes-containing ÷ total-genomes-containing), not raw counts:
-  `__lfo__` 206/304=0.68, `__counter__` 129/188=0.69, `__noise1d__` 93/139=0.67,
-  `__ramp__` 86/119=0.72, `__image_to_mask__` 41/55=0.75, `__envelope__` 38/51=0.75,
-  `137` 33/43=0.77, `141` 28/39=0.72, `51` 10/13=0.77, `123` 11/12=0.92(sup12),
-  `52` 11/12=0.92(sup12), `92` 11/13=0.85(sup13). **Uniform 0.67–0.77 across ALL
-  methods; NO method exceeds 0.85 at support≥20.**
-- This QUANTIFIES the sibling's control-node-inflation note AND shows it is NOT
-  only control nodes: image-producing methods (137/141/51/92/123/52) are all
-  ~0.7 too. So the 66% dead rate is generation-WIDE, not method-specific.
-- VERIFIED: the 8 driver→pixel regression tests PASS (LFO 0.5→0.96 across
-  frames; driver→952.matrix_size temporal_var=0.1157≫3e-3 floor). Driver
-  plumbing is correct; the drivers simply aren't reliably wired to animate the
-  terminal in most bred graphs.
-- DECISION: auto-feeding top-dead methods as `avoid_methods` (advisor has the
-  intake; SamplingBias→sample_valid_genome) is REJECTED — death-rate is uniform,
-  so there is no bad-method signal; pruning would only remove useful drivers.
-- ROOT CAUSE / NEXT STEP: evolution engine emits predominantly static graphs.
-  Fix on the GENERATION side (safe — shootout module, not core executor):
-  guarantee every bred/explored genome is "born animated" (≥1 driver→animatable
-  SCALAR-port wiring, or ≥1 node with anim_mode≠none). Detailed proposal +
-  headless test plan in evolution-research.md (2026-07-13 entry).
-
-
-## 2026-07-13 — autonomous run (Autostereogram #954, SIRDS)
-- genomes=525 alive=180 dead/rejected=345 (66%) renders>150s=126 median_wall=23.6s; cheap-alive(recombine)=107
-- RESEARCH: Autostereogram / Single-Image Random-Dot Stereogram (SIRDS) — Thimbleby, Inglis & Witten, "Displaying 3D Images: Algorithms for Single Image Random Dot Stereograms", 1991 (https://www.researchgate.net/publication/220578478_Displaying_3D_images). Depth encoded as horizontal pixel disparity; nearer surfaces get larger dot separation.
-- DUP GUARD (again): first candidate was Curl-Noise — already implemented x3 (patterns/curl_noise.py #314, simulations/curl_noise_flow.py, math_art/flow_field.py #510) AND Fractal Flames (fractals/fractal_flame.py), Superformula/Gielis, De Jong/Clifford already present. grep node NAMES before building. Pivoted to genuinely-open Autostereogram (0 grep hits for autostereogram/magic_eye).
-- FEATURE: node 954 "Autostereogram" (category patterns, Architecture B). Params: depth_mode(sphere/torus/pyramid/terrain/ripple), separation, depth_scale, tile_size, colorful, pattern(dots/checker/grid/plasma), anim_mode(none/bob/rotate/wave), anim_speed, time. Verified headlessly: non-black std=74; none=static delta=0.0000; bob changed-frac=0.077, rotate=0.125, wave=0.079 (changed-pixel-fraction, NOT mean-delta — stereogram is a displacement technique so mean-delta is a false-negative); separation 10 to 60 live (changed-frac=0.030); 0.19s/frame. /api/node-defs serves it on throwaway :7871.
-- TOP-3 rated: [None(5), None(5), None(5)] — genome id/rating None again; no seed_ids promotion hook (carried gap).
-- RECOMMENDATION (carried + new): (1) exclude pure-control __*__ scalar/mask nodes from the dead-rate denominator (they emit no image, so the 66 percent headline is inflated; hotspots __lfo__ 868 / __counter__ 239 / __noise1d__ 134 / __ramp__ 108 are control nodes, not image methods); (2) adopt structural/perceptual liveness (changed-pixel-fraction or optical-flow variance) so displacement-type animation (stereograms, LIC, warps) is not culled as static by mean-luminance temporal variance; (3) next technique: depth/relief saturated (HBAO #425) — try a closed-form iridescence/thin-film variant or 2D SSAO-on-wired-FIELD.
-
-## 2026-07-13 — autonomous run (Route 8: finish fallback born-animated batch)
-- genomes=525 alive=180 dead/rejected=345 (66%) renders>150s=126 (cap) max=547s; rated=18 (still starved, <20).
-- DIAGNOSIS (carried + confirmed): driver/control nodes (__lfo__ 868, __counter__ 239, __noise1d__ 134, __ramp__ 108) dominate dead-genome node counts, but this is an attribution artifact — death-RATE per method is uniform 0.67-0.77 across ALL methods (incl. image producers 137/141/51/92/123/52), so there is no bad-method signal. The driver->pixel SCALAR injection path is VERIFIED FIXED (test_driver_e2e_fast: LFO 0.5->0.96, driver->952 temporal_var=0.1157 >> 3e-3 floor; test_chop_drivers_advance 6 passed). The 66% dead-rejection is therefore HISTORICAL (genomes rendered under PRE-FIX code) + generation-wide static bias.
-- ACTION: finished the in-flight Route-8 batch found in the working tree — generator.py apply_fallback_driver_policy now runs apply_driver_policy + _terminal_animated_floor over the random_graph fallback (used when compose_graph throws), so fallback genomes are born animated like the motif path. Added test_fallback_path_born_animated (fast, structural, 300 genomes, 0 trivially-static). Also marked the pre-existing test_tv_terminals_born_animated as slow: it calls sample_valid_genome (renders heavy nishita_sky / weighted_voronoi_stippling) and was hanging the default pytest -q suite as the gene pool grew. Committed 95d24e1 + pushed.
-- RECOMMENDED NEXT: generation-side born-animated guarantee (evolution-research.md #1/#4) — ensure every bred/explored genome has >=1 driver->animatable SCALAR wiring or >=1 node with anim_mode!=none, to attack the 66% static bias on FRESH generations; re-measure dead-rate on a fresh generation to confirm the fix lands (historical genomes stay stale).
-
-## 2026-07-13T(cron) — autonomous run (cg: Strange Attractor node 957)
-- genomes=525 alive=180 dead/rejected=345 (66% dead) renders>150s=126 (24% of ALL renders). DOMINANT death cause = RENDER TIMEOUT (sample: reason=timeout, wall=152s), NOT a bad-method signal (per-method dead-rate is uniform 0.67-0.77 across all methods incl. producers 137/141/51/92). The driver->pixel SCALAR path is verified fixed (prior run).
-- ACTION this run: implemented node 957 "Strange Attractor" (Clifford 1989 / de Jong 1987 / Hopalong Martin 1989 deterministic-chaos point-clouds). Chosen BECAUSE its render is cheap: 1.2M pts = 0.09s, 4M pts = 0.21s, far under the 150s cull — a timeout-IMMUNE high-liveness generator for the gene pool.
-- VERIFIED headless: none Δ=0 (static baseline); morph 4.5% / orbit 5.5% / breathe 3.7% changed-pixel-fraction (sparse-content metric); param a 5.1% / exposure 4.7%; non-black; all 3 systems non-black; /api/methods registers 957.
-- RECOMMENDED NEXT (shootout-facing): keep adding cheap high-liveness generators so fresh generations have timeout-immune building blocks; re-measure dead-rate on a FRESH generation to confirm timeout-class nodes cut the >150s cull. (Hopalong/de Jong already folded into 957.)
-
 ## 2026-07-14T(cron) — autonomous run (cg: Stable Fluids node 961)
 - genomes=537 dead/rejected=351 (65%) renders>150s=131. DOMINANT death cause = RENDER TIMEOUT (131 genomes >150s), confirmed again — NOT a bad-method signal (per-method dead-rate uniform 0.67-0.77). Control/driver __*__ nodes top the hotspot list by ATTIBUTION only (__lfo__ 886 etc.) — same artifact noted 07-13.
 - ACTION this run: implemented node 961 "Stable Fluids" (Jos Stam, "Real-Time Fluid Dynamics for Games", 1999 — http://graphics.cs.cmu.edu/nsp/course/15-464/Fall09/papers/StamFluidforGames.pdf). Semi-Lagrangian advection + Helmholtz-Hodge Gauss-Seidel pressure projection + vorticity confinement. State persisted between frames so the pipeline animates ONE continuous evolving sim. Cheap: 128x128, 3 sub-steps = 0.15s/frame (timeout-IMMUNE).
@@ -417,3 +309,19 @@ Action: added CHEAP O(n) animated node 2D Gaussian Splatting (965). Structurally
 - ACTION THIS RUN: researched + implemented **God Rays (524)** — Kenny Mitchell's GPU Gems 3 Ch.13 single-pass radial light-scattering post-process. Cheap (vectorized numpy radial blur, no per-pixel python loop) so it AVOIDS the 150s timeout class entirely. Two modes: procedural analytic glow (standalone) + wired IMAGE-emissive source. Timeline-driven `orbit` animates the light position; 12 params (threshold/decay/density/exposure/weight/samples/light pos/radius). 8-step audit PASS: static Δ(t0 vs π, orbit off)=0.0000; anim Δ(orbit 0.3)=0.2416; exposure Δ(0 vs 1.2)=0.4928; decay Δ(.82 vs .99)=0.2526; non-black std=0.079; wired-mode blob → streaks (max 1.0). Registered (in-process + /api/node-defs on :7871). 
 - WHY THIS HELPS THE SHOOTOUT: a cheap (sub-second) post-process node that takes an upstream IMAGE + optionally self-generates — lets surviving cheap-alive graphs gain a cinematic pass without risking the timeout cull, and pairs with node 523 Aurora as a "procedural skies + volumetric light" family.
 - RECOMMENDED NEXT: (a) GPU live-preview twin of 524 (closed-form per-pixel radial blur → ideal CLIENT_GPU_SHIMS entry, additive); (b) a GLSL recursive radial-blur fragment for the client live path; (c) persist genome['id'] so top-rated survivors (g-e181c881 etc.) can seed generations.
+
+## 2026-07-14 (autonomous cg run — node 967 Interior Mapping)
+- CORPUS SCAN (real probe, 552 genomes): alive=193, dead/rejected=359 (65%), renders>150s=134 (24% timeout-cull), cheap-alive(wall<30s)=113. Unchanged vs prior runs — corpus is stable/stagnant.
+- DEAD HOTSPOTS (attribution artifact, not method defects): __lfo__=917, __counter__=253, __noise1d__=144, __ramp__=116, __strobe__=53, __envelope__=45, __image_to_mask__=42, 137=36. Driver/util nodes dominate; only ONE numbered method (137) in dead graphs. Root cause remains the executor driver→pixel gap (safety-rule blocked, deferred).
+- TOP-RATED: genome['id'] STILL persists as None (ratings 5,5,5,5,4,3 with id=None) → cannot wire top survivors into seed_ids. Confirmed-gap unchanged since 2026-07-14 Aurora run. Highest-leverage shootout fix remains: persist genome['id'] so /api/shootout/config prefer_ids can promote survivors.
+- ACTION THIS RUN: researched + implemented **Interior Mapping (967)** — Joost van Dongen's CGI-2008 real-time interior shader as a numpy CPU node. Per-pixel ray-box intersection against a virtual room (back wall/floor/ceiling/side walls), tiled into a hashed facade of individually-lit windows; parallax shifts window-to-window. Closed-form f(uv,t), O(W*H), never hits the timeout cull. 8-step audit PASS: static std=0.24; none Δ=0.000000; pan Δ=0.074; lights Δ=0.142; room_depth Δ=0.034; perspective Δ=0.041; registered {image,mask}. NODE-ID: 525/526/527 all taken (VHS/poisson/GPU-map) — used next_id.py=967 (id namespace shared with GPU node map). Committed + pushed.
+- NOTE: working tree carried ORPHANED prior-run files (filters/vhs.py id=527 which is SHADOWED by GPU-map __geometry__, plus _check_vhs.py/_dbg_vhs.py/_reg_vhs.py scratch). Left untouched, NOT bundled into this commit (unrelated feature + a latent id-collision bug). Flag for a future run: vhs.py needs a real free id (967+ now taken → 968).
+- RECOMMENDED NEXT: (a) fix the orphaned vhs.py id 527→free-id collision and commit it; (b) GPU CLIENT_GPU_SHIMS twin of 967 (closed-form ray-box → ideal client-GPU live path, additive); (c) persist genome['id'] to enable survivor-seeding (long-standing Route 8 #6 gap).
+
+## 2026-07-14 (autonomous cg run — node 528 Voronoise)
+- CORPUS SCAN (real probe, 552 genomes): alive=193, dead/rejected=359 (65%), renders>150s=134 (24% timeout-cull), cheap-alive(wall<30s)=113. Stable/stagnant vs prior runs.
+- DEAD HOTSPOTS (attribution artifact): __lfo__=917, __counter__=253, __noise1d__=144, __ramp__=116, __strobe__=53, __envelope__=45, __image_to_mask__=42, 137=36. Driver/util nodes dominate; root cause remains the executor driver→pixel gap (safety-rule blocked, deferred).
+- TOP-RATED: genome['id'] STILL persists as None (ratings 5,5,5,5,4,3) → cannot wire survivors into seed_ids. Long-standing highest-leverage shootout gap unchanged.
+- ACTION THIS RUN: researched + implemented **Voronoise (528)** — Iñigo Quilez's two-parameter generalization (iquilezles.org/articles/voronoise) that smoothly interpolates value-noise ↔ cell-noise ↔ Voronoi ↔ voronoise via u=jitter, v=smoothness. Distinct from existing worley/voronoi/truchet CPU nodes and the fixed GPU voronoise (node 178, no u/v exposure). Vectorized numpy 5×5 neighborhood, closed-form f(uv,t), O(W*H) → never hits the timeout cull (fits the cheap-post-process class the shootout needs). 8-step audit PASS: non-black std=0.28; voronoi(u1v0) vs noise(u0v1) Δ=0.268; smoothness sweep Δ=0.194 (both control params live); metric_morph anim Δ=0.077; drift Δ=0.124; none Δ=0.000000 (static baseline). Registered (in-process get_node_defs + server import OK).
+- WHY THIS HELPS THE SHOOTOUT: a sub-second procedural texture generator with a continuous grid-artifact-hiding parameter (voronoise mode hides Noise's grid) gives cheap-alive graphs a richer base pattern without timeout risk; pairs with domain_warping (311) as an IQ procedural-noise family.
+- RECOMMENDED NEXT: (a) GPU CLIENT_GPU_SHIMS twin of 528 exposing u/v (closed-form → ideal additive client-GPU live path); (b) fix orphaned vhs.py id 527→free-id collision; (c) persist genome['id'] to enable survivor-seeding.
