@@ -168,6 +168,16 @@ def method_p5(out_dir: Path, seed: int, params=None):
         params = {}
     seed_all(seed)
 
+    # W/H arrive as _DynDim canvas-proxy objects. NumPy resolves them via
+    # __index__, but Playwright JSON-serializes the new_page() viewport dict,
+    # which raises "Object of type _DynDim is not JSON serializable". Coerce to
+    # plain ints for all downstream use (config dict, np.zeros, viewport).
+    # Read via globals() (not a bare `W = int(W)`) so we don't shadow the
+    # module-level _DynDim import — the local name becomes an int while the
+    # module global stays a _DynDim that still resolves the live canvas size.
+    W = int(globals()["W"])
+    H = int(globals()["H"])
+
     sketch_name = params.get("sketch", "particle_swarm")
     template = SKETCHES.get(sketch_name)
     if template is None:
