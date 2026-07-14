@@ -378,7 +378,16 @@ class Builder:
             def _run() -> None:
                 try:
                     from .evaluator import render_stack
-                    acc = render_stack(self.nodes, self.edges, seed, cfg,
+                    # Probe on COPIES: render_stack -> _pin_n_frames mutates
+                    # each node's params in place (adds n_frames). Probing the
+                    # live self.nodes/self.edges would corrupt the incoming
+                    # graph even on the early-return (alive) path, breaking the
+                    # non-regression contract that an alive genome is left
+                    # byte-for-byte untouched. The probe only reads liveness,
+                    # so copies are safe.
+                    _nodes = [dict(n) for n in self.nodes]
+                    _edges = [dict(e) for e in self.edges]
+                    acc = render_stack(_nodes, _edges, seed, cfg,
                                        cfg.frames)
                     res["alive"] = bool(acc.stats().get("alive"))
                 except Exception:

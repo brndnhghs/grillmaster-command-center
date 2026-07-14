@@ -381,3 +381,34 @@ Action: added CHEAP O(n) animated node 2D Gaussian Splatting (965). Structurally
 - Top-rated survivors (promotion seeds): g-e181c881 (5, explorer), g-328f0d37 (5, random), g-e3d68069 (5, random) — all lean heavily on motion/signal-generator nodes (__lfo__/__noise1d__/__counter__).
 - Action taken: implemented node 966 Curl-Noise Particle Flow — Bridson et al. 2007 (https://www.cs.ubc.ca/~rbridson/docs/bridson-siggraph2007-curlnoise.pdf). Advects live particles through the divergence-free curl-noise field (node 314 is the static field; this is the real simulation). Architecture A substep loop + EMA trail accumulation (no strobing). Cheap: ~0.13s/frame render, addresses the 150s render-cost cull. Verified headlessly: non-blank sparse render (bright% 0.24), drift field Δ=0.60, scale param Δ=0.59, speed modulates advection footprint (changed-pixel 1.3%). Wired outputs: image/field/particles/luminance. Pushed c11562a.
 - Next topic: a GPU live-preview twin for the curl-noise field (node 314) under the GPU-First additive contract, OR a Stochastic Subdivision / Swift-Hohenberg pattern node (reaction-diffusion-adjacent, cheap, strong liveness).
+
+## 2026-07-14 (cron run) — Route 8 verification: gen-level dead-rate + motif-path CI guard
+- Re-measured the corpus at the GENERATION level (fresh probe, n=537 genomes):
+  - gen-0: 463 genomes, 324 dead (69%)  — the stale pre-fix bulk
+  - gen-1:  74 genomes,  27 dead (36%)  → 63% ALIVE
+  So the overall 65% rejection is dominated by 463 stale gen-0 genomes; the
+  born-animated generator fix (apply_driver_policy + _terminal_animated_floor,
+  2026-07-13) is WORKING on fresh generations.
+- gen-1 death breakdown (n=74): ALIVE 47 (63%), over-budget 12 (16%),
+  static 6 (8%), flat 5 (6%), timeout 4 (5%). 92% of gen-1 dead genomes DO
+  contain a driver node → drivers are wired (the driver→pixel path is healthy,
+  consistent with every prior run). Residual deaths are cost-gate (over-budget)
+  + legitimate non-TV / low-impact terminals, NOT a liveness-metric
+  false-negative: LivenessAccumulator already has motion_pixel_frac rescue +
+  spectral-FFT rescue, so contrast-only / low-amplitude-coherent clips are NOT
+  wrongly culled.
+- CI GAP closed: the motif-path born-animated guarantee (compose_graph ->
+  apply_driver_policy -> _terminal_animated_floor) was only guarded by the SLOW
+  rendering test test_tv_terminals_born_animated (excluded from the default
+  suite via the `slow` marker); the FAST test only covered the random_graph
+  FALLBACK path. Added test_shootout_motif_born_animated.py — calls
+  compose_graph directly (no render) across 400 genomes and asserts no TV
+  terminal is undriven AND frozen. Runs in ~3s, enforced on every CI run.
+- Also committed the in-flight liveness-probe copy fix (motifs.py: render_stack
+  probe now copies nodes/edges so the live genome is never mutated on the early
+  alive-path return).
+- ACTION: committed test_shootout_motif_born_animated.py (+ in-flight fixes).
+  RECOMMENDED NEXT: over-budget (16%) is the biggest CURRENT-gen killer →
+  widen explore_ratio / cost-gated seeding so cheap high-liveness generators
+  (957/959/960/961/962/965/966) dominate fresh breeds; the stale gen-0 corpus
+  stops polluting the dead-rate once gen-2+ accumulates.
