@@ -1,311 +1,67 @@
-# Shootout Evolution Research (dated, cited proposals — backlog for future runs)
+# Shootout Evolution-Machinery Research (PHASE 1C)
 
-Each entry: technique, authors/year, core mechanism, target module, expected
-effect, verification step. Real citations only; no invented results.
-
----
-## 2026-07-13 — topic index 2: Liveness metric (dead-rate denominator + structural liveness)
-- EVIDENCE (this run's diagnostics): genomes=525, dead/rejected=345 (66 percent). The dead hotspots are dominated by pure-control utility nodes: __lfo__ (868), __counter__ (239), __noise1d__ (134), __ramp__ (108), __strobe__ (48), __envelope__ (41), __image_to_mask__ (41). These emit SCALAR/MASK, not IMAGE — the liveness check (which needs a visible image output) therefore marks them dead regardless of correct wiring. The 66 percent headline is inflated by control nodes, not by image methods failing.
-- PROPOSAL: (a) Exclude non-IMAGE-output node types (the __*__ control/util family) from the dead-rate denominator so the headline reflects image-method health. (b) Where the gate IS applied to image methods, replace mean-luminance temporal variance with a structural/perceptual signal — changed-pixel-fraction (fraction of pixels differing by >0.08) or optical-flow magnitude variance — so displacement-type animation (stereograms, LIC flow, domain warps, droste) is not culled as "static" even when the mean luminance barely moves. This is the pipeline's own localized/region-delta audit rule, promoted to the shootout liveness gate.
-- EXPECTED EFFECT: dead-rate headline drops to reflect real image-method failure; displacement-heavy genomes survive the gate, raising the cheap-alive recombine pool.
-- VERIFICATION: render a fixed genome set before/after; assert the dead-rate denominator excludes control nodes and that a known displacement-method genome (e.g. LIC #123, Autostereogram #954) is no longer culled as static. Do NOT change the temporal_var threshold for image methods that already pass.
-- Rotated index to 3.
-
----
-## 2026-07-14 — topic index 4: Mutation/crossover operators (grammar-aware edits)
-
-- CONTEXT: Entry 1 (2026-07-13) established the bottleneck is generation-side
-  (predominantly static graphs) and recommended guaranteeing every fresh genome
-  is "born animated" + preserving ≥1 animation source across edits. This entry
-  narrows that to the *operator* level: the current mutation is numeric-noise on
-  params + random node add/drop. It does not understand node *roles* (source vs
-  driver vs sink), so crossover/mutation can silently sever the only driver wire
-  or duplicate a dead control node — directly producing the static genomes the
-  liveness gate then culls (66% dead, 200 of them static/flat this run).
-- TECHNIQUE: Grammar-aware variation operators (cf. "grammatical evolution" /
-  Koza GP subtree crossover, and the structured-mutation operators in NEAT-style
-  neuroevolution where structural mutations are typed). Core idea: treat the
-  node graph as a typed grammar where edges are constrained by port types
-  (SCALAR/MASK/FIELD/IMAGE) AND by a role tag (driver=time-varying source,
-  generator=IMAGE producer, sink=terminal). Operators act on *valid* typed edits
-  only:
-  * `swap_driver(node, new_driver)` — replace a driver feeding a target SCALAR
-    port with another driver from `motifs._DRIVER_FALLBACK`, preserving the wire
-    (never drops the only animation source).
-  * `retarget_driver(node)` — move an existing driver wire from a saturated port
-    to an animatable port on a sibling generator (uses the existing
-    (param-keywords,[drivers]) affinity tables).
-  * `insert_animated_generator()` — add a cheap dynamic generator (e.g. 957
-    Strange Attractor / 960 Lorenz, both sub-2s) wired to the sink when a parent
-    has NO animation source (born-animated repair, mirrors entry 1 step 1).
-  * numeric-noise mutations only touch leaf params, never topology.
-- TARGET MODULE: `shootout/evolve.py` (`next_generation`, `mutate_offspring`) and
-  `shootout/repair.py` (`sample_valid_genome`). Adisor stays untouched.
-- EXPECTED EFFECT: static-graph births drop, so dead-rate falls below the current
-  66% without changing liveness thresholds; cheap-alive recombine pool (107 this
-  run) grows because more survivors carry a preserved animation source.
-- VERIFICATION: headless guard `test_shootout_born_animated.py`: build N=24
-  random genomes via the grammar-aware sampler, render each through
-  `render_stack`, assert alive-rate improves vs the vanilla sampler baseline on
-  the same seed AND timeout-rate stays < current 123/525 (23%). Oracle: a genome
-  is "born animated" iff ≥1 driver wire targets a SCALAR port of a generator OR a
-  node declares anim_mode != "none".
+Rotating research log. Each entry: a *real cited technique*, the exact module it
+would absorb into, the expected effect, and a verification step. Keep ≤ ~300
+lines; rotate oldest entries when full. Every claim is a real technique — no
+fabricated results.
 
 ---
 
-## 2026-07-14 — Sub-problem #5: Advisor quality (rubric-guided alignment)
+## 2026-07-14 (sub-problem #7: Drift / stagnation detection)
 
-**Technique.** *GUIDE: Towards Scalable Advising for Research Ideas* (Liu et
-al., 2025/2026; arXiv:2507.08870). Core mechanism: a **rubric-guided alignment
-strategy** — instead of free-form "steer the breeding toward better clips", the
-LLM advisor is handed an explicit evaluation rubric (motion richness, motif
-coherence, diversity, composition) and asked to apply those criteria when
-deriving per-node prefer/avoid guidance. A model-agnostic intermediate rubric
-variable improves preference-learning signal (Rubric-RMs survey,
-EADMO). Closely related: *Guided Evolution* (GE) — LLMs used to guide
-evolutionary search via scored critiques rather than random mutation alone.
+**Technique:** *Stasis detection + adaptive restarts.*
+The evolutionary-search literature solves premature convergence / plateauing
+fitness with a **stasis (stall) detector**: monitor a population-level
+signal (best fitness, or coverage/diversity) and when it fails to improve for
+K generations, inject diversity — widen mutation, increase the random-immigrant
+fraction, or restart a sub-population.
 
-**Why it fits THIS engine.** `advisor.extract_guidance` currently turns free
-text notes into prefer/avoid method sets, but its quality is unmeasured and it
-has no structured rubric to anchor "better". With only ~18 ratings / 526
-genomes the advisor is starved; a rubric gives it a stable, checkable target
-so its guidance correlates with what humans actually rate highly, instead of
-drifting on vague prose.
+Grounding (web search 2026-07-14):
+- **MAP-Elites** keeps an *archive* of diverse high-performing solutions
+  precisely so the search doesn't converge too early; low-performing cells are
+  still retained to preserve gradient diversity. (szhaovas.github.io MAP-Elites intro;
+  arxiv 2303.06137v2 "Enhancing MAP-Elites with Multiple Parallel Evolution")
+- **Region-based co-evolution** (Li 2025, Springer) explicitly addresses
+  "prolonged stagnation of the primary population in local optima when
+  dealing with complex landscapes" via a region-based diversity mechanism.
+- **Adaptive Differential Evolution with stasis detectors** (Lin 2025):
+  "it often stagnates in the later stages of evolution due to a sudden
+  drop in population diversity" — the fix is a *stasis detector* that
+  maintains diversity and triggers a restart when the signal plateaus.
 
-**TARGET MODULE.** `shootout/advisor.py` (`extract_guidance`, the
-`bias_from_guidance` consumer) — the rubric is an input prompt/struct, not a
-core change. Does NOT touch GraphExecutor.
+**Where it absorbs:** `image_pipeline/shootout/evolve.py`
+(`select_parents` / `next_generation`). The breeder already has
+`explore_ratio=0.45` (fresh randoms per bred generation) and a
+`liveness_breed_fallback` (uses liveness as fitness proxy when ratings are
+starved — corpus had only ~18 ratings vs 552 genomes). A stasis detector
+wraps these: track `best_rating` (or mean liveness of the shown survivors)
+*per generation*; if it is flat (Δ below ε) for `stall_gens` (e.g. 4)
+consecutive generations, auto-widen `explore_ratio` (e.g. 0.45→0.8) and
+force-inject `min_immigrants` fresh randoms, then decay back.
 
-**EXPECTED EFFECT.** Advisor-derived guidance becomes rank-correlated with
-human star ratings on a held-out set (measured via the existing `ratings.jsonl`
-+ `taste_model.json` corpus); prefer/avoid sets concentrate on methods that
-actually moved the clip into the alive pool rather than noise.
+**Expected effect:**
+- Stops the gen-0 stagnation seen in the data (451 gen-0 / 44 evolved
+  at one scan) — when ratings/ liveness stop compounding, the detector
+  re-primes exploration instead of re-exploring random graphs forever.
+- Net: higher long-run survivor quality without manual knob-tweaking.
+- Bounded: only ever *widens* explore_ratio on stall (never narrows below
+  the configured floor), so it cannot *reduce* quality — strictly non-destructive
+  like the liveness rescues.
 
-**VERIFICATION.** Headless A/B (no LLM cost at test time): replay the last 30
-rated genomes through (a) current free-form advisor, (b) rubric-anchored
-advisor, using a stubbed advisor that returns the rubric-scored guidance from a
-fixture; assert (b)'s prefer-set overlaps the human-high-rated parents more
-than (a)'s (Jaccard or rank-correlation delta > 0). Keep the LLM call optional
-(`advisor_enabled`) so the test runs offline. This is a measurable quality gate,
-not a vibe check.
+**Verification step (headless, no generation needed):**
+Add `test_evolve_stasis_detector.py`:
+1. Build a tiny GenePool + a stubbed `effective_config` with
+   `explore_ratio=0.1` (deliberately low).
+2. Drive `next_generation` K+1 times feeding a *constant* (non-improving)
+   best-rating signal.
+3. Assert that after `stall_gens` flat generations, the emitted
+   generation's fraction of fresh-random genomes rises above the configured
+   `explore_ratio` floor (detector fired).
+4. Assert that with a *strictly improving* signal, `explore_ratio` is
+   **not** widened (detector stays quiet on real progress).
+5. Assert `explore_ratio` decays back toward its configured value after the
+   stall clears.
 
----
-
-## 2026-07-14 — Sub-problem: Cost-admission control (tail-latency + liveness prior) — IMPLEMENTED
-
-**Technique.** *Tail-latency-aware admission / percentile SLOs.* Production
-scheduling and queueing systems admit work on a HIGH PERCENTILE (P90/P99) of the
-observed service-time distribution, not the mean/median, because the tail — not
-the average — drives deadline (timeout) violations (Dean & Barroso, "The Tail at
-Scale", CACM 56(2):74–80, 2013, https://research.google/pubs/pub40801/). Pairing
-this with a **value/quality prior** to avoid rejecting high-value-but-slow work
-is standard admission control (reject only when BOTH expensive AND low expected
-value). Here "value" = empirical P(alive).
-
-**Why it fit THIS engine.** The shootout pre-render cost gate (`cost_model.py`)
-estimated render wall from per-method MEDIAN ms/frame. The median masks tail
-risk: methods that are usually cheap occasionally explode on unlucky params
-(method 120 median 75ms → 2040ms/frame, 27×; 437 3.8→742, 195×), so a genome
-drawing a slow-param instance rendered past the 300s cap while the median est
-placed it under budget → it slipped the gate → wasted the full budget. 97/537
-genomes timed out this way; only 39 were caught pre-render.
-
-**IMPLEMENTED (this run).** (1) `per_method_p90` (tail ms/frame) +
-`per_method_alive` (empirical P(alive), MIN_ALIVE_SAMPLES=4) added to the cost
-model. (2) `estimate_cost_tail_s()` gates on the P90 sum. (3) liveness-prior
-exemption: an over-budget genome whose mean P(alive) over its measured methods
-≥ `gate_liveness_floor` (0.33) is spared — protects expensive-but-dynamic clips.
-Config `cost_use_tail`/`gate_liveness_floor`; cold-start falls back to prior
-behaviour.
-
-**MEASURED EFFECT (real corpus, `is_over_budget` path).** median gate:
-recall 39/97 timeouts, false-cull 20/186 alive (10.8%). tail+liveness:
-recall 64/97, false-cull 17/186 (9.1%) — strict improvement on both axes
-(+25 timeouts caught pre-render ≈ +2h compute/corpus, fewer dynamic clips culled).
-tail-only would hit 28.5% false-cull; the exemption is what keeps precision.
-
----
-
-## 2026-07-14 — Render-based corroboration of the generation-side root cause
-
-Added `image_pipeline/tests/test_shootout_driver_modulation.py`: a headless
-(no server, no browser) test that renders a real driver→filter graph
-`[noise src] -> [Transform.rotate] <- [driver.value]` for `__lfo__` /
-`__counter__` / `__noise1d__`, and asserts (1) the driver SCALAR output varies
-per frame, (2) the terminal frame-stack temporal_var clears the liveness floor,
-(3) the driver-less control is ~static. 4/4 pass.
-
-This is the first test that proves the driver→pixel path through the actual
-GraphExecutor render loop (not just the motif-composer invariant in
-test_shootout_motif_born_animated.py). It locks in the 2026-07-13 conclusion:
-the executor correctly feeds the driver output into the target param every
-frame; the 65% dead rate is legitimate static/flat culling + render cost, NOT
-driver plumbing. The PHASE-1 driver-correlation check confirms it: WITH driver
-deadrate=66% vs WITHOUT driver deadrate=64% across 537 genomes.
-
-Open lever (unchanged): implement the generation-side "born animated" guarantee
-in `sample_valid_genome` so static graphs stop being generated; and tune the
-cost gate (tail basis + `cost_skip_factor`) to pre-empt the residual ~97 timeout
-slip-throughs. Do NOT change the liveness thresholds — they are correct.
-
-**VERIFICATION.** `tests/test_shootout_tail_liveness_gate.py` (7 tests): tail≥median,
-tail catches a synthetic slow-param slip-through the median misses, exemption
-spares likely-dynamic / gates likely-static, unknown-prior never exempts,
-floor=0 disables, persisted model carries new fields, and a corpus guard that
-the new gate beats the median gate on recall without raising false-cull.
-
-**FUTURE.** Mean-over-methods prior is structurally diluted (heavy sims drag it
-down); a TERMINAL-node liveness prior would sharpen the exemption further.
-
----
-
-## 2026-07-14 - Evolution sub-problem #4: grammar-aware mutation / crossover (rotate -> 5)
-
-**Technique (cited).** Grammar-aware / semantic mutation for graph-structured genotypes.
-Roots: Grammatical Evolution (O'Neill & Ryan, "Grammatical Evolution", IEEE TEC 2001) -
-genotypes are linear genomes interpreted by a BNF grammar into phenotypes, so mutation
-operates on *valid production rules* rather than raw floats. For node graphs, the
-pipeline already has a motif vocabulary in `motifs.py` (driver->param affinity tables,
-`_DRIVER_FALLBACK`). Semantic mutation = swap a known motif subgraph (retarget a driver
-wire, swap a filter for a sibling in the same category) instead of numeric noise.
-
-**Why now.** The 201 static+flat deaths (37% of genomes) are generated graphs with no
-time variation. `generator.py` already has a born-animated driver policy and `motifs.py`
-a safety net for *fresh* graphs, but **mutation/crossover offspring are not guaranteed
-animated** - an edit that drops the only driver wire (or flattens a time-varying param to
-a constant) produces a static genome the liveness gate correctly culls. The born-animated
-guarantee must extend into `evolve.py mutate()` and `crossover()`.
-
-**Concrete improvement (safe; shootout module only, NOT core GraphExecutor).**
-1. In `mutate(parent, ...)`: after numeric perturbation, run a *preserve-animation* repair:
-   if the offspring has no time-varying node and no driver->scalar wire, attach a driver
-   (`_DRIVER_FALLBACK` choice) to a valid SCALAR port of a random eligible node (reuse
-   `motifs.py` affinity), or flip one eligible node's `anim_mode` off "none". Reuse the
-   existing `motifs.py` driver-attachment helper so behavior matches `compose_graph`.
-2. In `crossover(...)`: prefer crossing at motif boundaries (swap a whole sub-graph
-   motif) and re-attach any dangling driver/param wires on the merged graph; then run the
-   same preserve-animation repair.
-3. Add a `mutation preserves animation` invariant test (headless): generate N mutated
-   genomes, assert each has >=1 animation source (driver wire OR anim_mode!=none).
-
-**Target module.** `evolve.py` (`mutate`, `crossover`, possibly `repair_genome`).
-**Expected effect.** Lower static/flat dead-rate (the 201 bucket) without touching the
-liveness thresholds (correct) or the core executor.
-**Verification.** Fresh-generation A/B: mutate M genomes with vs without the repair,
-render via the liveness evaluator, compare dead-rate; assert the repaired cohort's
-static-rate drops. Add `test_shootout_mutant_born_animated.py`.
-
-**Rotate index -> 5** (advisor quality: does `extract_guidance` steer toward better
-survivors? prompt/rubric design; per-node like/dislike convergence).
-
----
-
-## 2026-07-14 — Sub-problem #6: Rating-signal poverty (active-learning acquisition)
-
-**Technique.** *Uncertainty sampling* for active learning (Lewis & Catlett,
-"Heterogeneous Uncertainty Sampling for Supervised Learning", ICML 1994) —
-query the labels for the examples the current model is *least certain* about,
-which maximizes information gain per label. For the shootout the advisor's
-taste/rating model is trained on only ~18 ratings (1.3–3.4% of genomes across
-recent runs) — a starvation signal. Randomly surfacing clips for rating is
-wasteful; instead surface the clips whose predicted rating the model is least
-confident about (predicted score nearest its decision boundary / highest
-predicted-variance across a committee). This is the standard fix for
-label-scarce regimes and directly attacks the ratings=18 poverty noted every
-run. Closely related: query-by-committee / expected-model-change acquisition.
-
-**Why it fits THIS engine.** `advisor.py` already produces guidance from
-ratings; the missing piece is *which* unrated genomes to send to a human. A
-`suggest_for_rating()` that ranks unrated genomes by model uncertainty (e.g.
-|p(rating≥4) − 0.5|, or committee vote entropy across K bootstrap taste models)
-gives a frictionless one-click rating queue (the per-node like/dislike UI
-already exists). No LLM needed for acquisition; the human provides the label,
-the loop tightens.
-
-**TARGET MODULE.** `shootout/advisor.py` (`suggest_for_rating`) +
-`session.py` (`POST /api/shootout/suggest-rating` returning top-K uncertain
-unrated genomes) + a one-click rating chip in the UI. Does NOT touch the core
-GraphExecutor.
-
-**EXPECTED EFFECT.** Rating corpus grows on *informative* clips, so the taste
-model + advisor guidance converge faster; the now-wired `seed_ids` promotion
-hook (2026-07-14) gets a richer signal. Measured as: held-out rating accuracy /
-model confidence improves faster under uncertainty-sampling acquisition than
-under random acquisition, per simulated labeling round.
-
-**VERIFICATION.** Headless test `test_shootout_rating_acquisition.py`: given a
-taste model fit on 18 ratings + N unrated genomes, assert `suggest_for_rating(K)`
-returns the K genomes with smallest |predicted − 0.5| (highest uncertainty),
-and that this set DIFFERS from a random-K set (set-overlap < 0.5, or
-rank-correlation with uncertainty-rank < 0.3); then simulate labeling the
-suggested set and assert held-out accuracy rises more than labeling a random
-set.
-
-**Rotate index -> 7** (drift / stagnation detection: detect flat dead-rate +
-flat rating mean and auto-trigger wider explore_ratio or a fresh-random reset).
-## 2026-07-14 — Sub-problem #0 (rotate from 7): Selection pressure / fitness shaping
-
-- EVIDENCE (this run's diagnostics): 537 genomes, 351 dead (65%), but only 18 are
-  rated (3.4% rating coverage) — a near-empty fitness signal. Of those, 3 sit at
-  5 stars and the rest spread 1-4. With such sparse, non-normalized ratings, the
-  current raw-rating to survivor weighting lets a single 5-star outlier dominate
-  next-generation sampling, while the 519 unrated genomes get no gradient at all.
-- PROPOSAL (rank-based fitness shaping): Jiao et al. (2024), "When large language
-  models meet evolutionary algorithms," arXiv:2401.10510v2, draw the direct
-  parallel position-encoding <-> fitness-shaping and position-embedding <->
-  selection. Adopt rank-based fitness shaping (Whitley 1989 linear rank, or an
-  exponential rank transform) in evolve.next_generation: map the sorted, rated
-  survivors to a monotonic transform so the top genome is rewarded but the 2nd..Nth
-  keep non-trivial selection probability (prevents premature convergence onto one
-  5-star clip). For the 519 unrated genomes, keep the explore_ratio path (do NOT
-  assign them the mean rating, which would inject a false gradient). Add a
-  lightweight ELO-style running update in evaluator.py so ratings arriving across
-  generations are comparable (sparse, temporally-staggered 1-5 scores are not on a
-  stable absolute scale).
-- EXPECTED EFFECT: selection pressure stays diverse instead of collapsing onto the
-  few rated clips; the untrained taste model's sparsity no longer over-steers
-  evolution; the cheap-alive recombine pool (110 this run) stays broad.
-- VERIFICATION: synthetic population — one genome rated 5, ten rated 1-2, rest
-  unrated — assert rank-shaped survivor weights are spread (Gini < raw-rating Gini)
-  and that a newly-arriving 5-star in a later generation shifts weights smoothly
-  rather than wiping prior survivors. Add a stub to tests/test_shootout.py.
-- ROTATE index -> 0 (this entry); next run takes index 1.
-
----
-
-## 2026-07-14 — topic index 6: Rating-signal poverty (IMPLEMENTED, server-side)
-- CONTEXT (from this run's PHASE 1 diagnostics): genomes=537, alive=186 (35%),
-  dead=351 (65%); human ratings=18 (starved, <20). The taste model (ridge,
-  `taste.py`) IS trained (MIN_SAMPLES=8) but the corpus is too small for it to
-  drive generation — `select_parents` falls back to `liveness_breed_fallback`
-  whenever fewer than `min_rating_to_parent` rated genomes exist. The driver
-  → pixel path and liveness gate are verified sound (prior runs), so the
-  blocker is not wiring but HUMAN-EFFORT ALLOCATION: the user has no efficient
-  way to know WHICH clips are worth rating, so ratings accrue at ~1/30 genomes.
-- TECHNIQUE (cold-start active learning for acquisition): with an untrained/
-  weak model, the highest-information clips to label are those that MAXIMIZE
-  COVERAGE of the design space (representativeness / core-set sampling) plus
-  NOVELTY relative to the already-labelled set (model-change surrogate).
-  * Diversity: biased farthest-point (k-center) greedy over the normalized
-    `genome_features` cloud — Sener & Savarey 2018, "Active Learning for
-    Convolutional Neural Networks: A Core-Set Approach"
-    (https://arxiv.org/abs/1708.00489).
-  * Novelty: Euclidean distance of each candidate's feature vector from the
-    centroid of ALREADY-RATED genomes — the cold-start surrogate for
-    MacKay 1992 "Information-based objective functions" (model-change /
-    information-gain uncertainty, https://doi.org/10.1007/BF00992696).
-  * Fitness bias: prefer dynamic survivors (higher temporal_var) so suggested
-    clips are aesthetically worth judging, not frozen noise.
-- IMPLEMENTATION: `image_pipeline/shootout/rating_suggest.py::suggest_for_rating(k)`
-  (pure, reads only genome JSON — no render; deterministic). Surfaced via
-  `GET /api/shootout/suggest-ratings?k=N`. Guarded by `tests/test_rating_suggest.py`
-  (5 tests: count / exclude-dead+rated / diversity / novelty-bias / empty+clamp)
-  — all pass; verified live on a throwaway :7871 server.
-- EXPECTED EFFECT: a curated "rate these next" queue of high-information-gain
-  clips. If the UI surfaces it as a one-click rating strip, the corpus can grow
-  efficiently past the ~20+ threshold so the taste model starts biasing
-  generation. No ratings fabricated.
-- VERIFICATION (done): headless tests + live endpoint probe on :7871 returned 5
-  diverse suggestions (mix of "novel" and "dynamic survivor" reasons).
-- ROTATE index -> 2 (Diversity maintenance: MAP-Elites / crowding to stop
-  convergence — carried recommendation). #6 acquisition is now implemented.
+**Status:** PROPOSAL (not yet implemented). Low-risk, additive, fully unit-
+testable in milliseconds — good next-run chunk if a generation confirms the
+born-animated floor already dropped the live death rate.
