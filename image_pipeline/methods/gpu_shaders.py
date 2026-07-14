@@ -316,6 +316,11 @@ _TYPED_SHADER_NODES = [
     # fractal with NAMED typed controls — Sierpinski (Menger) carpet. Cells are
     # coloured by recursion depth; the plane spins and scale breathes with time.
     ("324", "menger_typed", "GPU Menger Carpet"),
+    # Categorical coverage pt.18 (2026-07-14): closed-form atmospheric sky —
+    # Nishita single-scattering GPU twin of CPU node 471. Per-pixel ray-march
+    # (no ping-pong state), animated sun day-arc via u_time. Named typed
+    # uniforms mirror node 471's real numeric params (contract #5/#6).
+    ("325", "nishita_sky_gpu", "GPU Nishita Sky"),
 ]
 
 _TIME_SCALE_PARAM = {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0}
