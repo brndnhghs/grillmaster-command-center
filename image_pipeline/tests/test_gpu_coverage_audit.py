@@ -61,8 +61,21 @@ DEFERRED_SIM_IDS = set(
     "20 34 35 36 55 79 83 84 86 88 89 90 92 94 97 98 101 102 103 "
     "107 109 110 111 112 113 114 116 117 123 129 130 131 134 "
     "136 145 147 149 151 152 158 159 167 337 429 440 448 922 310 "
-    "483 484 517".split()
+    "483 484 517 951 966 560".split()
 )
+# 951 Cahn–Hilliard Phase Separation: Arch-A phase-field PDE (chemical-potential
+# Laplacian + explicit Euler over many substeps, capture_frame per frame). Its
+# honest GPU twin is a WebGL2 ping-pong sim needing browser parity -- same
+# deferral class as 922 Brusselator / 517 Stable Fluids. Out of scope for
+# headless verification until P2 (WebGPU compute) is signed off.
+# 966 Curl-Noise Particle Flow: Arch-A curl-noise advected particle/field sim
+# (real-time flow integration), not a closed-form f(uv,t) field. Same deferral
+# class as 483 Curl Noise Flow (closed-form cousin 314 is already mirrored).
+# Stays deferred until P2 (WebGPU compute) is signed off.
+# 560 SmoothLife (Continuous Life): Arch-A continuous cellular automaton
+# (smooth transition function over a Moore neighbourhood, stateful across
+# frames). Not a closed-form f(uv,t) field; honest GPU twin is a WebGL2
+# ping-pong sim needing browser parity -- deferred until P2 is signed off.
 # 517 Stable Fluids: Arch-A Stam semi-Lagrangian Navier-Stokes solver (advect
 # velocity + pressure-projection Jacobian iteration, explicit over many
 # substeps, capture_frame per frame). Its honest GPU twin is a WebGL2 ping-pong
