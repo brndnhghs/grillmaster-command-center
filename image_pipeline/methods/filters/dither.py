@@ -189,7 +189,12 @@ def method_dither(out_dir: Path, seed: int, params=None):
         """Error diffusion dither. img: [0,1] HxW float. Returns binary HxW uint8."""
         h, w = img.shape
         out = np.zeros((h, w), dtype=np.float32)
-        err = np.zeros((h + 2, w + 2), dtype=np.float32)
+        # Pad by 2 on every side so every kernel neighbor offset (-2..+2) is
+        # always in-bounds; the current pixel indexes at +2/+2. The outer
+        # padding ring is never read back, so dropping the per-neighbor bounds
+        # check is bit-exact to the original (which skipped those out-of-range
+        # writes) while removing ~4*h*w Python branches per frame.
+        err = np.zeros((h + 4, w + 4), dtype=np.float32)
 
         for y in range(h):
             if serpentine_flag and y % 2 == 1:
@@ -200,23 +205,23 @@ def method_dither(out_dir: Path, seed: int, params=None):
                 rev = False
 
             for x in x_range:
-                old_pixel = np.clip(img[y, x] + err[y + 1, x + 1], 0, 1)
+                old_pixel = np.clip(img[y, x] + err[y + 2, x + 2], 0, 1)
                 new_pixel = 0.0 if old_pixel < 0.5 else 1.0
                 out[y, x] = new_pixel
                 quant_error = (old_pixel - new_pixel) * err_scale
                 for dy, dx, coef in matrix:
                     if rev:
                         dx = -dx
-                    ny, nx = y + 1 + dy, x + 1 + dx
-                    if 0 <= ny < h + 2 and 0 <= nx < w + 2:
-                        err[ny, nx] += quant_error * coef
+                    err[y + 2 + dy, x + 2 + dx] += quant_error * coef
         return (out * 255).astype(np.uint8)
 
     def multi_tone_diffuse(img, levels, matrix, serpentine_flag, err_scale):
         """Multi-tone error diffusion. Quantizes to N equally spaced levels."""
         h, w = img.shape
         out = np.zeros((h, w), dtype=np.float32)
-        err = np.zeros((h + 2, w + 2), dtype=np.float32)
+        # See error_diffuse: pad by 2 and drop the per-neighbor bounds check
+        # for a bit-exact but branch-free scatter.
+        err = np.zeros((h + 4, w + 4), dtype=np.float32)
         step = 1.0 / (levels - 1)
 
         for y in range(h):
@@ -228,16 +233,14 @@ def method_dither(out_dir: Path, seed: int, params=None):
                 rev = False
 
             for x in x_range:
-                old_pixel = np.clip(img[y, x] + err[y + 1, x + 1], 0, 1)
+                old_pixel = np.clip(img[y, x] + err[y + 2, x + 2], 0, 1)
                 q = round(old_pixel / step) * step
                 out[y, x] = q
                 quant_error = (old_pixel - q) * err_scale
                 for dy, dx, coef in matrix:
                     if rev:
                         dx = -dx
-                    ny, nx = y + 1 + dy, x + 1 + dx
-                    if 0 <= ny < h + 2 and 0 <= nx < w + 2:
-                        err[ny, nx] += quant_error * coef
+                    err[y + 2 + dy, x + 2 + dx] += quant_error * coef
         return (out * 255).astype(np.uint8)
 
     # ---- Error diffusion kernels ----
@@ -255,16 +258,25 @@ def method_dither(out_dir: Path, seed: int, params=None):
             size = {"bayer2": 2, "bayer4": 4, "bayer8": 8}[algo]
             mat = bayer_matrix(size)
             binary = ordered_dither(src, mat)
-            return np.stack([binary / 255.0] * 3, axis=2)
+            # binary is already 0/1; keep it as float so save()'s *255 yields
+            # a true 0/255 binary image (the previous `/255.0` produced a
+            # near-black 0/1 image).
+            return np.stack([binary.astype(np.float32)] * 3, axis=2)
         elif algo in ("cluster3", "cluster4"):
             hs = {"cluster3": 3, "cluster4": 4}[algo]
             binary = cluster_dot_dither(src, hs)
-            return np.stack([binary / 255.0] * 3, axis=2)
+            # binary is already 0/1; keep it as float so save()'s *255 yields
+            # a true 0/255 binary image (the previous `/255.0` produced a
+            # near-black 0/1 image).
+            return np.stack([binary.astype(np.float32)] * 3, axis=2)
         elif algo == "random":
             rng = random.Random(seed)
             noise_map = np.array([[rng.random() for _ in range(W)] for _ in range(H)])
             binary = (src > noise_map).astype(np.uint8)
-            return np.stack([binary / 255.0] * 3, axis=2)
+            # binary is already 0/1; keep it as float so save()'s *255 yields
+            # a true 0/255 binary image (the previous `/255.0` produced a
+            # near-black 0/1 image).
+            return np.stack([binary.astype(np.float32)] * 3, axis=2)
         else:
             kernel_map = {
                 "fs": (FS, "Floyd-Steinberg"),
