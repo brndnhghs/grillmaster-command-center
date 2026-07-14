@@ -45,6 +45,17 @@
 - **Logged TD-15** — keyframe easing footguns (end-keyframe read; silent linear
   fallback on misspelled names). Captured during test authoring; not yet fixed
   (a behavioral change to animation; deferred with documentation).
+- **Added** `image_pipeline/tests/test_group_node_execution.py` — closes the
+  group-node gap (TD-05): drives the real executor with generator →
+  group(graph of one filter). Asserts the group runs its subgraph and the output
+  differs from the raw generator (inner filter cooked the wired pixels via the
+  exposed input), output equals the terminal payload, and the per-group
+  sub-executor is REUSED across frames (BUG-6 identity invariant — not pixel
+  equality, since the inner filter is frame-seeded). 3 tests, ~1.0s.
+- **ALL six top testing gaps now closed** (TD-01, TD-02, TD-03-test, TD-04,
+  TD-05, TD-06). The executor's riskiest branches, group recursion, and graph
+  persistence are under regression guard. Remaining: TD-03 feature (per-node
+  sim-cache budget), TD-15 (easing normalize), architecture refactors R7–R14.
 
 ## Pre-history (selected, from git log)
 

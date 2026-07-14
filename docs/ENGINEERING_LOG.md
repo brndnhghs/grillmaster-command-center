@@ -196,3 +196,46 @@ assertions + a debt item rather than papered over:
   now under regression guard. TD-15 captured a real footgun for later.
 - Next: R5 (group-node execution) — the last cheap, high-value test gap before
   the architecture refactors.
+
+---
+
+## Iteration 6 — 2026-07-14
+
+### Context
+R5 / TD-05 (group-node execution). Group nodes (`type="group"`) wrap a subgraph
+run by `_execute_group_node` with a per-group cached `GraphExecutor`; the cache
+reuse is the BUG-6 invariant (a fresh per-frame executor loses Arch-A sim /
+feedback state and re-cooks the sub-graph from scratch). No regression test
+existed.
+
+### Decision
+Drive the real executor with generator → group(graph of one filter). Assert the
+group runs its subgraph and produces an image that DIFFERS from the raw
+generator (proving the inner filter actually cooked the wired pixels via the
+exposed input), and that its output is the terminal payload. For reuse, assert
+the sub-executor OBJECT is identical across two frames on the same executor
+(identity, not pixel equality — the inner filter is frame-seeded so its output
+legitimately varies per frame).
+
+### Action
+- Added `image_pipeline/tests/test_group_node_execution.py` (3 tests).
+- First version had TWO test-authoring bugs: (1) a `test_*`-named helper got
+  collected standalone by pytest and errored; (2) the reuse test wrongly
+  asserted cross-frame pixel equality. Both fixed: helper renamed `_grp_helper`,
+  reuse test now asserts sub-executor identity (`ex._group_executors["1"] is
+  same object`). The CODE behaved correctly throughout — this was a test-hardening
+  pass, exactly the kind of silent regression the new test now guards.
+- Verified: `pytest ... -q` → 3 passed in 1.04s.
+- Updated TECHNICAL_DEBT (TD-05 → closed), ROADMAP (R5), CHANGELOG,
+  ENGINEERING_LOG, .agent_state.json.
+
+### Resulting State
+- ALL cheap, high-value testing gaps from docs/reports/testing.md are now
+  CLOSED: TD-01, TD-02, TD-03-test, TD-04, TD-05, TD-06. The executor's riskiest
+  branches (payload propagation, feedback cycles, sim-cache eviction, keyframe
+  interpolation), group recursion, and graph persistence are under regression
+  guard. Remaining open test items: TD-03 feature (per-node sim-cache budget),
+  TD-15 (easing normalize), and the architecture refactors R7-R14.
+- Next: pivot to a high-value FEATURE or refactor. Top candidates: R7 (wire
+  CLI-only quality/annotator/postprocess into server — highest user value, 5),
+  or R8 (extract 3D node defs from core/graph.py — safe architecture cleanup).
