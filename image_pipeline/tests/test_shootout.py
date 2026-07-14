@@ -118,7 +118,13 @@ def tmp_store(tmp_path, monkeypatch):
 # ── Generator + repair ────────────────────────────────────────────────
 
 
+@pytest.mark.slow
 def test_fuzz_generator_repair_fast():
+    # NOTE: sample_valid_genome is expensive (~1-2s warm, ~15s cold per call)
+    # because the shootout generator exercises real node execution. 150
+    # iterations therefore take several minutes, so this belongs in the slow
+    # suite alongside its 1000-iteration sibling below. The "fast" name only
+    # distinguishes it from the 1000-iteration variant.
     rng = random.Random(42)
     for _ in range(150):
         g = sample_valid_genome(POOL, CFG, rng)
