@@ -244,6 +244,17 @@ class LivenessAccumulator:
                 # active_frac coverage floor keep a truly frozen frame (no AC
                 # energy) or a single flickering pixel (negligible coverage) dead.
                 reason = None
+            elif (flow_var >= cfg.flow_var_min
+                    and flow_coherence >= cfg.flow_coherence_min):
+                # Optical-flow rescue (sub-problem #3): a small object making a
+                # slow, COHERENT drift produces real pixel displacement but low
+                # GLOBAL variance (temporal_var below floor), sparse coverage
+                # (motion_pixel_frac below floor), and no sharp spectral peak.
+                # Dense optical flow sees the structured displacement: high
+                # flow-magnitude variance + high direction coherence. Flicker has
+                # low coherence; a static frame has ~0 flow magnitude -> both stay
+                # dead. This branch only ever flips dead -> alive, never reverse.
+                reason = None
             else:
                 # Not moving. If it is also spatially degenerate
                 # (near black/white/uniform) call it "flat"; otherwise it

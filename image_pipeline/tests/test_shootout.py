@@ -364,6 +364,55 @@ def test_evaluator_flow_telemetry_independent_of_other_rescues():
     assert s_static["flow_var"] < CFG.flow_var_min, s_static
 
 
+def test_evaluator_flow_rescue_subthreshold_drift():
+    """Sub-problem #3 optical-flow rescue, COMPLETED (2026-07-14): a small
+    disk making a SLOW, coherent drift is genuinely animating (pixels move) but
+    falls below EVERY other rescue floor — temporal_var < temporal_var_min
+    (low global variance), motion_pixel_frac < motion_pixel_frac_min (sparse
+    coverage), and no sharp spectral peak. Dense optical flow detects the
+    structured displacement (high flow_var + high flow_coherence) and keeps it
+    alive. This is the case the prior "flow rescue" telemetry computed but the
+    verdict never consulted, so the clip was wrongly culled as "static".
+
+    Controls: a static (non-drifting) disk has ~0 flow -> stays dead; with the
+    perceptual + spectral rescues disabled the drift is STILL rescued by flow
+    alone (proves flow is the active rescue, not a no-op)."""
+    H, W, r, n = 128, 192, 6, 24
+    yy, xx = np.mgrid[0:H, 0:W]
+    ppf = 1
+    x0 = W / 2 - (n - 1) * ppf / 2
+    x1 = x0 + (n - 1) * ppf
+
+    def drift(i):
+        a = np.zeros((H, W, 3), np.float32)
+        cx = x0 + (x1 - x0) * (i / (n - 1))
+        m = (yy - H // 2) ** 2 + (xx - cx) ** 2 < r * r
+        a[m] = 1.0
+        return a
+
+    s = evaluate_frames(_stack(drift, n=n, h=H, w=W), CFG)
+    assert s["alive"], s
+    assert s["reason"] is None, s
+    assert s["flow_var"] >= CFG.flow_var_min, s
+    assert s["flow_coherence"] >= CFG.flow_coherence_min, s
+    # It really was sub-threshold for the other rescues:
+    assert s["temporal_var"] < CFG.temporal_var_min, s
+    assert s["motion_pixel_frac"] < CFG.motion_pixel_frac_min, s
+
+    # Control: static disk -> dead, ~0 flow.
+    s_static = evaluate_frames(_stack(lambda i: drift(0), h=H, w=W), CFG)
+    assert not s_static["alive"], s_static
+    assert s_static["flow_var"] < CFG.flow_var_min, s_static
+
+    # Flow alone rescues even with the perceptual + spectral rescues disabled.
+    cfg = ShootoutConfig()
+    cfg.motion_pixel_frac_min = 1e9
+    cfg.spectral_corr_min = 1e9
+    s_off = evaluate_frames(_stack(drift, n=n, h=H, w=W), cfg)
+    assert s_off["alive"], s_off
+    assert s_off["flow_var"] >= CFG.flow_var_min, s_off
+
+
 def test_evaluator_nan_is_dead():
     def f(i):
         a = np.ones((64, 96, 3), np.float32) * (i / 24)
