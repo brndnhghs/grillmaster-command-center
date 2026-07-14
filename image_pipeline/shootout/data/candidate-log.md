@@ -358,3 +358,19 @@
 - VERIFIED on the 537-genome corpus via the real is_over_budget path: median gate = timeout-recall 39/97, alive-false-cull 20/186 (10.8%). tail+liveness(new) = recall 64/97, false-cull 17/186 (9.1%) -- STRICT improvement on BOTH axes (+25 timeouts caught pre-render ~= +2h compute saved/corpus, and FEWER dynamic clips culled). tail-only (floor 0) would hit 28.5% false-cull -- the exemption is what keeps precision. Floor sweep confirmed 0.33 is the strict-dominance point. New test file test_shootout_tail_liveness_gate.py (7 tests) + all 13 existing cost-gate tests pass.
 - TOP-3 rated (real ids, carry forward via seed_ids): g-e181c881(5), g-328f0d37(5), g-e3d68069(5).
 - NEXT: after a FRESH generation runs under the new gate, re-measure the timeout/over-budget cull rate to confirm the ~2h/corpus compute is recovered; consider a liveness-prior model keyed on the TERMINAL node (mean-over-methods is structurally diluted by heavy sims).
+
+## 2026-07-14 (cron run) — added CG node 965 "2D Gaussian Splats"
+Probe data this run (real):
+- genomes=537, dead/rejected=351 (65%), renders>150s=131 (max 547s), temporal_var median=0.0017
+- TOP-rated promotion seeds: g-e181c881/g-328f0d37/g-e3d68069/g-97f1158a (rating=5)
+- CHEAP-ALIVE (recombine seeds): 110 of 186 alive render <30s
+- Surviving-method coverage dominated by driver nodes (__lfo__ 383, __counter__ 102, __noise1d__ 70) — not actionable hotspots; the real failure modes are render-cost (timeout cull) and liveness false-negatives (contrast-only clips culled below 3e-3 floor).
+Action taken: implemented a CHEAP (O(n) numpy, ~1.4s at n=260) animated node — 2D Gaussian Splatting (2DGS, Kerbl et al. 2023). It is structurally animated (depth-sorted back-to-front compositing + camera orbit) so it clears the liveness gate via changed-pixel-fraction (0.106 at orbit t0→t1.6), NOT mean-Δ. Recommend the next generation widen explore_ratio so fresh cheap-but-lively nodes like this enter the pool; dead-rate is dominated by 150s-timeout culls, so cost-gated seeding is the higher-leverage fix.
+
+## 2026-07-14 (cron run) — added CG node 965 "2D Gaussian Splats"
+Probe data this run (real):
+- genomes=537, dead/rejected=351 (65%), renders>150s=131 (max 547s), temporal_var median=0.0017
+- TOP-rated promotion seeds: g-e181c881/g-328f0d37/g-e3d68069/g-97f1158a (rating=5)
+- CHEAP-ALIVE (recombine seeds): 110 of 186 alive render <30s
+- real failure modes: render-cost (150s timeout cull) + liveness false-negatives (contrast-only clips culled below 3e-3 floor), NOT driver-method hotspots.
+Action: added CHEAP O(n) animated node 2D Gaussian Splatting (965). Structurally animated -> clears liveness gate via changed-pixel-fraction (0.106 at orbit t0->t1.6), not mean-delta. Recommend cost-gated seeding + widen explore_ratio next gen.
