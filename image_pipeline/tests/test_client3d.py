@@ -124,12 +124,22 @@ def test_graph_overlay_is_noninteractive_and_default_off():
     from fastapi.testclient import TestClient
     from image_pipeline.server import app
 
-    html = TestClient(app).get("/").text
+    client = TestClient(app)
+    html = client.get("/").text
     assert 'id="graph-overlay"' in html
     # The overlay canvas is pointer-events:none (never intercepts drag/wiring/
-    # context-menus/keyframe-lanes on the DOM graph below).
+    # context-menus/keyframe-lanes on the DOM graph below). The rule lives in the
+    # linked stylesheet (editor.css), not inline in index.html — the UI was split
+    # into served modules (ui/css/editor.css, ui/js/app.js, ui/js/graph.js) in the
+    # modularization batch (44a747e), so we resolve the <link> href and fetch it.
     import re
-    css = re.search(r"#graph-overlay\s*\{[^}]*\}", html)
+    css_href = re.search(r'<link[^>]+href="(/ui/css/editor\.css)"', html)
+    css_text = ""
+    if css_href:
+        css_text = client.get(css_href.group(1)).text
+    # Fall back to inline if a future refactor re-inlines it.
+    css_text = css_text or html
+    css = re.search(r"#graph-overlay\s*\{[^}]*\}", css_text, re.S)
     assert css and "pointer-events: none" in css.group(0)
     # Default off — the controller initializes disabled and only restores when
     # the user previously enabled it.
