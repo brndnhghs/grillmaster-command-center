@@ -1,280 +1,264 @@
 from __future__ import annotations
+
 import math
-from pathlib import Path
 
 import numpy as np
-from scipy.ndimage import gaussian_filter, uniform_filter
 
 from ...core.registry import method
-from ...core.utils import (
-    save, norm, mn, seed_all, W, H, PALETTES, load_input, write_scalars,
-)
+from ...core.utils import (save, mn, seed_all, W, H, write_scalars,
+                           write_field, write_mask, wired_source_rgb)
 from ...core.animation import capture_frame
 
 
-# ── Rolling Guidance Filter (Zhang, Shen, Xu & Jia, ECCV 2014) ──
-# Scale-rolling edge-aware image abstraction. Each pass applies a *small-radius*
-# joint bilateral filter (range-guided by the ORIGINAL image, so strong edges
-# are re-anchored and survive) followed by a *large-radius* guided filter that
-# removes detail at the current scale. The small radius "rolls" up (1→2→4→…)
-# so progressively larger detail is stripped while major silhouettes stay
-# crisp — the painterly "abstraction" / cartoon base used in style transfer.
+# ── Procedural source (used only when no image is wired in) ──
+def _hash2(ix: np.ndarray, iy: np.ndarray, seed: int) -> np.ndarray:
+    ix = ix.astype(np.int64)
+    iy = iy.astype(np.int64)
+    n = (ix * 73856093) ^ (iy * 19349663) ^ (int(seed) * 83492791)
+    n = (n ^ (n >> 13)) * 1274126177
+    n = n ^ (n >> 16)
+    return (n & 0x7FFFFFFF).astype(np.float64) / 2147483647.0
 
 
-def _box_filter(x: np.ndarray, r: int) -> np.ndarray:
-    """O(1)-class box (mean) filter of radius r.
+def _vnoise(x: np.ndarray, y: np.ndarray, seed: int) -> np.ndarray:
+    xi = np.floor(x).astype(np.int64)
+    yi = np.floor(y).astype(np.int64)
+    xf = x - xi
+    yf = y - yi
+    u = xf * xf * (3.0 - 2.0 * xf)
+    v = yf * yf * (3.0 - 2.0 * yf)
+    a = _hash2(xi, yi, seed)
+    b = _hash2(xi + 1, yi, seed)
+    c = _hash2(xi, yi + 1, seed)
+    d = _hash2(xi + 1, yi + 1, seed)
+    return (a * (1.0 - u) + b * u) * (1.0 - v) + (c * (1.0 - u) + d * u) * v
 
-    Uses scipy.ndimage.uniform_filter with nearest-neighbour border extension,
-    which is exactly what the guided filter expects and avoids the broadcast bug
-    of a hand-rolled cumulative-sum box on the right/bottom edges.
+
+def _proc_source(source: str, seed: int, w: int, h: int, phase: float = 0.0) -> np.ndarray:
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float64)
+    # 'breathe' animation flows the procedural pattern across the canvas so the
+    # filter output morphs every frame (the filter's own range/scale params are
+    # near-invariant on smooth content, so animating the source is what moves it).
+    if phase != 0.0:
+        yy = (yy + phase * h * 0.12) % h
+        xx = (xx + phase * w * 0.12) % w
+    if source == "checkerboard":
+        cs = max(8, w // 24)
+        cell = ((xx // cs + yy // cs) % 2)
+        v = np.where(cell == 0, 0.25, 0.80)
+        img = np.stack([v, v, v], axis=-1)
+    elif source in ("perlin", "noise"):
+        n1 = _vnoise(xx / w * 8.0 + (seed % 17), yy / h * 8.0, seed)
+        n2 = _vnoise(xx / w * 16.0 + 5.0, yy / h * 16.0 + 3.0, seed + 11)
+        v = np.clip(0.6 * n1 + 0.4 * n2, 0.0, 1.0)
+        img = np.stack([v, v ** 1.2 * 0.9 + 0.05, v ** 0.7 * 0.7], axis=-1)
+    else:  # gradient
+        img = np.stack([xx / max(1, w - 1),
+                        yy / max(1, h - 1),
+                        (xx + yy) / max(1, w + h - 2)], axis=-1)
+    return img.astype(np.float64)
+
+
+def _shift2d(a: np.ndarray, dy: int, dx: int) -> np.ndarray:
+    """Circular shift (border wrap is fine for an artistic smoothing operator)."""
+    if dy == 0 and dx == 0:
+        return a
+    return np.roll(np.roll(a, dy, axis=0), dx, axis=1)
+
+
+def _joint_bilateral(img: np.ndarray, guide: np.ndarray,
+                     sigma_s: float, sigma_r: float, R: int) -> np.ndarray:
+    """Joint bilateral filter (Gastal & Oliveira O(N) spirit, shift-vectorised).
+
+    `guide` (H,W) carries the *range* edge information and stays fixed across
+    iterations (the "joint" / guidance image = the original luminance). `img`
+    is the current frame being smoothed, all channels at once. Spatial weight is
+    a Gaussian of the offset; range weight is a Gaussian of the guide-difference.
+    Cost is O(N · (2R+1)²) with a tiny constant — no large temporaries.
     """
-    if r <= 0:
-        return x.astype(np.float64)
-    size = 2 * r + 1
-    return np.asarray(uniform_filter(x, size=size, mode="nearest"), dtype=np.float64)
-
-
-def _guided_filter(I: np.ndarray, p: np.ndarray, r: int, eps: float) -> np.ndarray:
-    """He & Sun guided filter (self-guided: I == p smoothing case), O(1)."""
-    mean_I = _box_filter(I, r)
-    mean_p = _box_filter(p, r)
-    corr_I = _box_filter(I * I, r)
-    corr_Ip = _box_filter(I * p, r)
-    var_I = corr_I - mean_I * mean_I
-    a = (corr_Ip - mean_I * mean_p) / (var_I + eps)
-    b = mean_p - a * mean_I
-    mean_a = _box_filter(a, r)
-    mean_b = _box_filter(b, r)
-    return mean_a * I + mean_b
-
-
-def _joint_bilateral(guide_lum: np.ndarray, src: np.ndarray, r: int,
-                     sigma_r: float) -> np.ndarray:
-    """Separable small-radius joint bilateral (O(r) per pixel, not O(r^2)).
-
-    Two passes — horizontal then vertical — each weighting the neighbour by a
-    spatial Gaussian times a *range* Gaussian on the GUIDE luminance (original
-    image), so strong edges are re-anchored and survive. Separable is an
-    approximation to the true 2D bilateral but visually faithful at these radii
-    and fast enough for the rolling loop (radius up to 64, several passes).
-    Range weights from `guide_lum`, values from `src`.
-    """
-    if r <= 0:
-        return src.astype(np.float64)
-    Hh, Ww = guide_lum.shape
-    inv_2sr2 = 1.0 / (2.0 * sigma_r * sigma_r)
-    xs = np.arange(-r, r + 1, dtype=np.float64)
-    spatial = np.exp(-(xs * xs) / (2.0 * r * r))
-    out = np.empty_like(src, dtype=np.float64)
-    for c in range(src.shape[2]):
-        s = src[:, :, c].astype(np.float64)
-        # ── horizontal pass ──
-        tmp = np.zeros((Hh, Ww), dtype=np.float64)
-        wsum_h = np.zeros((Hh, Ww), dtype=np.float64)
-        for dx in range(-r, r + 1):
-            gx0, gx1 = max(0, dx), min(Ww, Ww + dx)
-            sx0, sx1 = max(0, -dx), min(Ww, Ww - dx)
-            if gx1 <= gx0:
+    H, W = guide.shape
+    C = img.shape[2] if img.ndim == 3 else 1
+    if img.ndim == 2:
+        img = img[..., None]
+    num = np.zeros_like(img, dtype=np.float64)
+    den = np.zeros((H, W), dtype=np.float64)
+    inv_2s2 = 1.0 / (2.0 * sigma_s * sigma_s)
+    inv_2r2 = 1.0 / (2.0 * sigma_r * sigma_r)
+    for dy in range(-R, R + 1):
+        for dx in range(-R, R + 1):
+            sp = math.exp(-(dx * dx + dy * dy) * inv_2s2)
+            if sp < 1e-3:
                 continue
-            gd = guide_lum[:, gx0:gx1] - guide_lum[:, sx0:sx1]
-            rw = spatial[dx + r] * np.exp(-(gd * gd) * inv_2sr2)
-            tmp[:, gx0:gx1] += rw * s[:, sx0:sx1]
-            wsum_h[:, gx0:gx1] += rw
-        tmp /= np.maximum(wsum_h, 1e-8)
-        # ── vertical pass (guide stays original luminance) ──
-        acc = np.zeros((Hh, Ww), dtype=np.float64)
-        wsum_v = np.zeros((Hh, Ww), dtype=np.float64)
-        for dy in range(-r, r + 1):
-            gy0, gy1 = max(0, dy), min(Hh, Hh + dy)
-            sy0, sy1 = max(0, -dy), min(Hh, Hh - dy)
-            if gy1 <= gy0:
-                continue
-            # guide luminance difference along y using the original guide
-            gd = guide_lum[gy0:gy1, :] - guide_lum[sy0:sy1, :]
-            rw = spatial[dy + r] * np.exp(-(gd * gd) * inv_2sr2)
-            acc[gy0:gy1, :] += rw * tmp[sy0:sy1, :]
-            wsum_v[gy0:gy1, :] += rw
-        out[:, :, c] = acc / np.maximum(wsum_v, 1e-8)
+            g_shift = _shift2d(guide, dy, dx)
+            i_shift = _shift2d(img, dy, dx)
+            diff = g_shift - guide
+            rw = np.exp(-(diff * diff) * inv_2r2)
+            w = sp * rw  # (H, W)
+            num += i_shift * w[..., None]
+            den += w
+    out = num / den[..., None]
+    if C == 1:
+        out = out[..., 0]
     return out
 
 
-@method(
-    id="346",
-    name="Rolling Guidance",
-    category="filters",
-    new_image_contract=True,
-    tags=["abstraction", "edge-aware", "smoothing", "cartoon", "painterly", "expanded", "animation"],
-    inputs={"image_in": "IMAGE"},
-    outputs={"image": "IMAGE"},
-    params={
-        "source": {"description": "source (procedural/noise/gradient/input_image/palette/rainbow)", "default": "procedural"},
-        "radius": {"description": "large smoothing radius in px (the final abstraction scale)", "min": 4, "max": 64, "default": 24},
-        "range_sigma": {"description": "range sigma of the joint step (smaller = sharper edges preserved)", "min": 0.02, "max": 0.5, "default": 0.15},
-        "eps": {"description": "guided-filter regularization (smaller = more edge-preserving)", "min": 0.001, "max": 0.1, "default": 0.02},
-        "abstraction": {"description": "mix between original (0) and abstracted base (1)", "min": 0.0, "max": 1.0, "default": 1.0},
-        "noise_amp": {"description": "noise amplitude for generated sources", "min": 0.1, "max": 1.0, "default": 0.35},
-        "blur_sigma": {"description": "gaussian blur sigma for noise source (lower = more detail for RGF to abstract)", "min": 2, "max": 80, "default": 12},
-        "palette": {"description": "palette name for palette source", "default": "vapor"},
-        "time": {"min": 0.0, "max": 6.28, "default": 0.0},
-        "anim_mode": {"description": "animation mode (none/radius_pulse/range_sweep/abstraction_sweep)", "choices": ["none", "radius_pulse", "range_sweep", "abstraction_sweep"], "default": "none"},
-        "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
-    },
-)
-def method_rolling_guidance(out_dir: Path, seed: int, params=None):
-    """Rolling Guidance Filter — scale-rolling edge-aware image abstraction.
+def rolling_guidance(img: np.ndarray, scale: float, R: int,
+                     iterations: int) -> tuple[np.ndarray, np.ndarray]:
+    """Rolling Guidance Filter (Zhang, Shen, Xu, Jia — ECCV 2014).
 
-    Zhang, Shen, Xu & Jia, "Rolling Guidance Filter", ECCV 2014.
+    Iteratively applies a joint bilateral filter whose *spatial* sigma stays
+    fixed but whose *range* sigma shrinks each pass:
 
-    The filter progressively removes detail at increasing scales while keeping
-    strong edges crisp, producing the painterly / cartoon base used in style
-    transfer:
+        f_0 = I ;  f_{j+1} = JBF(f_j ; guide=I_lum, sigma_s=R, sigma_r=scale·½ʲ)
 
-        g = src
-        r = 1
-        while r <= radius:
-            jbf = joint_bilateral(guided_by=ORIGINAL, src=g, r_small=r, range_sigma)
-            g   = guided_filter(jbf, jbf, r=radius, eps)   # large-radius smoothing
-            r  *= 2                                            # roll the small radius up
+    Shrinking the range sigma progressively peels away finer and finer detail
+    while the fixed guidance image keeps the original large-scale edges intact.
+    After J passes `f_J` is the coarse *structure*; `I − f_J` is the *detail*
+    layer. Returns (structure, detail).
+    """
+    img = np.asarray(img, dtype=np.float64)
+    mono = img.ndim == 2
+    if mono:
+        img = img[..., None]
+    guide = (0.299 * img[..., 0] + 0.587 * img[..., 1]
+             + 0.114 * img[..., 2]).astype(np.float64)
+    f = img.copy()
+    sigma_s = float(max(1, R))
+    for j in range(iterations):
+        sigma_r = max(1e-3, scale * (0.5 ** j))
+        f = _joint_bilateral(f, guide, sigma_s, sigma_r, R)
+    structure = np.clip(f, 0.0, 1.0)
+    detail = np.clip(img - structure, -1.0, 1.0)
+    if mono:
+        structure = structure[..., 0]
+        detail = detail[..., 0]
+    return structure, detail
 
-    The joint bilateral is *range-guided by the original image*, so each pass
-    re-anchors the surviving edges to the original's strong boundaries — that is
-    the "rolling" that stops major silhouettes from dissolving. The large-radius
-    guided filter then wipes detail at the current scale. Repeating with a
-    doubled small radius strips finer-to-coarser detail in sequence.
 
-    CPU path is authoritative (scipy-free O(1) box + guided filter, separable
-    joint bilateral). Luminance of the guide drives the range weight.
+@method(id='358', name='Rolling Guidance Filter', category='filters',
+        tags=['rolling-guidance-filter', 'zhang-2014', 'edge-preserving',
+              'structure-detail-decomposition', 'texture-suppression',
+              'post-fx', 'animation'],
+        params={
+            'source': {'description': "procedural source used when no image is wired in",
+                       'choices': ['gradient', 'perlin', 'noise', 'checkerboard', 'input_image'],
+                       'default': 'perlin'},
+            'radius': {'description': 'spatial Gaussian radius of the joint bilateral pass (fixed across rolls)',
+                       'min': 1, 'max': 8, 'default': 4},
+            'scale': {'description': 'detail-separation strength: starting range sigma (larger = more detail removed)',
+                      'min': 0.02, 'max': 0.5, 'default': 0.15},
+            'iterations': {'description': 'number of rolling passes (more = remove finer detail scales)',
+                           'min': 1, 'max': 6, 'default': 4},
+            'mode': {'description': 'structure = coarse smoothed image; detail = high-frequency residual; composite = structure with detail re-weighted',
+                     'choices': ['structure', 'detail', 'composite'], 'default': 'structure'},
+            'detail_gain': {'description': 'detail re-weighting for the composite / detail output (0=flat, 1=original, >1=enhanced)',
+                            'min': 0.0, 'max': 3.0, 'default': 2.0},
+            'anim_mode': {'description': 'none = static; breathe = the procedural source flows across the canvas (filter re-applied each frame) and the detail re-weight gently pulses, so the clip visibly breathes',
+                          'choices': ['none', 'breathe'], 'default': 'none'},
+            'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 3.0, 'default': 1.0},
+            'time': {'description': 'animation phase [0, 2pi)', 'min': 0.0, 'max': 6.28, 'default': 0.0},
+        },
+        inputs={'image_in': 'IMAGE'},
+        outputs={'image': 'IMAGE', 'field': 'FIELD', 'mask': 'MASK'})
+def method_rolling_guidance(out_dir, seed: int, params=None):
+    """Rolling Guidance Filter — scale-rolling structure/detail decomposition
+    (Zhang, Shen, Xu & Jia — ECCV 2014, doi:10.1007/978-3-319-10578-9_53).
 
-    Params:
-        source:       generated source type (noise/gradient/input_image/palette/rainbow/procedural)
-        radius:       large smoothing radius in px (4-64, default 24)
-        range_sigma:  joint-step range sigma (0.02-0.5, default 0.15) — smaller keeps sharper edges
-        eps:          guided-filter regularization (0.001-0.1, default 0.02)
-        abstraction:  mix toward the abstracted base (0-1, default 1.0)
-        noise_amp:    amplitude for generated sources (0.1-1.0)
-        blur_sigma:   blur sigma for noise source (5-80)
-        palette:      palette name for palette source
-        time:         animation clock (0-6.28)
-        anim_mode:    none / radius_pulse / range_sweep / abstraction_sweep
-        anim_speed:   animation speed (0.1-5.0)
+    The filter iteratively applies a *joint bilateral* filter to the image. Each
+    pass keeps a fixed spatial sigma but halves the range sigma:
+
+        f_{j+1} = JBF(f_j ; guide = I_lum,  sigma_s = radius,
+                                      sigma_r = scale · (½)ʲ)
+
+    Because the range sigma shrinks every roll, progressively finer detail is
+    stripped away while the (fixed) guidance image anchors the original large-
+    scale edges. After J rolls the result ``f_J`` is the coarse *structure* and
+    ``I − f_J`` is the *detail* layer. This is the canonical texture/structure
+    separator and a building block for detail enhancement, edge-aware smoothing,
+    and (here) a post-FX node whose **detail** output is a clean modulation
+    target for the pipeline's abundant control/modulator nodes.
+
+    Closed form per frame (no state) -> Architecture B; the orchestrator re-calls
+    this per frame. The ``breathe`` mode flows the *procedural source* across the
+    canvas (phase = t·anim_speed, applied directly — not through sin — so t=0 and
+    t=π/2 are clearly different and we avoid the sin-phase degeneracy at t=0/π)
+    and gently pulses the *detail re-weight* (detail_gain). On smooth/low-
+    frequency content the filter's own range/scale params are near-invariant, so
+    animating the source is what makes the clip visibly breathe; the detail-gain
+    pulse also animates the detail/composite outputs for a wired (non-procedural)
+    input.
     """
     try:
         if params is None:
             params = {}
-        anim_time = float(params.get("time", 0.0))
-        anim_mode = str(params.get("anim_mode", "none"))
-        anim_speed = float(params.get("anim_speed", 1.0))
         seed_all(seed)
-        rng = np.random.default_rng(seed)
 
-        source = str(params.get("source", "noise"))
-        radius = int(params.get("radius", 24))
-        radius = max(4, min(64, radius))
-        range_sigma = float(params.get("range_sigma", 0.15))
-        range_sigma = max(0.02, min(0.5, range_sigma))
-        eps = float(params.get("eps", 0.02))
-        eps = max(0.001, min(0.1, eps))
-        abstraction = float(params.get("abstraction", 1.0))
-        abstraction = max(0.0, min(1.0, abstraction))
-        noise_amp = float(params.get("noise_amp", 0.35))
-        blur_sigma = float(params.get("blur_sigma", 12))
-        pal_name = str(params.get("palette", "vapor"))
+        source = params.get("source", "perlin")
+        R = max(1, min(10, int(params.get("radius", 4))))
+        scale = float(params.get("scale", 0.15))
+        iterations = max(1, min(6, int(params.get("iterations", 4))))
+        mode = params.get("mode", "structure")
+        detail_gain = float(params.get("detail_gain", 1.0))
+        anim_mode = params.get("anim_mode", "none")
+        anim_speed = float(params.get("anim_speed", 1.0))
+        t = float(params.get("time", 0.0))
+        _t = 0.0 if anim_mode == "none" else t * anim_speed
 
-        # ── Animation (rename t to avoid shadowing the time param) ──
-        # _osc = 0.5 - 0.5*cos(_t) spans the FULL 0→1 as t goes 0→π, so the
-        # two audit frames (t=0 and t=3.14) land on the two OPPOSITE extremes.
-        _t = anim_time * anim_speed
-        _osc = 0.5 - 0.5 * math.cos(_t)
-        if anim_mode == "radius_pulse":
-            # oscillate the FINAL large radius across its full admissible span
-            radius = int(max(4, min(64, round(4 + (64 - 4) * _osc))))
-        elif anim_mode == "range_sweep":
-            # sweep BOTH range sigma and guided-filter eps across their full
-            # admissible spans — together they are the RGF's edge-preservation
-            # knobs, and coupling them gives a clearly visible abstraction swing.
-            range_sigma = max(0.02, min(0.5, 0.02 + (0.5 - 0.02) * _osc))
-            eps = max(0.001, min(0.1, 0.001 + (0.1 - 0.001) * _osc))
-        elif anim_mode == "abstraction_sweep":
-            abstraction = 0.5 + 0.5 * math.sin(_t * 0.4)
-        # else: none — static
+        # ── Animation: 'breathe' flows the procedural SOURCE across the canvas
+        # (phase uses _t directly, not sin, so t=0 vs t=π/2 are clearly different
+        # and we avoid the sin-phase false-negative trap) AND gently pulses the
+        # detail re-weight. On smooth/low-frequency content the filter's own
+        # range/scale params are near-invariant, so animating the source is what
+        # makes the clip visibly breathe; the detail-gain pulse also animates the
+        # detail/composite outputs even for a wired (non-procedural) input. ──
+        phase = _t if anim_mode == "breathe" else 0.0
+        if anim_mode == "breathe":
+            detail_gain_eff = detail_gain * (0.4 + 1.2 * (0.5 + 0.5 * math.sin(_t)))
+        else:
+            detail_gain_eff = detail_gain
 
-        # ── Resolve source image (float32 [0,1], H×W×3) ──
-        # A wired upstream image always overrides source generation (Rule #12).
-        src = None
-        wired_path = params.get("input_image", "")
-        if wired_path:
-            try:
-                src = load_input(wired_path, int(W), int(H))
-            except (FileNotFoundError, OSError):
-                src = None
+        # ── Rule #12: a wired image always wins over the procedural source ──
+        wired = wired_source_rgb(params, int(W), int(H))
+        if wired is not None:
+            base = wired.astype(np.float64)
+        else:
+            base = _proc_source(source, seed, int(W), int(H), phase=phase)
+        base = np.clip(base.astype(np.float64), 0.0, 1.0)
+        if base.ndim == 2:
+            base = base[..., None]
 
-        if src is None:
-            if source == "gradient":
-                yy, xx = np.mgrid[:H, :W].astype(np.float32)
-                r = norm(np.sqrt((xx - W / 2) ** 2 + (yy - H / 2) ** 2))
-                src = np.stack([r, r * 0.7, 1 - r], axis=-1).clip(0, 1)
-            elif source == "palette":
-                pal = PALETTES.get(pal_name, list(PALETTES.values())[0])
-                yy, xx = np.mgrid[:H, :W].astype(np.float32)
-                r = norm(np.sqrt((xx - W / 2) ** 2 + (yy - H / 2) ** 2))
-                idx = (r * (len(pal) - 1)).astype(np.int32)
-                src = np.array(pal, dtype=np.float32)[idx] / 255.0
-            elif source == "rainbow":
-                yy, xx = np.mgrid[:H, :W].astype(np.float32)
-                r = norm(np.sqrt((xx - W / 2) ** 2 + (yy - H / 2) ** 2))
-                hue = r * 2 * math.pi
-                src = np.stack([
-                    np.sin(hue) * 0.5 + 0.5,
-                    np.sin(hue + 2.094) * 0.5 + 0.5,
-                    np.sin(hue + 4.189) * 0.5 + 0.5,
-                ], axis=-1).astype(np.float32)
-            elif source == "procedural":
-                yy, xx = np.mgrid[:H, :W].astype(np.float32)
-                # time term only active under an explicit anim mode, so
-                # anim_mode="none" is a genuinely static baseline (Step-7 contract)
-                _anim_t = _t if anim_mode != "none" else 0.0
-                g = np.sin(xx * 0.03 + yy * 0.02 + _anim_t * 0.5) * \
-                    np.cos(xx * 0.02 - yy * 0.03 + _anim_t * 0.3) * 0.5 + 0.5
-                src = np.stack([g, g * 0.6, 1 - g * 0.8], axis=-1).astype(np.float32)
-            else:  # noise / input_image fallback
-                n = rng.standard_normal((H, W, 3)).astype(np.float32) * noise_amp + 0.5
-                if blur_sigma >= 1.0:
-                    n = gaussian_filter(n, sigma=blur_sigma, mode="reflect")
-                src = norm(n)
+        structure, detail = rolling_guidance(base, scale, R, iterations)
 
-        src = np.clip(src, 0.0, 1.0).astype(np.float32)
+        if mode == "detail":
+            result = np.clip(0.5 + detail_gain_eff * detail, 0.0, 1.0)
+        elif mode == "composite":
+            result = np.clip(structure + detail_gain_eff * detail, 0.0, 1.0)
+        else:  # structure
+            result = structure
 
-        # ── Rolling Guidance Filter ──
-        guide_lum = (0.299 * src[:, :, 0] + 0.587 * src[:, :, 1] + 0.114 * src[:, :, 2]).astype(np.float32)
-        g = src.astype(np.float64)
-        r_small = 1
-        while r_small <= radius:
-            # small-radius joint bilateral, range-guided by the ORIGINAL image
-            jbf = _joint_bilateral(guide_lum, g, r_small, range_sigma)
-            # large-radius guided filter (self-guided) strips detail at this scale
-            out_ch = np.empty_like(jbf)
-            for c in range(3):
-                out_ch[:, :, c] = _guided_filter(jbf[:, :, c], jbf[:, :, c], radius, eps)
-            g = out_ch
-            r_small *= 2
+        base_s = base if base.shape[-1] == 3 else np.repeat(base, 3, axis=-1)
+        result = np.clip(result, 0.0, 1.0).astype(np.float32)
+        lum = (0.299 * result[..., 0] + 0.587 * result[..., 1]
+               + 0.114 * result[..., 2]).astype(np.float32)
+        # Meaningful spatial selection: the detail residual |I − structure|.
+        detail_mask = np.clip(np.abs(base_s.astype(np.float32)
+                                     - structure.astype(np.float32)),
+                              0.0, 1.0).mean(axis=-1).astype(np.float32)
 
-        base = np.clip(g, 0.0, 1.0).astype(np.float32)
+        # ── Scalars (Rule #4) + Field (Rule #5) + Mask (Rule #10) ──
+        write_scalars(out_dir, radius=float(R), scale=float(scale),
+                      iterations=float(iterations),
+                      detail_gain=float(detail_gain),
+                      detail_gain_eff=float(detail_gain_eff),
+                      mean_lum=float(lum.mean()))
+        write_field(out_dir, lum)
+        write_mask(out_dir, detail_mask)
 
-        if abstraction < 1.0:
-            base = (base * abstraction + src * (1.0 - abstraction)).astype(np.float32)
-            base = np.clip(base, 0.0, 1.0).astype(np.float32)
-
-        capture_frame("346", base)
-        save(base, mn(346, "Rolling Guidance"), out_dir)
-        try:
-            write_scalars(out_dir, radius=float(radius), range_sigma=float(range_sigma),
-                          eps=float(eps), abstraction=float(abstraction),
-                          guide_luminance=float(guide_lum.mean()))
-        except Exception:
-            pass
-        return base
+        capture_frame("358", result)
+        save(result, mn(358, f"Rolling Guidance {mode} s={scale:.2f} r={R} x{iterations} {anim_mode}"), out_dir)
+        return result
     except Exception as exc:
-        fallback = np.full((H, W, 3), 0.93, dtype=np.float32)
-        save(fallback, mn(346, "Rolling Guidance"), out_dir)
-        print(f"[method_346] ERROR: {exc}")
+        fallback = np.full((int(H), int(W), 3), 128, dtype=np.uint8)
+        save(fallback, mn(358, "Rolling Guidance Filter"), out_dir)
+        print(f"[method_358] ERROR: {exc}")
         return fallback

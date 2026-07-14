@@ -159,7 +159,7 @@ def method_wls_smooth(out_dir: Path, seed: int, params=None):
     Distinct from the existing filters in this family:
       • Guided filter (335): local LINEAR fit of a guide — preserves edges but
         has no explicit scale knob; WLS adds the continuous λ/α scale control.
-      • Rolling Guidance (346): iterative scale-ROLLING bilateral+guided cascade.
+      • Rolling Guidance (358): iterative scale-ROLLING bilateral+guided cascade.
       • L0 Smooth (347): sparse gradient-COUNT prior → piecewise-constant cartoon.
       • WLS (349): continuous weighted GRADIENT-MAGNITUDE penalty → smooth,
         tonal structure with controllable detail retention (the HDR decomposition).
