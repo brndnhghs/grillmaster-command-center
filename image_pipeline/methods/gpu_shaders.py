@@ -311,6 +311,10 @@ _TYPED_SHADER_NODES = [
     # Distinct from node 301 (flat 2D scalar-field slice): full 3D volume with
     # depth, self-occlusion and lighting.
     ("323", "gyroid_raymarch_typed", "GPU Raymarched Gyroid"),
+    # Categorical coverage pt.17 (2026-07-14): closed-form recursive subdivision
+    # fractal with NAMED typed controls — Sierpinski (Menger) carpet. Cells are
+    # coloured by recursion depth; the plane spins and scale breathes with time.
+    ("324", "menger_typed", "GPU Menger Carpet"),
 ]
 
 _TIME_SCALE_PARAM = {"description": "animation speed", "min": 0.0, "max": 5.0, "default": 1.0}
