@@ -442,6 +442,13 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
            "param_map": {"tile_size": "p1", "line_width": "p2"}},
     "08": {"shader": "phyllotaxis_gpu", "type": "procedural",
            "param_map": {"points": "p1", "angle": "p2", "radius_scale": "p3"}},
+    # ── 326 Hash Field (Müller et al. 2022 multiresolution hash encoding) ──
+    # CPU node stays authoritative export; this routes its live preview to the
+    # matching closed-form GLSL twin. CPU params map to the shader's u_params
+    # slots: scale->p1, detail(levels)->p2, hue->p3, contrast->p4.
+    "326": {"shader": "hash_field_gpu", "type": "procedural",
+            "param_map": {"scale": "p1", "detail": "p2", "hue": "p3",
+                          "contrast": "p4"}},
     "105": {"shader": "morph_grid_gpu", "type": "procedural",
             "param_map": {"warp_strength": "p1", "line_width": "p2"}},
     # ── P0.2 noise/cellular ──
@@ -469,6 +476,7 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     "33": {"shader": "mandelbrot_gpu", "type": "procedural", "typed": True,
            "param_map": {"zoom": "zoom", "center_x": "center_x",
                          "center_y": "center_y", "iterations": "iterations",
+                         "escape_radius": "escape_radius",
                          "color_shift": "color_shift"}},
     # 51 Burning Ship → burning_ship_gpu. color_speed/color_offset already match
     # node 51; `iterations` added so the iter slider is live (was frozen).
@@ -816,6 +824,7 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     "503": {"shader": "conformal_gpu", "type": "procedural",
             "param_map": {"scale": "p1", "warp": "p2", "anim_speed": "p4"}},
 }
+
 GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SHIMS)
 
 

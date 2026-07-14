@@ -47,10 +47,11 @@ from image_pipeline.methods.gpu_shaders import GPU_SHADER_NODE_MAP
 #             typed twins onto existing CPU nodes (16, 65, 78, 56, 81,
 #             406, 409 — math_art / patterns).
 # 228 -> 237: typed shims (417, 419, 402, 399, 350, 311, 312, 314, 68, 104,
-#             161, 477, 480 ...) + P1 sim additions.
-# 237 -> 241: +4 categorical-coverage client-GPU shims for recent
+#         161, 477, 480 ...) + P1 sim additions.
+# 256 -> 257: +1 client-GPU shim for node 326 Hash Field (multiresolution hash
+#             encoding; live preview routed to hash_field_gpu).
+EXPECTED_MAP_ENTRIES = 257
 #             gpu-twin-candidate CPU nodes (431, 432, 433, 464).
-EXPECTED_MAP_ENTRIES = 256
 
 # Simulations-category CPU nodes that are intentionally NOT GPU-mirrored yet.
 # These are Architecture-A stateful sims (discrete CA, agent/particle systems,
