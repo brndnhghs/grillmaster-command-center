@@ -206,9 +206,87 @@ class Builder:
             return None
         return res["spatial"], res["temporal"]
 
+    def _widen_all_driver_ranges(self) -> None:
+        """Map every driver's output range onto a window that actually MOVES
+        the target — fixing the dominant flat/static dead-genome cause
+        (sub-perceptual driver modulation).
+
+        The generator's ``_configure_driver`` only runs for FRESH drivers the
+        guard attaches to the head; pre-existing drivers feeding INTERMEDIATE
+        nodes keep their generation-time auto-sampled ranges (e.g.
+        min=0.0001, max=0.0079). The variance guard previously only re-configured
+        head-feeding drivers, so intermediate ones were never widened and
+        produced sub-perceptual motion → flat/static cull.
+
+        Range policy (the executor does NOT clamp injected scalars to a
+        param's schema bounds, so a wide sweep genuinely moves the param):
+          * target has a WIDE native range (>= MIN_ABS) → map onto most of it;
+          * target has a TINY/no native range → use a full [0,1] sweep, which
+            covers far more than the native window so even range-less port
+            params (phase / rotation / density_inc / noise_amp …) animate.
+        Monotonic-safe (only adds motion) → the guard's improve-or-revert
+        invariant is preserved. Idempotent for a fixed target.
+        """
+        _MIN_ABS = {"__lfo__": 1.0, "__noise1d__": 1.0, "__strobe__": 1.0,
+                    "__counter__": 20, "__ramp__": 1.0}
+        for e in self.edges:
+            src_mid = self.mid(e["src_node"])
+            if src_mid not in self.pool.scalar_drivers:
+                continue
+            params = self.node(e["src_node"])["params"]
+            lo_k, hi_k = _DRIVER_RANGE_PARAMS.get(src_mid, ("min", "max"))
+            tgt_spec = (self.pool.defs[self.mid(e["dst_node"])].get("params")
+                        or {}).get(e["dst_port"])
+            tlo = thi = None
+            if (isinstance(tgt_spec, dict) and tgt_spec.get("min") is not None
+                    and tgt_spec.get("max") is not None):
+                tlo, thi = float(tgt_spec["min"]), float(tgt_spec["max"])
+            if src_mid in ("__lfo__", "__noise1d__", "__strobe__"):
+                if tlo is not None and thi is not None \
+                        and (thi - tlo) >= _MIN_ABS[src_mid]:
+                    params[lo_k] = round(tlo, 4)
+                    params[hi_k] = round(thi, 4)
+                else:
+                    # Tiny / no native range — full sweep so the param moves.
+                    params[lo_k] = 0.0
+                    params[hi_k] = 1.0
+                if src_mid != "__strobe__":
+                    params["rate"] = round(self.rng.uniform(0.4, 1.2), 3)
+            elif src_mid == "__counter__":
+                if tlo is not None and thi is not None \
+                        and (thi - tlo) >= _MIN_ABS["__counter__"]:
+                    # Wide native range → sweep most of it for real motion
+                    # (mirrors the LFO/noise1d policy above). A counter driving
+                    # e.g. a `steps` param with range [1, 1000] must sweep the
+                    # whole window, not a fixed 0..20 sub-slice, or the target
+                    # barely moves → flat/static cull.
+                    params["start"] = int(round(tlo))
+                    params["end"] = int(round(thi))
+                else:
+                    # Tiny / no native range → wide integer sweep (>= MIN_ABS
+                    # distinct values) so the param actually moves. The
+                    # executor does not clamp injected scalars to a param's
+                    # schema bounds, so overshoot is intentional.
+                    params["start"] = 0
+                    params["end"] = int(_MIN_ABS["__counter__"])
+            elif src_mid == "__ramp__":
+                params["start"] = 0.0
+                params["end"] = 1.0
+                params["duration_frames"] = int(
+                    self.cfg.frames * self.rng.uniform(0.5, 1.0))
+                params["mode"] = self.rng.choice(["loop", "pingpong", "once"])
+            # __envelope__ has no scalar output range to widen.
+
     def _boost_head_motion(self, rng: random.Random) -> None:
         """Ensure the render head moves: widen an existing driver, attach one
         to a drivable param, or force a strong live anim_mode on a TV head."""
+        # Route 8 (2026-07-14): widen EVERY driver→numeric-param edge to a
+        # meaningful window, not just a driver feeding the head. Drivers wired
+        # to INTERMEDIATE nodes keep their tiny auto-sampled ranges; the guard
+        # previously only re-configured head-feeding drivers, so intermediate
+        # ones were never widened and produced sub-perceptual motion → flat/
+        # static cull. Reusing _configure_driver is monotonic-safe.
+        self._widen_all_driver_ranges()
         head = self.terminal_id()
         if head is None:
             return

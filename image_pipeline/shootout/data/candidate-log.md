@@ -374,3 +374,10 @@ Action: added CHEAP O(n) animated node 2D Gaussian Splatting (965). Structurally
   dense optical flow (Horn-Schunck 1981), logarithmic-spiral galaxy generator (Lin-Shu
   1964), solarize, color transfer (Reinhard 2001), or vignette/film grain. Or a typed
   uniform GPU twin / 3D-sidecar feature.
+
+## 2026-07-14 (Route 8 — finish driver-range widening batch: counter honors target range)
+- Continuation/finish of the in-progress Route 8 batch: `motifs.py` `_widen_all_driver_ranges` + new test `test_widen_all_drivers.py` (both were uncommitted from a prior interrupted run). The new test caught a REAL defect: `__counter__` hardcoded `start=0,end=20` and ignored the target's native range, so a counter driving a wide-range param (e.g. node 79 `steps` [1,1000]) swept only a 0..20 sub-slice → sub-perceptual → flat/static cull. Fixed by mirroring the LFO/noise1d policy: when the target native range >= MIN_ABS (20 distinct values) map onto it; else wide integer sweep.
+- Test hardened: replaced the incorrect `new_width > 10*width` assertion (false for already-wide/idempotent drivers) with a contract-accurate check — monotonic (never removes motion) + perceptibility floor per driver kind + bounds-only-when-target-range-wide. 9/9 pass (3 batch + 6 chop-driver tests).
+- Target class (this batch): flat/static = 201 dead genomes (static 107 + flat 94). Drivers dominate dead-method counts (__lfo__ 886, __counter__ 245, __noise1d__ 136, __ramp__ 109, __strobe__ 48, __envelope__ 43) — consistent with the sub-perceptual-modulation root cause this batch addresses.
+- NOT addressed (separate issues): timeout 97 + over-budget 30 = 127 dead (render-cost/cost-gate, needs Route 8 render-timeout work); ratings=18 (still near starved<20).
+- Commit: targeted add of `motifs.py` + `test_widen_all_drivers.py` only. Left sibling's untracked `threejs_nodes.py` untouched; a concurrent sibling cron was observed running the full pytest suite (~5h) — did not kill it.
