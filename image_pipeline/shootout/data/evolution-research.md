@@ -252,3 +252,49 @@ static-rate drops. Add `test_shootout_mutant_born_animated.py`.
 
 **Rotate index -> 5** (advisor quality: does `extract_guidance` steer toward better
 survivors? prompt/rubric design; per-node like/dislike convergence).
+
+---
+
+## 2026-07-14 — Sub-problem #6: Rating-signal poverty (active-learning acquisition)
+
+**Technique.** *Uncertainty sampling* for active learning (Lewis & Catlett,
+"Heterogeneous Uncertainty Sampling for Supervised Learning", ICML 1994) —
+query the labels for the examples the current model is *least certain* about,
+which maximizes information gain per label. For the shootout the advisor's
+taste/rating model is trained on only ~18 ratings (1.3–3.4% of genomes across
+recent runs) — a starvation signal. Randomly surfacing clips for rating is
+wasteful; instead surface the clips whose predicted rating the model is least
+confident about (predicted score nearest its decision boundary / highest
+predicted-variance across a committee). This is the standard fix for
+label-scarce regimes and directly attacks the ratings=18 poverty noted every
+run. Closely related: query-by-committee / expected-model-change acquisition.
+
+**Why it fits THIS engine.** `advisor.py` already produces guidance from
+ratings; the missing piece is *which* unrated genomes to send to a human. A
+`suggest_for_rating()` that ranks unrated genomes by model uncertainty (e.g.
+|p(rating≥4) − 0.5|, or committee vote entropy across K bootstrap taste models)
+gives a frictionless one-click rating queue (the per-node like/dislike UI
+already exists). No LLM needed for acquisition; the human provides the label,
+the loop tightens.
+
+**TARGET MODULE.** `shootout/advisor.py` (`suggest_for_rating`) +
+`session.py` (`POST /api/shootout/suggest-rating` returning top-K uncertain
+unrated genomes) + a one-click rating chip in the UI. Does NOT touch the core
+GraphExecutor.
+
+**EXPECTED EFFECT.** Rating corpus grows on *informative* clips, so the taste
+model + advisor guidance converge faster; the now-wired `seed_ids` promotion
+hook (2026-07-14) gets a richer signal. Measured as: held-out rating accuracy /
+model confidence improves faster under uncertainty-sampling acquisition than
+under random acquisition, per simulated labeling round.
+
+**VERIFICATION.** Headless test `test_shootout_rating_acquisition.py`: given a
+taste model fit on 18 ratings + N unrated genomes, assert `suggest_for_rating(K)`
+returns the K genomes with smallest |predicted − 0.5| (highest uncertainty),
+and that this set DIFFERS from a random-K set (set-overlap < 0.5, or
+rank-correlation with uncertainty-rank < 0.3); then simulate labeling the
+suggested set and assert held-out accuracy rises more than labeling a random
+set.
+
+**Rotate index -> 7** (drift / stagnation detection: detect flat dead-rate +
+flat rating mean and auto-trigger wider explore_ratio or a fresh-random reset).

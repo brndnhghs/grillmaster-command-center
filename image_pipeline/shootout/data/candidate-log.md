@@ -381,3 +381,46 @@ Action: added CHEAP O(n) animated node 2D Gaussian Splatting (965). Structurally
 - Target class (this batch): flat/static = 201 dead genomes (static 107 + flat 94). Drivers dominate dead-method counts (__lfo__ 886, __counter__ 245, __noise1d__ 136, __ramp__ 109, __strobe__ 48, __envelope__ 43) — consistent with the sub-perceptual-modulation root cause this batch addresses.
 - NOT addressed (separate issues): timeout 97 + over-budget 30 = 127 dead (render-cost/cost-gate, needs Route 8 render-timeout work); ratings=18 (still near starved<20).
 - Commit: targeted add of `motifs.py` + `test_widen_all_drivers.py` only. Left sibling's untracked `threejs_nodes.py` untouched; a concurrent sibling cron was observed running the full pytest suite (~5h) — did not kill it.
+
+## 2026-07-14 (cron run) — added CG node 487 "Galaxy Generator" + finished Route-8 orphan (threejs_nodes.py)
+- Diagnostic re-run: genomes=537, alive=186, dead/rejected=351 (65%). Dead reasons:
+  static 107, timeout 97, flat 94, over-budget 30, no-output 7, flicker 7, skipped 6,
+  node_error 3. renders>150s=131, max=547s. rated=18 (still starved <20). cheap-alive=110.
+- RESEARCH: Galaxy Generator via **Lin-Shu density-wave theory** (Lin & Shu,
+  "On the Spiral Structure of Disk Galaxies", ApJ 140:646, 1964;
+  https://ui.adsabs.harvard.edu/abs/1964ApJ...140..646L/abstract). Spiral arms are
+  the locus r = a·exp(b·θ) (logarithmic spiral); a grand-design galaxy = `arms`
+  such arms rotated by 2π/arms. Stars sampled from a bulge (exponential) + disk,
+  given a Gaussian offset perpendicular to the arm centerline (density ridge, not
+  a thin curve). The PATTERN rotates at one speed (the wave, not the material) —
+  the defining density-wave prediction and the basis of the `rotate` mode. Modern
+  CG usage: procedural galaxy/space art (blackbody star colors, filmic tonemap).
+- DUP GUARD: confirmed absent — grep for galaxy/spiral-density/density-wave hits
+  only incidental substrings (ulam_spiral, pythagorean_tree, nbody_gravity,
+  metaballs); no galaxy generator node exists. ID 487 free (CPU namespace >301).
+- FEATURE: node 487 "Galaxy Generator" (category patterns, Architecture B).
+  Params: arms, tightness, arm_spread, bulge_size, star_count, inclination,
+  rotation_speed, brightness, scheme(natural/inferno/ice/mono), anim_mode
+  (none/rotate/wind/twinkle/pulse), anim_speed, time. Cheap: ~40k stars splatted
+  + 1.4σ Gaussian glow + filmic `1-exp(-exposure·x)` tonemap -> well under 1s/frame
+  (timeout-IMMUNE). Richly animatable: rotate (coherent arms), wind (tightness
+  breathe), twinkle (per-star phase), pulse (exposure breathe) -> attacks the
+  static(107)+flat(94)=201 no-animation dead bucket if promoted into shootout graphs.
+- VERIFIED headless (8-step audit, sparse-content metric = region-Δ over lit
+  pixels + changed-pixel-fraction, since global mean-Δ is a FALSE NEGATIVE for
+  sparse/rotated/color content): none static (region-Δ=0.0000, changed-frac=0.0000);
+  rotate region-Δ=0.1445 / 30.5% changed; wind 0.1131 / 25.9%; twinkle 0.0267 / 4.9%;
+  pulse 0.0363 / 10.0%; arms 0.0902 / 26.5%; tightness 0.1090 / 24.5%; bulge 0.0453
+  / 14.3%; scheme 0.0691 / 14.3%; non-black (std=0.1515). /api/node-defs on fresh
+  port 7883 serves 487 with all 11 params + IMAGE output; Rule-8 server import clean.
+- ACTION B (finish orphan): committed the prior run's Route-8 leftover that
+  `graph.py` REQUIRES — `image_pipeline/core/threejs_nodes.py` (imported by
+  graph.py but was untracked, so a clean checkout would fail to import). Bundled
+  with `motifs.py` (`_widen_all_driver_ranges`) + `tests/test_widen_all_drivers.py`
+  (3 passed) as one hygiene commit. Keeps main shippable; addresses the
+  generation-side sub-perceptual-driver root cause for the 201 static/flat deaths.
+- RECOMMENDED NEXT: (a) GPU twin of 487 is awkward (particle population, not
+  f(uv,t)); (b) from the confirmed-absent gap scan: anamorphic streak, dense
+  optical flow (Horn-Schunck 1981), solarize, color transfer (Reinhard 2001),
+  vignette/film grain; (c) evolution sub-problem #6 (rating-signal poverty /
+  active-learning acquisition) appended to evolution-research.md; index -> 7.
