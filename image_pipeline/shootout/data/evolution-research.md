@@ -143,3 +143,48 @@ fixture; assert (b)'s prefer-set overlaps the human-high-rated parents more
 than (a)'s (Jaccard or rank-correlation delta > 0). Keep the LLM call optional
 (`advisor_enabled`) so the test runs offline. This is a measurable quality gate,
 not a vibe check.
+
+---
+
+## 2026-07-14 — Sub-problem: Cost-admission control (tail-latency + liveness prior) — IMPLEMENTED
+
+**Technique.** *Tail-latency-aware admission / percentile SLOs.* Production
+scheduling and queueing systems admit work on a HIGH PERCENTILE (P90/P99) of the
+observed service-time distribution, not the mean/median, because the tail — not
+the average — drives deadline (timeout) violations (Dean & Barroso, "The Tail at
+Scale", CACM 56(2):74–80, 2013, https://research.google/pubs/pub40801/). Pairing
+this with a **value/quality prior** to avoid rejecting high-value-but-slow work
+is standard admission control (reject only when BOTH expensive AND low expected
+value). Here "value" = empirical P(alive).
+
+**Why it fit THIS engine.** The shootout pre-render cost gate (`cost_model.py`)
+estimated render wall from per-method MEDIAN ms/frame. The median masks tail
+risk: methods that are usually cheap occasionally explode on unlucky params
+(method 120 median 75ms → 2040ms/frame, 27×; 437 3.8→742, 195×), so a genome
+drawing a slow-param instance rendered past the 300s cap while the median est
+placed it under budget → it slipped the gate → wasted the full budget. 97/537
+genomes timed out this way; only 39 were caught pre-render.
+
+**IMPLEMENTED (this run).** (1) `per_method_p90` (tail ms/frame) +
+`per_method_alive` (empirical P(alive), MIN_ALIVE_SAMPLES=4) added to the cost
+model. (2) `estimate_cost_tail_s()` gates on the P90 sum. (3) liveness-prior
+exemption: an over-budget genome whose mean P(alive) over its measured methods
+≥ `gate_liveness_floor` (0.33) is spared — protects expensive-but-dynamic clips.
+Config `cost_use_tail`/`gate_liveness_floor`; cold-start falls back to prior
+behaviour.
+
+**MEASURED EFFECT (real corpus, `is_over_budget` path).** median gate:
+recall 39/97 timeouts, false-cull 20/186 alive (10.8%). tail+liveness:
+recall 64/97, false-cull 17/186 (9.1%) — strict improvement on both axes
+(+25 timeouts caught pre-render ≈ +2h compute/corpus, fewer dynamic clips culled).
+tail-only would hit 28.5% false-cull; the exemption is what keeps precision.
+
+**VERIFICATION.** `tests/test_shootout_tail_liveness_gate.py` (7 tests): tail≥median,
+tail catches a synthetic slow-param slip-through the median misses, exemption
+spares likely-dynamic / gates likely-static, unknown-prior never exempts,
+floor=0 disables, persisted model carries new fields, and a corpus guard that
+the new gate beats the median gate on recall without raising false-cull.
+
+**FUTURE.** Mean-over-methods prior is structurally diluted (heavy sims drag it
+down); a TERMINAL-node liveness prior would sharpen the exemption further.
+
