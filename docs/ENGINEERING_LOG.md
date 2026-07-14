@@ -239,3 +239,50 @@ legitimately varies per frame).
 - Next: pivot to a high-value FEATURE or refactor. Top candidates: R7 (wire
   CLI-only quality/annotator/postprocess into server — highest user value, 5),
   or R8 (extract 3D node defs from core/graph.py — safe architecture cleanup).
+
+---
+
+## Iteration 7 — 2026-07-14
+
+### Context
+With all cheap test gaps closed, pivot to architecture cleanup. R8 / TD-07:
+`core/graph.py` held ~190 lines of client-side three.js 3D node defs
+(`_threejs_node_def`, `_MODEL_PLACEMENT_PARAMS`, `_THREEJS_POSTFX_PARAMS`,
+`_THREEJS_3D_NODE_DEFS`) with no execution logic — pure serialisable metadata.
+
+### Decision
+Extract the block into a new module `core/threejs_nodes.py` (TD-07). Keep the
+one-way dependency (graph imports threejs_nodes). Preserve the backward-compat
+alias `_THREEJS_3D_NODE_DEFS` in graph.py's namespace so `server.py` (line 36)
+and `test_3d_sidecar_render.py` (imports `_THREEJS_3D_NODE_DEFS`) keep working
+untouched. Add a regression test pinning byte-identical defs + alias presence.
+
+### Correction discovered mid-iteration
+R7 / TD-14 ("CLI-only modules not wired into server") was STALE: grepping
+server.py shows quality check (@712), postprocess filter (@719), and annotator
+demo (@723) are ALREADY wired — completed by a concurrent session. Removed from
+the backlog; ROADMAP R7 marked done-by-concurrent-work. This is why the loop
+must re-verify the *current* state, not trust the original 10-phase audit.
+
+### Action
+- Created `image_pipeline/core/threejs_nodes.py` (extracted block, public names
+  `THREEJS_3D_NODE_DEFS` / `_POSTFX_PARAMS` / `_PLACEMENT_PARAMS`).
+- Replaced the block in `graph.py` with a one-way import (alias-preserving).
+- Verified: graph.py still exposes `_THREEJS_3D_NODE_DEFS`/`_THREEJS_POSTFX_
+  PARAMS`/`_MODEL_PLACEMENT_PARAMS`; `get_all_node_defs()` returns all 10 3D
+  ids with struct-identical content vs the source module.
+- Added `test_threejs_nodes_extraction.py` (5 tests).
+- Ran dependent tests: `test_3d_sidecar_render.py` + all 6 graph tests → 35
+  passed, 17 skipped (GPU/optional). No regressions.
+- Updated TECHNICAL_DEBT (TD-07 closed, TD-14 closed-stale), ROADMAP (R8 done,
+  R7 struck), CHANGELOG, ENGINEERING_LOG, .agent_state.json.
+
+### Resulting State
+- First architecture refactor done, behavior-preserving, regression-guarded.
+  `core/graph.py` is now smaller and focused on execution. Remaining architecture
+  items: R11 (split server.py), R12 (split shaders.py), R13 (frontend), R14
+  (merge runner.py) — all larger; R9/R10 (logging/except narrowing) are small
+  quality wins still available. TD-15 (easing) and R3-feature (per-node sim
+  budget) remain open.
+- Next: a small quality win (R9 centralize logging, or R10 narrow excepts) OR
+  R3-feature (per-node sim-cache budget) — both cheap and high-value.

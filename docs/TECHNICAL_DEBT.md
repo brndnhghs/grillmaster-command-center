@@ -19,14 +19,14 @@
 | TD-04 | No param-keyframe edge-case test | Testing | Med | Low | Low | Add `_evaluate_param_track` tests | Open |
 | TD-05 | No group-node execution test | Testing | Med | Low | Low | `test_group_node_execution.py` | ✅ Closed 2026-07-14 (commit pending) |
 | TD-06 | No graph save/load persistence test | Testing | Med | Low | Low | `test_graph_persistence.py` | ✅ Closed 2026-07-14 (commit pending) |
-| TD-07 | `core/graph.py` holds 3D node defs (~130+ lines, client-side concern) | Architecture | Low | Med | Low | Extract to `core/threejs_nodes.py` | Open |
+| TD-07 | `core/graph.py` holds 3D node defs (~130+ lines, client-side concern) | Architecture | Low | Med | Low | Extract to `core/threejs_nodes.py` | ✅ Closed 2026-07-14 (commit pending) |
 | TD-08 | `server.py` monolith (3k lines, ~30 endpoints) | Architecture | Med | High | Med | Split into `routes/` package | Open |
 | TD-09 | `core/shaders.py` monolith (9.4k lines) | Architecture | Low | High | Low | Split procedurals/postprocess/engine | Open |
 | TD-10 | `ui/index.html` monolith (9.7k lines) | Architecture | Low | High | Med | Extract css/js modules | Open |
 | TD-11 | Two execution engines (`runner.py` CLI + server direct) | Architecture | Med | High | Med | Merge caching/parallelism into executor | Open |
 | TD-12 | `print()` calls in production code (`graph.py`, `runner.py`, `registry.py`, `server.py`) | Quality | Low | Low | Low | Route through `logging` | Open |
 | TD-13 | 15+ bare `except Exception:` in `server.py` swallow real errors | Stability | Med | Low | Low | Narrow + log | Open |
-| TD-14 | CLI-only modules (`quality`, `annotator`, `postprocess`) not wired to server | Feature | Med | Med | Low | Expose via render-sequence / admin | Open |
+| TD-14 | CLI-only modules (`quality`, `annotator`, `postprocess`) not wired to server | Feature | Med | Med | Low | STALE — already wired (quality @server:712, postprocess filter @719, annotator demo @723). Closed by concurrent work; removed from backlog | Closed (stale) 2026-07-14 |
 | TD-15 | Keyframe easing contract footguns: (a) easing is read from the SEGMENT'S END keyframe (`kf_b`), so an easing set on the *start* keyframe is silently ignored; (b) an unknown/misspelled easing name (e.g. `"ease_in"` instead of `"ease-in"`) silently falls back to linear with no warning. Both are silent-correctness traps. Fix: normalize/validate easing names at keyframe ingest and document the end-keyframe convention (or switch to start-keyframe convention). | Quality | Low | Low | Low | Add normalization + warn; document contract | Open |
 
 ---

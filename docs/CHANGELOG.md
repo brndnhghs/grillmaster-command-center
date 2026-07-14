@@ -56,6 +56,16 @@
   TD-05, TD-06). The executor's riskiest branches, group recursion, and graph
   persistence are under regression guard. Remaining: TD-03 feature (per-node
   sim-cache budget), TD-15 (easing normalize), architecture refactors R7–R14.
+- **Refactor (R8/TD-07): extracted three.js 3D node definitions** out of
+  `core/graph.py` into `core/threejs_nodes.py` (the ~190-line block of
+  `_threejs_node_def`, `_MODEL_PLACEMENT_PARAMS`, `_THREEJS_POSTFX_PARAMS`,
+  `_THREEJS_3D_NODE_DEFS`). `graph.py` now imports them one-way; the backward-
+  compat alias `_THREEJS_3D_NODE_DEFS` is preserved so `server.py` and
+  `test_3d_sidecar_render.py` are untouched. Behavior-preserving — verified
+  byte-identical defs via `test_threejs_nodes_extraction.py` (5 tests).
+- **Corrected stale ROADMAP/TD-14**: the CLI-only modules (quality/annotator/
+  postprocess) are ALREADY wired into server.py (quality @712, postprocess @719,
+  annotator demo @723) — completed by concurrent work. Removed from backlog.
 
 ## Pre-history (selected, from git log)
 
