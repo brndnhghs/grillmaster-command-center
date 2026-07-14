@@ -15,8 +15,13 @@ Fix: bias TV nodes away from ``none`` modes, and add a safety net in
 undriven TV node's frozen mode to a live choice. This test locks both in:
 across many fresh gen-0 genomes, every TV terminal is either driver-driven or
 has a live (non-``none``) animation mode — i.e. the trivially-static risk is
-~0. It is purely structural (no rendering), so it runs in well under the
-cron time budget.
+~0. NOTE: this test calls ``sample_valid_genome``, which runs the real repair /
+variance pipeline and RENDERS each generated genome (incl. heavy methods such as
+nishita_sky / weighted_voronoi_stippling). With the gene pool having grown, that
+makes it a long-running guard — it is therefore marked ``slow`` and excluded
+from the default fast suite (run explicitly with ``-m slow``). The structural
+born-animated invariant (no driver + frozen mode) is still locked in well under
+the cron budget by ``test_fallback_path_born_animated``.
 
 Mirrors test_shootout_driver_modulation.py (which guards the SCALAR->param
 injection path) but at the sampling layer.
@@ -25,9 +30,13 @@ from __future__ import annotations
 
 import random
 
+import pytest
+
 import image_pipeline.methods  # noqa: F401 — registers the node catalog
 from image_pipeline.shootout.config import ShootoutConfig
-from image_pipeline.shootout.generator import build_gene_pool, DEFAULT_CONFIG
+from image_pipeline.shootout.generator import (
+    build_gene_pool, DEFAULT_CONFIG, random_graph, apply_fallback_driver_policy,
+)
 from image_pipeline.shootout.repair import sample_valid_genome
 
 CFG = ShootoutConfig()
@@ -79,7 +88,9 @@ def _terminal_static_risk(genome: dict) -> bool:
     return _has_none_mode(tmid, term.get("params", {}))
 
 
+@pytest.mark.slow
 def test_tv_terminals_born_animated():
+
     rng = random.Random(20260712)
     n = 400
     static_risk = 0
@@ -99,4 +110,34 @@ def test_tv_terminals_born_animated():
         f"no driver and a frozen 'none' mode renders static and gets culled. "
         f"The sampler must bias TV nodes away from 'none' modes and the "
         f"driver policy must guarantee a live mode on undriven TV terminals."
+    )
+
+
+def test_fallback_path_born_animated():
+    """Route 8 (2026-07-13): the ``random_graph`` *fallback* (used when
+    ``compose_graph`` throws) must also ship born-animated genomes. Before the
+    fix, the fallback never ran ``apply_driver_policy`` / ``_terminal_animated_floor``,
+    so its static-rejection rate was ~2x the motif path. This forces the fallback
+    (calls ``random_graph`` directly, skipping ``compose_graph``) and asserts the
+    same TV-terminal invariant the motif path already guarantees.
+    """
+    rng = random.Random(20260713)
+    n = 300
+    static_risk = 0
+    tv_terminals = 0
+    for _ in range(n):
+        raw = random_graph(POOL, CFG, rng)
+        g = apply_fallback_driver_policy(POOL, CFG, rng, None, raw)
+        term = max(g["nodes"], key=lambda nd: nd.get("render", False))
+        if _is_tv(term["method_id"]):
+            tv_terminals += 1
+        if _terminal_static_risk({"graph": g}):
+            static_risk += 1
+    frac = static_risk / max(tv_terminals, 1)
+    assert tv_terminals > 0, "fallback produced no TV terminals (unexpected)"
+    assert frac <= _MAX_TRIVIALLY_STATIC_FRAC, (
+        f"fallback: {static_risk}/{tv_terminals} TV terminals trivially static "
+        f"({frac:.1%} > {_MAX_TRIVIALLY_STATIC_FRAC:.0%}). The random_graph "
+        f"fallback must run apply_driver_policy so undriven TV terminals get a "
+        f"live animation mode."
     )

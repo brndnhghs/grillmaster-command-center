@@ -448,3 +448,12 @@
   guarantee every bred/explored genome is "born animated" (≥1 driver→animatable
   SCALAR-port wiring, or ≥1 node with anim_mode≠none). Detailed proposal +
   headless test plan in evolution-research.md (2026-07-13 entry).
+
+
+## 2026-07-13 — autonomous run (Autostereogram #954, SIRDS)
+- genomes=525 alive=180 dead/rejected=345 (66%) renders>150s=126 median_wall=23.6s; cheap-alive(recombine)=107
+- RESEARCH: Autostereogram / Single-Image Random-Dot Stereogram (SIRDS) — Thimbleby, Inglis & Witten, "Displaying 3D Images: Algorithms for Single Image Random Dot Stereograms", 1991 (https://www.researchgate.net/publication/220578478_Displaying_3D_images). Depth encoded as horizontal pixel disparity; nearer surfaces get larger dot separation.
+- DUP GUARD (again): first candidate was Curl-Noise — already implemented x3 (patterns/curl_noise.py #314, simulations/curl_noise_flow.py, math_art/flow_field.py #510) AND Fractal Flames (fractals/fractal_flame.py), Superformula/Gielis, De Jong/Clifford already present. grep node NAMES before building. Pivoted to genuinely-open Autostereogram (0 grep hits for autostereogram/magic_eye).
+- FEATURE: node 954 "Autostereogram" (category patterns, Architecture B). Params: depth_mode(sphere/torus/pyramid/terrain/ripple), separation, depth_scale, tile_size, colorful, pattern(dots/checker/grid/plasma), anim_mode(none/bob/rotate/wave), anim_speed, time. Verified headlessly: non-black std=74; none=static delta=0.0000; bob changed-frac=0.077, rotate=0.125, wave=0.079 (changed-pixel-fraction, NOT mean-delta — stereogram is a displacement technique so mean-delta is a false-negative); separation 10 to 60 live (changed-frac=0.030); 0.19s/frame. /api/node-defs serves it on throwaway :7871.
+- TOP-3 rated: [None(5), None(5), None(5)] — genome id/rating None again; no seed_ids promotion hook (carried gap).
+- RECOMMENDATION (carried + new): (1) exclude pure-control __*__ scalar/mask nodes from the dead-rate denominator (they emit no image, so the 66 percent headline is inflated; hotspots __lfo__ 868 / __counter__ 239 / __noise1d__ 134 / __ramp__ 108 are control nodes, not image methods); (2) adopt structural/perceptual liveness (changed-pixel-fraction or optical-flow variance) so displacement-type animation (stereograms, LIC, warps) is not culled as static by mean-luminance temporal variance; (3) next technique: depth/relief saturated (HBAO #425) — try a closed-form iridescence/thin-film variant or 2D SSAO-on-wired-FIELD.

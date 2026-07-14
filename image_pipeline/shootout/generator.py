@@ -413,6 +413,27 @@ def random_graph(pool: GenePool, cfg: ShootoutConfig, rng: random.Random,
     return {"version": 1, "name": "", "nodes": nodes, "edges": edges}
 
 
+def apply_fallback_driver_policy(pool: GenePool, cfg: ShootoutConfig,
+                                 rng: random.Random, bias: SamplingBias | None,
+                                 graph: dict) -> dict:
+    """Run the born-animated driver policy (``apply_driver_policy`` +
+    ``_terminal_animated_floor``) over a raw ``random_graph`` fallback so its
+    genomes are animated exactly like ``compose_graph`` output. Failure-soft:
+    returns the *unchanged* graph if the policy ever throws on a malformed
+    fallback. Route 8 (2026-07-13).
+    """
+    try:
+        from . import motifs as _m
+        b = _m.Builder(pool, cfg, rng, bias)
+        b.nodes = list(graph.get("nodes", []))
+        b.edges = list(graph.get("edges", []))
+        b._n = len(b.nodes)
+        _m.apply_driver_policy(b)
+        return {"version": 1, "name": "", "nodes": b.nodes, "edges": b.edges}
+    except Exception:
+        return graph
+
+
 def random_genome(pool: GenePool | None = None,
                   cfg: ShootoutConfig = DEFAULT_CONFIG,
                   rng: random.Random | None = None,
@@ -437,6 +458,12 @@ def random_genome(pool: GenePool | None = None,
         graph = None
     if graph is None:
         graph = random_graph(pool, cfg, rng, bias)
+        # Route 8 (2026-07-13): the random_graph *fallback* must obey the same
+        # born-animated driver policy as compose_graph. Historically the
+        # fallback shipped genomes that were never run through the policy, so
+        # its static-rejection rate was ~2x the motif path. Run the policy so
+        # fallback genomes are born animated too.
+        graph = apply_fallback_driver_policy(pool, cfg, rng, bias, graph)
     graph["name"] = gid
     return {
         "genome_id": gid,
