@@ -72,6 +72,14 @@ THREEJS_POSTFX_PARAMS: dict[str, dict] = {
     "lens_distortion": {"description": "lens distortion (barrel/pincushion): +wide-angle, -telephoto, 0 = off", "min": -1, "max": 1, "default": 0},
     "lens_distortion_scale": {"description": "lens distortion radial falloff power (1 = quadratic, 2 = cubic bulge)", "min": 0.5, "max": 3, "default": 1.0},
     "lens_distortion_anim": {"description": "lens breathing amplitude (slow sinusoidal zoom — makes a static scene read as alive; 0 = off)", "min": 0, "max": 1, "default": 0},
+    # Screen-Space Ambient Occlusion (SSAO) — depth-aware crevice darkening.
+    # The headless sidecar renders the scene a second time with a normal+depth
+    # override material and compares each pixel's depth against its
+    # hemisphere-sampled neighbours; crevices darken. 0 = off (direct path).
+    "ssao": {"description": "screen-space ambient occlusion strength (0 = off)", "min": 0, "max": 2, "default": 0},
+    "ssao_radius": {"description": "SSAO sampling radius (fraction of screen)", "min": 0.05, "max": 0.6, "default": 0.3},
+    "ssao_bias": {"description": "SSAO depth bias (occlusion threshold — larger skips near-self)", "min": 0.0, "max": 0.1, "default": 0.01},
+    "ssao_power": {"description": "SSAO falloff exponent (higher = tighter, darker contact shadows)", "min": 0.5, "max": 4.0, "default": 1.5},
 }
 
 THREEJS_3D_NODE_DEFS: dict[str, dict] = {

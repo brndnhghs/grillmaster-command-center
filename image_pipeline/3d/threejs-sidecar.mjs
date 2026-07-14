@@ -427,6 +427,10 @@ function buildScene(nodes, edges, frame = 0) {
           lens_distortion:     resolveParam(node, 'lens_distortion', 0),
           lens_distortion_scale: resolveParam(node, 'lens_distortion_scale', 1.0),
           lens_distortion_anim:   resolveParam(node, 'lens_distortion_anim', 0),
+          ssao:          resolveParam(node, 'ssao', 0),
+          ssao_radius:   resolveParam(node, 'ssao_radius', 0.3),
+          ssao_bias:     resolveParam(node, 'ssao_bias', 0.01),
+          ssao_power:    resolveParam(node, 'ssao_power', 1.5),
         };
 
         for (const [port, obj] of Object.entries(wired)) {
@@ -772,6 +776,93 @@ void main() {
 }
 `;
 
+// ── Screen-Space Ambient Occlusion (SSAO) ───────────────────────────────────
+// Reference technique: Crytek "Finding Next Gen: CryEngine 2" (Mittring 2007)
+// and Jimenez et al. "Image-Based Lens Flares / Scalable SSAO" (SIGGRAPH 2016).
+// Approach: render the scene a second time with a normal+depth *override*
+// material into a packed RGBA8 target (rgb = view-space normal encoded to
+// [0,1], a = linear depth / camera-far). Then, for each pixel, sample a fixed
+// hemisphere kernel (rotated per-pixel to break up banding), compare each
+// sample's stored depth against the depth expected along the surface normal,
+// and accumulate occlusion where a sampled neighbour is closer than expected
+// (i.e. it belongs to geometry that blocks ambient light). Crevice / contact
+// areas darken; flat open surfaces stay lit. Operates in sRGB display space on
+// the already-tone-mapped scene color (real-time AO approximation).
+const _SSAO_NORMAL_DEPTH = new THREE.ShaderMaterial({
+  uniforms: { uFar: { value: 100.0 } },
+  vertexShader: `
+    varying vec3 vN;
+    varying float vZ;
+    void main() {
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      vN = normalize(normalMatrix * normal);
+      vZ = -mv.z;
+      gl_Position = projectionMatrix * mv;
+    }
+  `,
+  fragmentShader: `
+    uniform float uFar;
+    varying vec3 vN;
+    varying float vZ;
+    void main() {
+      gl_FragColor = vec4(normalize(vN) * 0.5 + 0.5, clamp(vZ / uFar, 0.0, 1.0));
+    }
+  `,
+});
+
+// Fixed 16-sample hemisphere kernel (golden-angle spiral, z in [0,1]).
+const _SSAO_KERNEL = [];
+(function () {
+  for (let i = 0; i < 16; i++) {
+    const t = (i + 0.5) / 16.0;
+    const phi = i * 2.39996323; // golden angle
+    const sc = Math.sqrt(1.0 - t * t);
+    _SSAO_KERNEL.push(new THREE.Vector3(Math.cos(phi) * sc, Math.sin(phi) * sc, t));
+  }
+})();
+
+const _SSAO = `
+uniform sampler2D tDiffuse;       // scene color (sRGB, tone-mapped)
+uniform sampler2D tNormalDepth;   // rgb = normal*0.5+0.5, a = linear depth / far
+uniform vec2 uResolution;
+uniform float uRadius;            // sampling radius (screen fraction)
+uniform float uIntensity;         // overall strength
+uniform float uBias;              // occlusion depth threshold
+uniform float uPower;             // falloff exponent
+uniform vec3 uKernel[16];         // hemisphere sample directions
+varying vec2 vUv;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453123); }
+void main() {
+  vec4 base = texture2D(tDiffuse, vUv);
+  vec4 nd = texture2D(tNormalDepth, vUv);
+  float depth = nd.a;                       // linear depth / far, [0,1]
+  if (depth >= 0.999) { gl_FragColor = base; return; }   // background: no AO
+  vec3 N = normalize(nd.rgb * 2.0 - 1.0);
+  float r = uRadius * (0.1 + depth);        // perspective: smaller radius far away
+  float angle = hash(vUv * uResolution) * 6.2831853;
+  float ca = cos(angle), sa = sin(angle);
+  float occ = 0.0;
+  for (int i = 0; i < 16; i++) {
+    vec3 s = uKernel[i];
+    vec2 off = vec2(s.x * ca - s.y * sa, s.x * sa + s.y * ca);  // per-pixel rotate
+    vec2 suv = vUv + off * r;
+    float sd = texture2D(tNormalDepth, suv).a;
+    float expected = depth - s.z * r * 0.5;   // depth along the normal hemisphere
+    // Soft (continuous) occlusion weight: a closer neighbour contributes
+    // proportionally to how much closer it is, instead of a hard on/off step.
+    // This keeps `uIntensity` (strength) genuinely live — a low strength gives
+    // gentle crevice darkening, a high strength approaches full contact shadow,
+    // without the per-sample count saturating at 16/16.
+    float w = clamp((expected - sd) / max(uBias, 1e-4), 0.0, 1.0);
+    occ += w;
+  }
+  occ /= 16.0;
+  float ao = clamp(1.0 - occ * uIntensity, 0.0, 1.0);
+  ao = pow(ao, uPower);
+  gl_FragColor = vec4(base.rgb * ao, base.a);
+}
+`;
+
 function renderWithPostFX(renderer, scene, camera, w, h, fx, frame = 0) {
   const rtOpts = {
     minFilter: THREE.LinearFilter,
@@ -789,13 +880,53 @@ function renderWithPostFX(renderer, scene, camera, w, h, fx, frame = 0) {
   renderer.setRenderTarget(sceneRT);
   renderer.render(scene, camera);
 
+  // ── Screen-Space Ambient Occlusion (depth-aware, additive) ──
+  // Second render with a normal+depth override material into a packed RT, then
+  // a fullscreen SSAO pass darkens crevices. When fx.ssao == 0 the whole block
+  // is skipped and litTex stays the raw scene color (direct path untouched).
+  let normalDepthRT = null;
+  let ssaoRT = null;
+  let litTex = sceneRT.texture;
+  if (fx.ssao > 0) {
+    normalDepthRT = new THREE.WebGLRenderTarget(w, h, { ...rtOpts, depthBuffer: true });
+    const _prevBg = scene.background;
+    const _tmpCol = new THREE.Color();
+    renderer.getClearColor(_tmpCol);
+    const _tmpA = renderer.getClearAlpha();
+    _SSAO_NORMAL_DEPTH.uniforms.uFar.value = camera.far || 100.0;
+    scene.background = null;
+    renderer.setRenderTarget(normalDepthRT);
+    renderer.setClearColor(0x000000, 1.0);
+    renderer.clear(true, true, true);
+    scene.overrideMaterial = _SSAO_NORMAL_DEPTH;
+    renderer.render(scene, camera);
+    scene.overrideMaterial = null;
+    scene.background = _prevBg;
+    renderer.setClearColor(_tmpCol, _tmpA);
+
+    ssaoRT = new THREE.WebGLRenderTarget(w, h, { ...rtOpts, depthBuffer: false });
+    const ssaoMat = _fsMat(_SSAO, {
+      tDiffuse: { value: sceneRT.texture },
+      tNormalDepth: { value: normalDepthRT.texture },
+      uResolution: { value: new THREE.Vector2(w, h) },
+      uRadius: { value: fx.ssao_radius },
+      uIntensity: { value: fx.ssao },
+      uBias: { value: fx.ssao_bias },
+      uPower: { value: fx.ssao_power },
+      uFar: { value: camera.far || 100.0 },
+      uKernel: { value: _SSAO_KERNEL },
+    });
+    _fsRender(renderer, ssaoRT, ssaoMat);
+    litTex = ssaoRT.texture;
+  }
+
   let bloomTex = null;
   let bloomRTs = null;
   if (fx.bloom > 0) {
     const a = new THREE.WebGLRenderTarget(w, h, { ...rtOpts, depthBuffer: false });
     const b = new THREE.WebGLRenderTarget(w, h, { ...rtOpts, depthBuffer: false });
     const bright = _fsMat(_BLOOM_BRIGHT, {
-      tDiffuse: { value: sceneRT.texture },
+      tDiffuse: { value: litTex },
       threshold: { value: fx.bloom_threshold },
       knee: { value: fx.bloom_knee },
     });
@@ -829,7 +960,7 @@ function renderWithPostFX(renderer, scene, camera, w, h, fx, frame = 0) {
     : null;
 
   const comp = _fsMat(_COMPOSITE, {
-    tDiffuse: { value: sceneRT.texture },
+    tDiffuse: { value: litTex },
     tBloom: { value: bloomTex },
     hasBloom: { value: bloomTex ? 1 : 0 },
     bloomIntensity: { value: fx.bloom },
@@ -927,6 +1058,8 @@ function renderWithPostFX(renderer, scene, camera, w, h, fx, frame = 0) {
   if (caRT) caRT.dispose();
   if (grainRT) grainRT.dispose();
   if (radialRT) radialRT.dispose();
+  if (ssaoRT) ssaoRT.dispose();
+  if (normalDepthRT) normalDepthRT.dispose();
   renderer.setRenderTarget(null);
 }
 
@@ -971,7 +1104,7 @@ function renderSceneToPng(graphNodes, graphEdges, width, height, frame) {
   // unchanged direct render, so this feature is purely additive. Any
   // non-default value engages the render-target pipeline.
   const fx = scene._gmPostFX || {};
-  const fxEngaged = !!(fx.bloom || fx.vignette || fx.fxaa || fx.chromatic || fx.grain || fx.radial_blur ||
+  const fxEngaged = !!(fx.bloom || fx.vignette || fx.fxaa || fx.chromatic || fx.grain || fx.ssao > 0 || fx.radial_blur ||
       fx.lens_distortion !== 0 || fx.lens_distortion_anim > 0 ||
       fx.brightness !== 1 || fx.contrast !== 1 || fx.saturation !== 1);
 

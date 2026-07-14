@@ -174,7 +174,8 @@ def test_server_3d_nodes_exposed_in_node_defs():
         assert nd.get("outputs") or nd.get("inputs"), f"{mid}: no inputs/outputs"
         # Post-FX params must be mirrored on both Scene Render nodes.
         if mid in ("__scene_render__", "__scene3d__"):
-            for p in ("bloom", "vignette", "fxaa", "fx_saturation"):
+            for p in ("bloom", "vignette", "fxaa", "fx_saturation",
+                      "ssao", "ssao_radius", "ssao_bias", "ssao_power"):
                 assert p in nd.get("params", {}), f"{mid}: post-FX param '{p}' missing"
 
 
