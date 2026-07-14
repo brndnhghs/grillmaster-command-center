@@ -105,14 +105,41 @@ class GenePool:
     _CLOCK_PARAMS = frozenset({"time", "time_scale", "phase",
                                   "dt", "global_frame", "total_frames"})
 
+    # Architecture-A (no "time" param) methods run an internal sim loop and
+    # cache their state across frames; the executor re-injects a driver scalar
+    # each frame, but these params are consumed ONCE at sim initialisation, so
+    # modulating them cannot move the clip — it stays static and is culled as
+    # dead. Route 8 (2026-07-14): exclude them from driver targets for Arch-A
+    # methods so the born-animated floor / driver draw prefer a per-frame-live
+    # param instead. (Name-hint based: heuristic but strictly conservative —
+    # dropping a rarely-live target only ever removes an inert driver edge.)
+    _INIT_ONLY_HINTS = (
+        "seed", "n_particles", "num_particles", "particle_count",
+        "n_iterations", "iterations", "n_steps", "steps", "substeps",
+        "samples", "grid_div", "grid_size", "grid_w", "grid_h",
+        "cell_size", "resolution", "n_points", "num_points",
+        "n_agents", "population", "count", "n_cells",
+    )
+
     def driver_targets(self, method_id: str) -> list[str]:
         """Ports a scalar driver can legally feed: auto param ports plus
         declared scalar structural inputs (speed/rate/… on sims).
-        Executor-owned clock params are excluded (see _CLOCK_PARAMS)."""
+        Executor-owned clock params are excluded (see _CLOCK_PARAMS); for
+        Architecture-A methods (no "time" param) init-only params are also
+        excluded because they are consumed once at sim init and cannot
+        animate the clip."""
         d = self.defs[method_id]
         cands = self.wireable_params(method_id) + \
             [p for p, t in _declared_ports(d) if t == "scalar"]
-        return [p for p in cands if p not in self._CLOCK_PARAMS]
+        is_arch_a = "time" not in (d.get("params") or {})
+        out = []
+        for p in cands:
+            if p in self._CLOCK_PARAMS:
+                continue
+            if is_arch_a and p in self._INIT_ONLY_HINTS:
+                continue
+            out.append(p)
+        return out
 
 
 _POOL_CACHE: dict[tuple, GenePool] = {}
