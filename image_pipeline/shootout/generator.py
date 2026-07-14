@@ -93,12 +93,26 @@ class GenePool:
     def wireable_params(self, method_id: str) -> list[str]:
         return list(self.defs[method_id].get("param_ports") or [])
 
+    # Executor-owned timeline/clock params. A CHOP driver may legally
+    # wire to them (they are scalar), but driving them does NOT move
+    # pixels: `time`/`phase` are the injected animation clock,
+    # `time_scale`/`dt` are the pipeline's speed/timestep, `global_frame`
+    # is the frame counter. Empirically an LFO -> time_scale yields
+    # EXACT-0 frame-to-frame variance and the clip is culled as
+    # static/flat. Route 8 (2026-07-14): exclude them so
+    # _ensure_animated / the p_driver draw prefer a pixel-moving
+    # visual/structural param (weight_scale, frequency, amplitude, ...).
+    _CLOCK_PARAMS = frozenset({"time", "time_scale", "phase",
+                                  "dt", "global_frame", "total_frames"})
+
     def driver_targets(self, method_id: str) -> list[str]:
         """Ports a scalar driver can legally feed: auto param ports plus
-        declared scalar structural inputs (speed/rate/… on sims)."""
+        declared scalar structural inputs (speed/rate/… on sims).
+        Executor-owned clock params are excluded (see _CLOCK_PARAMS)."""
         d = self.defs[method_id]
-        return self.wireable_params(method_id) + \
+        cands = self.wireable_params(method_id) + \
             [p for p, t in _declared_ports(d) if t == "scalar"]
+        return [p for p in cands if p not in self._CLOCK_PARAMS]
 
 
 _POOL_CACHE: dict[tuple, GenePool] = {}
