@@ -69,6 +69,17 @@
   so a broken progress hook is diagnosable instead of silently swallowed.
   `graph.py` now has zero `print()`. `server.py`/`runner.py`/`registry.py`
   logging centralization remains (R9 partial). 40 graph tests still pass.
+- **Feature (R3 / TD-03 feature half): per-node sim-cache byte budget**.
+  Added `SIM_CACHE_NODE_MAX_BYTES` (1.4 GB, just under the global 1.5 GB cap so
+  the documented common-case sim stores in full — non-destructive default). New
+  `_store_sim()` helper bounds a single sim's cached bytes: an over-sized sim is
+  subsampled with an even-spread stride (preserves both endpoints → full-duration
+  playback coverage at lower temporal resolution) instead of letting one node
+  monopolise the cache or dropping mid-sequence frames. Replaced both Arch-A
+  store sites (capture @799, sidecar @1171); extracted the shared
+  `_sim_entry_bytes()` helper. `test_sim_cache_per_node_budget.py` (5 tests)
+  covers under-budget passthrough, oversized subsample, even-spread endpoints,
+  empty no-op, and that global eviction still runs afterwards. 45 graph tests pass.
 - **Corrected stale ROADMAP/TD-14**: the CLI-only modules (quality/annotator/
   postprocess) are ALREADY wired into server.py (quality @712, postprocess @719,
   annotator demo @723) — completed by concurrent work. Removed from backlog.

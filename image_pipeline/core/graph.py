@@ -424,6 +424,15 @@ def _write_error_placeholder(node_dir: Path, write: bool = True) -> np.ndarray:
     return arr_u8.astype(np.float32) / 255.0
 
 
+def _sim_entry_bytes(frames: list) -> int:
+    """Total byte size of a cached sim's image frames (TD-03)."""
+    total = 0
+    for f in frames:
+        a = f.get("image") if isinstance(f, dict) else f
+        if isinstance(a, np.ndarray):
+            total += a.nbytes
+    return total
+
 class GraphExecutor:
     """Execute a node graph for one or more frames."""
 
@@ -431,6 +440,16 @@ class GraphExecutor:
     # float32 RGB is ~1.4 GB per node; without a cap the process grows without
     # bound (BUG-8a). Oldest entries are evicted first.
     SIM_CACHE_MAX_BYTES = 1_500_000_000
+
+    # Per-node ceiling on a single sim's cached bytes (TD-03 feature half).
+    # A 300-frame sim at 768x512 float32 RGB is ~1.4 GB; the global cap above
+    # would let one such sim occupy almost the entire budget and starve every
+    # other node's cache. This bound subsamples an *over-sized* single sim to
+    # fit (keeping full-duration coverage at lower temporal resolution) so no
+    # one node can monopolise the cache. Set just under the global cap so the
+    # documented common-case sim stores in full and only genuinely oversized
+    # sims are subsampled (non-destructive default behaviour).
+    SIM_CACHE_NODE_MAX_BYTES = 1_400_000_000
 
     def __init__(self, out_dir: Path, fps: int = 24, in_memory: bool = False,
                  audit_to_disk: bool = True):
@@ -479,22 +498,43 @@ class GraphExecutor:
         """
         protect = protect or set()
 
-        def _entry_bytes(frames: list) -> int:
-            total = 0
-            for f in frames:
-                a = f.get("image") if isinstance(f, dict) else f
-                if isinstance(a, np.ndarray):
-                    total += a.nbytes
-            return total
-
-        total = sum(_entry_bytes(v) for v in self._sim_cache.values())
+        total = sum(_sim_entry_bytes(v) for v in self._sim_cache.values())
         for key in list(self._sim_cache):  # oldest-first (dict preserves insertion)
             if total <= self.SIM_CACHE_MAX_BYTES:
                 break
             if key[0] in protect:
                 continue
-            total -= _entry_bytes(self._sim_cache.pop(key))
+            total -= _sim_entry_bytes(self._sim_cache.pop(key))
             self._sim_params_hash.pop(key[0], None)
+
+    def _store_sim(self, node_id: str, seed: int, frames: list,
+                     protect: set[str] | None = None) -> None:
+        """Cache a simulation's frames, bounding the entry to SIM_CACHE_NODE_MAX_BYTES.
+
+        If the raw sim exceeds the per-node budget, deterministically subsample
+        (keep every Nth frame) so playback still spans the full duration — just
+        at lower temporal resolution — instead of letting one node hog the cache
+        or dropping frames from the middle. Then run the global eviction pass.
+        """
+        if not frames:
+            return
+        total = _sim_entry_bytes(frames)
+        if total > self.SIM_CACHE_NODE_MAX_BYTES:
+            # Subsample to fit while preserving FULL-DURATION coverage: keep an
+            # even spread of frames including both endpoints (not frames[::stride],
+            # which collapses to a single leading frame for small over-runs).
+            want = max(1, int(self.SIM_CACHE_NODE_MAX_BYTES * len(frames) / total))
+            if want < len(frames):
+                idx = np.linspace(0, len(frames) - 1, want).round().astype(int)
+                seen = set()
+                kept = []
+                for i in idx:
+                    if i not in seen:
+                        seen.add(i)
+                        kept.append(frames[i])
+                frames = kept
+        self._sim_cache[(node_id, seed)] = frames
+        self._evict_sim_cache(protect)
 
     def execute(
         self,
@@ -796,9 +836,8 @@ class GraphExecutor:
                         sim_frames = [_arr]
 
                 if sim_frames:
-                    self._sim_cache[sim_cache_key] = sim_frames
+                    self._store_sim(node_id, seed, sim_frames, self._active_node_ids)
                     self._sim_params_hash[node_id] = params_hash
-                    self._evict_sim_cache(self._active_node_ids)
 
                     # Loop the cooked frames (matches the cache-hit path above).
                     arr = sim_frames[frame % len(sim_frames)]
@@ -1168,7 +1207,7 @@ class GraphExecutor:
 
             if isinstance(_fn_result, list):
                 # Architecture A: list of dicts — cache all frames
-                self._sim_cache[sim_cache_key] = _fn_result
+                self._store_sim(node_id, seed, _fn_result)
                 self._sim_params_hash[node_id] = params_hash
                 if frame < len(_fn_result):
                     frame_data = _fn_result[frame]

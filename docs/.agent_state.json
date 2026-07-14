@@ -4,25 +4,26 @@
   "owner": "autonomous-engineering-agent",
   "created": "2026-07-14",
   "updated": "2026-07-14",
-  "loop_iteration": 8,
-  "health_score": 8.2,
-  "current_focus": "R9 partial done (graph.py). Next: R3-feature or TD-15.",
+  "loop_iteration": 9,
+  "health_score": 8.3,
+  "current_focus": "TD-03 fully closed. Next: TD-15 (easing) or R9 finish.",
   "last_completed": [
     "R8/TD-07: extract 3D node defs -> core/threejs_nodes.py",
-    "R9 partial (TD-12): graph.py print() -> logging; 0 print() left",
-    "Fixed own syntax break on graph.py via revert+reapply with AST check"
+    "R9 partial (TD-12): graph.py print() -> logging",
+    "R3/TD-03 feature: per-node sim-cache byte budget (_store_sim + even-spread subsample)",
+    "R3/TD-03 test: 5 new tests; TD-03 fully closed"
   ],
   "next_up": [
-    "R3 feature: per-node sim-cache byte budget",
     "TD-15: normalize/validate keyframe easing names",
     "R9 finish: server/runner/registry logging",
-    "TD-13: narrow server.py except handlers"
+    "TD-13: narrow server.py except handlers",
+    "R11-R14: large refactors (split server/shaders, merge runner)"
   ],
   "open_blockers": [],
   "metrics": {
     "source_lines_python": 142738,
-    "test_files": 47,
-    "e2e_graph_tests": 33,
+    "test_files": 48,
+    "e2e_graph_tests": 38,
     "health_baseline": 7.5
   },
   "policy": {

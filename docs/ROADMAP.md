@@ -28,7 +28,7 @@ Every candidate is scored 1–5 on five axes; the weighted rank decides priority
 |----|-----------|:---:|:---:|:---:|:---:|:---:|:---:|--------|
 | R1 | **End-to-end graph execution test** (full pipeline: topo → propagation → terminal → multi-frame) | 5 | 3 | 5 | 5 | 5 | **4.70** | ✅ Done 2026-07-14 |
 | R2 | Feedback-edge regression test (cycle support, frame-0 black fallback) | 5 | 2 | 4 | 5 | 4 | 4.15 | ✅ Done 2026-07-14 |
-| R3 | Sim-cache eviction guard ✅; per-node byte budget (feature) | 4 | 3 | 4 | 5 | 4 | 3.95 | ✅ Test done 2026-07-14 · feature queued |
+| R3 | Sim-cache eviction guard ✅; per-node byte budget (feature) | 4 | 3 | 4 | 5 | 4 | 3.95 | ✅ Both done 2026-07-14 |
 | R4 | Param-keyframe edge-case test (single kf, zero-len, easing) | 4 | 2 | 4 | 5 | 3 | 3.70 | ✅ Done 2026-07-14 |
 | TD-15 | Easing contract footguns (end-keyframe read; silent linear fallback) | Quality | Low | Low | Low | Normalize + warn; document | Open |
 | R5 | Group-node execution test (recursive subgraph) | 4 | 2 | 3 | 4 | 4 | 3.55 | ✅ Done 2026-07-14 |

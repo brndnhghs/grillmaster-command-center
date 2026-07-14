@@ -316,3 +316,39 @@ R9 (centralize logging) and TD-12 (print() in production code). Audit flagged
   file under active concurrent modification; revisit when quieter).
 - Next: R3-feature (per-node sim-cache budget) or TD-15 (easing) — both small,
   self-contained, and safe to land now.
+
+---
+
+## Iteration 9 — 2026-07-14
+
+### Context
+R3 / TD-03 feature half: a single simulation's cached frames were only bounded
+by the *global* SIM_CACHE_MAX_BYTES (1.5 GB). One node's oversized sim could
+monopolise the cache and starve every other node. Need a per-node ceiling.
+
+### Decision
+Add `SIM_CACHE_NODE_MAX_BYTES = 1_400_000_000` (just under the global cap so the
+documented common-case 300-frame@768x512 sim stores in FULL — non-destructive
+default). New `_store_sim(node_id, seed, frames, protect)` helper: if a sim
+exceeds the per-node cap, subsample with an EVEN-SPREAD stride (linspace over
+the frame indices, keep both endpoints + dedupe) so playback still spans the
+full duration at lower temporal resolution — better than frames[::stride], which
+collapses small over-runs to a single leading frame. Then run global eviction.
+Extracted shared `_sim_entry_bytes()` (was a nested def in _evict_sim_cache).
+
+### Action
+- Replaced both Arch-A store sites (capture @799, sidecar @1171) with `_store_sim`.
+- Added `test_sim_cache_per_node_budget.py` (5 tests): under-budget passthrough,
+  oversized subsample + endpoint preservation, even-spread determinism, empty
+  no-op, and global-eviction-still-runs.
+- Verified: AST parse after each edit; existing test_sim_cache_eviction (4) +
+  new (5) = 9 pass; full graph suite = 45 pass. No behavioral regression.
+- Updated TECHNICAL_DEBT (TD-03 both done), ROADMAP (R3 done), CHANGELOG,
+  ENGINEERING_LOG, .agent_state.json.
+
+### Resulting State
+- TD-03 fully closed (eviction guard + per-node budget). The sim-cache now has
+  both a global bound (BUG-8a) and a per-node bound (monopolisation guard).
+- Remaining open: TD-15 (easing), R9 finish (server/runner/registry logging),
+  TD-13 (server except narrowing), R11-R14 (large refactors).
+- Next: TD-15 (easing normalize) — small, self-contained, safe to land.
