@@ -31,6 +31,14 @@ class ShootoutConfig:
     p_fill_image: float = 0.85     # chance to feed a node's image_in while budget remains
     p_fill_aux: float = 0.6      # chance to feed declared field/mask/particles ports
     p_driver: float = 0.4          # legacy repeated-draw chance per extra scalar driver
+    # Hard floor on born-animated genomes (Route 8, 2026-07-14): when a
+    # generated graph has NO animation source at all (no node with a ``time``
+    # param, no non-``none`` anim_mode, no driver edge), wire an LFO onto the
+    # terminal's first free driver target so the clip can never be *genuinely*
+    # frozen. This stops the liveness gate from wasting a full render on a
+    # statically-dead clip. Set False to restore the pre-floor behavior
+    # (useful for A/B-measuring the static-rejection rate).
+    guarantee_born_animated: bool = True
     # Motif-grammar driver policy (motifs.py): probability a non-driver node
     # gets at least one control-node driver, and a second one.
     p_drive_primary: float = 0.9

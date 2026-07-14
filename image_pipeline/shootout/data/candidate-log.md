@@ -462,3 +462,52 @@ Action: added CHEAP O(n) animated node 2D Gaussian Splatting (965). Structurally
 - VERIFIED headless (8-step audit): registered in /api/node-defs (463 methods); non-black (std 0.18 on wired random); none-mode static Δ=0.0000; eps 0.001 vs 0.5 Δ=0.2107; radius 2 vs 30 Δ=0.0924 (tested on a period-60 sine — stationary/white-noise sources are radius-invariant by design, a global affine map q≈a·I+b); mode distinct (smooth/detail 0.1332, smooth/flatten 0.1405); radius_grow animation t=3π/2 vs π/2 Δ=0.0958 (sin-phase degeneracy avoided — NOT t=0 vs π); wired-input override Δ=0.2631; Rule-8 server import clean.
 - SHOOTOUT-FACING: O(N) box filter, ~no heavy compute → timeout-immune; the detail/flatten modes are cheap high-contrast post-processes that help the 201 static/flat dead bucket if wired into graphs.
 - RECOMMENDED NEXT: (a) a typed-uniform GPU twin (the guided filter is a cheap per-pixel op ideal for the client-GPU live path); (b) evolution sub-problem #6 (rating-signal poverty / active-learning acquisition — only 18/537 rated).
+
+## 2026-07-14 (cron run) — Route 8 dead-rate root-cause audit + born-animated floor
+- DIAGNOSTIC (537 genomes): alive=186 (35%), dead=351 (65%). Death reasons:
+  timeout>150s=108, static=104, flat=90, over-budget=30, no-output=7,
+  flicker=7, skipped=5. BUT config now has render_timeout_s=300 + cost_skip_factor
+  + hard_wall_factor, so the >150s count is STALE (old-cap genomes); many of the
+  108 would now survive at 300s. The dominant LIVE death modes are static(104)
+  + flat(90) = 194 (36%).
+- LIVENESS GATE IS SOUND: re-ran the stored stats of the 201 static/flat deaths —
+  temporal_var median≈0, motion_pixel_frac median≈0, frame_corr median≈1.0. The
+  current gate (temporal_var + motion_pixel_frac + frame_corr + spectral rescue)
+  would rescue ZERO of them. They are GENUINELY frozen, NOT contrast-only false
+  culls. The known temporal_var_min residual is NOT the cause here.
+- STRUCTURAL SOURCE CHECK on the 201 dead genomes: 83 have NO animation source at
+  all (legacy pre-policy single-node graphs, e.g. g-02de84db = lone fractal 238);
+  118 HAVE a wired driver/anim_mode yet are still static. So the real Route-8 #1
+  cause is NOT a broken driver-sampling path (graph.py re-runs each node per frame
+  and injects driver scalars via _inject_typed — confirmed by code read) — it is
+  that the wired driver modulates a param with NEGLIGIBLE visual effect (tiny
+  amplitude on an insensitive param, or a dead/unused param at the target node).
+  The 186 alive genomes animate purely via the GraphExecutor-injected `time` param
+  (architecture-B terminals): 0/186 alive genomes use a driver or anim_mode!=none.
+- FIX (defense-in-depth): added `guarantee_born_animated` floor in generator.py —
+  `_ensure_animated()` hard-guarantees ≥1 animation source (wires an LFO onto the
+  terminal's first free driver target) when a graph has none. Idempotent; covers
+  both motif and fallback paths via random_genome. CURRENT code (apply_driver_policy)
+  already prevents no-source graphs, so the floor is a robustness net against
+  future regression of the motif policy, not the primary fix for the 118.
+  Added 4 headless tests (test_shootout.py: test_ensure_animated_*,
+  test_random_genome_is_born_animated) — all pass.
+- RECOMMENDED NEXT (the actual 118 fix, needs executor/target-node work, OUT OF
+  SCOPE for this safe run per "do not modify core execution"): smarter driver-
+  target selection that prefers HIGH-SENSITIVITY params (per-node param-Δ
+  fingerprint), and/or per-node dead-param audits. This is Route 8 #1's real
+  remaining gap. Also: re-run a fresh generation with render_timeout_s=300 to
+  measure the true current dead-rate (the 65% figure is inflated by old-cap
+  genomes).
+- PHASE 1C: rotated evolution-research-index 0→1 (Selection pressure / fitness
+  shaping done last run's analysis; next = Diversity maintenance). Note rating
+  corpus grew 7→18 — still starved; sub-problem #6 (active-learning acquisition)
+  remains the highest-leverage evolution research item.
+
+## 2026-07-14 (autonomous cg run — node 489)
+- DEAD-rate: 351/537 = 65% rejected/dead. renders>150s = 131 (still the dominant failure mode — timeout cull). FIXED-action angle: keep adding cheap O(N) post_fx so genomes clear the 150s wall.
+- DEAD hotspots: __lfo__ (886), __counter__ (245), __noise1d__ (136), __ramp__ (109), __strobe__ (48), __envelope__ (43), __image_to_mask__ (41), 137 (35). Driver/control utility nodes dominate deaths (they are used everywhere, not broken) → the lever is more cheap, high-yield ANIMATED content, not fixing drivers.
+- TOP-RATED (promotion seeds, rating 3-5): genome_ids e181c881/328f0d37/e3d68069/97f1158a (5), 9636245b (4); ids still log as genome_id not a stable method id → prefer_ids/seed_ids still not wireable via /api/shootout/config (unchanged capability gap).
+- surviving-motif coverage: post_fx (183), sim_backbone (73), masked_composite (20), pattern_blend (19), feedback_loop (11). post_fx is the dominant motif → Film Grain strengthens it cheaply.
+- ACTION TAKEN: added node 489 "Film Grain" — luminance-adaptive (shadow-weighted, Hasinoff 2010 emulsion model) photographic grain with temporal-coherence control (none=fixed / flicker=reseed-per-frame / drift=translate). O(N): one noise field + a few array ops, so it dodges the 150s cull. Verified headlessly: none Δ=0.000 (static baseline), flicker Δ=0.207, drift Δ=0.207, intensity Δ=0.333, adapt Δ=0.086, grain_size Δ=0.207; registered in get_all() and served via /api/node-defs (fresh port — stale server on reused port was a false-negative, pitfall #22).
+- RECOMMENDED NEXT: rotate evolution-research-index →2 (Diversity maintenance: MAP-Elites / crowding to stop convergence); active-learning rating acquisition (#6) still highest-leverage.

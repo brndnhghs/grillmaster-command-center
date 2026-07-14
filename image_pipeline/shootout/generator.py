@@ -413,6 +413,92 @@ def random_graph(pool: GenePool, cfg: ShootoutConfig, rng: random.Random,
     return {"version": 1, "name": "", "nodes": nodes, "edges": edges}
 
 
+def _graph_has_animation_source(graph: dict, pool: GenePool) -> bool:
+    """True if the graph can possibly animate without external input.
+
+    Three independent signals:
+      * a node with ``time`` in its schema (architecture-B — GraphExecutor
+        injects the animation clock every frame),
+      * a node whose animation-mode enum (anim_mode / animation_mode) was
+        sampled to a non-``none`` value (internal animation),
+      * any driver edge feeding a scalar param port (CHOP-style modulation).
+    """
+    nodes = graph.get("nodes", [])
+    by_id = {n["id"]: n for n in nodes}
+    for n in nodes:
+        mid = n.get("method_id")
+        d = pool.defs.get(mid)
+        if not d:
+            continue
+        if "time" in (d.get("params") or {}):
+            return True
+        p = n.get("params") or {}
+        for k in ("anim_mode", "animation_mode"):
+            spec = (d.get("params") or {}).get(k)
+            if spec and "none" in (spec.get("choices") or []):
+                if p.get(k) not in (None, "none"):
+                    return True
+    for e in graph.get("edges", []):
+        sn = by_id.get(e.get("src_node"))
+        if sn and sn.get("method_id") in pool.scalar_drivers:
+            return True
+    return False
+
+
+def _ensure_animated(graph: dict, pool: GenePool, cfg: ShootoutConfig,
+                     rng: random.Random) -> dict:
+    """Hard floor on born-animated genomes (Route 8, 2026-07-14).
+
+    The random walk can emit graphs with no animation source at all — a
+    single architecture-A terminal (e.g. an escape-time fractal with
+    ``is_time_varying=False``, no ``time`` param, no ``anim_mode``) simply
+    cannot move unless a control node modulates one of its params. When the
+    driver draw happens not to fire, the clip is *genuinely* frozen and the
+    liveness gate correctly culls it as ``static`` — wasting the full render.
+    We guarantee at least one animation source by wiring an LFO onto the
+    terminal node's first free driver target (falling back to any node).
+    Idempotent: a no-op when a source already exists.
+    """
+    if not cfg.guarantee_born_animated:
+        return graph
+    if _graph_has_animation_source(graph, pool):
+        return graph
+    nodes = list(graph.get("nodes", []))
+    edges = list(graph.get("edges", []))
+    if not nodes or not pool.scalar_drivers:
+        return graph
+
+    def _free_targets(n: dict) -> list[str]:
+        return [p for p in pool.driver_targets(n["method_id"])
+                if p not in cfg.frozen_params
+                and not any(e["dst_node"] == n["id"] and e["dst_port"] == p
+                            for e in edges)]
+
+    term = next((n for n in nodes if n.get("render")), nodes[-1])
+    targets = _free_targets(term)
+    if not targets:                       # terminal saturated — try any node
+        for n in nodes:
+            if n["method_id"] in pool.scalar_drivers:
+                continue
+            if _free_targets(n):
+                term, targets = n, _free_targets(n)
+                break
+    if not targets:
+        return graph
+    drv_mid = rng.choice(pool.scalar_drivers)
+    drv_port = pool.output_port_for(drv_mid, "scalar") or "value"
+    drv_id = f"n-drv-{len(nodes)}-{rng.randint(0, 9999)}"
+    nodes.append({
+        "id": drv_id, "method_id": drv_mid,
+        "params": sample_params(pool, cfg, rng, drv_mid, False),
+        "x": 0, "y": 0, "render": False,
+    })
+    edges.append({"src_node": drv_id, "src_port": drv_port,
+                  "dst_node": term["id"], "dst_port": targets[0]})
+    return {"version": graph.get("version", 1), "name": graph.get("name", ""),
+            "nodes": nodes, "edges": edges}
+
+
 def apply_fallback_driver_policy(pool: GenePool, cfg: ShootoutConfig,
                                  rng: random.Random, bias: SamplingBias | None,
                                  graph: dict) -> dict:
@@ -464,6 +550,10 @@ def random_genome(pool: GenePool | None = None,
         # its static-rejection rate was ~2x the motif path. Run the policy so
         # fallback genomes are born animated too.
         graph = apply_fallback_driver_policy(pool, cfg, rng, bias, graph)
+    # Hard floor (Route 8, 2026-07-14): guarantee at least one animation
+    # source regardless of which path produced the graph, so no genome is
+    # *genuinely* frozen before the liveness gate even runs.
+    graph = _ensure_animated(graph, pool, cfg, rng)
     graph["name"] = gid
     return {
         "genome_id": gid,

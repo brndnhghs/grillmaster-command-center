@@ -16,7 +16,10 @@ import pytest
 
 import image_pipeline.methods  # noqa: F401
 from image_pipeline.shootout.config import ShootoutConfig
-from image_pipeline.shootout.generator import build_gene_pool, random_genome
+from image_pipeline.shootout.generator import (
+    build_gene_pool, random_genome, sample_params,
+    _ensure_animated, _graph_has_animation_source,
+)
 from image_pipeline.shootout.repair import (
     repair_genome, sample_valid_genome, validate_graph,
 )
@@ -29,6 +32,73 @@ from image_pipeline.shootout import taste, store
 
 CFG = ShootoutConfig()
 POOL = build_gene_pool(CFG)
+
+
+# ── Born-animated floor (Route 8, 2026-07-14) ──────────────────────────
+# Guarantees every generated graph carries at least one animation source so
+# the liveness gate never wastes a full render on a *genuinely* frozen clip.
+
+def _no_source_graph(cfg, rng):
+    """A single architecture-A terminal with no time param, no anim_mode,
+    no driver — the exact shape that produces a statically-dead clip."""
+    return {
+        "version": 1, "name": "",
+        "nodes": [{
+            "id": "n1", "method_id": "238",
+            "params": sample_params(POOL, cfg, rng, "238", False),
+            "x": 0, "y": 0, "render": True,
+        }],
+        "edges": [],
+    }
+
+
+def test_ensure_animated_adds_driver_to_source_less_graph():
+    import copy
+    cfg = copy.deepcopy(CFG)
+    cfg.guarantee_born_animated = True
+    g = _no_source_graph(cfg, random.Random(1))
+    assert not _graph_has_animation_source(g, POOL)
+    out = _ensure_animated(g, POOL, cfg, random.Random(2))
+    assert _graph_has_animation_source(out, POOL)
+    drv = [n for n in out["nodes"]
+           if n["method_id"] in POOL.scalar_drivers]
+    assert len(drv) == 1
+    # the driver is wired to the terminal's first free driver target
+    assert any(e["dst_node"] == "n1" and e["src_node"] == drv[0]["id"]
+               for e in out["edges"])
+
+
+def test_ensure_animated_is_idempotent():
+    import copy
+    cfg = copy.deepcopy(CFG)
+    cfg.guarantee_born_animated = True
+    g = _no_source_graph(cfg, random.Random(1))
+    out = _ensure_animated(g, POOL, cfg, random.Random(2))
+    out2 = _ensure_animated(out, POOL, cfg, random.Random(3))
+    drv = [n for n in out2["nodes"]
+           if n["method_id"] in POOL.scalar_drivers]
+    assert len(drv) == 1  # no second driver added
+
+
+def test_ensure_animated_disabled_is_noop():
+    import copy
+    cfg = copy.deepcopy(CFG)
+    cfg.guarantee_born_animated = False
+    g = _no_source_graph(cfg, random.Random(1))
+    out = _ensure_animated(g, POOL, cfg, random.Random(2))
+    assert out is g  # unchanged when the floor is disabled
+
+
+def test_random_genome_is_born_animated():
+    import copy
+    cfg = copy.deepcopy(CFG)
+    cfg.guarantee_born_animated = True
+    missing = 0
+    for i in range(40):
+        g = random_genome(POOL, cfg, random.Random(7000 + i), origin="test")
+        if not _graph_has_animation_source(g["graph"], POOL):
+            missing += 1
+    assert missing == 0, f"{missing}/40 generated genomes lack an animation source"
 
 
 @pytest.fixture()
