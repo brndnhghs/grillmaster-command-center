@@ -231,6 +231,45 @@ class ShootoutConfig:
     cost_gate_enabled: bool = True
     cost_skip_factor: float = 0.7
 
+    # ── Liveness-prior gate exemption (cost_model.py) ──────────────
+    # The cost gate above is a BLUNT instrument: its estimate cannot tell a
+    # slow-but-DYNAMIC clip from a slow-static timeout. The cost model records
+    # a per-method empirical P(alive) from the corpus; a genome whose mean
+    # liveness-prior over its measured methods is >= gate_liveness_floor is
+    # EXEMPT from over-budget skipping even if its cost estimate exceeds the
+    # threshold. This RELAXES the gate (never gates more). In practice on the
+    # 537-genome corpus this exemption rarely fires (the over-budget graphs are
+    # dominated by genuinely expensive methods, so their mean prior stays low)
+    # — it is best understood as a manual safety valve for a specific
+    # dynamic-prone graph rather than a systemic fix. Exemption applies only
+    # when the model carries enough alive samples (per_method_alive present);
+    # cold-start behaves exactly as before. Set to 0.0 to disable the exemption
+    # and gate purely on cost.
+    gate_liveness_floor: float = 0.33
+
+    # ── Tail-latency cost basis (cost_model.py) ────────────────────
+    # The cost estimate sums per-method ms/frame. Using the MEDIAN masks
+    # tail risk: many methods are usually cheap but occasionally explode on
+    # unlucky params (e.g. method 120 median 75ms → max 2040ms/frame, 27×;
+    # 437 3.8→742ms, 195×). A genome that draws such a slow-param instance
+    # renders past the timeout cap yet the median estimate placed it well
+    # under budget, so it slips the gate and wastes the full render budget.
+    # With cost_use_tail the gate estimate sums per-method P90 ms/frame
+    # instead — catching high-variance timeout slip-throughs. Measured on the
+    # 537-genome corpus (via is_over_budget, the real gate path, default
+    # skip_factor=0.7, timeout=300s): the P90 basis raises true-timeout recall
+    # from 6→31 of 52 empirically-timed-out genomes (the median estimate misses
+    # most), but it also raises the alive-clip false-cull rate from 0.5%→4.8%
+    # (1→9 of 186 alive genomes). So the gate trades a small survivor-pool loss
+    # for much better avoidance of wasted full-budget renders. The liveness
+    # exemption rarely fires on this corpus (0 alive genomes spared), so the net
+    # effect is dominated by the tail estimate. Still well under the 25%
+    # survivor-pool cap. estimate_cost_s (the reported/median estimate) is
+    # unchanged; only the gating basis switches. Falls back to median when no
+    # P90 data is present (cold start), so early generations behave exactly as
+    # before. Set False to restore pure median-based gating.
+    cost_use_tail: bool = True
+
     # ── Gene pool ─────────────────────────────────────────────────
     # client_3d renders in the browser (no server-side cook), ml_models are
     # heavy model loads, io needs uploaded assets, cli_tools shell out to
@@ -316,6 +355,8 @@ TUNABLE_FIELDS: dict[str, tuple[str, float | None, float | None]] = {
     "render_timeout_s":  ("Per-clip render budget (seconds) — slower graphs are culled as 'timeout'", 10, 3600),
     "cost_gate_enabled": ("Skip guaranteed-timeout graphs before rendering, using the empirical cost model", None, None),
     "cost_skip_factor":  ("Cost gate strictness: skip when estimated render > render_timeout_s × this (lower = stricter)", 0.1, 2.0),
+    "gate_liveness_floor": ("Cost-gate exemption: an over-budget genome whose mean empirical P(alive) over its methods is ≥ this is spared the cull (0 disables — protects slow-but-dynamic clips)", 0.0, 1.0),
+    "cost_use_tail": ("Cost gate estimates render wall from per-method P90 (tail) ms/frame instead of the median — catches high-variance timeout slip-throughs", None, None),
     "render_concurrency": ("Clips rendered in parallel", 1, 8),
     "preview_every":    ("Capture a live preview thumbnail every N frames (0 = off) so you can skip candidates before they finish", 0, 48),
     "preview_w":        ("Live preview thumbnail width (px)", 64, 512),

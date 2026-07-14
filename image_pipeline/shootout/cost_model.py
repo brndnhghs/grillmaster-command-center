@@ -37,6 +37,11 @@ COST_MODEL_PATH = DATA_DIR / "cost_model.json"
 # Below this the model is too sparse to trust, so we never skip a render.
 MIN_SAMPLES_TO_GATE = 8
 
+# Minimum observations of a method (across genomes with a liveness verdict)
+# before its empirical P(alive) is trusted for the gate exemption. Rarely-seen
+# methods stay "unknown" (omitted from per_method_alive → neutral prior).
+MIN_ALIVE_SAMPLES = 4
+
 # Fallback ms/frame for a method with no recorded timing. Deliberately modest
 # (not zero) so novel/unmeasured nodes contribute a small, non-trivial cost to
 # the estimate without dominating it.
@@ -64,11 +69,28 @@ def build_cost_model(persist: bool = True) -> dict:
     per_method: dict[str, list[float]] = {}
     n_samples = 0
     frames_lookup: dict[str, int] = {}
+    # Liveness-prior corpus: per method, count (alive, total) over every genome
+    # that contains it and logged a liveness verdict. Feeds the survivor-pool-
+    # protective gate exemption (per_method_alive below).
+    alive_counts: dict[str, list[int]] = {}   # method_id -> [alive, total]
     for path in _iter_genome_files():
         try:
             g = json.loads(path.read_text())
         except (OSError, ValueError):
             continue
+        # ── Liveness-prior tally (independent of node_timings) ──
+        lv = g.get("liveness")
+        if isinstance(lv, dict) and "alive" in lv:
+            is_alive = 1 if lv.get("alive") else 0
+            seen: set[str] = set()
+            for nd in g.get("graph", {}).get("nodes", []):
+                mid = nd.get("method_id")
+                if mid is None or mid in seen:
+                    continue
+                seen.add(mid)
+                rec = alive_counts.setdefault(mid, [0, 0])
+                rec[0] += is_alive
+                rec[1] += 1
         render = g.get("render") or {}
         timings = render.get("node_timings") or {}
         if not timings:
@@ -91,6 +113,12 @@ def build_cost_model(persist: bool = True) -> dict:
 
     model_per_method = {m: round(statistics.median(v), 3)
                         for m, v in per_method.items() if v}
+    # Per-method P90 (tail) ms/frame — the gating basis under cost_use_tail.
+    # Captures the slow-param instances the median masks (see cost_use_tail).
+    model_per_method_p90 = {
+        m: round(sorted(v)[min(len(v) - 1, int(0.9 * len(v)))], 3)
+        for m, v in per_method.items() if v
+    }
     all_vals = [v for vs in per_method.values() for v in vs]
     default_ms = (round(statistics.median(all_vals), 3)
                   if all_vals else _FALLBACK_MS_PER_FRAME)
@@ -98,10 +126,22 @@ def build_cost_model(persist: bool = True) -> dict:
     # median); floor it so unmeasured nodes still carry weight.
     default_ms = max(default_ms, 1.0)
 
+    # Per-method empirical P(alive), only for methods with enough observations
+    # to be trustworthy. Methods below the floor are omitted (unknown → neutral).
+    per_method_alive = {
+        m: round(a / t, 4)
+        for m, (a, t) in alive_counts.items()
+        if t >= MIN_ALIVE_SAMPLES
+    }
+    n_alive_samples = sum(t for _a, t in alive_counts.values())
+
     model = {
         "per_method": model_per_method,
+        "per_method_p90": model_per_method_p90,
         "default_ms": default_ms,
         "n_samples": n_samples,
+        "per_method_alive": per_method_alive,
+        "n_alive_samples": n_alive_samples,
         "built": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "calibration": _fit_calibration(model_per_method, frames_lookup),
     }
@@ -235,6 +275,46 @@ def estimate_cost_s(genome: dict, frames: int, model: dict | None = None) -> flo
     return CAL_SLOPE * raw + CAL_INTERCEPT
 
 
+def estimate_cost_tail_s(genome: dict, frames: int,
+                         model: dict | None = None) -> float:
+    """Estimate render wall from per-method P90 (tail) ms/frame, calibrated.
+
+    Same calibration as ``estimate_cost_s`` but summed over the tail latency
+    rather than the median, so a method that is usually cheap but occasionally
+    explodes contributes its worst-case cost. Falls back per-method to the
+    median, then the corpus default, when no P90 sample exists.
+    """
+    if model is None:
+        model = load_cost_model()
+    p90 = model.get("per_method_p90") or {}
+    per_method = model.get("per_method", {})
+    default_ms = model.get("default_ms", _FALLBACK_MS_PER_FRAME)
+    total_ms_per_frame = 0.0
+    for nd in genome.get("graph", {}).get("nodes", []):
+        mid = nd.get("method_id")
+        total_ms_per_frame += p90.get(mid, per_method.get(mid, default_ms))
+    raw = total_ms_per_frame * frames / 1000.0
+    return CAL_SLOPE * raw + CAL_INTERCEPT
+
+
+def liveness_prior(genome: dict, model: dict | None = None) -> float | None:
+    """Mean empirical P(alive) over the genome's methods that the model has
+    enough samples for. Returns None when no method has a trusted prior
+    (unknown → the caller must not relax the gate).
+    """
+    if model is None:
+        model = load_cost_model()
+    pma = model.get("per_method_alive") or {}
+    if not pma:
+        return None
+    vals = [pma[nd.get("method_id")]
+            for nd in genome.get("graph", {}).get("nodes", [])
+            if nd.get("method_id") in pma]
+    if not vals:
+        return None
+    return sum(vals) / len(vals)
+
+
 def is_over_budget(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
                    model: dict | None = None) -> tuple[bool, float]:
     """Return (skip?, estimated_seconds).
@@ -243,16 +323,32 @@ def is_over_budget(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
     samples to be trusted, and the estimate exceeds
     ``render_timeout_s * cost_skip_factor``. Otherwise ``skip`` is always
     False — the render proceeds exactly as before.
+
+    Liveness-prior exemption (survivor-pool-protective): even an over-budget
+    genome is spared the cull when its mean empirical P(alive) over its measured
+    methods is >= ``gate_liveness_floor`` (> 0). This only ever RELAXES the gate
+    — an expensive-but-likely-dynamic clip gets its render chance back — so it
+    cannot increase the alive-clips-skipped rate the cost gate is bounded by.
     """
     if model is None:
         model = load_cost_model()
-    est = estimate_cost_s(genome, cfg.frames, model)
+    use_tail = getattr(cfg, "cost_use_tail", True)
+    est = (estimate_cost_tail_s(genome, cfg.frames, model) if use_tail
+           else estimate_cost_s(genome, cfg.frames, model))
     if not getattr(cfg, "cost_gate_enabled", True):
         return False, est
     if model.get("n_samples", 0) < MIN_SAMPLES_TO_GATE:
         return False, est
     threshold = cfg.render_timeout_s * getattr(cfg, "cost_skip_factor", 0.9)
-    return est > threshold, est
+    if est <= threshold:
+        return False, est
+    # Over budget by cost — but spare likely-dynamic clips.
+    floor = getattr(cfg, "gate_liveness_floor", 0.0)
+    if floor and floor > 0.0:
+        prior = liveness_prior(genome, model)
+        if prior is not None and prior >= floor:
+            return False, est
+    return True, est
 
 
 def partition_by_budget(genomes: list[dict], cfg: ShootoutConfig = DEFAULT_CONFIG
