@@ -63,6 +63,12 @@
   compat alias `_THREEJS_3D_NODE_DEFS` is preserved so `server.py` and
   `test_3d_sidecar_render.py` are untouched. Behavior-preserving — verified
   byte-identical defs via `test_threejs_nodes_extraction.py` (5 tests).
+- **Quality (R9 partial / TD-12): routed `graph.py` `print()` → `logging`**.
+  Removed all 2 `print()` calls (node-skip info, node-error) and converted the
+  2 telemetry `except Exception: pass` guards to `logging.debug(..., exc_info=True)`
+  so a broken progress hook is diagnosable instead of silently swallowed.
+  `graph.py` now has zero `print()`. `server.py`/`runner.py`/`registry.py`
+  logging centralization remains (R9 partial). 40 graph tests still pass.
 - **Corrected stale ROADMAP/TD-14**: the CLI-only modules (quality/annotator/
   postprocess) are ALREADY wired into server.py (quality @712, postprocess @719,
   annotator demo @723) — completed by concurrent work. Removed from backlog.

@@ -4,20 +4,19 @@
   "owner": "autonomous-engineering-agent",
   "created": "2026-07-14",
   "updated": "2026-07-14",
-  "loop_iteration": 7,
+  "loop_iteration": 8,
   "health_score": 8.2,
-  "current_focus": "Architecture cleanup begun (R8 done). Next: R9/R10 quality or R3-feature.",
+  "current_focus": "R9 partial done (graph.py). Next: R3-feature or TD-15.",
   "last_completed": [
-    "R1-R6 test gaps closed (35 new regression tests across 6 files)",
-    "R8/TD-07: extract 3D node defs -> core/threejs_nodes.py (behavior-preserving, 5 tests)",
-    "TD-14 corrected: CLI-only modules already wired (stale, closed)",
-    "Bootstrap loop memory files"
+    "R8/TD-07: extract 3D node defs -> core/threejs_nodes.py",
+    "R9 partial (TD-12): graph.py print() -> logging; 0 print() left",
+    "Fixed own syntax break on graph.py via revert+reapply with AST check"
   ],
   "next_up": [
-    "R9: centralize logging (print -> logger) in production code",
-    "R10: narrow broad except handlers in server.py",
     "R3 feature: per-node sim-cache byte budget",
-    "TD-15: normalize/validate keyframe easing names"
+    "TD-15: normalize/validate keyframe easing names",
+    "R9 finish: server/runner/registry logging",
+    "TD-13: narrow server.py except handlers"
   ],
   "open_blockers": [],
   "metrics": {

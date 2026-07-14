@@ -25,7 +25,7 @@
 | TD-10 | `ui/index.html` monolith (9.7k lines) | Architecture | Low | High | Med | Extract css/js modules | Open |
 | TD-11 | Two execution engines (`runner.py` CLI + server direct) | Architecture | Med | High | Med | Merge caching/parallelism into executor | Open |
 | TD-12 | `print()` calls in production code (`graph.py`, `runner.py`, `registry.py`, `server.py`) | Quality | Low | Low | Low | Route through `logging` | Open |
-| TD-13 | 15+ bare `except Exception:` in `server.py` swallow real errors | Stability | Med | Low | Low | Narrow + log | Open |
+| TD-13 | 15+ bare `except Exception:` in `server.py` swallow real errors; `graph.py` telemetry `except: pass` now logs at debug (R9 partial) | Stability | Med | Low | Low | Narrow + log; finish `server.py` | Open |
 | TD-14 | CLI-only modules (`quality`, `annotator`, `postprocess`) not wired to server | Feature | Med | Med | Low | STALE — already wired (quality @server:712, postprocess filter @719, annotator demo @723). Closed by concurrent work; removed from backlog | Closed (stale) 2026-07-14 |
 | TD-15 | Keyframe easing contract footguns: (a) easing is read from the SEGMENT'S END keyframe (`kf_b`), so an easing set on the *start* keyframe is silently ignored; (b) an unknown/misspelled easing name (e.g. `"ease_in"` instead of `"ease-in"`) silently falls back to linear with no warning. Both are silent-correctness traps. Fix: normalize/validate easing names at keyframe ingest and document the end-keyframe convention (or switch to start-keyframe convention). | Quality | Low | Low | Low | Add normalization + warn; document contract | Open |
 

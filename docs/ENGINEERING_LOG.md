@@ -286,3 +286,33 @@ must re-verify the *current* state, not trust the original 10-phase audit.
   budget) remain open.
 - Next: a small quality win (R9 centralize logging, or R10 narrow excepts) OR
   R3-feature (per-node sim-cache budget) — both cheap and high-value.
+
+---
+
+## Iteration 8 — 2026-07-14
+
+### Context
+R9 (centralize logging) and TD-12 (print() in production code). Audit flagged
+10+ print() in core + 15+ in server. graph.py had 2 print() + 2 telemetry
+`except Exception: pass` guards.
+
+### Action
+- Routed all 2 `print()` in `graph.py` to `logging` (info for node-skip, error
+  for node-error) matching the existing `logging.warning` convention.
+- Converted both telemetry `except Exception: pass` guards to
+  `logging.debug(..., exc_info=True)` so a broken progress hook is diagnosable
+  instead of silently swallowed. graph.py now has ZERO print().
+- NOTE: an earlier attempt broke graph.py syntax (bad except indentation) — I
+  reverted via `git checkout`, confirmed it still parsed + extraction intact,
+  then re-applied with a verified AST-parse step. Lesson: use the script path
+  (AST.parse check) for multi-edit refactors, not blind patch insertion.
+- Verified: import OK, 10 3D ids intact, 40 graph tests pass. No regressions.
+- Updated TECHNICAL_DEBT (TD-12/TD-13), ROADMAP (R9 partial), CHANGELOG.
+
+### Resulting State
+- R9 partial: graph.py done; server.py/runner.py/registry.py logging still
+  pending (lower priority, higher collision risk with concurrent edits).
+- TD-13 (except narrowing in server.py) still open — deferred (broad edit to a
+  file under active concurrent modification; revisit when quieter).
+- Next: R3-feature (per-node sim-cache budget) or TD-15 (easing) — both small,
+  self-contained, and safe to land now.

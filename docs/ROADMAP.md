@@ -36,7 +36,7 @@ Every candidate is scored 1–5 on five axes; the weighted rank decides priority
 | R7 | Wire CLI-only modules into server (quality/annotator/postprocess) | 3 | 5 | 2 | 5 | 4 | 3.45 | Queued |
 | R8 | Extract 3D node defs out of `core/graph.py` | 3 | 1 | 4 | 5 | 4 | 3.25 | ✅ Done 2026-07-14 |
 | ~~R7~~ | Wire CLI-only modules into server | 3 | 5 | 2 | 5 | 4 | 3.45 | ✅ Already done (concurrent work) — removed from backlog |
-| R9 | Centralize logging (`print` → `logger`) | 3 | 1 | 5 | 5 | 3 | 3.35 | Queued |
+| R9 | Centralize logging (`print` → `logger`) — graph.py done; runner/registry/server pending | 3 | 1 | 5 | 5 | 3 | 3.35 | Partial (graph.py 2026-07-14) |
 | R10 | Narrow broad exception handlers in `server.py` | 3 | 2 | 5 | 5 | 3 | 3.40 | Queued |
 | R11 | Split `server.py` into modular routes | 3 | 2 | 1 | 3 | 5 | 2.70 | Backlog |
 | R12 | Split `core/shaders.py` (9.4k lines) | 2 | 1 | 2 | 4 | 4 | 2.50 | Backlog |
