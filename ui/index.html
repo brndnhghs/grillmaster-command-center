@@ -12,7 +12,6 @@ try {
 } catch (e) {}
 </script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Ccircle%20cx='4'%20cy='8'%20r='2.6'%20fill='%234a9eff'/%3E%3Ccircle%20cx='12'%20cy='8'%20r='2.6'%20fill='%236c8ef5'/%3E%3Crect%20x='5'%20y='7.25'%20width='6'%20height='1.5'%20fill='%236c8ef5'/%3E%3C/svg%3E">
-
 <link rel="stylesheet" href="/ui/css/editor.css">
 </head>
 <body>
@@ -4689,7 +4688,10 @@ function gPopOutViewer() {
   const w = window.open('', '_blank', 'width=860,height=580');
   if (!w) { gShowToast('Pop-up blocked by the browser', true); return; }
   w.document.write(
-    `<!DOCTYPE html><html><head><title>Grillmaster — ${title}</title></head><body>' + body + '</body></html>');
+    `<!DOCTYPE html><html><head><title>Grillmaster — ${title}</title><style>` +
+    'html,body{margin:0;height:100%;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden}' +
+    'img,video{max-width:100vw;max-height:100vh;object-fit:contain}' +
+    '</style></head><body>' + body + '</body></html>');
   w.document.close();
 }
 
