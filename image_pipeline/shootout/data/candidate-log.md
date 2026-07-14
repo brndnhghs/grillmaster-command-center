@@ -122,3 +122,23 @@ The `born-animated floor` (commit `9019501`, dated **2026-07-14 07:36**, same da
   the evolution loop, prioritize sub-problem #6 (active-learning / uncertainty
   sampling to surface informative clips) given the persistent rating-metadata
   void; cheap-alive pool (120) stays healthy for crossover.
+
+2026-07-14 — cron run (CG technique: Curl-Noise Warp, node 355)
+- Phase 1 diagnostic (PYSHOT, hardened): genomes=582, dead/rejected=372 (64 percent),
+  renders_over_150s=144. Dead-hotspots (method_id: rejects): __lfo__=972, __counter__=265,
+  __noise1d__=151, __ramp__=121, __strobe__=55, __envelope__=46, __image_to_mask__=43, 137=37.
+  The clock/utility generators (__lfo__,__counter__,__noise1d__,__ramp__,__strobe__,
+  __envelope__) dominate rejections -> likely wiring into inert params or producing
+  static/low-contrast frames (cf. known temporal_var_min=3e-3 cull).
+- PYCAND: ALIVE=210, CHEAP-ALIVE(recombine seeds)=120. Top-rated ids rate=5 but
+  motifs=[] / drivers=None -> rating metadata still empty (sub-problem 6 persists;
+  historically ~7/293 rated). Cheap-alive pool healthy for crossover.
+- ACTION (pipeline feature): added node 355 "Curl-Noise Warp" — divergence-free
+  curl-noise image warp (image-warping + anisotropic + multi-step advection
+  applications of Baerentzen et al. 2025 "Improving Curl Noise"). Verified headlessly:
+  static delta=0.0000, anim delta=0.0566, warp-sweep delta=0.0631, smooth-warp
+  changed-px 0.720, wired-input override delta=0.1903. Committed and pushed.
+- RECOMMENDATION (next evolution step): prioritize sub-problem 6 (rating-signal
+  poverty). Cheap-alive pool (120) is ample for crossover, but survivor-selection
+  signal is starved. Adopt core-set active learning (Sener and Savarese 2018) to
+  build an informative rating queue -> see evolution-research.md (topic 6).

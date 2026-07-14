@@ -213,3 +213,50 @@ faster convergence of the rating signal; advisor.extract_guidance gets real
 per-node like/dislike. Verification: after wiring, measure rating coverage per
 generation and time-to-first-rated-driver. (No code change this run; LIC node
 354 was the CG deliverable.)
+
+---
+### Topic 6 — Rating-signal poverty (2026-07-14)
+Persistent gap: only ~7/293 genomes historically rated; this run's PYCAND shows
+top-rated ids carry rating=5 but motifs=[] and drivers=None -> the advisor receives
+almost no per-clip supervision, so `extract_guidance` steers on near-zero signal.
+Survivor selection therefore leans almost entirely on the untrained/liveness proxy.
+
+Technique (cited, real): **Core-Set Active Learning** — Sener & Savarese,
+"Active Learning for Convolutional Neural Networks: A Core-Set Approach", ICLR 2018
+(arXiv:1708.00489, OpenReview H1aIuk-RW). Treats active-learning batch selection as
+a core-set problem: pick a small subset whose "covering" of the full unlabeled pool
+is maximal, so a model trained on it is competitive with one trained on all data.
+Applied here: the "model" is the next-generation advisor; the "unlabeled pool" is the
+cheap-alive survivor set; the "label" we want is a human preference/rating.
+
+Concrete improvement (module: `advisor.py` + `session.py` rating queue):
+1. Build a lightweight genotype embedding for every alive genome: concatenate
+   (a) normalized numeric driver values, (b) one-hot of motif tags, (c) a
+   low-dim projection (PCA→k=8) of the graph topology features already computed by
+   `utilization.py`. No neural net required.
+2. Active queue = **k-means++ / farthest-point sampling** over that embedding,
+   restricted to ALIVE && cheap (wall_s<30) genomes, picking ~K=12 most
+   diverse-per-cluster clips for the human to rate. This maximizes coverage of the
+   live design space instead of resampling near-duplicates (directly attacks the
+   "results converge toward clones" failure the explore_ratio guard only weakly
+   addresses).
+3. Frictionless UX: pair each queued clip with a 2-AFC (A/B) comparison vs a random
+   alive clip + a single 1-5 slider, so a rater contributes 2 bits per clip. Log
+   Elo-style updates so even sparse ratings compound.
+4. Feed rated preference pairs back as `prefer_ids` / `avoid_methods` into
+   `extract_guidance` (per-node like/dislike already exists; this supplies the
+   global signal it currently lacks).
+
+Expected effect: rating volume per session rises (coverage-driven queue, 2-AFC),
+and the advisor's guidance correlates with human taste instead of the liveness
+proxy alone -> fewer of the 64% dead-clip rejections driven by undirected crossover.
+
+Verification (headless, no LLM):
+- Add `tests/test_shootout.py::test_active_rating_queue_coverage` — synthetic pool of
+  N genomes with 2D embeddings; assert the selected K clips' pairwise min-distance is
+  >> the min-distance of K random picks (coverage gain), and that all K are ALIVE &&
+  cheap. Use a fixed RNG seed for determinism.
+- Add `test_active_rating_queue_respects_alive` — inject 50% dead genomes; assert
+  zero dead clips are ever queued.
+- Manual: run the queue on the live 582-genome corpus; confirm it surfaces distinct
+  motif/driver regions, not clones.
