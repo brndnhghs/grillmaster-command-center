@@ -61,8 +61,12 @@ DEFERRED_SIM_IDS = set(
     "20 34 35 36 55 79 83 84 86 88 89 90 92 94 97 98 101 102 103 "
     "107 109 110 111 112 113 114 116 117 123 129 130 131 134 "
     "136 145 147 149 151 152 158 159 167 337 429 440 448 922 310 "
-    "483 484 517 951 966 560".split()
+    "483 484 517 951 966 560 518".split()
 )
+# 518 Larger Than Life: discrete range-neighborhood cellular automaton (stateful
+# across frames; its honest GPU twin is a WebGL2 ping-pong sim needing browser
+# parity -- same deferral class as 87/96/93 cyclic-CA and 55/92/129 sandpile/Potts.
+# Deferred until P2 (WebGPU compute) is signed off.
 # 951 Cahn–Hilliard Phase Separation: Arch-A phase-field PDE (chemical-potential
 # Laplacian + explicit Euler over many substeps, capture_frame per frame). Its
 # honest GPU twin is a WebGL2 ping-pong sim needing browser parity -- same
