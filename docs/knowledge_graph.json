@@ -1,0 +1,157 @@
+{
+  "meta": {
+    "generated_at": "2026-07-13T15:00:00Z",
+    "commit": "5d0eb0e",
+    "phase": 3,
+    "status": "in_progress"
+  },
+  "modules": {
+    "image_pipeline": {
+      "path": "image_pipeline/",
+      "type": "package",
+      "description": "Primary application — FastAPI server + node-graph executor",
+      "loc": 19499,
+      "submodules": [
+        "server.py", "pipeline.py", "nd_runner.py",
+        "core/", "methods/", "shootout/", "tuning/", "tests/", "3d/", "config/"
+      ]
+    },
+    "core": {
+      "path": "image_pipeline/core/",
+      "type": "package",
+      "description": "Core engine — executor, registry, utilities, timeline",
+      "loc": 16807,
+      "classes": ["GraphExecutor", "GraphNode", "GraphEdge", "NodeDef",
+                   "MethodMeta", "PortTypeSpec", "Timeline", "Keyframe",
+                   "KeyframeTrack", "TestResult", "TestReport", "QualityReport",
+                   "ParameterRamp", "JobCancelled", "_DynDim"],
+      "key_functions": ["method()", "detect_architecture()", "apply_easing()",
+                        "eval_param()", "make_timeline()", "capture_frame()",
+                        "frames_to_mp4()", "animate_method()", "blend_two()",
+                        "save_image()", "write_scalars()", "write_field()",
+                        "write_particles()", "write_mask()", "load_input()",
+                        "quantize_to_palette()", "apply_palette()",
+                        "ordered_dither()", "floyd_steinberg_dither()"],
+      "files": ["graph.py", "registry.py", "port_types.py", "arch.py",
+                "timeline.py", "easing.py", "expr.py", "utils.py",
+                "animation.py", "compositing.py", "cache.py",
+                "node_tester.py", "postprocess.py", "annotator.py",
+                "quality.py", "runner.py", "shaders.py"]
+    },
+    "graph_executor": {
+      "path": "image_pipeline/core/graph.py",
+      "type": "module",
+      "loc": 1685,
+      "class": "GraphExecutor",
+      "key_methods": ["execute()", "_execute_group_node()",
+                      "selective_invalidate()", "_topo_sort()",
+                      "_find_terminal()"]
+    },
+    "registry": {
+      "path": "image_pipeline/core/registry.py",
+      "type": "module",
+      "loc": 281,
+      "class": "MethodMeta",
+      "key_functions": ["method()", "get_meta()", "get_all()", "unregister()",
+                        "resolve_keys()", "timed_run()"]
+    },
+    "methods": {
+      "path": "image_pipeline/methods/",
+      "type": "package",
+      "description": "Node library — 180+ registered generative methods",
+      "loc": 89100,
+      "categories": {
+        "simulations": {"path": "simulations/", "count": 80, "loc": 35621, "description": "Physics/biology simulations"},
+        "filters":     {"path": "filters/",     "count": 46, "loc": 18789, "description": "Image filters/effects"},
+        "patterns":    {"path": "patterns/",    "count": 53, "loc": 13161, "description": "Geometric/texture patterns"},
+        "math_art":    {"path": "math_art/",    "count": 24, "loc": 8280,  "description": "Math visualizations"},
+        "codegen":     {"path": "codegen/",     "count": 13, "loc": 7202,  "description": "Programmatic/algorithmic generators"},
+        "fractals":    {"path": "fractals/",    "count": 17, "loc": 5796,  "description": "Escape-time + IFS fractals"},
+        "compositing": {"path": "compositing/", "count": 9,  "loc": 1605,  "description": "Blend/merge/apply-mask nodes"},
+        "system":      {"path": "system/",      "count": 2,  "loc": 132,   "description": "System nodes (Timeline)"}
+      },
+      "top_level_files": ["channels.py", "blender_render.py", "cli_tools.py",
+                          "custom_shader.py", "gpu_shaders.py", "io_nodes.py",
+                          "ml_models.py", "p5_sketches.py", "simulations_cellular.py"]
+    },
+    "shootout": {
+      "path": "image_pipeline/shootout/",
+      "type": "package",
+      "loc": 5979,
+      "description": "Evolutionary generator — LLM-driven method authoring via Hermes agent",
+      "files": ["generator.py", "evolve.py", "evaluator.py", "advisor.py",
+                "store.py", "session.py", "progress.py", "repair.py",
+                "cost_model.py", "utilization.py", "timeout_blame.py",
+                "describe.py", "features.py", "motifs.py", "motifs.json",
+                "contribution.py", "taste.py", "config.py", "cli.py"]
+    },
+    "tuning": {
+      "path": "image_pipeline/tuning/",
+      "type": "package",
+      "loc": 998,
+      "description": "Method parameter tuning — catalog, builder, session, prompt, store, hermes"
+    },
+    "tests": {
+      "path": "image_pipeline/tests/",
+      "type": "package",
+      "loc": 9621,
+      "description": "Test suite — ~40 test files covering registration, live regression, GPU, shootout, simulations"
+    },
+    "chord_bot": {
+      "path": "chord_bot/",
+      "type": "package",
+      "loc": 6869,
+      "description": "Independent music chord progression node system (FastAPI server)",
+      "submodules": ["server.py", "executor.py", "registry.py", "cli.py",
+                     "chord_types.py", "port_types.py", "keyframes.py",
+                     "nodes/", "export/", "ui/", "tests/", "demo/"]
+    },
+    "dashboard": {
+      "path": "dashboard/",
+      "type": "package",
+      "loc": 274,
+      "description": "Unified control panel — launches & monitors both services"
+    },
+    "ui": {
+      "path": "ui/",
+      "type": "directory",
+      "loc": 13631,
+      "description": "Frontend assets — single-page editor, 3D viewer, vendor libs",
+      "files": ["index.html (9697 lines)", "shootout.html", "tune.html",
+                "js/client3d.js", "js/editor3d.js",
+                "vendor/three.module.js", "vendor/p5.min.js", "vendor/fflate.module.js"]
+    },
+    "tools": {
+      "path": "tools/",
+      "type": "directory",
+      "loc": 1763,
+      "description": "Development utilities — audit, ID generation, cron image input, wiring validation"
+    },
+    "scripts": {
+      "path": "scripts/",
+      "type": "directory",
+      "loc": 1014,
+      "description": "Launchers, tunnel scripts, demo generators, performance probes"
+    }
+  },
+  "dependencies": {
+    "internal": {
+      "core": ["registry.py → port_types.py → graph.py → utils.py → animation.py",
+               "graph.py → timeline.py, easing.py, expr.py, arch.py",
+               "server.py → core/*, methods/*, nd_runner.py"],
+      "methods": ["methods/* → core/utils.py, core/animation.py, core/registry.py"]
+    },
+    "external_python": [
+      "fastapi==0.137.2", "uvicorn==0.47.0", "numpy==2.4.6", "scipy==1.17.1",
+      "opencv-python==4.13.0.92", "Pillow==12.2.0", "pydantic==2.13.4",
+      "PyYAML==6.0.3", "pyngrok==8.1.2", "watchdog>=4.0.0", "moderngl"
+    ],
+    "external_js": ["three", "puppeteer", "gl"]
+  },
+  "entry_points": {
+    "server": "image_pipeline/server.py (FastAPI, port 7860)",
+    "chord_bot": "chord_bot/server.py (FastAPI, port 7861)",
+    "dashboard": "dashboard/__main__.py (port 7870)",
+    "cli": "image_pipeline/pipeline.py (legacy CLI)"
+  }
+}
