@@ -1,217 +1,245 @@
-"""#86 — Physarum Slime Mold
-Jeff Jones 2010 Physarum transport networks simulation.
-Agent-based slime mold that creates organic vein networks
-through chemoattractant sensing, movement, and trail diffusion.
+"""Physarum transport network — Jeff Jones (2010) agent + trail model.
+
+Slime-mold (Physarum polycephalum) foraging simulation after Sage Jenson's
+GPU implementation (cargocollective.com/sagejenson/physarum), which follows
+Jones' "Characteristics of pattern formation and evolution in approximations
+of Physarum transport networks."
+
+Two coupled layers, each tick:
+  • AGENT layer  — many particles, each with a position + heading and three
+                   sensors (front, front-left, front-right).
+  • TRAIL layer  — a 2D intensity grid (like an image) the agents read from
+                   and write to.
+
+Per-tick sub-steps (the Jones "six steps"):
+  1. SENSE   — each agent samples the trail map at its 3 sensors.
+  2. ROTATE  — steer toward the strongest sensor (turn left / right / straight).
+  3. MOVE    — step forward by `step_size`; wrap toroidally.
+  4. DEPOSIT — add `deposit_amount` to the trail at the agent's cell.
+  5. DIFFUSE — 3x3 mean blur of the whole trail map.
+  6. DECAY   — multiply the trail by `decay` so old paths fade.
+
+The emergent result is the classic Physarum vein / network / blob patterns.
+Collision detection (one-particle-per-cell) is intentionally omitted, as in
+Jenson's implementation, which yields richer patterns and removes sequential
+dependence. Pace is one operation per frame; vary `n_frames` to evolve.
+
+Architecture A: internal tick loop with `capture_frame()` per visible frame.
 """
+
 from __future__ import annotations
+
 import math
 from pathlib import Path
 
 import numpy as np
-import cv2
+from PIL import Image
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, write_field, write_particles
+from ...core.utils import (
+    save, mn, seed_all, W, H, write_scalars, write_field, write_particles,
+    PALETTES,
+)
 from ...core.animation import capture_frame
 
 
-# ─── Colormap rendering (global ceiling) ───────────────────────────────────
+def _box_blur3x3(trail: np.ndarray) -> np.ndarray:
+    """Separable 3x3 mean blur (pure numpy, no scipy dependency)."""
+    # horizontal pass (mode='same' via edge padding)
+    k = np.array([1.0, 1.0, 1.0]) / 3.0
+    row = np.apply_along_axis(
+        lambda r: np.convolve(r, k, mode="same"), axis=1, arr=trail
+    )
+    # vertical pass
+    col = np.apply_along_axis(
+        lambda c: np.convolve(c, k, mode="same"), axis=0, arr=row
+    )
+    return col
 
-def _render_trail(trail: np.ndarray, colormap_name: str, ceiling: float = None) -> np.ndarray:
-    """Render log-scaled trail map to float32 [0,1] RGB.
 
-    When ceiling is provided, uses global normalization — early frames
-    are dark (trail ≪ ceiling), later frames brighten as the network
-    matures. This makes emergence visible. When ceiling is None,
-    falls back to per-frame min/max (for single-frame renders).
-    """
-    log_trail = np.log1p(trail)
-
-    if ceiling is not None and ceiling > 0:
-        normalized = np.clip(log_trail / ceiling, 0.0, 1.0)
-    else:
-        vmax = log_trail.max()
-        if vmax > 0:
-            normalized = log_trail / vmax
+def _intensity_to_color(trail: np.ndarray, colormode: str, pal_name: str,
+                        bg_light: bool) -> np.ndarray:
+    """Map normalized trail intensity -> RGB image."""
+    mx = trail.max()
+    norm = trail / mx if mx > 1e-6 else trail
+    norm = np.clip(norm, 0.0, 1.0)
+    if colormode == "mono":
+        if bg_light:
+            img = np.ones((H, W, 3), dtype=np.float64)
+            img *= (1.0 - norm)[..., None]
+            # light bg, dark veins -> invert so veins are dark
+            img = (1.0 - norm)[..., None] * np.array([0.05, 0.05, 0.08]) + \
+                  norm[..., None] * np.array([0.95, 0.95, 0.92])
         else:
-            normalized = np.zeros_like(log_trail)
-
-    img = np.zeros((H, W, 4), dtype=np.float32)
-
-    if colormap_name == "blues":
-        img[:, :, 0] = normalized * 0.35
-        img[:, :, 1] = normalized * 0.75
-        img[:, :, 2] = 0.04 + normalized * 0.96
-    elif colormap_name == "plasma":
-        t = normalized
-        img[:, :, 0] = np.clip(t * 2.0, 0, 1)
-        img[:, :, 1] = np.clip(t * 2.0 - 0.5, 0, 1) * 0.9
-        img[:, :, 2] = np.clip(1.0 - t * 1.5, 0, 1)
-    elif colormap_name == "neon":
-        img[:, :, 0] = normalized * 0.25
-        img[:, :, 1] = 0.04 + normalized * 0.96
-        img[:, :, 2] = normalized * 0.45
-    elif colormap_name == "amber":
-        img[:, :, 0] = 0.04 + normalized * 0.96
-        img[:, :, 1] = normalized * 0.65
-        img[:, :, 2] = normalized * 0.12
-
-    # Alpha: trail intensity → transparency
-    img[:, :, 3] = np.clip(normalized * 1.2, 0, 1)  # semi-transparent at low intensity, opaque at high
-
+            img = norm[..., None] * np.array([0.95, 0.92, 0.85])
+        return np.clip(img, 0.0, 1.0)
+    # palette mode: sample a ramp by intensity
+    pal = PALETTES.get(pal_name)
+    if not pal:
+        pal = PALETTES.get("amber")
+    pal_arr = np.array(pal, dtype=np.float64) / 255.0
+    # build a smooth ramp across the palette
+    idx = np.clip(norm * (len(pal_arr) - 1), 0, len(pal_arr) - 1).astype(np.int64)
+    ramp = pal_arr[idx]  # (H,W,3)
+    if bg_light:
+        bg = np.array([0.95, 0.95, 0.92])
+    else:
+        bg = np.array([0.02, 0.02, 0.04])
+    # blend veins over background by intensity
+    img = norm[..., None] * ramp + (1.0 - norm[..., None]) * bg
     return np.clip(img, 0.0, 1.0)
 
 
-# ─── Jeff Jones 2010 Physarum transport networks ───────────────────────────
-
 @method(
-    inputs={},id="86", name="Physarum Slime Mold", category="simulations",
-         tags=["physarum", "slime-mold", "agents", "organic", "animation"],
-         timeout=300,
-         params={
-             "num_agents": {"description": "number of slime mold agents",
-                            "min": 500, "max": 5000, "default": 2000},
-             "sa": {"description": "sensor angle (radians)",
-                    "min": 0.1, "max": 1.5, "default": 0.7},
-             "sd": {"description": "sensor distance (pixels)",
-                    "min": 2, "max": 30, "default": 9},
-             "ra": {"description": "rotation angle (radians)",
-                    "min": 0.1, "max": 1.5, "default": 0.3},
-             "md": {"description": "move distance (pixels)",
-                    "min": 1, "max": 5, "default": 1},
-             "deposit": {"description": "trail deposit amount",
-                         "min": 1, "max": 50, "default": 5},
-             "decay": {"description": "trail decay factor",
-                       "min": 0.5, "max": 0.99, "default": 0.85},
-             "blur_sigma": {"description": "diffusion blur sigma",
-                            "min": 0.5, "max": 5.0, "default": 1.0},
-             "n_frames": {"description": "total animation frames",
-                          "min": 50, "max": 300, "default": 150},
-             "colormap": {"description": "color scheme",
-                          "choices": ["blues", "plasma", "neon", "amber"],
-                          "default": "blues"},"anim_mode": {"description": "animation mode",
-                           "choices": ["none", "evolve"],
-                           "default": "none"},
-             "anim_speed": {"description": "animation speed multiplier",
-                            "min": 0.1, "max": 5.0, "default": 1.0},
-         },
-         outputs={"image": "IMAGE", "luminance": "SCALAR", "field": "FIELD", "particles": "PARTICLES"})
+    id="530",
+    name="Physarum Transport Network",
+    category="simulations",
+    tags=["physarum", "slime-mold", "agents", "trail-map", "foraging", "animation"],
+    inputs={},
+    outputs={"image": "IMAGE", "field": "FIELD", "particles": "PARTICLES", "luminance": "SCALAR"},
+    params={
+        "agents": {"description": "number of slime agents", "min": 500, "max": 40000, "default": 12000},
+        "spawn": {"description": "agent initial placement", "choices": ["random", "ring", "center"], "default": "random"},
+        "sensor_dist": {"description": "how far ahead sensors look (px)", "min": 1.0, "max": 40.0, "default": 9.0},
+        "sensor_angle": {"description": "left/right sensor angle (radians)", "min": 0.05, "max": 1.8, "default": 0.5},
+        "rotation_angle": {"description": "turn step per tick (radians)", "min": 0.02, "max": 1.2, "default": 0.4},
+        "step_size": {"description": "move distance per tick (px)", "min": 0.2, "max": 6.0, "default": 1.0},
+        "deposit_amount": {"description": "trail deposited per agent", "min": 0.05, "max": 5.0, "default": 1.0},
+        "decay": {"description": "trail multiplicative decay (higher = persists)", "min": 0.80, "max": 0.99, "default": 0.93},
+        "diffuse": {"description": "diffusion blend with 3x3 mean (0=none,1=full)", "min": 0.0, "max": 1.0, "default": 0.6},
+        "colormode": {"description": "vein color: mono (b/w) or palette", "choices": ["mono", "palette"], "default": "palette"},
+        "palette": {"description": "palette name when colormode=palette", "default": "amber"},
+        "bg_style": {"description": "background (dark/light)", "choices": ["dark", "light"], "default": "dark"},
+        "n_frames": {"description": "simulation ticks", "min": 30, "max": 600, "default": 220},
+    },
+)
 def method_physarum(out_dir: Path, seed: int, params=None):
-    """Simulate Physarum polycephalum slime mold transport networks.
+    try:
+        if params is None:
+            params = {}
+        agents = int(params.get("agents", 12000))
+        spawn = str(params.get("spawn", "random"))
+        sensor_dist = float(params.get("sensor_dist", 9.0))
+        sensor_angle = float(params.get("sensor_angle", 0.5))
+        rotation_angle = float(params.get("rotation_angle", 0.4))
+        step_size = float(params.get("step_size", 1.0))
+        deposit_amount = float(params.get("deposit_amount", 1.0))
+        decay = float(params.get("decay", 0.93))
+        diffuse = float(params.get("diffuse", 0.6))
+        colormode = str(params.get("colormode", "palette"))
+        pal_name = str(params.get("palette", "amber"))
+        bg_style = str(params.get("bg_style", "dark"))
+        n_frames = int(params.get("n_frames", 220))
 
-    Implements Jeff Jones' 2010 agent-based model. Agents sense
-    chemoattractant trail at three forward positions, turn toward the
-    strongest signal, move forward, and deposit trail. The trail map
-    diffuses and decays each frame.
+        seed_all(seed)
+        rng = np.random.default_rng(seed)
 
-    Animation (evolve mode): the network emerges organically over
-    ~150 frames — starts dark with no trail, brightens as agents build
-    the transport network. No parameter modulation — pure growth.
+        bg_light = bg_style == "light"
 
-    Static (none mode): renders the mature network after all frames.
+        # ── Trail map ──
+        trail = np.zeros((H, W), dtype=np.float64)
 
-    Args:
-        out_dir: Output directory.
-        seed: Random seed.
-        params: Parameter overrides dict.
-    """
-    if params is None:
-        params = {}
+        # ── Agent initialization ──
+        agents = max(1, min(agents, 40000))
+        if spawn == "ring":
+            cx, cy = W / 2.0, H / 2.0
+            r = min(W, H) * 0.35
+            a = rng.uniform(0, 2 * math.pi, size=agents)
+            pos = np.stack([cx + r * np.cos(a), cy + r * np.sin(a)], axis=-1)
+            heading = a + math.pi  # point inward
+        elif spawn == "center":
+            cx, cy = W / 2.0, H / 2.0
+            pos = np.stack([
+                cx + rng.normal(0, min(W, H) * 0.02, size=agents),
+                cy + rng.normal(0, min(W, H) * 0.02, size=agents),
+            ], axis=-1)
+            heading = rng.uniform(0, 2 * math.pi, size=agents)
+        else:  # random
+            pos = rng.uniform(0, [W - 1, H - 1], size=(agents, 2))
+            heading = rng.uniform(0, 2 * math.pi, size=agents)
 
-    t = float(params.get("time", 0.0))
-    anim_speed = float(params.get("anim_speed", 1.0))
-    anim_mode = params.get("anim_mode", "none")
+        pos = pos.astype(np.float64)
+        heading = heading.astype(np.float64)
 
-    seed_all(seed)
-    rng = np.random.default_rng(seed)
+        def _sample_trail(px, py):
+            """Bilinear sample of the trail map at float pixel coords."""
+            fx = np.clip(px, 0, W - 1)
+            fy = np.clip(py, 0, H - 1)
+            x0 = fx.astype(np.int64); y0 = fy.astype(np.int64)
+            x1 = np.minimum(x0 + 1, W - 1); y1 = np.minimum(y0 + 1, H - 1)
+            tx = fx - x0; ty = fy - y0
+            w00 = (1 - tx) * (1 - ty); w10 = tx * (1 - ty)
+            w01 = (1 - tx) * ty; w11 = tx * ty
+            return (trail[y0, x0] * w00 + trail[y0, x1] * w10 +
+                    trail[y1, x0] * w01 + trail[y1, x1] * w11)
 
-    num_agents = int(params.get("num_agents", 2000))
-    sa = float(params.get("sa", 0.7))
-    sd = float(params.get("sd", 9))
-    ra = float(params.get("ra", 0.3))
-    md = float(params.get("md", 1))
-    deposit = float(params.get("deposit", 5))
-    decay = float(params.get("decay", 0.85))
-    blur_sigma = float(params.get("blur_sigma", 1.0))
-    n_frames = int(params.get("n_frames", 150))
-    colormap_name = params.get("colormap", "blues")
+        img = None
+        for frame in range(n_frames):
+            # ── 1. SENSE ──
+            ca = np.cos(heading); sa = np.sin(heading)
+            # front
+            fx = pos[:, 0] + ca * sensor_dist
+            fy = pos[:, 1] + sa * sensor_dist
+            # front-left
+            la = heading - sensor_angle
+            lx = pos[:, 0] + np.cos(la) * sensor_dist
+            ly = pos[:, 1] + np.sin(la) * sensor_dist
+            # front-right
+            ra = heading + sensor_angle
+            rx = pos[:, 0] + np.cos(ra) * sensor_dist
+            ry = pos[:, 1] + np.sin(ra) * sensor_dist
+            s_f = _sample_trail(fx, fy)
+            s_l = _sample_trail(lx, ly)
+            s_r = _sample_trail(rx, ry)
 
-    _t = t * anim_speed
+            # ── 2. ROTATE ──
+            turn = np.zeros(agents, dtype=np.float64)
+            left_mask = (s_l > s_f) & (s_l >= s_r)
+            right_mask = (s_r > s_f) & (s_r >= s_l)
+            turn[left_mask] = -rotation_angle
+            turn[right_mask] = rotation_angle
+            # tie / straight -> no turn
+            heading = heading + turn
 
-    # ── Initialize agents ──
-    positions = rng.random((num_agents, 2)) * np.array([W, H], dtype=np.float32)
-    headings = rng.random(num_agents, dtype=np.float32) * 2.0 * math.pi
+            # ── 3. MOVE (toroidal wrap) ──
+            pos[:, 0] += np.cos(heading) * step_size
+            pos[:, 1] += np.sin(heading) * step_size
+            pos[:, 0] = np.mod(pos[:, 0], W - 1)
+            pos[:, 1] = np.mod(pos[:, 1], H - 1)
 
-    # ── Trail map ──
-    trail = np.zeros((H, W), dtype=np.float32)
+            # ── 4. DEPOSIT ──
+            ix = np.clip(pos[:, 0].astype(np.int64), 0, W - 1)
+            iy = np.clip(pos[:, 1].astype(np.int64), 0, H - 1)
+            np.add.at(trail, (iy, ix), deposit_amount)
 
-    # ── Global ceiling for emergence rendering ──
-    # Trail max converges to ~log1p(8) after 144 frames at default params.
-    # Use 0.001 factor so ceiling ≈ 2.4 — final frame reaches ~90% brightness,
-    # early frames are proportionally dimmer (visible growth).
-    ceiling = max(np.log1p(num_agents * deposit * 0.001), 0.1)
+            # ── 5. DIFFUSE (3x3 mean) ──
+            if diffuse > 0.0:
+                blurred = _box_blur3x3(trail)
+                trail = (1.0 - diffuse) * trail + diffuse * blurred
 
-    # ── Kernel for blur (constant, not varying per frame) ──
-    ksize = max(3, int(blur_sigma * 6.0 + 1.0))
-    if ksize % 2 == 0:
-        ksize += 1
+            # ── 6. DECAY ──
+            trail *= decay
 
-    # ── Simulation loop ──
-    for frame in range(n_frames):
-        # Per-frame _t for seed variation between animations
-        _frame_seed = seed + int((t + frame / max(1, n_frames)) * anim_speed * 10000)
+            # ── render ──
+            img = _intensity_to_color(trail, colormode, pal_name, bg_light)
+            pout = np.stack([pos[:, 0], pos[:, 1],
+                             np.cos(heading), np.sin(heading)], axis=-1).astype(np.float32)
+            write_particles(out_dir, pout)
+            capture_frame("530", img.astype(np.float32))
 
-        # ── SENSE → DECIDE → MOVE → DEPOSIT ──
-        for i in range(num_agents):
-            px, py = positions[i]
-            heading = headings[i]
+        if img is None:
+            img = _intensity_to_color(trail, colormode, pal_name, bg_light)
+        img = img.astype(np.float32)
 
-            cx = px + math.cos(heading) * sd
-            cy = py + math.sin(heading) * sd
-            lx = px + math.cos(heading - sa) * sd
-            ly = py + math.sin(heading - sa) * sd
-            rx = px + math.cos(heading + sa) * sd
-            ry = py + math.sin(heading + sa) * sd
-
-            cx_w = int(cx) % W; cy_w = int(cy) % H
-            lx_w = int(lx) % W; ly_w = int(ly) % H
-            rx_w = int(rx) % W; ry_w = int(ry) % H
-
-            c_val = trail[cy_w, cx_w]
-            l_val = trail[ly_w, lx_w]
-            r_val = trail[ry_w, rx_w]
-
-            if c_val > l_val and c_val > r_val:
-                pass
-            elif l_val > c_val and l_val > r_val:
-                headings[i] -= ra
-            elif r_val > c_val and r_val > l_val:
-                headings[i] += ra
-            elif c_val < l_val and c_val < r_val:
-                headings[i] += ra if rng.random() > 0.5 else -ra
-
-            px += math.cos(headings[i]) * md
-            py += math.sin(headings[i]) * md
-            px %= W; py %= H
-            positions[i] = (px, py)
-
-            ix = int(px) % W; iy = int(py) % H
-            trail[iy, ix] += deposit
-
-        # ── Diffuse + decay ──
-        trail = cv2.GaussianBlur(trail, (ksize, ksize), blur_sigma)
-        trail *= decay
-
-        # ── Capture (every frame for smooth animation) ──
-        img = _render_trail(trail, colormap_name, ceiling=ceiling)
-        capture_frame("86", img)
-
-    # ── Final render and save (single-frame: use per-frame normalization) ──
-    final_img = _render_trail(trail, colormap_name, ceiling=None)
-    capture_frame("86", final_img)
-    write_field(out_dir, trail)
-    _vx = np.cos(headings).astype(np.float32)
-    _vy = np.sin(headings).astype(np.float32)
-    write_particles(out_dir, np.stack([positions[:, 0], positions[:, 1], _vx, _vy], axis=1))
-    save(final_img, mn(86, "Physarum"), out_dir)
-    return final_img
+        write_field(out_dir, trail.astype(np.float32))
+        write_scalars(out_dir,
+                      mean_trail=float(trail.mean()),
+                      max_trail=float(trail.max()),
+                      n_agents=float(agents))
+        save(img, mn(530, "Physarum"), out_dir)
+        return img
+    except Exception as exc:
+        fallback = np.full((H, W, 3), 128, dtype=np.uint8)
+        save(fallback, mn(530, "Physarum"), out_dir)
+        print(f"[method_530] ERROR: {exc}")
+        return fallback
