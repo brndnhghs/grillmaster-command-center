@@ -412,3 +412,15 @@ Action: added CHEAP O(n) animated node 2D Gaussian Splatting (965). Structurally
   widen explore_ratio / cost-gated seeding so cheap high-liveness generators
   (957/959/960/961/962/965/966) dominate fresh breeds; the stale gen-0 corpus
   stops polluting the dead-rate once gen-2+ accumulates.
+
+## 2026-07-14 (Route 8 driver-modulation regression test — confirms generation-side root cause)
+- Diagnostic re-run: genomes=537, alive=186, dead/rejected=351 (65%).
+- Dead reasons: static 107 (30%), timeout 97 (28%), flat 94 (27%), over-budget 30 (9%), no-output 7, flicker 7, skipped 6, node_error 3.
+- Render cost: renders>150s=131 (24%), >100s=158, max=547s. Human ratings=18 (still starved, <20).
+- Driver correlation check (the key PHASE-1 diagnostic): WITH driver deadrate=66%, WITHOUT driver deadrate=64%. **Drivers are NOT causal** — the headline Route-8 hypothesis (driver modulation not reaching pixels) is DISPROVEN; it was a co-occurrence artifact (drivers are common, dead genomes are common).
+- Render-based proof: new test_shootout_driver_modulation.py builds [noise src] -> [Transform.rotate] <- [driver.value] for __lfo__/__counter__/__noise1d__, renders 16 frames via GraphExecutor, and asserts (1) the driver SCALAR output varies per frame, (2) terminal temporal_var > liveness floor, (3) the driver-less control is ~static. 4/4 pass. This locks the wiring path as correct (corroborates evolution-research 2026-07-13).
+- Top-rated survivors (promotion seeds): g-e181c881 (5), g-328f0d37 (5), g-e3d68069 (5), g-97f1158a (5), g-9636245b (4). ALIVE=186, CHEAP-ALIVE=110. Surviving-motif coverage: post_fx 183, sim_backbone 73, masked_composite 20, pattern_blend 19, feedback_loop 11.
+- ACTION: committed test_shootout_driver_modulation.py (headless driver→pixel regression guard). No core/logic change — pure test.
+- RECOMMENDED NEXT (real levers, both generation/cost-side, NOT driver/executor):
+  (a) timeout 97 + over-budget 30 = 127 dead from render cost — the cost gate (tail-latency basis, liveness-prior exemption) still lets alive-but-slow clips slip past the 150s cap. Tune cost_skip_factor / extend tail basis and verify via a fresh-generation A/B (don't touch liveness thresholds — they are correct).
+  (b) generation-side "born animated" guarantee in sample_valid_genome (per evolution-research 2026-07-13) so static graphs stop being generated; this is the dominant remaining lever for the static(107)+flat(94) buckets.

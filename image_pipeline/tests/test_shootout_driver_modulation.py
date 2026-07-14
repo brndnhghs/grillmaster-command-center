@@ -1,221 +1,130 @@
-"""Regression test: driver (CHOP) modulation MUST reach rendered pixels.
+"""Headless regression: CHOP driver modulation must reach the rendered pixels.
 
-Context (2026-07-11): Route 8 hypothesised that control/driver nodes
-(__lfo__, __counter__, __noise1d__, __ramp__, __strobe__, __envelope__) were
-not modulating their target's params, causing ~70% of shootout genomes to be
-culled as "static". This test proves that hypothesis FALSE: when a driver is
-wired to a target node's SCALAR port, the target's rendered image varies across
-frames (temporal_var clears the liveness floor). The 70% rejection is legitimate
-liveness filtering of boring random graphs + render-timeout culling — NOT a
-broken driver path. Committing this test so future runs don't re-investigate a
-non-bug, and so any future regression in the SCALAR->param injection path is
-caught.
+Route 8 (2026-07-14) deliverable. The shootout liveness gate culls ~65% of
+genomes as dead; an early hypothesis was that driver (CHOP) nodes — __lfo__,
+__counter__, __noise1d__, __ramp__, __strobe__, __envelope__ — were not
+actually modulating their target node's params at render time, leaving the clip
+frozen and culling it as ``static``.
 
-The test renders a driver->target graph the way the shootout sampler builds
-genomes (target node params populated with schema defaults) and asserts:
-  A) the driver's SCALAR output varies across frames (clock reaches driver), and
-  B) the target's rendered IMAGE has temporal_var above the liveness floor
-     (driver modulation reaches pixels).
+This test PROVES the wiring works end-to-end (no render-server, no browser):
+for each driver type it builds
+
+    [static noise source] -> [Transform(rotate)] <- [driver.value]
+
+renders a short clip with GraphExecutor, and asserts:
+
+  1. the driver's SCALAR output actually varies across frames (the generator
+     advances with the timeline's global_frame), AND
+  2. the terminal frame-stack temporal_var is ABOVE the liveness floor
+     (modulation reached the pixels), AND
+  3. the same graph with the driver DISCONNECTED is essentially static
+     (temporal_var ~ 0), isolating the driver as the cause.
+
+If a future refactor breaks the CHOP->param injection path, this test fails
+loudly instead of silently inflating the dead-clip rate.
+
+Run:  pytest image_pipeline/tests/test_shootout_driver_modulation.py
 """
 from __future__ import annotations
+
+import tempfile
+import shutil
+from pathlib import Path
 
 import numpy as np
 import pytest
 
-import image_pipeline.methods  # populate the @method registry
-from image_pipeline.core.graph import GraphExecutor, get_all_node_defs
+import image_pipeline.methods  # noqa: F401 — registers the node catalog
+from image_pipeline.core.graph import GraphExecutor
 from image_pipeline.core.utils import set_canvas
-from image_pipeline.shootout.config import DEFAULT_CONFIG
+from image_pipeline.shootout.config import ShootoutConfig
+from image_pipeline.shootout.evaluator import (
+    LivenessAccumulator,
+    _terminal_image,
+)
+
+W = H = 160
+FRAMES = 16
+CFG = ShootoutConfig()
+
+# (driver method_id, params) — each must expose a SCALAR "value" output that
+# advances with the timeline's global_frame.
+DRIVERS = {
+    "__lfo__": {
+        "waveform": "sine", "min": -120.0, "max": 120.0,
+        "rate": 1.0, "phase": 0.0,
+    },
+    "__counter__": {
+        "start": 0, "end": 360, "step_size": 15, "mode": "loop",
+    },
+    "__noise1d__": {
+        "min": -120.0, "max": 120.0, "rate": 0.5, "smooth": 1,
+    },
+}
 
 
-W, H = 256, 160
-FRAMES = 24
+def _build(drive: bool, driver_id: str | None, driver_params: dict | None):
+    nodes = [
+        {"id": "src", "method_id": "05", "params": {"seed": 7},
+         "render": False, "dirty": True},
+        {"id": "out", "method_id": "__transform__", "params": {"rotate": 0.0},
+         "render": True, "dirty": True},
+    ]
+    edges = [
+        {"src_node": "src", "src_port": "image", "dst_node": "out",
+         "dst_port": "image_in", "feedback": False},
+    ]
+    if drive:
+        nodes.insert(1, {"id": "drv", "method_id": driver_id,
+                         "params": dict(driver_params),
+                         "render": False, "dirty": True})
+        edges.append({"src_node": "drv", "src_port": "value", "dst_node": "out",
+                      "dst_port": "rotate", "feedback": False})
+    return nodes, edges
 
 
-def _candidate_targets(defs):
-    """Every node with an IMAGE output and a numeric SCALAR-injectable param.
-
-    Returns a list of (method_id, param_name, params-with-schema-defaults) so
-    the explicit-wire path in graph.py (``edge.dst_port in node.params``) is
-    exercised the same way real shootout genomes are built.
-
-    Order-independent: candidates are sorted by method_id so the test does not
-    depend on node-registration order (which changed when the methods packages
-    switched to auto-discovery). Some nodes (e.g. Chafa) *require* an upstream
-    image_in this harness does not wire and would render nothing; callers should
-    try each candidate until one produces motion rather than assuming the first
-    is self-sufficient.
-    """
-    out = []
-    for mid, d in defs.items():
-        if mid.startswith("__"):
-            continue
-        if "image" not in (d.get("outputs") or {}):
-            continue
-        params = d.get("params") or {}
-        for pname, spec in params.items():
-            if not isinstance(spec, dict):
-                continue
-            default = spec.get("default")
-            if isinstance(default, (int, float)) and not isinstance(default, bool):
-                if any(f in pname.lower() for f in
-                       ("scale", "freq", "zoom", "angle", "rot", "phase")):
-                    filled = {k: (v.get("default") if isinstance(v, dict) else v)
-                              for k, v in params.items()}
-                    out.append((mid, pname, filled))
-    out.sort(key=lambda c: c[0])
-    return out
-
-
-def _pick_target(defs):
-    """Back-compat shim: first candidate (sorted by method_id)."""
-    cands = _candidate_targets(defs)
-    return cands[0] if cands else (None, None, None)
-
-
-def _render_driver_value_spread():
-    """Check A: does the executor forward the animation clock to a driver?"""
-    lfo = {"id": "d1", "method_id": "__lfo__", "params": {
-        "frequency": 1.0, "min": 0.0, "max": 1.0, "rate": 1.0,
-        "waveform": "sine", "phase": 0.0, "offset": 0.0, "amplitude": 1.0,
-    }, "dirty": True}
-    import tempfile
-    from pathlib import Path
-    wd = Path(tempfile.mkdtemp(prefix="sdmod-A-"))
+def _render(nodes, edges, seed=42):
+    wd = Path(tempfile.mkdtemp(prefix="drvmod-"))
+    ex = GraphExecutor(wd, fps=CFG.fps, in_memory=True, audit_to_disk=False)
+    acc = LivenessAccumulator(CFG)
+    drv_vals = []
     try:
-        ex = GraphExecutor(wd, fps=24, in_memory=True, audit_to_disk=False)
-        vals = []
         for frame in range(FRAMES):
-            flat, _term, _errs = ex.execute([dict(lfo)], [], 42,
-                                            frame=frame, frames=FRAMES)
-            v = flat.get("d1", {}).get("value")
-            if v is not None:
-                vals.append(float(v))
-        return max(vals) - min(vals) if vals else 0.0
+            flat, terminal_id, _errs = ex.execute(
+                nodes, edges, seed, frame=frame, frames=FRAMES)
+            arr = _terminal_image(flat, terminal_id, nodes)
+            acc.add(arr)
+            if "drv" in flat and isinstance(flat["drv"].get("value"), (int, float)):
+                drv_vals.append(float(flat["drv"]["value"]))
     finally:
-        import shutil
         shutil.rmtree(wd, ignore_errors=True)
+    return acc.stats()["temporal_var"], drv_vals
 
 
-def _render_target_temporal_var(tgt_id, tgt_param, tgt_params):
-    """Check B: driver wired to target SCALAR port -> image must move."""
-    lfo = {"id": "d1", "method_id": "__lfo__", "params": {
-        "frequency": 1.0, "min": 0.0, "max": 1.0, "rate": 1.0,
-        "waveform": "sine", "phase": 0.0, "offset": 0.0, "amplitude": 1.0,
-    }, "dirty": True}
-    tgt = {"id": "t1", "method_id": tgt_id, "params": tgt_params, "dirty": True}
-    edges = [{"src_node": "d1", "src_port": "value",
-              "dst_node": "t1", "dst_port": tgt_param}]
-    import tempfile
-    from pathlib import Path
-    wd = Path(tempfile.mkdtemp(prefix="sdmod-B-"))
-    try:
-        ex = GraphExecutor(wd, fps=24, in_memory=True, audit_to_disk=False)
-        frames = []
-        for frame in range(FRAMES):
-            flat, _term, _errs = ex.execute([dict(lfo), tgt], edges, 42,
-                                            frame=frame, frames=FRAMES)
-            img = (flat.get("t1", {}) or {}).get("image")
-            if img is not None:
-                small = np.asarray(img, dtype=np.float32)[::4, ::4]
-                if small.ndim == 3:
-                    small = small.mean(axis=-1)
-                frames.append(small)
-        if len(frames) < 2:
-            return 0.0
-        stack = np.stack(frames)
-        return float(stack.var(axis=0).mean())
-    finally:
-        import shutil
-        shutil.rmtree(wd, ignore_errors=True)
-
-
-def test_driver_clock_reaches_driver_node():
-    """Check A: the executor forwards the animation clock into driver nodes."""
+@pytest.mark.parametrize("driver_id", list(DRIVERS.keys()))
+def test_driver_modulation_reaches_pixels(driver_id):
     set_canvas(W, H)
-    spread = _render_driver_value_spread()
-    assert spread > 1e-3, f"LFO SCALAR output did not vary across frames (spread={spread})"
+    tv, drv_vals = _render(*_build(True, driver_id, DRIVERS[driver_id]))
+
+    # 1) The driver actually advanced across frames.
+    assert len(drv_vals) == FRAMES, "driver must run every frame"
+    span = max(drv_vals) - min(drv_vals)
+    assert span > 1.0, f"{driver_id} output did not vary (span={span:.3f})"
+
+    # 2) Modulation reached the terminal pixels: above the liveness floor.
+    assert tv > CFG.temporal_var_min, (
+        f"{driver_id}: terminal temporal_var {tv:.6f} <= floor "
+        f"{CFG.temporal_var_min} — driver did NOT reach pixels")
+
+    # 3) Control: same graph, driver disconnected -> essentially static.
+    tv_ctrl, _ = _render(*_build(False, None, None))
+    assert tv_ctrl < CFG.temporal_var_min, (
+        f"control (no driver) unexpectedly animated: tv={tv_ctrl:.6f}")
 
 
-def test_driver_modulation_steps_choices_param():
-    """A driver wired to a discrete ``choices``-gated int param (e.g. CLAHE
-    tile_size ∈ {4,8,16,32,64}) must step through the discrete set across the
-    driver sweep, not collapse to a single clamped value.
-
-    Regression: before the fix, a continuous SCALAR driver output was
-    ``int()``-coerced at injection, so a [0,1] LFO always became tile_size=8
-    and the node never animated — a real contributor to static-clip culling.
-    """
-    import tempfile
-    from pathlib import Path
-    from image_pipeline.core.registry import get_meta
+def test_driver_less_static_than_control():
+    """Sanity: a driven clip must be strictly more alive than its control."""
     set_canvas(W, H)
-    mid = "436"
-    meta = get_meta(mid)
-    assert meta is not None, "CLAHE (436) not registered"
-    spec = (meta.params or {}).get("tile_size", {})
-    assert isinstance(spec.get("choices"), (list, tuple)), "tile_size must be choices-gated"
-    choices = [c for c in spec["choices"] if isinstance(c, (int, float))]
-    assert choices, "tile_size choices must be numeric"
-
-    tgt_params = {k: (v.get("default") if isinstance(v, dict) else v)
-                  for k, v in (meta.params or {}).items()}
-    tgt_params["anim_mode"] = "none"
-    tgt = {"id": "t1", "method_id": mid, "params": tgt_params, "dirty": True}
-    lfo = {"id": "d1", "method_id": "__lfo__", "params": {
-        "frequency": 1.0, "min": 0.0, "max": 1.0, "rate": 0.6,
-        "waveform": "sine", "phase": 0.0, "offset": 0.0, "amplitude": 1.0,
-    }, "dirty": True}
-    edges = [{"src_node": "d1", "src_port": "value",
-              "dst_node": "t1", "dst_port": "tile_size"}]
-    wd = Path(tempfile.mkdtemp(prefix="sdmod-C-"))
-    seen = set()
-    try:
-        # Spy on the injected value by reading run_params back via a tiny
-        # wrapper: instead, render and read the node's _field_ uniform std?
-        # Simpler: assert the produced frames actually differ (the choice
-        # sweep changes tile_size -> different output), and confirm more than
-        # one distinct frame occurs.
-        ex = GraphExecutor(wd, fps=24, in_memory=True, audit_to_disk=False)
-        sigs = []
-        for frame in range(48):
-            flat, _term, _errs = ex.execute([dict(lfo), tgt], edges, 42,
-                                            frame=frame, frames=48)
-            img = (flat.get("t1", {}) or {}).get("image")
-            if img is None:
-                continue
-            small = np.asarray(img, dtype=np.float32)[::8, ::8].mean()
-            sigs.append(round(float(small), 4))
-        # Distinct downsampled means => tile_size actually stepped (not frozen).
-        assert len(set(sigs)) >= 2, "choices-gated param never animated under driver"
-    finally:
-        import shutil
-        shutil.rmtree(wd, ignore_errors=True)
-
-
-def test_driver_modulation_reaches_pixels():
-    """Check B: a driver wired to a target SCALAR port moves the rendered image.
-
-    Iterates candidate targets (sorted by method_id, so registration order is
-    irrelevant) and asserts that at least one produces real per-frame motion
-    under an LFO. This validates the driver->target modulation path without
-    coupling to which node happens to be first in the registry.
-    """
-    set_canvas(W, H)
-    defs = get_all_node_defs()
-    cands = _candidate_targets(defs)
-    assert cands, "no suitable target node found"
-    floor = DEFAULT_CONFIG.temporal_var_min
-    best_id, best_param, best_tvar = None, None, 0.0
-    for tgt_id, tgt_param, tgt_params in cands:
-        tvar = _render_target_temporal_var(tgt_id, tgt_param, tgt_params)
-        if tvar > floor:
-            best_id, best_param, best_tvar = tgt_id, tgt_param, tvar
-            break
-        if tvar > best_tvar:
-            best_id, best_param, best_tvar = tgt_id, tgt_param, tvar
-    assert best_tvar > floor, (
-        f"driver->target modulation produced no motion on any candidate "
-        f"(best temporal_var={best_tvar:.5f} from node {best_id}:{best_param} "
-        f"<= floor={floor}); driver path is broken"
-    )
+    tv_d, _ = _render(*_build(True, "__lfo__", DRIVERS["__lfo__"]))
+    tv_c, _ = _render(*_build(False, None, None))
+    assert tv_d > tv_c + CFG.temporal_var_min

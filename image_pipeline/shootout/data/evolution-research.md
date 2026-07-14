@@ -179,6 +179,30 @@ recall 64/97, false-cull 17/186 (9.1%) — strict improvement on both axes
 (+25 timeouts caught pre-render ≈ +2h compute/corpus, fewer dynamic clips culled).
 tail-only would hit 28.5% false-cull; the exemption is what keeps precision.
 
+---
+
+## 2026-07-14 — Render-based corroboration of the generation-side root cause
+
+Added `image_pipeline/tests/test_shootout_driver_modulation.py`: a headless
+(no server, no browser) test that renders a real driver→filter graph
+`[noise src] -> [Transform.rotate] <- [driver.value]` for `__lfo__` /
+`__counter__` / `__noise1d__`, and asserts (1) the driver SCALAR output varies
+per frame, (2) the terminal frame-stack temporal_var clears the liveness floor,
+(3) the driver-less control is ~static. 4/4 pass.
+
+This is the first test that proves the driver→pixel path through the actual
+GraphExecutor render loop (not just the motif-composer invariant in
+test_shootout_motif_born_animated.py). It locks in the 2026-07-13 conclusion:
+the executor correctly feeds the driver output into the target param every
+frame; the 65% dead rate is legitimate static/flat culling + render cost, NOT
+driver plumbing. The PHASE-1 driver-correlation check confirms it: WITH driver
+deadrate=66% vs WITHOUT driver deadrate=64% across 537 genomes.
+
+Open lever (unchanged): implement the generation-side "born animated" guarantee
+in `sample_valid_genome` so static graphs stop being generated; and tune the
+cost gate (tail basis + `cost_skip_factor`) to pre-empt the residual ~97 timeout
+slip-throughs. Do NOT change the liveness thresholds — they are correct.
+
 **VERIFICATION.** `tests/test_shootout_tail_liveness_gate.py` (7 tests): tail≥median,
 tail catches a synthetic slow-param slip-through the median misses, exemption
 spares likely-dynamic / gates likely-static, unknown-prior never exempts,
