@@ -352,3 +352,38 @@ Extracted shared `_sim_entry_bytes()` (was a nested def in _evict_sim_cache).
 - Remaining open: TD-15 (easing), R9 finish (server/runner/registry logging),
   TD-13 (server except narrowing), R11-R14 (large refactors).
 - Next: TD-15 (easing normalize) — small, self-contained, safe to land.
+
+---
+
+## Iteration 10 — 2026-07-14 (observation-only, no source edits)
+
+### Context
+Parked after iteration 9 (TD-03 closed, health 8.3). The only unblocked decision
+was TD-15 (easing), which is a *behavioral* change to animation output and needs
+user input. Meanwhile several concurrent sessions are actively editing/running
+the tree (servers on 7860, 12-minute shootout suites, full-suite pytest runs).
+Editing server.py / runner.py / method modules now risks the racing-corruption
+problem in the loop's memory notes.
+
+### Action (safe, memory-only)
+Rather than touch concurrently-edited code, I captured latent bugs OBSERVED in
+those other sessions' runtime output as new TECHNICAL_DEBT items — no source
+changes, zero collision risk:
+- TD-16: flowfield.py:398 overflow in glow-color clamp (RuntimeWarning).
+- TD-17: evaluator.py:115 "Mean of empty slice" / invalid divide on static diffs.
+- TD-18: live server `n5: empty range in randrange(50, 23)` — node emitted
+  min>max random range; param-range validation gap.
+- TD-19: live server `n2: name '_LANGTON_EXTRA_PALETTES' is not defined` —
+  Langton node references an undefined symbol (incomplete refactor).
+
+Also confirmed (positive): my iteration-8 `logging.error("[node-error] %s: %s")`
+format is live in the running server and correctly surfaces these as
+`ERROR:root:[node-error] nX: ...` — the R9 logging work is in production use.
+
+### Resulting State
+- No code changes this iteration (by design — avoid collision with active
+  concurrent edits). Debt register enriched with 4 observed issues.
+- Still blocked on TD-15 user decision before any animation-output change.
+- Next safe move once quiet: TD-15 (warn+document, zero output change) or pick
+  up TD-16/TD-17 (small, isolated, low-collision fixes) if their modules are
+  not being concurrently edited at that moment.
