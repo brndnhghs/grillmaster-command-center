@@ -17,6 +17,13 @@ from typing import Callable
 
 import numpy as np
 
+try:
+    import cv2
+    _HAS_CV2 = True
+except Exception:  # pragma: no cover - optical-flow rescue degrades gracefully
+    cv2 = None
+    _HAS_CV2 = False
+
 from image_pipeline.core.animation import frames_to_mp4
 from image_pipeline.core.graph import GraphExecutor
 
@@ -40,6 +47,7 @@ class LivenessAccumulator:
     def __init__(self, cfg: ShootoutConfig):
         self.cfg = cfg
         self.small: list[np.ndarray] = []
+        self.small_f: list[np.ndarray] = []  # higher-res grayscale for optical flow
         self.nan = False
         self.missing = 0
         self.total = 0
@@ -57,6 +65,16 @@ class LivenessAccumulator:
             self.nan = True
             small = np.nan_to_num(small)
         self.small.append(small)
+        # Higher-resolution grayscale (half the stat stride) for the optical-flow
+        # pass: stride-4 over-smooths sub-pixel drift, so flow needs more detail
+        # to resolve sparse, slow, aperiodic motion the other rescues miss.
+        s2 = max(1, s // 2)
+        small_f = np.asarray(arr, dtype=np.float32)[::s2, ::s2]
+        if small_f.ndim == 3:
+            small_f = small_f.mean(axis=-1)
+        if not np.isfinite(small_f).all():
+            small_f = np.nan_to_num(small_f)
+        self.small_f.append(small_f)
 
     def stats(self) -> dict:
         cfg = self.cfg
@@ -142,6 +160,55 @@ class LivenessAccumulator:
             spectral_peak = 0.0
             spectral_ac_active = 0.0
 
+        # ── Optical-flow liveness rescue signal (sub-problem #3) ──
+        # Dense optical flow measures WHERE pixels move, not just intensity
+        # change. It catches the residual after the spectral rescue: LOW-
+        # AMPLITUDE NON-PERIODIC STRUCTURED DRIFT (a blob sliding once across, a
+        # slow aperiodic pan) that has no sharp spectral peak to trip the
+        # periodic-oscillation rescue. ``flow_var`` is the variance of the flow
+        # magnitude across the frame; a real drift has a consistent displacement
+        # over part of the frame (high variance) while a static frame has ~0
+        # flow. ``flow_coherence`` is the alignment of each pixel's per-frame
+        # flow with its time-averaged direction (|mean vector| / mean magnitude):
+        # ~1.0 for a constant-direction drift, ~0.0 for incoherent flicker — so
+        # the coherence gate keeps flicker dead while admitting real drift.
+        # Computed on the small stack (already stat_stride-downsampled), further
+        # subsampled in time to <= flow_max_frames pairs so the 150s wall is
+        # never threatened. Degrades to (0.0, 0.0) if cv2 is unavailable.
+        flow_var = 0.0
+        flow_coherence = 0.0
+        if _HAS_CV2 and T >= 3:
+            assert cv2 is not None  # guarded by _HAS_CV2 above
+            fseq = np.stack(self.small_f)  # stride-2 grayscale — keeps sub-pixel drift resolvable
+            if T > cfg.flow_max_frames:
+                fidx = np.linspace(0, T - 1, cfg.flow_max_frames).astype(int)
+                fseq = fseq[fidx]
+            if cfg.flow_downscale > 1:
+                fseq = fseq[:, ::cfg.flow_downscale, ::cfg.flow_downscale]
+            # Farnebäck's polynomial expansion needs a uint8 intensity range
+            # (0-255); float32 frames in [0,1] collapse to ~0 flow, so scale up.
+            fseq = (np.clip(fseq, 0.0, 1.0) * 255.0).astype(np.uint8)
+            flows = []
+            prev = fseq[0]
+            fh, fw = prev.shape
+            flow_out = np.zeros((fh, fw, 2), dtype=np.float32)
+            for t in range(1, fseq.shape[0]):
+                cv2.calcOpticalFlowFarneback(
+                    prev, fseq[t], flow_out, 0.5, 3, 15, 3, 5, 1.2, 0)
+                flows.append(flow_out.copy())
+                prev = fseq[t]
+            if flows:
+                flows = np.stack(flows, axis=0)            # (K, h, w, 2)
+                mags = np.hypot(flows[..., 0], flows[..., 1])
+                flow_var = float(mags.var())
+                mean_vec = flows.mean(axis=0)              # (h, w, 2)
+                mean_mag = np.hypot(mean_vec[..., 0], mean_vec[..., 1])
+                per_time_mag = mags.mean(axis=0)          # (h, w)
+                moving = per_time_mag > 1e-3
+                if moving.any():
+                    coh = mean_mag[moving] / per_time_mag[moving]
+                    flow_coherence = float(np.mean(np.clip(coh, 0.0, 1.0)))
+
         reason = None
         if self.nan:
             reason = "nan"
@@ -206,6 +273,8 @@ class LivenessAccumulator:
             "spectral_ac": round(spectral_ac, 6),
             "spectral_ac_active": round(spectral_ac_active, 6),
             "spectral_active_frac": round(active_frac, 4),
+            "flow_var": round(flow_var, 4),
+            "flow_coherence": round(flow_coherence, 4),
             "frame_drop": self.missing,
         }
 

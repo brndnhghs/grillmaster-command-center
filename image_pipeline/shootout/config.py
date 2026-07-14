@@ -154,6 +154,26 @@ class ShootoutConfig:
     # from being admitted — 1% is plenty. Lowering it from 3% (the shared
     # floor) rescues sparse-but-genuinely-alive content without reviving noise.
     spectral_coverage_min: float = 0.01
+    # ── Optical-flow liveness rescue (sub-problem #3, 2026-07-14) ──
+    # variance + perceptual + spectral rescues still miss LOW-AMPLITUDE
+    # NON-PERIODIC STRUCTURED DRIFT: a blob sliding once across the canvas, a
+    # shape wiping in, a slow aperiodic pan. The spectral rescue (above) catches
+    # PERIODIC coherent motion via a sharp FFT bin; an aperiodic single traverse
+    # has no sharp spectral peak, so it slips through as "static" even though
+    # pixels genuinely move. Dense optical flow (Farnebäck) measures WHERE pixels
+    # move, not just intensity change. ``flow_var`` = variance of the flow
+    # magnitude across the frame; a real drift fills part of the frame with
+    # consistent displacement (high variance) while a static frame has ~0 flow.
+    # ``flow_coherence`` = alignment of per-pixel flow directions with their
+    # time-averaged direction (magnitude of mean vector / mean magnitude);
+    # structured translation is highly coherent, random flicker is NOT (its flow
+    # directions are incoherent even though its magnitude variance is high) — so
+    # the coherence gate keeps flicker dead while admitting real drift. Strictly
+    # non-destructive: only ever flips static/flat -> alive, never reverse.
+    flow_var_min: float = 0.02       # flow-magnitude variance above this ⇒ real displacement
+    flow_coherence_min: float = 0.4  # flow-direction alignment above this ⇒ structured (not flicker)
+    flow_downscale: int = 1          # extra spatial downsample for the flow pass (1 = use stride-2 buffer as-is)
+    flow_max_frames: int = 60        # cap flow sub-sequence here (150s wall is the enemy); longer clips subsampled
 
     # ── Rendering ─────────────────────────────────────────────────
     render_concurrency: int = 3
@@ -375,6 +395,8 @@ TUNABLE_FIELDS: dict[str, tuple[str, float | None, float | None]] = {
     "temporal_var_min":  ("Liveness: minimum motion required — lower lets calmer clips through", 0.0, 0.5),
     "spatial_var_min":   ("Liveness: minimum spatial detail — lower lets flatter clips through", 0.0, 0.5),
     "spectral_corr_min": ("Liveness: coherent-oscillation rescue — peak normalized FFT-bin; higher admits only sharp periodic motion", 0.3, 0.95),
+    "flow_var_min":      ("Liveness: optical-flow rescue — min flow-magnitude variance; higher admits only real displacement", 0.0, 1.0),
+    "flow_coherence_min":("Liveness: optical-flow rescue — min flow-direction coherence; higher admits only structured motion", 0.0, 1.0),
 }
 
 

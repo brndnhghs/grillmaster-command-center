@@ -295,6 +295,75 @@ def test_evaluator_flicker_not_spectral_rescued():
     assert not s["alive"] and s["reason"] == "static"
 
 
+def test_evaluator_flow_rescue_structured_drift_rejects_flicker_and_static():
+    """Sub-problem #3 optical-flow rescue (2026-07-14): a small bright disk
+    making a single non-periodic drift across the canvas is genuinely animating
+    (pixels move) but is missed by every other rescue — temporal_var is low
+    (tiny moving region), motion_pixel_frac is below its 3% floor (sparse
+    content), and the motion is non-periodic so it has no sharp spectral peak.
+    Dense optical flow must detect the structured displacement (high flow
+    magnitude variance + high direction coherence) and keep it alive, while a
+    static frame (~0 flow) and incoherent flicker (low coherence) stay dead.
+    Frames are sized (256x384 -> 128x192 stride-2 flow buffer) so Farnebäck's
+    winsize resolves the motion rather than smoothing it away."""
+    H, W = 256, 384
+    yy, xx = np.mgrid[0:H, 0:W]
+    r = 18
+    n = 12
+    x0, x1 = 60.0, 60.0 + 3.0 * (n - 1)  # ~3 px/frame, non-periodic (sparse drift)
+    def f(i):
+        a = np.zeros((H, W, 3), np.float32)
+        cx = x0 + (x1 - x0) * (i / (n - 1))
+        m = (yy - H // 2) ** 2 + (xx - cx) ** 2 < r * r
+        a[m] = 1.0
+        return a
+    s = evaluate_frames(_stack(f, n=n, h=H, w=W), CFG)
+    assert s["alive"], s
+    assert s["flow_var"] >= CFG.flow_var_min, s
+    assert s["flow_coherence"] >= CFG.flow_coherence_min, s
+
+    # Control 1: static frame -> dead, ~0 flow.
+    s_static = evaluate_frames(_stack(lambda i: f(0), h=H, w=W), CFG)
+    assert not s_static["alive"], s_static
+    assert s_static["flow_var"] < CFG.flow_var_min, s_static
+
+    # Control 2: incoherent low-amplitude flicker -> dead, low coherence.
+    rng = np.random.default_rng(7)
+    s_flick = evaluate_frames(
+        _stack(lambda i: rng.random((H, W, 3)).astype(np.float32) * 0.02,
+               n=n, h=H, w=W), CFG)
+    assert not s_flick["alive"], s_flick
+    assert s_flick["flow_coherence"] < CFG.flow_coherence_min, s_flick
+
+
+def test_evaluator_flow_telemetry_independent_of_other_rescues():
+    """The optical-flow signal (flow_var / flow_coherence) is computed
+    independently of the amplitude and spectral rescues, so it remains a valid
+    liveness diagnostic even when those rescues are disabled for tuning. A
+    structured-drift clip reports high flow_var + coherence regardless; a
+    static clip reports ~0 flow under the same config."""
+    H, W = 256, 384
+    yy, xx = np.mgrid[0:H, 0:W]
+    r = 18
+    n = 12
+    x0, x1 = 60.0, 60.0 + 3.0 * (n - 1)
+    def f(i):
+        a = np.zeros((H, W, 3), np.float32)
+        cx = x0 + (x1 - x0) * (i / (n - 1))
+        m = (yy - H // 2) ** 2 + (xx - cx) ** 2 < r * r
+        a[m] = 1.0
+        return a
+    cfg = ShootoutConfig()
+    cfg.motion_pixel_frac_min = 1e9  # perceptual rescue off
+    cfg.spectral_corr_min = 1e9      # spectral rescue off
+    s = evaluate_frames(_stack(f, n=n, h=H, w=W), cfg)
+    assert s["flow_var"] >= CFG.flow_var_min, s
+    assert s["flow_coherence"] >= CFG.flow_coherence_min, s
+    # Static clip still reports ~0 flow under the same config.
+    s_static = evaluate_frames(_stack(lambda i: f(0), h=H, w=W), cfg)
+    assert s_static["flow_var"] < CFG.flow_var_min, s_static
+
+
 def test_evaluator_nan_is_dead():
     def f(i):
         a = np.ones((64, 96, 3), np.float32) * (i / 24)

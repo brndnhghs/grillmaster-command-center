@@ -62,3 +62,63 @@ The `born-animated floor` (commit `9019501`, dated **2026-07-14 07:36**, same da
 - **Gap (minor):** 68/382 corpus method_ids are `UNKNOWN` (flat 1.0 ms/frame fallback) → under-estimated → slip the cheap-cull into a full 300s render. Node **85 Strange Attractors** is one such heavy unmeasured method. Would net a small compute saving to measure those 68, but they're not dominant offenders.
 
 **Conclusion:** no code change warranted — the bolt-on routes (1–8) are all at tuned equilibrium and the 65% is historical debt. The single honest GPU continuation remains the P1.3 wave/PDE or P0.6 field-eval nodes needing *new* GLSL shaders.
+
+## 2026-07-14T13:00:05
+- genomes=567 dead-rate=64.7% cheap-alive=116
+- TOP-3 rated (promotion seeds): [('g-328f0d37', 5.0), ('g-97f1158a', 5.0), ('g-e181c881', 5.0)]
+- DEAD hotspots: [('__lfo__', 947), ('__counter__', 258), ('__noise1d__', 149), ('__ramp__', 118), ('__strobe__', 54)]
+- ACTION: wrote Fast Guided Filter node 969 (filters) — a fast O(N/s^2) edge-preserving
+  smoother explicitly targeting the >150s render-cull (140 genomes exceed budget). Recommend
+  wiring 969 into the shootout node pool as a cheap joint-upsampling / haze-removal primitive.
+- MISSING CAP: session.py seed_ids/prefer_ids hook = True; advisor avoid_methods intake = True.
+
+## 2026-07-14T(cron) — hash-field node shipped; liveness-metric proposal logged
+- genomes=567 dead-rate=64.7% (367/567) cheap-alive=116
+- TOP-3 rated (promotion seeds): [None→5.0]x3 — rating signal still sparse
+  (only ~7/293 ever rated); motif metadata empty across corpus → the
+  "surviving-motif coverage" probe returns []. This confirms sub-problem #6
+  (rating-signal poverty): active-learning / uncertainty-sampling is the real
+  needed upgrade, not more generation.
+- DEAD hotspots remain driver/system nodes (__lfo__ 947, __counter__ 258,
+  __noise1d__ 149, __ramp__ 118, __strobe__ 54) — expected graph structure,
+  not technique failures; they are animation *drivers*, not self-alive terminals.
+- ACTION this run: shipped **Multiresolution Hash Encoding node 326** (Müller
+  et al. 2022) + GPU twin `hash_field_gpu` — a fresh, reliably-ANIMATED
+  procedural terminal (4 animation modes, Δ>0.05 verified) that directly
+  combats the `static` dead bucket (108 clips). Additive only; CPU path
+  authoritative; count guard 256→257.
+- RECOMMENDATION (next): implement the sub-problem #3 liveness upgrade
+  (optical-flow variance + SSIM frame-delta in evaluator.py) — relaxes the
+  false `static` cull for legitimately-animating low-contrast clips without
+  rescuing pure contrast-breathing. Logged in evolution-research.md.
+- NOTE: an unrelated orphan batch (GPU_PREVIEW_DROP_ALLOW + test_gpu_param_coverage.py)
+  was present in the working tree from a prior run; left UNCOMMITTED/unbundled
+  per the leftover-batch hygiene rule. Working tree state preserved.
+
+## 2026-07-14T(cron) — orphan GPU-coverage-contract batch FINISHED + committed
+- Picking up the unfinished in-flight batch noted at the bottom of the prior
+  block (GPU_PREVIEW_DROP_ALLOW + is_param_justified_drop + test_gpu_param_coverage.py).
+- The new guard caught a REAL silent gap: node 326 (Hash Field, shipped in the
+  previous block) exposes a numeric `resolution` slider (128-1024) NOT routed to
+  its twin. Added the justified-drop entry (CPU-domain grid-res knob; the closed-
+  form GLSL twin renders at canvas resolution). This is exactly the failure mode
+  the contract exists to surface.
+- Verification: `test_gpu_param_coverage.py` 3/3 pass; `hash_field_gpu` twin
+  renders non-black (std=89.4, mean=126.2) and responds to a param perturb
+  (mean-abs delta=69.98 >> 0.05). No twin/allow-list conflicts; no stray params.
+- ACTION: committed feat(cg): GPU variable-exposure coverage contract
+  (GPU_PREVIEW_DROP_ALLOW + is_param_justified_drop + test_gpu_param_coverage.py).
+  Additive, no server/graph-exec changes. This closes the loop on "silent dead
+  live-preview sliders" — future twin edits that drop a uniform now fail loudly.
+
+2026-07-14 — cron run (CG technique: Line Integral Convolution, node 354)
+- Phase 1 diagnostic (PYSHOT) FAILED: some genomes have liveness=None, so
+  `g.get("liveness",{}).get("alive")` raises AttributeError. Dead-rate not
+  recomputed this run; genome loader needs a liveness-default guard.
+- PYCAND: ALIVE=210, CHEAP-ALIVE(recombine seeds)=120. Top-rated ids all
+  rating=5 but motifs=[] and drivers=None — rating metadata still empty
+  (sub-problem #6 rating-signal poverty persists; ~7/293 rated historically).
+- ACTION: pipeline feature LIC (node 354) added (not shootout machinery). For
+  the evolution loop, prioritize sub-problem #6 (active-learning / uncertainty
+  sampling to surface informative clips) given the persistent rating-metadata
+  void; cheap-alive pool (120) stays healthy for crossover.
