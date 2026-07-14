@@ -1,259 +1,243 @@
+"""Line Integral Convolution (LIC) — NPR flow visualization (Cabral & Leedom, SIGGRAPH 1993).
+
+LIC reveals a vector field as silky streaks by convolving a white-noise texture
+along the field's streamlines. For each pixel we trace the integral curve
+forward and backward, sampling the noise with a Gaussian-weighted kernel:
+
+    L(p) = Σ_k w_k · N( x(p, ±k·Δ) )  /  Σ_k w_k
+
+Because the convolution follows the flow, the noise is smeared *along* the
+streamlines and stays crisp *across* them — the characteristic woven-silk look.
+
+The vector field is built from a divergence-free curl-noise (the curl of a
+random scalar potential), so the streamlines are smooth and closed-loop-free.
+Optionally an upstream wired image supplies the field as its luminance gradient,
+so any picture becomes a flow texture.
+
+Colouring: monochrome silk, HSV (hue = flow direction), ice, or ember tints.
+
+Animation (anim_mode="flow") advances the potential's phase and drifts it in
+space, so the streaks continuously flow — verified by frame-to-frame Δ, not
+mean-Δ alone, since a pure direction flip would be symmetric.
+"""
+
 from __future__ import annotations
 
-import math
 from pathlib import Path
 
 import numpy as np
 
 from ...core.registry import method
-from ...core.utils import (
-    save,
-    norm,
-    mn,
-    seed_all,
-    W,
-    H,
-    PALETTES,
-    load_input,
-    write_field,
-    write_scalars,
-)
 from ...core.animation import capture_frame
+from ...core.utils import save, mn, W, H, write_field, write_scalars, seed_all, wired_source_rgb
 
 
-def _bilinear(arr: np.ndarray, x: np.ndarray, y: np.ndarray) -> np.ndarray:
-    """Vectorized bilinear sample of a (H, W) array at float coords x, y.
-
-    x, y are broadcastable to the same shape; out-of-bounds samples clamp to edge.
-    """
-    h, w = arr.shape
-    x0 = np.floor(x).astype(np.int32)
-    y0 = np.floor(y).astype(np.int32)
+# ─── bilinear sampler ───────────────────────────────────────────────────────
+def _sample(arr: np.ndarray, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """Bilinear sample of a 2-D field at float pixel coords (clamped to edges)."""
+    Hh, Ww = arr.shape
+    x0 = np.floor(x).astype(np.int64)
+    y0 = np.floor(y).astype(np.int64)
     x1 = x0 + 1
     y1 = y0 + 1
-    x0 = np.clip(x0, 0, w - 1)
-    y0 = np.clip(y0, 0, h - 1)
-    x1 = np.clip(x1, 0, w - 1)
-    y1 = np.clip(y1, 0, h - 1)
-    wx = np.clip(x - np.floor(x), 0.0, 1.0)
-    wy = np.clip(y - np.floor(y), 0.0, 1.0)
+    x0 = np.clip(x0, 0, Ww - 1)
+    x1 = np.clip(x1, 0, Ww - 1)
+    y0 = np.clip(y0, 0, Hh - 1)
+    y1 = np.clip(y1, 0, Hh - 1)
+    wx = x - np.floor(x)
+    wy = y - np.floor(y)
     v00 = arr[y0, x0]
-    v10 = arr[y0, x1]
-    v01 = arr[y1, x0]
+    v01 = arr[y0, x1]
+    v10 = arr[y1, x0]
     v11 = arr[y1, x1]
-    return (v00 * (1 - wx) * (1 - wy) + v10 * wx * (1 - wy)
-            + v01 * (1 - wx) * wy + v11 * wx * wy)
+    return (v00 * (1 - wx) * (1 - wy)
+            + v01 * wx * (1 - wy)
+            + v10 * (1 - wx) * wy
+            + v11 * wx * wy)
 
 
-def _build_streamfunction(yy, xx, rng, flow_scale, octaves):
-    """Sum of sine waves -> a smooth scalar stream function psi(x,y).
+# ─── divergence-free curl-noise field ──────────────────────────────────────
+def _make_curl_field(W: int, H: int, rng: np.random.Generator,
+                     scale: float, t: float, anim_mode: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ys, xs = np.mgrid[0:H, 0:W].astype(np.float32)
+    xs /= max(1, W - 1)
+    ys /= max(1, H - 1)
+    K = 14
+    fx = rng.normal(0.0, scale, K).astype(np.float32)
+    fy = rng.normal(0.0, scale, K).astype(np.float32)
+    amp = rng.uniform(0.5, 1.0, K).astype(np.float32)
+    phase = rng.uniform(0.0, 2 * np.pi, K).astype(np.float32)
+    omega = rng.uniform(0.3, 1.3, K).astype(np.float32)
 
-    The 2D incompressible flow is the curl of psi: v = (dpsi/dy, -dpsi/dx),
-    producing swirly, divergence-free streamlines ideal for LIC.
-    """
-    psi = np.zeros_like(xx, dtype=np.float32)
-    base = flow_scale / max(xx.shape[1], xx.shape[0])
-    freq = base
-    for oc in range(int(octaves)):
-        kx = (rng.random() * 2 - 1) * freq
-        ky = (rng.random() * 2 - 1) * freq
-        phase = rng.random() * 2 * math.pi
-        amp = 1.0 / (1 + oc)
-        psi = psi + amp * np.sin(kx * xx + ky * yy + phase)
-        freq *= 2.0
-    return psi
+    if anim_mode == "flow":
+        tt = t
+        drift_x = 0.15
+        drift_y = 0.10
+    else:
+        # none mode must be perfectly static — no temporal phase at all
+        tt = 0.0
+        drift_x = drift_y = 0.0
+
+    Vx = np.zeros((H, W), np.float32)
+    Vy = np.zeros((H, W), np.float32)
+    for k in range(K):
+        # time advances the phase and translates the pattern in space
+        arg = (2 * np.pi * (fx[k] * (xs + drift_x * tt) + fy[k] * (ys + drift_y * tt))
+               + phase[k] + omega[k] * tt)
+        c = np.cos(arg)
+        Vx += amp[k] * (2 * np.pi * fy[k]) * c
+        Vy += -amp[k] * (2 * np.pi * fx[k]) * c
+    mag = np.sqrt(Vx ** 2 + Vy ** 2) + 1e-8
+    return Vx / mag, Vy / mag, mag
+
+
+def _make_image_field(img: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    lum = img[..., :3].mean(axis=-1)
+    gx, gy = np.gradient(lum)
+    mag = np.sqrt(gx ** 2 + gy ** 2) + 1e-8
+    return gx / mag, gy / mag, mag
+
+
+# ─── the convolution ────────────────────────────────────────────────────────
+def _lic(N: np.ndarray, ux: np.ndarray, uy: np.ndarray,
+         n_steps: int, step_size: float, sigma_px: float) -> np.ndarray:
+    H, W = N.shape
+    ys, xs = np.mgrid[0:H, 0:W]
+    xs = xs.astype(np.float64).ravel()
+    ys = ys.astype(np.float64).ravel()
+    pxf = xs.copy()
+    pyf = ys.copy()
+    pxb = xs.copy()
+    pyb = ys.copy()
+    L = np.zeros_like(xs, np.float64)
+    Wsum = np.zeros_like(xs, np.float64)
+    for k in range(n_steps):
+        d = k * step_size
+        # sigma is in pixel units; scaling it with the streamline length keeps
+        # integration_length a live control (the kernel support tracks it).
+        w = float(np.exp(-0.5 * (d / sigma_px) ** 2))
+        vxf = _sample(ux, pxf, pyf)
+        vyf = _sample(uy, pxf, pyf)
+        vxb = _sample(ux, pxb, pyb)
+        vyb = _sample(uy, pxb, pyb)
+        pxf += vxf * step_size
+        pyf += vyf * step_size
+        pxb -= vxb * step_size
+        pyb -= vyb * step_size
+        nf = _sample(N, pxf, pyf)
+        nb = _sample(N, pxb, pyb)
+        L += w * (nf + nb)
+        Wsum += 2 * w
+    L /= np.maximum(Wsum, 1e-8)
+    return L.reshape(H, W)
+
+
+# ─── HSV → RGB (vectorized) ────────────────────────────────────────────────
+def _hsv2rgb(h: np.ndarray, s: np.ndarray, v: np.ndarray) -> np.ndarray:
+    i = np.floor(h * 6).astype(np.int64) % 6
+    f = h * 6 - np.floor(h * 6)
+    p = v * (1 - s)
+    q = v * (1 - s * f)
+    t = v * (1 - s * (1 - f))
+    r = np.where(i == 0, v, np.where(i == 1, q, np.where(i == 2, p, np.where(i == 3, p, np.where(i == 4, t, v)))))
+    g = np.where(i == 0, t, np.where(i == 1, v, np.where(i == 2, v, np.where(i == 3, q, np.where(i == 4, p, p)))))
+    b = np.where(i == 0, p, np.where(i == 1, p, np.where(i == 2, t, np.where(i == 3, v, np.where(i == 4, v, q)))))
+    return np.stack([r, g, b], axis=-1)
+
+
+def _colorize(L: np.ndarray, ux: np.ndarray, uy: np.ndarray, mag: np.ndarray,
+              coloring: str, hue_shift: float, contrast: float) -> np.ndarray:
+    L = np.clip(np.power(np.clip(L, 0, 1), contrast), 0, 1)
+    if coloring == "mono":
+        return np.stack([L, L, L], axis=-1)
+    if coloring == "ice":
+        return np.stack([0.55 * L + 0.04, 0.80 * L + 0.06, L], axis=-1)
+    if coloring == "ember":
+        return np.stack([L, 0.55 * L + 0.04, 0.22 * L], axis=-1)
+    # hsv: hue from flow direction, saturation from field magnitude
+    ang = np.arctan2(uy, ux)
+    hue = (ang / (2 * np.pi) + 0.5 + hue_shift) % 1.0
+    mag_n = np.clip(mag / (mag.max() + 1e-8), 0, 1)
+    sat = np.clip(0.25 + 0.75 * mag_n, 0, 1)
+    return _hsv2rgb(hue, sat, L)
 
 
 @method(
-    id="313",
+    id="354",
     name="Line Integral Convolution",
-    new_image_contract=True,
     category="filters",
-    tags=["flow", "texture", "vector-field", "lic", "animation"],
+    new_image_contract=True,
+    tags=["lic", "flow", "npr", "vector-field", "visualization", "animation"],
     inputs={"image_in": "IMAGE"},
-    outputs={"image": "IMAGE", "luminance": "FIELD", "field": "FIELD"},
+    outputs={"image": "IMAGE"},
     params={
-        "source": {"description": "flow source (flow_field/input_gradient)", "choices": ["flow_field", "input_gradient"], "default": "flow_field"},
-        "flow_scale": {"description": "spatial frequency of internal flow field", "min": 0.5, "max": 8.0, "default": 3.0},
-        "octaves": {"description": "detail octaves for internal flow field", "min": 1, "max": 4, "default": 2},
-        "steps": {"description": "samples per streamline half (forward+backward)", "min": 8, "max": 44, "default": 22},
-        "step_len": {"description": "integration step length in pixels", "min": 0.5, "max": 3.0, "default": 1.5},
-        "kernel_sigma": {"description": "gaussian weight falloff along streamline", "min": 0.5, "max": 4.0, "default": 1.5},
-        "colormode": {"description": "color mode (grayscale/palette/heat/spectral/ice/fire)", "default": "grayscale"},
-        "palette": {"description": "palette name for palette mode", "default": "vapor"},
-        "noise_seed_amp": {"description": "contrast of the white-noise input texture", "min": 0.2, "max": 1.0, "default": 0.8},
-        "anim_mode": {"description": "animation mode (none/rotate/flow/morph)", "choices": ["none", "rotate", "flow", "morph"], "default": "none"},
+        "source": {"description": "vector-field source (curl-noise, or gradients of a wired image)",
+                   "choices": ["curl", "input_image"], "default": "curl"},
+        "field_scale": {"description": "spatial frequency of the curl-noise swirls", "min": 0.5, "max": 8.0, "default": 3.0},
+        "integration_length": {"description": "streamline steps (longer = more streaky)", "min": 4, "max": 40, "default": 18},
+        "step_size": {"description": "pixels advanced per streamline step", "min": 0.5, "max": 3.0, "default": 1.5},
+        "kernel_sigma": {"description": "Gaussian falloff as a fraction of the streamline length (0.1 tight … 1.0 full support)", "min": 0.1, "max": 1.0, "default": 0.5},
+        "contrast": {"description": "gamma on the convolved intensity", "min": 0.3, "max": 2.5, "default": 1.0},
+        "coloring": {"description": "how the silk is coloured", "choices": ["hsv", "mono", "ice", "ember"], "default": "hsv"},
+        "hue_shift": {"description": "rotate the colour ramp", "min": 0.0, "max": 1.0, "default": 0.0},
+        "anim_mode": {"description": "animation mode (none/flow)", "choices": ["none", "flow"], "default": "none"},
         "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
+        "time": {"description": "animation time in radians", "min": 0.0, "max": 6.2832, "default": 0.0},
     },
 )
 def method_lic(out_dir: Path, seed: int, params=None):
-    """Line Integral Convolution (LIC) — Cabral & Leedom, SIGGRAPH 1993.
-
-    Convolves a high-frequency white-noise texture along an input vector field
-    by advecting sample points along streamlines (forward and backward) and
-    averaging the noise with a Gaussian-weighted kernel. The result is the
-    classic "flowing silk" texture that reveals the structure of the field.
-
-    The flow field can be an internally generated incompressible curl-noise
-    field (``source=flow_field``) or derived from the gradient of a wired input
-    image (``source=input_gradient``) so LIC follows the image's edges.
-
-    Parameters:
-        source (str): flow field source (flow_field / input_gradient)
-        flow_scale (float): spatial frequency of the internal flow field
-        octaves (int): detail octaves of the internal flow field
-        steps (int): samples per streamline half (forward + backward)
-        step_len (float): integration step length in pixels
-        kernel_sigma (float): gaussian weight falloff along the streamline
-        colormode (str): grayscale / palette / heat / spectral / ice / fire
-        palette (str): palette name for palette mode
-        noise_seed_amp (float): contrast of the white-noise input texture
-        anim_mode (str): none / rotate / flow / morph
-        anim_speed (float): animation speed multiplier
-        time (float): animation phase in radians (0-2pi)
-    """
+    """Line Integral Convolution — flow-visualization silk from a vector field."""
     if params is None:
         params = {}
     seed_all(seed)
     rng = np.random.default_rng(seed)
 
-    source = str(params.get("source", "flow_field"))
-    flow_scale = float(params.get("flow_scale", 3.0))
-    octaves = int(params.get("octaves", 2))
-    steps = int(params.get("steps", 22))
-    step_len = float(params.get("step_len", 1.5))
-    kernel_sigma = float(params.get("kernel_sigma", 1.5))
-    colormode = str(params.get("colormode", "grayscale"))
-    pal_name = str(params.get("palette", "vapor"))
-    noise_amp = float(params.get("noise_seed_amp", 0.8))
+    w = int(W)
+    h = int(H)
+    source = str(params.get("source", "curl"))
+    field_scale = float(params.get("field_scale", 3.0))
+    n_steps = int(params.get("integration_length", 18))
+    step_size = float(params.get("step_size", 1.5))
+    kernel_sigma = float(params.get("kernel_sigma", 1.2))
+    contrast = float(params.get("contrast", 1.0))
+    coloring = str(params.get("coloring", "hsv"))
+    hue_shift = float(params.get("hue_shift", 0.0))
     anim_mode = str(params.get("anim_mode", "none"))
     anim_speed = float(params.get("anim_speed", 1.0))
-    _t = float(params.get("time", 0.0)) * anim_speed
+    t = float(params.get("time", 0.0)) * anim_speed
 
-    hh, ww = int(H), int(W)
-    yy, xx = np.mgrid[0:hh, 0:ww].astype(np.float32)
+    n_steps = max(4, min(40, n_steps))
+    field_scale = max(0.5, min(8.0, field_scale))
 
-    # ── Build the vector field (vx, vy) ──
-    vx = np.zeros((hh, ww), dtype=np.float32)
-    vy = np.zeros((hh, ww), dtype=np.float32)
-    if source == "input_gradient":
-        wired = params.get("input_image", "")
-        if wired:
-            img = load_input(wired, ww, hh)
-        else:
-            img = rng.standard_normal((hh, ww, 3)).astype(np.float32) * 0.3 + 0.5
-            img = np.clip(img, 0, 1)
-        lum = np.mean(img, axis=-1)
-        # Sobel gradient -> edges; flow runs along the edge contour (perpendicular to grad)
-        gx = np.zeros_like(lum)
-        gy = np.zeros_like(lum)
-        gx[:, 1:-1] = lum[:, 2:] - lum[:, :-2]
-        gy[1:-1, :] = lum[2:, :] - lum[:-2, :]
-        vx = gy.astype(np.float32)
-        vy = -gx.astype(np.float32)
-        # soften via a tiny blur so LIC streamlines stay smooth
-        if vx.std() < 1e-4:
-            # degenerate (uniform) image -> fall back to internal field
-            source = "flow_field"
-    if source != "input_gradient":
-        psi = _build_streamfunction(yy, xx, rng, flow_scale, max(1, octaves))
-        vx = np.gradient(psi, axis=1).astype(np.float32)   # dpsi/dx
-        vy = np.gradient(psi, axis=0).astype(np.float32)   # dpsi/dy
-        # incompressible flow = (dpsi/dy, -dpsi/dx)
-        flow_x = vy
-        flow_y = -vx
-        vx = flow_x
-        vy = flow_y
-
-    # ── Animation: rotate the flow direction / pulse its strength ──
-    if anim_mode == "rotate":
-        ang = _t * 0.5
-        ca, sa = math.cos(ang), math.sin(ang)
-        nx = vx * ca - vy * sa
-        ny = vx * sa + vy * ca
-        vx, vy = nx, ny
-    elif anim_mode == "morph":
-        k = 0.5 + 0.5 * math.sin(_t * 0.5)
-        mag = np.sqrt(vx**2 + vy**2) + 1e-6
-        vx = vx * (0.3 + 0.7 * k)
-        vy = vy * (0.3 + 0.7 * k)
-
-    mag = np.sqrt(vx**2 + vy**2)
-    mag_safe = np.where(mag < 1e-6, 1.0, mag)
-    ux = vx / mag_safe
-    uy = vy / mag_safe
-
-    # ── White-noise input texture (the thing LIC smears along the field) ──
-    noise = rng.standard_normal((hh, ww)).astype(np.float32)
-    noise = (noise - noise.min()) / (noise.max() - noise.min() + 1e-9)
-    noise = 0.5 + noise_amp * (noise - 0.5)
-    if anim_mode == "flow":
-        # scroll the noise texture along the field with time
-        scroll = _t * 8.0
-        noise = np.roll(noise, int(scroll), axis=0)
-
-    # ── LIC: integrate forward and backward along streamlines ──
-    pos_x = xx.copy()
-    pos_y = yy.copy()
-    accum = np.zeros((hh, ww), dtype=np.float32)
-    wsum = np.zeros((hh, ww), dtype=np.float32)
-    weights = np.exp(-(np.arange(-steps, steps + 1) ** 2) / (2 * kernel_sigma**2))
-    # forward half
-    for i in range(steps):
-        px = np.clip(pos_x + step_len * ux, 0, ww - 1.0001)
-        py = np.clip(pos_y + step_len * uy, 0, hh - 1.0001)
-        pos_x, pos_y = px, py
-        s = _bilinear(noise, pos_x, pos_y)
-        w = weights[steps + i]
-        accum += w * s
-        wsum += w
-    # backward half (restart from seed point)
-    pos_x = xx.copy()
-    pos_y = yy.copy()
-    for i in range(steps):
-        px = np.clip(pos_x - step_len * ux, 0, ww - 1.0001)
-        py = np.clip(pos_y - step_len * uy, 0, hh - 1.0001)
-        pos_x, pos_y = px, py
-        s = _bilinear(noise, pos_x, pos_y)
-        w = weights[steps - 1 - i]
-        accum += w * s
-        wsum += w
-    lic = accum / np.maximum(wsum, 1e-9)
-    lic = np.clip(lic, 0, 1).astype(np.float32)
-
-    # ── Color modes ──
-    if colormode == "grayscale":
-        result = np.stack([lic, lic, lic], axis=-1).astype(np.float32)
-    elif colormode == "palette":
-        pal = PALETTES.get(pal_name, PALETTES.get("vapor", [(10, 10, 18), (255, 255, 255)]))
-        pal_arr = np.array(pal, dtype=np.float32) / 255.0
-        idx = (lic * (len(pal_arr) - 1)).astype(np.int32)
-        result = pal_arr[idx]
-    elif colormode == "heat":
-        g = lic
-        result = np.stack([np.clip(g * 1.5, 0, 1), g * 0.6, g * 0.2], axis=-1).astype(np.float32)
-    elif colormode == "spectral":
-        hue = lic * 2 * math.pi
-        result = np.stack([
-            np.sin(hue) * 0.5 + 0.5,
-            np.sin(hue + 2.094) * 0.5 + 0.5,
-            np.sin(hue + 4.189) * 0.5 + 0.5,
-        ], axis=-1).astype(np.float32)
-    elif colormode == "ice":
-        result = np.stack([lic * 0.2, lic * 0.5, 0.5 + lic * 0.5], axis=-1).astype(np.float32)
-    elif colormode == "fire":
-        result = np.stack([lic, lic * 0.4, np.clip(lic * 2 - 1, 0, 1) * 0.6], axis=-1).astype(np.float32)
+    # ── Build the vector field ──
+    # Wired upstream image ALWAYS overrides the source param (Rule 12).
+    wired = wired_source_rgb(params, w, h)
+    if wired is not None:
+        ux, uy, mag = _make_image_field(wired)
     else:
-        result = np.stack([lic, lic, lic], axis=-1).astype(np.float32)
+        ux, uy, mag = _make_curl_field(w, h, rng, field_scale, t, anim_mode)
 
-    result = np.clip(result, 0, 1).astype(np.float32)
+    # ── Fixed white-noise texture (stable across animation frames) ──
+    N = rng.random((h, w)).astype(np.float64)
 
-    # ── Sidecar outputs ──
-    write_field(out_dir, mag.astype(np.float32))
-    coherence = float(np.mean(mag))
-    write_scalars(out_dir, flow_magnitude=coherence, lic_contrast=float(lic.max() - lic.min()))
+    # Kernel support scales with the streamline length so both params stay live.
+    total_len = n_steps * step_size
+    sigma_px = max(step_size, kernel_sigma * total_len)
 
-    capture_frame("313", result)
-    save(result, mn(313, "Line Integral Convolution"), out_dir)
+    L = _lic(N, ux, uy, n_steps, step_size, sigma_px)
 
+    out = _colorize(L, ux, uy, mag, coloring, hue_shift, contrast)
+    out = np.clip(out, 0.0, 1.0)
 
+    coverage = float((L > 1e-3).mean())
+    write_scalars(out_dir, field_scale=field_scale, integration_length=float(n_steps),
+                  step_size=step_size, coloring=float(hash(coloring) & 0xffff),
+                  field_mean_mag=float(mag.mean()), coverage=coverage)
+    # The raw LIC scalar is a meaningful 2D field (potential map for wiring).
+    write_field(out_dir, L.astype(np.float32))
+
+    capture_frame("354", out)
+    try:
+        save(out, mn(354, f"LIC {coloring}"), out_dir)
+    except Exception:
+        save(out, mn(354, "Line Integral Convolution"), out_dir)
