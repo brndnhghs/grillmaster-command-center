@@ -374,3 +374,10 @@ Probe data this run (real):
 - CHEAP-ALIVE (recombine seeds): 110 of 186 alive render <30s
 - real failure modes: render-cost (150s timeout cull) + liveness false-negatives (contrast-only clips culled below 3e-3 floor), NOT driver-method hotspots.
 Action: added CHEAP O(n) animated node 2D Gaussian Splatting (965). Structurally animated -> clears liveness gate via changed-pixel-fraction (0.106 at orbit t0->t1.6), not mean-delta. Recommend cost-gated seeding + widen explore_ratio next gen.
+
+## 2026-07-14 (Curl-Noise Particle Flow node, 966)
+- Diagnostic this run: genomes=537, dead/rejected=351/537 (65%), renders>150s=131 (24%), rated=~7/537 (1.3%, rating-signal poverty persists).
+- Dead hotspots: __lfo__ 886, __counter__ 245, __noise1d__ 136, __ramp__ 109, __strobe__ 48, __envelope__ 43, __image_to_mask__ 41, node 137 (Image Blend) 35.
+- Top-rated survivors (promotion seeds): g-e181c881 (5, explorer), g-328f0d37 (5, random), g-e3d68069 (5, random) — all lean heavily on motion/signal-generator nodes (__lfo__/__noise1d__/__counter__).
+- Action taken: implemented node 966 Curl-Noise Particle Flow — Bridson et al. 2007 (https://www.cs.ubc.ca/~rbridson/docs/bridson-siggraph2007-curlnoise.pdf). Advects live particles through the divergence-free curl-noise field (node 314 is the static field; this is the real simulation). Architecture A substep loop + EMA trail accumulation (no strobing). Cheap: ~0.13s/frame render, addresses the 150s render-cost cull. Verified headlessly: non-blank sparse render (bright% 0.24), drift field Δ=0.60, scale param Δ=0.59, speed modulates advection footprint (changed-pixel 1.3%). Wired outputs: image/field/particles/luminance. Pushed c11562a.
+- Next topic: a GPU live-preview twin for the curl-noise field (node 314) under the GPU-First additive contract, OR a Stochastic Subdivision / Swift-Hohenberg pattern node (reaction-diffusion-adjacent, cheap, strong liveness).
