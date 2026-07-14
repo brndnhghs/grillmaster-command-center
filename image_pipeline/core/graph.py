@@ -597,7 +597,9 @@ class GraphExecutor:
                     self.node_progress(node_id, node.method_id,
                                        getattr(meta, "name", None) or node.method_id)
                 except Exception:
-                    pass
+                    # Telemetry callback is best-effort; surface failures
+                    # instead of swallowing silently.
+                    logging.debug("node_progress callback failed", exc_info=True)
 
             upstream_node_ids = {
                 e.src_node for e in gedges if e.dst_node == node_id and not e.feedback
@@ -666,7 +668,7 @@ class GraphExecutor:
                         }
                         flat_outputs[node_id] = {**_inh, **flat_outputs[node_id]}
                         ran[node_id] = False
-                        print(f"  ↩ {node_id} skipped (clean)")
+                        logging.info("%s skipped (clean)", node_id)
                         continue
 
             # ── Architecture A: simulation with capture_frame() ──────
@@ -738,7 +740,7 @@ class GraphExecutor:
                             _sim_prog(node_id, node.method_id, _sim_meta_name,
                                       sim_frame=len(_captured) + 1)
                         except Exception:
-                            pass
+                            logging.debug("sim node_progress callback failed", exc_info=True)
                     _captured.append(
                         (arr.copy() / 255.0).astype(np.float32)
                         if isinstance(arr, np.ndarray) and arr.dtype == np.uint8
@@ -1142,7 +1144,7 @@ class GraphExecutor:
                 err_text = traceback.format_exc(limit=8)
                 err_img = _write_error_placeholder(node_dir, write=self.audit_to_disk)
                 node_errors[node_id] = err_text
-                print(f"[node-error] {node_id}: {exc}")
+                logging.error("[node-error] %s: %s", node_id, exc)
                 flat_outputs[node_id] = {
                     "image":     err_img,
                     "luminance": 0.0,
