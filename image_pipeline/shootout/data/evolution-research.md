@@ -212,3 +212,43 @@ the new gate beats the median gate on recall without raising false-cull.
 **FUTURE.** Mean-over-methods prior is structurally diluted (heavy sims drag it
 down); a TERMINAL-node liveness prior would sharpen the exemption further.
 
+---
+
+## 2026-07-14 - Evolution sub-problem #4: grammar-aware mutation / crossover (rotate -> 5)
+
+**Technique (cited).** Grammar-aware / semantic mutation for graph-structured genotypes.
+Roots: Grammatical Evolution (O'Neill & Ryan, "Grammatical Evolution", IEEE TEC 2001) -
+genotypes are linear genomes interpreted by a BNF grammar into phenotypes, so mutation
+operates on *valid production rules* rather than raw floats. For node graphs, the
+pipeline already has a motif vocabulary in `motifs.py` (driver->param affinity tables,
+`_DRIVER_FALLBACK`). Semantic mutation = swap a known motif subgraph (retarget a driver
+wire, swap a filter for a sibling in the same category) instead of numeric noise.
+
+**Why now.** The 201 static+flat deaths (37% of genomes) are generated graphs with no
+time variation. `generator.py` already has a born-animated driver policy and `motifs.py`
+a safety net for *fresh* graphs, but **mutation/crossover offspring are not guaranteed
+animated** - an edit that drops the only driver wire (or flattens a time-varying param to
+a constant) produces a static genome the liveness gate correctly culls. The born-animated
+guarantee must extend into `evolve.py mutate()` and `crossover()`.
+
+**Concrete improvement (safe; shootout module only, NOT core GraphExecutor).**
+1. In `mutate(parent, ...)`: after numeric perturbation, run a *preserve-animation* repair:
+   if the offspring has no time-varying node and no driver->scalar wire, attach a driver
+   (`_DRIVER_FALLBACK` choice) to a valid SCALAR port of a random eligible node (reuse
+   `motifs.py` affinity), or flip one eligible node's `anim_mode` off "none". Reuse the
+   existing `motifs.py` driver-attachment helper so behavior matches `compose_graph`.
+2. In `crossover(...)`: prefer crossing at motif boundaries (swap a whole sub-graph
+   motif) and re-attach any dangling driver/param wires on the merged graph; then run the
+   same preserve-animation repair.
+3. Add a `mutation preserves animation` invariant test (headless): generate N mutated
+   genomes, assert each has >=1 animation source (driver wire OR anim_mode!=none).
+
+**Target module.** `evolve.py` (`mutate`, `crossover`, possibly `repair_genome`).
+**Expected effect.** Lower static/flat dead-rate (the 201 bucket) without touching the
+liveness thresholds (correct) or the core executor.
+**Verification.** Fresh-generation A/B: mutate M genomes with vs without the repair,
+render via the liveness evaluator, compare dead-rate; assert the repaired cohort's
+static-rate drops. Add `test_shootout_mutant_born_animated.py`.
+
+**Rotate index -> 5** (advisor quality: does `extract_guidance` steer toward better
+survivors? prompt/rubric design; per-node like/dislike convergence).
