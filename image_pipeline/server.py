@@ -1208,6 +1208,24 @@ def shootout_train():
             if k in ("trained", "n_samples", "metrics", "note", "model")}
 
 
+@app.get("/api/shootout/suggest-ratings")
+def shootout_suggest_ratings(k: int = 5):
+    """Active-learning: surface the k most informative unrated-alive genomes.
+
+    Returns a list of suggestion dicts (genome_id, fitness, novelty,
+    temporal_var, n_nodes, reason) so the user can rate high-information-gain
+    clips instead of random ones — directly attacks the starved-rating problem
+    (Route 8, rating-signal poverty). See shootout/rating_suggest.py.
+    """
+    from image_pipeline.shootout.rating_suggest import suggest_for_rating
+    k = max(1, min(int(k), 50))
+    try:
+        sug = suggest_for_rating(k=k, cfg=_shootout_config.effective_config())
+    except Exception as exc:  # pragma: no cover - defensive
+        raise HTTPException(500, f"suggest-ratings failed: {exc}")
+    return {"suggestions": sug, "k": k}
+
+
 @app.post("/api/shootout/contribution/{genome_id}")
 def shootout_contribution(genome_id: str):
     """Per-node contribution diagnosis for one genome (node ablation).
