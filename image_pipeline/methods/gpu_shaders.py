@@ -448,6 +448,13 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
            "param_map": {"scale": "p1", "octaves": "p2"}},
     "29": {"shader": "voronoi", "type": "procedural",
            "param_map": {"n_cells": "p1", "jitter": "p2"}},
+    # 31 Plasma Fractal -> plasma_gpu (typed, node-param-named uniforms).
+    # Choice params (source/terrain/color_mode/palette/water_level/light_angle/
+    # erosion) are intentionally unmapped (pitfall #14): the twin is the
+    # closed-form parity preview; the CPU diamond-square node stays authoritative.
+    "31": {"shader": "plasma_gpu", "type": "procedural", "typed": True,
+           "param_map": {"size": "size", "roughness": "roughness",
+                         "octaves": "octaves", "seed_strength": "seed_strength"}},
     # ── P0.3 escape-time / deterministic fractals ──
     # Each legacy twin now carries `uniforms=` whose NAMES match the CPU node's
     # REAL numeric params (contract #6: client typed-branch fills u_<name> from
