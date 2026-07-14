@@ -424,3 +424,9 @@ Action: added CHEAP O(n) animated node 2D Gaussian Splatting (965). Structurally
 - RECOMMENDED NEXT (real levers, both generation/cost-side, NOT driver/executor):
   (a) timeout 97 + over-budget 30 = 127 dead from render cost — the cost gate (tail-latency basis, liveness-prior exemption) still lets alive-but-slow clips slip past the 150s cap. Tune cost_skip_factor / extend tail basis and verify via a fresh-generation A/B (don't touch liveness thresholds — they are correct).
   (b) generation-side "born animated" guarantee in sample_valid_genome (per evolution-research 2026-07-13) so static graphs stop being generated; this is the dominant remaining lever for the static(107)+flat(94) buckets.
+
+## 2026-07-14 (Mathematical Morphology node 485 — finish in-flight batch)
+- Finished + verified the in-flight Morphology node (485) left uncommitted by the prior run: Matheron/Serra grey-scale operators (erosion/dilation/opening/closing/gradient/top-hat/black_hat/morphological_smooth) via scipy.ndimage grey morphology; structuring element disk/square; per-channel or luminance; radius_grow breathing animation (smooth 0.5+0.5*sin, no cusps).
+- Headless verify: registration OK; non-black render (std=0.037); param liveness Δ=0.40 (operation) / 0.29 (radius); none-mode static Δ=0.0; radius_grow Δ=0.061 at t=0 vs pi/2 (sin degeneracy avoided); field.npy written. /api/node-defs on fresh port 7874 serves 485.
+- Shootout state carried from sibling's 2026-07-14 run: ALIVE=186, CHEAP-ALIVE=110, dead=351 (65%). Action this run: ship the morphology node as its own commit (no shootout-logic change).
+- NEXT technique worth doing: a typed-uniform GPU twin or a 3D-sidecar feature; evolution sub-problem rotation -> #4 (mutation/crossover operators).
