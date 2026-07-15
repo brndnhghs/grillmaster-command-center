@@ -23,6 +23,7 @@ from image_pipeline.methods.gpu_shaders import (
     CLIENT_GPU_SHIMS,
     CLIENT_GPU_SIMS,
     GPU_PREVIEW_DROP_ALLOW,
+    GPU_SHADER_NODE_MAP,
     is_param_justified_drop,
 )
 
@@ -98,4 +99,29 @@ def test_gpu_coverage_drop_list_distinct_from_mapped():
     assert not conflict, (
         "params both mapped and listed as dropped (remove the allow-list entry):\n"
         + "\n".join(f"  node {m}: '{p}'" for m, p in conflict)
+    )
+
+
+def test_gpu_coverage_drop_list_not_mislabelled_as_uncovered():
+    """GPU_PREVIEW_DROP_ALLOW must not describe a COVERED node as 'lacking a GPU
+    slot' / 'explicit drop'. A node with an active shim/sim in
+    GPU_SHADER_NODE_MAP IS ported; mislabelling it as uncovered is factually
+    wrong and previously misled an audit into thinking ported nodes were
+    unported. The allow-list only documents params not wired to the twin.
+    """
+    covered = set(GPU_SHADER_NODE_MAP.keys())
+    bad = []
+    for mid, drops in GPU_PREVIEW_DROP_ALLOW.items():
+        if mid not in covered:
+            continue
+        for reason in drops.values():
+            # Only the false claim "lacks a GPU slot" is forbidden on a COVERED
+            # node. A legitimate per-param justification may still say "explicit
+            # drop" (e.g. node 326 explains its twin renders at canvas res) - that
+            # is accurate and must NOT be flagged.
+            if "lacks a GPU slot" in reason:
+                bad.append((mid, reason))
+    assert not bad, (
+        "GPU_PREVIEW_DROP_ALLOW mislabels a COVERED node as uncovered:\n"
+        + "\n".join(f"  node {m}: {r}" for m, r in bad)
     )
