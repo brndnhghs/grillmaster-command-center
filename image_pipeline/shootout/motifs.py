@@ -753,8 +753,27 @@ def _drivable_params(pool: GenePool, cfg: ShootoutConfig,
         seen.add(p)
         spec = schema.get(p) if isinstance(schema.get(p), dict) else None
         out.append(_score(p, spec, port=True))
+    is_arch_a = "time" not in (d.get("params") or {})
     for p, spec in schema.items():
         if p in seen or p in cfg.frozen_params:
+            continue
+        # Clock params (time / time_scale / phase / dt / global_frame /
+        # total_frames) are executor-owned timeline state. The driver_targets()
+        # port path already excludes them, but this schema-scan loop would
+        # re-add any that happen to be ranged numeric params — e.g. ``time`` on
+        # every Architecture-B node. Wiring a CHOP driver onto ``time`` yields
+        # EXACT-0 frame-to-frame variance (the LFO's 0→1 sweep replaces the
+        # real animation clock and the clip is culled as static/flat). This was
+        # the dominant born-static cause: ~90% of graphs (p_drive_primary)
+        # attached their primary driver to ``time`` instead of a pixel-moving
+        # param. Route 8 (2026-07-14) fix.
+        if p in pool._CLOCK_PARAMS:
+            continue
+        # Architecture-A (no "time" param) sims consume init-only params once
+        # at sim initialisation, so modulating them cannot animate the clip.
+        # driver_targets() already drops these by name-hint; mirror that here
+        # so the schema scan does not re-leak them as driver targets.
+        if is_arch_a and p in pool._INIT_ONLY_HINTS:
             continue
         if not isinstance(spec, dict):
             continue
