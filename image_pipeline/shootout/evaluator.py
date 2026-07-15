@@ -373,7 +373,8 @@ def render_stack(nodes: list[dict], edges: list[dict], seed: int,
 
 
 def render_genome(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
-                  progress_cb: Callable[[str], None] | None = None) -> dict:
+                  progress_cb: Callable[[str], None] | None = None,
+                  render_timeout_s: float | None = None) -> dict:
     """Render genome → output/sequences/shootout-<id>/output.mp4, fill
     genome['render'] + genome['liveness']. Never raises on node failures —
     executor errors become dead clips."""
@@ -415,6 +416,10 @@ def render_genome(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
     t0 = time.time()
     timed_out = False
     skipped = False
+    # Per-genome render cap (Route 8, 2026-07-14): slow-but-likely-dynamic
+    # heavy sims get an extended cap so they can finish instead of timing out.
+    eff_timeout = (render_timeout_s if render_timeout_s is not None
+                   else cfg.render_timeout_s)
     # Node-error tracking: a method that raises at render (inter-param bugs,
     # OpenCV bad-args, index errors) yields an error-placeholder frame. Record
     # which nodes threw so the clip can be culled instead of shipped.
@@ -435,7 +440,7 @@ def render_genome(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
                 if progress_cb:
                     progress_cb(f"{gid}: skipped at frame {frame}")
                 return
-            if time.time() - t0 > cfg.render_timeout_s:
+            if time.time() - t0 > eff_timeout:
                 timed_out = True
                 if progress_cb:
                     progress_cb(f"{gid}: timeout after {frame} frames")
@@ -504,7 +509,7 @@ def render_genome(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
         # captured enough frames and passes liveness, rather than discarding a
         # slow-but-dynamic animation as a plain skip. A manual/frame-stuck skip
         # (elapsed still under the hard wall) stays a plain cull.
-        wall_limit = cfg.render_timeout_s * getattr(cfg, "hard_wall_factor", 1.15)
+        wall_limit = eff_timeout * getattr(cfg, "hard_wall_factor", 1.15)
         hard_walled = (time.time() - t0) >= wall_limit
         if hard_walled and captured >= min_frames and liveness.get("alive"):
             liveness = {**liveness, "truncated": True,
@@ -578,6 +583,21 @@ def render_many(genomes: list[dict], cfg: ShootoutConfig = DEFAULT_CONFIG,
     progress.MONITOR.clear_all()
     stop = threading.Event()
 
+    # Per-genome effective render cap (Route 8, 2026-07-14): slow-but-likely-
+    # dynamic heavy sims get an extended cap so they can finish instead of
+    # timing out. Computed once here (cost model loaded once) and threaded into
+    # both render_genome and the watchdog below so the watchdog never force-
+    # skips an extended-cap clip at the base cap.
+    try:
+        from . import cost_model as _cm
+        _cm_model = _cm.load_cost_model()
+        eff_timeout: dict[str, float] = {
+            g["genome_id"]: _cm.effective_render_timeout_s(g, cfg, _cm_model)
+            for g in genomes
+        }
+    except Exception:
+        eff_timeout = {}
+
     def _heartbeat() -> None:
         hard = cfg.auto_skip_frame_hang_s or 0.0
         while not stop.wait(cfg.heartbeat_s):
@@ -590,7 +610,7 @@ def render_many(genomes: list[dict], cfg: ShootoutConfig = DEFAULT_CONFIG,
                 if s.get("skip_requested"):
                     continue
                 on_frame = now - s.get("t_frame", now)
-                limit = hard if hard > 0 else cfg.render_timeout_s
+                limit = hard if hard > 0 else eff_timeout.get(gid, cfg.render_timeout_s)
                 if on_frame > limit:
                     progress.MONITOR.request_skip(gid)
                     _safe_progress(
@@ -601,11 +621,11 @@ def render_many(genomes: list[dict], cfg: ShootoutConfig = DEFAULT_CONFIG,
                 # simply slow (each frame < the per-frame limit) never trips the
                 # check above and sails past the render budget — empirically up
                 # to ~547s against a 300s cap. Force-skip once total elapsed
-                # exceeds render_timeout_s × hard_wall_factor so the over-run
-                # compute is reclaimed instead of wasted on a clip that will be
-                # culled as timeout anyway.
+                # exceeds the (per-genome) render cap × hard_wall_factor so the
+                # over-run compute is reclaimed instead of wasted on a clip that
+                # will be culled as timeout anyway.
                 elapsed = now - s.get("t0", now)
-                wall_limit = cfg.render_timeout_s * getattr(
+                wall_limit = eff_timeout.get(gid, cfg.render_timeout_s) * getattr(
                     cfg, "hard_wall_factor", 1.15)
                 if elapsed > wall_limit:
                     progress.MONITOR.request_skip(gid)
@@ -617,7 +637,8 @@ def render_many(genomes: list[dict], cfg: ShootoutConfig = DEFAULT_CONFIG,
     hb.start()
     try:
         with ThreadPoolExecutor(max_workers=cfg.render_concurrency) as ex:
-            futs = {ex.submit(render_genome, g, cfg, _safe_progress): i
+            futs = {ex.submit(render_genome, g, cfg, _safe_progress,
+                            eff_timeout.get(g["genome_id"], cfg.render_timeout_s)): i
                     for i, g in enumerate(genomes)}
             for fut in as_completed(futs):
                 i = futs[fut]

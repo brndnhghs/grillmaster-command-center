@@ -298,6 +298,32 @@ class ShootoutConfig:
     # before. Set False to restore pure median-based gating.
     cost_use_tail: bool = True
 
+    # ── Heavy-sim render-cap extension (cost_model.py) ─────────────
+    # Route 8 timeout failure mode (2026-07-14): ~102/613 genomes are culled
+    # as 'timeout' at the hard render cap, but ~49 of them contain a HEAVY
+    # method (per-method ms/frame >= heavy_method_ms_floor) with a HIGH
+    # empirical P(alive) (>= gate_liveness_floor) — i.e. slow-but-DYNAMIC
+    # clips the liveness gate would accept if they finished. The blunt
+    # cost gate can't tell slow-dynamic from slow-static, so it lets them
+    # render and they hit the cap. This extends the per-clip render cap for
+    # exactly those genomes (heavy AND likely-dynamic) so they can complete
+    # instead of being discarded. The extension is survivor-pool-protective
+    # and MONOTONIC-SAFE: it only ever RAISES the cap for a narrow,
+    # high-prior subset; every other genome keeps the base render_timeout_s.
+    # heavy_render_timeout_factor is the multiplier applied to render_timeout_s
+    # for worth-extending genomes (2.0 → 600s cap). Set <= 1.0 to disable.
+    heavy_render_timeout_factor: float = 2.0
+    # A method is "heavy" (worth a cap extension when its alive-prior is high)
+    # only if its empirical median ms/frame meets this floor. Keeps light
+    # methods from triggering the extension.
+    heavy_method_ms_floor: float = 50.0
+    # Eligibility gate for the cap extension: a genome is only extended if its
+    # calibrated cost estimate already reaches this fraction of render_timeout_s
+    # (default 0.5 → estimated ≥150s). This keeps the extension NARROW — only
+    # genomes the cost model flags as genuinely heavy (and thus at real risk of
+    # blowing the base cap) get a longer cap, so light graphs never slow down.
+    heavy_extend_est_floor: float = 0.5
+
     # ── Gene pool ─────────────────────────────────────────────────
     # client_3d renders in the browser (no server-side cook), ml_models are
     # heavy model loads, io needs uploaded assets, cli_tools shell out to
@@ -385,6 +411,9 @@ TUNABLE_FIELDS: dict[str, tuple[str, float | None, float | None]] = {
     "cost_skip_factor":  ("Cost gate strictness: skip when estimated render > render_timeout_s × this (lower = stricter)", 0.1, 2.0),
     "gate_liveness_floor": ("Cost-gate exemption: an over-budget genome whose mean empirical P(alive) over its methods is ≥ this is spared the cull (0 disables — protects slow-but-dynamic clips)", 0.0, 1.0),
     "cost_use_tail": ("Cost gate estimates render wall from per-method P90 (tail) ms/frame instead of the median — catches high-variance timeout slip-throughs", None, None),
+    "heavy_render_timeout_factor": ("Heavy-sim cap extension: slow-but-dynamic clips (heavy method with high P(alive)) get render_timeout_s × this so they finish instead of timing out (<=1 disables)", 1.0, 6.0),
+    "heavy_method_ms_floor": ("A method is 'heavy' (eligible for the cap extension) only above this median ms/frame", 10.0, 500.0),
+    "heavy_extend_est_floor": ("Cap extension eligibility: a genome is extended only if its calibrated cost estimate reaches this fraction of render_timeout_s (keeps the extension narrow)", 0.1, 1.0),
     "render_concurrency": ("Clips rendered in parallel", 1, 8),
     "preview_every":    ("Capture a live preview thumbnail every N frames (0 = off) so you can skip candidates before they finish", 0, 48),
     "preview_w":        ("Live preview thumbnail width (px)", 64, 512),

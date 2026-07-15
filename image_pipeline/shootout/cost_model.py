@@ -374,3 +374,59 @@ def partition_by_budget(genomes: list[dict], cfg: ShootoutConfig = DEFAULT_CONFI
         else:
             affordable.append(g)
     return affordable, skipped
+
+
+def effective_render_timeout_s(genome: dict,
+                               cfg: ShootoutConfig = DEFAULT_CONFIG,
+                               model: dict | None = None) -> float:
+    """Per-genome render cap that extends for slow-but-likely-dynamic clips.
+
+    Route 8 timeout failure mode (2026-07-14): the blunt cost gate lets heavy
+    sims render, but ~102/613 genomes are culled as 'timeout' at the hard cap,
+    and ~49-56 of those contain a HEAVY method (per-method ms/frame >=
+    ``heavy_method_ms_floor``) with a HIGH empirical P(alive) (>=
+    ``gate_liveness_floor``) — clips the liveness gate would accept if they
+    finished. This returns ``render_timeout_s * factor`` for genomes that are
+    BOTH estimated-heavy (calibrated cost estimate >= ``render_timeout_s`` ×
+    ``heavy_extend_est_floor``) AND contain such a heavy likely-dynamic method,
+    so they can complete instead of being discarded.
+
+    The estimate floor keeps the extension NARROW: only genomes the cost model
+    already flags as genuinely heavy (and thus at real risk of blowing the base
+    cap) are eligible, so light graphs never get a longer cap and generations
+    stay fast. MONOTONIC-SAFE: it only ever RAISES the cap for that narrow,
+    high-prior subset; every other genome keeps the base ``render_timeout_s``.
+    Disabled when ``heavy_render_timeout_factor <= 1.0`` or the model lacks a
+    trusted alive-prior for the heavy method.
+    """
+    factor = getattr(cfg, "heavy_render_timeout_factor", 1.0)
+    if factor <= 1.0:
+        return float(cfg.render_timeout_s)
+    base = float(cfg.render_timeout_s)
+    if model is None:
+        model = load_cost_model()
+    pm = model.get("per_method", {})
+    pma = model.get("per_method_alive") or {}
+    if not pma:
+        return base
+    # Eligibility 1: the calibrated cost estimate must already be substantial,
+    # i.e. the genome is genuinely heavy and at risk of exceeding the base cap.
+    est_floor = getattr(cfg, "heavy_extend_est_floor", 0.5)
+    est = estimate_cost_tail_s(genome, cfg.frames, model) if hasattr(
+        cfg, "frames") else estimate_cost_tail_s(genome, 48, model)
+    if est < base * est_floor:
+        return base
+    # Eligibility 2: contains a heavy method with a high empirical P(alive).
+    prior_floor = getattr(cfg, "gate_liveness_floor", 0.33)
+    heavy_ms = getattr(cfg, "heavy_method_ms_floor", 50.0)
+    for nd in genome.get("graph", {}).get("nodes", []):
+        mid = nd.get("method_id")
+        if mid is None:
+            continue
+        ms = pm.get(mid)
+        if ms is None or ms < heavy_ms:
+            continue
+        prior = pma.get(mid)
+        if prior is not None and prior >= prior_floor:
+            return base * float(factor)
+    return base
