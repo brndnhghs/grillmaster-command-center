@@ -184,6 +184,7 @@ def run_generation(session_id: str,
 
 
 def _run_generation_locked(session_id, cfg, progress_cb, rng) -> dict:
+    import copy
     import time as _time
     _t0 = _time.time()
 
@@ -200,11 +201,35 @@ def _run_generation_locked(session_id, cfg, progress_cb, rng) -> dict:
     pool = build_gene_pool(cfg)
     gen_index = len(session["generations"])
 
+    # ── Stagnation / drift detection (Route 8, sub-problem #7) ──────────
+    # A plateau in alive-rate / dynamic-richness across a sliding window means
+    # the population has converged. "widen" bumps explore_ratio (more fresh
+    # randoms); "reset" re-seeds a fresh random generation. Both are
+    # non-destructive (they only add exploration) and use a *transient* cfg
+    # copy that is never persisted. Failures degrade to "keep" (normal run).
+    stagnation_action = "keep"
+    if cfg.stagnation_enabled and gen_index > 0:
+        try:
+            from . import stagnation
+            stagnation_action, _hist = stagnation.evaluate_stagnation(session, cfg)
+            if stagnation_action == "widen":
+                cfg = copy.copy(cfg)
+                cfg.explore_ratio = stagnation.recommended_explore_ratio(cfg, "widen")
+                _p(f"↻ stagnation: flat alive-rate over {cfg.stagnation_window} gens "
+                   f"— widening explore_ratio to {cfg.explore_ratio:.2f}")
+            elif stagnation_action == "reset":
+                _p(f"↻ stagnation: deep plateau ({cfg.stagnation_window} flat gens) "
+                   f"— re-seeding a fresh random generation")
+        except Exception as exc:  # pragma: no cover - defensive guard
+            _p(f"stagnation check failed ({exc}) — proceeding normally")
+            stagnation_action = "keep"
+
     guidance: dict | None = None
     explorer_bias = None
-    if gen_index == 0:
-        _p(f"▶ gen 0 · sampling {cfg.render_pool} random genomes "
-           f"(max_depth={cfg.max_depth})")
+    if gen_index == 0 or stagnation_action == "reset":
+        _p(f"▶ gen {gen_index} · sampling {cfg.render_pool} random genomes "
+           f"(max_depth={cfg.max_depth})"
+           + ("  [stagnation reset]" if stagnation_action == "reset" else ""))
         candidates = [sample_valid_genome(pool, cfg, rng) for _ in range(cfg.render_pool)]
     else:
         prev = session["generations"][-1]
@@ -250,7 +275,6 @@ def _run_generation_locked(session_id, cfg, progress_cb, rng) -> dict:
     # with a fresh id + origin="promotion" so it re-renders cleanly and is
     # distinguishable from bred offspring; prior liveness/render/rating are
     # stripped so it is judged on its own merits this generation.
-    import copy
     _seed_ids = list(getattr(cfg, "seed_ids", []) or [])
     for _sid in _seed_ids:
         _seed = store.load_genome(_sid)

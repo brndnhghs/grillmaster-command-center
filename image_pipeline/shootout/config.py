@@ -102,6 +102,27 @@ class ShootoutConfig:
     # Persists until changed or reset; the auto-loop rewires it each run.
     seed_ids: list[str] = field(default_factory=list)
 
+    # ── Stagnation / drift detection (Route 8, sub-problem #7, 2026-07-14) ──
+    # When a generation's alive-rate (and dynamic-richness) go FLAT across a
+    # sliding window the population has converged or stalled on a plateau.
+    # Left unchecked it wastes the render budget re-deriving near-identical
+    # clips. The detector (shootout/stagnation.py) recommends one of:
+    #   * "keep"   — signals still moving / not enough history → proceed
+    #   * "widen"  — mild plateau → bump explore_ratio so more fresh randoms
+    #                enter and re-inject diversity (non-destructive)
+    #   * "reset"  — deep plateau → re-seed a fresh random generation (the
+    #                gen-0 escape hatch) to escape the stall entirely.
+    # Escalation: a plateau of ``stagnation_window`` consecutive flat gens
+    # triggers "widen"; persisting to ``window + stagnation_reset_after``
+    # consecutive flat gens triggers "reset". All thresholds are tunable;
+    # the action is non-destructive (it only ever adds exploration).
+    stagnation_enabled: bool = True
+    stagnation_window: int = 4           # consecutive flat gens to flag a plateau
+    stagnation_flat_eps: float = 0.03    # dead-rate step below this ≈ "flat"
+    stagnation_reset_after: int = 4      # extra flat gens after the plateau → reset
+    stagnation_widen_bump: float = 0.2   # explore_ratio += this on a widen
+    stagnation_explore_cap: float = 0.85 # ceiling for the widened explore_ratio
+
     # ── Liveness rejection (tuned on the first empirical batch — plan §7) ──
     # Empirics: random nodegraphs render with temporal_var spanning
     # 1.5e-5 (frozen, frame_corr≈0.9999) to 4e-2 (clearly moving,
