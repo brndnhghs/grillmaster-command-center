@@ -112,8 +112,14 @@ class LivenessAccumulator:
         # noise and a global uniform pulse barely register here (the global
         # pulse is already rescued by the temporal_var floor above).
         diffs = np.abs(stack[1:] - stack[:-1])
-        changed = (diffs > cfg.motion_thresh).mean(axis=0)  # (h, w) per-pixel frac
-        motion_pixel_frac = float((changed > 0).mean())
+        if diffs.size == 0:
+            # Degenerate: a genome rendered <2 frames, so nothing can move.
+            # Guard the empty slice so we never emit a "Mean of empty slice"
+            # NaN and leave motion_pixel_frac defined (TD-17).
+            motion_pixel_frac = 0.0
+        else:
+            changed = (diffs > cfg.motion_thresh).mean(axis=0)  # (h, w) per-pixel frac
+            motion_pixel_frac = float((changed > 0).mean())
 
         # ── Spectral-liveness rescue signal (FFT temporal spectrum) ──
         # Amplitude metrics (temporal_var, motion_pixel_frac) miss LOW-AMPLITUDE

@@ -6,6 +6,7 @@ All functions take t ∈ [0, 1] and return eased t' ∈ [0, 1].
 
 from __future__ import annotations
 import math
+import warnings
 
 
 # ── Cubic Bézier evaluation ────────────────────────────────────────────
@@ -57,6 +58,23 @@ _EASE_PRESETS: dict[str, tuple[float, float, float, float]] = {
 }
 
 
+# Known easing identifiers: the presets plus the special (non-preset) names.
+_VALID_EASINGS = frozenset(_EASE_PRESETS) | {
+    "step", "bounce", "elastic", "cubic-bezier",
+}
+
+
+def _normalize_easing(name) -> str:
+    """Map common spelling variants to the canonical easing id.
+
+    e.g. ``"ease_in"`` / ``"Ease In"`` -> ``"ease-in"``. Unknown names are
+    returned unchanged so the caller can warn and fall back to linear (TD-15).
+    """
+    if name is None:
+        return "linear"
+    return str(name).strip().lower().replace("_", "-").replace(" ", "-")
+
+
 def apply_easing(t: float, easing: str,
                  handle_in: tuple[float, float] | None = None,
                  handle_out: tuple[float, float] | None = None) -> float:
@@ -69,6 +87,9 @@ def apply_easing(t: float, easing: str,
     easing : str
         Easing preset name: "linear", "ease", "ease-in", "ease-out",
         "ease-in-out", "step", "bounce", "elastic", or "cubic-bezier".
+        Common spelling variants are accepted (e.g. ``"ease_in"`` ->
+        ``"ease-in"``); an unrecognized name logs a warning and falls back to
+        linear instead of silently producing a wrong curve (TD-15).
     handle_in : tuple or None
         For "cubic-bezier": (x1, y1) control point.
     handle_out : tuple or None
@@ -78,8 +99,24 @@ def apply_easing(t: float, easing: str,
     -------
     float
         Eased t' in [0, 1].
+
+    Note
+    ----
+    A keyframe's easing is read from the SEGMENT'S END keyframe (``kf_b``); an
+    easing set on the *start* keyframe is intentionally ignored. Set the easing
+    on the keyframe that *ends* the segment you want to shape.
     """
     t = max(0.0, min(1.0, t))
+
+    # Normalize spelling (ease_in -> ease-in) before matching (TD-15).
+    name = _normalize_easing(easing)
+    if name not in _VALID_EASINGS:
+        warnings.warn(
+            f"Unknown easing name {easing!r}; falling back to linear",
+            stacklevel=2,
+        )
+        return t
+    easing = name
 
     if easing == "step":
         return 0.0 if t < 1.0 else 1.0
@@ -101,7 +138,8 @@ def apply_easing(t: float, easing: str,
         p1x, p1y, p2x, p2y = preset
         return _cubic_bezier(t, p1x, p1y, p2x, p2y)
 
-    # Fallback: linear
+    # Fallback: linear (only reached for typos that normalize to a valid id
+    # but aren't a real preset — should not happen given _VALID_EASINGS).
     return t
 
 

@@ -395,7 +395,10 @@ def method_flowfield(out_dir: Path, seed: int, params=None):
             colors = get_particle_colors(pos, vel_mag)
             for pi in range(n_p):
                 col = tuple(colors[pi])
-                glow_col = tuple(min(255, c + 100) for c in col)
+                # Cast to float before adding so an np.uint8 color (which
+                # overflows silently on c + 100) cannot wrap — clamp to [0,255]
+                # (TD-16: RuntimeWarning "overflow encountered in scalar add").
+                glow_col = tuple(int(np.clip(float(c) + 100, 0, 255)) for c in col)
                 px, py = int(pos[pi, 0]), int(pos[pi, 1])
                 # Glow pass
                 drw.ellipse((px - 4, py - 4, px + 4, py + 4), fill=tuple(c // 3 for c in glow_col))
