@@ -59,27 +59,24 @@ def _proc_source(source: str, seed: int, w: int, h: int, phase: float = 0.0) -> 
     return img.astype(np.float64)
 
 
-def _shift2d(a: np.ndarray, dy: int, dx: int) -> np.ndarray:
-    """Circular shift (border wrap is fine for an artistic smoothing operator)."""
-    if dy == 0 and dx == 0:
-        return a
-    return np.roll(np.roll(a, dy, axis=0), dx, axis=1)
-
-
 def _joint_bilateral(img: np.ndarray, guide: np.ndarray,
                      sigma_s: float, sigma_r: float, R: int) -> np.ndarray:
-    """Joint bilateral filter (Gastal & Oliveira O(N) spirit, shift-vectorised).
+    """Joint bilateral filter — the rolling operator of the Rolling Guidance
+    Filter (Zhang et al. ECCV 2014).
 
     `guide` (H,W) carries the *range* edge information and stays fixed across
     iterations (the "joint" / guidance image = the original luminance). `img`
-    is the current frame being smoothed, all channels at once. Spatial weight is
-    a Gaussian of the offset; range weight is a Gaussian of the guide-difference.
-    Cost is O(N · (2R+1)²) with a tiny constant — no large temporaries.
+    is the current frame being smoothed. Spatial weight is a Gaussian of the
+    offset; range weight is a Gaussian of the guide-difference. O(N·K) with
+    K=(2R+1)². The range sigma is supplied by the caller (it shrinks each roll).
     """
     H, W = guide.shape
-    C = img.shape[2] if img.ndim == 3 else 1
-    if img.ndim == 2:
+    mono = img.ndim == 2
+    if mono:
         img = img[..., None]
+    C = img.shape[2]
+    img = np.ascontiguousarray(img, dtype=np.float64)
+    guide = np.ascontiguousarray(guide, dtype=np.float64)
     num = np.zeros_like(img, dtype=np.float64)
     den = np.zeros((H, W), dtype=np.float64)
     inv_2s2 = 1.0 / (2.0 * sigma_s * sigma_s)
@@ -89,15 +86,15 @@ def _joint_bilateral(img: np.ndarray, guide: np.ndarray,
             sp = math.exp(-(dx * dx + dy * dy) * inv_2s2)
             if sp < 1e-3:
                 continue
-            g_shift = _shift2d(guide, dy, dx)
-            i_shift = _shift2d(img, dy, dx)
+            g_shift = np.roll(np.roll(guide, dy, axis=0), dx, axis=1)
+            i_shift = np.roll(np.roll(img, dy, axis=0), dx, axis=1)
             diff = g_shift - guide
             rw = np.exp(-(diff * diff) * inv_2r2)
             w = sp * rw  # (H, W)
             num += i_shift * w[..., None]
             den += w
     out = num / den[..., None]
-    if C == 1:
+    if mono:
         out = out[..., 0]
     return out
 
@@ -124,9 +121,18 @@ def rolling_guidance(img: np.ndarray, scale: float, R: int,
              + 0.114 * img[..., 2]).astype(np.float64)
     f = img.copy()
     sigma_s = float(max(1, R))
+    # Convergence early-stop: once the structure stops changing between rolls we
+    # have peeled all reachable detail for the current scale, so further passes
+    # are wasted work. This keeps the per-frame cost low (the 150s shootout cull)
+    # without changing the output for content that converges early.
+    prev = None
     for j in range(iterations):
         sigma_r = max(1e-3, scale * (0.5 ** j))
         f = _joint_bilateral(f, guide, sigma_s, sigma_r, R)
+        if prev is not None:
+            if float(np.mean(np.abs(f - prev))) < 1e-4:
+                break
+        prev = f
     structure = np.clip(f, 0.0, 1.0)
     detail = np.clip(img - structure, -1.0, 1.0)
     if mono:
@@ -213,7 +219,10 @@ def method_rolling_guidance(out_dir, seed: int, params=None):
         # detail/composite outputs even for a wired (non-procedural) input. ──
         phase = _t if anim_mode == "breathe" else 0.0
         if anim_mode == "breathe":
-            detail_gain_eff = detail_gain * (0.4 + 1.2 * (0.5 + 0.5 * math.sin(_t)))
+            # Wide envelope so the detail re-weight visibly breathes (smooth
+            # 0.5+0.5·sin, no cusp). t=0 -> 2×detail_gain, t=π/2 -> 3.5×detail_gain
+            # (clearly different; avoids the sin-phase degeneracy at t=0/π).
+            detail_gain_eff = detail_gain * (1.25 + 2.25 * (0.5 + 0.5 * math.sin(_t)))
         else:
             detail_gain_eff = detail_gain
 
