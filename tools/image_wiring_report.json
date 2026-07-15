@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-07-14T18:04:00.679541+00:00",
+  "generated_at": "2026-07-15T03:04:23.494320+00:00",
   "graphs_scanned": 49,
-  "error_count": 13,
+  "error_count": 14,
   "warn_count": 28,
   "findings": [
     {
@@ -214,11 +214,19 @@
     },
     {
       "graph": "shootout-g-18612554",
+      "node_id": "n2",
+      "method_id": "81",
+      "severity": "ERROR",
+      "code": "E_EDGE_NOT_TANGIBLE",
+      "message": "image port 'image_in' wired from n3:image \u2014 src-method-unknown (source does not emit a real image on that port)"
+    },
+    {
+      "graph": "shootout-g-18612554",
       "node_id": "n3",
       "method_id": "313",
       "severity": "ERROR",
-      "code": "E_DANGLING_REQUIRED",
-      "message": "image_in has no inbound edge and the method consumes the wired image \u2014 will run without an upstream image (broken)"
+      "code": "E_ORPHAN_NODE",
+      "message": "node references unknown method_id '313' (no NodeDef)"
     },
     {
       "graph": "shootout-g-2661455a",

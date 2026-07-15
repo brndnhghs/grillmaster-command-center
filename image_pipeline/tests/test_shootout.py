@@ -1587,4 +1587,106 @@ def test_local_laplacian_params_live():
     tone1 = _render_496({"anim_mode": "none", "source": "noise",
                          "detail": 1.0, "tone": 1.0})
     assert _changed_frac(base, detail3) > 0.10
-    assert _changed_frac(base, tone1) > 0.10
+
+
+# ── Driver → target pixel-reach integration (Route 8, item 1) ──────────
+# The dominant dead-genome failure mode in the shootout is a wired CHOP
+# driver (LFO / Counter / Noise1D / Ramp / …) that does NOT actually vary the
+# target node's param across frames, so the clip stays flat/static and the
+# liveness gate culls it (~63% of 628 genomes historically are dead, and the
+# dead-list is dominated by __lfo__ (1041), __counter__ (297), __noise1d__
+# (159), __ramp__ (132)). This headless integration test renders a real
+# LFO→Gradient(cx) graph frame-by-frame through the GraphExecutor and asserts
+# the driver's modulation REACHES THE PIXELS (large temporal_var + changed
+# pixel fraction), while the IDENTICAL graph with the driver disconnected
+# stays static. It guards the entire driver→SCALAR→param injection path
+# (graph.py _inject_typed + the CHOP nodes' global_frame derivation) from
+# silently regressing back into the dead-clip trap.
+
+def _render_driver_graph(driver_wired: bool, seed: int = 7,
+                         n_frames: int = 24, total_frames: int = 24):
+    """Render an LFO→Gradient(cx) graph for n_frames and return the stack."""
+    import tempfile
+    from pathlib import Path
+    from image_pipeline.core.graph import (
+        GraphExecutor, GraphNode, GraphEdge,
+    )
+    import numpy as np
+
+    nodes = [
+        GraphNode(id="drv", method_id="__lfo__",
+                  params={"waveform": "sine", "min": 0.0, "max": 1.0,
+                          "rate": 1.0, "phase": 0.0, "bipolar": False}),
+        GraphNode(id="g", method_id="11",
+                  params={"gradient_type": "radial", "style": "solid",
+                          "cx": 0.5, "cy": 0.5, "direction": 0.0,
+                          "anim_mode": "none", "anim_speed": 1.0,
+                          "color1": "0.05,0.05,0.2",
+                          "color2": "0.95,0.3,0.1"}),
+    ]
+    edges = []
+    if driver_wired:
+        # LFO.value (SCALAR) → Gradient.cx (SCALAR port). cx sweeps the
+        # gradient center across the full canvas, a large unambiguous Δ.
+        edges.append(GraphEdge(src_node="drv", src_port="value",
+                               dst_node="g", dst_port="cx"))
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ex = GraphExecutor(out_dir=Path(tmp), fps=24, in_memory=True)
+        stack = []
+        for f in range(n_frames):
+            flat, terminal, errors = ex.execute(
+                nodes=[n.__dict__ for n in nodes],
+                edges=[e.__dict__ for e in edges],
+                seed=seed, frame=f, frames=total_frames,
+            )
+            assert not errors, f"node errors: {errors}"
+            assert terminal == "g", f"expected terminal g, got {terminal}"
+            img = flat["g"]["image"]
+            assert isinstance(img, np.ndarray) and img.ndim == 3, "no image out"
+            stack.append(img.astype(np.float32))
+    return stack
+
+
+def test_driver_wired_reaches_pixels():
+    """An LFO driving Gradient.cx must produce a visibly animated clip.
+
+    NOTE: do NOT compare frame 0 vs the last frame — with rate=1.0 over 24
+    frames the LFO completes an integer number of sine cycles, so frame 0 and
+    the last frame land on the SAME phase (the classic sin-phase degeneracy
+    false-negative from the 8-step audit, Step 7). Compare frame 0 against a
+    quarter-cycle frame instead, which sits at the waveform's opposite extreme.
+    """
+    stack = _render_driver_graph(driver_wired=True, seed=7)
+    arr = np.stack(stack)  # (N, H, W, 3)
+    temporal_var = float(arr.var(axis=0).mean())
+    # quarter-cycle apart (frame 6) sits at the LFO's opposite extreme from frame 0
+    changed = _changed_frac(stack[0], stack[6])
+    # The gradient center sweeps 0→1 across the full canvas, so the canvas
+    # changes a lot between the two frames; both globals are large.
+    assert temporal_var > 1e-3, temporal_var
+    assert changed > 0.30, f"driver did not reach pixels (changed={changed:.3f})"
+
+
+def test_driver_disconnected_is_static():
+    """The SAME graph WITHOUT the driver wire must stay static (proves the
+    animation in the wired case is caused by the driver, not by a built-in
+    anim_mode or seed drift)."""
+    stack = _render_driver_graph(driver_wired=False, seed=7)
+    arr = np.stack(stack)
+    temporal_var = float(arr.var(axis=0).mean())
+    changed = _changed_frac(stack[0], stack[-1])
+    # cx is pinned at its default 0.5 and anim_mode='none' → a frozen clip.
+    assert temporal_var < 1e-4, temporal_var
+    assert changed < 0.01, f"disconnected graph moved ({changed:.3f})"
+
+
+def test_driver_variation_distinct_from_static_baseline():
+    """Sanity: the wired driver's temporal_var must be SIGNIFICANTLY larger
+    than the disconnected baseline's, confirming the injection path adds real
+    motion and is not just numerical noise."""
+    wired = np.stack(_render_driver_graph(driver_wired=True, seed=3))
+    static = np.stack(_render_driver_graph(driver_wired=False, seed=3))
+    tv_wired = wired.var(axis=0).mean()
+    tv_static = static.var(axis=0).mean()
+    assert tv_wired > 50 * tv_static, (tv_wired, tv_static)

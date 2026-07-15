@@ -1,8 +1,8 @@
 # Image-Input Wiring Report
 
-- generated: 2026-07-14T18:04:00.679541+00:00
+- generated: 2026-07-15T03:04:23.494320+00:00
 - graphs scanned: 49
-- errors: 13
+- errors: 14
 - warnings: 28
 
 ```
@@ -10,7 +10,7 @@
  IMAGE-INPUT WIRING VALIDATION
 ========================================================================
  graphs scanned : 49
- ERROR findings : 13
+ ERROR findings : 14
  WARN  findings : 28
 
 ── graph: age_density   (0 ERROR / 1 WARN) ──
@@ -111,11 +111,13 @@
   [WARN] W_OPTIONAL_UNWIRED @ n28 (18)
         optional image port 'seed_image' is unwired (method may fall back to an internal/default source)
 
-── graph: shootout-g-18612554   (2 ERROR / 0 WARN) ──
+── graph: shootout-g-18612554   (3 ERROR / 0 WARN) ──
   [ERROR] E_ORPHAN_NODE @ n1 (156)
         node references unknown method_id '156' (no NodeDef)
-  [ERROR] E_DANGLING_REQUIRED @ n3 (313)
-        image_in has no inbound edge and the method consumes the wired image — will run without an upstream image (broken)
+  [ERROR] E_EDGE_NOT_TANGIBLE @ n2 (81)
+        image port 'image_in' wired from n3:image — src-method-unknown (source does not emit a real image on that port)
+  [ERROR] E_ORPHAN_NODE @ n3 (313)
+        node references unknown method_id '313' (no NodeDef)
 
 ── graph: shootout-g-2661455a   (1 ERROR / 3 WARN) ──
   [ERROR] E_DANGLING_REQUIRED @ n1 (42)
