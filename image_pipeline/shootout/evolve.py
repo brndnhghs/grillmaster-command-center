@@ -538,11 +538,33 @@ def crossover(parent_a: dict, parent_b: dict, pool: GenePool,
 # ── Generation composition ────────────────────────────────────────────
 
 
+def _render_cost_discount(g: dict, cfg: ShootoutConfig) -> float:
+    """Cheapness multiplier for parent-breeding weight (1.0 = neutral).
+
+    Penalise genomes that burned a lot of render wall-time so selection
+    prefers cheap-alive forms and the gene pool stops over-investing in
+    topologies that hit the render_timeout_s cap (the timeout cluster).
+    Gated by ``cfg.render_cost_fitness_penalty`` (<=0 disables). Genomes
+    not yet rendered (no ``render.wall_s``) are treated as neutral.
+    """
+    p = float(getattr(cfg, "render_cost_fitness_penalty", 0.0))
+    if p <= 0.0:
+        return 1.0
+    wall = (g.get("render") or {}).get("wall_s")
+    if not isinstance(wall, (int, float)) or wall <= 0:
+        return 1.0
+    ref = float(getattr(cfg, "render_cost_fitness_ref_s", 300.0)) or 300.0
+    return 1.0 / (1.0 + p * (float(wall) / ref))
+
+
 def select_parents(rated: list[dict], cfg: ShootoutConfig) -> tuple[list[dict], list[float]]:
     """Rating-weighted parent pool (top stars dominate; below threshold never breed).
 
-    weight = (rating/5)**cfg.parent_selection_power, so a higher power sharpens
-    preference for the winning forms without ever carrying a clip forward verbatim.
+    weight = (rating/5)**cfg.parent_selection_power, then multiplied by the
+    render-cost discount (_render_cost_discount) when cfg.render_cost_fitness_penalty
+    > 0 — so the winning forms dominate AND cheap-alive genomes out-breed
+    render-expensive ones (attacks the timeout cluster). Verified by
+    test_shootout_render_cost_fitness.py.
 
     When human ratings are starved the rating-eligible pool is empty and the
     evolution would collapse to fresh randoms every generation (gen-0
@@ -553,7 +575,7 @@ def select_parents(rated: list[dict], cfg: ShootoutConfig) -> tuple[list[dict], 
     parents = [g for g in rated
                if isinstance(g.get("rating"), (int, float))
                and g["rating"] >= cfg.min_rating_to_parent]
-    weights = [(g["rating"] / 5.0) ** cfg.parent_selection_power for g in parents]
+    weights = [((g["rating"] / 5.0) ** cfg.parent_selection_power) * _render_cost_discount(g, cfg) for g in parents]
     if cfg.liveness_breed_fallback and (
             not parents or len(parents) < cfg.liveness_breed_min_rated):
         # Blended liveness-breeding (Route 8 follow-up): when the rated-parent
@@ -596,7 +618,7 @@ def _liveness_parent_pool(rated: list[dict], cfg: ShootoutConfig) -> tuple[list[
         fit = _liveness_fitness(g, cfg)
         if fit >= 0.15:
             pool.append(g)
-            weights.append(fit ** cfg.parent_selection_power)
+            weights.append((fit ** cfg.parent_selection_power) * _render_cost_discount(g, cfg))
     return pool, weights
 
 

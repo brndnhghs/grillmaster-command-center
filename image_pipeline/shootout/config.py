@@ -92,6 +92,16 @@ class ShootoutConfig:
     liveness_breed_min_rated: int = 20
     liveness_breed_blend: float = 0.5
 
+    # ── Render-cost-aware fitness shaping (Route 8 follow-up, 2026-07-15) ──
+    # Penalise parent-breeding weight by how much render wall-time a genome
+    # burned, so selection prefers CHEAP-alive forms and the gene pool stops
+    # over-investing in topologies that hit the render_timeout_s cap (the
+    # 164>150s timeout cluster). discount = 1/(1 + penalty * wall_s/ref_s):
+    # 1.0 for an un-rendered / cheap genome, → 1/(1+penalty) for a genome
+    # at the cap. Gated: penalty<=0 disables (pure rating/liveness weight).
+    render_cost_fitness_penalty: float = 1.0
+    render_cost_fitness_ref_s: float = 300.0   # matches render_timeout_s
+
     # ── Promotion seeds (Route 8 / PHASE 1B) ──────────────────────────
     # Opt-in list of genome ids to roll forward (verbatim) into the NEXT
     # generation's candidate pool. The evolution has no verbatim survivors
