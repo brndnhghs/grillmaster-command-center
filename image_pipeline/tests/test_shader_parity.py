@@ -164,7 +164,9 @@ def test_gpu_shader_node_map_resolves():
     # 256 -> 257: +1 client-GPU shim for node 326 Hash Field (Müller et al.
     #             2022 multiresolution hash encoding; routes live preview to
     #             hash_field_gpu).
-    assert len(GPU_SHADER_NODE_MAP) == 257, len(GPU_SHADER_NODE_MAP)
+    # 257 -> 258: +1 typed-uniform GPU node 327 GPU Hex Tiling (Heitz-Neyret
+    #             HPG 2018 stochastic hex-tiling filter; typed FILTER node).
+    assert len(GPU_SHADER_NODE_MAP) == 258, len(GPU_SHADER_NODE_MAP)
     for mid, entry in GPU_SHADER_NODE_MAP.items():
         if entry.get("type") == "sim":
             # P1 ping-pong sim: seed/step/display must all resolve to shaders.

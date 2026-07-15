@@ -319,6 +319,11 @@ _TYPED_SHADER_NODES = [
     # (no ping-pong state), animated sun day-arc via u_time. Named typed
     # uniforms mirror node 471's real numeric params (contract #5/#6).
     ("325", "nishita_sky_gpu", "GPU Nishita Sky"),
+    # Categorical coverage pt.19 (2026-07-14): stochastic hex-tiling filter —
+    # Heitz & Neyret (HPG 2018) histogram-preserving blending operator that
+    # tiles the wired input image across the plane with NO visible repetition.
+    # A true FILTER (image_in: IMAGE) with named typed controls.
+    ("327", "hex_tiling_gpu", "GPU Hex Tiling"),
 ]
 
 
