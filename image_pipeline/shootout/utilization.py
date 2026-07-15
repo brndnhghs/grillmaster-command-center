@@ -14,6 +14,7 @@ survivor in a session, or the union of all generated genomes.
 """
 from __future__ import annotations
 
+import math
 from collections import Counter
 
 from .config import ShootoutConfig, DEFAULT_CONFIG
@@ -129,6 +130,34 @@ def audit_population(genomes: list[dict],
         "categories": categories,
         "motifs": motifs,
     }
+
+
+def motif_diversity(genomes: list[dict]) -> float:
+    """Shannon entropy (bits) of the motif-frequency distribution across a
+    population of genomes.
+
+    0.0  = every genome that carries motifs uses the *same* single motif
+           (total convergence / monoculture).
+    higher = motifs are spread more evenly (healthy diversity).
+
+    Operationalizes the "is the population collapsing onto one motif?"
+    question (Route 8 / Phase 1C sub-problem #2 — diversity maintenance).
+    Pure function of the genome envelopes: no rendering, no LLM.
+
+    Extraction mirrors :func:`audit_population` — motifs live under
+    ``graph["motifs"]`` (NOT a top-level ``genomes[.]["motifs"]`` key), which
+    is the field the real genome schema uses. A prior autonomous run read the
+    wrong key, concluded the rating signal was unlinked from ids, and filed a
+    false "rating-instrumentation gap"; this function reads the correct key.
+    """
+    counts: Counter[str] = Counter()
+    for g in genomes:
+        for m in (g.get("graph", {}) or {}).get("motifs", []) or []:
+            counts[m] += 1
+    total = sum(counts.values())
+    if total == 0:
+        return 0.0
+    return -sum((c / total) * math.log2(c / total) for c in counts.values())
 
 
 def summarize(audit: dict) -> str:
