@@ -62,8 +62,18 @@ DEFERRED_SIM_IDS = set(
     "20 34 35 36 55 79 83 84 88 89 90 92 94 97 98 101 102 103 "
     "107 109 110 111 112 113 114 116 117 123 129 130 131 134 "
     "136 145 147 149 151 152 158 159 167 337 429 440 448 922 310 "
-    "483 484 517 951 966 560 518 530".split()
+    "483 484 517 951 966 560 518 530 532".split()
 )
+# 532 Chaotic Billiards: Arch-A stateful trajectory-integration sim. It
+# integrates up to 12 point-particle trajectories by reflection off a closed
+# boundary (_simulate) and renders them as thin polylines, with trace/spin/
+# breathe animation modes. It is NOT a closed-form f(uv,t) field (the particle
+# positions are per-agent state, not a local RGBA-float ping-pong field), so its
+# honest GPU twin would be a WebGL2 agent-integration sim needing browser
+# parity -- same deferral class as 530 Physarum / 518 Larger-Than-Life / 951
+# Cahn-Hilliard. Out of scope for headless verification until P2 (WebGPU
+# compute) is signed off. Was committed (c0c1f93) without a mirror or deferral
+# entry; added here so the exhaustive-deferral guard holds again.
 # 530 Physarum Transport Network: Arch-A agent-based slime-mold foraging sim
 # (thousands of agents sensing a deposited trail-map, box-blur diffusion,
 # capture_frame per frame). Same deferral class as the other agent/trail-map
