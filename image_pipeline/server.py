@@ -1126,6 +1126,25 @@ def shootout_session_state(session_id: str):
     return state
 
 
+@app.post("/api/shootout/session/{session_id}/cancel")
+def shootout_session_cancel(session_id: str):
+    """Signal a running generation for this session to abort early.
+
+    Safe to call when nothing is running. Returns whether a generation was
+    in flight (and is now signalled to stop between batches)."""
+    was_running = _shootout_session.cancel_session(session_id)
+    return {"ok": True, "was_running": was_running}
+
+
+@app.post("/api/shootout/session/{session_id}/reset")
+def shootout_session_reset(session_id: str):
+    """Cancel any running generation and delete the session + its genomes.
+
+    The cross-session ratings dataset and taste model are preserved."""
+    removed = _shootout_session.reset_session(session_id)
+    return {"ok": True, "removed": removed}
+
+
 def _shootout_launch_job(session_id: str) -> dict:
     """Run one generation in a background job; progress + result stream via
     the existing /api/jobs/{id}/stream SSE."""

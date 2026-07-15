@@ -30,6 +30,54 @@ from .repair import sample_valid_genome
 
 _session_locks: dict[str, threading.Lock] = {}
 _locks_guard = threading.Lock()
+# Per-session cancellation flag. Set by cancel_session()/reset_session();
+# checked by the generation loop between batches so a long generation can be
+# stopped promptly without waiting for it to exhaust its render budget.
+_session_cancel: dict[str, threading.Event] = {}
+_cancel_guard = threading.Lock()
+
+
+def _cancel_event_for(session_id: str) -> threading.Event:
+    with _cancel_guard:
+        return _session_cancel.setdefault(session_id, threading.Event())
+
+
+def cancel_session(session_id: str) -> bool:
+    """Signal the running generation for `session_id` to abort.
+
+    Returns True if a generation was in flight (and is now signalled). Also
+    flags every in-flight render via the shared progress monitor so the
+    currently-cooking genome stops between frames, not just at the next
+    batch boundary. Safe to call when nothing is running.
+    """
+    was_running = False
+    lock = _lock_for(session_id)
+    if lock.locked():
+        was_running = True
+    ev = _cancel_event_for(session_id)
+    ev.set()
+    # Abort any genomes currently rendering for this session.
+    from . import progress as _progress
+    snap = _progress.MONITOR.snapshot(include_done=True)
+    for gid in snap:
+        # render ids encode the session; we can't see session from gid alone,
+        # so request_skip on every active render is the safe over-approximation.
+        _progress.MONITOR.request_skip(gid)
+    return was_running
+
+
+def reset_session(session_id: str) -> int:
+    """Cancel any running generation and delete the session + its genomes.
+
+    The cross-session ratings dataset and taste model are preserved. Returns
+    the number of genome files removed.
+    """
+    cancel_session(session_id)
+    # Clear the cancel flag so a future session with the same id starts clean.
+    with _cancel_guard:
+        _session_cancel.pop(session_id, None)
+    removed = store.delete_session(session_id)
+    return removed
 
 
 def _lock_for(session_id: str) -> threading.Lock:
@@ -146,6 +194,8 @@ def _run_generation_locked(session_id, cfg, progress_cb, rng) -> dict:
     session = store.load_session(session_id)
     if session is None:
         raise ValueError(f"unknown session {session_id!r}")
+    # Fresh run starts clean — clear any stale cancel signal from a previous run.
+    _cancel_event_for(session_id).clear()
     rng = rng or random.Random()
     pool = build_gene_pool(cfg)
     gen_index = len(session["generations"])
@@ -259,6 +309,9 @@ def _run_generation_locked(session_id, cfg, progress_cb, rng) -> dict:
             if (len(alive) >= need or rendered_total >= max_total
                     or gated_total >= max_total):
                 break
+            if _cancel_event_for(session_id).is_set():
+                _p("✋ generation cancelled — stopping early")
+                break
             # Everything got gated; sample fresh explorers and retry.
             n_more = min(max(2 * (need - len(alive)), 2),
                          max_total - rendered_total)
@@ -291,6 +344,9 @@ def _run_generation_locked(session_id, cfg, progress_cb, rng) -> dict:
                 reason = lv.get("reason", "unknown")
                 _p(f"  ✗ {gid}  {n_nodes} nodes  → DEAD ({reason})")
         _p(f"  batch done in {_rt:.1f}s · {len(alive)} alive / {dead} dead so far")
+        if _cancel_event_for(session_id).is_set():
+            _p("✋ generation cancelled — stopping early")
+            break
         if len(alive) >= need or rendered_total >= max_total:
             break
         n_more = min(max(2 * (need - len(alive)), 2), max_total - rendered_total)

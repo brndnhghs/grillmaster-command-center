@@ -70,6 +70,29 @@ def list_sessions() -> list[dict]:
     return out
 
 
+def delete_session(session_id: str) -> int:
+    """Delete a session file and all of its genome envelopes.
+
+    Returns the number of genome files removed. Safe if the session or its
+    genomes are already gone (idempotent). The cross-session ratings dataset
+    and taste model are intentionally NOT touched — those compound across
+    sessions and a session delete should not erase learned taste.
+    """
+    removed = 0
+    session = load_session(session_id)
+    if session is not None:
+        for gen in session.get("generations", []):
+            for gid in (gen.get("shown", []) + gen.get("pool", [])):
+                gp = GENOMES_DIR / f"{gid}.json"
+                if gp.exists():
+                    gp.unlink()
+                    removed += 1
+    sp = SESSIONS_DIR / f"{session_id}.json"
+    if sp.exists():
+        sp.unlink()
+    return removed
+
+
 def append_rating(genome_id: str, session_id: str, rating: int,
                   features: dict, notes: str = "",
                   node_feedback: dict | None = None) -> None:
