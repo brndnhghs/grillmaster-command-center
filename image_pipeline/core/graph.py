@@ -799,6 +799,60 @@ class GraphExecutor:
                 sim_params["frame"] = 0
                 sim_params["frame_seed"] = node_seed
 
+                # ── Route 8 #1: drivers + keyframes MUST reach Arch-A sims ──
+                # The generic driver/keyframe injection below (after this arch
+                # branch) is skipped for Arch-A via `continue`, so without this
+                # block a CHOP driver feeding an Arch-A terminal is silently
+                # dropped: the sim cooks from node.params defaults and the clip
+                # is culled as static by the liveness gate. Apply the same
+                # per-frame modulation here, and fold it into the cache key so a
+                # changing driver value re-cooks the sim instead of serving a
+                # static cached frame.
+                if node.paramKeyframes:
+                    for _pn, _kfs in node.paramKeyframes.items():
+                        if not _kfs or len(_kfs) < 1:
+                            continue
+                        _skfs = sorted(_kfs, key=lambda k: k.get("frame", 0))
+                        _val = _evaluate_param_track(_skfs, timeline.global_frame)
+                        if _val is not None:
+                            sim_params[_pn] = _val
+                _drv_ids = {e.src_node for e in gedges
+                            if e.dst_node == node_id and not e.feedback}
+                _up_scalars: dict[str, float] = {}
+                for _uid in _drv_ids:
+                    for _k, _v in (flat_outputs.get(_uid) or {}).items():
+                        if (_k not in ("image", "field", "particles", "mask")
+                                and isinstance(_v, (int, float))
+                                and _k not in _up_scalars):
+                            _up_scalars[_k] = float(_v)
+                _elig_s = [k for k, _ in _eligible_params(meta.params or {}, "scalar")]
+                for _sk, _sv in _up_scalars.items():
+                    _tgt = _score_param(_sk, _elig_s)
+                    if _tgt:
+                        _inject_typed(sim_params, _tgt, _sv, "scalar",
+                                      node.params, (meta.params or {}).get(_tgt))
+                for _edge in gedges:
+                    if _edge.dst_node != node_id:
+                        continue
+                    if _edge.src_port in ("image", "field"):
+                        continue
+                    _slot = flat_outputs.get(_edge.src_node) or {}
+                    _dv = _slot.get(_edge.src_port)
+                    if _dv is None:
+                        _lv = _slot.get("luminance")
+                        if _edge.src_port == "value" and isinstance(_lv, (int, float)):
+                            _dv = float(_lv)
+                        else:
+                            continue
+                    if isinstance(_dv, np.ndarray):
+                        _dv = float(np.mean(_dv))
+                    if not isinstance(_dv, (int, float)):
+                        continue
+                    _inject_typed(sim_params, _edge.dst_port, float(_dv), "scalar",
+                                  node.params, (meta.params or {}).get(_edge.dst_port))
+                # Cache key now reflects driver/keyframe-modulated params.
+                params_hash = _node_params_hash(node.method_id, sim_params)
+
                 set_job_context(on_frame=_on_capture, cancel_event=_cancel_evt)
                 _t0_arch_a = time.monotonic()
                 try:
