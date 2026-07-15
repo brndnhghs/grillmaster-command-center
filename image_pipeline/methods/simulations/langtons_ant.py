@@ -10,6 +10,11 @@ from ...core.registry import method
 from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES, load_input, write_particles, write_field
 from ...core.animation import capture_frame
 
+# Canonical extended-palette table (neon/pastel/ocean/forest/fire/ice) is the
+# single source of truth in particles.py — reuse it instead of duplicating it
+# here so the two Langton renderers never drift apart.
+from .particles import _LANGTON_EXTRA_PALETTES  # noqa: E402,F401
+
 # ── Preview helpers for animated captures ──
 
 def _render_dla_preview(grid, age_grid, h, w, rng):
