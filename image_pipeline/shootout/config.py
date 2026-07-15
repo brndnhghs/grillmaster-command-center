@@ -77,6 +77,20 @@ class ShootoutConfig:
     # rating-weighted parents take over (the fallback only triggers when there
     # are no rating-eligible parents). 45% explorer randoms keep diversity up.
     liveness_breed_fallback: bool = True
+    # Blended liveness-breeding (Route 8 follow-up, 2026-07-14): the fallback
+    # above only fires when ZERO rating-eligible parents exist. But a *sparse*
+    # rating corpus (e.g. ~18 ratings / 600 genomes) yields a handful of rated
+    # parents, so pure rating selection kicks in and the liveness signal of the
+    # other ~hundreds of alive genomes is discarded — losing the only abundant,
+    # per-genome fitness signal. When the rated-parent count is below
+    # ``liveness_breed_min_rated``, liveness-fitness parents are BLENDED into the
+    # pool (weighted by liveness fitness ** power) so the evolution still
+    # compounds toward dynamic clips instead of over-fitting to a few possibly
+    # unrepresentative stars. ``liveness_breed_blend`` scales how strongly the
+    # liveness parents pull relative to the rated ones. Once humans rate enough
+    # clips (>= min_rated) the rated signal is trusted and blending disables.
+    liveness_breed_min_rated: int = 20
+    liveness_breed_blend: float = 0.5
 
     # ── Promotion seeds (Route 8 / PHASE 1B) ──────────────────────────
     # Opt-in list of genome ids to roll forward (verbatim) into the NEXT

@@ -633,6 +633,46 @@ def test_no_parents_means_all_random():
     assert all(g["origin"] in ("random", "explorer") for g in gen)
 
 
+def test_blended_liveness_breeding_supplements_sparse_ratings():
+    """Route 8 follow-up: with a *sparse* rating pool, liveness-fitness
+    (unrated but alive) genomes are blended into the breeder pool so the
+    abundant liveness signal still drives evolution toward dynamic clips.
+    Lightweight dicts: select_parents only reads rating + liveness."""
+    prev = [
+        {"rating": 5, "liveness": {"alive": True, "temporal_var": 0.05,
+                                   "motion_pixel_frac": 0.4}},
+        {"rating": 2, "liveness": {"alive": True, "temporal_var": 0.03,
+                                   "motion_pixel_frac": 0.25}},
+    ]
+    for _ in range(5):
+        prev.append({"rating": None,
+                     "liveness": {"alive": True, "temporal_var": 0.05,
+                                  "motion_pixel_frac": 0.4}})
+    parents, weights = select_parents(prev, CFG)
+    # 2 rated + 5 blended liveness parents
+    assert len(parents) == 7
+    assert any(g.get("rating") is None for g in parents)
+    # rated parents remain present, with rating ordering intact
+    rated = [(p["rating"], w) for p, w in zip(parents, weights)
+             if p.get("rating") is not None]
+    assert rated[0][0] == 5 and rated[1][0] == 2
+    # blended (unrated) parents carry real liveness weight
+    unrated = [(p, w) for p, w in zip(parents, weights)
+               if p.get("rating") is None]
+    assert len(unrated) == 5 and all(w > 0 for _, w in unrated)
+
+
+def test_blended_liveness_off_when_ratings_plentiful():
+    """Once humans rate enough clips (>= min_rated) the rated signal is
+    trusted and liveness blending disables — pure rating behavior preserved."""
+    prev = [{"rating": 5,
+             "liveness": {"alive": True, "temporal_var": 0.05,
+                          "motion_pixel_frac": 0.4}} for _ in range(25)]
+    parents, weights = select_parents(prev, CFG)
+    assert len(parents) == 25
+    assert all(g.get("rating") is not None for g in parents)
+
+
 # ── Features + taste ──────────────────────────────────────────────────
 
 

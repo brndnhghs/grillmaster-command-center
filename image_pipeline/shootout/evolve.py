@@ -554,10 +554,21 @@ def select_parents(rated: list[dict], cfg: ShootoutConfig) -> tuple[list[dict], 
                if isinstance(g.get("rating"), (int, float))
                and g["rating"] >= cfg.min_rating_to_parent]
     weights = [(g["rating"] / 5.0) ** cfg.parent_selection_power for g in parents]
-    if not parents and cfg.liveness_breed_fallback:
-        fb, fbw = _liveness_parent_pool(rated, cfg)
+    if cfg.liveness_breed_fallback and (
+            not parents or len(parents) < cfg.liveness_breed_min_rated):
+        # Blended liveness-breeding (Route 8 follow-up): when the rated-parent
+        # pool is thin, supplement it with liveness-fitness parents so the
+        # abundant liveness signal from the other alive genomes still drives
+        # evolution toward dynamic clips. Rated parents already in the pool are
+        # excluded so each breeder appears exactly once.
+        fb, fbw = _liveness_parent_pool(
+            [g for g in rated if g not in parents], cfg)
         if fb:
-            parents, weights = fb, fbw
+            if not parents:
+                parents, weights = fb, fbw
+            else:
+                parents = parents + fb
+                weights = weights + [w * cfg.liveness_breed_blend for w in fbw]
     return parents, weights
 
 
