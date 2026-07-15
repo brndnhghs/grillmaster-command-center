@@ -173,16 +173,22 @@ def test_cost_gate_protects_survivor_pool():
         est = cm.estimate_cost_s(g, cfg.frames, m)
         if est <= 0:
             continue
+        # Measure the REAL gate, not a stale re-implementation. The gate's
+        # survivor-pool-protective liveness-prior exemption (bf3ba4d) spares
+        # heavy-but-likely-dynamic genomes, so raw ``est > th`` over-counts the
+        # clips the gate would actually cull. The test's contract is "dynamic
+        # clips the gate WOULD cull", which is exactly ``is_over_budget``.
+        skip, _ = cm.is_over_budget(g, cfg, m)
         alive = bool((g.get("liveness") or {}).get("alive"))
         if alive:
             n_alive += 1
-            if est > th:
+            if skip:
                 alive_skipped += 1
         else:
             heavy = wall > th
-            if heavy and est > th:
+            if heavy and skip:
                 caught += 1
-            elif heavy and est <= th:
+            elif heavy and not skip:
                 fn += 1
 
     if n_alive == 0:
