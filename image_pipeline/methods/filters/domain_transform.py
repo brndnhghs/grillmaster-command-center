@@ -3,175 +3,108 @@ import math
 from pathlib import Path
 
 import numpy as np
-from scipy.ndimage import uniform_filter
+from scipy.ndimage import gaussian_filter
 
 from ...core.registry import method
 from ...core.utils import (
-    save, norm, mn, seed_all, W, H, PALETTES, load_input,
-    write_scalars, write_mask,
+    save, norm, mn, seed_all, W, H, PALETTES, load_input, write_scalars,
 )
 from ...core.animation import capture_frame
 
 
-# ── Domain Transform Edge-Aware Filtering (DTF) ──
-# Gastal & Oliveira, "Domain Transform for Edge-Aware Image and Video
-# Processing", SIGGRAPH 2011 (ACM TOG 30(4)).
-#
-# Classic edge-preserving filters (bilateral, anisotropic diffusion, WLS) cost
-# O(N·r) or O(N) but with a large constant — the bilateral grid helps but needs
-# quantization. DTF instead turns the non-linear edge-aware weight into a
-# *scalar distance along a 1D path* and then applies a tiny constant-time
-# recursive filter. The edge-aware weight between pixels p,q is
-#
-#     w(p,q) = exp( -(|p-q|/σ_s  +  (|∇g(p)|₁ + |∇g(q)|₁)/σ_r) )
-#
-# The key insight: integrate the per-pixel "domain transform" distance along the
-# line between p and q, so the weight becomes a *single scalar* per pixel. That
-# lets the filter be evaluated with an O(1) forward+backward recurrence — total
-# cost O(N) with a tiny constant, independent of the smoothing scale σ_s. This
-# is what makes DTF real-time for video and why it ships in open-source editors.
-#
-# The recursive pass along one axis (weight image w, decay a = exp(-√2·w)):
-#
-#     g[0] = f[0];  g[i] = (1-a[i])·f[i] + a[i]·g[i-1]      # forward
-#     h[n] = g[n];  h[i] = (1-a[i+1])·g[i] + a[i+1]·h[i+1]   # backward
-#
-# With |∇g| large (a strong edge) w is large → a→0 → g[i]≈f[i] → the edge is
-# PRESERVED; in flat regions w≈σ_s⁻¹ is small → a→1 → strong smoothing. σ_r is
-# the range/edge sensitivity: small σ_r keeps edges crisp; the whole filter is
-# normalized by running the same recurrence on a constant-1 image. Alternating
-# horizontal/vertical passes (3–4 iterations) gives the 2D result.
-#
-# CPU path is the authoritative export. Fully self-contained (numpy + scipy
-# uniform_filter for source generation only). Distinct from the other filters
-# in this family:
-#   • Guided filter (335): local-LINEAR fit — no explicit scale knob.
-#   • WLS (349): global weighted-gradient-magnitude PD solve (sparse linear).
-#   • L0 (347): sparse gradient-COUNT cartoon.
-#   • DTF (352): O(N) recursive domain-transform recurrence — the real-time
-#     scale-free edge-preserving smoother.
+# ── Domain Transform Edge-Aware Filtering (Gastal & Oliveira, SIGGRAPH 2011) ──
+# O(N) edge-preserving smoothing that fakes a 2D bilateral filter with a pair of
+# 1D recursive passes. The trick: remap each pixel into a "domain transform"
+# coordinate that STRETCHES the distance across intensity edges, so a plain 1D
+# exponential smoother (which only sees the stretched coordinate) automatically
+# stops at boundaries. Per axis the spacing between neighbours is
+#     d[i] = 1 + sigma_s * rg[i],   rg = |grad| / (sigma_r + |grad|)
+# and the recursive weight is w[i] = exp(-d[i] / sigma_s). rg is ~1 on flat
+# areas (compact spacing -> heavy smoothing) and -> 0 at edges (stretched
+# spacing -> preserved). Two separable passes (H then V) repeated a few times
+# approximate the full 2D filter in O(N) with no per-pixel neighbourhood.
 
 
-def _dt_pass_1d(f: np.ndarray, w: np.ndarray, axis: int) -> np.ndarray:
-    """One edge-aware recursive pass along `axis` (1=horizontal, 0=vertical).
+def _dt_1d(line: list[float], w: list[float]) -> list[float]:
+    """One axis of the Domain Transform recursive filter (Gastal & Oliveira).
 
-    w is the per-pixel domain-transform weight image (w[i] = weight between
-    pixel i and its predecessor along the axis). Returns the single-axis
-    smoothed result (still unnormalized; caller normalizes via a const-1 pass).
+    Forward + backward exponential smoother along a 1-D signal. ``w[i]`` is the
+    edge-aware weight between sample ``i`` and its predecessor; values live in
+    (0, 1) so the recurrence is numerically stable (no under/overflow).
     """
-    a = np.exp(-math.sqrt(2.0) * w)
-    out = f.astype(np.float64, copy=True)
-    if axis == 1:
-        N = f.shape[1]
-        g = out.copy()
-        for j in range(1, N):
-            g[:, j] = (1.0 - a[:, j]) * f[:, j] + a[:, j] * g[:, j - 1]
-        h = g.copy()
-        for j in range(N - 2, -1, -1):
-            h[:, j] = (1.0 - a[:, j + 1]) * g[:, j] + a[:, j + 1] * h[:, j + 1]
-        return h
-    else:
-        M = f.shape[0]
-        g = out.copy()
-        for i in range(1, M):
-            g[i, :] = (1.0 - a[i, :]) * f[i, :] + a[i, :] * g[i - 1, :]
-        h = g.copy()
-        for i in range(M - 2, -1, -1):
-            h[i, :] = (1.0 - a[i + 1, :]) * g[i, :] + a[i + 1, :] * h[i + 1, :]
-        return h
-
-
-def _dt_filter_2d(src: np.ndarray, guide: np.ndarray,
-                  sigma_s: float, sigma_r: float, passes: int) -> np.ndarray:
-    """2D domain-transform edge-aware smoothing of an (H,W) float image.
-
-    `guide` is the guidance (single channel, [0,1]); `src` is the signal to
-    filter. Returns a normalized, clipped (H,W) float32 array in [0,1].
-    """
-    gx = np.abs(np.gradient(guide, axis=1))
-    gy = np.abs(np.gradient(guide, axis=0))
-    wh = np.zeros_like(guide)
-    wh[:, 1:] = (1.0 / max(1e-3, sigma_s) + (gx[:, :-1] + gx[:, 1:]) / sigma_r)
-    wv = np.zeros_like(guide)
-    wv[1:, :] = (1.0 / max(1e-3, sigma_s) + (gy[:-1, :] + gy[1:, :]) / sigma_r)
-
-    f = src.astype(np.float64)
-    nrm = np.ones_like(src, dtype=np.float64)
-    for it in range(max(1, int(passes))):
-        if it % 2 == 0:
-            f = _dt_pass_1d(f, wh, 1)
-            nrm = _dt_pass_1d(nrm, wh, 1)
-        else:
-            f = _dt_pass_1d(f, wv, 0)
-            nrm = _dt_pass_1d(nrm, wv, 0)
-    return np.clip(f / np.maximum(nrm, 1e-8), 0.0, 1.0).astype(np.float32)
+    n = len(line)
+    if n == 0:
+        return line
+    out_f = line[:]
+    prev = line[0]
+    for i in range(1, n):
+        wi = w[i]
+        v = (line[i] + wi * prev) / (1.0 + wi)
+        out_f[i] = v
+        prev = v
+    out_b = line[:]
+    prev = line[n - 1]
+    for i in range(n - 2, -1, -1):
+        wi = w[i + 1]
+        v = (line[i] + wi * prev) / (1.0 + wi)
+        out_b[i] = v
+        prev = v
+    return [(out_f[i] + out_b[i]) * 0.5 for i in range(n)]
 
 
 @method(
-    id="352",
-    name="Domain Transform Filter",
+    id="991",
+    name="Domain Transform",
     category="filters",
     new_image_contract=True,
-    tags=["smoothing", "edge-preserving", "domain-transform", "real-time",
-          "detail", "abstraction", "expanded", "animation"],
+    tags=["edge-preserving", "smoothing", "domain-transform", "bilateral", "npr", "expanded", "animation"],
     inputs={"image_in": "IMAGE"},
     outputs={"image": "IMAGE"},
     params={
-        "source": {"description": "source (procedural/noise/gradient/input_image/palette/rainbow)", "default": "procedural"},
-        "spatial": {"description": "spatial sigma σs in px — HIGHER = wider smoothing (scale-free, O(N))", "min": 2, "max": 200, "default": 60},
-        "range": {"description": "range sigma σr — LOWER = sharper edge preservation, HIGHER = flatter smoothing", "min": 0.02, "max": 1.0, "default": 0.2},
-        "passes": {"description": "recursive iterations (1-5, more = smoother/tighter convergence)", "min": 1, "max": 5, "default": 3},
-        "guide": {"description": "guidance (luminance = coherent grayscale guide, self = per-channel color guide)", "choices": ["luminance", "self"], "default": "luminance"},
-        "mode": {"description": "output (smooth = edge-preserving filtered, detail = extracted residual, enhance = src + amount*residual)", "choices": ["smooth", "detail", "enhance"], "default": "smooth"},
-        "amount": {"description": "detail/enhance strength (0-2)", "min": 0.0, "max": 2.0, "default": 1.0},
-        "noise_amp": {"description": "noise amplitude for generated sources", "min": 0.1, "max": 1.0, "default": 0.6},
-        "blur_sigma": {"description": "gaussian blur sigma for noise source (more detail for DTF to separate)", "min": 5, "max": 80, "default": 30},
+        "source": {"description": "source (noise/gradient/input_image/palette/rainbow/procedural)", "default": "noise"},
+        "sigma_s": {"description": "spatial smoothing scale (bigger = wider smooth regions)", "min": 1, "max": 20, "default": 8},
+        "sigma_r": {"description": "range/edge sensitivity in [0,1] (smaller = sharper edges)", "min": 0.02, "max": 0.5, "default": 0.15},
+        "iterations": {"description": "filtering passes (more = stronger edge sharpening)", "min": 1, "max": 4, "default": 3},
+        "blend": {"description": "blend original source back in (0=pure filter, 1=original)", "min": 0.0, "max": 1.0, "default": 0.0},
+        "noise_amp": {"description": "noise amplitude for generated sources", "min": 0.1, "max": 1.0, "default": 0.5},
+        "blur_sigma": {"description": "gaussian blur sigma for noise source", "min": 5, "max": 80, "default": 30},
         "palette": {"description": "palette name for palette source", "default": "vapor"},
         "time": {"min": 0.0, "max": 6.28, "default": 0.0},
-        "anim_mode": {"description": "animation mode (none/spatial_sweep/range_sweep/mode_cycle)", "choices": ["none", "spatial_sweep", "range_sweep", "mode_cycle"], "default": "none"},
+        "anim_mode": {"description": "animation mode (none/sigma_pulse/range_sweep/blend_sweep)", "choices": ["none", "sigma_pulse", "range_sweep", "blend_sweep"], "default": "none"},
         "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
     },
 )
 def method_domain_transform(out_dir: Path, seed: int, params=None):
-    """Domain Transform Edge-Aware Filter (DTF) — O(N) real-time edge-preserving smoothing.
+    """Domain Transform Edge-Aware Filter (Gastal & Oliveira, SIGGRAPH 2011).
 
-    Gastal & Oliveira, "Domain Transform for Edge-Aware Image and Video
-    Processing", SIGGRAPH 2011 (https://inf.ufrgs.br/~eslgastal/DomainTransform/).
+    A real-time O(N) replacement for the bilateral filter. Instead of the
+    expensive per-pixel spatial+range weighted average, it remaps the image into
+    a "domain transform" that stretches distances across intensity edges, then
+    runs a plain 1-D recursive exponential smoother along each axis. Because the
+    smoother only sees the stretched coordinate, it naturally stops at edges:
 
-    DTF turns the non-linear edge-aware weight
+        1. guidance = luminance;  gx, gy = |grad| along each axis
+        2. rg = |grad| / (sigma_r + |grad|)        # ~1 flat, ->0 at edges
+        3. spacing  d = 1 + sigma_s * rg           # stretched at edges
+        4. weight   w = exp(-d / sigma_s)          # ~1 flat, small at edges
+        5. recursive 1-D smoother (fwd+bwd) per row (w_x) and per col (w_y)
+        6. repeat steps 5 a few times (iterations)
 
-        w(p,q) = exp( -(|p-q|/σs + (|∇g(p)|₁ + |∇g(q)|₁)/σr) )
-
-    into a single scalar "domain transform" distance per pixel, then evaluates
-    the filter with an O(1) forward+backward recurrence. Total cost is O(N)
-    with a tiny constant INDEPENDENT of the smoothing scale σs — unlike the
-    bilateral filter (O(N·r)) or WLS (sparse linear solve). That scale-free
-    real-time property is why DTF is used for live video abstraction, joint
-    upsampling, and stylization.
-
-    Strong guidance gradients (|∇g| large) make w large → decay a→0 → the pixel
-    keeps its own value → edges are preserved. Flat regions have w≈σs⁻¹ small →
-    a→1 → heavy smoothing. σr is the range/edge sensitivity: small keeps edges
-    crisp. Each pass is normalized by running the same recurrence on a
-    constant-1 image; 3–4 alternating horizontal/vertical passes give the 2D
-    result.
-
-    CPU path is authoritative; verifiable headlessly (non-black, responds to
-    σs/σr and to time under an animation sweep).
+    Flat regions melt into smooth gradients (cartoon / HDR-detail look) while
+    strong silhouettes survive untouched. CPU path is authoritative (pure numpy
+    + scipy for source generation); no cv2 required.
 
     Params:
         source:     generated source type (noise/gradient/input_image/palette/rainbow/procedural)
-        spatial:    spatial sigma σs in px (2-200, default 60) — HIGHER = wider smoothing
-        range:      range sigma σr (0.02-1.0, default 0.2) — LOWER = sharper edges
-        passes:     recursive iterations (1-5, default 3)
-        guide:      luminance (coherent) or self (per-channel color) guidance
-        mode:       smooth / detail (residual) / enhance (unsharp via DTF residual)
-        amount:     detail/enhance strength (0-2, default 1)
+        sigma_s:    spatial smoothing scale (1-50, default 12)
+        sigma_r:    range/edge sensitivity (0.02-0.5, default 0.15)
+        iterations: filtering passes (1-4, default 3)
+        blend:      mix original source back in (0-1, default 0)
         noise_amp:  amplitude for generated sources (0.1-1.0)
         blur_sigma: blur sigma for noise source (5-80)
         palette:    palette name for palette source
         time:       animation clock (0-6.28)
-        anim_mode:  none / spatial_sweep / range_sweep / mode_cycle
+        anim_mode:  none / sigma_pulse / range_sweep / blend_sweep
         anim_speed: animation speed (0.1-5.0)
     """
     try:
@@ -183,35 +116,36 @@ def method_domain_transform(out_dir: Path, seed: int, params=None):
         seed_all(seed)
         rng = np.random.default_rng(seed)
 
-        source = str(params.get("source", "procedural"))
-        sigma_s = float(params.get("spatial", 60))
-        sigma_s = max(2.0, min(200.0, sigma_s))
-        sigma_r = float(params.get("range", 0.2))
-        sigma_r = max(0.02, min(1.0, sigma_r))
-        passes = int(params.get("passes", 3))
-        passes = max(1, min(5, passes))
-        guide = str(params.get("guide", "luminance"))
-        mode = str(params.get("mode", "smooth"))
-        amount = float(params.get("amount", 1.0))
-        noise_amp = float(params.get("noise_amp", 0.6))
+        source = str(params.get("source", "noise"))
+        sigma_s = float(params.get("sigma_s", 12))
+        sigma_s = max(1.0, min(50.0, sigma_s))
+        sigma_r = float(params.get("sigma_r", 0.15))
+        sigma_r = max(0.02, min(0.5, sigma_r))
+        n_iter = int(params.get("iterations", 3))
+        n_iter = max(1, min(4, n_iter))
+        blend = float(params.get("blend", 0.0))
+        blend = max(0.0, min(1.0, blend))
+        noise_amp = float(params.get("noise_amp", 0.5))
         blur_sigma = float(params.get("blur_sigma", 30))
         pal_name = str(params.get("palette", "vapor"))
 
         # ── Animation (rename t to avoid shadowing the time param) ──
-        # _osc = 0.5 - 0.5*cos(_t) spans the FULL 0→1 as _t goes 0→π, so the two
-        # audit frames (t=0 and t=3.14) land on the two OPPOSITE extremes.
         _t = anim_time * anim_speed
-        _osc = 0.5 - 0.5 * math.cos(_t)
-        if anim_mode == "spatial_sweep":
-            sigma_s = max(2.0, min(200.0, 2.0 + (200.0 - 2.0) * _osc))
+        if anim_mode == "sigma_pulse":
+            # Full sine period in [0,2pi]; sweep sigma_s across its SENSITIVE
+            # range [2,14] (DTF saturates above ~14, so a narrower band would
+            # read as static — skill pitfall #19). Test at true extremes
+            # (t=0 vs t=3pi/2), not t=0 vs pi (both sit at sin=0).
+            sigma_s = max(1.0, 2.0 + 12.0 * (0.5 + 0.5 * math.sin(_t)))
         elif anim_mode == "range_sweep":
-            sigma_r = max(0.02, min(1.0, 0.02 + (1.0 - 0.02) * _osc))
-        elif anim_mode == "mode_cycle":
-            # smooth / detail / enhance cycle (intentional discrete content switch)
-            mode = ["smooth", "detail", "enhance"][int((_t / 2.094)) % 3]
-        # else: none — static
+            # sweep edge sensitivity across its full live range [0.02, 0.5]
+            sigma_r = max(0.02, min(0.5, 0.02 + 0.48 * (0.5 + 0.5 * math.sin(_t))))
+        elif anim_mode == "blend_sweep":
+            # dissolve between filtered result and original
+            blend = 0.5 + 0.5 * math.sin(_t * 0.4)
+        # else: none -> static
 
-        # ── Resolve source image (float32 [0,1], H×W×3) ──
+        # ── Resolve source image (float32 [0,1], HxWx3) ──
         # A wired upstream image always overrides source generation (Rule #12).
         src = None
         wired_path = params.get("input_image", "")
@@ -224,9 +158,8 @@ def method_domain_transform(out_dir: Path, seed: int, params=None):
         if src is None:
             if source == "gradient":
                 yy, xx = np.mgrid[:H, :W].astype(np.float32)
-                r = np.sqrt((xx - W / 2) ** 2 + (yy - H / 2) ** 2)
-                g = norm(r)
-                src = np.stack([g, g * 0.7, 1 - g], axis=-1).clip(0, 1)
+                r = norm(np.sqrt((xx - W / 2) ** 2 + (yy - H / 2) ** 2))
+                src = np.stack([r, r * 0.6, 1 - r], axis=-1).clip(0, 1)
             elif source == "palette":
                 pal = PALETTES.get(pal_name, list(PALETTES.values())[0])
                 yy, xx = np.mgrid[:H, :W].astype(np.float32)
@@ -243,56 +176,78 @@ def method_domain_transform(out_dir: Path, seed: int, params=None):
                     np.sin(hue + 4.189) * 0.5 + 0.5,
                 ], axis=-1).astype(np.float32)
             elif source == "procedural":
+                # Seed-stable (no _t) so the `none` mode stays a true static baseline.
                 yy, xx = np.mgrid[:H, :W].astype(np.float32)
-                # time term only active under an explicit anim mode, so
-                # anim_mode="none" is a genuinely static baseline (Step-7 contract)
-                _anim_t = _t if anim_mode != "none" else 0.0
-                g = np.sin(xx * 0.03 + yy * 0.02 + _anim_t * 0.5) * \
-                    np.cos(xx * 0.02 - yy * 0.03 + _anim_t * 0.3) * 0.5 + 0.5
+                g = np.sin(xx * 0.03 + yy * 0.02) * \
+                    np.cos(xx * 0.02 - yy * 0.03) * 0.5 + 0.5
                 src = np.stack([g, g * 0.6, 1 - g * 0.8], axis=-1).astype(np.float32)
             else:  # noise / input_image fallback
                 n = rng.standard_normal((H, W, 3)).astype(np.float32) * noise_amp + 0.5
-                n = uniform_filter(n, size=max(3, int(blur_sigma)), mode="reflect")
+                if blur_sigma >= 1.0:
+                    n = gaussian_filter(n, sigma=blur_sigma, mode="reflect")
                 src = norm(n)
 
         src = np.clip(src, 0.0, 1.0).astype(np.float32)
+        Hh, Ww = src.shape[:2]
 
-        # ── Domain Transform edge-aware filtering + compose output ──
-        gray = (0.299 * src[:, :, 0] + 0.587 * src[:, :, 1] + 0.114 * src[:, :, 2]).astype(np.float32)
-        if guide == "luminance":
-            g = gray  # single coherent guide for all channels
-        else:
-            g = None  # self-guided: each channel guides its own output
+        # ── Domain transform weights from luminance guidance ──
+        lum = (0.299 * src[:, :, 0] + 0.587 * src[:, :, 1] + 0.114 * src[:, :, 2]).astype(np.float32)
+        gy, gx = np.gradient(lum)  # gradient returns [d/dy, d/dx]
+        gx = np.abs(gx).astype(np.float32)
+        gy = np.abs(gy).astype(np.float32)
+        # Edge-aware recurrence coefficient a_i = exp(-d_i / sigma_s), where the
+        # domain-transform spacing d_i = 1 + sigma_s * M_i and M_i = |grad|/(sigma_r
+        # + |grad|) is the normalized gradient magnitude. The 1-D smoother below
+        # consumes wi = a/(1-a), so a near 1 (flat region) -> large wi -> heavy
+        # smoothing; a small (edge) -> small wi -> preserved. This is what makes
+        # sigma_s / sigma_r actually bite instead of collapsing to a fixed blend.
+        rg_x = gx / (sigma_r + gx)
+        rg_y = gy / (sigma_r + gy)
+        base = math.exp(-1.0 / sigma_s)
+        a_x = (base * np.exp(-rg_x)).astype(np.float32)
+        a_y = (base * np.exp(-rg_y)).astype(np.float32)
+        a_x = np.clip(a_x, 0.0, 0.9995)
+        a_y = np.clip(a_y, 0.0, 0.9995)
+        w_x = (a_x / (1.0 - a_x)).astype(np.float32)  # smoother weight along x
+        w_y = (a_y / (1.0 - a_y)).astype(np.float32)  # smoother weight along y
 
-        smooth = np.empty((H, W, 3), dtype=np.float32)
-        for c in range(3):
-            guide_c = g if g is not None else src[:, :, c]
-            smooth[:, :, c] = _dt_filter_2d(src[:, :, c], guide_c, sigma_s, sigma_r, passes)
+        out = src.copy()
+        for _it in range(n_iter):
+            # Horizontal pass (per row)
+            for r in range(Hh):
+                line = out[r, :, 0].tolist()
+                wl = w_x[r, :].tolist()
+                out[r, :, 0] = _dt_1d(line, wl)
+                line = out[r, :, 1].tolist()
+                out[r, :, 1] = _dt_1d(line, wl)
+                line = out[r, :, 2].tolist()
+                out[r, :, 2] = _dt_1d(line, wl)
+            # Vertical pass (per column)
+            for c in range(Ww):
+                line = out[:, c, 0].tolist()
+                wl = w_y[:, c].tolist()
+                out[:, c, 0] = _dt_1d(line, wl)
+                line = out[:, c, 1].tolist()
+                out[:, c, 1] = _dt_1d(line, wl)
+                line = out[:, c, 2].tolist()
+                out[:, c, 2] = _dt_1d(line, wl)
 
-        residual = src - smooth
-        detail_energy = float(np.mean(np.abs(residual)))
+        out = np.clip(out, 0.0, 1.0).astype(np.float32)
 
-        if mode == "detail":
-            out = np.clip(0.5 + amount * residual, 0.0, 1.0).astype(np.float32)
-        elif mode == "enhance":
-            out = np.clip(src + amount * residual, 0.0, 1.0).astype(np.float32)
-        else:  # smooth
-            out = smooth.astype(np.float32)
+        if blend > 0.0:
+            out = (out * (1.0 - blend) + src * blend).astype(np.float32)
+            out = np.clip(out, 0.0, 1.0).astype(np.float32)
 
-        # ── Mask: edge-strength map = magnitude of the DTF detail residual ──
-        mask = np.clip(np.mean(np.abs(residual), axis=-1), 0.0, 1.0).astype(np.float32)
-
-        capture_frame("352", out)
-        save(out, mn(352, "Domain Transform Filter"), out_dir)
+        capture_frame("991", out)
+        save(out, mn(991, f"Domain Transform t={_t:.2f}"), out_dir)
         try:
-            write_scalars(out_dir, spatial=float(sigma_s), range_param=float(sigma_r),
-                          passes=float(passes), detail_energy=detail_energy)
-            write_mask(out_dir, mask)
+            write_scalars(out_dir, sigma_s=float(sigma_s), sigma_r=float(sigma_r),
+                          iterations=float(n_iter), blend=float(blend))
         except Exception:
             pass
         return out
     except Exception as exc:
-        fallback = np.full((H, W, 3), 0.5, dtype=np.float32)
-        save(fallback, mn(352, "Domain Transform Filter"), out_dir)
-        print(f"[method_352] ERROR: {exc}")
+        fallback = np.full((int(H), int(W), 3), 0.93, dtype=np.float32)
+        save(fallback, mn(991, "Domain Transform"), out_dir)
+        print(f"[method_991] ERROR: {exc}")
         return fallback
