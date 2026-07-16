@@ -324,6 +324,12 @@ _TYPED_SHADER_NODES = [
     # tiles the wired input image across the plane with NO visible repetition.
     # A true FILTER (image_in: IMAGE) with named typed controls.
     ("327", "hex_tiling_gpu", "GPU Hex Tiling"),
+    # Categorical coverage pt.20 (2026-07-16): Interior Mapping (van Dongen,
+    # CGI 2008) — believable 3D rooms behind a flat facade via per-pixel
+    # ray-box intersection, NO added geometry. Closed-form f(uv,t) procedural
+    # twin: eye ray into a repeating room-grid, nearest interior wall shaded
+    # with depth tint + hashed per-room window lights (u_time twinkle).
+    ("328", "interior_mapping_typed", "GPU Interior Mapping"),
 ]
 
 

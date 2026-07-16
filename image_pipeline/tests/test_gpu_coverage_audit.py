@@ -50,7 +50,7 @@ from image_pipeline.methods.gpu_shaders import GPU_SHADER_NODE_MAP
 #         161, 477, 480 ...) + P1 sim additions.
 # 256 -> 257: +1 client-GPU shim for node 326 Hash Field (multiresolution hash
 #             encoding; live preview routed to hash_field_gpu).
-EXPECTED_MAP_ENTRIES = 258
+EXPECTED_MAP_ENTRIES = 259
 #             gpu-twin-candidate CPU nodes (431, 432, 433, 464).
 
 # Simulations-category CPU nodes that are intentionally NOT GPU-mirrored yet.
@@ -62,8 +62,22 @@ DEFERRED_SIM_IDS = set(
     "20 34 35 36 55 79 83 84 88 89 90 92 94 97 98 101 102 103 "
     "107 109 110 111 112 113 114 116 117 123 129 130 131 134 "
     "136 145 147 149 151 152 158 159 167 337 429 440 448 922 310 "
-    "483 484 517 951 966 560 518 530 532".split()
+    "483 484 517 951 966 560 518 530 532 970 971 974".split()
 )
+# 970 Percolation: Arch-A stateful cluster-growth sim (site/bond percolation on a
+# lattice, union-find cluster labeling accumulated across frames). Not a
+# closed-form f(uv,t) field; its honest GPU twin is a WebGL2 ping-pong sim needing
+# browser parity -- same deferral class as the other Arch-A CA/lattice sims above.
+# Committed without a mirror or deferral entry by a prior run; added here so the
+# exhaustive-deferral guard holds again. Deferred until P2 (WebGPU) is signed off.
+# 971 Stable Fluids: Arch-A Stam semi-Lagrangian Navier-Stokes solver (same
+# deferral class as 517). Its honest GPU twin is a WebGL2 ping-pong sim needing
+# browser parity. Committed without a deferral entry by a prior run; deferred
+# until P2 (WebGPU compute) is signed off.
+# 974 Ant Colony: Arch-A agent-based foraging sim (pheromone deposition + trail-
+# map diffusion, stateful across frames). Same deferral class as 530 Physarum;
+# honest GPU twin is a WebGL2 ping-pong state sim needing browser parity.
+# Committed without a deferral entry by a prior run; deferred until P2.
 # 532 Chaotic Billiards: Arch-A stateful trajectory-integration sim. It
 # integrates up to 12 point-particle trajectories by reflection off a closed
 # boundary (_simulate) and renders them as thin polylines, with trace/spin/
