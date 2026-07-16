@@ -64,6 +64,24 @@ class Builder:
         })
         return nid
 
+    def add_forced(self, method_id: str, has_image_input: bool = False,
+                    render: bool = False) -> str | None:
+        """Add a motif-fixed node id, but honour the advisor's avoid-set.
+
+        Used by motifs that hardcode a node id (e.g. Image Blend 137,
+        Apply Mask 141). Without this, the avoids in ``bias`` silently never
+        reached those nodes — a user who said "stop using 137" still got it
+        bolted into every blend composite (Route 8, 2026-07-15). Returns the
+        new node id, or ``None`` (and leaves the graph unchanged) when the id
+        is on the avoid-list, so the caller can fall back to a softer motif.
+        """
+        if self.bias is not None:
+            d = self.pool.defs.get(method_id, {})
+            if method_id in self.bias.avoid_methods \
+                    or d.get("category") in self.bias.avoid_categories:
+                return None
+        return self.add(method_id, has_image_input, render)
+
     def wire(self, src_id: str, src_port: str, dst_id: str, dst_port: str) -> None:
         # No `feedback` option by design: the auto-generator must never emit a
         # feedback edge (image output looped back to an upstream input). The
@@ -581,7 +599,9 @@ def m_pattern_blend(b: Builder, budget: int) -> str | None:
     c = b.branch(max_len=min(budget // 2, 2))
     if a is None or c is None:
         return a or c
-    blend = b.add("137")
+    blend = b.add_forced("137")
+    if blend is None:
+        return a or c
     b.wire(a, b.pool.output_port_for(b.mid(a), "image"), blend, "image_a")
     b.wire(c, b.pool.output_port_for(b.mid(c), "image"), blend, "image_b")
     return blend
@@ -597,10 +617,14 @@ def m_masked_composite(b: Builder, budget: int) -> str | None:
     m_src = b.branch(max_len=1)
     if a is None or m_src is None:
         return a or m_src
-    to_mask = b.add("__image_to_mask__", has_image_input=True)
+    to_mask = b.add_forced("__image_to_mask__", has_image_input=True)
+    if to_mask is None:
+        return a or m_src
     b.wire(m_src, b.pool.output_port_for(b.mid(m_src), "image"),
            to_mask, "image_in")
-    apply_m = b.add("141", has_image_input=True)
+    apply_m = b.add_forced("141", has_image_input=True)
+    if apply_m is None:
+        return a or m_src
     b.wire(a, b.pool.output_port_for(b.mid(a), "image"), apply_m, "image_in")
     b.wire(to_mask, "mask", apply_m, "mask")
     return apply_m
@@ -928,6 +952,15 @@ def apply_driver_policy(b: Builder) -> None:
     """
     pool, cfg, rng = b.pool, b.cfg, b.rng
     available = set(pool.scalar_drivers)
+    # Route 8 (2026-07-15): honour the advisor's avoid_methods / avoid_categories
+    # for control/driver nodes. Without this, a user who feeds back "stop using
+    # __counter__" still gets that driver injected by the born-animated policy
+    # (it drew from the full scalar_drivers pool), silently neutering avoidance.
+    if b.bias is not None:
+        available = {m for m in available
+                     if m not in b.bias.avoid_methods
+                     and pool.defs.get(m, {}).get("category")
+                     not in b.bias.avoid_categories}
     if not available:
         return
     fed = b.fed_ports()

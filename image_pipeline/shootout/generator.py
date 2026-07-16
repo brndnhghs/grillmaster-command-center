@@ -487,7 +487,8 @@ def _graph_has_animation_source(graph: dict, pool: GenePool) -> bool:
 
 
 def _ensure_animated(graph: dict, pool: GenePool, cfg: ShootoutConfig,
-                     rng: random.Random) -> dict:
+                     rng: random.Random,
+                     bias: SamplingBias | None = None) -> dict:
     """Hard floor on born-animated genomes (Route 8, 2026-07-14).
 
     The random walk can emit graphs with no animation source at all — a
@@ -509,6 +510,16 @@ def _ensure_animated(graph: dict, pool: GenePool, cfg: ShootoutConfig,
     if not nodes or not pool.scalar_drivers:
         return graph
 
+    # Route 8 (2026-07-15): honour the advisor's avoid-set for injected drivers.
+    drivers = pool.scalar_drivers
+    if bias is not None:
+        drivers = [m for m in drivers
+                   if m not in bias.avoid_methods
+                   and pool.defs.get(m, {}).get("category")
+                   not in bias.avoid_categories]
+    if not drivers:
+        return graph
+
     def _free_targets(n: dict) -> list[str]:
         return [p for p in pool.driver_targets(n["method_id"])
                 if p not in cfg.frozen_params
@@ -519,14 +530,14 @@ def _ensure_animated(graph: dict, pool: GenePool, cfg: ShootoutConfig,
     targets = _free_targets(term)
     if not targets:                       # terminal saturated — try any node
         for n in nodes:
-            if n["method_id"] in pool.scalar_drivers:
+            if n["method_id"] in drivers:
                 continue
             if _free_targets(n):
                 term, targets = n, _free_targets(n)
                 break
     if not targets:
         return graph
-    drv_mid = rng.choice(pool.scalar_drivers)
+    drv_mid = rng.choice(drivers)
     drv_port = pool.output_port_for(drv_mid, "scalar") or "value"
     drv_id = f"n-drv-{len(nodes)}-{rng.randint(0, 9999)}"
     nodes.append({
@@ -594,7 +605,7 @@ def random_genome(pool: GenePool | None = None,
     # Hard floor (Route 8, 2026-07-14): guarantee at least one animation
     # source regardless of which path produced the graph, so no genome is
     # *genuinely* frozen before the liveness gate even runs.
-    graph = _ensure_animated(graph, pool, cfg, rng)
+    graph = _ensure_animated(graph, pool, cfg, rng, bias)
     graph["name"] = gid
     return {
         "genome_id": gid,
