@@ -774,18 +774,12 @@ def _drivable_params(pool: GenePool, cfg: ShootoutConfig,
     # (anim_mode) without touching the alive-sim rate, and removes the wasted
     # O(N^2) re-cook churn. Non-sim nodes keep the full port + schema-scan
     # target set unchanged.
-    if d.get("category") in _SIM_DRIVER_EXCLUDE_CATS:
-        out_sim: list[tuple[float, str, dict | None]] = []
-        for p in port_targets:
-            if p in cfg.frozen_params:
-                continue
-            spec = schema.get(p) if isinstance(schema.get(p), dict) else None
-            out_sim.append(_score(p, spec, port=True))
-        out_sim.sort(key=lambda t: -t[0])
-        return [(p, spec) for _, p, spec in out_sim]
-    seen: set[str] = set()
-    out: list[tuple[float, str, dict | None]] = []
 
+    # _score must be defined BEFORE the sim/non-sim split below: it is
+    # referenced inside the sim-exclude early-return branch, and a def placed
+    # AFTER that branch makes the name a function-local referenced before
+    # assignment -> UnboundLocalError for every sim-category node (Route-8
+    # driver targeting on simulations / codegen / gpu_shaders categories).
     def _score(p: str, spec: dict | None, port: bool) -> tuple[float, str, dict | None]:
         default = (spec or {}).get("default")
         ranged = spec is not None and spec.get("min") is not None \
@@ -801,6 +795,18 @@ def _drivable_params(pool: GenePool, cfg: ShootoutConfig,
                 score += 1.5
                 break
         return score, p, spec if ranged else None
+
+    if d.get("category") in _SIM_DRIVER_EXCLUDE_CATS:
+        out_sim: list[tuple[float, str, dict | None]] = []
+        for p in port_targets:
+            if p in cfg.frozen_params:
+                continue
+            spec = schema.get(p) if isinstance(schema.get(p), dict) else None
+            out_sim.append(_score(p, spec, port=True))
+        out_sim.sort(key=lambda t: -t[0])
+        return [(p, spec) for _, p, spec in out_sim]
+    seen: set[str] = set()
+    out: list[tuple[float, str, dict | None]] = []
 
     for p in port_targets:
         if p in cfg.frozen_params or p in seen:
