@@ -714,6 +714,12 @@ _DRIVER_AFFINITY = [
 ]
 _DRIVER_FALLBACK = ["__lfo__", "__lfo__", "__lfo__", "__noise1d__", "__ramp__"]
 
+# Route 8 (2026-07-16): Architecture-A simulation nodes consume most params
+# ONCE at sim initialisation, so per-frame driver modulation is wasted (forces a
+# full O(N^2) re-cook and still gets culled static). These categories are not
+# driver-driven; they animate via their own anim_mode. See _drivable_params.
+_SIM_DRIVER_EXCLUDE_CATS = frozenset({"simulations", "gpu_shaders", "codegen"})
+
 # driver method → (low-end param, high-end param) for output-range mapping
 _DRIVER_RANGE_PARAMS = {
     "__lfo__": ("min", "max"),
@@ -752,6 +758,31 @@ def _drivable_params(pool: GenePool, cfg: ShootoutConfig,
     d = pool.defs[method_id]
     schema = d.get("params") or {}
     port_targets = set(pool.driver_targets(method_id))
+    # Route 8 (2026-07-16): Architecture-A simulation nodes (simulations /
+    # gpu_shaders / codegen) consume most of their params ONCE at sim
+    # initialisation, so modulating a schema-scanned ranged param per frame
+    # (a) barely moves the rendered output — the re-cooked trajectory differs
+    # but the liveness metrics stay under floor, so the clip is culled static
+    # anyway — and (b) forces the executor to re-cook the WHOLE sim every
+    # frame (O(N^2) in frame count), which is the dominant source of the 103
+    # timeout culls seen in the 643-genome corpus. Sims are inherently
+    # time-varying and animate through their own anim_mode, so a CHOP driver
+    # adds little and costs a lot. Restrict sim driver targets to the method
+    # author's EXPLICITLY wireable SCALAR input ports (driver_targets); sims
+    # declare none, so they simply are not driven and keep animating via
+    # anim_mode. This converts the static sim-driven deaths to alive
+    # (anim_mode) without touching the alive-sim rate, and removes the wasted
+    # O(N^2) re-cook churn. Non-sim nodes keep the full port + schema-scan
+    # target set unchanged.
+    if d.get("category") in _SIM_DRIVER_EXCLUDE_CATS:
+        out_sim: list[tuple[float, str, dict | None]] = []
+        for p in port_targets:
+            if p in cfg.frozen_params:
+                continue
+            spec = schema.get(p) if isinstance(schema.get(p), dict) else None
+            out_sim.append(_score(p, spec, port=True))
+        out_sim.sort(key=lambda t: -t[0])
+        return [(p, spec) for _, p, spec in out_sim]
     seen: set[str] = set()
     out: list[tuple[float, str, dict | None]] = []
 

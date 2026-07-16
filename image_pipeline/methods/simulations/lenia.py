@@ -1,4 +1,37 @@
+"""
+#359 — Lenia (continuous cellular automata)
+
+Lenia is the continuous generalization of Conway's Game of Life (Bert Wang-Chak
+Chan, "Lenia — Biology of Artificial Life", Artificial Life 25(4), 2019;
+arXiv:1812.05433). Life is no longer a binary grid but a continuous field
+A(x,t) ∈ [0,1] carried by a smooth growth rule:
+
+    A' = A + dt · (2·f(Σ) − 1)
+
+where f is a bell-shaped growth curve over the weighted neighborhood sum
+
+    Σ = Σ_y K(y) · A(x+y)          # kernel-weighted sum (via FFT)
+    f(Σ) = exp( −((Σ − μ)²) / (2·σ²) )
+
+K is a radially-symmetric Lenia kernel: a polynomial core of order β scaled by a
+Gaussian envelope, centered at radius R. With the right parameters this O(N)
+convolution sustains self-organizing gliders, oscillators, and "creatures" —
+the canonical example of emergent artificial-life dynamics on a continuous
+substrate. The kernel here uses the standard ring-envelope form
+(u = |x|/R):  core = (1 − u²)^β inside the disk, envelope = exp(−(u−1)²/2T²).
+
+Animation modes:
+    none    — a single static snapshot of a jittered ring seed
+    ring    — jittered solid ring seed → self-organizing Lenia creature
+    orbium  — concentric-ring seed (orbium-like) → symmetric oscillator
+    chaos   — smooth random field → turbulent self-organization
+    breathing — global growth-curve oscillation driven by anim_speed·t
+
+Architecture A — internal simulation loop with capture_frame().
+"""
+
 from __future__ import annotations
+
 import math
 from pathlib import Path
 
@@ -6,190 +39,236 @@ import numpy as np
 from PIL import Image
 
 from ...core.registry import method
-from ...core.utils import save, norm, mn, seed_all, W, H
+from ...core.utils import (
+    save, mn, seed_all, W, H, wired_source_lum, write_scalars,
+)
 from ...core.animation import capture_frame
 
-# scipy is used for FFT-accelerated convolution — fall back gracefully
-try:
-    from scipy.signal import fftconvolve
-    _HAS_SCIPY = True
-except ImportError:
-    _HAS_SCIPY = False
 
-# ── Colormap: dark blue → cyan → white → gold ──
-# Build a 256-entry lookup table
-_COLORMAP_256 = np.zeros((256, 3), dtype=np.uint8)
-for _i in range(256):
-    t = _i / 255.0
-    if t < 0.33:
-        # dark blue → cyan
-        s = t / 0.33
-        r = int(10 + s * 20)          # 10 → 30
-        g = int(10 + s * 200)         # 10 → 210
-        b = int(30 + s * 225)         # 30 → 255
-    elif t < 0.66:
-        # cyan → white
-        s = (t - 0.33) / 0.33
-        r = int(30 + s * 225)         # 30 → 255
-        g = int(210 + s * 45)         # 210 → 255
-        b = int(255 + s * 0)          # 255 → 255
-    else:
-        # white → gold
-        s = (t - 0.66) / 0.34
-        r = int(255 + s * 0)          # 255 → 255
-        g = int(255 - s * 55)         # 255 → 200
-        b = int(255 - s * 205)        # 255 → 50
-    _COLORMAP_256[_i] = (np.clip(r, 0, 255), np.clip(g, 0, 255), np.clip(b, 0, 255))
+# ── Defaults (validated living config) ──
 
+R = 13.0           # kernel radius (in cells)
+BETA = 4           # kernel core order β
+T = 0.12           # Gaussian envelope thickness (ring sharpness)
+MU = 0.15          # growth-curve center (target neighborhood sum)
+SIGMA = 0.025      # growth-curve width (life-threshold sharpness)
+DT = 0.10          # growth update rate
+N_FRAMES = 240
+SUBSTEPS = 1
+
+
+# ── Kernel construction (radial Lenia ring kernel, FFT-centered) ──
+
+def _build_kernel(r: float, beta: int, T_env: float) -> np.ndarray:
+    h, w = int(H), int(W)
+    yy, xx = np.mgrid[0:h, 0:w]
+    cy, cx = h / 2.0, w / 2.0
+    dy = np.abs(yy - cy)
+    dx = np.abs(xx - cx)
+    dy = np.minimum(dy, h - dy)
+    dx = np.minimum(dx, w - dx)
+    dist = np.sqrt(dx * dx + dy * dy)
+    r2 = max(r, 1e-3)
+    u = dist / r2
+    core = np.where(u <= 1.0, (1.0 - u ** 2) ** beta, 0.0)
+    envelope = np.exp(-((u - 1.0) ** 2) / (2.0 * T_env ** 2))
+    K = core * envelope
+    s = K.sum()
+    if s > 0:
+        K = K / s
+    return np.fft.fft2(np.fft.ifftshift(K))
+
+
+# ── Growth curve f(Σ) ──
+
+def _growth_curve(s: np.ndarray, mu: float, sigma: float) -> np.ndarray:
+    return np.exp(-((s - mu) ** 2) / (2.0 * sigma ** 2))
+
+
+# ── Initial conditions ──
+
+def _init_ring(r: float, rng: np.random.Generator, h: int, w: int) -> np.ndarray:
+    """Solid annulus seed (the robust living Lenia seed), lightly jittered."""
+    yy, xx = np.mgrid[0:h, 0:w]
+    cy, cx = h / 2.0, w / 2.0
+    dy = np.abs(yy - cy)
+    dx = np.abs(xx - cx)
+    dy = np.minimum(dy, h - dy)
+    dx = np.minimum(dx, w - dx)
+    dist = np.sqrt(dx * dx + dy * dy)
+    A = np.zeros((h, w), dtype=np.float64)
+    ring = (dist > r * 0.45) & (dist < r * 0.75)
+    A[ring] = 0.85 + 0.15 * rng.random(ring.sum())  # light jitter keeps it alive
+    return A
+
+
+def _init_orbium(r: float, rng: np.random.Generator, h: int, w: int) -> np.ndarray:
+    """Concentric-ring seed (orbium-like) → symmetric oscillator."""
+    yy, xx = np.mgrid[0:h, 0:w]
+    cy, cx = h / 2.0, w / 2.0
+    dy = np.abs(yy - cy)
+    dx = np.abs(xx - cx)
+    dy = np.minimum(dy, h - dy)
+    dx = np.minimum(dx, w - dx)
+    dist = np.sqrt(dx * dx + dy * dy)
+    rr = max(3.0, r * 0.6)
+    ring = 0.5 + 0.5 * np.cos(dist / rr * math.pi * 2.0)
+    A = np.clip(ring, 0.0, 1.0) * (dist < rr).astype(np.float64)
+    A += 0.02 * rng.standard_normal((h, w))
+    return np.clip(A, 0.0, 1.0)
+
+
+def _init_chaos(rng: np.random.Generator, h: int, w: int) -> np.ndarray:
+    yy, xx = np.mgrid[0:h, 0:w]
+    field = np.zeros((h, w), dtype=np.float64)
+    for k in range(1, 5):
+        ax = rng.random() * 2 * math.pi
+        ay = rng.random() * 2 * math.pi
+        field += rng.random() * np.sin(xx / w * 2 * math.pi * k + ax) \
+                          * np.cos(yy / h * 2 * math.pi * k + ay)
+    fmin, fmax = field.min(), field.max()
+    field = (field - fmin) / (fmax - fmin + 1e-9)
+    return np.clip(field, 0.0, 1.0)
+
+
+# ── Render ──
+
+def _render(A: np.ndarray) -> np.ndarray:
+    gray = np.clip(A, 0.0, 1.0)
+    return (gray * 255).astype(np.uint8)
+
+
+# ════════════════════════════════════════════════════════════
+#  METHOD
+# ════════════════════════════════════════════════════════════
 
 @method(
-    inputs={},
-    id="90",
+    id="359",
     name="Lenia",
     category="simulations",
-    tags=["animation", "organic", "emergence", "artificial-life"],
+    tags=["simulation", "animation", "continuous-ca", "artificial-life", "lenia"],
+    timeout=180,
+    inputs={"image_in": "IMAGE"},
     params={
-        "grid_size": {"description": "simulation grid size", "min": 128, "max": 512, "default": 256},
-        "kernel_radius": {"description": "kernel radius (grid cells)", "min": 5, "max": 25, "default": 13},
-        "growth_mu": {"description": "growth function center", "min": 0.05, "max": 0.5, "default": 0.15},
-        "growth_sigma": {"description": "growth function width", "min": 0.01, "max": 0.1, "default": 0.022},
-        "dt": {"description": "time step", "min": 0.01, "max": 0.3, "default": 0.1},
-        "n_frames": {"description": "simulation frames", "min": 50, "max": 400, "default": 200},"anim_mode": {"description": "animation mode", "choices": ["none", "evolve"], "default": "none"},
+        "source": {"description": "initial-condition seed: random patches or the wired upstream image's luminance", "choices": ["random", "input_image"], "default": "random"},
+        "r": {"description": "kernel radius (cells)", "min": 5.0, "max": 25.0, "default": 13.0},
+        "beta": {"description": "kernel core order (shape of the growth core)", "min": 1, "max": 12, "default": 4},
+        "t_env": {"description": "kernel envelope thickness (ring sharpness)", "min": 0.05, "max": 0.4, "default": 0.12},
+        "mu": {"description": "growth-curve center (target neighborhood sum)", "min": 0.05, "max": 0.4, "default": 0.15},
+        "sigma": {"description": "growth-curve width (sharpness of the life threshold)", "min": 0.005, "max": 0.06, "default": 0.025},
+        "dt": {"description": "growth update rate", "min": 0.05, "max": 0.4, "default": 0.10},
+        "n_frames": {"description": "simulation frames", "min": 50, "max": 600, "default": 240},
+        "substeps": {"description": "substeps per frame", "min": 1, "max": 4, "default": 1},
+        "anim_mode": {"description": "animation / initial condition mode", "choices": ["none", "ring", "orbium", "chaos", "breathing"], "default": "none"},
         "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
     }
 )
 def method_lenia(out_dir: Path, seed: int, params=None):
-    """Simulate Lenia — Continuous Cellular Automata (Bert Chan, 2019).
+    """Lenia — continuous cellular automata (Chan 2019).
 
-    Lenia is a continuous generalization of cellular automata. Unlike discrete
-    CA, Lenia uses a continuous state grid with values in [0, 1], a smooth
-    Gaussian kernel for neighborhood sensing, and a unimodal growth function
-    that maps neighborhood sums to state changes. The result is fluid, organic
-    creatures that swim, pulse, and divide — a form of artificial life.
+    A(x,t) ∈ [0,1] evolves by a smooth, radially-symmetric growth rule built
+    from an FFT-convolution kernel K and a bell-shaped growth curve f over the
+    weighted neighborhood sum Σ = K * A. Supports emergent gliders, oscillators,
+    and self-organizing blobs.
 
-    Uses FFT convolution (scipy.signal.fftconvolve) for accelerated kernel
-    application on a 256×256 grid, rendered to a 768×512 canvas with a vibrant
-    dark-blue-to-gold colormap.
+    Animation modes:
+        none:     single static snapshot of a jittered ring seed
+        ring:     jittered solid ring → self-organizing Lenia creature
+        orbium:   concentric-ring seed → symmetric oscillator
+        chaos:    random smooth field → turbulent self-organization
+        breathing: global growth-curve oscillation driven by time
 
-    Args:
-        out_dir: Output directory for the generated image.
-        seed: Random seed for deterministic output.
-        params: Dict with keys:
-            grid_size: simulation grid size (128-512)
-            kernel_radius: kernel radius in grid cells (5-25)
-            growth_mu: growth function center (0.05-0.5)
-            growth_sigma: growth function width (0.01-0.1)
-            dt: time step (0.01-0.3)
-            n_frames: simulation frames (50-400)
-            time: animation time (0-6.28)
-            anim_mode: "none" (static) or "evolve" (animated emergence)
-            anim_speed: animation speed multiplier (0.1-3.0)
+    Architecture A — internal simulation loop with capture_frame().
     """
-    if not _HAS_SCIPY:
-        raise ImportError(
-            "Lenia requires scipy for FFT convolution. Install with: pip install scipy"
-        )
-
     if params is None:
         params = {}
 
-    # ── Param extraction ──
-    anim_time = float(params.get("time", 0.0))
-    anim_mode = params.get("anim_mode", "none")
+    t = float(params.get("time", 0.0))
+    anim_mode = str(params.get("anim_mode", "none"))
     anim_speed = float(params.get("anim_speed", 1.0))
-    grid_size = int(params.get("grid_size", 256))
-    kernel_radius = float(params.get("kernel_radius", 13))
-    growth_mu = float(params.get("growth_mu", 0.15))
-    growth_sigma = float(params.get("growth_sigma", 0.022))
-    dt = float(params.get("dt", 0.1))
-    n_frames = int(params.get("n_frames", 200))
 
-    # ── Seed wiring ──
+    r = float(params.get("r", R))
+    beta = int(params.get("beta", BETA))
+    t_env = float(params.get("t_env", T))
+    mu = float(params.get("mu", MU))
+    sigma = float(params.get("sigma", SIGMA))
+    dt = float(params.get("dt", DT))
+    n_frames = int(params.get("n_frames", N_FRAMES))
+    substeps = int(params.get("substeps", SUBSTEPS))
+
     seed_all(seed)
     rng = np.random.default_rng(seed)
 
-    # ── Animation setup ──
-    if anim_time > 0.01:
-        n_frames = max(50, int(30 + anim_time * anim_speed * 15))
+    evolve_modes = {"ring", "orbium", "chaos", "breathing"}
+    is_evolve = anim_mode in evolve_modes or t > 0.01
 
-    is_evolve = anim_mode == "evolve" or anim_time > 0.01
+    # breathing modulates μ smoothly per frame (oscillation applied inside the loop)
+    mu_t = mu
 
-    # ── Build kernel (Gaussian bump) ──
-    # Kernel is a 2D Gaussian with radius kernel_radius (standard deviation)
-    ks = grid_size
-    xy = np.arange(ks, dtype=np.float32) - ks / 2.0
-    xx, yy = np.meshgrid(xy, xy)
-    dist_sq = xx * xx + yy * yy
-    # Gaussian kernel: exp(-r² / (2 * R²))
-    kernel = np.exp(-dist_sq / (2.0 * kernel_radius * kernel_radius))
-    # Normalize kernel so total mass = 1 (for proper neighborhood averaging)
-    kernel /= kernel.sum()
+    h, w = int(H), int(W)
+    K = _build_kernel(r, beta, t_env)
 
-    # ── Growth function ──
-    # g(u, μ, σ) = 2 * exp(-((u-μ)/σ)²) - 1
-    # When u ≈ μ: g > 0 (growth), when u far from μ: g < 0 (decay)
-    def growth(u):
-        z = (u - growth_mu) / growth_sigma
-        return 2.0 * np.exp(-z * z) - 1.0
+    # ── Initial condition ──
+    if anim_mode == "orbium":
+        A = _init_orbium(r, rng, h, w)
+    elif anim_mode == "chaos":
+        A = _init_chaos(rng, h, w)
+    elif anim_mode == "ring":
+        A = _init_ring(r, rng, h, w)
+    else:
+        # `none` and `breathing` both start from a jittered ring seed;
+        # `none` was already marked static above (is_evolve=False),
+        # `breathing` stays in evolve_modes so it animates.
+        A = _init_ring(r, rng, h, w)
 
-    # ── Initialize grid ──
-    # Start with random seed blobs — a few Gaussian bumps
-    state = np.zeros((ks, ks), dtype=np.float32)
-    n_seeds = rng.integers(3, 8)
-    for _ in range(n_seeds):
-        cx = rng.integers(ks // 4, 3 * ks // 4)
-        cy = rng.integers(ks // 4, 3 * ks // 4)
-        sigma_seed = rng.uniform(3.0, 12.0)
-        for dy in range(max(0, int(cy - sigma_seed * 3)), min(ks, int(cy + sigma_seed * 3 + 1))):
-            for dx in range(max(0, int(cx - sigma_seed * 3)), min(ks, int(cx + sigma_seed * 3 + 1))):
-                d2 = (dx - cx) ** 2 + (dy - cy) ** 2
-                val = math.exp(-d2 / (2.0 * sigma_seed * sigma_seed))
-                state[dy, dx] += val
-    state = np.clip(state, 0.0, 1.0)
+    # Seed from a wired upstream image's luminance
+    src_lum = None
+    if str(params.get("source", "random")) == "input_image":
+        src_lum = wired_source_lum(params, w, h)
+    if src_lum is not None:
+        A = np.clip(src_lum.astype(np.float64), 0.0, 1.0)
+        print("  Seeded Lenia field from wired input image luminance")
 
-    # ── Render helper ──
-    def render(state_grid):
-        """Render state grid [0,1] to (H, W, 3) uint8 image using colormap."""
-        # Map state [0,1] to colormap indices [0,255]
-        indices = np.clip((state_grid * 255.0).astype(np.int32), 0, 255)
-        # Look up colormap
-        colored = _COLORMAP_256[indices]  # (ks, ks, 3) uint8
-        # Upscale to canvas size
-        img_pil = Image.fromarray(colored).resize((W, H), Image.BILINEAR)
-        return np.array(img_pil, dtype=np.uint8)
+    img = None
+    last_sum = float(A.sum())
 
-    # ══════════════════════════════════════════════════════
+    # Static snapshot for `none`: render the initial field without evolving.
+    if not is_evolve:
+        gray = _render(A)
+        canvas = Image.fromarray(gray, mode="L")
+        img = canvas
+        capture_frame("359", np.array(canvas, dtype=np.float32) / 255.0)
+        save(img, mn(359, "Lenia"), out_dir)
+        write_scalars(out_dir, alive_mass=last_sum, peak=round(float(A.max()), 4))
+        return np.array(img, dtype=np.float32) / 255.0
+
+    # ══════════════════════
     #  SIMULATION LOOP
-    # ══════════════════════════════════════════════════════
-    img_uint8 = None
-
+    # ══════════════════════
     for frame in range(n_frames):
-        # ── FFT convolution: state * kernel ──
-        convolved = fftconvolve(state, kernel, mode="same")
+        # breathing oscillates the growth-curve center μ across frames (smooth, no cusps)
+        if anim_mode == "breathing":
+            _phase = (frame / max(1, n_frames - 1)) * 2.0 * math.pi * anim_speed
+            mu_t = mu + 0.03 * (0.5 + 0.5 * math.sin(_phase))
+        for _ in range(substeps):
+            S = np.real(np.fft.ifft2(np.fft.fft2(A) * K))
+            S = np.clip(S, 0.0, 1.0)
+            f = _growth_curve(S, mu_t, sigma)
+            A = A + (2.0 * f - 1.0) * dt
+            A = np.clip(A, 0.0, 1.0)
+            if not np.all(np.isfinite(A)):
+                A = np.clip(A, 0.0, 1.0)
+                break
 
-        # ── Apply growth function ──
-        delta = growth(convolved)
+        last_sum = float(A.sum())
+        gray = _render(A)
+        canvas = Image.fromarray(gray, mode="L")
+        img = canvas
+        capture_frame("359", np.array(canvas, dtype=np.float32) / 255.0)
 
-        # ── Update state ──
-        state += dt * delta
-        state = np.clip(state, 0.0, 1.0)
+    if img is None:
+        img = Image.new("L", (w, h), 0)
 
-        # ── Render ──
-        img_uint8 = render(state)
-
-        # ── Capture frame for animation ──
-        if is_evolve:
-            capture_frame("90", img_uint8)
-
-    # ── Final render (if no frames were rendered or evolve didn't happen) ──
-    if img_uint8 is None:
-        img_uint8 = render(state)
-
-    # If evolve, also capture the final frame
-    if is_evolve and img_uint8 is not None:
-        capture_frame("90", img_uint8)
-
-    # ── Save and return ──
-    img_pil = Image.fromarray(img_uint8)
-    save(img_pil, mn(90, "Lenia"), out_dir)
-    return img_uint8
+    save(img, mn(359, "Lenia"), out_dir)
+    write_scalars(out_dir, alive_mass=last_sum, peak=round(float(A.max()), 4))
+    return np.array(img, dtype=np.float32) / 255.0
