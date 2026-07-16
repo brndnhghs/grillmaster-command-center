@@ -30,8 +30,12 @@ def _genome(gid: str, method_ids: list[str]) -> dict:
     }
 
 
-def _model(per_method: dict[str, float], n_samples: int, default_ms: float = 5.0) -> dict:
+def _model(per_method: dict[str, float], n_samples: int, default_ms: float = 5.0,
+           per_method_p90: dict[str, float] | None = None,
+           per_method_alive: dict[str, float] | None = None) -> dict:
     return {"per_method": per_method, "default_ms": default_ms,
+            "per_method_p90": per_method_p90 or {},
+            "per_method_alive": per_method_alive or {},
             "n_samples": n_samples, "built": "test"}
 
 
@@ -111,6 +115,53 @@ def test_partition_stamps_skipped_as_dead(monkeypatch):
     assert s["liveness"]["alive"] is False
     assert s["liveness"]["reason"] == "over-budget"
     assert "est_s" in s["liveness"]
+
+
+def test_cost_gate_spares_heavy_cap_eligible_graph(monkeypatch):
+    """Route 8 (2026-07-15): a genome the renderer would EXTEND the per-clip
+    render cap for (heavy method with a high alive-prior, via
+    ``effective_render_timeout_s``) must NOT be pre-culled by the cost gate as
+    'over-budget' — the pre-render gate sits in front of the cap extension and
+    would otherwise negate it. Heavy-cap-eligible == the extension raises the cap
+    above the base render_timeout_s, so the genome gets its render chance back
+    under the longer cap and is judged by the liveness gate as normal.
+    """
+    cfg = DEFAULT_CONFIG  # heavy_render_timeout_factor=2.0, gate_liveness_floor=0.33
+    # 'sim' is cost-heavy (well over the 0.9*300=270s threshold) AND has a high
+    # P(alive)=0.9, with a calibrated estimate already >= 0.5*base (est floor),
+    # so effective_render_timeout_s returns 600s (the extended cap).
+    model = _model(
+        {"sim": 2000.0, "sim_dyn": 2000.0},
+        n_samples=50,
+        per_method_p90={"sim": 2000.0, "sim_dyn": 2000.0},
+        per_method_alive={"sim_dyn": 0.9},
+    )
+    monkeypatch.setattr(cm, "load_cost_model", lambda *a, **k: model)
+    g = _genome("g-heavy-dyn", ["sim", "sim_dyn", "sim_dyn"])
+    # Pre-change behaviour: gated (True). Post-change: spared (False) because the
+    # renderer would extend its cap.
+    assert cm.is_over_budget(g, cfg, model)[0] is False
+    # Sanity: the extension actually applies to this genome.
+    assert cm.effective_render_timeout_s(g, cfg, model) > cfg.render_timeout_s
+
+
+def test_cost_gate_still_skips_heavy_static(monkeypatch):
+    """The exemption is narrow: a heavy graph whose heavy method has a LOW
+    alive-prior (genuinely slow-and-static) has no cap extension, so the gate
+    still culls it as over-budget. Guards against the fix over-relaxing.
+    """
+    cfg = DEFAULT_CONFIG
+    model = _model(
+        {"sim": 2000.0, "sim_static": 2000.0},
+        n_samples=50,
+        per_method_p90={"sim": 2000.0, "sim_static": 2000.0},
+        per_method_alive={"sim_static": 0.05},
+    )
+    monkeypatch.setattr(cm, "load_cost_model", lambda *a, **k: model)
+    g = _genome("g-heavy-static", ["sim", "sim_static", "sim_static"])
+    assert cm.is_over_budget(g, cfg, model)[0] is True
+    assert cm.effective_render_timeout_s(g, cfg, model) == cfg.render_timeout_s
+
 
 
 def test_build_cost_model_smoke():

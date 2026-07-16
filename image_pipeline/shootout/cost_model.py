@@ -348,6 +348,30 @@ def is_over_budget(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
         prior = liveness_prior(genome, model)
         if prior is not None and prior >= floor:
             return False, est
+        # Heavy-cap exemption (Route 8 cost-gate vs cap-extension reconciliation,
+        # 2026-07-15): ``effective_render_timeout_s`` RAISES the per-clip render
+        # cap for heavy-but-likely-dynamic genomes so they can FINISH instead of
+        # being culled as 'timeout' at the base cap. But the pre-render cost gate
+        # here sits in FRONT of that extension and pre-culls exactly those genomes
+        # as 'over-budget' before they ever reach the renderer — so the heavy-cap
+        # extension is dead code for the 56 over-budget culls it was built to save.
+        # Do NOT pre-skip a genome the renderer would extend the cap for: it runs
+        # under the longer cap and is judged by the liveness gate as normal. This
+        # is strictly non-destructive — it only ever REDUCES pre-skips, and every
+        # other genome keeps its existing gate verdict. Gated behind the same
+        # ``floor > 0`` condition as the liveness-prior exemption so a floor=0.0
+        # config (prior exemption explicitly disabled) still gates purely on cost
+        # and the heavy-cap extension's own prior-floor coupling cannot invert the
+        # gate's behaviour. Empirically on the 643-genome corpus this re-admits
+        # ~76 of 177 pre-skipped graphs; 52 current 'timeout' culls also receive
+        # the longer cap.
+        if (getattr(cfg, "heavy_render_timeout_factor", 1.0) or 1.0) > 1.0:
+            try:
+                eff = effective_render_timeout_s(genome, cfg, model)
+            except Exception:
+                eff = float(cfg.render_timeout_s)
+            if eff > float(cfg.render_timeout_s) + 1e-6:
+                return False, est
     return True, est
 
 

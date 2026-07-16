@@ -143,7 +143,16 @@ def test_new_gate_beats_median_on_corpus():
     if len(timeouts) < 20 or len(alive) < 40:
         import pytest; pytest.skip("corpus too small for a stable comparison")
     old = replace(DEFAULT_CONFIG, cost_use_tail=False, gate_liveness_floor=0.0)
-    new = DEFAULT_CONFIG
+    # The heavy-cap extension (heavy_render_timeout_factor) is a SEPARATE
+    # mechanism with its own dedicated tests (test_shootout_cap_extension.py,
+    # test_shootout_cost_gate.py::test_cost_gate_spares_heavy_cap_eligible_graph).
+    # It deliberately SPARES heavy-cap-eligible genomes the cost gate would
+    # otherwise pre-skip, which lowers the gate's raw timeout-recall — exactly
+    # the intended effect (those genomes get a longer cap and finish instead of
+    # timing out). To validate the tail-basis + prior-exemption feature this test
+    # targets without the heavy cap confounding the invariant, disable the heavy
+    # cap here so ``new`` isolates the two mechanisms under test.
+    new = replace(DEFAULT_CONFIG, heavy_render_timeout_factor=1.0)
     def rate(cfg, gs):
         return sum(1 for g in gs if cm.is_over_budget(g, cfg, model)[0])
     old_recall, new_recall = rate(old, timeouts), rate(new, timeouts)
