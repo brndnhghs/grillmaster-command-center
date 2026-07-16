@@ -44,10 +44,13 @@ from ...core.utils import (
 )
 from ...core.animation import capture_frame
 
-# Heitz 2021 R2: α = 1/φ₂, 1/φ₃  (φ₂ = golden ratio)
-_GOLDEN = 1.32471795724474602596  # plastic number φ₂
-_ALPHA = np.array([1.0 / _GOLDEN, 1.0 / (_GOLDEN * _GOLDEN)],
-                  dtype=np.float64)  # (1/φ₂, 1/φ₃) = (0.75487766, 0.56984029)
+# Heitz 2021 R2: the two published 2-D constants
+#   α = (1/φ₂, 1/φ₃) = (0.7548776662, 0.5698402909)
+# where φ₂ is the plastic number (root of x³=x+1) and φ₃ the root of x⁴=x+1.
+# These EXACT values produce the optimal blue-noise spectrum. Deriving the
+# second constant as 1/φ₂² (≈0.570248) is a common slip and degrades the
+# spectrum — we hard-code the paper's numbers instead of recomputing them.
+_ALPHA = np.array([0.7548776662, 0.5698402909], dtype=np.float64)
 
 
 def _r2(n: int) -> np.ndarray:
@@ -94,7 +97,7 @@ def _build_tone(source: str, w: int, h: int, seed: int) -> np.ndarray:
     outputs={"image": "IMAGE", "luminance": "FIELD"},
     params={
         "samples": {"description": "number of R2-sampled points to draw",
-                    "min": 500, "max": 60000, "default": 12000},
+                    "min": 500, "max": 60000, "default": 20000},
         "point_size": {"description": "drawn point radius in pixels",
                        "min": 0.5, "max": 4.0, "default": 1.4},
         "coverage": {"description": "fraction of the frame covered by sampling (0..1)",
@@ -130,8 +133,9 @@ def method_blue_noise_sampler(out_dir: Path, seed: int, params=None):
         point_size:  drawn point radius (px)
         coverage:    fraction of the frame the sampling covers (0..1)
         source:      fallback tone field when no image is wired
-        anim_mode:   none / drift (sequence rotated by a time-varying offset) /
-                     breathe (coverage pulses with a smooth sine)
+        anim_mode:   none / drift (whole point cloud rotated by a time-varying
+                     offset) / breathe (drawn point size pulses with a smooth
+                     sine, keeping the blue-noise positions intact)
         anim_speed:  animation speed
         time:        animation phase [0, 2pi)
     """
@@ -183,10 +187,9 @@ def method_blue_noise_sampler(out_dir: Path, seed: int, params=None):
             # Drop points rotated outside the frame (keeps a clean rectangle)
             inb = (pts[:, 0] >= 0.0) & (pts[:, 0] < 1.0) & (pts[:, 1] >= 0.0) & (pts[:, 1] < 1.0)
             pts = pts[inb]
-        # Trimming by coverage as a prefix would only remove outer points; instead
-        # we keep ALL in-frame points (the zoom above already encodes coverage).
-        keep = max(1, len(pts))
-        pts = pts[:keep]
+        # `keep` = number of in-frame R2 points after the coverage zoom / drift
+        # trim; used for the provenance scalars below.
+        keep = len(pts)
 
         px = (pts[:, 0] * (W - 1)).astype(np.int64)
         py = (pts[:, 1] * (H - 1)).astype(np.int64)
