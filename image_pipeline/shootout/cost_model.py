@@ -29,6 +29,7 @@ import time
 from pathlib import Path
 
 from .config import ShootoutConfig, DEFAULT_CONFIG
+from .evaluator import EVALUATOR_VERSION
 from .store import DATA_DIR, GENOMES_DIR
 
 COST_MODEL_PATH = DATA_DIR / "cost_model.json"
@@ -81,6 +82,16 @@ def build_cost_model(persist: bool = True) -> dict:
         # ── Liveness-prior tally (independent of node_timings) ──
         lv = g.get("liveness")
         if isinstance(lv, dict) and "alive" in lv:
+            # Route 8 (2026-07-16): skip legacy DEAD verdicts. The modern
+            # liveness gate adds spectral + optical-flow rescue signals the
+            # legacy gate lacked, so legacy (pre-stamp) DEAD verdicts are false
+            # negatives that over-culled real animation as static/flat. We keep
+            # legacy-ALIVE and every modern-stamped verdict; only unstamped (or
+            # older-version) DEAD verdicts are dropped so stale culls no longer
+            # drag P(alive) down. The evaluator_version stamp is the
+            # forward-looking guard the regeneration pass relies on.
+            if lv.get("evaluator_version") != EVALUATOR_VERSION and not lv.get("alive"):
+                continue
             is_alive = 1 if lv.get("alive") else 0
             seen: set[str] = set()
             for nd in g.get("graph", {}).get("nodes", []):

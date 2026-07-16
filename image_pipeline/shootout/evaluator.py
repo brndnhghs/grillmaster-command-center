@@ -33,6 +33,15 @@ from .config import ShootoutConfig, DEFAULT_CONFIG
 OUTPUT_ROOT = Path(__file__).resolve().parent.parent / "output"
 SEQUENCES_DIR = OUTPUT_ROOT / "sequences"
 
+# Liveness-verdict schema version. Bumped whenever the gate gains a new rescue
+# signal (spectral, optical-flow, ...) so the cost model can tell a MODERN
+# verdict from a legacy one produced by an evaluator that would have over-culled
+# real animation. Legacy genomes (no stamp, or an older stamp) are still trusted
+# for timing data but are EXCLUDED from the liveness prior so their stale
+# static/flat verdicts do not drag P(alive) down and falsely suppress the
+# heavy-cap extension / advisor dead-method feedback (Route 8, 2026-07-16).
+EVALUATOR_VERSION = "2026-07-16"
+
 
 def seq_name_for(genome_id: str) -> str:
     return f"shootout-{genome_id}"
@@ -302,7 +311,7 @@ def evaluate_frames(frames: list[np.ndarray | None],
     acc = LivenessAccumulator(cfg)
     for f in frames:
         acc.add(f)
-    return acc.stats()
+    return {**acc.stats(), "evaluator_version": EVALUATOR_VERSION}
 
 
 # ── Executor plumbing shared by render + ablation ─────────────────────
@@ -561,7 +570,7 @@ def render_genome(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
             # "slowest node" readout on the shootout card.
             "node_timings": {nid: round(ms, 1) for nid, ms in node_ms.items()},
         },
-        "liveness": liveness,
+        "liveness": {**liveness, "evaluator_version": EVALUATOR_VERSION},
     }
 
 
