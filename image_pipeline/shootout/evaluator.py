@@ -433,8 +433,23 @@ def render_genome(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
     skipped = False
     # Per-genome render cap (Route 8, 2026-07-14): slow-but-likely-dynamic
     # heavy sims get an extended cap so they can finish instead of timing out.
-    eff_timeout = (render_timeout_s if render_timeout_s is not None
-                   else cfg.render_timeout_s)
+    if render_timeout_s is not None:
+        eff_timeout = render_timeout_s
+    else:
+        # Defensive default for ANY direct caller (not just render_many, which
+        # passes the extended cap explicitly): consult the cost model so a
+        # standalone render of a heavy-but-likely-dynamic clip still gets the
+        # extended cap instead of timing out at the base cap. This can only
+        # EVER EXTEND the cap — never shorten it — so it is monotonic-safe and
+        # production renders (always via render_many with an explicit cap) are
+        # unaffected. Guarded so a cost-model failure falls back to the base
+        # cap rather than crashing the render.
+        try:
+            from . import cost_model as _cm
+            eff_timeout = _cm.effective_render_timeout_s(
+                genome, cfg, _cm.load_cost_model())
+        except Exception:
+            eff_timeout = cfg.render_timeout_s
     # Node-error tracking: a method that raises at render (inter-param bugs,
     # OpenCV bad-args, index errors) yields an error-placeholder frame. Record
     # which nodes threw so the clip can be culled instead of shipped.
