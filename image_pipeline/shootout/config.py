@@ -380,8 +380,13 @@ class ShootoutConfig:
     heavy_render_timeout_factor: float = 2.0
     # A method is "heavy" (worth a cap extension when its alive-prior is high)
     # only if its empirical median ms/frame meets this floor. Keeps light
-    # methods from triggering the extension.
-    heavy_method_ms_floor: float = 50.0
+    # methods from triggering the extension. Empirically the genomes that
+    # actually blow the render_timeout_s cap contain methods at >=400ms/frame
+    # (up to ~5s/frame for the worst offenders); the old 50ms floor flagged
+    # 165/242 ALIVE genomes and made the extension near-global. 400ms keeps
+    # the extension NARROW (catches ~53/103 genuine timeouts, flags only
+    # ~70/242 alive) while still rescuing every slow-but-dynamic heavy sim.
+    heavy_method_ms_floor: float = 400.0
     # Eligibility gate for the cap extension: a genome is only extended if its
     # calibrated cost estimate already reaches this fraction of render_timeout_s
     # (default 0.5 → estimated ≥150s). This keeps the extension NARROW — only

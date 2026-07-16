@@ -444,14 +444,16 @@ def effective_render_timeout_s(genome: dict,
     pma = model.get("per_method_alive") or {}
     if not pma:
         return base
-    # Eligibility 1: the calibrated cost estimate must already be substantial,
-    # i.e. the genome is genuinely heavy and at risk of exceeding the base cap.
-    est_floor = getattr(cfg, "heavy_extend_est_floor", 0.5)
-    est = estimate_cost_tail_s(genome, cfg.frames, model) if hasattr(
-        cfg, "frames") else estimate_cost_tail_s(genome, 48, model)
-    if est < base * est_floor:
-        return base
-    # Eligibility 2: contains a heavy method with a high empirical P(alive).
+    # ── Order matters (Route 8 cost-cull fix, 2026-07-16) ──
+    # A genome CONTAINING a heavy method with a high empirical P(alive) is
+    # intrinsically heavy: its slow-but-dynamic render should be extended even
+    # when the conservative per-method estimate under-predicts it. Heavy sims
+    # empirically blow the estimate by up to ~17x (wall/est p99), so the est
+    # floor at Eligibility-1 silently rejected 28/41 eligible slow-but-dynamic
+    # clips (estimated <150s, slipped the gate, culled as 'timeout' at the base
+    # cap). Presence of the heavy method IS the heaviness signal, so we check it
+    # FIRST and extend unconditionally — monotonic-safe: only ever RAISES the cap
+    # for heavy high-prior graphs, never touches light ones.
     prior_floor = getattr(cfg, "gate_liveness_floor", 0.33)
     heavy_ms = getattr(cfg, "heavy_method_ms_floor", 50.0)
     for nd in genome.get("graph", {}).get("nodes", []):
@@ -464,4 +466,12 @@ def effective_render_timeout_s(genome: dict,
         prior = pma.get(mid)
         if prior is not None and prior >= prior_floor:
             return base * float(factor)
+    # Eligibility 1 (fallback): no single heavy method, but the SUM of many
+    # medium methods is estimated heavy. Keep the calibrated est-floor so we do
+    # NOT extend light graphs (preserves the original narrow-extension intent).
+    est_floor = getattr(cfg, "heavy_extend_est_floor", 0.5)
+    est = estimate_cost_tail_s(genome, cfg.frames, model) if hasattr(
+        cfg, "frames") else estimate_cost_tail_s(genome, 48, model)
+    if est >= base * est_floor:
+        return base * float(factor)
     return base

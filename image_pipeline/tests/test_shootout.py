@@ -1730,3 +1730,94 @@ def test_driver_variation_distinct_from_static_baseline():
     tv_wired = wired.var(axis=0).mean()
     tv_static = static.var(axis=0).mean()
     assert tv_wired > 50 * tv_static, (tv_wired, tv_static)
+
+
+# ── Cost-cull cap-extension fix (Route 8, 2026-07-16) ─────────────────────
+# Heavy sims empirically blow the conservative per-method cost estimate by up
+# to ~17x (wall/est p99), so the estimate floor silently rejected slow-but-
+# dynamic clips (estimated < floor, slipped the gate, culled as 'timeout').
+# The fix: a genome CONTAINING a heavy method with a high empirical P(alive)
+# is intrinsically heavy and gets the extended cap even when its estimate
+# under-predicts. The check runs BEFORE the estimate-floor fallback, so it is
+# monotonic-safe (only ever raises the cap for heavy high-prior graphs).
+
+def _fake_model(per_method, per_method_alive, per_method_p90=None,
+                n_samples=200, default_ms=50.0):
+    return {
+        "n_samples": n_samples,
+        "per_method": per_method,
+        "per_method_alive": per_method_alive,
+        "per_method_p90": per_method_p90 or {k: v for k, v in per_method.items()},
+        "default_ms": default_ms,
+    }
+
+
+def _genome_with(method_ids):
+    return {
+        "genome_id": "g-test",
+        "graph": {"nodes": [{"id": f"n{i}", "method_id": m}
+                             for i, m in enumerate(method_ids)]},
+    }
+
+
+def test_heavy_method_presence_extends_cap_despite_low_estimate():
+    """A genome containing a heavy (>= heavy_method_ms_floor) method with a
+    high P(alive) must get the extended cap EVEN IF its conservative estimate
+    is far below the est-floor (the real under-prediction case)."""
+    from image_pipeline.shootout import cost_model as cm
+    cfg = ShootoutConfig()
+    cfg.heavy_method_ms_floor = 400.0
+    cfg.gate_liveness_floor = 0.33
+    cfg.heavy_render_timeout_factor = 2.0
+    cfg.render_timeout_s = 300.0
+    cfg.heavy_extend_est_floor = 0.5
+    # Method '999' is genuinely heavy (600 ms/frame) and likely-dynamic (P=0.9)
+    # but the P90 estimate is tiny so the est-floor fallback would NOT catch it.
+    model = _fake_model(
+        per_method={"999": 600.0, "light": 5.0},
+        per_method_alive={"999": 0.9, "light": 0.5},
+        per_method_p90={"999": 10.0, "light": 5.0},  # tiny → est far under 150s
+    )
+    g = _genome_with(["light", "999"])
+    eff = cm.effective_render_timeout_s(g, cfg, model)
+    assert eff == 300.0 * 2.0, f"heavy-presence must extend cap, got {eff}"
+    # Without the heavy method, the light-only genome keeps the base cap.
+    g_light = _genome_with(["light", "light"])
+    assert cm.effective_render_timeout_s(g_light, cfg, model) == 300.0
+
+
+def test_heavy_method_without_prior_does_not_extend():
+    """A heavy method with NO trusted alive-prior must NOT trigger the
+    extension (monotonic-safe: never extends on a method the model distrusts)."""
+    from image_pipeline.shootout import cost_model as cm
+    cfg = ShootoutConfig()
+    cfg.heavy_method_ms_floor = 400.0
+    cfg.gate_liveness_floor = 0.33
+    cfg.heavy_render_timeout_factor = 2.0
+    cfg.render_timeout_s = 300.0
+    model = _fake_model(
+        per_method={"999": 600.0},
+        per_method_alive={"999": None},  # no trusted prior
+    )
+    g = _genome_with(["999"])
+    assert cm.effective_render_timeout_s(g, cfg, model) == 300.0
+
+
+def test_est_floor_fallback_still_extends_heavy_sum():
+    """The est-floor fallback still extends a graph whose SUM of media methods
+    is estimated heavy even with no single heavy method present."""
+    from image_pipeline.shootout import cost_model as cm
+    cfg = ShootoutConfig()
+    cfg.heavy_method_ms_floor = 400.0
+    cfg.render_timeout_s = 300.0
+    cfg.heavy_extend_est_floor = 0.5
+    cfg.heavy_render_timeout_factor = 2.0
+    # Three media methods each ~800 ms/frame → sum 2400 ms/frame × 96 frames
+    # calibrates (slope 0.557 + intercept 33.7) to ~162s, above the 150s floor.
+    model = _fake_model(
+        per_method={"a": 800.0, "b": 800.0, "c": 800.0},
+        per_method_alive={"a": 0.2, "b": 0.2, "c": 0.2},
+        per_method_p90={"a": 800.0, "b": 800.0, "c": 800.0},
+    )
+    g = _genome_with(["a", "b", "c"])
+    assert cm.effective_render_timeout_s(g, cfg, model) == 600.0
