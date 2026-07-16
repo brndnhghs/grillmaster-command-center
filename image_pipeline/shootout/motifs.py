@@ -686,6 +686,62 @@ def motif_names() -> list[str]:
     return list(_MOTIFS)
 
 
+def motif_counts(genomes: list[dict]) -> dict[str, int]:
+    """Tally how many survivor genomes carry each motif (lives under
+    ``graph["motifs"]`` — the field the real genome schema uses)."""
+    counts: dict[str, int] = {}
+    for g in genomes:
+        for m in (g.get("graph", {}) or {}).get("motifs", []) or []:
+            counts[m] = counts.get(m, 0) + 1
+    return counts
+
+
+def coverage_biased_weights(survivors: list[dict], boost: float = 1.0
+                            ) -> dict[str, float] | None:
+    """Inverse-frequency motif weights so the explorer branch upsamples
+    under-represented motifs and downsamples over-represented ones.
+
+    Route 8 / Phase 1C sub-problem #2 (diversity maintenance): ``explore_ratio``
+    already injects fresh randoms, but each samples the *same* flat prior, so the
+    population mean converges to that prior and rare motifs (e.g. ``field_modulate``
+    appearing 3× vs ``post_fx`` 716× in the 643-genome corpus) effectively never
+    survive. Feeding inverse-frequency weights into the explorer branch nudges the
+    fresh-randoms toward uncovered niches.
+
+    Behavior-preserving by construction: when the survivor count distribution is
+    uniform across motifs the multipliers are all 1.0, so this returns a dict
+    identical to ``load_motif_weights()`` and the sampling is unchanged. The
+    ``boost`` (default 1.0) scales how hard we push toward the inverse — 1.0 maps
+    min-freq → boost/ (max-weighted), max-freq → 1.0. A ``boost`` ≤ 1.0 is a
+    no-op that returns ``None`` (caller uses its normal prior). Returns ``None``
+    also when ``survivors`` is empty or carries no motif provenance, so a gen-0
+    generation is unaffected.
+    """
+    if boost <= 1.0 or not survivors:
+        return None
+    base = load_motif_weights()
+    counts = motif_counts(survivors)
+    if not counts:
+        return None
+    # Per-motif survivor count. Base motifs with NO survivors are treated as
+    # count 0 → they receive the full boost (push explorers into the uncovered
+    # niche). Present motifs get their real count so uniform distributions yield
+    # mult 1.0 (behavior-preserving).
+    present = list(counts.values())
+    mean = (sum(present) / len(present)) if present else 0.0
+    adjusted: dict[str, float] = {}
+    for m, w in base.items():
+        c = float(counts.get(m, 0.0))
+        if c <= 0.0:
+            # Never-seen motif → strongest boost (push into the niche).
+            mult = boost
+        else:
+            # Inverse-frequency: rarer motif → higher mult, clamped to [1, boost].
+            mult = max(1.0, min(boost, mean / c)) if mean > 0 else boost
+        adjusted[m] = w * mult
+    return adjusted
+
+
 def load_motif_weights() -> dict[str, float]:
     """Defaults, overridden by shootout/motifs.json (user-editable)."""
     weights = {k: w for k, (_, w) in _MOTIFS.items()}

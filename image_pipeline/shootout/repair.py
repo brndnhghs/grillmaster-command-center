@@ -335,19 +335,19 @@ def validate_graph(graph: dict, pool: GenePool | None = None,
 
 def sample_valid_genome(pool: GenePool, cfg: ShootoutConfig,
                         rng: random.Random, origin: str = "random",
-                        max_tries: int = 20, bias=None) -> dict:
+                        max_tries: int = 20, bias=None,
+                        motif_weights: dict[str, float] | None = None) -> dict:
     """random_genome + repair, resampling until structurally valid (plan §7).
 
-    This gate is *static* (see validate_graph). Runtime node errors — inter-param
-    bugs like randrange(hi, lo), OpenCV bad-args, index-out-of-bounds — can't be
-    caught cheaply here (a probe render can't be both cheap and complete when a
-    sim ignores the n_frames pin), so they are rejected downstream at render time
-    by the evaluator (cfg.reject_node_errors), which renders every frame anyway.
+    ``motif_weights`` is forwarded to the motif-grammar sampler so the caller can
+    bias which workflow motifs get stacked (e.g. coverage-aware diversification).
+    When ``None`` the sampler uses its normal prior.
     """
     from .generator import random_genome
     for _ in range(max_tries):
         g = repair_genome(random_genome(pool, cfg, rng, origin=origin,
-                                        bias=bias), pool, cfg)
+                                        bias=bias, motif_weights=motif_weights),
+                           pool, cfg)
         if g is not None:
             return g
     raise RuntimeError("could not sample a repairable genome")

@@ -61,6 +61,14 @@ class ShootoutConfig:
     # weighted variations on the winning forms.)
     parent_selection_power: float = 2.0
     mutations_per_offspring: tuple[int, int] = (1, 2)  # inclusive range
+    # motif_coverage_boost: explorer diversification strength (Route 8 sub-
+    # problem #2 — diversity maintenance). Fresh-randoms in next_generation
+    # receive inverse-frequency motif weights over the survivor pool, so rare
+    # motifs get upsampled toward uncovered niches. 1.0 = no-op (uses the flat
+    # prior, identical to the old behaviour); higher = push explorers harder into
+    # under-represented motifs. Never reduces exploration, so it cannot make
+    # evolution worse — only restores motif spread under a starved rating corpus.
+    motif_coverage_boost: float = 2.0
     param_jitter_sigma: float = 0.15   # gaussian sigma as fraction of param range
     min_divergence: float = 0.3        # breeder aims for this graph-distance (0..1) from the parent
     max_divergence_attempts: int = 5   # mutation retries to hit min_divergence before accepting best-so-far
@@ -472,6 +480,7 @@ TUNABLE_FIELDS: dict[str, tuple[str, float | None, float | None]] = {
     "cross_breed_probability": ("Chance a bred offspring blends two rated parents together (rest are variations on one parent)", 0.0, 1.0),
     "parent_selection_power": ("How strongly star ratings favor top clips as breeding parents (higher = 5★ dominates; 1 = linear by stars)", 1.0, 6.0),
     "mutations_per_offspring": ("Mutation ops per bred offspring (1–2 = subtle, higher = wilder evolutions)", 0, 5),
+    "motif_coverage_boost": ("Explorer diversification: fresh-randoms upsample under-represented motifs (1 = off, identical to prior; higher = wider motif spread)", 1.0, 8.0),
     "param_jitter_sigma": ("Mutation strength — fraction of each param's range a tweak can move (higher = more extreme)", 0.0, 1.0),
     "min_divergence":   ("Bred offspring must differ from the parent by at least this graph-distance (0..1); the breeder escalates mutation until it does (higher = more extreme evolutions)", 0.0, 1.0),
     "max_divergence_attempts": ("Mutation retries to reach min_divergence before accepting the best attempt (higher = more effort pushing extreme changes)", 1, 12),

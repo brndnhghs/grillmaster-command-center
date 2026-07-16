@@ -646,6 +646,15 @@ def next_generation(rated: list[dict], generation: int,
     n_total = cfg.render_pool
     n_explore = max(1, round(cfg.explore_ratio * n_total)) if parents else n_total
 
+    # Coverage-aware explorer booster (Route 8 sub-problem #2 — diversity): bias
+    # the fresh-randoms toward under-represented motifs using inverse-frequency
+    # weights over the survivor pool. When the pool is flat this returns None and
+    # the explorer samples the normal prior (fully behavior-preserving); only
+    # when a few motifs dominate does it nudge explorers into uncovered niches.
+    from . import motifs as _motifs
+    explorer_motif_weights = _motifs.coverage_biased_weights(
+        breedable if parents else [], cfg.motif_coverage_boost)
+
     out: list[dict] = []
     while len(out) < n_total - n_explore:
         child = None
@@ -673,7 +682,9 @@ def next_generation(rated: list[dict], generation: int,
             child = mutate(parent, pool, cfg, rng, generation,
                            gentle=parent["genome_id"] in protect)
         if child is None:
-            child = sample_valid_genome(pool, cfg, rng, origin="random", bias=bias)
+            child = sample_valid_genome(pool, cfg, rng, origin="random",
+                                        bias=bias,
+                                        motif_weights=explorer_motif_weights)
             child["generation"] = generation
             child["deviation"] = {"kind": "random",
                                   "text": "fresh random graph (no parent — pure exploration)",
@@ -681,7 +692,8 @@ def next_generation(rated: list[dict], generation: int,
         out.append(child)
 
     while len(out) < n_total:
-        g = sample_valid_genome(pool, cfg, rng, origin="explorer", bias=bias)
+        g = sample_valid_genome(pool, cfg, rng, origin="explorer", bias=bias,
+                                motif_weights=explorer_motif_weights)
         g["generation"] = generation
         g["deviation"] = {"kind": "explorer",
                           "text": "fresh random graph (explorer — keeps variety high)",
