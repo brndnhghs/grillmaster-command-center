@@ -217,6 +217,26 @@ class ShootoutConfig:
     # non-destructive: only ever flips static/flat -> alive, never reverse.
     flow_var_min: float = 0.02       # flow-magnitude variance above this ⇒ real displacement
     flow_coherence_min: float = 0.4  # flow-direction alignment above this ⇒ structured (not flicker)
+    # ── Color-aware liveness rescue (Route 8 sub-problem #3 closure, 2026-07-16) ──
+    # ALL of the above rescues run on GRAYSCALE (luminance-collapsed). They miss
+    # CHROMA-ONLY animation: a clip whose per-pixel HUES / CHANNELS cycle at
+    # CONSTANT luminance. The Phase-1C research flagged exactly this residual —
+    # "clips that DO animate but don't change mean-luminance" — and the 643-
+    # genome scan's 211 static+flat deaths are its fingerprint. Concrete cases
+    # in this pipeline: a control node (driver) modulating an --recolor
+    # ``palette`` (cosmetic color per the color-architecture rule), a LUT /
+    # hue-sweep filter, or a color_intrinsic method whose hue sweeps at fixed
+    # luminance. The color rescue measures per-pixel color change on a
+    # luminance-PRESERVING buffer: ``color_change_frac`` = fraction of pixels
+    # whose mean per-frame RGB step exceeds ``color_thresh``; ``color_struct_corr``
+    # = consecutive-frame correlation of the per-pixel color vector (structured
+    # palette sweep ~0.7-0.99; incoherent hue noise ~0.0). The rescue fires only
+    # when BOTH hold, so a static frame (~0 color change) and incoherent
+    # saturation shuffle / channel noise (low color-vector correlation) stay dead.
+    # Strictly non-destructive: it can only flip static/flat -> alive, never reverse.
+    color_thresh: float = 0.03            # per-pixel mean RGB step to count as "color-changed"
+    color_change_frac_min: float = 0.03   # changed-pixel fraction implying real color motion
+    color_corr_min: float = 0.4           # color-vector correlation must be >= this (more coherent than flicker)
     flow_downscale: int = 1          # extra spatial downsample for the flow pass (1 = use stride-2 buffer as-is)
     flow_max_frames: int = 60        # cap flow sub-sequence here (150s wall is the enemy); longer clips subsampled
 

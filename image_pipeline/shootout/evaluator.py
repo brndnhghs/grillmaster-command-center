@@ -40,7 +40,7 @@ SEQUENCES_DIR = OUTPUT_ROOT / "sequences"
 # for timing data but are EXCLUDED from the liveness prior so their stale
 # static/flat verdicts do not drag P(alive) down and falsely suppress the
 # heavy-cap extension / advisor dead-method feedback (Route 8, 2026-07-16).
-EVALUATOR_VERSION = "2026-07-16"
+EVALUATOR_VERSION = "2026-07-16b"
 
 
 def seq_name_for(genome_id: str) -> str:
@@ -57,6 +57,14 @@ class LivenessAccumulator:
         self.cfg = cfg
         self.small: list[np.ndarray] = []
         self.small_f: list[np.ndarray] = []  # higher-res grayscale for optical flow
+        # Color-preserving downsampled copy for the COLOR-AWARE liveness
+        # rescue (Route 8 sub-problem #3 closure, 2026-07-16). Plain grayscale
+        # (small / small_f) collapses per-pixel RGB -> luminance, so a clip whose
+        # HUES/CHANNELS cycle while every pixel's luminance stays constant reads
+        # as ``static`` and gets culled. The color stack keeps all 3 channels so
+        # we can measure per-pixel chroma change that survives the luminance
+        # collapse. Same stride as ``small`` to stay memory-flat.
+        self.small_c: list[np.ndarray] = []
         self.nan = False
         self.missing = 0
         self.total = 0
@@ -74,6 +82,14 @@ class LivenessAccumulator:
             self.nan = True
             small = np.nan_to_num(small)
         self.small.append(small)
+        # Color-preserving copy (stride-downsampled, NOT luminance-collapsed).
+        small_c = np.asarray(arr, dtype=np.float32)[::s, ::s]
+        if small_c.ndim != 3:
+            small_c = small_c[..., None]
+        if not np.isfinite(small_c).all():
+            self.nan = True
+            small_c = np.nan_to_num(small_c)
+        self.small_c.append(small_c)
         # Higher-resolution grayscale (half the stat stride) for the optical-flow
         # pass: stride-4 over-smooths sub-pixel drift, so flow needs more detail
         # to resolve sparse, slow, aperiodic motion the other rescues miss.
@@ -224,6 +240,44 @@ class LivenessAccumulator:
                     coh = mean_mag[moving] / per_time_mag[moving]
                     flow_coherence = float(np.mean(np.clip(coh, 0.0, 1.0)))
 
+        # ── Color-aware liveness rescue signal (Route 8 sub-problem #3 closure) ──
+        # Every rescue above runs on GRAYSCALE (the luminance-collapsed ``small``
+        # / ``small_f`` buffers). That misses CHROMA-ONLY animation: a clip whose
+        # per-pixel HUES / CHANNELS cycle while every pixel's luminance stays
+        # constant. The Phase-1C research flagged this exact residual — "clips
+        # that DO animate but don't change mean-luminance" — and the 643-genome
+        # scan's 211 static+flat deaths are its fingerprint. Examples in THIS
+        # pipeline: a driver modulating an --recolor ``palette`` (cosmetic color
+        # per pitfall color-architecture), a LUT/hue-sweep filter, or a
+        # color_intrinsic method whose hue sweeps at fixed luminance. We measure
+        # per-pixel color change on the luminance-PRESERVING ``small_c`` buffer.
+        # ``color_change_frac`` = fraction of pixels whose mean per-frame RGB step
+        # exceeds ``color_thresh``; ``color_struct_corr`` = consecutive-FRAME
+        # correlation of the per-pixel color vector (structured color motion, e.g.
+        # a palette sweep, has corr ~0.7-0.99; incoherent hue noise ~0.0). A
+        # spatial decorrelation (saturation shuffle / channel swap that changes
+        # each pixel's color but NOT its local color-vector correlation) is caught
+        # by ``color_struct_corr`` being low. Genuinely static color -> ~0 change
+        # -> stays dead. Strictly non-destructive: only ever flips
+        # static/flat -> alive, never reverse.
+        color_change_frac = 0.0
+        color_struct_corr = 0.0
+        cstack = np.stack([c[:h, :w] for c in self.small_c])  # (T, h, w, 3)
+        cd = np.abs(cstack[1:] - cstack[:-1]).mean(axis=-1)   # (T-1, h, w) per-pixel color step
+        if cd.size:
+            color_change_frac = float((cd > cfg.color_thresh).mean(axis=0).mean())
+            # Consecutive-frame correlation of the flattened per-pixel color trace.
+            flatc = cstack.reshape(cstack.shape[0], -1)       # (T, h*w*3)
+            cc = []
+            for a, b in zip(flatc[:-1], flatc[1:]):
+                sa, sb = a.std(), b.std()
+                if sa < 1e-8 or sb < 1e-8:
+                    cc.append(1.0)
+                else:
+                    cc.append(float(np.dot(a - a.mean(), b - b.mean())
+                                    / (len(a) * sa * sb)))
+            color_struct_corr = float(np.mean(cc)) if cc else 1.0
+
         reason = None
         if self.nan:
             reason = "nan"
@@ -270,6 +324,19 @@ class LivenessAccumulator:
                 # low coherence; a static frame has ~0 flow magnitude -> both stay
                 # dead. This branch only ever flips dead -> alive, never reverse.
                 reason = None
+            elif (color_change_frac >= cfg.color_change_frac_min
+                    and color_struct_corr >= cfg.color_corr_min):
+                # Color-aware rescue (Route 8 sub-problem #3 closure): chroma-only
+                # animation. Every other rescue above runs on GRAYSCALE and misses
+                # a clip whose hues/channels cycle at constant luminance (palette
+                # sweeps, LUT/hue filters, recolor driven by a control node). The
+                # motion is genuine but leaves NO luminance footprint, so it is
+                # rescued only here: a meaningful fraction of pixels must change
+                # color frame-to-frame AND that color change must be temporally
+                # STRUCTURED (high consecutive-frame color-vector correlation), so
+                # incoherent hue noise / per-frame saturation shuffles stay dead.
+                # Strictly non-destructive: flips static/flat -> alive, never reverse.
+                reason = None
             else:
                 # Not moving. If it is also spatially degenerate
                 # (near black/white/uniform) call it "flat"; otherwise it
@@ -301,6 +368,8 @@ class LivenessAccumulator:
             "spectral_active_frac": round(active_frac, 4),
             "flow_var": round(flow_var, 4),
             "flow_coherence": round(flow_coherence, 4),
+            "color_change_frac": round(color_change_frac, 4),
+            "color_struct_corr": round(color_struct_corr, 4),
             "frame_drop": self.missing,
         }
 
