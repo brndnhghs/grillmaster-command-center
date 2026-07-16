@@ -96,7 +96,7 @@ def method_domain_transform(out_dir: Path, seed: int, params=None):
 
     Params:
         source:     generated source type (noise/gradient/input_image/palette/rainbow/procedural)
-        sigma_s:    spatial smoothing scale (1-50, default 12)
+        sigma_s:    spatial smoothing scale (1-20, default 8)
         sigma_r:    range/edge sensitivity (0.02-0.5, default 0.15)
         iterations: filtering passes (1-4, default 3)
         blend:      mix original source back in (0-1, default 0)
@@ -132,17 +132,24 @@ def method_domain_transform(out_dir: Path, seed: int, params=None):
         # ── Animation (rename t to avoid shadowing the time param) ──
         _t = anim_time * anim_speed
         if anim_mode == "sigma_pulse":
-            # Full sine period in [0,2pi]; sweep sigma_s across its SENSITIVE
-            # range [2,14] (DTF saturates above ~14, so a narrower band would
-            # read as static — skill pitfall #19). Test at true extremes
+            # Full sine period in [0,2pi]; sweep sigma_s across its FULL live
+            # range [1,20] (params max). A smoothing filter's per-frame change is
+            # intrinsically modest, so use the widest band. Test at true extremes
             # (t=0 vs t=3pi/2), not t=0 vs pi (both sit at sin=0).
-            sigma_s = max(1.0, 2.0 + 12.0 * (0.5 + 0.5 * math.sin(_t)))
+            sigma_s = max(1.0, min(20.0, 1.0 + 19.0 * (0.5 + 0.5 * math.sin(_t))))
         elif anim_mode == "range_sweep":
-            # sweep edge sensitivity across its full live range [0.02, 0.5]
+            # Sweep edge sensitivity across its full live range [0.02, 0.5].
+            # sigma_r only acts at edges (localized), so to make the sweep
+            # clearly visible we also ride sigma_s with it: sharp edges (low
+            # sigma_r) paired with light smoothing, soft edges (high sigma_r)
+            # paired with heavy smoothing -> a large global smoothing change.
             sigma_r = max(0.02, min(0.5, 0.02 + 0.48 * (0.5 + 0.5 * math.sin(_t))))
+            sigma_s = max(1.0, min(20.0, 4.0 + 16.0 * (0.5 + 0.5 * math.sin(_t))))
         elif anim_mode == "blend_sweep":
-            # dissolve between filtered result and original
-            blend = 0.5 + 0.5 * math.sin(_t * 0.4)
+            # Dissolve between a lightly-smoothed and a heavily-smoothed version
+            # of the source (both clearly distinct), which is far more visible
+            # than filtered<->source for already-smooth sources.
+            blend = 0.5 + 0.5 * math.sin(_t)  # full 0->1 sweep over one period
         # else: none -> static
 
         # ── Resolve source image (float32 [0,1], HxWx3) ──
@@ -190,52 +197,58 @@ def method_domain_transform(out_dir: Path, seed: int, params=None):
         src = np.clip(src, 0.0, 1.0).astype(np.float32)
         Hh, Ww = src.shape[:2]
 
-        # ── Domain transform weights from luminance guidance ──
+        def _filter(sig_s: float) -> np.ndarray:
+            """Run the domain-transform edge-aware smoother at scale `sig_s`."""
+            # Edge-aware recurrence coefficient a_i = exp(-d_i / sig_s), where the
+            # domain-transform spacing d_i = 1 + sig_s * M_i and M_i = |grad|/(sigma_r
+            # + |grad|) is the normalized gradient magnitude. The 1-D smoother below
+            # consumes wi = a/(1-a), so a near 1 (flat region) -> large wi -> heavy
+            # smoothing; a small (edge) -> small wi -> preserved. This is what makes
+            # sigma_s / sigma_r actually bite instead of collapsing to a fixed blend.
+            rg_x = gx / (sigma_r + gx)
+            rg_y = gy / (sigma_r + gy)
+            base = math.exp(-1.0 / sig_s)
+            a_x = np.clip((base * np.exp(-rg_x)).astype(np.float32), 0.0, 0.9995)
+            a_y = np.clip((base * np.exp(-rg_y)).astype(np.float32), 0.0, 0.9995)
+            wx = (a_x / (1.0 - a_x)).astype(np.float32)  # smoother weight along x
+            wy = (a_y / (1.0 - a_y)).astype(np.float32)  # smoother weight along y
+            res = src.copy()
+            for _it in range(n_iter):
+                for r in range(Hh):
+                    line = res[r, :, 0].tolist(); wl = wx[r, :].tolist()
+                    res[r, :, 0] = _dt_1d(line, wl)
+                    line = res[r, :, 1].tolist()
+                    res[r, :, 1] = _dt_1d(line, wl)
+                    line = res[r, :, 2].tolist()
+                    res[r, :, 2] = _dt_1d(line, wl)
+                for c in range(Ww):
+                    line = res[:, c, 0].tolist(); wl = wy[:, c].tolist()
+                    res[:, c, 0] = _dt_1d(line, wl)
+                    line = res[:, c, 1].tolist()
+                    res[:, c, 1] = _dt_1d(line, wl)
+                    line = res[:, c, 2].tolist()
+                    res[:, c, 2] = _dt_1d(line, wl)
+            return np.clip(res, 0.0, 1.0).astype(np.float32)
+
+        # ── Domain transform weights from luminance guidance ─
         lum = (0.299 * src[:, :, 0] + 0.587 * src[:, :, 1] + 0.114 * src[:, :, 2]).astype(np.float32)
         gy, gx = np.gradient(lum)  # gradient returns [d/dy, d/dx]
         gx = np.abs(gx).astype(np.float32)
         gy = np.abs(gy).astype(np.float32)
-        # Edge-aware recurrence coefficient a_i = exp(-d_i / sigma_s), where the
-        # domain-transform spacing d_i = 1 + sigma_s * M_i and M_i = |grad|/(sigma_r
-        # + |grad|) is the normalized gradient magnitude. The 1-D smoother below
-        # consumes wi = a/(1-a), so a near 1 (flat region) -> large wi -> heavy
-        # smoothing; a small (edge) -> small wi -> preserved. This is what makes
-        # sigma_s / sigma_r actually bite instead of collapsing to a fixed blend.
-        rg_x = gx / (sigma_r + gx)
-        rg_y = gy / (sigma_r + gy)
-        base = math.exp(-1.0 / sigma_s)
-        a_x = (base * np.exp(-rg_x)).astype(np.float32)
-        a_y = (base * np.exp(-rg_y)).astype(np.float32)
-        a_x = np.clip(a_x, 0.0, 0.9995)
-        a_y = np.clip(a_y, 0.0, 0.9995)
-        w_x = (a_x / (1.0 - a_x)).astype(np.float32)  # smoother weight along x
-        w_y = (a_y / (1.0 - a_y)).astype(np.float32)  # smoother weight along y
 
-        out = src.copy()
-        for _it in range(n_iter):
-            # Horizontal pass (per row)
-            for r in range(Hh):
-                line = out[r, :, 0].tolist()
-                wl = w_x[r, :].tolist()
-                out[r, :, 0] = _dt_1d(line, wl)
-                line = out[r, :, 1].tolist()
-                out[r, :, 1] = _dt_1d(line, wl)
-                line = out[r, :, 2].tolist()
-                out[r, :, 2] = _dt_1d(line, wl)
-            # Vertical pass (per column)
-            for c in range(Ww):
-                line = out[:, c, 0].tolist()
-                wl = w_y[:, c].tolist()
-                out[:, c, 0] = _dt_1d(line, wl)
-                line = out[:, c, 1].tolist()
-                out[:, c, 1] = _dt_1d(line, wl)
-                line = out[:, c, 2].tolist()
-                out[:, c, 2] = _dt_1d(line, wl)
+        out = _filter(sigma_s)
 
-        out = np.clip(out, 0.0, 1.0).astype(np.float32)
-
-        if blend > 0.0:
-            out = (out * (1.0 - blend) + src * blend).astype(np.float32)
+        if blend > 0.0 or anim_mode == "blend_sweep":
+            # blend_sweep dissolves between the raw source and a heavily filtered
+            # version (clearly distinct). The blend>0 OR blend_sweep guard ensures
+            # the raw-source extreme (blend=0) is still produced, not skipped.
+            if anim_mode == "blend_sweep":
+                # Dissolve between the raw source and a *heavily* filtered version
+                # (clearly distinct from source, unlike a lightly-smoothed one).
+                heavy = _filter(20.0)
+                out = (src * (1.0 - blend) + heavy * blend).astype(np.float32)
+            else:
+                out = (out * (1.0 - blend) + src * blend).astype(np.float32)
             out = np.clip(out, 0.0, 1.0).astype(np.float32)
 
         capture_frame("991", out)
