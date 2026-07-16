@@ -175,7 +175,8 @@ def test_server_3d_nodes_exposed_in_node_defs():
         # Post-FX params must be mirrored on both Scene Render nodes.
         if mid in ("__scene_render__", "__scene3d__"):
             for p in ("bloom", "vignette", "fxaa", "fx_saturation",
-                      "ssao", "ssao_radius", "ssao_bias", "ssao_power"):
+                      "ssao", "ssao_radius", "ssao_bias", "ssao_power",
+                      "dof", "dof_focus", "dof_range", "dof_radius"):
                 assert p in nd.get("params", {}), f"{mid}: post-FX param '{p}' missing"
 
 
@@ -478,3 +479,54 @@ def test_lens_distortion_breathing_advances_frames():
     b = _render({**base, "frame": 90})
     delta = float(np.mean(np.abs(a - b)))
     assert delta > 0.01, f"lens breathing did not advance between frames (Δ={delta})"
+
+
+def test_dof_postfx_changes_render():
+    """Engaging depth-of-field is NOT a no-op: the CoC gather blur smears
+    out-of-focus pixels (the background / foreground torusknot), so the frame
+    differs from the off state. Locks in the DoF pass so a future edit that
+    silently drops its engagement is caught. Disabled by default.
+
+    A small torusknot near the focus plane keeps most of the frame sharp, so
+    we assert a meaningful-but-bounded departure (the focus plane stays crisp,
+    only far pixels blur).
+    """
+    off = _render(_build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0,
+        "fx_brightness": 1.0, "fx_contrast": 1.0, "fx_saturation": 1.0,
+        "chromatic": 0.0, "grain": 0.0, "radial_blur": 0.0,
+        "ssao": 0.0, "dof": 0.0,
+    }))
+    on = _render(_build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0,
+        "fx_brightness": 1.0, "fx_contrast": 1.0, "fx_saturation": 1.0,
+        "chromatic": 0.0, "grain": 0.0, "radial_blur": 0.0,
+        "ssao": 0.0, "dof": 1.0, "dof_focus": 0.12,
+        "dof_range": 0.25, "dof_radius": 30.0,
+    }))
+    delta = float(np.mean(np.abs(on - off)))
+    assert delta > 0.01, f"depth-of-field did not change the render (Δ={delta})"
+
+
+def test_dof_strength_is_live():
+    """The `dof` strength parameter actually drives the output: a stronger
+    bokeh produces a larger departure from the off state than a weak one.
+    """
+    off = _render(_build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0, "chromatic": 0.0,
+        "grain": 0.0, "radial_blur": 0.0, "ssao": 0.0, "dof": 0.0,
+    }))
+    weak = _render(_build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0, "chromatic": 0.0,
+        "grain": 0.0, "radial_blur": 0.0, "ssao": 0.0,
+        "dof": 0.4, "dof_focus": 0.12, "dof_range": 0.25, "dof_radius": 30.0,
+    }))
+    strong = _render(_build_graph(spin_speed=0.0, scene_overrides={
+        "bloom": 0.0, "vignette": 0.0, "fxaa": 0, "chromatic": 0.0,
+        "grain": 0.0, "radial_blur": 0.0, "ssao": 0.0,
+        "dof": 1.0, "dof_focus": 0.12, "dof_range": 0.25, "dof_radius": 30.0,
+    }))
+    d_weak = float(np.mean(np.abs(weak - off)))
+    d_strong = float(np.mean(np.abs(strong - off)))
+    assert d_weak > 0.01, f"weak DoF did not change render (Δ={d_weak})"
+    assert d_strong > d_weak, f"DoF not live: strong Δ={d_strong} <= weak Δ={d_weak}"

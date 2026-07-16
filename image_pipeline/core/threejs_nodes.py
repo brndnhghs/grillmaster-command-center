@@ -80,6 +80,15 @@ THREEJS_POSTFX_PARAMS: dict[str, dict] = {
     "ssao_radius": {"description": "SSAO sampling radius (fraction of screen)", "min": 0.05, "max": 0.6, "default": 0.3},
     "ssao_bias": {"description": "SSAO depth bias (occlusion threshold — larger skips near-self)", "min": 0.0, "max": 0.1, "default": 0.01},
     "ssao_power": {"description": "SSAO falloff exponent (higher = tighter, darker contact shadows)", "min": 0.5, "max": 4.0, "default": 1.5},
+    # Depth-of-Field (bokeh) — Circle-of-Confusion gather blur. A depth pre-pass
+    # yields a per-pixel linear depth; the CoC radius is |depth - focus| clamped
+    # to [0,1]; a golden-spiral disc gather of the lit color produces a bokeh-like
+    # blur. Far-from-focus pixels (background/foreground) blur; the focus plane
+    # stays crisp. 0 = off (direct path).
+    "dof": {"description": "depth-of-field (bokeh) blur strength (0 = off)", "min": 0, "max": 1, "default": 0},
+    "dof_focus": {"description": "focus distance (0 = near subject, 1 = far/infinity)", "min": 0, "max": 1, "default": 0.12},
+    "dof_range": {"description": "focus-plane sharpness band (smaller = tighter, more selective focus)", "min": 0.02, "max": 1, "default": 0.25},
+    "dof_radius": {"description": "max bokeh blur radius in px", "min": 1, "max": 40, "default": 20},
 }
 
 THREEJS_3D_NODE_DEFS: dict[str, dict] = {

@@ -431,6 +431,10 @@ function buildScene(nodes, edges, frame = 0) {
           ssao_radius:   resolveParam(node, 'ssao_radius', 0.3),
           ssao_bias:     resolveParam(node, 'ssao_bias', 0.01),
           ssao_power:    resolveParam(node, 'ssao_power', 1.5),
+          dof:           resolveParam(node, 'dof', 0),
+          dof_focus:     resolveParam(node, 'dof_focus', 0.12),
+          dof_range:     resolveParam(node, 'dof_range', 0.25),
+          dof_radius:    resolveParam(node, 'dof_radius', 20.0),
         };
 
         for (const [port, obj] of Object.entries(wired)) {
@@ -863,6 +867,44 @@ void main() {
 }
 `;
 
+// Depth-of-Field (bokeh) — Circle-of-Confusion gather blur.
+// Operates on the lit color (`litTex`, already SSAO-blended if SSAO is on) with a
+// per-pixel CoC radius driven by a linear-view-depth pre-pass. A golden-spiral
+// disc gather of the lit color produces a bokeh-like blur: far-from-focus pixels
+// (background / foreground) blur, the focus plane stays crisp. `dof == 0` is a
+// no-op (the whole pass is skipped and `litTex` is left untouched).
+const _DOF = `
+uniform sampler2D tDiffuse;       // lit scene color (sRGB, tone-mapped)
+uniform sampler2D tDepth;        // a = linear view-depth / far, [0,1]
+uniform vec2 uResolution;
+uniform float uFocus;             // focus plane (depth/far, [0,1])
+uniform float uRange;             // sharpness band half-width (larger = more in focus)
+uniform float uRadius;            // max bokeh blur radius (px)
+uniform float uStrength;          // overall strength (0 = off)
+varying vec2 vUv;
+void main() {
+  vec4 base = texture2D(tDiffuse, vUv);
+  float depth = texture2D(tDepth, vUv).a;        // linear depth / far, [0,1]
+  // Circle of Confusion: 0 on the focus plane, ramping to uRadius away from it.
+  float coc = clamp(abs(depth - uFocus) / max(uRange, 0.01), 0.0, 1.0);
+  coc *= uRadius * uStrength;
+  if (coc < 0.5) { gl_FragColor = base; return; } // sharp — skip the gather
+  // Golden-spiral (Vogel) disc sampling for a pleasing bokeh disc.
+  vec3 sum = base.rgb;
+  float total = 1.0;
+  const int N = 24;
+  for (int i = 0; i < N; i++) {
+    float t = (float(i) + 0.5) / float(N);
+    float ang = float(i) * 2.39996323;            // golden angle
+    float r = sqrt(t) * coc / max(uResolution.x, 1.0);
+    vec2 off = vec2(cos(ang), sin(ang)) * r;
+    sum += texture2D(tDiffuse, vUv + off).rgb;
+    total += 1.0;
+  }
+  gl_FragColor = vec4(sum / total, base.a);
+}
+`;
+
 function renderWithPostFX(renderer, scene, camera, w, h, fx, frame = 0) {
   const rtOpts = {
     minFilter: THREE.LinearFilter,
@@ -918,6 +960,44 @@ function renderWithPostFX(renderer, scene, camera, w, h, fx, frame = 0) {
     });
     _fsRender(renderer, ssaoRT, ssaoMat);
     litTex = ssaoRT.texture;
+  }
+
+  // ── Depth-of-Field (bokeh) gather blur ──
+  // A linear-view-depth pre-pass (reusing the SSAO normal-depth override
+  // material — its alpha channel already packs vZ/far) feeds a disc-gather pass
+  // that blurs pixels by their distance from the focus plane. When fx.dof == 0
+  // the whole block is skipped and litTex stays untouched (direct path safe).
+  let dofDepthRT = null;
+  let dofRT = null;
+  if (fx.dof > 0) {
+    dofDepthRT = new THREE.WebGLRenderTarget(w, h, { ...rtOpts, depthBuffer: true });
+    const _prevBgD = scene.background;
+    const _tmpColD = new THREE.Color();
+    renderer.getClearColor(_tmpColD);
+    const _tmpAD = renderer.getClearAlpha();
+    _SSAO_NORMAL_DEPTH.uniforms.uFar.value = camera.far || 100.0;
+    scene.background = null;
+    renderer.setRenderTarget(dofDepthRT);
+    renderer.setClearColor(0x000000, 1.0);
+    renderer.clear(true, true, true);
+    scene.overrideMaterial = _SSAO_NORMAL_DEPTH;
+    renderer.render(scene, camera);
+    scene.overrideMaterial = null;
+    scene.background = _prevBgD;
+    renderer.setClearColor(_tmpColD, _tmpAD);
+
+    dofRT = new THREE.WebGLRenderTarget(w, h, { ...rtOpts, depthBuffer: false });
+    const dofMat = _fsMat(_DOF, {
+      tDiffuse: { value: litTex },
+      tDepth: { value: dofDepthRT.texture },
+      uResolution: { value: new THREE.Vector2(w, h) },
+      uFocus: { value: fx.dof_focus },
+      uRange: { value: fx.dof_range },
+      uRadius: { value: fx.dof_radius },
+      uStrength: { value: fx.dof },
+    });
+    _fsRender(renderer, dofRT, dofMat);
+    litTex = dofRT.texture;
   }
 
   let bloomTex = null;
@@ -1060,6 +1140,8 @@ function renderWithPostFX(renderer, scene, camera, w, h, fx, frame = 0) {
   if (radialRT) radialRT.dispose();
   if (ssaoRT) ssaoRT.dispose();
   if (normalDepthRT) normalDepthRT.dispose();
+  if (dofRT) dofRT.dispose();
+  if (dofDepthRT) dofDepthRT.dispose();
   renderer.setRenderTarget(null);
 }
 
@@ -1104,7 +1186,7 @@ function renderSceneToPng(graphNodes, graphEdges, width, height, frame) {
   // unchanged direct render, so this feature is purely additive. Any
   // non-default value engages the render-target pipeline.
   const fx = scene._gmPostFX || {};
-  const fxEngaged = !!(fx.bloom || fx.vignette || fx.fxaa || fx.chromatic || fx.grain || fx.ssao > 0 || fx.radial_blur ||
+  const fxEngaged = !!(fx.bloom || fx.vignette || fx.fxaa || fx.chromatic || fx.grain || fx.ssao > 0 || fx.radial_blur || fx.dof > 0 ||
       fx.lens_distortion !== 0 || fx.lens_distortion_anim > 0 ||
       fx.brightness !== 1 || fx.contrast !== 1 || fx.saturation !== 1);
 
