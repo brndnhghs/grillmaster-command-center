@@ -325,6 +325,8 @@ def method_clip_score(out_dir: Path, seed: int, params=None):
     # ── Default outputs (overwritten on success) ──
     probs = _np.full(len(label_list), 1.0 / len(label_list), dtype=_np.float32)
     top_score = float(probs.max())
+    clip_ran = False  # set True only when CLIP genuinely executed
+    top_label = label_list[int(probs.argmax())]
 
     try:
         import clip
@@ -351,12 +353,27 @@ def method_clip_score(out_dir: Path, seed: int, params=None):
         top_score = float(probs.max())
         top_idx = int(probs.argmax())
         top_label = label_list[top_idx]
+        clip_ran = True
     except Exception as e:
-        print(f"  ✗ CLIP Score: {e}")
+        # Honest fallback: keep a valid (uniform) output so the graph keeps
+        # flowing, but DO NOT claim CLIP scored the image. A uniform
+        # distribution is the exact fingerprint of "model did not run" and
+        # downstream consumers must be able to detect it via `clip_ran` == 0.
+        print(f"  ✗ CLIP Score: {e} — emitting uniform fallback (clip_ran=0)")
         top_label = label_list[int(probs.argmax())]
 
     # ── Write scalar + field outputs ──
-    write_scalars(out_dir, score=top_score, n_labels=float(len(label_list)))
+    # `clip_ran` is the honesty flag that lets a downstream node (or test)
+    # distinguish a real CLIP embedding from the silent uniform fallback:
+    # a genuine run always peaks ABOVE 1/n_labels; the fallback sits at exactly
+    # 1/n_labels. See grillmaster-image-pipeline Pitfalls #18-#20 + CLIP skill
+    # best-practice #8.
+    write_scalars(
+        out_dir,
+        score=top_score,
+        n_labels=float(len(label_list)),
+        clip_ran=1.0 if clip_ran else 0.0,
+    )
     # Field = per-label probability column broadcast over the canvas (H×W FIELD)
     col = probs.reshape(1, 1, -1)  # (1, 1, n_labels)
     weights_field = _np.repeat(_np.repeat(col, int(W), axis=1), int(H), axis=0)  # (H, W, n_labels)

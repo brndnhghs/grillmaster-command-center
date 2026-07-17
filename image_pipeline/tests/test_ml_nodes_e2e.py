@@ -47,8 +47,13 @@ try:
 except Exception:
     _sam_ok = False
 
-_skip_ml = not (_clip_ok and _sam_ok)
-_skip_reason = "CLIP and/or SAM cached weights not available (see references/ml-node-e2e-verify.md)"
+# Skip the SAM-family tests only when SAM is unavailable; CLIP tests run
+# independently whenever CLIP (and cached ViT-B/32 weights) is available, so a
+# missing SAM checkpoint can no longer silence the CLIP regression.
+_clip_skip = not _clip_ok
+_sam_skip = not _sam_ok
+_clip_skip_reason = "CLIP import or cached ViT-B/32 weights not available (see references/ml-node-e2e-verify.md)"
+_sam_skip_reason = "SAM cached checkpoint not available (see references/ml-node-e2e-verify.md)"
 
 
 # Force registration of every @method (so the ML nodes are in the registry).
@@ -86,34 +91,57 @@ def _call(node_id: str, out_dir: Path, params: dict, canvas=(256, 256)) -> None:
         U._CANVAS.reset(token)
 
 
-@pytest.mark.skipif(_skip_ml, reason=_skip_reason)
-@pytest.mark.parametrize("node_id", ["__clip_score__", "__sam_segment__", "__clip_sam__"])
-def test_ml_node_runs_and_writes_contracted_outputs(node_id: str, tmp_path: Path):
-    """Each ML node must run end-to-end and emit its contracted outputs."""
+@pytest.mark.skipif(_clip_skip, reason=_clip_skip_reason)
+def test_clip_score_runs_and_writes_contracted_outputs(tmp_path: Path):
+    """CLIP Score must run end-to-end and emit its contracted outputs.
+
+    Decoupled from the SAM tests: this runs whenever CLIP + ViT-B/32 weights
+    are present, regardless of SAM availability.
+    """
     h, w = 256, 256
-    if node_id == "__clip_score__":
-        img = _gradient(h, w)
-        params = {
-            "input_image": str(tmp_path / "_input.png"),
-            "labels": "a cat\na dog\na red circle\na blue square\na fractal pattern",
-            "prompt_prefix": "a photo of",
-            "visualization": "heatmap",
-            "device": "cpu",
-            "model_name": "ViT-B/32",
-        }
-    else:  # SAM / CLIP-SAM: bright disk foreground on dark bg
-        img = _disk(h, w)
-        params = {
-            "input_image": str(tmp_path / "_input.png"),
-            "mode": "automatic" if node_id == "__sam_segment__" else "automatic",
-            "checkpoint": "vit_b",
-            "device": "cpu",
-            "model_name": "ViT-B/32",
-            "prompt": "a white circle",
-            "prompt_prefix": "a photo of",
-            "points_per_side": 16,
-            "max_masks": 20,
-        }
+    img = _gradient(h, w)
+    params = {
+        "input_image": str(tmp_path / "_input.png"),
+        "labels": "a cat\na dog\na red circle\na blue square\na fractal pattern",
+        "prompt_prefix": "a photo of",
+        "visualization": "heatmap",
+        "device": "cpu",
+        "model_name": "ViT-B/32",
+    }
+    Image.fromarray((np.clip(img, 0.0, 1.0) * 255).astype(np.uint8)).save(
+        tmp_path / "_input.png"
+    )
+    _call("__clip_score__", tmp_path, params, (h, w))
+
+    # IMAGE output
+    pngs = list(tmp_path.glob("*.png"))
+    assert [p for p in pngs if p.name != "_input.png"], "__clip_score__: no PNG output"
+
+    # SCALAR output
+    scalars = tmp_path / "scalars.json"
+    assert scalars.exists(), "__clip_score__: no scalars.json (SCALAR missing)"
+    sc = json.loads(scalars.read_text())
+    assert "score" in sc, "__clip_score__: 'score' scalar missing"
+    assert 0.0 <= sc["score"] <= 1.0, "__clip_score__: score out of [0,1]"
+
+
+@pytest.mark.skipif(_sam_skip, reason=_sam_skip_reason)
+@pytest.mark.parametrize("node_id", ["__sam_segment__", "__clip_sam__"])
+def test_sam_node_runs_and_writes_contracted_outputs(node_id: str, tmp_path: Path):
+    """SAM-family nodes must run end-to-end and emit their contracted outputs."""
+    h, w = 256, 256
+    img = _disk(h, w)
+    params = {
+        "input_image": str(tmp_path / "_input.png"),
+        "mode": "automatic",
+        "checkpoint": "vit_b",
+        "device": "cpu",
+        "model_name": "ViT-B/32",
+        "prompt": "a white circle",
+        "prompt_prefix": "a photo of",
+        "points_per_side": 16,
+        "max_masks": 20,
+    }
     Image.fromarray((np.clip(img, 0.0, 1.0) * 255).astype(np.uint8)).save(
         tmp_path / "_input.png"
     )
@@ -123,25 +151,17 @@ def test_ml_node_runs_and_writes_contracted_outputs(node_id: str, tmp_path: Path
     pngs = list(tmp_path.glob("*.png"))
     assert [p for p in pngs if p.name != "_input.png"], f"{node_id}: no PNG output"
 
-    # SCALAR output
-    scalars = tmp_path / "scalars.json"
-    assert scalars.exists(), f"{node_id}: no scalars.json (SCALAR output missing)"
-    sc = json.loads(scalars.read_text())
-    assert "score" in sc, f"{node_id}: 'score' scalar missing"
-    assert 0.0 <= sc["score"] <= 1.0, f"{node_id}: score out of [0,1]"
-
-    # MASK output for SAM-family nodes
-    if node_id in ("__sam_segment__", "__clip_sam__"):
-        mask = tmp_path / "mask.npy"
-        assert mask.exists(), f"{node_id}: no mask.npy (MASK output missing)"
-        m = np.load(mask)
-        cov = float(m.mean())
-        assert cov > 0.0, f"{node_id}: mask empty -- foreground not found"
-        # Pitfall #20 regression: automatic mode must NOT pick the background.
-        assert cov < 0.5, f"{node_id}: mask {cov:.3f} covers >=0.5 (Pitfall #20)"
+    # MASK output
+    mask = tmp_path / "mask.npy"
+    assert mask.exists(), f"{node_id}: no mask.npy (MASK output missing)"
+    m = np.load(mask)
+    cov = float(m.mean())
+    assert cov > 0.0, f"{node_id}: mask empty -- foreground not found"
+    # Pitfall #20 regression: automatic mode must NOT pick the background.
+    assert cov < 0.5, f"{node_id}: mask {cov:.3f} covers >=0.5 (Pitfall #20)"
 
 
-@pytest.mark.skipif(_skip_ml, reason=_skip_reason)
+@pytest.mark.skipif(_sam_skip, reason=_sam_skip_reason)
 def test_sam_score_clamped_to_unit_interval(tmp_path: Path):
     """Pitfall #18 contract: SAM SCALAR score must stay within [0,1].
 
@@ -170,7 +190,7 @@ def test_sam_score_clamped_to_unit_interval(tmp_path: Path):
     assert 0.0 <= s <= 1.0, f"__sam_segment__: score {s} outside [0,1] (Pitfall #18)"
 
 
-@pytest.mark.skipif(_skip_ml, reason=_skip_reason)
+@pytest.mark.skipif(_clip_skip, reason=_clip_skip_reason)
 def test_clip_score_writes_field(tmp_path: Path):
     """CLIP Score must emit a FIELD broadcast of per-label probabilities."""
     h, w = 256, 256
@@ -188,6 +208,59 @@ def test_clip_score_writes_field(tmp_path: Path):
     assert field.exists(), "CLIP Score: no field.npy (FIELD output missing)"
     f = np.load(field)
     assert f.shape == (h, w, 3), f"CLIP Score FIELD shape {f.shape} != (h,w,n_labels)"
+
+
+@pytest.mark.skipif(_clip_skip, reason=_clip_skip_reason)
+def test_clip_score_does_not_silently_fallback(tmp_path: Path):
+    """CLIP skill best-practice #8 + grillmaster Pitfalls #18-#20: prove CLIP
+    actually RAN, not the silent uniform fallback.
+
+    ``method_clip_score`` wraps ``clip.load``/``encode`` in try/except and on
+    any exception returns a uniform ``1/n`` probability distribution as if it
+    had succeeded — indistinguishable from a real run unless we check the
+    ``clip_ran`` honesty flag. A genuine CLIP embedding of an unambiguous image
+    always peaks ABOVE the uniform baseline (1/n_labels); the fallback sits at
+    exactly 1/n. This catches a dead model that the lazy ``0<=score<=1``
+    assertion would otherwise pass.
+
+    Uses in-distribution images (checkerboard / solid white) whose dominant
+    label ViT-B/32 reliably prefers, so the test is robust and not tied to a
+    single fragile color-shape composition.
+    """
+    h, w = 224, 224
+
+    # Checkerboard panel — "a checkerboard pattern" should win clearly.
+    cb = np.zeros((h, w, 3), dtype=np.float32)
+    n = 8
+    for i in range(n):
+        for j in range(n):
+            if (i + j) % 2 == 0:
+                cb[i * h // n:(i + 1) * h // n, j * w // n:(j + 1) * w // n] = 1.0
+    cb_labels = ["a checkerboard pattern", "a solid color", "a fractal", "a portrait"]
+
+    Image.fromarray((cb * 255).astype(np.uint8)).save(tmp_path / "_cb.png")
+    params = {
+        "input_image": str(tmp_path / "_cb.png"),
+        "labels": "\n".join(cb_labels),
+        "prompt_prefix": "a photo of",
+        "visualization": "none",
+        "device": "cpu",
+        "model_name": "ViT-B/32",
+    }
+    _call("__clip_score__", tmp_path, params, (h, w))
+
+    scalars = tmp_path / "scalars.json"
+    assert scalars.exists(), "__clip_score__: no scalars.json"
+    sc = json.loads(scalars.read_text())
+    assert sc.get("clip_ran", 0.0) == 1.0, (
+        "__clip_score__: clip_ran=0 — CLIP did NOT execute (silent fallback)"
+    )
+    # Peak probability must exceed the uniform-fallback baseline.
+    n_labels = float(sc["n_labels"])
+    assert sc["score"] > 1.0 / n_labels, (
+        f"__clip_score__: peak {sc['score']:.3f} <= uniform baseline "
+        f"{1.0 / n_labels:.3f} — model produced no real preference"
+    )
 
 
 # ── ComfyUI capture_frame contract (Leverage Tier regression) ──────────────
