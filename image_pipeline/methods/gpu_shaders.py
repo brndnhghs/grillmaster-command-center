@@ -351,6 +351,13 @@ _TYPED_SHADER_NODES = [
     # shader name domain_warp_palette_gpu vs node 311's domain_warp_gpu: the
     # 311 twin keeps the IQ-inferno look; this node adds a 4-colour palette.)
     ("335", "domain_warp_palette_gpu", "GPU Domain Warp"),
+    # Node 309: Mandelbox — 3D escape-time fractal (Tom Lowe 2010), the box-fold
+    # + sphere-fold companion to the Mandelbulb (node 331). DE raymarch (Hart et
+    # al. 1989); the negative scale yields the iconic tiled infinite-rooms look.
+    # Genuinely time-varying (orbiting camera + scale breathing) so it survives
+    # the contrast-only static liveness cull and feeds animation drivers.
+    # (309 is the free ID above 301 — 310-315 are taken by CPU method ids.)
+    ("309", "mandelbox_gpu", "GPU Mandelbox"),
 ]
 
 
