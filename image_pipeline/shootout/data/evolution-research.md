@@ -607,3 +607,52 @@ control (cheap offline test in `test_shootout.py`).
 - **Expected effect:** render pool stops burning compute on guaranteed-timeouts → effective alive-rate rises without weakening survivors; promotion seeds stay cost-viable; the 165 timeout culls shrink toward 0.
 - **Verification (headless):** `test_shootout_cost_proxy.py` — 5-fold CV MAE on wall_s below threshold + precision@cap > 0.7 on real timeouts; `predict_cost` on hand-built heavy graph (141+155, high n_frames) > cap while a 3-node LFO→filter graph << cap; generator share-regression lock (gated <1% timeouts when enabled); disabled → pass-through.
 - **Index:** rotate evolution-research-index.txt 0 → 1 (keep targeting sub-problem #1 cost-proxy actuator for implementation next run — it is the single highest-leverage unbuilt fix).
+
+
+---
+
+## 2026-07-18 — Sub-problem #2 (Diversity maintenance) — OPEN FOLLOW-UP FINALIZED: MAP-Elites BC elite archive
+
+**Observed (real probe, this run):** genomes=649; dead=402 (62%); diversity-collapse
+actuator (sub-problem #2, `motifs.py` inverse-frequency niching + `stagnation.py`
+plateau-widen of `explore_ratio`) is ALREADY implemented and live. The one unbuilt
+piece flagged in the 2026-07-16 #2 entry (lines ~372/380) is an **active elite
+archive** — currently `explore_ratio` just injects fresh *random* graphs on a
+plateau, rather than *archive-guided* diverse seeds.
+
+**Technique — MAP-Elites Behavior-Characterization (BC) archive** (Mouret & Clune
+2015, "Illuminating search spaces by mapping elites"; Cully et al. 2015, "Robots
+that can adapt like animals"). Discretize a low-dimensional **behavior
+characteristic** space (e.g. 2D: mean-luminance x temporal-var, or motif-count x
+cost-bucket) into bins; for every evaluated genome keep the *elite* (highest
+liveness-rated survivor) per occupied bin. On a plateau (`stagnation.py` "widen"
+action), instead of pure random explorers, sample a *random occupied BC-bin's
+elite* and mutate it -> injects **structurally diverse, already-alive** seeds that
+re-light dark regions of the BC map (quality-diversity illumination, not just novelty).
+
+**Module:** `evolve.next_generation` / `generator.py` — add `EvolveArchive` keyed by
+a BC hash (computed from `evaluator` outputs already on each genome: `mean_lum`,
+`temporal_var`, `motif_set`). `stagnation.recommended_explore_ratio` path calls
+`archive.sample_diverse()` to fill the explorer quota; a small `explorer_bc_frac`
+config (default 0.5) trades random-vs-BC-seeded explorers. Pure additive — does not
+touch the graph executor or 2D render path.
+
+**Expected effect:** survivor BC-entropy rises (fewer clones of the top-1 motif); the
+165 timeout-cull and 212 static-cull buckets are attacked by injecting cost-cheap,
+liveness-alive diverse seeds, complementing the Leverage-tier cheap-generator
+pushes. Selection pressure / liveness gates unchanged.
+
+**Verification (headless):** unit test in `image_pipeline/tests/test_shootout_map_elites.py`
+— (a) two genomes differing only in BC land in different bins; (b) `sample_diverse()`
+never returns a bin not in the archive (no KeyError); (c) over N=50 plateau-triggered
+injections the BC-occupied-bin count grows or holds while a pure-random baseline
+collapses entropy (Shannon on `motif_diversity`); (d) archive is rebuild-safe from
+persisted genomes (no crash on empty). Gate behind `map_elites_enabled=False` so the
+live path is unchanged until enabled.
+
+**Index:** rotate evolution-research-index.txt 1 -> 2 (sub-problem #2 finalized; the
+next distinct lever is sub-problem #3 — SSIM/optical-flow temporal liveness metric to
+rescue the 212 contrast-only false-static culls). evolution-research.md now exceeds
+its 300-line cap (609) — manual trim of the oldest IMPLEMENTED entries (2026-07-15 #1
+pre-render-cost-proxy, 2026-07-16 #4 niching ACTUATOR) recommended at a quiet moment;
+do NOT trim the standing open items (#2 BC-archive above, #3 liveness metric).
