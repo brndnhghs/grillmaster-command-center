@@ -3823,6 +3823,78 @@ void main() {
 ''')
 
 
+# ── Kuramoto coupled-oscillator phase field (client-GPU sim of node 999) ─────
+# Client-GPU sim twin of the Arch-A Kuramoto node. The phase field is NOT a
+# velocity advection (every flow node does that) — it is self-organized
+# synchronization: each pixel is an oscillator whose phase θ is nudged toward
+# its neighbours AND toward the global mean phase. State packs:
+#   .r = phase θ (wrapped to [0, 2π])
+#   .g = natural frequency Ω (frozen at seed — per-oscillator intrinsic rate)
+#   .b = RNG carry (see pitfall #6b: renderGpuSim gives step NO u_time, so we
+#        carry a per-cell random in state instead of hashing the clock).
+# CPU node stays authoritative for export (two-tier precision).
+_register("kuramoto_seed",
+          "Kuramoto seed: hashed phase + spatially-structured natural frequency Ω (node 999 twin)",
+          "procedural", '''
+void main() {
+    float h1 = hash21(floor(v_uv * u_resolution * 0.37));
+    float h2 = hash21(floor(v_uv * u_resolution * 0.91) + 5.3);
+    // phase: scattered so the field starts incoherent
+    float theta = h1 * 6.2831853;
+    // Ω: smooth spatial gradient + mild noise → travelling spiral waves
+    vec2 c = v_uv - 0.5;
+    float omega = (c.x + c.y) * u_params.z * 1.4 + (h2 - 0.5) * u_params.z * 0.4;
+    f_color = vec4(theta, omega, h2, 1.0);
+}
+''')
+
+_register("kuramoto_step",
+          "Kuramoto one Euler step: θ += dt·(Ω + K·Σsin(θⱼ−θ) + gK·R·sin(Ψ−θ))",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float theta = s.r;
+    float omega = s.g;
+    float rng = s.b;
+    // Nearest-neighbour coupling term Σⱼ sin(θⱼ − θᵢ) (toroidal wrap).
+    float cl = texture(u_texture, v_uv + vec2(-texel.x, 0.0)).r;
+    float cr = texture(u_texture, v_uv + vec2( texel.x, 0.0)).r;
+    float cu = texture(u_texture, v_uv + vec2(0.0,  texel.y)).r;
+    float cd = texture(u_texture, v_uv + vec2(0.0, -texel.y)).r;
+    float coupling = sin(cl - theta) + sin(cr - theta)
+                   + sin(cu - theta) + sin(cd - theta);
+    // Global mean-field term: approximate R·sin(Ψ−θᵢ) with a frame-stable
+    // proxy using the local-averaged phase (keeps the twin lively without a
+    // full-canvas reduction in GLSL). Ψ ≈ neighbourhood mean phase.
+    float neigh = (cl + cr + cu + cd) * 0.25;
+    float mean_sin = sin(neigh - theta);
+    float K  = u_params.x;            // local coupling
+    float gK = u_params.y;            // global coupling
+    float dt = max(u_params.w, 0.02);
+    // local coherence ~ |coupling|/4 in [0,1] stands in for R so the global
+    // term stays bounded and the pattern still forms chimeras.
+    float Rloc = clamp(abs(coupling) / 4.0, 0.0, 1.0);
+    float dtheta = omega + K * coupling + gK * Rloc * mean_sin;
+    float ntheta = mod(theta + dt * dtheta, 6.2831853);
+    // advance RNG carry
+    float nrng = fract(rng * 1.4567 + 0.137);
+    f_color = vec4(ntheta, omega, nrng, 1.0);
+}
+''')
+
+_register("kuramoto_display",
+          "Kuramoto display: phase θ → IQ rainbow palette (matches _render_phase)",
+          "procedural", '''
+void main() {
+    float theta = texture(u_texture, v_uv).r;
+    float t = theta / 6.2831853;
+    vec3 col = 0.5 + 0.5 * cos(6.2831853 * (t + vec3(0.0, 0.3333333, 0.6666667)));
+    f_color = vec4(col, 1.0);
+}
+''')
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # ── Node 106: Dielectric Breakdown Model (GPU sim twin) ─────────────────────
 # Client-GPU sim twin of the Arch-A dielectric-breakdown node (DBM, Niemeyer

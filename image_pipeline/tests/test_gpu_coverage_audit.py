@@ -50,7 +50,7 @@ from image_pipeline.methods.gpu_shaders import GPU_SHADER_NODE_MAP
 #         161, 477, 480 ...) + P1 sim additions.
 # 256 -> 257: +1 client-GPU shim for node 326 Hash Field (multiresolution hash
 #             encoding; live preview routed to hash_field_gpu).
-EXPECTED_MAP_ENTRIES = 264
+EXPECTED_MAP_ENTRIES = 265
 #             gpu-twin-candidate CPU nodes (431, 432, 433, 464).
 
 # Simulations-category CPU nodes that are intentionally NOT GPU-mirrored yet.
@@ -59,11 +59,32 @@ EXPECTED_MAP_ENTRIES = 264
 # browser WebGL2 parity — out of scope for headless verification. If you port
 # one, remove it from this set AND add the appropriate CLIENT_GPU_SIMS entry.
 DEFERRED_SIM_IDS = set(
-    "20 34 35 36 55 79 83 84 88 89 90 92 94 97 98 101 102 103 "
+    "20 34 35 36 55 79 83 84 88 92 94 97 98 101 102 103 "
     "107 109 110 111 112 113 114 116 117 123 129 130 131 134 "
     "136 145 147 149 151 152 158 159 167 337 429 440 448 922 310 "
-    "483 484 517 951 966 560 518 530 532 970 971 974".split()
+    "483 484 517 951 966 560 518 530 532 970 971 974 "
+    "915 993 998 359 996".split()
 )
+# 996 Swift-Hohenberg Pattern Formation: Arch-A Swift-Hohenberg PDE (spectral
+# (FFT) space stepping + explicit Euler over many substeps, capture_frame per
+# frame). Its honest GPU twin is a WebGL2 ping-pong sim needing a spectral
+# (FFT) pass -- out of scope for headless verification until P2 (WebGPU).
+# 998 FTLE / Lagrangian Coherent Structures: Arch-A tracer-integration + flow-map
+# deformation-tensor extraction (coarse seed grid advected under a vector field,
+# finite-differenced across frames). Not a closed-form f(uv,t) field; honest GPU
+# twin is a WebGL2 advection + tensor-extraction sim needing browser parity.
+# Deferred until P2 (WebGPU compute) is signed off.
+# 993 Bitangent-Noise Particle Flow: Arch-A particle/field sim (real-time flow
+# integration of bitangent-noise advected particles), not a closed-form
+# f(uv,t) field. Same deferral class as 966/483 curl-noise particle flows.
+# 915 Active Matter (MIPS): Arch-A active-particle motility-induced phase
+# separation sim (self-propelled disks with alignment + repulsion, stateful
+# across frames). Honest GPU twin is a WebGL2 agent-integration sim needing
+# browser parity; deferred until P2.
+# 359 Lenia: Arch-A continuous cellular automaton (smooth kernel convolution over
+# a float state, stateful across frames). Not a closed-form f(uv,t) field;
+# honest GPU twin is a WebGL2 ping-pong sim needing browser parity, same class
+# as 560 SmoothLife. Deferred until P2.
 # 970 Percolation: Arch-A stateful cluster-growth sim (site/bond percolation on a
 # lattice, union-find cluster labeling accumulated across frames). Not a
 # closed-form f(uv,t) field; its honest GPU twin is a WebGL2 ping-pong sim needing

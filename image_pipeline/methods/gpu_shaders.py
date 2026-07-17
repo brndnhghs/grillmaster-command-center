@@ -1018,6 +1018,21 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "reset_on": ["seed", "param", "loop", "resize"],
         "param_map": {"feed": "p1", "kill": "p2", "diff_u": "p3", "diff_v": "p4"},
     },
+    # ── Node 999: Kuramoto Coupled-Oscillator Phase Field (GPU sim twin) ──
+    # Self-organized synchronization — a brand-new GPU-sim category (no coupled
+    # oscillator existed before). State packs phase in .r, Ω in .g, RNG in .b.
+    # Live-preview twin only; CPU node (simulations/kuramoto.py) stays authoritative.
+    "999": {
+        "type": "sim",
+        "seed": "kuramoto_seed",
+        "step": "kuramoto_step",
+        "display": "kuramoto_display",
+        "state_channels": 3,          # θ in .r, Ω in .g, rng in .b
+        "substeps": 4,                # Euler steps per rendered frame (live pace)
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"coupling": "p1", "global_coupling": "p2",
+                      "omega_scale": "p3", "dt": "p4"},
+    },
     # ── Node 106: Dielectric Breakdown Model (GPU sim twin) ──
     "106": {
         "type": "sim",
