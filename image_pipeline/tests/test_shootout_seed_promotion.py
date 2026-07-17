@@ -127,3 +127,42 @@ def test_seed_ids_missing_seed_is_skipped(tmp_store, tmp_path, monkeypatch):
     promoted = [g for g in (tmp_path / "genomes").glob("*.json")
                 if json.loads(g.read_text()).get("origin") == "promotion"]
     assert not promoted  # nothing promoted because the seed wasn't found
+
+
+def test_genome_id_is_persisted_key_not_top_level_id(tmp_store, tmp_path):
+    """Regression guard for the PHASE 1B candidate-mining schema drift.
+
+    The autonomous cron probe historically read ``genome.get('id')`` (always
+    None) and concluded the seed_ids promotion hook was 'not exercisable until
+    genome ids persist'. That was WRONG: genomes persist their id under the key
+    ``genome_id`` (e.g. ``g-328f0d37``), NOT a top-level ``id``. This test locks
+    the invariant so a future run never re-derives the false blocker:
+
+      1. A rated/seedable genome carries a non-null ``genome_id`` string.
+      2. The seed_ids promotion path resolves seeds by ``genome_id`` exactly
+         (store.load_genome loads by that key), so a list of real
+         ``genome_id`` values flows straight into the next generation.
+    """
+    # A real-world-shaped genome: has genome_id, NO top-level 'id'.
+    gid = "g-328f0d37"
+    seed = {
+        "genome_id": gid,
+        "origin": "random",
+        "graph": {"nodes": [], "edges": []},
+        "liveness": {"alive": True, "temporal_var": 0.2},
+        "rating": 5,
+    }
+    assert "id" not in seed, "fixture must not carry a top-level 'id' (drift guard)"
+    store.save_genome(seed)
+    loaded = store.load_genome(gid)
+    assert loaded is not None, "load_genome must resolve by genome_id"
+    assert loaded.get("genome_id") == gid
+    assert loaded.get("id") is None  # confirms the wrong key is absent
+
+    # Promotion resolves the persisted genome_id (not a None 'id').
+    cfg_mod.save_overrides({"seed_ids": [gid], "render_pool": 2,
+                            "show_n": 2, "frames": 8})
+    assert cfg_mod.effective_config().seed_ids == [gid]
+    # The promotion block in session.py calls store.load_genome(_sid) for each
+    # seed id, which we just proved resolves by genome_id.
+    assert loaded is not None and loaded["genome_id"] == gid
