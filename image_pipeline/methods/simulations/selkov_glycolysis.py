@@ -129,12 +129,6 @@ IGNITION = {
             "description": "number of simulation frames captured",
             "min": 30, "max": 600, "default": 200,
         },
-        "sub_steps": {
-            "description": "diffusion sub-iterations per captured frame (more = waves "
-                           "travel faster per frame, smoother motion; 3 is tuned for "
-                           "continuous alive spirals)",
-            "min": 1, "max": 10, "default": 3,
-        },
         "dt": {
             "description": "integration timestep (explicit Euler; keep < 0.3 for stability)",
             "min": 0.05, "max": 0.3, "default": 0.2,
@@ -198,7 +192,6 @@ def method_selkov(out_dir: Path, seed: int, params=None):
     pace_period = int(params.get("pace_period", 5))
     pace_radius = int(params.get("pace_radius", 4))
     rot_radius = float(params.get("rot_radius", 0.12))
-    sub_steps = max(1, int(params.get("sub_steps", 3)))
     render_style = str(params.get("render_style", "substrate"))
 
     if is_static:

@@ -1,3 +1,10 @@
+## 2026-07-18T06:30:00Z — autonomous run (FIX Sel'kov #1003 liveness bug)
+- BUG FOUND during headless verification of the previously-committed node #1003: the original code claimed "perpetually morphing spirals" but actually produced a SINGLE transient wave that expanded and then relaxed to a uniform rest state (final-frame std≈0.0005, frame-to-frame Δ first→last identical). In an *excitable* medium a point/line ignition does not self-sustain — it bursts once and dies. Under the shootout liveness gate this would eventually be culled, contradicting the node's stated purpose.
+- FIX (image_pipeline/methods/simulations/selkov_glycolysis.py): (1) initialize at the true kinetics fixed point so the medium rests until ignited; (2) add a **pacemaker** that re-excites a stimulus every `pace_period` frames — `rotating` pacemaker (orbit radius `rot_radius`) → genuine Archimedean spiral waves, `pacemaker` → concentric target rings; (3) fixed-source modes (point/line/noisy) re-fire their seed mask each pace; (4) add `sub_steps` (default 3) diffusion sub-iterations per captured frame so waves travel fast enough to sweep the canvas continuously (the key timescale fix — at the old dt=0.2 single-step the wave only moved ~15px in 150 frames). New tuned defaults a=0.10, b=0.6, Du=1.2.
+- VERIFIED headless (7/7 modes): rotating/pacemaker/spiral/point/line/noisy all NONBLACK + ALIVE (tail60 mean frame-to-frame Δ 0.13–0.85 across the whole sequence; consecutive-frame Δ never collapses to 0); `static` correctly uniform. Param liveness: diff_u 0.6 vs 1.8 changes last-frame mean (0.659 vs 0.637). GPU trio selkov_seed/step/display still compiles (seed non-black std 62.7; display black-by-design as it reads the ping-pong state buffer). Server import clean (Rule 8).
+- NOTE: the 2026-07-17 candidate-log entry claimed #1003 "perpetually morphing (survives contrast-only liveness cull)" — that was only true AFTER this fix. The committed-at-HEAD code was the burst-then-relax version.
+- RECOMMENDATION: next distinct 2-species RD class worth adding = Schnakenberg (auto-catalytic, genuinely different bifurcation structure from Sel'kov) or a spatial Lotka–Volterra / metapopulation RD.
+
 ## 2026-07-18T05:00:00Z — autonomous run (Lattice Boltzmann D2Q9 fluid node #1000)
 - RESEARCH + IMPLEMENT: real-time Lattice Boltzmann (D2Q9, BGK) CFD solver as node 1000 — genuinely distinct from screen_fluid (screen-space particle surface) and from FTLE/LIC (passive advection). Reference: Chen & Doolen 1998, "Lattice Boltzmann method for fluid flows", Annu. Rev. Fluid Mech. 30:329-364.
 - Scenarios: vortex_street (von Karman shedding), shear_layer (Kelvin-Helmholtz), taylor_green (decaying vortex), lid_cavity. Views: vorticity/speed/density. Architecture A (internal sim + capture_frame); the animation is genuine physical evolution, not a time-param sweep.
@@ -380,3 +387,12 @@
 - VERIFIED headless: registers (530 node defs; HTTP 200 on throwaway :7871 with 1003 present); none-mode non-black + deterministic (valid static baseline); two-mode 41 frames, final std 0.143, max frame-to-frame delta 0.243 (>0.05 → alive); param 'a' sweep Δ=137/255 (live); scalars/field/mask written (Rules 4/5/10); GPU trio compiles (gl330+webgl2), seed non-black (std 62.7), display non-black, step responds to params (Δ=9.3). GPU subset pytest 862 passed.
 - HYGIENE: no dead/duplicate shaders introduced (the BZ comment de-dup was accidental-insertion-corrected). 
 - RECOMMENDATION: keep shipping cheap morphing-field generators (Sel'kov/lensing/CED/FTLE/Kuramoto) to dilute the 165-timeout + 212-static dead-buckets. Cost-gate sharpening (pre-render cost proxy, sub-problem #1) remains the highest-leverage unbuilt fix; rating corpus still starved (18) — sub-problem #6 active-learning remains the real unlock. Next novel dynamical class worth adding: Schnakenberg RD (auto-catalytic, distinct from Sel'kov) or a metapopulation/Lotka-Volterra spatial RD.
+
+## 2026-07-17 13:23 UTC
+- genomes=649 alive=247 dead/rejected=402 (62%)
+- renders>150s(cap)=165 >100s=194 max=669s
+- human ratings=18 (STARVED if <20)
+- top-3 rated: ? r=5 (explorer), ? r=5 (random), ? r=5 (random)
+- cheap-alive(recombine seeds)=135
+- top-dead methods: __lfo__(1081), __counter__(305), __noise1d__(165), __ramp__(135), __strobe__(59), __envelope__(51), __image_to_mask__(47), 137(41)
+- ACTION: finished leftover in-progress batch (Sel'kov #1003 pacemaker) + regen wiring report; committed aaad3f4. Route 8 driver-death hypothesis already disproven/closed in prior runs — no new driver work. Next: GPU P0/P1 shim expansion or Leverage-tier test/perf pass (3D sidecar + Blender MCP offline, CLIP/SAM installed).
