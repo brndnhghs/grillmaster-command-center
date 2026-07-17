@@ -31,6 +31,7 @@ from pathlib import Path
 from .config import ShootoutConfig, DEFAULT_CONFIG
 from .evaluator import EVALUATOR_VERSION
 from .store import DATA_DIR, GENOMES_DIR
+from . import cost_proxy as _proxy
 
 COST_MODEL_PATH = DATA_DIR / "cost_model.json"
 
@@ -287,13 +288,23 @@ def estimate_cost_s(genome: dict, frames: int, model: dict | None = None) -> flo
 
 
 def estimate_cost_tail_s(genome: dict, frames: int,
-                         model: dict | None = None) -> float:
+                         model: dict | None = None,
+                         cfg: ShootoutConfig | None = None) -> float:
     """Estimate render wall from per-method P90 (tail) ms/frame, calibrated.
 
     Same calibration as ``estimate_cost_s`` but summed over the tail latency
     rather than the median, so a method that is usually cheap but occasionally
     explodes contributes its worst-case cost. Falls back per-method to the
     median, then the corpus default, when no P90 sample exists.
+
+    When ``cfg.structural_cost_enabled`` (default True) the estimate is raised
+    to ``max(per_node_est, structural_estimate_s(genome))`` — the structural
+    ridge proxy (cost_proxy.py) that catches cold heavy sims the per-method
+    model cannot learn because they time out before logging timings. This is
+    MONOTONIC-SAFE: it only ever RAISES est, so a graph the per-node model
+    already flags stays flagged and a light graph is unchanged. Passing
+    ``cfg=None`` (e.g. from tests) disables the raise, preserving exact
+    backwards behaviour.
     """
     if model is None:
         model = load_cost_model()
@@ -305,7 +316,15 @@ def estimate_cost_tail_s(genome: dict, frames: int,
         mid = nd.get("method_id")
         total_ms_per_frame += p90.get(mid, per_method.get(mid, default_ms))
     raw = total_ms_per_frame * frames / 1000.0
-    return CAL_SLOPE * raw + CAL_INTERCEPT
+    est = CAL_SLOPE * raw + CAL_INTERCEPT
+    if cfg is not None and getattr(cfg, "structural_cost_enabled", True):
+        try:
+            sest = _proxy.structural_estimate_s(genome)
+            if sest > est:
+                est = sest
+        except Exception:
+            pass
+    return est
 
 
 def liveness_prior(genome: dict, model: dict | None = None) -> float | None:
@@ -344,7 +363,7 @@ def is_over_budget(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
     if model is None:
         model = load_cost_model()
     use_tail = getattr(cfg, "cost_use_tail", True)
-    est = (estimate_cost_tail_s(genome, cfg.frames, model) if use_tail
+    est = (estimate_cost_tail_s(genome, cfg.frames, model, cfg) if use_tail
            else estimate_cost_s(genome, cfg.frames, model))
     if not getattr(cfg, "cost_gate_enabled", True):
         return False, est
@@ -470,8 +489,8 @@ def effective_render_timeout_s(genome: dict,
     # medium methods is estimated heavy. Keep the calibrated est-floor so we do
     # NOT extend light graphs (preserves the original narrow-extension intent).
     est_floor = getattr(cfg, "heavy_extend_est_floor", 0.5)
-    est = estimate_cost_tail_s(genome, cfg.frames, model) if hasattr(
-        cfg, "frames") else estimate_cost_tail_s(genome, 48, model)
+    est = estimate_cost_tail_s(genome, cfg.frames, model, cfg) if hasattr(
+        cfg, "frames") else estimate_cost_tail_s(genome, 48, model, cfg)
     if est >= base * est_floor:
         return base * float(factor)
     return base

@@ -331,6 +331,12 @@ class ShootoutConfig:
     # gate skip static-heavy timeouts without ever touching a dynamic clip.
     cost_gate_enabled: bool = True
     cost_skip_factor: float = 0.7
+    # Structural cost proxy (Route 8 sub-problem #1 closure): a ridge regressor
+    # on graph structure that catches cold heavy sims the per-node timing model
+    # cannot learn (they time out before logging timings). When enabled, the
+    # cost gate takes max(per-node estimate, structural estimate) — monotonic
+    # safe, only ever raises the estimate of heavy-looking graphs.
+    structural_cost_enabled: bool = True
 
     # ── Liveness-prior gate exemption (cost_model.py) ──────────────
     # The cost gate above is a BLUNT instrument: its estimate cannot tell a
