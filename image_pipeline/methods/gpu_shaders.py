@@ -337,6 +337,12 @@ _TYPED_SHADER_NODES = [
     # LFO/counter nodes can drive the live kaleidoscope animation (shootout:
     # contrast-only static culls are avoided by the genuine u_time motion).
     ("330", "kifs_spherefold_gpu", "GPU KIFS Fractal"),
+    # Node 331: Mandelbulb — 3D escape-time fractal (White & Nylander 2009),
+    # sphere-traced via the Hart et al. 1989 distance estimator. The canonical
+    # "3D Mandelbrot": distinct from the 2D escape-time family and from the 3D
+    # TPMS raymarches (gyroid/menger). Genuinely time-varying (power morph +
+    # orbiting camera) so animation drivers have a visibly-responsive target.
+    ("331", "mandelbulb_gpu", "GPU Mandelbulb"),
 ]
 
 
