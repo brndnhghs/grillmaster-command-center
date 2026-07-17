@@ -819,9 +819,9 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # anisotropy/frequency/falloff (bandwidth) mapped to the twin's p2..p4;
     # the twin's p1 (orientation) is left at its default (0) — the node has no
     # orientation param (anisotropy + wired-image warp drive direction instead).
-    "473": {"shader": "gabor_gpu", "type": "procedural",
-            "param_map": {"anisotropy": "p2", "frequency": "p3",
-                          "falloff": "p4"}},
+    "473": {"shader": "gabor_gpu", "type": "procedural", "typed": True,
+            "param_map": {"anisotropy": "anisotropy", "frequency": "frequency",
+                          "falloff": "falloff"}},
     # 480 Lens Distortion -> closed-form filter twin (live-preview path; the
     # CPU numpy node stays authoritative for exact export).  REAL numeric
     # params amount/k2/center/aspect/chromatic mapped to the twin's typed
@@ -853,8 +853,8 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # params scale/warp/anim_speed mapped to the twin's p1/p2/p4. The string
     # choice `function` (moebius/z2/z3/exp/sin/joukowsky) is intentionally
     # left unmapped (pitfall #14) — the twin renders the canonical Möbius map.
-    "503": {"shader": "conformal_gpu", "type": "procedural",
-            "param_map": {"scale": "p1", "warp": "p2", "anim_speed": "p4"}},
+    "503": {"shader": "conformal_gpu", "type": "procedural", "typed": True,
+            "param_map": {"scale": "scale", "warp": "warp", "anim_speed": "anim_speed"}},
 }
 
 # ── GPU coverage contract: no SILENT param drops ────────────────────────────

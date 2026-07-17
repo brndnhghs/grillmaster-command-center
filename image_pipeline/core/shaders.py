@@ -1099,10 +1099,10 @@ _register("gabor_gpu", "Gabor noise (Lagae et al. 2011) — anisotropic sparse G
 void main() {
     vec2 res = u_resolution;
     vec2 px = v_uv * res;
-    float orient = radians(u_params.x * 180.0);
-    float aniso = clamp(u_params.y, 0.0, 1.0);
-    float freq = clamp(u_params.z * 12.0, 0.5, 12.0);
-    float bw = clamp(u_params.w * 6.0, 0.5, 6.0);
+    float orient = radians(90.0);   // fixed: node 473 exposes no orientation param
+    float aniso = clamp(u_anisotropy, 0.0, 1.0);
+    float freq = clamp(u_frequency * 12.0, 0.5, 12.0);
+    float bw = clamp(u_falloff * 6.0, 0.5, 6.0);
 
     float S = clamp(70.0 / freq, 6.0, 90.0);
     float Fmag = freq * 0.03;
@@ -1143,7 +1143,14 @@ void main() {
     vec3 col = 0.5 + 0.5 * cos(6.2831853 * (0.5 + 0.5 * v) + vec3(0.0, 0.33, 0.67));
     f_color = vec4(col, 1.0);
 }
-''')
+''', uniforms={
+    "anisotropy": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5,
+                   "description": "kernel elongation (0=isotropic, 1=fully stretched)"},
+    "frequency":   {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5,
+                    "description": "spatial frequency (scaled x12 internally)"},
+    "falloff":     {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5,
+                    "description": "envelope bandwidth (scaled x6 internally)"},
+})
 
 
 _register("dot_noise_gpu", "Aperiodic gyroid dot-noise fBm (Xor, GM Shaders 2025)", "procedural", '''
@@ -9768,10 +9775,10 @@ void main() {
     // centered, aspect-correct complex coordinate
     vec2 z = (v_uv - 0.5) * 2.0;
     z.x *= aspect;
-    float scale = clamp(u_params.x * 6.0, 0.5, 8.0);   // p1: domain radius
+    float scale = clamp(u_scale * 6.0, 0.5, 8.0);   // domain radius
     z *= scale;
-    float warp = clamp(u_params.y, 0.0, 0.92);          // p2: |a|
-    float anim = u_time * clamp(u_params.w * 2.0, 0.05, 4.0); // p4: anim speed
+    float warp = clamp(u_warp, 0.0, 0.92);          // |a|
+    float anim = u_time * clamp(u_anim_speed * 2.0, 0.05, 4.0); // anim speed
 
     // Möbius coefficient a orbits inside the unit disk => disk->disk conformal map
     vec2 a = warp * vec2(cos(anim), sin(anim));
@@ -9796,7 +9803,14 @@ void main() {
     vec3 tint = 0.14 * vec3(cos(ang), cos(ang + 2.094), cos(ang + 4.188)) * (1.0 - shade);
     f_color = vec4(base + tint, 1.0);
 }
-''')
+''', uniforms={
+    "scale":      {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5,
+                   "description": "domain radius (scaled x6 internally, clamped 0.5-8.0)"},
+    "warp":       {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5,
+                   "description": "Mobius coefficient magnitude |a| (0-0.92)"},
+    "anim_speed": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5,
+                   "description": "sun/orbit animation speed (scaled x2 internally)"},
+})
 
 # ── GPU-First categorical coverage (2026-07-14): Nishita atmospheric
 # single-scattering sky — the GPU live-preview twin of CPU node 471. Closed-form
