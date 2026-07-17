@@ -343,6 +343,14 @@ _TYPED_SHADER_NODES = [
     # TPMS raymarches (gyroid/menger). Genuinely time-varying (power morph +
     # orbiting camera) so animation drivers have a visibly-responsive target.
     ("331", "mandelbulb_gpu", "GPU Mandelbulb"),
+    # Node 335: Domain Warping (Inigo Quilez, 2015) — fbm(fbm(p + fbm(p)))
+    # two-level noise feed-forward gives marbled organic flow distinct from
+    # single fbm (node 225); animated by scrolling the inner warp with u_time
+    # so shootout contrast-only static culls are avoided. (ID 335: 332-334 are
+    # taken by CPU nodes — GPU-typed nodes must use free IDs above 301. Distinct
+    # shader name domain_warp_palette_gpu vs node 311's domain_warp_gpu: the
+    # 311 twin keeps the IQ-inferno look; this node adds a 4-colour palette.)
+    ("335", "domain_warp_palette_gpu", "GPU Domain Warp"),
 ]
 
 
