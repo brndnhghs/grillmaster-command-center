@@ -21,6 +21,7 @@ import pytest
 import image_pipeline.methods  # register all @method modules
 import image_pipeline.server as srv  # Rule 8 import check
 from image_pipeline.core.registry import get_meta
+from image_pipeline.core.utils import set_canvas
 
 import image_pipeline.methods.simulations.ant_colony as aco
 
@@ -41,6 +42,11 @@ def capture(monkeypatch):
 
 
 def _run(mode: str, t: float = 0.0, seed: int = 42) -> tuple[np.ndarray, list[np.ndarray]]:
+    # Pin the canvas: the method reads the global W/H from core.utils at call
+    # time, and other tests in the suite mutate it via set_canvas() (e.g.
+    # test_shootout_driver_modulation sets 160x160). Without this pin the probe
+    # is order-dependent — a small canvas collapses the time delta below 0.05.
+    set_canvas(512, 512)
     fn = get_meta("974").fn
     out = Path("/tmp/aco974_out")
     out.mkdir(parents=True, exist_ok=True)
@@ -83,10 +89,20 @@ def test_internal_clip_animates(capture):
 
 @pytest.mark.parametrize("mode", ["drift", "pulse"])
 def test_time_responsive_modes(capture, mode):
+    set_canvas(512, 512)
     _, f_a = _run(mode, t=0.0)
     _, f_b = _run(mode, t=3.14)
-    d = float(np.mean(np.abs(f_a[-1].astype(np.float32) - f_b[-1].astype(np.float32))))
-    assert d > 0.05, f"{mode} mode does not respond to time (Δ={d})"
+    # Max delta over the whole clip, not just the final frame. A mode that
+    # responds to `time` diverges from its t=0 twin at SOME frame even when the
+    # converged final frame is phase-invariant (sin-phase / full-orbit
+    # degeneracy — grillmaster Step 7: t=0 vs t=π is a false negative for
+    # breathe/pulse, and drift's food-orbit aliases under a 180° rotation once
+    # the pheromone field has settled). The mid-clip frames carry the motion.
+    n = min(len(f_a), len(f_b))
+    deltas = [float(np.mean(np.abs(f_a[i].astype(np.float32) - f_b[i].astype(np.float32))))
+              for i in range(n)]
+    d = max(deltas)
+    assert d > 0.05, f"{mode} mode does not respond to time (maxΔ={d})"
 
 
 def test_forage_ignores_time(capture):
