@@ -1,3 +1,12 @@
+## 2026-07-17T18:40:00Z — autonomous run (finish leftover Route-8 test-hardening batch)
+- genomes=649 alive=247 dead/rejected=402 (62%) — dead-rate flat vs prior run (62%); liveness gate + heavy-cap survivor pool holding.
+- cheap-alive(recombine seeds)=135; rated_total=18 (taste corpus STARVED but doubled from ~7; top-3 rated all rating=5).
+- TOP-3 rated genome_ids (genome_id IS persisted; reading wrong `id` key was the old false blocker): g-e181c881, g-328f0d37, g-e3d68069.
+- ACTION: finished + committed the untracked half-finished Route-8 test-hardening batch (test_cost_gate_calibration.py + test_method_ant_colony.py). Both green headless (5 + 7 passed). Pushed a71340c. Untracked bitangent-noise-flow node files left OUT (separate feature — cross-feature hygiene).
+- seed_ids promotion hook: ALREADY LIVE with the same top-3 rated ids from a prior run (config.py seed_ids + _coerce_seed_ids validator; GET /api/shootout/config returns them). Closed loop operational — no re-wiring needed.
+- dead hotspots (control/utility nodes dominate by ubiquity, NOT failure): [('__lfo__',1081),('__counter__',305),('__noise1d__',165),('__ramp__',135),('__strobe__',59),('__envelope__',51)]. Driver-reachability already instrumented (test_shootout_driver_modulation.py et al.); residual dead-rate is graph-composition ubiquity, not a wiring bug.
+- RECOMMENDATION: evolution-research rotation COMPLETE (all 7 sub-problems researched; #7 drift/stagnation done by sibling run 2026-07-17T03:20Z). Re-survey for new gaps next run. evolution-research.md exceeds its 300-line cap (501) — manual trim of oldest IMPLEMENTED entries recommended at a quiet moment.
+
 ## 2026-07-16T17:51:27Z — autonomous run (Flow LIC 992: finish-leftover batch)
 - genomes=643 alive=242 dead/rejected=401 (62%)
 - cheap-alive(recombine seeds)=133; rated_total=18 (still STARVED — taste model near-blind)
