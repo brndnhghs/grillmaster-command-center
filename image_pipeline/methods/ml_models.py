@@ -450,6 +450,14 @@ def method_clip_score(out_dir: Path, seed: int, params=None):
             "default": "vit_b",
             "choices": ["vit_b", "vit_l", "vit_h"],
         },
+        "points_per_side": {
+            "description": "SAM automatic mask density (more = more candidates, slower)",
+            "min": 8, "max": 64, "default": 32,
+        },
+        "max_masks": {
+            "description": "cap on candidate masks kept for the output (automatic mode)",
+            "min": 1, "max": 100, "default": 40,
+        },
         "device": {
             "description": "torch device for SAM (cpu/mps/cuda)",
             "default": "cpu",
@@ -500,6 +508,13 @@ def method_sam_segment(out_dir: Path, seed: int, params=None):
     px = float(params.get("point_x", -1.0))
     py = float(params.get("point_y", -1.0))
     box_raw = params.get("box", "none")
+    # `points_per_side` is the SAM automatic-mode candidate density. It is a
+    # declared, user-facing param (schema default 32). MUST be read here and
+    # threaded into SamAutomaticMaskGenerator -- a prior hardcode of 32 made
+    # the param a dead control AND forced the slow default (1024 candidates)
+    # even when callers asked for less. On CPU this is the difference between
+    # a ~seconds regression run and a multi-minute hang that stalls pytest.
+    points_per_side = int(params.get("points_per_side", 32))
 
     # Checkpoint URLs (Meta's official hosted weights)
     _CKPT_URLS = {
@@ -557,7 +572,7 @@ def method_sam_segment(out_dir: Path, seed: int, params=None):
         if mode == "automatic":
             generator = SamAutomaticMaskGenerator(
                 model=sam,
-                points_per_side=32,
+                points_per_side=points_per_side,
                 pred_iou_thresh=0.88,
                 stability_score_thresh=0.95,
                 crop_n_layers=1,

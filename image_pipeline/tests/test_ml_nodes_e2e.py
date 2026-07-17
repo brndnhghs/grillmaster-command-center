@@ -296,3 +296,24 @@ def test_capture_frame_accepts_ndarray_only():
     finally:
         anim.disable_frame_capture()
 
+
+def test_sam_segment_exposes_points_per_side_param():
+    """Regression for the dead-control bug: ``__sam_segment__`` used to
+    hardcode ``points_per_side=32`` inside ``SamAutomaticMaskGenerator`` even
+    though the UI/test passed a different value. That silently ignored the
+    param AND forced the slow 1024-candidate path on CPU (multi-minute hang
+    that stalls the whole pytest run). The param must now be declared in the
+    node schema AND read from ``params`` by the fn. This test locks the
+    contract side without loading the SAM checkpoint.
+    """
+    import image_pipeline.methods  # ensure registration
+    from image_pipeline.core.registry import get_all
+
+    nd = get_all()["__sam_segment__"]
+    params = nd.params
+    assert "points_per_side" in params, \
+        "__sam_segment__: points_per_side must be a declared, user-facing param"
+    assert params["points_per_side"].get("default") == 32, \
+        "__sam_segment__: points_per_side default should stay 32 (schema contract)"
+    assert params["points_per_side"].get("min") == 8
+
