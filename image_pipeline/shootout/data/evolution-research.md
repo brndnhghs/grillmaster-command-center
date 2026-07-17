@@ -1,3 +1,21 @@
+## 2026-07-18T05:00:00Z — Sub-problem #1 (Selection pressure: ELO/Bradley-Terry survivor weighting to counter untrained taste-model bias)
+
+**Observed (real probe, this run):** genomes=649; dead=402 (62%); rated_total ≈18 (still starved, ~2.8%). The survivor weight in `evolve.next_generation` mixes raw `rating` with liveness/structural fitness, but with only ~18 ratings the untrained taste model is near-blind, so a few human ratings dominate selection pressure in a way that does not generalize. The cost-proxy actuator (#1, 2026-07-15) is still unbuilt, so slow genomes keep getting rendered and culled.
+
+**Technique — ELO / Bradley-Terry survivor scoring** (Elo 1978 "The Rating of Chessplayers"; Bradley & Terry 1952; Herbrich et al. 2007 TrueSkill): replace the raw `rating` term in the survivor weight with a *Bayesian* skill estimate `elo(g)` updated only from the pairwise comparisons that exist (rating_A > rating_B ⇒ A beats B). Clips with <2 comparisons fall back to a prior so the near-blind model cannot over-steer. Combine:
+  `survivor_weight = w_live * liveness_score + w_elo * norm(elo(g)) + w_div * diversity_bonus(g)`
+where `diversity_bonus` reuses the inverse-frequency motif niching already built (sub-problem #2 actuator). This keeps liveness/structure as the primary driver (robust without ratings) while ratings act as a *sparse, uncertainty-aware* bonus rather than a dominant raw signal.
+
+**Module:** `evolve.next_generation` (survivor weight) + a small `taste_elo.py` (per-genome μ/σ maintained from the rating store; `elo(g)`→μ, `uncertainty(g)`→σ). The existing `seed_ids` promotion hook (config) stays the live path for top-rated seeds.
+
+**Expected effect:** selection pressure no longer whipsaws on a near-blind taste model; diversity (sub-problem #2) is preserved; the 165 timeout culls are untouched by this change (cost-proxy is the separate fix).
+
+**Verification (headless):** unit test in `image_pipeline/tests/test_shootout_elo.py` — (a) clips with 0/1 comparisons get the prior (equal elo, no NaN/Inf); (b) a clip that beats 5 others gets higher elo than one that loses to 5; (c) survivor_weight ordering matches elo ordering on a synthetic rated set; (d) a no-rating genome never yields NaN/Inf. Gate behind config (`elo_fitness_enabled=False` → pass-through to current behavior) so the live path is unchanged until enabled.
+
+**Index:** rotate evolution-research-index.txt 6 → 0 (re-engage sub-problem #1 on the ELO/survivor-weighting axis, distinct from the cost-proxy axis which remains the unbuilt actuator).
+
+---
+
 # Shootout Generational-Evolution Research (dated proposals; rotate < 300 lines)
 
 Concrete, cited technique → module → expected effect → verification.
@@ -578,3 +596,14 @@ about. For this shootout:
 id-addressable. **Verification:** after N new ratings from uncertainty-surfaced
 clips, assert the taste_model's held-out RMSE drops faster than random-surface
 control (cheap offline test in `test_shootout.py`).
+
+---
+
+## 2026-07-18T06:00:00Z — Sub-problem #1 (cost-proxy ACTUATOR, highest-leverage unbuilt) — refreshed citations
+- **Standing:** 649 genomes, dead=402 (62%); cost culls (timeout 103 + over-budget 56 = 159, ~39% of deaths) remain the #2 death cause behind liveness (212). The post-hoc `_render_cost_discount` (evolve.py) only de-weights slow survivors at *selection* time — it never stops the generator from *rendering* predicted-timeouts, so ~165 genomes per scan burn full render budget then get culled. The cost-proxy gate is the only open fix that attacks this at the source.
+- **Fresh evidence (web, 2024/2025):** performance-predictor / proxy-NAS is an active, maturing field — Wang et al. 2024 "Advances in Neural Architecture Search" (PMCID 11389615) surveys predictors; FR-NAS (arXiv:2404.15622, 2024) renders architectures into graph-vector representations via a forward-and-reverse graph predictor (directly analogues our nodegraph→wall_s regression); Han et al. 2023 "A General-Purpose Transferable Predictor for Neural Architecture Performance" shows a simple ridge/transfer model already ranks real cost well. This de-risks the trivial linear/ridge regressor proposed 2026-07-15: we have 649 labelled (graph → wall_s) samples in a closed domain, so a ridge on structural features is expected to rank real timeouts with high precision.
+- **Technique — pre-render cost proxy (unchanged design, fresh support):** `image_pipeline/shootout/cost_proxy.py` → `predict_cost(graph) -> float`; train ridge on `genomes/g-*.json` (features: node/edge/motif counts, per-category counts, heavy-sim presence flags for 137/141/84/51/85/97/110/123/155…, total n_frames; target wall_s). Hook in `generator.py random_genome`/`motifs.compose`: when `cfg.cost_proxy_enabled`, reject a sampled graph whose predicted wall_s > render_timeout_s * margin and resample (bounded retry, same pattern as `_ensure_animated`); also feed predictor into `select_parents` as a gate complementing the post-hoc discount.
+- **Module:** `cost_proxy.py` (new) + `generator.py`/`evolve.py` hooks. Persist coefficients in existing `data/cost_model.json` (extend schema).
+- **Expected effect:** render pool stops burning compute on guaranteed-timeouts → effective alive-rate rises without weakening survivors; promotion seeds stay cost-viable; the 165 timeout culls shrink toward 0.
+- **Verification (headless):** `test_shootout_cost_proxy.py` — 5-fold CV MAE on wall_s below threshold + precision@cap > 0.7 on real timeouts; `predict_cost` on hand-built heavy graph (141+155, high n_frames) > cap while a 3-node LFO→filter graph << cap; generator share-regression lock (gated <1% timeouts when enabled); disabled → pass-through.
+- **Index:** rotate evolution-research-index.txt 0 → 1 (keep targeting sub-problem #1 cost-proxy actuator for implementation next run — it is the single highest-leverage unbuilt fix).

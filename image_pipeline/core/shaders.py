@@ -3427,6 +3427,67 @@ _register("grayscott_display",
 void main() {
 ''')
 
+# ── Sel'kov Glycolysis (client-GPU sim of node 1003) ─────────────────────────
+# Excitable two-variable reaction-diffusion (Sel'kov 1968): substrate-depletion
+# kinetics u²v with TWO diffusing species. State packs U in .r, V in .g. The
+# medium is *excitable* (not Turing): a perturbation ignites a wavefront that
+# travels and curls into spirals — the signature of glycolytic waves and a
+# different dynamical regime from Gray-Scott (id 155) and BZ (id 91). CPU node
+# stays authoritative for export (two-tier precision); this is the live twin.
+_register("selkov_seed",
+          "Sel'kov initial state: U~0.6, V~0.25 with a hashed ignition blob (node 1003 twin)",
+          "procedural", '''
+void main() {
+    float U = 0.6;
+    float V = 0.25;
+    // Ignite one seeded blob near center so the excitable wave actually starts.
+    // (The CPU node supports several seed shapes; the twin just needs ONE live
+    // ignition to show the same spiral dynamics.)
+    vec2 c = vec2(0.5);
+    float d = distance(v_uv, c);
+    float ign = smoothstep(0.04, 0.0, d);
+    U = mix(U, 0.05, ign);
+    V = mix(V, 0.85, ign);
+    f_color = vec4(U, V, 0.0, 1.0);
+}
+''')
+
+_register("selkov_step",
+          "Sel'kov one Euler step (5-pt Laplacian, toroidal) — excitable u²v kinetics",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float U = s.r, V = s.g;
+    vec4 sl = texture(u_texture, v_uv + vec2(-texel.x, 0.0));
+    vec4 sr = texture(u_texture, v_uv + vec2( texel.x, 0.0));
+    vec4 su = texture(u_texture, v_uv + vec2(0.0,  texel.y));
+    vec4 sd = texture(u_texture, v_uv + vec2(0.0, -texel.y));
+    float lapU = sl.r + sr.r + su.r + sd.r - 4.0 * U;
+    float lapV = sl.g + sr.g + su.g + sd.g - 4.0 * V;
+    float a  = u_params.x;   // substrate supply
+    float b  = u_params.y;   // intermediate removal
+    float Du = u_params.z;   // diffusion U
+    float Dv = u_params.w;   // diffusion V
+    float uvv = U * U * V;
+    float dt = 0.2;          // matches CPU default; substeps control pace
+    float nU = U + dt * (a - U + uvv + Du * lapU);
+    float nV = V + dt * (b * U * U - uvv + Dv * lapV);
+    f_color = vec4(clamp(nU, 0.0, 2.0), clamp(nV, 0.0, 2.0), 0.0, 1.0);
+}
+''')
+
+_register("selkov_display",
+          "Sel'kov display: U substrate → heat ramp (matches _render_substrate)",
+          "procedural", '''
+void main() {
+    float U = texture(u_texture, v_uv).r;
+    float f = clamp(U / 1.5, 0.0, 1.0);
+    f = pow(f, 0.6);                       // gamma lift
+    vec3 col = vec3(f);                    // grayscale heat
+    f_color = vec4(col, 1.0);
+}
+''')
 
 # ── BZ Oregonator (client-GPU sim of node 91) ───────────────────────────────
 # Two-variable reaction-diffusion with Oregonator kinetics. State packs U in

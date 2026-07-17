@@ -1033,6 +1033,22 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "param_map": {"coupling": "p1", "global_coupling": "p2",
                       "omega_scale": "p3", "dt": "p4"},
     },
+    # ── Node 1003: Sel'kov Glycolysis (GPU sim twin) ──
+    # Excitable 2-species reaction-diffusion (Sel'kov 1968). State packs U in
+    # .r, V in .g (2 channels). The excitable medium ignites spiral/target waves
+    # from the seeded blob — a distinct dynamical regime from Gray-Scott (155)
+    # and BZ (91). Live-preview twin only; CPU node (simulations/selkov_glycolysis.py)
+    # stays authoritative.
+    "1003": {
+        "type": "sim",
+        "seed": "selkov_seed",
+        "step": "selkov_step",
+        "display": "selkov_display",
+        "state_channels": 2,          # U in .r, V in .g
+        "substeps": 3,                # Euler steps per rendered frame (live pace)
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"a": "p1", "b": "p2", "diff_u": "p3", "diff_v": "p4"},
+    },
     # ── Node 106: Dielectric Breakdown Model (GPU sim twin) ──
     "106": {
         "type": "sim",
