@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-07-15T03:04:23.494320+00:00",
+  "generated_at": "2026-07-17T13:21:27.587552+00:00",
   "graphs_scanned": 49,
-  "error_count": 14,
+  "error_count": 15,
   "warn_count": 28,
   "findings": [
     {
@@ -259,6 +259,14 @@
       "severity": "WARN",
       "code": "W_OPTIONAL_UNWIRED",
       "message": "optional image port 'image_4' is unwired (method may fall back to an internal/default source)"
+    },
+    {
+      "graph": "shootout-g-2661455a",
+      "node_id": "n6",
+      "method_id": "89",
+      "severity": "ERROR",
+      "code": "E_ORPHAN_NODE",
+      "message": "node references unknown method_id '89' (no NodeDef)"
     },
     {
       "graph": "shootout-g-a4d26afb",
