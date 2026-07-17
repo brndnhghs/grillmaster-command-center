@@ -166,3 +166,180 @@ def test_genome_id_is_persisted_key_not_top_level_id(tmp_store, tmp_path):
     # The promotion block in session.py calls store.load_genome(_sid) for each
     # seed id, which we just proved resolves by genome_id.
     assert loaded is not None and loaded["genome_id"] == gid
+
+
+# ── Auto-promote top-rated seeds (Route 8 / sub-problem #6 closure) ─────
+
+
+def test_auto_wire_finds_top_rated_alive(tmp_store):
+    """_auto_wire_top_rated returns the top-N rated ALIVE genome IDs."""
+    from image_pipeline.shootout.session import _auto_wire_top_rated
+
+    # Create 5 genomes with different ratings and alive/dead status.
+    for gid, rating, alive in [
+        ("g-aaa0001", 5, True),
+        ("g-aaa0002", 4, True),
+        ("g-aaa0003", 5, False),  # rated 5 but DEAD → must be skipped
+        ("g-aaa0004", 3, True),
+        ("g-aaa0005", 2, True),
+    ]:
+        store.save_genome({
+            "genome_id": gid,
+            "origin": "random",
+            "graph": {"nodes": [], "edges": []},
+            "liveness": {"alive": alive},
+            "rating": rating,
+        })
+
+    cfg = ShootoutConfig(auto_promote_top_n=3)
+    ids = _auto_wire_top_rated(cfg)
+    # Top-3 alive by rating: g-aaa0001(5), g-aaa0002(4), g-aaa0004(3)
+    # g-aaa0003 is dead → skipped despite rating=5
+    assert ids == ["g-aaa0001", "g-aaa0002", "g-aaa0004"]
+
+
+def test_auto_wire_skips_unrated_genomes(tmp_store):
+    """Genomes without a numeric rating are never auto-promoted."""
+    from image_pipeline.shootout.session import _auto_wire_top_rated
+
+    store.save_genome({
+        "genome_id": "g-unrated1",
+        "origin": "random",
+        "graph": {"nodes": [], "edges": []},
+        "liveness": {"alive": True},
+        # No "rating" field
+    })
+    store.save_genome({
+        "genome_id": "g-rated1",
+        "origin": "random",
+        "graph": {"nodes": [], "edges": []},
+        "liveness": {"alive": True},
+        "rating": 3,
+    })
+
+    cfg = ShootoutConfig(auto_promote_top_n=5)
+    ids = _auto_wire_top_rated(cfg)
+    assert ids == ["g-rated1"]
+    assert "g-unrated1" not in ids
+
+
+def test_auto_wire_empty_corpus_returns_empty(tmp_store):
+    """No rated genomes → empty list (abstain, never gates)."""
+    from image_pipeline.shootout.session import _auto_wire_top_rated
+
+    cfg = ShootoutConfig()
+    assert _auto_wire_top_rated(cfg) == []
+
+
+def test_auto_wire_respects_top_n(tmp_store):
+    """auto_promote_top_n controls how many seeds are returned."""
+    from image_pipeline.shootout.session import _auto_wire_top_rated
+
+    for i in range(6):
+        store.save_genome({
+            "genome_id": f"g-tn{i:04d}",
+            "origin": "random",
+            "graph": {"nodes": [], "edges": []},
+            "liveness": {"alive": True},
+            "rating": i + 1,  # 1..6
+        })
+
+    assert len(_auto_wire_top_rated(ShootoutConfig(auto_promote_top_n=1))) == 1
+    assert len(_auto_wire_top_rated(ShootoutConfig(auto_promote_top_n=3))) == 3
+    assert len(_auto_wire_top_rated(ShootoutConfig(auto_promote_top_n=10))) == 6
+
+
+def test_manual_seed_ids_override_takes_precedence(tmp_store, monkeypatch):
+    """When seed_ids is manually set, auto-promote does NOT override it."""
+    # Seed the corpus with rated genomes.
+    store.save_genome({
+        "genome_id": "g-auto001",
+        "origin": "random",
+        "graph": {"nodes": [], "edges": []},
+        "liveness": {"alive": True},
+        "rating": 5,
+    })
+    store.save_genome({
+        "genome_id": "g-manual01",
+        "origin": "random",
+        "graph": {"nodes": [], "edges": []},
+        "liveness": {"alive": True},
+        "rating": 1,
+    })
+
+    # Manual override: set seed_ids to the low-rated genome.
+    cfg_mod.save_overrides({"seed_ids": ["g-manual01"],
+                            "render_pool": 2, "show_n": 2, "frames": 8})
+    cfg = cfg_mod.effective_config()
+    assert cfg.seed_ids == ["g-manual01"]
+
+    # Run a generation — the manual seed should be promoted, NOT the auto-wired one.
+    _patch_render(monkeypatch)
+    sess = session.start_session(None, cfg)
+    session.run_generation(sess["session_id"], cfg)
+
+    promoted = []
+    for p in (tmp_store / "genomes").glob("*.json"):
+        g = json.loads(p.read_text())
+        if g.get("origin") == "promotion":
+            promoted.append(g)
+    sources = {g.get("seed_source") for g in promoted}
+    assert "g-manual01" in sources
+    assert "g-auto001" not in sources  # auto-wire did NOT fire
+
+
+def test_auto_promote_fires_when_seed_ids_empty(tmp_store, monkeypatch):
+    """When seed_ids is empty and auto_promote_seeds=True, top-rated
+    genomes are auto-promoted into the next generation."""
+    store.save_genome({
+        "genome_id": "g-promo001",
+        "origin": "random",
+        "graph": {"nodes": [], "edges": []},
+        "liveness": {"alive": True},
+        "rating": 5,
+    })
+
+    # No manual seed_ids override.
+    cfg_mod.save_overrides({"render_pool": 2, "show_n": 2, "frames": 8})
+    cfg = cfg_mod.effective_config()
+    assert cfg.seed_ids == []
+    assert cfg.auto_promote_seeds is True
+
+    _patch_render(monkeypatch)
+    sess = session.start_session(None, cfg)
+    session.run_generation(sess["session_id"], cfg)
+
+    promoted = []
+    for p in (tmp_store / "genomes").glob("*.json"):
+        g = json.loads(p.read_text())
+        if g.get("origin") == "promotion":
+            promoted.append(g)
+    sources = {g.get("seed_source") for g in promoted}
+    assert "g-promo001" in sources, "auto-promoted seed should be in the pool"
+
+
+def test_auto_promote_disabled_when_config_says_so(tmp_store, monkeypatch):
+    """auto_promote_seeds=False disables the auto-wire entirely."""
+    store.save_genome({
+        "genome_id": "g-nopromo1",
+        "origin": "random",
+        "graph": {"nodes": [], "edges": []},
+        "liveness": {"alive": True},
+        "rating": 5,
+    })
+
+    cfg_mod.save_overrides({"auto_promote_seeds": False,
+                            "render_pool": 2, "show_n": 2, "frames": 8})
+    cfg = cfg_mod.effective_config()
+    assert cfg.auto_promote_seeds is False
+
+    _patch_render(monkeypatch)
+    sess = session.start_session(None, cfg)
+    session.run_generation(sess["session_id"], cfg)
+
+    promoted = []
+    for p in (tmp_store / "genomes").glob("*.json"):
+        g = json.loads(p.read_text())
+        if g.get("origin") == "promotion":
+            promoted.append(g)
+    assert not promoted, "auto-promote should NOT fire when disabled"

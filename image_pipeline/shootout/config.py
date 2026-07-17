@@ -120,6 +120,19 @@ class ShootoutConfig:
     # Persists until changed or reset; the auto-loop rewires it each run.
     seed_ids: list[str] = field(default_factory=list)
 
+    # ── Auto-promote top-rated seeds (Route 8 / sub-problem #6 closure) ──
+    # When seed_ids is EMPTY (no manual override), the session auto-scans the
+    # genome corpus for the top-rated ALIVE genomes and wires their IDs into
+    # seed_ids before the promotion-seed injection. This closes the "rating
+    # signal is starved" gap: the ~18 rated genomes ARE enough to bias the
+    # next generation toward known-good forms, but only if they actually
+    # reach the promotion hook — which they weren't because no auto-loop
+    # existed to populate seed_ids from the corpus. Gate behind
+    # auto_promote_seeds so it can be disabled via config override; the
+    # top_n controls how many seeds are auto-wired (default 3).
+    auto_promote_seeds: bool = True
+    auto_promote_top_n: int = 3
+
     # ── Autonomous deprioritization (PHASE 1B closed loop) ────────────
     # Opt-in list of method ids the autonomous loop wants the generator to
     # sample LESS / never. Mirrors the advisor's per-node ``avoid`` but is
@@ -523,6 +536,8 @@ TUNABLE_FIELDS: dict[str, tuple[str, float | None, float | None]] = {
     "spectral_corr_min": ("Liveness: coherent-oscillation rescue — peak normalized FFT-bin; higher admits only sharp periodic motion", 0.3, 0.95),
     "flow_var_min":      ("Liveness: optical-flow rescue — min flow-magnitude variance; higher admits only real displacement", 0.0, 1.0),
     "flow_coherence_min":("Liveness: optical-flow rescue — min flow-direction coherence; higher admits only structured motion", 0.0, 1.0),
+    "auto_promote_seeds": ("Auto-promote top-rated alive genomes into seed_ids when no manual override is set", None, None),
+    "auto_promote_top_n": ("Number of top-rated genomes to auto-promote (1–10)", 1, 10),
 }
 
 

@@ -150,6 +150,36 @@ def _survivor_view(genome: dict, predicted: float | None = None,
     }
 
 
+def _auto_wire_top_rated(cfg: ShootoutConfig) -> list[str]:
+    """Scan the genome corpus for the top-rated ALIVE genomes.
+
+    Returns a list of genome_id strings (up to ``cfg.auto_promote_top_n``),
+    sorted by rating descending. Only ALIVE genomes with a numeric rating
+    are considered — dead clips and unrated genomes are skipped. Returns
+    an empty list when no rated alive genomes exist (abstain → no promotion).
+    """
+    import json
+    top_n = max(1, getattr(cfg, "auto_promote_top_n", 3))
+    rated: list[tuple[str, float]] = []
+    for path in store.GENOMES_DIR.glob("g-*.json"):
+        try:
+            g = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        if not g or not isinstance(g, dict):
+            continue
+        r = g.get("rating")
+        if not isinstance(r, (int, float)):
+            continue
+        lv = g.get("liveness")
+        if isinstance(lv, dict) and not lv.get("alive"):
+            continue
+        gid = g.get("genome_id") or path.stem
+        rated.append((gid, float(r)))
+    rated.sort(key=lambda x: -x[1])
+    return [gid for gid, _ in rated[:top_n]]
+
+
 def _rated_genomes(gen_record: dict) -> list[dict]:
     """Load the generation's shown genomes with ratings + notes attached."""
     out = []
@@ -157,6 +187,7 @@ def _rated_genomes(gen_record: dict) -> list[dict]:
         g = store.load_genome(gid)
         if g is None:
             continue
+
         r = gen_record.get("ratings", {}).get(gid)
         if r is not None:
             g["rating"] = r
@@ -276,6 +307,20 @@ def _run_generation_locked(session_id, cfg, progress_cb, rng) -> dict:
     # distinguishable from bred offspring; prior liveness/render/rating are
     # stripped so it is judged on its own merits this generation.
     _seed_ids = list(getattr(cfg, "seed_ids", []) or [])
+
+    # ── Auto-promote top-rated seeds (Route 8 / sub-problem #6 closure) ──
+    # When seed_ids is empty (no manual override) and auto_promote_seeds is
+    # enabled, scan the genome corpus for the top-rated ALIVE genomes and
+    # wire their IDs into seed_ids. This closes the "rating signal is starved"
+    # gap: the ~18 rated genomes ARE enough to bias the next generation, but
+    # only if they reach the promotion hook. Without this auto-loop, seed_ids
+    # stays empty unless a human manually POSTs to /api/shootout/config.
+    if not _seed_ids and getattr(cfg, "auto_promote_seeds", True):
+        _auto_ids = _auto_wire_top_rated(cfg)
+        if _auto_ids:
+            _seed_ids = _auto_ids
+            _p(f"  ⭐ auto-promoted top-{len(_auto_ids)} rated seeds: "
+               f"{', '.join(_auto_ids)}")
     for _sid in _seed_ids:
         _seed = store.load_genome(_sid)
         if _seed is None:
