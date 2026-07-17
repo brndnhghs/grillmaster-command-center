@@ -343,6 +343,14 @@ _TYPED_SHADER_NODES = [
     # TPMS raymarches (gyroid/menger). Genuinely time-varying (power morph +
     # orbiting camera) so animation drivers have a visibly-responsive target.
     ("331", "mandelbulb_gpu", "GPU Mandelbulb"),
+    # Node 332: De Jong Attractor - GPU live-preview twin of CPU node 498.
+    # Closed-form de Jong chaos map rendered as a single-pass density field
+    # tone-mapped with the inferno ramp - parity with node 498 density colouring.
+    # Named typed uniforms mirror node 498 real numeric params (a/b/c/d/exposure).
+    # morph+speed animate the params via u_time (CPU anim_mode morph_all) so the
+    # live preview is genuinely time-varying. CPU numpy node stays authoritative.
+    # 332 is the free ID above 301 (333-334 also free; 335 taken by domain warp).
+    ("346", "de_jong_typed", "GPU De Jong Attractor"),
     # Node 335: Domain Warping (Inigo Quilez, 2015) — fbm(fbm(p + fbm(p)))
     # two-level noise feed-forward gives marbled organic flow distinct from
     # single fbm (node 225); animated by scrolling the inner warp with u_time

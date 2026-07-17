@@ -50,7 +50,7 @@ from image_pipeline.methods.gpu_shaders import GPU_SHADER_NODE_MAP
 #         161, 477, 480 ...) + P1 sim additions.
 # 256 -> 257: +1 client-GPU shim for node 326 Hash Field (multiresolution hash
 #             encoding; live preview routed to hash_field_gpu).
-EXPECTED_MAP_ENTRIES = 263
+EXPECTED_MAP_ENTRIES = 264
 #             gpu-twin-candidate CPU nodes (431, 432, 433, 464).
 
 # Simulations-category CPU nodes that are intentionally NOT GPU-mirrored yet.
