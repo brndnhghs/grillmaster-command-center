@@ -172,8 +172,7 @@ def _advect(N: int, b: int, d: np.ndarray, d0: np.ndarray,
     _set_bnd(N, b, d)
 
 
-def _project(N: int, u: np.ndarray, v: np.ndarray, p: np.ndarray,
-             div: np.ndarray, iters: int) -> None:
+def _project(N, u, v, p, div, iters):
     div[1:N + 1, 1:N + 1] = (
         -0.5 * (u[2:, 1:N + 1] - u[:-2, 1:N + 1]
                 + v[1:N + 1, 2:] - v[1:N + 1, :-2]) / N
@@ -184,6 +183,46 @@ def _project(N: int, u: np.ndarray, v: np.ndarray, p: np.ndarray,
     _lin_solve(N, 0, p, div, 1.0, 4.0, iters)
     u[1:N + 1, 1:N + 1] -= 0.5 * N * (p[1:N + 1, 2:] - p[1:N + 1, :-2])
     v[1:N + 1, 1:N + 1] -= 0.5 * N * (p[2:, 1:N + 1] - p[:-2, 1:N + 1])
+    _set_bnd(N, 1, u)
+    _set_bnd(N, 2, v)
+
+
+def _vorticity_confinement(N, u, v, eps, dt):
+    """Fedkiw et al. (SIGGRAPH 2001) vorticity confinement.
+
+    Semi-Lagrangian advection is highly diffusive, so the small-scale
+    swirling motion that makes fluid look turbulent gets numerically
+    smeared out. Compute the curl (scalar vorticity) w = dv/dx - du/dy,
+    its gradient |grad w|, the confinement direction N = grad|w| / |grad|w||,
+    and add a force f = eps * (N x w) that pushes velocity back toward the
+    centres of existing vortices -- reinjecting the lost small-scale
+    energy. eps = 0 disables it (this function becomes a no-op).
+    """
+    if eps <= 0.0:
+        return
+    u_int = u[1:N + 1, 1:N + 1]
+    v_int = v[1:N + 1, 1:N + 1]
+    # curl w on the interior cells (size N-2)
+    dvdx = (v_int[:, 2:] - v_int[:, :-2]) * 0.5
+    dudy = (u_int[2:, :] - u_int[:-2, :]) * 0.5
+    w = (dvdx[1:-1, :] - dudy[:, 1:-1])            # (N-2, N-2) at [1:-1,1:-1]
+    # pad curl back to the full (N,N) interior with zero boundary
+    curl = np.zeros((N, N), dtype=np.float64)
+    curl[1:-1, 1:-1] = w
+    absw = np.abs(curl)
+    # gradient of |curl|
+    gw_x = np.zeros((N, N), dtype=np.float64)
+    gw_y = np.zeros((N, N), dtype=np.float64)
+    gw_x[1:-1, 1:-1] = (absw[1:-1, 2:] - absw[1:-1, :-2]) * 0.5
+    gw_y[1:-1, 1:-1] = (absw[2:, 1:-1] - absw[:-2, 1:-1]) * 0.5
+    mag = np.sqrt(gw_x ** 2 + gw_y ** 2) + 1e-9
+    nx = gw_x / mag
+    ny = gw_y / mag
+    # f = eps * (N x w) ; in 2D  (Nx, Ny, 0) x (0, 0, w) = (Ny*w, -Nx*w, 0)
+    fx = eps * (ny * curl)
+    fy = eps * (-nx * curl)
+    u[1:N + 1, 1:N + 1] += dt * fx
+    v[1:N + 1, 1:N + 1] += dt * fy
     _set_bnd(N, 1, u)
     _set_bnd(N, 2, v)
 
@@ -266,6 +305,8 @@ def _build_obstacles(N, n_obs, rng):
                       "min": 0.0, "max": 0.0008, "default": 0.00002},
         "diffusion": {"description": "dye diffusion (higher = blurrier dye)",
                       "min": 0.0, "max": 0.0008, "default": 0.00002},
+        "vorticity_confinement": {"description": "Fedkiw vorticity confinement: reinjects small-scale turbulence the solver numerical diffusion smears out (0 = off)",
+                                   "min": 0.0, "max": 8.0, "default": 0.6},
         "force": {"description": "stirring force magnitude",
                   "min": 0.5, "max": 12.0, "default": 5.0},
         "density_amount": {"description": "dye injected per splat",
@@ -316,6 +357,7 @@ def method_stable_fluids(out_dir: Path, seed: int, params=None):
         dt = float(params.get("dt", 0.12))
         visc = float(params.get("viscosity", 0.00002))
         diff = float(params.get("diffusion", 0.00002))
+        vort_eps = float(params.get("vorticity_confinement", 0.6))
         force = float(params.get("force", 5.0))
         dens_amp = float(params.get("density_amount", 3.0))
         n_splats = int(params.get("splats", 2))
@@ -425,6 +467,7 @@ def method_stable_fluids(out_dir: Path, seed: int, params=None):
             dens *= dens_damp
 
             _vel_step(N, u, v, u0, v0, visc, dt, iters)
+            _vorticity_confinement(N, u, v, vort_eps, dt)
             u = np.clip(u, -vmax, vmax)
             v = np.clip(v, -vmax, vmax)
             _dens_step(N, dens, d0, u, v, diff, dt, iters)
@@ -448,12 +491,17 @@ def method_stable_fluids(out_dir: Path, seed: int, params=None):
         dens_i = dens[1:N + 1, 1:N + 1]
         write_field(out_dir, dens_i.astype(np.float32))
         spd = np.sqrt(u[1:N + 1, 1:N + 1] ** 2 + v[1:N + 1, 1:N + 1] ** 2)
+        # vorticity magnitude (curl) of the final field, for the scalars output
+        u_i = u[1:N + 1, 1:N + 1]; v_i = v[1:N + 1, 1:N + 1]
+        curl_final = (v_i[1:-1, 2:] - v_i[1:-1, :-2]) * 0.5 - (u_i[2:, 1:-1] - u_i[:-2, 1:-1]) * 0.5
         write_scalars(
             out_dir,
             max_speed=float(float(spd.max())),
             kinetic_energy=float(float((spd ** 2).mean())),
             mean_density=float(float(dens_i.mean())),
+            max_vorticity=float(float(np.abs(curl_final).max())),
             n_splats=float(n_splats),
+            vorticity_confinement=float(vort_eps),
         )
         if splat_pos:
             arr = np.array(splat_pos, dtype=np.float32)  # (k,4): cx,cy,fx,fy
