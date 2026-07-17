@@ -1,3 +1,17 @@
+## 2026-07-18T09:00:00Z — Sub-problem #3 (Perceptual / optical-flow liveness to rescue contrast-only false-static culls)
+
+**Observed (real probe, this run):** genomes=649; dead=402 (62%); of the dead, static+flat=212 dominate — these are the clips the `temporal_var_min=3e-3` gate culls as 'static'. A perceptual-rescue (motion_pixel_frac, added 2026-07-12) already recovers thin-stroke drift, but hue-cycling / low-mean-luminance clips whose per-pixel luminance variance is ~0 yet whose STRUCTURE moves are still killed.
+
+**Technique — optical-flow variance liveness** (Horn & Schunck 1981 "Determining Optical Flow"; Brox et al. 2004 high-accuracy optical flow; Teed & Deng 2020 RAFT, arXiv:2003.12039): add a second liveness signal = frame-to-frame optical-flow magnitude variance (cheap Farneback, or RAFT on the rendered sequence). When temporal_var < floor BUT mean(|flow|) or flow-variance > threshold, classify alive. This is a STRUCTURAL (not luminance) motion proof, so hue-cycling and low-mean clips survive. Combine with the existing motion_pixel_frac rescue (OR of the two).
+
+**Module:** `evaluator.py` LivenessAccumulator (add `flow_var` stat + config `flow_var_min`); feed into the same alive/dead verdict as motion_pixel_frac.
+
+**Expected effect:** recover the residual contrast-only false-static clips (the 212 bucket shrinks) without re-admitting genuine flicker; the 165 timeout cull is untouched.
+
+**Verification (headless):** on a hue-cycling clip (temporal_var≈0, flow≠0) and a thin drifting stroke, both score alive where temporal_var alone kills them; a frozen checkerboard still dead; 2-3 new tests in test_shootout_liveness_rescue.py.
+
+---
+
 ## 2026-07-18T05:00:00Z — Sub-problem #1 (Selection pressure: ELO/Bradley-Terry survivor weighting to counter untrained taste-model bias)
 
 **Observed (real probe, this run):** genomes=649; dead=402 (62%); rated_total ≈18 (still starved, ~2.8%). The survivor weight in `evolve.next_generation` mixes raw `rating` with liveness/structural fitness, but with only ~18 ratings the untrained taste model is near-blind, so a few human ratings dominate selection pressure in a way that does not generalize. The cost-proxy actuator (#1, 2026-07-15) is still unbuilt, so slow genomes keep getting rendered and culled.
