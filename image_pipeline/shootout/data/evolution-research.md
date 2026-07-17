@@ -534,3 +534,8 @@ item, logged here for the next implementer.
 - Expected effect: higher survivor motif-diversity at equal mutation budget; retarget-driver edits may revive currently-static driver→param paths.
 - Verification (headless, no LLM/network): test_shootout.py asserts that after N mutation steps the population motif multiset entropy is higher than a pure-perturb baseline (reuses `motif_diversity`). Gated behind cfg ratio so the live path is unchanged when disabled.
 - Index: rotate evolution-research-index.txt 3 → 4 (next run tackles #4 implementation, now web-citable).
+
+## 2026-07-17 — evolution sub-problem #5 (advisor quality) — rotated from #4
+- Topic: does extract_guidance steer toward better survivors? With only 18/649 rated (2.8%), the advisor has almost no rating signal to learn from, so its selections are effectively near-random vs the taste model.
+- Suggestion: wire per-node like/dislike (cheap, frictionless) as the primary advisor signal instead of free-text. This raises the rating sample without requiring full-clip ratings. Verify by comparing advisor-chosen vs random survival over N generations.
+- Module: advisor.py extract_guidance; per-node feedback works WITHOUT an LLM.

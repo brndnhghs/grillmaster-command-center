@@ -336,3 +336,10 @@
   - dead hotspots = control/utility SCALAR nodes by ubiquity (__lfo__ 1081, __counter__ 305, __noise1d__ 165, __ramp__ 135, __strobe__ 59, __envelope__ 51, __image_to_mask__ 47, 137 41) — NOT method failure (sub-problem #8 still open). Do NOT feed as avoid_methods quality signal.
 - ACTION (feature this run): implemented Gravitational Lensing (Einstein-ring thin-lens warp; Einstein 1936; James et al. 2015 Interstellar Gargantua) as node #995 — a cheap O(H·W) screen warp (no PDE, no grid solve) rendering in <1s (never hits 150s cull) whose morphing lens field (animated mass / source-drift / swirl) gives perpetual non-repeating motion that passes the liveness cull. Directly targets the two dominant death causes (165 timeouts + 212 static/flat). Verified headlessly: registers (514 nodes), non-black, none-mode Δ≈0, drift/pulse/swirl Δ>0.05, einstein_radius + star_density params live.
 - RECOMMENDATION: keep shipping cheap morphing-field generators (lensing/CED/fluid class) to dilute the 165 timeout bucket; cost-gate sharpening (extend heavy-sim cap) is still the highest-leverage cost fix. The 62% dead-rate is structural (utility-node false-culls + sparse rating), not a gate regression.
+
+## 2026-07-17 — run: Tone Mapping node #997
+- genomes=649, alive=247, dead=402 (62%), renders>150s=165 (of 581 timed), median_wall=28.6s
+- rated=18/649 (2.8% rating poverty)
+- origins: random=400, explorer=186, promotion=19, mutation=36, crossover=8
+- ACTION: added node 997 "Tone Mapping" (AgX/ACES/Reinhard/Uncharted2/log/gamma), O(W*H) filter — fast, safe for cheap-alive graphs, does NOT add to the 150s timeout-cull load.
+- RECOMMENDATION: 62% dead-rate is dominated by 165 renders >150s (timeout cull). Bias next generation toward fast post-process/filter nodes (like this one) and away from heavy sims to cut the cull. Promotion seeds remain sparse (18 rated) — keep explore_ratio ~0.45 so fresh randoms keep entering.
