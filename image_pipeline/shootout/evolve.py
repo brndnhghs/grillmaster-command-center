@@ -566,6 +566,12 @@ def select_parents(rated: list[dict], cfg: ShootoutConfig) -> tuple[list[dict], 
     render-expensive ones (attacks the timeout cluster). Verified by
     test_shootout_render_cost_fitness.py.
 
+    When ``cfg.elo_fitness_enabled`` (Route 8 / sub-problem #1, default False),
+    the raw ``rating/5`` term is replaced by ``elo_fitness(genome_id)`` — a
+    Bayesian Bradley-Terry lower-confidence-bound that shrinks under-observed
+    genomes toward the prior so a single noisy 5-star rating cannot dominate
+    the parent pool. The liveness-breed fallback still works the same way.
+
     When human ratings are starved the rating-eligible pool is empty and the
     evolution would collapse to fresh randoms every generation (gen-0
     stagnation). If ``cfg.liveness_breed_fallback`` is set AND there are no
@@ -575,7 +581,16 @@ def select_parents(rated: list[dict], cfg: ShootoutConfig) -> tuple[list[dict], 
     parents = [g for g in rated
                if isinstance(g.get("rating"), (int, float))
                and g["rating"] >= cfg.min_rating_to_parent]
-    weights = [((g["rating"] / 5.0) ** cfg.parent_selection_power) * _render_cost_discount(g, cfg) for g in parents]
+
+    if getattr(cfg, "elo_fitness_enabled", False):
+        # Bradley-Terry skill path: replace raw rating with Bayesian LCB.
+        from . import taste_elo
+        taste_elo.invalidate_cache()  # fresh model each generation
+        weights = [(taste_elo.elo_fitness(g.get("genome_id", "")) ** cfg.parent_selection_power)
+                   * _render_cost_discount(g, cfg) for g in parents]
+    else:
+        weights = [((g["rating"] / 5.0) ** cfg.parent_selection_power) * _render_cost_discount(g, cfg) for g in parents]
+
     if cfg.liveness_breed_fallback and (
             not parents or len(parents) < cfg.liveness_breed_min_rated):
         # Blended liveness-breeding (Route 8 follow-up): when the rated-parent

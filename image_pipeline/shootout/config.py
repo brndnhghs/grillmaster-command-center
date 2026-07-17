@@ -100,6 +100,19 @@ class ShootoutConfig:
     liveness_breed_min_rated: int = 20
     liveness_breed_blend: float = 0.5
 
+    # ── Bayesian Bradley-Terry taste model (Route 8 / sub-problem #1) ──
+    # When the taste corpus is starved (~18 ratings / 649 genomes), raw ratings
+    # whipsaw selection pressure: a single 5-star rating makes a genome
+    # dominate the parent pool. The Bradley-Terry model (taste_elo.py) converts
+    # all ratings into pairwise comparisons and learns a per-genome skill (μ)
+    # with uncertainty (σ). When enabled, ``select_parents`` replaces
+    # ``(rating/5)**power`` with ``(elo_fitness(g))**power`` where elo_fitness
+    # is the lower-confidence-bound (μ − k·σ) mapped through a logistic to
+    # [0, 1]. Under-observed genomes (high σ) are shrunk toward the prior,
+    # preventing a single noisy rating from dominating. Gate behind this flag
+    # so the live path is unchanged until enabled.
+    elo_fitness_enabled: bool = False
+
     # ── Render-cost-aware fitness shaping (Route 8 follow-up, 2026-07-15) ──
     # Penalise parent-breeding weight by how much render wall-time a genome
     # burned, so selection prefers CHEAP-alive forms and the gene pool stops
@@ -516,6 +529,7 @@ TUNABLE_FIELDS: dict[str, tuple[str, float | None, float | None]] = {
     "min_divergence":   ("Bred offspring must differ from the parent by at least this graph-distance (0..1); the breeder escalates mutation until it does (higher = more extreme evolutions)", 0.0, 1.0),
     "max_divergence_attempts": ("Mutation retries to reach min_divergence before accepting the best attempt (higher = more effort pushing extreme changes)", 1, 12),
     "min_rating_to_parent": ("Clips rated below this never breed", 1, 5),
+    "elo_fitness_enabled": ("Use Bayesian Bradley-Terry skill instead of raw star ratings for parent-selection weight — shrinks under-observed genomes toward the prior so a single noisy rating cannot dominate", None, None),
     "render_timeout_s":  ("Per-clip render budget (seconds) — slower graphs are culled as 'timeout'", 10, 3600),
     "cost_gate_enabled": ("Skip guaranteed-timeout graphs before rendering, using the empirical cost model", None, None),
     "cost_skip_factor":  ("Cost gate strictness: skip when estimated render > render_timeout_s × this (lower = stricter)", 0.1, 2.0),
