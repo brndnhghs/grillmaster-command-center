@@ -306,11 +306,25 @@ def extract_guidance(rated: list[dict],
 def bias_from_guidance(guidance: dict | None) -> SamplingBias:
     """Guidance dict → SamplingBias for generator/evolve sampling."""
     if not guidance:
-        return SamplingBias()
-    return SamplingBias(
-        prefer_methods=set(guidance.get("prefer_methods") or []),
-        avoid_methods=set(guidance.get("avoid_methods") or []),
-        prefer_categories=set(guidance.get("prefer_categories") or []),
-        avoid_categories=set(guidance.get("avoid_categories") or []),
-        complexity=_COMPLEXITY_TO_BIAS.get(guidance.get("complexity"), 0.0),
-    )
+        bias = SamplingBias()
+    else:
+        bias = SamplingBias(
+            prefer_methods=set(guidance.get("prefer_methods") or []),
+            avoid_methods=set(guidance.get("avoid_methods") or []),
+            prefer_categories=set(guidance.get("prefer_categories") or []),
+            avoid_categories=set(guidance.get("avoid_categories") or []),
+            complexity=_COMPLEXITY_TO_BIAS.get(guidance.get("complexity"), 0.0),
+        )
+    # Autonomous-loop deprioritization (PHASE 1B closed loop): union the
+    # config-level avoid_methods so the cron can feed top-dead-heavy method
+    # ids into the generator WITHOUT an LLM. The advisor's per-node avoid is
+    # still applied above; this is purely additive. Guarded so a config /
+    # import hiccup never breaks guidance resolution.
+    try:
+        from .config import effective_config
+        cfg_avoids = set(effective_config().avoid_methods or [])
+        if cfg_avoids:
+            bias.avoid_methods |= cfg_avoids
+    except Exception:
+        pass
+    return bias

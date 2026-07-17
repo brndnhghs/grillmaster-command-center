@@ -120,6 +120,18 @@ class ShootoutConfig:
     # Persists until changed or reset; the auto-loop rewires it each run.
     seed_ids: list[str] = field(default_factory=list)
 
+    # ── Autonomous deprioritization (PHASE 1B closed loop) ────────────
+    # Opt-in list of method ids the autonomous loop wants the generator to
+    # sample LESS / never. Mirrors the advisor's per-node ``avoid`` but is
+    # driven WITHOUT an LLM: the cron scans the dead-genome corpus, extracts
+    # the top dead-heavy method ids, and pushes them here so the NEXT
+    # generation's SamplingBias hard-excludes them (weight → 0.0, see
+    # generator.py SamplingBias.weight). Set via
+    # /api/shootout/config {"overrides":{"avoid_methods":[...]}}.
+    # Persists until changed or reset. The existing seed_ids promotion and
+    # this avoid-set are the two halves of the data-driven feedback loop.
+    avoid_methods: list[str] = field(default_factory=list)
+
     # ── Stagnation / drift detection (Route 8, sub-problem #7, 2026-07-14) ──
     # When a generation's alive-rate (and dynamic-richness) go FLAT across a
     # sliding window the population has converged or stalled on a plateau.
@@ -576,15 +588,21 @@ def save_overrides(overrides: dict) -> dict:
     """
     accepted = {}
     seed_ids = None
+    avoid_methods = None
     for k, v in (overrides or {}).items():
         if k == "seed_ids":
             seed_ids = _coerce_seed_ids(v)
+            continue
+        if k == "avoid_methods":
+            avoid_methods = _coerce_seed_ids(v)
             continue
         cv = _coerce(k, v)
         if cv is not None and cv != getattr(DEFAULT_CONFIG, k):
             accepted[k] = cv
     if seed_ids is not None:
         accepted["seed_ids"] = seed_ids
+    if avoid_methods is not None:
+        accepted["avoid_methods"] = avoid_methods
     _OVERRIDES_PATH.parent.mkdir(parents=True, exist_ok=True)
     _OVERRIDES_PATH.write_text(json.dumps(accepted, indent=1))
     return accepted
@@ -603,6 +621,11 @@ def effective_config() -> ShootoutConfig:
             cleaned = _coerce_seed_ids(v)
             if cleaned is not None:
                 cfg.seed_ids = cleaned
+            continue
+        if k == "avoid_methods":
+            cleaned = _coerce_seed_ids(v)
+            if cleaned is not None:
+                cfg.avoid_methods = cleaned
             continue
         cv = _coerce(k, v)
         if cv is not None:
@@ -627,4 +650,4 @@ def config_info() -> dict:
             "overridden": name in overrides,
             "help": help_text,
         })
-    return {"fields": out, "seed_ids": cfg.seed_ids}
+    return {"fields": out, "seed_ids": cfg.seed_ids, "avoid_methods": cfg.avoid_methods}
