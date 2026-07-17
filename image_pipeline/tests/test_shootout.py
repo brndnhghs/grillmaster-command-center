@@ -413,6 +413,114 @@ def test_evaluator_flow_rescue_subthreshold_drift():
     assert s_off["flow_var"] >= CFG.flow_var_min, s_off
 
 
+def _chroma_only_frames(n=48, amp=0.3, period=24):
+    """Synthetic clip whose per-pixel MEAN luminance is a fixed spatial gradient
+    (constant over time) while the CHROMA rotates in the plane orthogonal to the
+    (1,1,1) mean-luminance axis.
+
+    ``U`` / ``V`` are two orthonormal directions perpendicular to (1,1,1), so
+    ``rgb = lum*1 + amp*(U*cos t + V*sin t)`` keeps the channel-MEAN (the
+    grayscale the evaluator collapses RGB to) exactly ``lum`` for every ``t``.
+    The grayscale-based rescues (temporal variance, perceptual motion, spectral,
+    optical-flow) therefore see a frozen clip; only the color-aware rescue can
+    detect the chroma motion.
+    """
+    U = np.array([1.0, -1.0, 0.0], np.float32)
+    U = U / np.linalg.norm(U)
+    V = np.array([1.0, 1.0, -2.0], np.float32)
+    V = V / np.linalg.norm(V)
+    grad = (np.arange(96, dtype=np.float32) / 96.0)[None, :]
+    lum = (0.3 + 0.4 * grad)[:, :, None]            # [0.3, 0.7], constant over time
+
+    def f(i):
+        t = 2.0 * np.pi * i / period                 # smooth coherent rotation
+        rgb = lum + amp * (U[None, None, :] * np.cos(t)
+                           + V[None, None, :] * np.sin(t))
+        return np.clip(rgb, 0.0, 1.0)
+
+    return _stack(f, n=n)
+
+
+def test_evaluator_color_rescue_chroma_only_oscillation():
+    """Color-aware liveness rescue (Route 8 sub-problem #3 closure, 2026-07-16):
+    a clip whose HUES/CHANNELS cycle at CONSTANT luminance is genuinely
+    animating but reads as 'static' to every grayscale-based rescue (temporal
+    variance, perceptual motion, spectral, optical-flow all collapse the color
+    vector to the channel mean). A driver modulating an --recolor ``palette``
+    (cosmetic color per the color-architecture rule), a LUT/hue-sweep filter, or
+    a color_intrinsic method with a luminance-fixed hue sweep is exactly this
+    case — the 643-genome scan's 211 static+flat deaths are its fingerprint. The
+    color-aware rescue measures per-pixel chroma change on the luminance-
+    preserving buffer and must keep it alive, while a frozen color and
+    incoherent hue noise stay dead (see the controls below)."""
+    s = evaluate_frames(_chroma_only_frames(n=48), CFG)
+    assert s["alive"], s
+    assert s["reason"] is None, s
+    assert s["color_change_frac"] >= CFG.color_change_frac_min, s
+    assert s["color_struct_corr"] >= CFG.color_corr_min, s
+    # It was sub-threshold for EVERY grayscale-based rescue, so the COLOR rescue
+    # is the only thing that could have flipped it alive:
+    assert s["temporal_var"] < CFG.temporal_var_min, s
+    assert s["motion_pixel_frac"] < CFG.motion_pixel_frac_min, s
+    assert s["spectral_peak"] < CFG.spectral_corr_min, s
+    assert s["flow_var"] < CFG.flow_var_min, s
+
+    # Color alone rescues even with the other rescues disabled.
+    cfg = ShootoutConfig()
+    cfg.motion_pixel_frac_min = 1e9
+    cfg.spectral_corr_min = 1e9
+    cfg.flow_var_min = 1e9
+    s_off = evaluate_frames(_chroma_only_frames(n=48), cfg)
+    assert s_off["alive"], s_off
+    assert s_off["color_change_frac"] >= CFG.color_change_frac_min, s_off
+
+
+def test_evaluator_color_rescue_frozen_chroma_stays_dead():
+    """Control: a clip whose color is frozen (no chroma change) must NOT be
+    rescued even though its luminance is spatially structured — there is no
+    motion of any kind."""
+    U = np.array([1.0, -1.0, 0.0], np.float32)
+    U = U / np.linalg.norm(U)
+    grad = (np.arange(96, dtype=np.float32) / 96.0)[None, :]
+    lum = (0.3 + 0.4 * grad)[:, :, None]
+
+    def g(i):
+        return np.clip(lum + 0.3 * U[None, None, :], 0.0, 1.0)  # fixed hue
+
+    s = evaluate_frames(_stack(g, n=48), CFG)
+    assert not s["alive"], s
+    assert s["color_change_frac"] < CFG.color_change_frac_min, s
+
+
+def test_evaluator_color_rescue_incoherent_hue_noise_stays_dead():
+    """Control: per-PIXEL independent random chroma (luminance-preserving) changes
+    color every frame but is temporally INCOHERENT (color_struct_corr ~0), so it
+    must not be rescued — only STRUCTURED chroma motion (a palette sweep, a
+    coherent hue cycle) is alive. A uniform-luminance canvas avoids the lum
+    signal drowning the (low) chroma correlation, isolating the color gate."""
+    U = np.array([1.0, -1.0, 0.0], np.float32)
+    U = U / np.linalg.norm(U)
+    V = np.array([1.0, 1.0, -2.0], np.float32)
+    V = V / np.linalg.norm(V)
+    rng = np.random.default_rng(7)
+
+    def noise(i):
+        a = rng.standard_normal((64, 96)).astype(np.float32)
+        b = rng.standard_normal((64, 96)).astype(np.float32)
+        chroma = 0.3 * (U[None, None, :] * a[..., None]
+                        + V[None, None, :] * b[..., None])
+        # uniform luminance (0.5) so spatial_var is degenerate but the clip is
+        # clearly NOT alive — the color gate must reject the incoherent chroma.
+        return np.clip(0.5 + chroma, 0.0, 1.0)
+
+    s = evaluate_frames(_stack(noise, n=48), CFG)
+    assert not s["alive"], s
+    # color DOES change...
+    assert s["color_change_frac"] >= CFG.color_change_frac_min, s
+    # ...but incoherently, so the rescue correctly rejects it:
+    assert s["color_struct_corr"] < CFG.color_corr_min, s
+
+
 def test_evaluator_nan_is_dead():
     def f(i):
         a = np.ones((64, 96, 3), np.float32) * (i / 24)
