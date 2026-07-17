@@ -330,6 +330,13 @@ _TYPED_SHADER_NODES = [
     # twin: eye ray into a repeating room-grid, nearest interior wall shaded
     # with depth tint + hashed per-room window lights (u_time twinkle).
     ("328", "interior_mapping_typed", "GPU Interior Mapping"),
+    # Node 330: Kaleidoscopic IFS - box-fold + sphere-fold (Knighty/Kali 2010).
+    # Distinct from node 402 kifs_gpu (wedge + scale only): adds the sphere
+    # fold (minR/maxR radius clamp) that opens the characteristic holes, plus
+    # a per-iteration rotation. All 5 controls are wireable SCALAR ports so
+    # LFO/counter nodes can drive the live kaleidoscope animation (shootout:
+    # contrast-only static culls are avoided by the genuine u_time motion).
+    ("330", "kifs_spherefold_gpu", "GPU KIFS Fractal"),
 ]
 
 
