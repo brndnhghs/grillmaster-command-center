@@ -27,7 +27,7 @@ def _render(f):
 @method(
     inputs={},
     id="157",
-    name="Swift-Hohenberg Pattern Formation",
+    name="Swift-Hohenberg (Convection)",
     category="simulations",
     tags=["pattern", "turing", "convection", "hexagons"],
     timeout=300,

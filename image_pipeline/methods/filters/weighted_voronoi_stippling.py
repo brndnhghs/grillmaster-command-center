@@ -15,7 +15,7 @@ from ...core.animation import capture_frame
 
 @method(
     id="315",
-    name="Weighted Voronoi Stippling",
+    name="Weighted Voronoi Stippling (Filter)",
     category="filters",
     new_image_contract=True,
     tags=["stippling", "stochastic", "abstraction", "lloyd", "expanded", "animation"],

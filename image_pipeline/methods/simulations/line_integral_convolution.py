@@ -221,7 +221,7 @@ def _lic(noise, Xg, Yg, Hw, Ww, ud, vd, steps, step_size, kernel,
 
 @method(
     id="484",
-    name="Line Integral Convolution",
+    name="Line Integral Convolution (Animated)",
     category="simulations",
     new_image_contract=True,
     tags=["lic", "flow-visualization", "vector-field", "post-process",

@@ -61,7 +61,7 @@ def _render_field(u: np.ndarray) -> np.ndarray:
 @method(
     inputs={},
     id="128",
-    name="Swift-Hohenberg Pattern Formation",
+    name="Swift-Hohenberg (Active-Brownian)",
     category="simulations",
     tags=["animation", "pde", "patterns", "instability"],
     timeout=180,

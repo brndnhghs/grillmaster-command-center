@@ -281,7 +281,7 @@ def _init_state(seed, N, Xg, Yg, iters, dt, vort):
 
 @method(
     id="961",
-    name="Stable Fluids",
+    name="Stable Fluids (Procedural)",
     category="patterns",
     new_image_contract=True,
     tags=["generative", "fluid", "simulation", "stam", "smoke", "vorticity",

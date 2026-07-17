@@ -31,7 +31,7 @@ def _render_flame_preview(density, colors, h, w):
 
 @method(
     id="19",
-    name="L-System",
+    name="L-System (Fractal)",
     category="fractals",
     tags=["recursive", "fast", "animation", "expanded"],
     inputs={},

@@ -200,7 +200,7 @@ def _inject_blob(dye: np.ndarray, rng, h: int, w: int, amount: float, r: float,
 
 @method(
     id="971",
-    name="Stable Fluids",
+    name="Stable Fluids (Navier-Stokes)",
     category="simulations",
     tags=["physics", "fluid", "navier-stokes", "simulation", "curl-noise",
           "procedural", "color_intrinsic:false"],

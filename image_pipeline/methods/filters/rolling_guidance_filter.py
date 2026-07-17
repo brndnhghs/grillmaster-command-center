@@ -155,7 +155,7 @@ def _area_downsample(I: np.ndarray, s: float) -> np.ndarray:
                             max(1, int(round(I.shape[1] / s))))
 
 
-@method(id='946', name='Rolling Guidance Filter', category='filters',
+@method(id='946', name='Rolling Guidance Filter (Scale-Selective)', category='filters',
         tags=['rolling-guidance-filter', 'zhang-2014', 'scale-selective', 'edge-preserving',
               'smoothing', 'detail-extraction', 'multi-scale', 'structural', 'animation'],
         params={

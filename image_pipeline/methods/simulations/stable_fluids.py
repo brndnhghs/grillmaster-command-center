@@ -247,7 +247,7 @@ def _build_obstacles(N, n_obs, rng):
 
 @method(
     id="517",
-    name="Stable Fluids",
+    name="Stable Fluids (Stam 2D)",
     category="simulations",
     new_image_contract=True,
     tags=["fluid", "navier-stokes", "stam", "simulation", "advection",

@@ -169,7 +169,7 @@ def _render(pts_canvas: np.ndarray, src_lum: np.ndarray, w: int, h: int,
 
 
 @method(
-    id="497", name="Weighted Voronoi Stippling", category="math_art",
+    id="497", name="Weighted Voronoi Stippling (CVT)", category="math_art",
     new_image_contract=True,
     tags=["stippling", "voronoi", "cvt", "lloyd", "npr", "weighted",
           "procedural", "expanded", "particles", "animation"],

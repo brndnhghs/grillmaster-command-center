@@ -129,7 +129,7 @@ def _sample(pos, field):
 
 
 @method(
-    id="510", name="Curl-Noise Flow Field", category="math_art",
+    id="510", name="Curl-Noise Flow Field (Math-Art)",category="math_art",
     new_image_contract=True,
     tags=["flow-field", "curl-noise", "fluid", "procedural", "generative",
           "math-art", "particles", "animation", "expanded"],

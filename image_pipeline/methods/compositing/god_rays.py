@@ -61,7 +61,7 @@ def _bilinear(arr: np.ndarray, coords: np.ndarray) -> np.ndarray:
 
 @method(
     id="524",
-    name="God Rays",
+    name="God Rays (Compositing)",
     category="compositing",
     tags=["post-process", "god-rays", "volumetric", "light-scattering", "glow"],
     inputs={"image_in": "IMAGE", "source": "IMAGE"},

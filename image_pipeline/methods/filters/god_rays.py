@@ -90,7 +90,7 @@ def _scatter_rays(buf: np.ndarray, light_x: float, light_y: float,
 
 @method(
     id="446",
-    name="God Rays",
+    name="God Rays (Filter)",
     category="filters",
     new_image_contract=True,
     tags=["post-process", "god-rays", "volumetric", "crepuscular", "light-scattering",

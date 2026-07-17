@@ -161,7 +161,7 @@ def _splat_fields(px, py, col, W, H, r=3, sigma=1.6):
 
 @method(
     id="968",
-    name="Particle Life",
+    name="Particle Life (Procedural)",
     category="patterns",
     new_image_contract=True,
     tags=["generative", "artificial-life", "emergence", "particles", "swarm",

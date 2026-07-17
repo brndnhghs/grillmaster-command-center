@@ -56,7 +56,7 @@ def _smoothstep(e0, e1, x):
     return tt * tt * (3.0 - 2.0 * tt)
 
 
-@method(id="505", name="Metaballs", category="patterns",
+@method(id="505", name="Metaballs (Procedural)",category="patterns",
         tags=["metaballs", "implicit-surface", "blobby", "procedural",
               "animation", "scalar-field", "real-time-cg"],
         inputs={},
