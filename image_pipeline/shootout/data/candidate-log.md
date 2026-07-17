@@ -343,3 +343,12 @@
 - origins: random=400, explorer=186, promotion=19, mutation=36, crossover=8
 - ACTION: added node 997 "Tone Mapping" (AgX/ACES/Reinhard/Uncharted2/log/gamma), O(W*H) filter — fast, safe for cheap-alive graphs, does NOT add to the 150s timeout-cull load.
 - RECOMMENDATION: 62% dead-rate is dominated by 165 renders >150s (timeout cull). Bias next generation toward fast post-process/filter nodes (like this one) and away from heavy sims to cut the cull. Promotion seeds remain sparse (18 rated) — keep explore_ratio ~0.45 so fresh randoms keep entering.
+
+## 2026-07-17 — run: FTLE / Lagrangian Coherent Structures node #998
+- genomes=649, alive=247, dead=402 (62%), renders>150s=165 (unchanged), median_wall=28.6s, max=668.6s.
+- rated=18/649 (2.8% rating poverty — same standing gap).
+- PHASE 1B: top-rated promotion seeds (g-328f0d37/5, g-e181c881/5, g-97f1158a/5, g-e3d68069/5, g-9636245b/4) are id-less in the current persisted corpus → seed_ids promotion hook still cannot consume them. STANDING GAP persists; log it, do not fabricate a hook.
+- cheap-alive (recombine seeds)=135; explore_ratio 0.45 still admits fresh randoms.
+- dead hotspots = control/utility SCALAR nodes by ubiquity (__lfo__ 1081, __counter__ 305, __noise1d__ 165, __ramp__ 135, __strobe__ 59, __envelope__ 51) — NOT a technique/method failure. Do NOT feed as avoid_methods quality signal.
+- ACTION (feature this run): implemented node #998 "FTLE / Lagrangian Coherent Structures" — finite-time Lyapunov exponent ridge visualization (Haller 2001; Shadden/Lekien/Marsden 2005). Complements LIC (#484): integrates passive tracers under a vector field, extracts λ_max of the flow-map deformation tensor, paints the transport-barrier ridges. O(coarse²·steps) bounded cost (~40²·25 ≈ 40k samples), renders <1s (no timeout-cull risk). Animate mode cross-fades two independent fractal fields (|sin(t/2)| weight) so LCS ridges genuinely morph (changed-pixel-frac 0.107 at t=0 vs π) — survives the contrast-only liveness cull. Verified headlessly: registers (525 nodes), non-black (std 0.158), none-mode Δ≈0, animate changed-pixel-frac>0.01, coarse param live (Δ0.064), FIELD+MASK outputs written (Rule 5/10).
+- RECOMMENDATION: keep adding fast morphing-field generators (FTLE/LIC/lensing/CED) to dilute the 165-timeout + 212-static/flat buckets. Cost-gate sharpening remains the highest-leverage cost fix. 62% dead-rate is structural (utility-node false-culls + sparse id-less rating), not a regression. Sub-problem #6 (rating-signal poverty) is the real unlock — see evolution-research.md.

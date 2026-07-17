@@ -539,3 +539,42 @@ item, logged here for the next implementer.
 - Topic: does extract_guidance steer toward better survivors? With only 18/649 rated (2.8%), the advisor has almost no rating signal to learn from, so its selections are effectively near-random vs the taste model.
 - Suggestion: wire per-node like/dislike (cheap, frictionless) as the primary advisor signal instead of free-text. This raises the rating sample without requiring full-clip ratings. Verify by comparing advisor-chosen vs random survival over N generations.
 - Module: advisor.py extract_guidance; per-node feedback works WITHOUT an LLM.
+
+---
+
+## 2026-07-17 — Sub-problem #6 (Rating-signal poverty → uncertainty sampling)
+
+**Observed (real probe, this run):** 649 genomes but only **18 rated (2.8%)** in
+`ratings.jsonl`. Worse, ratings are recorded by `genome_id` only — the persisted
+rating rows carry no node/motif/feature snapshot, so the per-genome rating cannot
+be mapped back to graph *structure* (the candidate-log's standing gap:
+"seed_ids promotion hook cannot consume them"). Evolution is therefore flying
+almost blind: `select_parents`/`next_generation` weight survivors by a rating
+signal that covers <3% of the population, and the LLM advisor (`extract_guidance`)
+has almost nothing to learn from.
+
+**Technique — active-learning uncertainty sampling (real, cited):**
+Cold-start / sparse-rating is a textbook active-learning problem. Houlsby et al.
+2014 ("Cold-start Active Learning with Robust Ordinal Matrix Factorization",
+http://proceedings.mlr.press/v32/houlsby14.pdf, cited 106×) shows that when
+ratings are scarce you should *choose which items to ask about* by predicted
+uncertainty, not at random — surface the clips the current model is least sure
+about. For this shootout:
+  1. Persist a **feature snapshot per genome at rating time** (motif counts,
+     category histogram, node ids, liveness stats, predicted cost). This is the
+     missing link that lets ratings become *learnable* structure labels — without
+     it, no selection/active-learning step can use the rating signal.
+  2. Add an `uncertainty_rank` endpoint/CLI: rank unrated genomes by the
+     taste_model's (or a cheap surrogate's) **prediction variance / entropy**
+     and surface the top-K as "rate these next" instead of a random clip. This
+     directly attacks the 2.8% coverage by spending the user's rating budget on
+     the most *informative* clips (maximal expected model improvement), which is
+     the whole point of active learning.
+
+**Module:** `image_pipeline/shootout/ratings.py` (persist feature snapshot +
+`rank_by_uncertainty`) + a hook in `session.py`/UI to surface K uncertain clips.
+**Expected effect:** rating coverage climbs faster per user rating; advisor
+`extract_guidance` gets a real feature→rating map; promotion seeds become
+id-addressable. **Verification:** after N new ratings from uncertainty-surfaced
+clips, assert the taste_model's held-out RMSE drops faster than random-surface
+control (cheap offline test in `test_shootout.py`).
