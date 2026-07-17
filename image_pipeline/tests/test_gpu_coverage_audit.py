@@ -63,8 +63,16 @@ DEFERRED_SIM_IDS = set(
     "107 109 110 111 112 113 114 116 117 123 129 130 131 134 "
     "136 145 147 149 151 152 158 159 167 337 429 440 448 922 310 "
     "483 484 517 951 966 560 518 530 532 970 971 974 "
-    "915 993 998 359 996".split()
+    "915 993 998 359 996 1000".split()
 )
+# 1000 Lattice Boltzmann Fluid (D2Q9 BGK): Arch-A CFD solver whose state is the
+# full 9-channel D2Q9 distribution function f_i(x) — one scalar per lattice
+# direction. That is 9 floats per cell, which exceeds the 4-channel RGBA-float
+# ping-pong state pair the P1 WebGL2 sim machinery carries (sibling 2/3-channel
+# sims like Gray-Scott / Kuramoto fit; LBM does not). An honest GPU twin needs
+# multi-attachment ping-pong state (3× RGBA) or WebGPU compute — out of scope
+# for headless verification until P2 (WebGPU) is signed off. CPU node is
+# authoritative (simulations/lbm.py).
 # 996 Swift-Hohenberg Pattern Formation: Arch-A Swift-Hohenberg PDE (spectral
 # (FFT) space stepping + explicit Euler over many substeps, capture_frame per
 # frame). Its honest GPU twin is a WebGL2 ping-pong sim needing a spectral

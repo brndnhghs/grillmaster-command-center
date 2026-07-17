@@ -153,8 +153,10 @@ def _simulate(nx, ny, scenario, u0, viscosity, n_steps, capture_every,
         width = max(2.0, ny * 0.06)
         prof = 0.5 * (1.0 + np.tanh((np.arange(ny)[:, None] - ny / 2.0) / width))
         ux[:] = u0 * prof
-        # Random perturbation breaks the perfect symmetry -> roll-up.
-        ux += u0 * 0.04 * (rng.random((ny, nx)) - 0.5)
+        # Time-offset + seed-driven perturbation breaks the perfect symmetry
+        # -> roll-up; the `time` param shapes the initial perturbation.
+        ux += u0 * 0.04 * np.sin(np.linspace(0, 2 * math.pi, ny) + t)[:, None]
+        ux += u0 * 0.02 * (rng.random((ny, nx)) - 0.5)
     elif scenario == "taylor_green":
         ax = np.linspace(0, 2 * math.pi, nx, endpoint=False)[None, :]
         ay = np.linspace(0, 2 * math.pi, ny, endpoint=False)[:, None]
@@ -345,7 +347,7 @@ def method_lbm(out_dir: Path, seed: int, params=None):
 
         frames, ux, uy, rho, solid = _simulate(
             nx, ny, anim_mode, u0, visc, eff_steps, cap_every,
-            rng, view, colormap, contrast, Hw, Ww, active)
+            rng, view, colormap, contrast, Hw, Ww, active, t)
 
         final = frames[-1]
 
