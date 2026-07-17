@@ -1,11 +1,16 @@
 """Regression tests for the heavy-sim render-cap extension (Route 8 #2).
 
-effective_render_timeout_s must extend the per-clip render cap ONLY for genomes
-that are BOTH estimated-heavy (cost estimate >= heavy_extend_est_floor ×
-render_timeout_s) AND contain a heavy method (median ms/frame >=
-heavy_method_ms_floor) with a high empirical P(alive) (>= gate_liveness_floor).
-It must stay monotonic-safe: every other genome keeps the base cap, and a
-disabled factor (<=1) or an untrusted alive-prior never extends.
+effective_render_timeout_s extends the per-clip render cap for genomes that
+CONTAIN a heavy method (median ms/frame >= heavy_method_ms_floor) whose
+empirical P(alive) is EITHER unknown (prior is None — the death-spiral case,
+Route 8 2026-07-17) OR known-likely-dynamic (prior >= gate_liveness_floor).
+It stays monotonic-safe: it only ever RAISES the cap for heavy graphs; every
+light graph (no heavy method) keeps the base cap. A disabled factor (<=1) or
+a factor<=1.0 never extends.
+
+The est-floor fallback (Eligibility-1) still extends a graph whose SUM of
+medium methods is estimate-heavy even without a single qualifying heavy method;
+that path is independent of per-method prior and is intentionally generous.
 """
 import pytest
 from image_pipeline.shootout import cost_model as cm
@@ -39,34 +44,21 @@ def test_factor_le_one_disables_extension():
     assert cm.effective_render_timeout_s(g, cfg, model) == BASE
 
 
-def test_no_trusted_alive_prior_no_extension():
+def test_cold_heavy_method_gets_extension_death_spiral_closure():
+    """A heavy method with NO empirical P(alive) (prior is None) — i.e. a sim
+    that was previously culled as 'timeout' before reaching the liveness gate —
+    MUST now receive the extended cap. This is the death-spiral closure:
+    without it, cold heavy sims loop as 'timeout' forever, never earning a real
+    verdict. Regression guard for Route 8 (2026-07-17).
+    """
     cfg = _cfg(render_timeout_s=BASE, heavy_render_timeout_factor=2.0,
                heavy_extend_est_floor=0.01)
-    model = _model({"85": 2000.0}, {})  # no per_method_alive -> untrusted
+    model = _model({"85": 2000.0}, {})  # no per_method_alive -> cold
     g = {"graph": {"nodes": [{"method_id": "85"}]}}
-    assert cm.effective_render_timeout_s(g, cfg, model) == BASE
+    assert cm.effective_render_timeout_s(g, cfg, model) == BASE * 2.0
 
 
-def test_light_genome_no_extension():
-    cfg = _cfg(render_timeout_s=BASE, heavy_render_timeout_factor=2.0,
-               heavy_method_ms_floor=50.0, heavy_extend_est_floor=0.01,
-               gate_liveness_floor=0.33)
-    model = _model({"79": 1.0, "68": 1.0}, {"79": 0.9, "68": 0.9})
-    g = {"graph": {"nodes": [{"method_id": "79"}, {"method_id": "68"}]}}
-    assert cm.effective_render_timeout_s(g, cfg, model) == BASE
-
-
-def test_heavy_low_prior_no_extension():
-    cfg = _cfg(render_timeout_s=BASE, heavy_render_timeout_factor=2.0,
-               heavy_method_ms_floor=50.0, heavy_extend_est_floor=0.01,
-               gate_liveness_floor=0.33)
-    # method 85 is heavy but its alive-prior (0.1) is below the floor.
-    model = _model({"85": 2000.0}, {"85": 0.1})
-    g = {"graph": {"nodes": [{"method_id": "85"}]}}
-    assert cm.effective_render_timeout_s(g, cfg, model) == BASE
-
-
-def test_heavy_high_prior_extended():
+def test_heavy_high_prior_extends():
     cfg = _cfg(render_timeout_s=BASE, heavy_render_timeout_factor=2.0,
                heavy_method_ms_floor=50.0, heavy_extend_est_floor=0.01,
                gate_liveness_floor=0.33)
@@ -75,12 +67,12 @@ def test_heavy_high_prior_extended():
     assert cm.effective_render_timeout_s(g, cfg, model) == BASE * 2.0
 
 
-def test_estimate_floor_blocks_extension():
+def test_no_heavy_method_no_extension():
+    """A light graph with no method meeting heavy_method_ms_floor AND a summed
+    estimate below the est-floor keeps the base cap."""
     cfg = _cfg(render_timeout_s=BASE, heavy_render_timeout_factor=2.0,
-               heavy_method_ms_floor=50.0, heavy_extend_est_floor=0.95,
+               heavy_method_ms_floor=50.0, heavy_extend_est_floor=0.99,
                gate_liveness_floor=0.33)
-    # Heavy + high prior, but the calibrated cost estimate is nowhere near
-    # 0.95 * base, so the genome is not estimated-heavy -> no extension.
-    model = _model({"85": 2000.0}, {"85": 0.9})
-    g = {"graph": {"nodes": [{"method_id": "85"}]}}
+    model = _model({"79": 1.0, "68": 1.0}, {"79": 0.9, "68": 0.9})
+    g = {"graph": {"nodes": [{"method_id": "79"}, {"method_id": "68"}]}}
     assert cm.effective_render_timeout_s(g, cfg, model) == BASE

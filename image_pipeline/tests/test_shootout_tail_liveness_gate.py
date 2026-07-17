@@ -75,7 +75,7 @@ def test_tail_gate_catches_a_slow_param_slipthrough():
 def test_liveness_prior_spares_expensive_but_dynamic():
     """An over-budget genome whose methods are empirically likely-alive is
     exempted from the cull; a likely-static one is still gated."""
-    cfg = DEFAULT_CONFIG  # gate_liveness_floor=0.33, cost_use_tail=True
+    cfg = replace(DEFAULT_CONFIG, heavy_render_timeout_factor=1.0)
     model = _model({"heavy": 1500.0},
                    per_method_p90={"heavy": 1500.0, "heavy_dyn": 1500.0,
                                    "heavy_static": 1500.0},
@@ -89,8 +89,14 @@ def test_liveness_prior_spares_expensive_but_dynamic():
 
 
 def test_liveness_prior_unknown_never_exempts():
-    """No measured prior → the exemption must not fire (gate as cost dictates)."""
-    cfg = DEFAULT_CONFIG
+    """No measured prior → the exemption must not fire (gate as cost dictates).
+
+    Disable the heavy-cap extension (heavy_render_timeout_factor=1.0) so this
+    isolates the PURE liveness-prior exemption: with the default factor=2.0 the
+    death-spiral closure now spares cold-heavy genomes (prior is None) via the
+    cap-extension reconciliation, which would mask the prior-exemption contract.
+    """
+    cfg = replace(DEFAULT_CONFIG, heavy_render_timeout_factor=1.0)
     model = _model({"heavy": 1500.0}, per_method_p90={"heavy": 1500.0},
                    per_method_alive={})   # no alive data
     g = _genome("g", ["heavy", "heavy", "heavy"])
@@ -142,7 +148,8 @@ def test_new_gate_beats_median_on_corpus():
             alive.append(g)
     if len(timeouts) < 20 or len(alive) < 40:
         import pytest; pytest.skip("corpus too small for a stable comparison")
-    old = replace(DEFAULT_CONFIG, cost_use_tail=False, gate_liveness_floor=0.0)
+    old = replace(DEFAULT_CONFIG, cost_use_tail=False, gate_liveness_floor=0.0,
+                   heavy_render_timeout_factor=1.0)
     # The heavy-cap extension (heavy_render_timeout_factor) is a SEPARATE
     # mechanism with its own dedicated tests (test_shootout_cap_extension.py,
     # test_shootout_cost_gate.py::test_cost_gate_spares_heavy_cap_eligible_graph).

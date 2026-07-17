@@ -440,18 +440,20 @@ def effective_render_timeout_s(genome: dict,
     and ~49-56 of those contain a HEAVY method (per-method ms/frame >=
     ``heavy_method_ms_floor``) with a HIGH empirical P(alive) (>=
     ``gate_liveness_floor``) — clips the liveness gate would accept if they
-    finished. This returns ``render_timeout_s * factor`` for genomes that are
-    BOTH estimated-heavy (calibrated cost estimate >= ``render_timeout_s`` ×
-    ``heavy_extend_est_floor``) AND contain such a heavy likely-dynamic method,
-    so they can complete instead of being discarded.
+    finished. This returns ``render_timeout_s * factor`` for genomes that
+    contain such a heavy method, so they can complete instead of being
+    discarded.
 
-    The estimate floor keeps the extension NARROW: only genomes the cost model
-    already flags as genuinely heavy (and thus at real risk of blowing the base
-    cap) are eligible, so light graphs never get a longer cap and generations
-    stay fast. MONOTONIC-SAFE: it only ever RAISES the cap for that narrow,
-    high-prior subset; every other genome keeps the base ``render_timeout_s``.
-    Disabled when ``heavy_render_timeout_factor <= 1.0`` or the model lacks a
-    trusted alive-prior for the heavy method.
+    Death-spiral closure (2026-07-17): a heavy method whose empirical P(alive)
+    is UNKNOWN (prior is None) is extended TOO, not just known-likely-dynamic
+    ones. A heavy sim culled as 'timeout' at the base cap never reaches the
+    liveness gate, so its prior stays None forever — and the prior-gated branch
+    (prior >= floor) could never fire for it, looping it as 'timeout' for every
+    generation. The median ms/frame (>= heavy_ms) already proves the method is
+    genuinely heavy; a null prior is the bug's artifact, not static evidence. So
+    we extend for prior is None OR prior >= floor. MONOTONIC-SAFE: only ever
+    RAISES the cap; light graphs (no heavy method) keep the base
+    ``render_timeout_s``. Disabled when ``heavy_render_timeout_factor <= 1.0``.
     """
     factor = getattr(cfg, "heavy_render_timeout_factor", 1.0)
     if factor <= 1.0:
@@ -461,20 +463,40 @@ def effective_render_timeout_s(genome: dict,
         model = load_cost_model()
     pm = model.get("per_method", {})
     pma = model.get("per_method_alive") or {}
-    if not pma:
-        return base
     # ── Order matters (Route 8 cost-cull fix, 2026-07-16) ──
-    # A genome CONTAINING a heavy method with a high empirical P(alive) is
-    # intrinsically heavy: its slow-but-dynamic render should be extended even
-    # when the conservative per-method estimate under-predicts it. Heavy sims
-    # empirically blow the estimate by up to ~17x (wall/est p99), so the est
-    # floor at Eligibility-1 silently rejected 28/41 eligible slow-but-dynamic
-    # clips (estimated <150s, slipped the gate, culled as 'timeout' at the base
-    # cap). Presence of the heavy method IS the heaviness signal, so we check it
-    # FIRST and extend unconditionally — monotonic-safe: only ever RAISES the cap
-    # for heavy high-prior graphs, never touches light ones.
+    # A genome CONTAINING a heavy method is intrinsically heavy: its
+    # slow-but-dynamic render should be extended even when the conservative
+    # per-method estimate under-predicts it. Heavy sims empirically blow the
+    # estimate by up to ~17x (wall/est p99), so the est floor at Eligibility-1
+    # silently rejected eligible slow-but-dynamic clips (estimated <150s,
+    # slipped the gate, culled as 'timeout' at the base cap). Presence of the
+    # heavy method IS the heaviness signal, so we check it FIRST and extend
+    # unconditionally for a cold (prior is None) or known-likely-dynamic (prior
+    # >= floor) heavy method — monotonic-safe: only ever RAISES the cap for
+    # heavy graphs, never touches light ones.
+    # NOTE: we must NOT `if not pma: return base` here (the old guard). A heavy
+    # method whose prior is None IS the death-spiral case — with an empty/partial
+    # pma dict, pma.get(mid) returns None, and that is exactly what we now
+    # extend. Removing the early-return is what lets cold heavy sims escape the
+    # timeout loop. (per_method_alive may still be non-empty for OTHER methods;
+    # we just can't let its emptiness suppress the cold-heavy branch.)
     prior_floor = getattr(cfg, "gate_liveness_floor", 0.33)
     heavy_ms = getattr(cfg, "heavy_method_ms_floor", 50.0)
+    # Death-spiral closure (Route 8, 2026-07-17): a heavy sim that gets culled
+    # as 'timeout' at the BASE cap never reaches the liveness gate, so its
+    # empirical P(alive) stays UNKNOWN (prior is None). The prior-gated branch
+    # below then requires prior >= floor, which that cold method can NEVER
+    # satisfy — so every heavy sim is permanently capped at BASE and re-culled
+    # as 'timeout' on every generation, forever denied the longer cap that
+    # would let it finish and earn a real verdict. The median ms/frame (>=
+    # heavy_ms) already PROVES the method is genuinely heavy; a null prior is
+    # the artifact of the bug, not evidence of a static node. So we extend the
+    # cap for a heavy method when its prior is None (cold) OR >= floor (known
+    # alive). This only RAISES the cap (monotonic-safe) and is self-correcting:
+    # once the clip finishes under the longer cap it gets a real verdict and
+    # becomes known-alive (or known-static, in which case the liveness gate
+    # culls it cheaply in a single generation instead of looping forever).
+    _COLD_HEAVY_EXTENDS = True
     for nd in genome.get("graph", {}).get("nodes", []):
         mid = nd.get("method_id")
         if mid is None:
@@ -483,6 +505,8 @@ def effective_render_timeout_s(genome: dict,
         if ms is None or ms < heavy_ms:
             continue
         prior = pma.get(mid)
+        if _COLD_HEAVY_EXTENDS and prior is None:
+            return base * float(factor)
         if prior is not None and prior >= prior_floor:
             return base * float(factor)
     # Eligibility 1 (fallback): no single heavy method, but the SUM of many

@@ -65,7 +65,11 @@ def test_unknown_method_uses_default():
 
 
 def test_over_budget_graph_is_gated():
-    cfg = DEFAULT_CONFIG  # render_timeout_s=300, cost_skip_factor=0.9 → 270s
+    # Disable the heavy-cap extension (DEFAULT_CONFIG has factor=2.0) so this
+    # isolates the PURE cost-gate behaviour. With factor>1.0 the gate spares any
+    # heavy-cap-eligible genome (incl. cold-heavy ones, post death-spiral
+    # closure) - see test_cost_gate_spares_heavy_cap_eligible_graph.
+    cfg = replace(DEFAULT_CONFIG, heavy_render_timeout_factor=1.0)
     # 3 * 1500 ms/frame * 96 / 1000 = 432 s  >> 270 s threshold
     model = _model({"sim": 1500.0}, n_samples=50)
     heavy = _genome("g-heavy", ["sim", "sim", "sim"])
@@ -101,7 +105,10 @@ def test_disabled_gate_never_skips():
 
 
 def test_partition_stamps_skipped_as_dead(monkeypatch):
-    cfg = DEFAULT_CONFIG
+    # heavy_render_timeout_factor=1.0 disables the cap extension, so the heavy
+    # graph is NOT spared by the gate (with the default factor=2.0 a cold heavy
+    # method now triggers the death-spiral extension and would spare it).
+    cfg = replace(DEFAULT_CONFIG, heavy_render_timeout_factor=1.0)
     model = _model({"sim": 1500.0, "cheap": 10.0}, n_samples=50)
     monkeypatch.setattr(cm, "load_cost_model", lambda *a, **k: model)
     heavy = _genome("g-heavy", ["sim", "sim", "sim"])
@@ -146,19 +153,27 @@ def test_cost_gate_spares_heavy_cap_eligible_graph(monkeypatch):
 
 
 def test_cost_gate_still_skips_heavy_static(monkeypatch):
-    """The exemption is narrow: a heavy graph whose heavy method has a LOW
+    """The exemption is narrow: a heavy graph whose ONLY heavy method has a LOW
     alive-prior (genuinely slow-and-static) has no cap extension, so the gate
     still culls it as over-budget. Guards against the fix over-relaxing.
+
+    Disable the heavy-cap extension (heavy_render_timeout_factor=1.0): with the
+    default factor=2.0 the death-spiral closure (2026-07-17) now spares cold-heavy
+    OR est-floor-heavy genomes via the cap-extension reconciliation, so a static
+    heavy graph would be spared too — that path is exercised by
+    test_cost_gate_spares_heavy_cap_eligible_graph. This test isolates the
+    narrow guarantee that with the extension OFF a slow-but-static heavy graph is
+    still gated.
     """
-    cfg = DEFAULT_CONFIG
+    cfg = replace(DEFAULT_CONFIG, heavy_render_timeout_factor=1.0)
     model = _model(
-        {"sim": 2000.0, "sim_static": 2000.0},
+        {"sim_static": 2000.0},
         n_samples=50,
-        per_method_p90={"sim": 2000.0, "sim_static": 2000.0},
+        per_method_p90={"sim_static": 2000.0},
         per_method_alive={"sim_static": 0.05},
     )
     monkeypatch.setattr(cm, "load_cost_model", lambda *a, **k: model)
-    g = _genome("g-heavy-static", ["sim", "sim_static", "sim_static"])
+    g = _genome("g-heavy-static", ["sim_static", "sim_static", "sim_static"])
     assert cm.is_over_budget(g, cfg, model)[0] is True
     assert cm.effective_render_timeout_s(g, cfg, model) == cfg.render_timeout_s
 

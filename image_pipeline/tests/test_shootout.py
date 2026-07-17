@@ -1786,9 +1786,11 @@ def test_heavy_method_presence_extends_cap_despite_low_estimate():
     assert cm.effective_render_timeout_s(g_light, cfg, model) == 300.0
 
 
-def test_heavy_method_without_prior_does_not_extend():
-    """A heavy method with NO trusted alive-prior must NOT trigger the
-    extension (monotonic-safe: never extends on a method the model distrusts)."""
+def test_heavy_method_without_prior_gets_extension_death_spiral():
+    """A heavy method with NO trusted alive-prior (prior is None) must NOW
+    trigger the extension (death-spiral closure, Route 8 2026-07-17). The old
+    behaviour suppressed it, which guaranteed the heavy sim would be culled as
+    'timeout' every generation without ever earning a verdict."""
     from image_pipeline.shootout import cost_model as cm
     cfg = ShootoutConfig()
     cfg.heavy_method_ms_floor = 400.0
@@ -1800,7 +1802,7 @@ def test_heavy_method_without_prior_does_not_extend():
         per_method_alive={"999": None},  # no trusted prior
     )
     g = _genome_with(["999"])
-    assert cm.effective_render_timeout_s(g, cfg, model) == 300.0
+    assert cm.effective_render_timeout_s(g, cfg, model) == 600.0
 
 
 def test_est_floor_fallback_still_extends_heavy_sum():
