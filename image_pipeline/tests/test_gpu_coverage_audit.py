@@ -63,7 +63,9 @@ DEFERRED_SIM_IDS = set(
     "107 109 110 111 112 113 114 116 117 123 129 130 131 134 "
     "136 145 147 149 151 152 158 159 167 337 429 440 448 922 310 "
     "483 484 517 951 966 560 518 530 532 970 971 974 "
-    "915 993 998 359 996 1000".split()
+    # 1007 MLS-MPM: Material-Point-Method continuum solver — heavy, not a
+    # ping-pong-twin candidate (no closed-form per-pixel update), defer.
+    "915 993 998 359 996 1000 1007".split()
 )
 # 1000 Lattice Boltzmann Fluid (D2Q9 BGK): Arch-A CFD solver whose state is the
 # full 9-channel D2Q9 distribution function f_i(x) — one scalar per lattice
