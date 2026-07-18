@@ -41,6 +41,7 @@ no node, no server path, no GPU.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import time
 from pathlib import Path
@@ -86,13 +87,29 @@ def _temporal_var(stack: list[np.ndarray]) -> float:
 
 
 def _non_none_modes(defn: dict) -> list[str]:
-    """Return the non-'none' anim_mode / animation_mode choices for a node def."""
+    """Return the non-'none' anim_mode / animation_mode choices for a node def.
+
+    Prefers an explicit ``choices`` list. Falls back to parsing a slash-listed
+    mode enumeration from the param description (e.g.
+    ``"animation mode (none/phase/draw/rotate)"``) — the same paren-slash
+    pattern the server's ``_parse_choices`` enrichment recognises. Without this
+    fallback, a node whose modes live ONLY in the description (choices derived
+    at the /api/node-defs layer, not declared in the decorator) is audited via
+    the ``time`` path with ``anim_mode='none'`` — which freezes the clock and
+    yields a FALSE ``DEAD-PARAM`` verdict (hit node 406 Harmonograph / 402
+    Kaleidoscopic IFS: both animate strongly but were flagged static).
+    """
     out: list[str] = []
     for key in ("anim_mode", "animation_mode"):
         spec = (defn.get("params") or {}).get(key)
         if not spec:
             continue
-        choices = spec.get("choices") or []
+        choices = list(spec.get("choices") or [])
+        if not choices:
+            # Fallback: paren slash-list in the description (>= 2 items).
+            m = re.search(r"\(([a-z_]+(?:/[a-z_]+)+)\)", str(spec.get("description", "")))
+            if m:
+                choices = m.group(1).split("/")
         for c in choices:
             cs = str(c).lower()
             if cs not in ("none", "", "off"):

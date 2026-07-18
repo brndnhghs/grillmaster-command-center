@@ -47,7 +47,7 @@ def _gaussian_blur(buf: np.ndarray, sigma: float) -> np.ndarray:
         "line_width": {"description": "stroke softness / ribbon width (px)", "min": 0.3, "max": 4.0, "default": 1.2},
         "color_shift": {"description": "palette hue offset", "min": 0.0, "max": 1.0, "default": 0.5},
         "samples": {"description": "curve sample count (resolution)", "min": 20000, "max": 300000, "default": 120000},
-        "anim_mode": {"description": "animation mode (none/phase/draw/rotate)", "default": "none"},
+        "anim_mode": {"description": "animation mode (none/phase/draw/rotate)", "choices": ["none", "phase", "draw", "rotate"], "default": "none"},
         "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
     },
 )

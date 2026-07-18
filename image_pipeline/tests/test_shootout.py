@@ -1964,3 +1964,41 @@ def test_audit_time_fallback_yields_real_verdict():
     r2 = audit_node("__nonexistent_time__", tdef)
     assert r2["status"] != "no-anim-mode"
     assert r2["modes"] == ["<time>"]
+
+
+def test_audit_parses_description_derived_modes():
+    """anim_mode choices that live only in the description (paren slash-list)
+    must be discovered so the node is audited via its REAL modes, not the
+    ``time`` fallback with anim_mode='none' (which freezes the clock → false
+    DEAD-PARAM). Regression for nodes 406 Harmonograph / 402 Kaleidoscopic IFS.
+    """
+    from image_pipeline.shootout.audit_dead_params import _non_none_modes
+    # choices only in the description string, no explicit choices list
+    desc_only = {"params": {"anim_mode": {
+        "description": "animation mode (none/phase/draw/rotate)", "default": "none"}}}
+    assert _non_none_modes(desc_only) == ["phase", "draw", "rotate"]
+    # explicit choices still take precedence
+    explicit = {"params": {"anim_mode": {
+        "description": "ignored (a/b)", "choices": ["none", "rotate", "spin"],
+        "default": "none"}}}
+    assert _non_none_modes(explicit) == ["rotate", "spin"]
+    # a description with no paren slash-list yields nothing
+    plain = {"params": {"anim_mode": {"description": "the animation", "default": "none"}}}
+    assert _non_none_modes(plain) == []
+
+
+def test_harmonograph_and_kifs_animate_and_declare_modes():
+    """Nodes 406/402 must declare explicit anim_mode choices AND actually
+    animate in a non-none mode (audit must classify them 'alive')."""
+    import image_pipeline.methods  # noqa: F401
+    from image_pipeline.core.graph import get_all_node_defs
+    from image_pipeline.shootout.audit_dead_params import audit_node
+    defs = get_all_node_defs()
+    for mid in ("406", "402"):
+        defn = defs.get(mid)
+        assert defn is not None, f"node {mid} not registered"
+        choices = (defn.get("params") or {}).get("anim_mode", {}).get("choices")
+        assert choices and "none" in choices and len(choices) >= 3, \
+            f"node {mid} missing explicit anim_mode choices: {choices}"
+        r = audit_node(mid, defn)
+        assert r["status"] == "alive", f"node {mid} audited {r['status']} (should be alive): {r}"
