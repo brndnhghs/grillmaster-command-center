@@ -373,6 +373,13 @@ _TYPED_SHADER_NODES = [
     # numpy node 963 stays authoritative for export (two-tier precision).
     # 352 is the free ID above 301.
     ("352", "gerstner_ocean_gpu", "GPU Gerstner Ocean"),
+    # Node 360: Gyroid TPMS — closed-form triply-periodic minimal-surface shell
+    # on a swept slice plane (typed GPU twin of CPU node 964). Genuinely
+    # time-varying: the slice-plane z advances with u_time so the 2D cross
+    # section morphs continuously (survives the shootout contrast-only static
+    # cull). CPU numpy node 964 stays authoritative for export.
+    # 360 is the free ID above 301.
+    ("360", "gyroid_tpms_gpu", "GPU Gyroid TPMS"),
 ]
 
 
