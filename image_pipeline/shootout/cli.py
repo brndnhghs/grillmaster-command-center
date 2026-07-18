@@ -8,6 +8,7 @@ and prints a liveness table.
 from __future__ import annotations
 
 import argparse
+import json
 import random
 import time
 
@@ -74,6 +75,124 @@ def _print_honest_dead_rate() -> None:
         f"{n}× {r}" for r, n in sorted(reasons.items())))
 
 
+def _print_health() -> None:
+    """Full corpus-health diagnostic (Phase 1 of the autonomous-dev loop).
+
+    Operationalizes the standing Phase-1 analysis so every run (and the user)
+    gets it instantly instead of re-deriving it by hand:
+      * naive + control-excluded dead-rate,
+      * dead-reason breakdown,
+      * DRIVER-INDEPENDENCE test (does driver presence correlate with
+        death, or is the driver-heavy dead list just a ubiquity confound?),
+      * rating starvation (how blind the taste model is),
+      * liveness-gate calibration (alive vs dead sub-metric medians).
+
+    Read-only; renders nothing, never mutates a genome.
+    """
+    import statistics as _st
+
+    from . import cost_model as _cm
+
+    files = list(_cm._iter_genome_files())
+    G: list[dict] = []
+    for p in files:
+        try:
+            G.append(json.loads(p.read_text()))
+        except (OSError, ValueError):
+            continue
+    n = len(G)
+    if n == 0:
+        print("no genomes in corpus")
+        return
+
+    def _lv(g: dict) -> dict:
+        return g.get("liveness") or {}
+
+    def _dead(g: dict) -> bool:
+        return not bool(_lv(g).get("alive"))
+
+    alive = [g for g in G if not _dead(g)]
+    dead = [g for g in G if _dead(g)]
+    naive = 100.0 * len(dead) / n
+
+    # control-excluded (image-node) dead-rate, mirroring _print_honest_dead_rate
+    image_genomes = 0
+    image_dead = 0
+    for g in G:
+        mids = [nd.get("method_id") for nd in g.get("graph", {}).get("nodes", [])]
+        if any(m not in _CONTROL_NODE_IDS for m in mids):
+            image_genomes += 1
+            if _dead(g):
+                image_dead += 1
+    honest = 100.0 * image_dead / image_genomes if image_genomes else 0.0
+
+    print(f"corpus: {n} genomes")
+    print(f"  naive dead-rate (all):         {naive:.0f}%  ({len(dead)}/{n})")
+    print(f"  honest dead-rate (image-graphs): {honest:.0f}%  ({image_dead}/{image_genomes})")
+
+    # dead-reason breakdown
+    reasons: dict[str, int] = {}
+    for g in dead:
+        r = _lv(g).get("reason") or "unknown"
+        reasons[r] = reasons.get(r, 0) + 1
+    print("  dead reasons:")
+    for r, c in sorted(reasons.items(), key=lambda x: -x[1]):
+        print(f"    {c:4d}  {r}")
+
+    # DRIVER-INDEPENDENCE test — the standing Route-8 premise is that
+    # driver/control nodes do not modulate output, so driver-heavy graphs
+    # die as 'static'. That conflates ubiquity with causation: drivers sit in
+    # most genomes, so they dominate any dead-list count. The real test is
+    # whether driver-PRESENCE raises the death rate. If the two rates are
+    # ~equal, drivers are NOT the cause and the hypothesis is a red herring.
+    drivers = {"__counter__", "__ramp__", "__lfo__", "__noise1d__",
+               "__envelope__", "__strobe__", "__burst__", "__beats__",
+               "__noise__", "__image_to_mask__"}
+
+    def _has_drv(g: dict) -> bool:
+        return any(nd.get("method_id") in drivers
+                   for nd in g.get("graph", {}).get("nodes", []))
+
+    wd = [g for g in G if _has_drv(g)]
+    wod = [g for g in G if not _has_drv(g)]
+    dw = sum(1 for g in wd if _dead(g))
+    dwo = sum(1 for g in wod if _dead(g))
+    print("  DRIVER-INDEPENDENCE (does driver presence => death?):")
+    print(f"    with driver:     {100.0 * dw / len(wd):.0f}% dead ({dw}/{len(wd)})")
+    print(f"    without driver:  {100.0 * dwo / len(wod):.0f}% dead ({dwo}/{len(wod)})")
+    if dw and dwo and abs(100.0 * dw / len(wd) - 100.0 * dwo / len(wod)) < 5.0:
+        print("    -> ~equal: drivers are a UBIQUITY confound, NOT the death cause")
+    else:
+        print("    -> divergent: driver presence DOES affect death rate")
+
+    # rating starvation — the taste model is near-blind below ~20 ratings
+    rated = sum(1 for g in G if isinstance(g.get("rating"), (int, float)))
+    print(f"  rating starvation: {rated}/{n} rated ({100.0 * rated / n:.1f}%)")
+    if rated < 20:
+        print("    -> taste model is STARVED; rating-signal poverty is the live bottleneck")
+
+    # liveness-gate calibration — proves the gate culls genuinely-static
+    # clips (alive median >> dead median on motion sub-metrics) rather than
+    # missing real motion. Only the UNIVERSAL liveness keys are reported;
+    # extended keys (spectral_ac_active / flow_var / motion_pixel_frac)
+    # drifted in and out of the schema across the corpus, so they are
+    # skipped to avoid a misleading median over a mixed-population.
+    UNIV = ("temporal_var", "spatial_var", "frame_corr")
+
+    def _med_cov(xs: list[dict], key: str):
+        raw = [(_lv(g).get(key) or 0.0) for g in xs]
+        vals = [v for v in raw if isinstance(v, (int, float)) and v != 0.0]
+        cov = sum(1 for v in raw if isinstance(v, (int, float)))
+        return (float(_st.median(vals)) if vals else 0.0,
+                100.0 * cov / len(xs) if xs else 0.0)
+
+    print("  liveness-gate calibration (median sub-metric [coverage%]):")
+    for key in UNIV:
+        am, ac = _med_cov(alive, key)
+        dm, dc = _med_cov(dead, key)
+        print(f"    {key:<16} alive={am:.5f}[{ac:.0f}%]  dead={dm:.5f}[{dc:.0f}%]")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Shootout M1: generate → render → reject")
     ap.add_argument("--n", type=int, default=12, help="candidates to render")
@@ -86,6 +205,10 @@ def main() -> None:
     ap.add_argument("--honest-dead-rate", action="store_true",
                     help="Instead of rendering: print the naive dead-rate AND the "
                          "control-excluded (image-node) dead-rate over the corpus")
+    ap.add_argument("--health", action="store_true",
+                    help="Print the full corpus-health diagnostic (dead-rate + "
+                         "reasons + driver-independence + rating starvation + "
+                         "liveness calibration) and exit")
     ap.add_argument("--revalidate-legacy", action="store_true",
                     help="Re-run the CURRENT liveness gate over stored mp4s for "
                          "version-stale dead genomes (optical-flow / color-aware / "
@@ -108,6 +231,10 @@ def main() -> None:
 
     if args.honest_dead_rate:
         _print_honest_dead_rate()
+        return
+
+    if args.health:
+        _print_health()
         return
 
     cfg = ShootoutConfig()
