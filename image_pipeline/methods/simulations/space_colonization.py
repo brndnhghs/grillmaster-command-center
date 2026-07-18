@@ -121,6 +121,38 @@ def _grow(attractors, origin, segment, influence, kill, max_nodes,
     return np.array(nodes, dtype=np.float32), np.array(parents, dtype=np.int64)
 
 
+# ── Grow-result cache (Architecture-B timeout fix) ──────────────────────────
+# Node 337 is Architecture B: the orchestrator re-calls the whole method once
+# per frame (48-96×). The space-colonization growth (`_grow`) is fully
+# deterministic in (seed, attractor field, growth params) — it produces a
+# byte-identical tree every frame — yet it was the single largest render-timeout
+# burner in the shootout corpus (~238s/clip) precisely because it re-grew the
+# tree from scratch on every frame. The per-frame work that actually varies is
+# only the sway/reveal transform + render. Memoizing the grown structure across
+# frames cuts the dominant O(steps·nodes·attractors) cost to once per clip,
+# leaving output pixel-identical. Small bounded cache keeps memory flat.
+_GROW_CACHE: dict = {}
+_GROW_CACHE_MAX = 8
+
+
+def _grow_cached(key, attractors, origin, segment, influence, kill, max_nodes,
+                 rng):
+    """Memoized `_grow`. `key` must capture every growth-affecting input.
+
+    `_grow` does not consume `rng` (the growth rule is deterministic), and the
+    returned arrays are never mutated downstream (sway builds new arrays,
+    reveal only slices, render reads), so sharing cached arrays is safe.
+    """
+    hit = _GROW_CACHE.get(key)
+    if hit is not None:
+        return hit
+    res = _grow(attractors, origin, segment, influence, kill, max_nodes, rng)
+    if len(_GROW_CACHE) >= _GROW_CACHE_MAX:
+        _GROW_CACHE.pop(next(iter(_GROW_CACHE)))  # drop oldest (FIFO)
+    _GROW_CACHE[key] = res
+    return res
+
+
 def _nearest_attractor_dir(node, act, alive, influence):
     """Mean normalized direction from node to its live attractors within influence."""
     if not alive.any():
@@ -280,8 +312,10 @@ def method_space_colonization(out_dir: Path, seed: int, params=None):
         origin = np.array([W / 2, H / 2], dtype=np.float64)
 
     try:
-        nodes, parents = _grow(attractors, origin, segment, influence, kill,
-                               max_nodes=4000, rng=rng)
+        _grow_key = (int(seed), n_attr, round(segment, 4), round(influence, 4),
+                     round(kill, 4), domain, seed_pos)
+        nodes, parents = _grow_cached(_grow_key, attractors, origin, segment,
+                                      influence, kill, max_nodes=4000, rng=rng)
 
         if len(nodes) < 2:
             nodes = np.array([origin, origin + np.array([1.0, 0.0])], dtype=np.float32)
