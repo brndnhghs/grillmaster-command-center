@@ -2,8 +2,11 @@
 from __future__ import annotations
 import asyncio
 import base64
+import glob
 import importlib
+import inspect
 import io
+import ast
 import json
 import os
 import queue
@@ -455,16 +458,106 @@ def _parse_choices(desc: str, default_val) -> list | None:
     return None
 
 
-def _enrich_params(params: dict | None) -> dict | None:
-    """Inject 'choices' into param specs where the description encodes an enum list."""
+def _derive_anim_mode_choices(fn) -> list[str] | None:
+    """Best-effort: recover the enum of animation modes a method actually
+    implements, by reading its own source.
+
+    Many methods alias ``anim_mode`` to a local variable (e.g.
+    ``mode = params.get("anim_mode")``) and branch on that, so a naive regex
+    over ``anim_mode == '...'`` misses them. We parse the AST and collect every
+    string literal that is compared against (== / != / ``in``) the anim-mode
+    variable — however it is named — then the ``default`` from the param spec.
+
+    Returns the ordered mode list (default first) or ``None`` if the method has
+    no anim_mode param or we couldn't find ≥2 modes.
+    """
+    if fn is None or not hasattr(fn, "__code__"):
+        return None
+    try:
+        src = inspect.getsource(fn)
+        tree = ast.parse(src)
+    except (OSError, TypeError, SyntaxError):
+        return None
+
+    # 1) Find the local name bound to anim_mode (direct, or via params.get).
+    anim_var = "anim_mode"
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            tgt = node.targets[0]
+            val = node.value
+            if isinstance(tgt, ast.Name) and isinstance(val, ast.Call):
+                # mode = params.get("anim_mode", "none")
+                if isinstance(val.func, ast.Attribute) and val.func.attr == "get":
+                    args = val.args
+                    if args and isinstance(args[0], ast.Constant) and args[0].value == "anim_mode":
+                        anim_var = tgt.id
+            elif isinstance(tgt, ast.Name) and isinstance(val, ast.Name) and val.id == "anim_mode":
+                anim_var = tgt.id
+
+    found: list[str] = []
+    seen: set[str] = set()
+
+    def add(v):
+        if isinstance(v, str) and re.fullmatch(r"[A-Za-z0-9_\-]+", v) and v not in seen:
+            seen.add(v)
+            found.append(v)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Compare):
+            # Identify the operand that is the anim-mode variable
+            operands = [node.left] + list(node.comparators)
+            names = {o.id for o in operands if isinstance(o, ast.Name)}
+            if anim_var in names:
+                for o in operands:
+                    if isinstance(o, ast.Constant) and isinstance(o.value, str):
+                        add(o.value)
+        elif isinstance(node, ast.If) and isinstance(node.test, ast.Compare):
+            # also catch `if mode in ("a", "b")`
+            operands = [node.test.left] + list(node.test.comparators)
+            names = {o.id for o in operands if isinstance(o, ast.Name)}
+            if anim_var in names:
+                for o in operands:
+                    if isinstance(o, ast.Constant) and isinstance(o.value, str):
+                        add(o.value)
+                    elif isinstance(o, (ast.Tuple, ast.List, ast.Set)):
+                        for elt in o.elts:
+                            if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                                add(elt.value)
+    return found if len(found) >= 2 else None
+
+
+def _enrich_params(params: dict | None, fn=None) -> dict | None:
+    """Inject 'choices' into param specs where the description encodes an enum
+    list, or (for ``anim_mode``) where the method's own source declares them.
+
+    Also normalises the legacy ``options`` key (some older methods used it
+    instead of ``choices``) to ``choices`` so the UI select factory picks it up.
+    """
     if not params:
         return params
     result = {}
     for key, spec in params.items():
-        if not isinstance(spec, dict) or 'choices' in spec:
+        if not isinstance(spec, dict):
+            result[key] = spec
+            continue
+        # Normalise legacy 'options' -> 'choices' (UI reads 'choices').
+        if 'choices' not in spec and 'options' in spec and isinstance(spec['options'], (list, tuple)) and spec['options']:
+            spec = {**spec, 'choices': list(spec['options'])}
+        if 'choices' in spec:
+            # Already explicit — keep as-is (data wins).
             result[key] = spec
             continue
         choices = _parse_choices(spec.get('description', ''), spec.get('default'))
+        if choices is None and key == "anim_mode" and fn is not None:
+            # Recover the mode enum from the method body itself.
+            derived = _derive_anim_mode_choices(fn)
+            default = spec.get("default")
+            if derived and default and default in derived:
+                # Ensure default leads the list (UI convention).
+                ordered = [default] + [m for m in derived if m != default]
+                choices = ordered
+            else:
+                choices = derived
         result[key] = {**spec, 'choices': choices} if choices else spec
     return result
 
@@ -532,7 +625,7 @@ def list_methods():
             "name": meta.name,
             "category": meta.category,
             "tags": meta.tags,
-            "params": _enrich_params(meta.params),
+            "params": _enrich_params(meta.params, meta.fn),
         }
         for meta in sorted(all_methods.values(), key=lambda m: m.id)
     ]
@@ -973,9 +1066,14 @@ def get_wire_payload(job_id: str, src_node_id: str):
 def get_node_defs():
     from image_pipeline.core.graph import get_all_node_defs
     defs = get_all_node_defs()
+    # Map method_id -> function so enrichment can derive anim_mode choices
+    # from each method's own source (handles aliased anim-mode variables).
+    _meta_by_id = registry.get_all()
     for nd in defs.values():
         if nd.get('params'):
-            nd['params'] = _enrich_params(nd['params'])
+            _mid = nd.get('method_id', '')
+            _meta = _meta_by_id.get(_mid)
+            nd['params'] = _enrich_params(nd['params'], _meta.fn if _meta else None)
     return defs
 
 
