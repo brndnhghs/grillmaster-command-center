@@ -1018,6 +1018,22 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "reset_on": ["seed", "param", "loop", "resize"],
         "param_map": {"feed": "p1", "kill": "p2", "diff_u": "p3", "diff_v": "p4"},
     },
+    # ── Node 1008: Cahn-Hilliard Phase Separation (GPU sim twin) ──
+    # Spinodal decomposition / phase coarsening — a free-energy (Model B)
+    # regime distinct from the reaction-diffusion twins (Gray-Scott 155,
+    # Sel'kov 1003, BZ 91). State packs φ (phase) in .r, μ (chemical
+    # potential) in .g (two channels). Live-preview twin only; CPU node
+    # (simulations/cahn_hilliard.py) stays authoritative for export.
+    "1008": {
+        "type": "sim",
+        "seed": "cahn_hilliard_seed",
+        "step": "cahn_hilliard_step",
+        "display": "cahn_hilliard_display",
+        "state_channels": 2,          # φ in .r, μ in .g
+        "substeps": 24,                # Euler steps per rendered frame (live pace)
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"epsilon": "p1", "mobility": "p2", "seed_variance": "p3"},
+    },
     # ── Node 999: Kuramoto Coupled-Oscillator Phase Field (GPU sim twin) ──
     # Self-organized synchronization — a brand-new GPU-sim category (no coupled
     # oscillator existed before). State packs phase in .r, Ω in .g, RNG in .b.
