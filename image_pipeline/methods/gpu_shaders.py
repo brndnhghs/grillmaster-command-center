@@ -366,6 +366,13 @@ _TYPED_SHADER_NODES = [
     # the contrast-only static liveness cull and feeds animation drivers.
     # (309 is the free ID above 301 — 310-315 are taken by CPU method ids.)
     ("309", "mandelbox_gpu", "GPU Mandelbox"),
+    # Node 352: Gerstner Ocean — analytic trochoidal-wave height field with
+    # Blinn-Phong sun glitter (typed GPU twin of CPU node 963). Closed-form
+    # f(uv,t): wave phases advance with u_time so the live preview is genuinely
+    # animated (survives the shootout contrast-only static liveness cull). CPU
+    # numpy node 963 stays authoritative for export (two-tier precision).
+    # 352 is the free ID above 301.
+    ("352", "gerstner_ocean_gpu", "GPU Gerstner Ocean"),
 ]
 
 
