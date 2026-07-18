@@ -86,18 +86,78 @@ def _temporal_var(stack: list[np.ndarray]) -> float:
     return float(arr.var(axis=0).mean())
 
 
-def _non_none_modes(defn: dict) -> list[str]:
+def _derive_modes_from_source(mid: str) -> list[str]:
+    """Recover the anim_mode enum from a method's own source via AST.
+
+    Mirrors the server's ``_derive_anim_mode_choices``: many methods alias
+    ``anim_mode`` to a local (``mode = params.get("anim_mode", "none")``) and
+    branch on that, so the modes appear NEITHER in an explicit ``choices`` list
+    NOR in a paren slash-list description — they live only in the method body.
+    Reading the source recovers them and closes the last audit blind spot
+    (the alias-only case the description regex cannot see).
+
+    Returns the ordered non-'none' mode list, or ``[]`` if unrecoverable.
+    """
+    from image_pipeline.core import registry as _reg
+    meta = _reg.get_meta(mid)
+    fn = getattr(meta, "fn", None) if meta else None
+    if fn is None or not hasattr(fn, "__code__"):
+        return []
+    import ast
+    import inspect
+    try:
+        tree = ast.parse(inspect.getsource(fn))
+    except (OSError, TypeError, SyntaxError):
+        return []
+    # Find the local name bound to anim_mode (direct or via params.get).
+    anim_var = "anim_mode"
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            tgt, val = node.targets[0], node.value
+            if isinstance(tgt, ast.Name) and isinstance(val, ast.Call) \
+                    and isinstance(val.func, ast.Attribute) and val.func.attr == "get" \
+                    and val.args and isinstance(val.args[0], ast.Constant) \
+                    and val.args[0].value == "anim_mode":
+                anim_var = tgt.id
+            elif isinstance(tgt, ast.Name) and isinstance(val, ast.Name) and val.id == "anim_mode":
+                anim_var = tgt.id
+    found: list[str] = []
+    seen: set[str] = set()
+
+    def _add(v):
+        if isinstance(v, str) and re.fullmatch(r"[A-Za-z0-9_\-]+", v) and v not in seen:
+            seen.add(v)
+            found.append(v)
+
+    for node in ast.walk(tree):
+        cmp = node.test if isinstance(node, ast.If) and isinstance(node.test, ast.Compare) else \
+            (node if isinstance(node, ast.Compare) else None)
+        if cmp is None:
+            continue
+        operands = [cmp.left] + list(cmp.comparators)
+        if anim_var in {o.id for o in operands if isinstance(o, ast.Name)}:
+            for o in operands:
+                if isinstance(o, ast.Constant) and isinstance(o.value, str):
+                    _add(o.value)
+                elif isinstance(o, (ast.Tuple, ast.List, ast.Set)):
+                    for elt in o.elts:
+                        if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                            _add(elt.value)
+    return [m for m in found if m.lower() not in ("none", "", "off")]
+
+
+def _non_none_modes(defn: dict, mid: str | None = None) -> list[str]:
     """Return the non-'none' anim_mode / animation_mode choices for a node def.
 
-    Prefers an explicit ``choices`` list. Falls back to parsing a slash-listed
-    mode enumeration from the param description (e.g.
-    ``"animation mode (none/phase/draw/rotate)"``) — the same paren-slash
-    pattern the server's ``_parse_choices`` enrichment recognises. Without this
-    fallback, a node whose modes live ONLY in the description (choices derived
-    at the /api/node-defs layer, not declared in the decorator) is audited via
-    the ``time`` path with ``anim_mode='none'`` — which freezes the clock and
-    yields a FALSE ``DEAD-PARAM`` verdict (hit node 406 Harmonograph / 402
-    Kaleidoscopic IFS: both animate strongly but were flagged static).
+    Layered recovery (each fallback catches a strictly harder case):
+    1. explicit ``choices`` list in the param spec,
+    2. a paren slash-list in the param description (e.g.
+       ``"animation mode (none/phase/draw/rotate)"``),
+    3. an AST scan of the method's own source (``mid`` given) — catches modes
+       declared ONLY via an aliased local (``mode = params.get("anim_mode")``),
+       which neither (1) nor (2) can see. This is the last audit blind spot the
+       prior runs flagged (false DEAD-PARAM verdicts from a frozen ``none``
+       clock — hit 406 Harmonograph / 402 Kaleidoscopic IFS).
     """
     out: list[str] = []
     for key in ("anim_mode", "animation_mode"):
@@ -106,7 +166,7 @@ def _non_none_modes(defn: dict) -> list[str]:
             continue
         choices = list(spec.get("choices") or [])
         if not choices:
-            # Fallback: paren slash-list in the description (>= 2 items).
+            # Fallback 2: paren slash-list in the description (>= 2 items).
             m = re.search(r"\(([a-z_]+(?:/[a-z_]+)+)\)", str(spec.get("description", "")))
             if m:
                 choices = m.group(1).split("/")
@@ -114,6 +174,11 @@ def _non_none_modes(defn: dict) -> list[str]:
             cs = str(c).lower()
             if cs not in ("none", "", "off"):
                 out.append(str(c))
+    # Fallback 3: AST recovery from the method source (alias-only modes).
+    if not out and mid is not None:
+        params = defn.get("params") or {}
+        if any(k in params for k in ("anim_mode", "animation_mode")):
+            out = _derive_modes_from_source(mid)
     return out
 
 
@@ -140,7 +205,7 @@ def _time_varying_ids() -> list[str]:
             ids.append(mid)
             continue
         # An anim_mode enum with a non-'none' choice
-        if _non_none_modes(defn):
+        if _non_none_modes(defn, mid):
             ids.append(mid)
             continue
         # Category hints for known time-varying families
@@ -176,7 +241,7 @@ def _render(mid: str, params: dict, frame: int, seed: int = 42) -> np.ndarray:
 
 
 def audit_node(mid: str, defn: dict, seed: int = 42) -> dict:
-    modes = _non_none_modes(defn)
+    modes = _non_none_modes(defn, mid)
     # sensible source so motion is visible where the node needs structure
     base: dict[str, object] = {"anim_speed": 1.0}
     params_schema = defn.get("params") or {}

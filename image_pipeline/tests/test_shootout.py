@@ -2002,3 +2002,32 @@ def test_harmonograph_and_kifs_animate_and_declare_modes():
             f"node {mid} missing explicit anim_mode choices: {choices}"
         r = audit_node(mid, defn)
         assert r["status"] == "alive", f"node {mid} audited {r['status']} (should be alive): {r}"
+
+
+def test_audit_recovers_alias_only_modes_from_source():
+    """Fallback 3 (2026-07-18): modes declared ONLY via an aliased local
+    (``mode = params.get("anim_mode", "none")`` then branched on) appear in
+    NEITHER an explicit ``choices`` list NOR a paren slash-list description.
+    An AST scan of the method source must still recover them so the node is
+    audited via its real modes rather than the frozen ``none`` time-path.
+
+    We assert the real registry: find a registered node whose anim_mode modes
+    are recoverable from source, and prove _derive_modes_from_source returns a
+    non-empty list for it. Node 402 (Kaleidoscopic IFS) reads anim_mode via an
+    aliased local, so its source-derived modes must be non-empty.
+    """
+    import image_pipeline.methods  # noqa: F401
+    from image_pipeline.shootout.audit_dead_params import (
+        _derive_modes_from_source,
+        _non_none_modes,
+    )
+    # 402 aliases anim_mode to a local and branches on it — source recovery
+    # must yield its real (non-none) modes.
+    modes = _derive_modes_from_source("402")
+    assert modes and all(m.lower() != "none" for m in modes), \
+        f"source-derived modes for 402 should be non-empty non-none: {modes}"
+    # The layered _non_none_modes with a def that has an anim_mode param but no
+    # choices/description must fall through to the source scan when mid is given.
+    stub = {"params": {"anim_mode": {"description": "the animation", "default": "none"}}}
+    assert _non_none_modes(stub) == []            # no mid → no source scan
+    assert _non_none_modes(stub, "402") == modes  # mid → source scan recovers
