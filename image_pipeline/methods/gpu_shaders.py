@@ -674,6 +674,14 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # uv, t); CPU numpy node stays the authoritative export.
     "172": {"shader": "dunes_gpu", "type": "procedural",
             "param_map": {"wind_strength": "p1", "sediment_supply": "p2"}},
+    # 513 Caustics: typed-uniform twin — depth/scale/gain/waves map by NAME
+    # (the client typed-live path reads node params by uniform name; the p-slot
+    # values here are legacy-path fallbacks only). `colormode`/`anim_mode` are
+    # choice strings (pitfall #14) left unmapped → preview uses the aqua/animated
+    # closed-form default. Analytic-Hessian inverse-magnification caustic is a
+    # pure function of (uv, t); CPU numpy node stays the authoritative export.
+    "513": {"shader": "caustics513_gpu", "type": "procedural",
+            "param_map": {"depth": "p1", "scale": "p2", "gain": "p3", "waves": "p4"}},
     # ── P0.6 field-eval (closed-form f(uv,t) twins, same family as 125/164) ──
     # 53 Metaballs: isovalue -> p1, ball_speed -> p2. behavior/field_fn/style
     # are choice strings (pitfall #14) left unmapped; preview shows orbiting
