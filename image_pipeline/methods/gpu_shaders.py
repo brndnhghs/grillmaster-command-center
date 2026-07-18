@@ -618,6 +618,15 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
             "param_map": {"spacing": "spacing", "line_width": "line_width",
                           "layers": "layers", "angle": "angle",
                           "contrast": "contrast"}},
+    # 493 Color Grading (OKLab) → typed-uniform twin (color_grade_gpu). The
+    # node's REAL numeric grade params are mapped by name (contract #5); the
+    # string params (source/palette/invert) + anim modes stay CPU-only. Gives
+    # the `filters` category another perceptual-color GPU mirror.
+    "493": {"shader": "color_grade_gpu", "type": "filter", "typed": True,
+            "param_map": {"exposure": "exposure", "contrast": "contrast",
+                          "gamma": "gamma", "saturation": "saturation",
+                          "hue_rotate": "hue_rotate", "temperature": "temperature",
+                          "tint": "tint", "vignette": "vignette"}},
     # ── P0.5 LUT / color ──
     # 11 Gradient: cx/cy are already in [0,1] so they map cleanly onto the
     # twin's center params (0.5 = middle). `direction` (0-360°) and
