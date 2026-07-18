@@ -1192,13 +1192,13 @@ void main() {
     vec2 uv = (v_uv * 2.0 - 1.0);
     uv.x *= u_resolution.x / u_resolution.y;
 
-    float baseFreq = mix(2.0, 10.0, u_params.x);
-    float oct = floor(mix(2.0, 6.0, u_params.y) + 0.5);
-    float warp = u_params.z * 0.7;
-    float phase = u_params.w;
+    float baseFreq = u_freq;
+    float oct = floor(u_octaves + 0.5);
+    float warp = u_warp;
+    float phase = u_palette;
 
     // sweep the 3rd coordinate through time: animates the noise field
-    vec3 p = vec3(uv * baseFreq, u_time * 0.6);
+    vec3 p = vec3(uv * baseFreq, u_time * u_flow);
 
     float n = dotNoiseFbm(p, oct, warp);
     // gyroid dot is in ~[-2,2]; remap to [0,1]
@@ -1208,7 +1208,18 @@ void main() {
     col *= 0.35 + 0.65 * v;
     f_color = vec4(col, 1.0);
 }
-''')
+''', uniforms={
+    "freq":    {"glsl": "float", "min": 2.0, "max": 10.0, "default": 6.0,
+                "description": "base frequency / zoom of the noise field"},
+    "octaves": {"glsl": "float", "min": 1.0, "max": 6.0, "default": 4.0,
+                "description": "number of fBm octaves summed"},
+    "warp":    {"glsl": "float", "min": 0.0, "max": 0.7, "default": 0.35,
+                "description": "self domain-warp amount"},
+    "palette": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5,
+                "description": "cosine palette phase"},
+    "flow":    {"glsl": "float", "min": 0.0, "max": 2.0, "default": 0.6,
+                "description": "time-sweep speed through the noise volume"},
+})
 
 
 # ── FILTER SHADERS (process input image) ──
@@ -1226,7 +1237,7 @@ float smin(float a, float b, float k) {
     return mix(b, a, h) - k * h * (1.0 - h);
 }
 float mapScene(vec3 p) {
-    float nSph = floor(mix(2.0, 6.0, u_params.y) + 0.5);
+    float nSph = floor(u_primitives + 0.5);
     float k = 0.4;
     float d = 1e5;
     for (int i = 0; i < 6; i++) {
@@ -1248,9 +1259,9 @@ vec3 calcNormal(vec3 p) {
         mapScene(p + e.yyx) - mapScene(p - e.yyx)));
 }
 void main() {
-    float camDist = mix(3.0, 7.0, u_params.x);
-    float glow = u_params.w;
-    float steps = floor(mix(40.0, 140.0, u_params.z) + 0.5);
+    float camDist = u_cam_dist;
+    float glow = u_glow;
+    float steps = floor(u_steps + 0.5);
 
     vec2 uv = (v_uv * 2.0 - 1.0);
     uv.x *= u_resolution.x / u_resolution.y;
@@ -1282,14 +1293,25 @@ void main() {
         vec3 lig = normalize(vec3(0.6, 0.7, -0.4));
         float dif = clamp(dot(n, lig), 0.0, 1.0);
         float amb = 0.3 + 0.7 * n.y;
-        vec3 base = vec3(0.9, 0.55, 0.35);
+        vec3 base = u_surface;
         col = base * (amb * 0.4 + dif * 0.9);
         float rim = pow(1.0 - clamp(dot(n, -rd), 0.0, 1.0), 2.0);
         col += glow * rim * vec3(0.35, 0.7, 1.0);
     }
     f_color = vec4(col, 1.0);
 }
-''')
+''', uniforms={
+    "cam_dist":   {"glsl": "float", "min": 3.0, "max": 7.0, "default": 5.0,
+                   "description": "camera orbit distance"},
+    "primitives": {"glsl": "float", "min": 2.0, "max": 6.0, "default": 4.0,
+                   "description": "number of blended SDF spheres"},
+    "steps":      {"glsl": "float", "min": 40.0, "max": 140.0, "default": 90.0,
+                   "description": "max ray-march steps (quality)"},
+    "glow":       {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5,
+                   "description": "rim-glow amount"},
+    "surface":    {"glsl": "color", "default": "#e68c59",
+                   "description": "surface base color"},
+})
 
 def _filter_shader(source: str) -> str:
     """Wrap a filter shader body with the full image processing prologue."""
