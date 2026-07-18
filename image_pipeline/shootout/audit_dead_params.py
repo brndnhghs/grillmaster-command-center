@@ -100,6 +100,20 @@ def _non_none_modes(defn: dict) -> list[str]:
     return out
 
 
+def _has_time_param(defn: dict) -> bool:
+    """True when a node animates via the injected ``time`` clock (Architecture B).
+
+    The GraphExecutor sets ``run_params["time"] = timeline.phase`` every frame
+    (graph.py), so any node that DECLARES a ``time`` param (or a ``phase``
+    alias) evolves across frames WITHOUT an ``anim_mode`` enum. These nodes were
+    previously reported ``no-anim-mode`` and never rendered — a blind spot that
+    hid genuine dead-``time`` nodes (the Arch-B analogue of the pitfall #4/#19
+    dead-param class). Detect them so the audit can exercise the time path.
+    """
+    params = defn.get("params") or {}
+    return any(k in params for k in ("time", "phase"))
+
+
 def _time_varying_ids() -> list[str]:
     defs = get_all_node_defs()
     ids: list[str] = []
@@ -124,8 +138,6 @@ def _time_varying_ids() -> list[str]:
 
 def _render(mid: str, params: dict, frame: int, seed: int = 42) -> np.ndarray:
     node = GraphNode(id="n0", method_id=mid, params=dict(params))
-    with (Path("/tmp") / "_audit_dp") as _tmpbase:
-        pass
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:
         ex = GraphExecutor(out_dir=Path(tmp), fps=24, in_memory=True)
@@ -164,6 +176,32 @@ def audit_node(mid: str, defn: dict, seed: int = 42) -> dict:
         "detail": "",
     }
     if not modes:
+        # ── Architecture-B fallback: no anim_mode enum, but the node may
+        # animate purely via the injected ``time`` clock. Render across the
+        # frame stack (the executor varies ``time`` = timeline.phase per frame)
+        # and measure whether the time path reaches pixels. This turns the
+        # former "no-anim-mode" blind spot into a real verdict.
+        if _has_time_param(defn):
+            result["modes"] = ["<time>"]
+            try:
+                stack = [_render(mid, dict(base), frame=f, seed=seed)
+                         for f in range(STACK_N)]
+                changed = _changed_frac(stack[0], stack[QUARTER])
+                tvar = _temporal_var(stack)
+            except Exception as e:
+                result["status"] = "render-error"
+                result["detail"] = f"time-path err={type(e).__name__}: {str(e)[:80]}"
+                return result
+            result["best_mode"] = "<time>"
+            result["best_changed"] = round(changed, 4)
+            result["best_tvar"] = round(tvar, 6)
+            if changed <= CHANGED_FLOOR and tvar <= TEMPORAL_VAR_FLOOR:
+                result["status"] = "DEAD-PARAM (suspect)"
+            elif changed <= CHANGED_FLOOR:
+                result["status"] = "weak (changed<=floor)"
+            else:
+                result["status"] = "alive"
+            return result
         result["status"] = "no-anim-mode"
         return result
     best_changed = 0.0

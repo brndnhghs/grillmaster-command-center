@@ -1931,3 +1931,36 @@ def test_est_floor_fallback_still_extends_heavy_sum():
     )
     g = _genome_with(["a", "b", "c"])
     assert cm.effective_render_timeout_s(g, cfg, model) == 600.0
+
+
+# ── Dead-param audit: Architecture-B (time-param) fallback ──────────────────
+# Regression guard for the audit_dead_params.py blind spot fix (2026-07-18):
+# nodes that animate via the injected ``time`` clock (no anim_mode enum) were
+# reported "no-anim-mode" and never rendered, hiding genuine dead-time nodes.
+# The fallback renders them across the frame stack and returns a real verdict.
+
+def test_audit_detects_time_param_node():
+    """A node with a ``time`` param but no anim_mode is now auditable."""
+    from image_pipeline.shootout.audit_dead_params import _has_time_param
+    assert _has_time_param({"params": {"time": {"min": 0.0, "max": 6.28}}})
+    assert _has_time_param({"params": {"phase": {"min": 0.0, "max": 6.28}}})
+    assert not _has_time_param({"params": {"scale": {"min": 0.0, "max": 1.0}}})
+    assert not _has_time_param({"params": {}})
+    assert not _has_time_param({})
+
+
+def test_audit_time_fallback_yields_real_verdict():
+    """A pure-filter node (no time param, no anim_mode) stays 'no-anim-mode',
+    but a time-param node gets a rendered changed/tvar verdict instead."""
+    from image_pipeline.shootout.audit_dead_params import audit_node
+    # Pure filter def: no anim_mode, no time param → unauditable as before.
+    filt = {"name": "Fake Filter", "params": {"strength": {"min": 0.0, "max": 1.0}}}
+    r = audit_node("__nonexistent_filter__", filt)
+    assert r["status"] == "no-anim-mode"
+    # A time-param def routes into the <time> fallback; the render will error on
+    # a nonexistent method id, which the fallback classifies as render-error
+    # (NOT the old silent no-anim-mode). Either way it is no longer skipped.
+    tdef = {"name": "Fake Time Node", "params": {"time": {"min": 0.0, "max": 6.28}}}
+    r2 = audit_node("__nonexistent_time__", tdef)
+    assert r2["status"] != "no-anim-mode"
+    assert r2["modes"] == ["<time>"]
