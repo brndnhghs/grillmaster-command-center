@@ -35,6 +35,22 @@ where `diversity_bonus` reuses the inverse-frequency motif niching already built
 Concrete, cited technique → module → expected effect → verification.
 Rotating sub-problem index is tracked in evolution-research-index.txt.
 
+> **STALE-ROADMAP CORRECTION (2026-07-18T17:21Z).** Several prior entries
+> (esp. Sub-problem #3 and the cost-proxy gate) are framed as "highest-value
+> UNBUILT actuators." They are in fact ALREADY SHIPPED + WIRED IN:
+> - Optical-flow liveness rescue: committed `3c63416` (flow_var/flow_coherence
+>   in LivenessAccumulator, verdict branch at evaluator.py:316).
+> - Color-aware chroma rescue: committed `3106867` (color_change_frac/
+>   color_struct_corr).
+> - Spectral-coherence rescue: committed `1358457`.
+> - Cost-proxy pre-render gate (`is_over_budget`/`partition_by_budget`) invoked
+>   at session.py:367; `cost_proxy.py` structural ridge proxy exists + imported.
+> Do NOT re-attempt these as "next levers." The honest dead-rate (modern gate,
+> post-revalidation) is now 45%, and the remaining real gap is the STARVED
+> RATING CORPUS (sub-problem #6), not a missing liveness actuator. This file is
+> kept as the historical technique archive; treat #3 / cost-gate entries as
+> DONE.
+
 ---
 
 ## 2026-07-15 — Sub-problem #1 (Selection pressure / fitness shaping: pre-render cost proxy)

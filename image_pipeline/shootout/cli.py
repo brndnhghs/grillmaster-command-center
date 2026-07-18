@@ -86,11 +86,24 @@ def main() -> None:
     ap.add_argument("--honest-dead-rate", action="store_true",
                     help="Instead of rendering: print the naive dead-rate AND the "
                          "control-excluded (image-node) dead-rate over the corpus")
+    ap.add_argument("--revalidate-legacy", action="store_true",
+                    help="Re-run the CURRENT liveness gate over stored mp4s for "
+                         "version-stale dead genomes (optical-flow / color-aware / "
+                         "spectral rescues added after they were first culled). "
+                         "Only flips dead -> alive; rewrites verdicts in place.")
     args = ap.parse_args()
 
     if args.timeout_blame:
         rep = _blame.report(ShootoutConfig())
         print(_blame.summarize(rep))
+        return
+
+    if args.revalidate_legacy:
+        from .revalidate import revalidate_corpus
+        summary = revalidate_corpus(progress=print)
+        print("\n=== revalidate-legacy summary ===")
+        for k, v in summary.items():
+            print(f"  {k}: {v}")
         return
 
     if args.honest_dead_rate:

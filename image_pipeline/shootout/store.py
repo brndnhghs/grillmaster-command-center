@@ -41,6 +41,19 @@ def load_genome(genome_id: str) -> dict | None:
     return json.loads(path.read_text())
 
 
+def iter_genomes() -> "list[dict]":
+    """Yield every persisted genome envelope in load order."""
+    if not GENOMES_DIR.exists():
+        return []
+    out: list[dict] = []
+    for p in sorted(GENOMES_DIR.glob("g-*.json")):
+        try:
+            out.append(json.loads(p.read_text()))
+        except (OSError, ValueError):
+            continue
+    return out
+
+
 def save_session(session: dict) -> None:
     _ensure_dirs()
     path = SESSIONS_DIR / f"{session['session_id']}.json"
