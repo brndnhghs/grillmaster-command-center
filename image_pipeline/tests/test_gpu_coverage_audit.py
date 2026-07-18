@@ -50,7 +50,7 @@ from image_pipeline.methods.gpu_shaders import GPU_SHADER_NODE_MAP
 #         161, 477, 480 ...) + P1 sim additions.
 # 256 -> 257: +1 client-GPU shim for node 326 Hash Field (multiresolution hash
 #             encoding; live preview routed to hash_field_gpu).
-EXPECTED_MAP_ENTRIES = 271
+EXPECTED_MAP_ENTRIES = 272
 #             gpu-twin-candidate CPU nodes (431, 432, 433, 464).
 
 # Simulations-category CPU nodes that are intentionally NOT GPU-mirrored yet.
@@ -60,7 +60,7 @@ EXPECTED_MAP_ENTRIES = 271
 # one, remove it from this set AND add the appropriate CLIENT_GPU_SIMS entry.
 DEFERRED_SIM_IDS = set(
     "20 34 35 36 55 79 83 84 88 92 94 97 98 101 102 103 "
-    "107 109 110 111 112 113 114 116 117 123 129 130 131 134 "
+    "107 109 110 111 112 113 114 116 117 123 129 130 134 "
     "136 145 147 149 151 152 158 159 167 337 429 440 448 922 310 "
     "483 484 517 951 966 560 518 530 532 970 971 974 "
     # 1007 MLS-MPM: Material-Point-Method continuum solver — heavy, not a

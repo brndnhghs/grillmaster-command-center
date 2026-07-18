@@ -4839,6 +4839,101 @@ void main() {
 }
 ''')
 
+# ── Node 131: Burridge-Knopoff Spring-Block (Earthquake Cascades) ── -----------
+# 2D grid of frictional blocks slowly driven by a plate. Stress builds until a
+# block exceeds its heterogeneous friction threshold and slips, resetting to a
+# residual level and redistributing a coupling fraction of released stress to
+# its 4 neighbors — which may trigger a branching cascade. The CPU node runs an
+# inner while-loop to fully relax a cascade per frame; the GPU twin performs one
+# threshold+redistribute relaxation per substep, so a cascade propagates over
+# consecutive substeps (many substeps/frame → visually equivalent avalanches).
+# State packs: .r = stress, .g = damage (accumulated slip count), .b = strength
+# (heterogeneous friction, seeded once and preserved). CPU numpy node stays the
+# authoritative export (two-tier precision).
+# p1=loading_rate, p2=threshold, p3=residual, p4=coupling(α).
+_register("burridge_seed",
+          "Burridge-Knopoff seed: heterogeneous strength (.b), near-threshold stress (.r), zero damage (node 131 twin)",
+          "procedural", '''
+void main() {
+    float thr = clamp(u_params.y, 0.5, 5.0);
+    // Heterogeneous per-cell strength in [0.7, 1.3] (matches CPU 0.7+0.6*rand).
+    float hs = hash21(v_uv * 71.31 + 3.7);
+    float strength = 0.7 + 0.6 * hs;
+    // Initial stress near each block's own threshold (0.5..1.0 of thr).
+    float hr = hash21(v_uv * 137.13 + 0.123);
+    float stress = thr * (0.5 + 0.5 * hr);
+    f_color = vec4(stress, 0.0, strength, 1.0);  // .r=stress .g=damage .b=strength
+}
+''')
+
+_register("burridge_step",
+          "Burridge-Knopoff one step: load + threshold slip + 4-neighbor stress redistribution (toroidal)",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float stress   = s.r;
+    float damage   = s.g;
+    float strength = s.b;
+
+    float rate  = clamp(u_params.x, 0.001, 0.1);
+    float thr   = clamp(u_params.y, 0.5, 5.0);
+    float resid = clamp(u_params.z, 0.0, 0.5);
+    float alpha = clamp(u_params.w, 0.0, 0.25);
+
+    // Slow tectonic loading + tiny per-cell noise (breaks symmetry / nucleates).
+    float nz = (hash21(v_uv * 311.7 + fract(stress * 53.13)) - 0.5) * 0.008;
+    stress += rate + nz;
+
+    // Neighbor slip stress: a neighbor over its own effective threshold released
+    // its stress; we receive alpha * that released stress from each of 4 sides.
+    vec4 sl = texture(u_texture, v_uv + vec2(-texel.x, 0.0));
+    vec4 sr = texture(u_texture, v_uv + vec2( texel.x, 0.0));
+    vec4 su = texture(u_texture, v_uv + vec2(0.0,  texel.y));
+    vec4 sd = texture(u_texture, v_uv + vec2(0.0, -texel.y));
+    float rel_l = (sl.r > thr * sl.b) ? sl.r : 0.0;
+    float rel_r = (sr.r > thr * sr.b) ? sr.r : 0.0;
+    float rel_u = (su.r > thr * su.b) ? su.r : 0.0;
+    float rel_d = (sd.r > thr * sd.b) ? sd.r : 0.0;
+    stress += alpha * (rel_l + rel_r + rel_u + rel_d);
+
+    // This block's own slip: if over effective threshold, reset to residual and
+    // record a damage event (permanent scar for the fracture render).
+    float eff = thr * strength;
+    bool over = stress > eff;
+    float new_stress = over ? resid : stress;
+    float new_damage = damage + (over ? 1.0 : 0.0);
+
+    f_color = vec4(clamp(new_stress, 0.0, 8.0), new_damage, strength, 1.0);
+}
+''')
+
+_register("burridge_display",
+          "Burridge-Knopoff display (tectonic): stress field + edge-detected crack lines (grayscale)",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    float st = texture(u_texture, v_uv).r;
+    // Contrast-stretched stress background (matches CPU tectonic: (s-0.2)/0.6 ^0.8).
+    float s = clamp(st, 0.0, 1.0);
+    float ss = clamp((s - 0.2) / 0.6, 0.0, 1.0);
+    float bg = pow(ss, 0.8) * 0.59 + 0.08;
+    // 4-directional stress gradient → bright crack edges.
+    float c  = st;
+    float gl = abs(texture(u_texture, v_uv + vec2(-texel.x, 0.0)).r - c);
+    float gr = abs(texture(u_texture, v_uv + vec2( texel.x, 0.0)).r - c);
+    float gu = abs(texture(u_texture, v_uv + vec2(0.0,  texel.y)).r - c);
+    float gd = abs(texture(u_texture, v_uv + vec2(0.0, -texel.y)).r - c);
+    float grad = max(max(gl, gr), max(gu, gd));
+    float edges = clamp(grad * 3.0, 0.0, 1.0) * 0.86;
+    // Faint permanent damage scars.
+    float dmg = texture(u_texture, v_uv).g;
+    float scar = clamp(log(1.0 + dmg) / 3.0, 0.0, 1.0) * 0.08;
+    float g = max(max(bg, edges), scar);
+    f_color = vec4(vec3(g), 1.0);
+}
+''')
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  P1.3b — Fluid / surface-growth / lattice sim twins (nodes 132, 135, 150)
 #  Same RGBA-float ping-pong contract as P1.3: seed writes initial state,

@@ -1065,6 +1065,26 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "reset_on": ["seed", "param", "loop", "resize"],
         "param_map": {"epsilon": "p1", "mobility": "p2", "seed_variance": "p3"},
     },
+    # ── Node 131: Burridge-Knopoff Spring-Block (Earthquake Cascades) ──
+    # Frictional spring-block lattice: stress loads slowly, slips past a
+    # heterogeneous threshold, and redistributes to 4 neighbors in branching
+    # avalanches. A stateful cascade sim (self-organized criticality) with no
+    # prior GPU coverage — distinct from the RD/wave/CA sim families. State
+    # packs stress in .r, damage in .g, heterogeneous strength in .b (seeded
+    # once, preserved). Many substeps/frame let a cascade propagate cell-to-cell
+    # within one rendered frame. Live-preview twin only; CPU node
+    # (simulations/burridge_knopoff.py) stays authoritative for export.
+    "131": {
+        "type": "sim",
+        "seed": "burridge_seed",
+        "step": "burridge_step",
+        "display": "burridge_display",
+        "state_channels": 3,          # stress .r, damage .g, strength .b
+        "substeps": 16,               # cascade relaxation steps per rendered frame
+        "reset_on": ["seed", "param", "loop", "resize"],
+        "param_map": {"loading_rate": "p1", "threshold": "p2",
+                      "residual": "p3", "coupling": "p4"},
+    },
     # ── Node 999: Kuramoto Coupled-Oscillator Phase Field (GPU sim twin) ──
     # Self-organized synchronization — a brand-new GPU-sim category (no coupled
     # oscillator existed before). State packs phase in .r, Ω in .g, RNG in .b.
