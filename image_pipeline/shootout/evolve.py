@@ -15,6 +15,7 @@ from .generator import (
     sample_params, _auto_layout, _fillable_ports, _pick_producer,
 )
 from .repair import repair_genome
+from .features import behavior_cell, behavior_features
 
 
 # ── Helpers ───────────────────────────────────────────────────────────
@@ -557,6 +558,37 @@ def _render_cost_discount(g: dict, cfg: ShootoutConfig) -> float:
     return 1.0 / (1.0 + p * (float(wall) / ref))
 
 
+def _corpus_cell_map(cfg: ShootoutConfig) -> dict[str, int]:
+    """Count occupied MAP-Elites behavior cells across the persisted corpus.
+
+    Seeds the diversity bonus: a parent whose behavior cell is rare in the
+    corpus receives a higher bonus, nudging selection toward under-filled
+    niches. Genomes without persisted behavior_features are computed on the
+    fly (cheap, structural). Returns {} when the corpus is empty.
+    """
+    from . import store as _store
+    counts: dict[str, int] = {}
+    for g in _store.iter_genomes():
+        bf = g.get("behavior_features") or behavior_features(g, cfg=cfg)
+        cell = behavior_cell(bf)
+        counts[cell] = counts.get(cell, 0) + 1
+    return counts
+
+
+def _diversity_bonus(genome: dict, cell_map: dict[str, int],
+                     cfg: ShootoutConfig = DEFAULT_CONFIG) -> float:
+    """MAP-Elites quality-diversity bonus for a single genome.
+
+    1 / (1 + K) where K = number of already-counted corpus elites sharing the
+    genome's behavior cell. A genome in a rare/empty cell gets 1.0; one in a
+    crowded cell gets < 1.0, so up-weighting the parent weight favors
+    under-represented behavioral niches. Multiply-safe: never negative or NaN.
+    """
+    bf = genome.get("behavior_features") or behavior_features(genome, cfg=cfg)
+    cell = behavior_cell(bf)
+    return 1.0 / (1.0 + max(0, cell_map.get(cell, 0)))
+
+
 def select_parents(rated: list[dict], cfg: ShootoutConfig) -> tuple[list[dict], list[float]]:
     """Rating-weighted parent pool (top stars dominate; below threshold never breed).
 
@@ -590,6 +622,18 @@ def select_parents(rated: list[dict], cfg: ShootoutConfig) -> tuple[list[dict], 
                    * _render_cost_discount(g, cfg) for g in parents]
     else:
         weights = [((g["rating"] / 5.0) ** cfg.parent_selection_power) * _render_cost_discount(g, cfg) for g in parents]
+
+    # Quality-diversity survivor-weight bonus (Route 8 / Phase 1C sub-problem
+    # #2). A parent in a behavior cell that is rare in the corpus is up-weighted
+    # so breeders spread across behavioral niches instead of clustering on the
+    # single top-rated archetype. Gated by cfg.diversity_enabled; off by default
+    # so the live path is unchanged. Purely additive to selection.
+    if getattr(cfg, "diversity_enabled", False):
+        from . import store as _store
+        cell_map = _corpus_cell_map(cfg)
+        if cell_map:
+            weights = [w * _diversity_bonus(g, cell_map, cfg)
+                       for g, w in zip(parents, weights)]
 
     if cfg.liveness_breed_fallback and (
             not parents or len(parents) < cfg.liveness_breed_min_rated):

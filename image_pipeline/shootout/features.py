@@ -97,3 +97,90 @@ def genome_features(genome: dict, pool: GenePool | None = None,
         f[f"origin_{o}"] = float(origin == o)
 
     return f
+
+
+# ── Behavior features for quality-diversity (Route 8 / Phase 1C #2) ──
+# MAP-Elites-style diversity needs a STABLE behavior-characterization space.
+# The generator emits motif tags but they are never populated (0/649 in the
+# real corpus), so motif-based diversity maintenance is blind. Instead derive a
+# low-dim behavior vector from signals that ARE reliably present: the
+# structural graph features computed above (always available, no render
+# needed) plus, when a genome has been rendered, the evaluator's liveness bands
+# and render cost. Behavior features are persisted on every genome at save time
+# (store.save_genome), so the MAP-Elites cell map can be seeded from the on-disk
+# corpus without re-rendering anything.
+
+_BEHAVIOR_POOL = None
+
+
+def _behavior_pool() -> "GenePool":
+    global _BEHAVIOR_POOL
+    if _BEHAVIOR_POOL is None:
+        _BEHAVIOR_POOL = build_gene_pool(DEFAULT_CONFIG)
+    return _BEHAVIOR_POOL
+
+
+def _band(v, edges: tuple[float, ...]) -> float:
+    """Map a continuous value to an integer bin index (stable for cell hashing).
+
+    Returns -1.0 when ``v`` is not a number (missing signal).
+    """
+    if not isinstance(v, (int, float)) or isinstance(v, bool):
+        return -1.0
+    b = 0
+    for e in edges:
+        if v >= e:
+            b += 1
+    return float(b)
+
+
+def behavior_features(genome: dict, pool: "GenePool | None" = None,
+                      cfg: ShootoutConfig = DEFAULT_CONFIG) -> dict[str, float]:
+    """Low-dim behavior-characterization vector for quality-diversity.
+
+    Starts from the structural graph features (no render needed) and enriches
+    with evaluator/render bands when present. The vector is JSON-serializable
+    (all floats) and stable across runs for the same genome, so persisted
+    copies are safe to band into cells.
+    """
+    pool = pool or _behavior_pool()
+    f = genome_features(genome, pool, cfg)
+
+    liv = genome.get("liveness")
+    if isinstance(liv, dict):
+        f["spec_peak"] = _band(liv.get("spectral_peak"), (0.3, 0.6, 0.9))
+        f["flow_var"] = _band(liv.get("flow_var"), (0.05, 0.2, 0.5))
+        f["color_corr"] = _band(liv.get("color_struct_corr"), (0.4, 0.7, 0.9))
+
+    dev = genome.get("deviation")
+    if isinstance(dev, dict) and dev.get("kind"):
+        # crude stable categorical bin for the deviation-kind string
+        f["dev_kind"] = float(abs(hash(str(dev["kind"]))) % 8)
+
+    render = genome.get("render")
+    if isinstance(render, dict):
+        f["cost_band"] = _band(render.get("wall_s"), (30.0, 100.0, 250.0))
+
+    return f
+
+
+# Compact, meaningful subspace used to discretize behavior into MAP-Elites cells.
+_BEHAVIOR_CELL_KEYS = (
+    "n_nodes", "depth", "n_drivers", "param_spread", "has_feedback",
+    "spec_peak", "flow_var", "color_corr", "dev_kind", "cost_band",
+)
+
+
+def behavior_cell(features: dict[str, float]) -> str:
+    """Discretize a behavior-feature vector into a stable MAP-Elites cell key."""
+    parts = []
+    for k in _BEHAVIOR_CELL_KEYS:
+        v = features.get(k)
+        if v is None:
+            v = -1.0
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            v = -1.0
+        parts.append(f"{k}={round(v, 1)}")
+    return "|".join(parts)

@@ -69,6 +69,20 @@ class ShootoutConfig:
     # under-represented motifs. Never reduces exploration, so it cannot make
     # evolution worse — only restores motif spread under a starved rating corpus.
     motif_coverage_boost: float = 2.0
+    # Quality-diversity survivor-weight bonus (Route 8 / Phase 1C sub-problem
+    # #2 — diversity maintenance). The generator's motif tags are NEVER
+    # populated (0/649 in the real corpus), so the motif-based explorer booster
+    # above is currently blind. This term instead drives a MAP-Elites
+    # behavior-cell bonus (behavior_features in features.py: structural graph
+    # features + evaluator liveness/cost bands) into the PARENT-selection weight
+    # so breeders favor under-represented behavioral niches, not just the
+    # top-rated form. bonus = 1/(1 + corpus_cell_count); a parent in a rare cell
+    # is up-weighted, a parent in a crowded cell is down-weighted. Purely
+    # additive to selection — never changes which clips are alive, only which
+    # alive clips breed. Building the per-generation corpus cell map iterates
+    # the on-disk genomes (one GenePool build, cached), so leave OFF until
+    # measured. Gate behind this flag so the live path is unchanged by default.
+    diversity_enabled: bool = False
     param_jitter_sigma: float = 0.15   # gaussian sigma as fraction of param range
     min_divergence: float = 0.3        # breeder aims for this graph-distance (0..1) from the parent
     max_divergence_attempts: int = 5   # mutation retries to hit min_divergence before accepting best-so-far

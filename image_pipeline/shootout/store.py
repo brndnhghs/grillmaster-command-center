@@ -30,6 +30,16 @@ def _ensure_dirs() -> None:
 
 def save_genome(genome: dict) -> None:
     _ensure_dirs()
+    # Attach a quality-diversity behavior-feature vector (Route 8 / Phase 1C
+    # #2) so the MAP-Elites cell map can be seeded from the corpus without
+    # re-rendering. Guarded: a feature-compute failure must never block
+    # persistence. Idempotent — skipped if already present on the dict.
+    if "behavior_features" not in genome:
+        try:
+            from .features import behavior_features
+            genome["behavior_features"] = behavior_features(genome)
+        except Exception:
+            pass
     path = GENOMES_DIR / f"{genome['genome_id']}.json"
     path.write_text(json.dumps(genome, indent=1, default=str))
 
