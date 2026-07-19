@@ -19,8 +19,10 @@ GENOMES_DIR = DATA_DIR / "genomes"
 SESSIONS_DIR = DATA_DIR / "sessions"
 RATINGS_PATH = DATA_DIR / "ratings.jsonl"
 MODEL_PATH = DATA_DIR / "taste_model.json"
+METRICS_PATH = DATA_DIR / "generation-metrics.jsonl"
 
 _ratings_lock = threading.Lock()
+_metrics_lock = threading.Lock()
 
 
 def _ensure_dirs() -> None:
@@ -160,3 +162,44 @@ def load_model() -> dict | None:
     if not MODEL_PATH.exists():
         return None
     return json.loads(MODEL_PATH.read_text())
+
+
+def append_generation_metric(session_id: str, gen_index: int,
+                            metrics: dict) -> None:
+    """Append one per-generation health summary line to the append-only ledger.
+
+    Used by stagnation / drift detection (Route 8, sub-problem #7): the
+    detector reads a sliding window of these summaries to decide whether the
+    population has converged onto a plateau. Append-only — it never
+    rewrites prior lines, so a partial run never corrupts history. Mirrors
+    append_rating's JSONL contract.
+    """
+    _ensure_dirs()
+    line = json.dumps({
+        "session_id": session_id,
+        "gen": int(gen_index),
+        "ts": time.time(),
+        **(metrics or {}),
+    })
+    with _metrics_lock:
+        with METRICS_PATH.open("a") as f:
+            f.write(line + "\n")
+
+
+def load_generation_metrics(session_id: str | None = None) -> "list[dict]":
+    """Read the ledger back (optionally filtered to one session)."""
+    if not METRICS_PATH.exists():
+        return []
+    out: "list[dict]" = []
+    with METRICS_PATH.open() as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except Exception:
+                continue
+            if session_id is None or rec.get("session_id") == session_id:
+                out.append(rec)
+    return out

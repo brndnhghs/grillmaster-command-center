@@ -476,6 +476,21 @@ def _run_generation_locked(session_id, cfg, progress_cb, rng) -> dict:
         views.append(_survivor_view(g, pred, pool))
 
     session = store.load_session(session_id)  # reload — rate() may have run
+
+    # ── Per-generation metrics ledger (Route 8, sub-problem #7) ──
+    # Append-only health summary so stagnation / drift detection has a cheap
+    # in-memory history (generation_metrics over the persisted corpus) without
+    # reloading every genome from disk each generation. Append-only: a
+    # partial run never corrupts prior lines. Gated by stagnation_enabled
+    # (the detector is off until measured); never blocks the run on failure.
+    if cfg.stagnation_enabled:
+        try:
+            from .stagnation import generation_metrics
+            _gm = generation_metrics(all_rendered, pool, cfg)
+            store.append_generation_metric(session_id, gen_index, _gm)
+        except Exception as exc:  # pragma: no cover - defensive
+            _p(f"metrics ledger write failed ({exc}) — non-fatal")
+
     session["generations"].append({
         "gen": gen_index,
         "shown": [g["genome_id"] for g in survivors],
