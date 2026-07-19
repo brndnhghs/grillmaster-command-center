@@ -380,6 +380,12 @@ _TYPED_SHADER_NODES = [
     # cull). CPU numpy node 964 stays authoritative for export.
     # 360 is the free ID above 301.
     ("360", "gyroid_tpms_gpu", "GPU Gyroid TPMS"),
+    # Node 361: Phasor Noise — sparse-convolution complex-phasor field (typed GPU
+    # twin of CPU node 1006). Closed-form f(uv,t): the global phase advances with
+    # u_time so the live preview is genuinely animated (survives the shootout
+    # contrast-only static liveness cull). CPU numpy node 1006 stays authoritative
+    # for export. 361 is the free ID above 360.
+    ("361", "phasor_noise_gpu", "GPU Phasor Noise"),
 ]
 
 
