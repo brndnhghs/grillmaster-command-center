@@ -2316,3 +2316,117 @@ def test_mine_candidates_reads_real_schema():
     # surviving-motif coverage only counts ALIVE genomes
     assert rep["motif_coverage"].get("sim_backbone") == 1  # g-top only (g-dead culled)
     assert rep["motif_coverage"].get("post_fx") == 2       # g-top + g-slow
+
+
+# ── Active-learning rating suggester (Route 8 #6, rating-signal poverty) ──
+def test_shootout_suggest_ratings_warm_contract(monkeypatch):
+    """suggest_for_rating surfaces diverse, novel, unrated-ALIVE genomes.
+
+    Locks in the cold-start active-learning contract behind the single
+    remaining shootout lever (the starved rating corpus, 19/649). Genome
+    features are faked to a deterministic cloud so the *selection math*
+    (core-set farthest-point greedy + novelty/uncertainty + fitness bias) is
+    what is under test, not the feature extractor.
+
+    Contract:
+      1. only alive + unrated genomes are ever suggested
+      2. the suggestion set is duplicate-free
+      3. exactly k are returned (capped at candidate count)
+      4. novelty engages once rated genomes exist (active-learning is live)
+      5. the selected set is spatially diverse (not collapsed to one point)
+    """
+    import image_pipeline.shootout.rating_suggest as rs
+
+    def _fake_features(g, pool, cfg):
+        h = 0
+        for c in g["genome_id"]:
+            h = (h * 31 + ord(c)) & 0xFFFFFF
+        return {"f0": ((h >> 0) & 0xFF) / 255.0,
+                "f1": ((h >> 8) & 0xFF) / 255.0,
+                "f2": ((h >> 16) & 0xFF) / 255.0}
+
+    monkeypatch.setattr(rs, "genome_features", _fake_features)
+
+    def _mk(gid, alive, rating=None, tv=0.1):
+        return {"genome_id": gid,
+                "liveness": {"alive": alive, "temporal_var": tv},
+                "rating": rating,
+                "graph": {"nodes": [{"method_id": "82"}]}}
+
+    genomes = [
+        # 3 rated-alive genomes -> engage the novelty centroid
+        _mk("g-1001", True, 4, tv=0.20),
+        _mk("g-1002", True, 5, tv=0.25),
+        _mk("g-1003", True, 3, tv=0.15),
+        # 8 alive + unrated candidates (distinct feature points)
+        *[_mk(f"g-000{i}", True, None, tv=0.05 + 0.02 * i) for i in range(1, 9)],
+        # 2 dead genomes -> MUST be excluded
+        _mk("g-dead1", False), _mk("g-dead2", False),
+    ]
+
+    out = rs.suggest_for_rating(k=3, cfg=CFG, pool=POOL, genomes=genomes)
+    by_id = {g["genome_id"]: g for g in genomes}
+    ids = [s["genome_id"] for s in out]
+
+    # (1) only alive + unrated
+    for gid in ids:
+        g = by_id[gid]
+        assert g["liveness"]["alive"] and g["rating"] is None, \
+            f"suggested dead/rated genome {gid}"
+    # (2) no duplicates
+    assert len(ids) == len(set(ids))
+    # (3) exactly k returned (fewer candidates would cap, here 8 >= 3)
+    assert len(out) == 3
+    # (4) novelty engages (rated corpus present -> some novelty > 0)
+    assert any(s["novelty"] > 0.0 for s in out), \
+        "novelty collapsed to 0 despite a rated corpus"
+    # (5) diversity: selected points are not all identical
+    feats = np.array([[_fake_features({"genome_id": i}, POOL, CFG)[k]
+                      for k in ("f0", "f1", "f2")] for i in ids])
+    if len(feats) > 1:
+        d = np.linalg.norm(feats[:, None, :] - feats[None, :, :], axis=2)
+        np.fill_diagonal(d, np.inf)
+        assert d.min() > 1e-3, "selected set collapsed to identical features (no diversity)"
+
+
+def test_shootout_suggest_ratings_cold_start(monkeypatch):
+    """Cold start (no rated genomes): diversity alone must still drive a
+    valid, duplicate-free, alive+unrated suggestion set."""
+    import image_pipeline.shootout.rating_suggest as rs
+
+    def _fake_features(g, pool, cfg):
+        h = 0
+        for c in g["genome_id"]:
+            h = (h * 31 + ord(c)) & 0xFFFFFF
+        return {"f0": ((h >> 0) & 0xFF) / 255.0,
+                "f1": ((h >> 8) & 0xFF) / 255.0,
+                "f2": ((h >> 16) & 0xFF) / 255.0}
+
+    monkeypatch.setattr(rs, "genome_features", _fake_features)
+
+    def _mk(gid, alive, rating=None):
+        return {"genome_id": gid,
+                "liveness": {"alive": alive, "temporal_var": 0.1},
+                "rating": rating,
+                "graph": {"nodes": [{"method_id": "82"}]}}
+
+    genomes = [
+        *[_mk(f"g-000{i}", True, None) for i in range(1, 7)],  # 6 candidates
+        _mk("g-dead1", False),
+    ]
+
+    out = rs.suggest_for_rating(k=4, cfg=CFG, pool=POOL, genomes=genomes)
+    by_id = {g["genome_id"]: g for g in genomes}
+    ids = [s["genome_id"] for s in out]
+
+    assert len(out) == 4                       # capped at 6 candidates -> 4
+    assert len(ids) == len(set(ids))           # no duplicates
+    for gid in ids:
+        g = by_id[gid]
+        assert g["liveness"]["alive"] and g["rating"] is None
+    # cold start -> novelty all zero, but diversity must still hold
+    feats = np.array([[_fake_features({"genome_id": i}, POOL, CFG)[k]
+                      for k in ("f0", "f1", "f2")] for i in ids])
+    d = np.linalg.norm(feats[:, None, :] - feats[None, :, :], axis=2)
+    np.fill_diagonal(d, np.inf)
+    assert d.min() > 1e-3, "cold-start selection collapsed to identical features"
