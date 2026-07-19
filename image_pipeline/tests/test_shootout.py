@@ -2262,3 +2262,57 @@ def test_rate_external_writes_genome_and_appends_once(tmp_path, monkeypatch):
     assert after == mid, "append-once guard broke on re-rate"
     assert shoot_store.load_genome(gid)["rating"] == 5
 
+
+
+# ── mine_candidates: schema-correct feedback-loop mining (Route 8) ──
+def test_mine_candidates_reads_real_schema():
+    """mine_candidates must extract genome_id / graph.motifs / driver count
+    from the REAL persisted schema — the old inline probe used non-existent
+    keys (id / top-level motifs / n_drivers) and recorded None/[] every run."""
+    from image_pipeline.shootout import describe
+
+    pool = build_gene_pool(CFG)
+    driver_id = next(iter(pool.scalar_drivers))
+
+    def mk(gid, rating, alive, wall, motifs, ndrivers, gen=1):
+        nodes = [{"id": f"n{i}", "method_id": driver_id} for i in range(ndrivers)]
+        nodes.append({"id": "src", "method_id": "02"})
+        return {
+            "genome_id": gid,
+            "generation": gen,
+            "origin": "explorer",
+            "rating": rating,
+            "deviation": {"kind": "mutation"},
+            "graph": {"nodes": nodes, "edges": [], "motifs": motifs},
+            "render": {"wall_s": wall},
+            "liveness": {"alive": alive},
+        }
+
+    genomes = [
+        mk("g-top", 5, True, 12.0, ["sim_backbone", "post_fx"], 2),
+        mk("g-mid", 3, True, 8.0, ["pattern_blend"], 1),
+        mk("g-slow", 4, True, 120.0, ["post_fx"], 1),
+        mk("g-dead", None, False, 200.0, ["sim_backbone"], 0),
+    ]
+
+    rep = describe.mine_candidates(genomes=genomes, pool=pool, cheap_wall_s=30.0)
+
+    assert rep["n_genomes"] == 4
+    assert rep["n_rated"] == 3
+    assert rep["n_alive"] == 3
+    # cheap-alive = alive AND wall < 30 → g-top, g-mid (not g-slow at 120s)
+    assert rep["cheap_alive"] == 2
+
+    top = rep["top_rated"]
+    # highest rating first, real genome_id (not None), real motifs, real drivers
+    assert top[0]["genome_id"] == "g-top"
+    assert top[0]["rating"] == 5
+    assert top[0]["motifs"] == ["sim_backbone", "post_fx"]
+    assert top[0]["n_drivers"] == 2
+    assert top[0]["deviation_kind"] == "mutation"
+    # no None genome_ids leaked (the old-probe failure mode)
+    assert all(c["genome_id"] is not None for c in top)
+
+    # surviving-motif coverage only counts ALIVE genomes
+    assert rep["motif_coverage"].get("sim_backbone") == 1  # g-top only (g-dead culled)
+    assert rep["motif_coverage"].get("post_fx") == 2       # g-top + g-slow

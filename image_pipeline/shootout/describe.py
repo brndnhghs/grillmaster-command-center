@@ -115,3 +115,81 @@ def describe_clip(graph: dict, pool: GenePool | None = None,
         "n_drivers": n_drivers,
         "driver_words": driver_words,
     }
+
+
+def _genome_driver_count(graph: dict, pool: GenePool) -> int:
+    """Number of scalar-driver (CHOP) nodes in a genome graph."""
+    return sum(1 for n in graph.get("nodes", [])
+               if n.get("method_id") in pool.scalar_drivers)
+
+
+def mine_candidates(genomes: "list[dict] | None" = None,
+                    pool: GenePool | None = None,
+                    cfg: ShootoutConfig = DEFAULT_CONFIG,
+                    top_k: int = 8,
+                    cheap_wall_s: float = 30.0) -> dict:
+    """Schema-correct candidate mining for the shootout feedback loop.
+
+    Reads the REAL genome envelope schema (``genome_id`` at top level,
+    motifs under ``graph.motifs``, drivers as ``graph.nodes`` whose
+    ``method_id`` is in ``pool.scalar_drivers``, ``deviation.kind``) and
+    returns the promotion/recombine seeds the evolution loop needs:
+
+      * ``top_rated``   — highest human-rated survivors (promotion seeds)
+      * ``cheap_alive`` — count of alive genomes that rendered fast
+                          (ideal explorer/recombine parents)
+      * ``motif_coverage`` — surviving-motif histogram (diversity signal)
+
+    This replaces the ad-hoc inline probe whose key names
+    (``id`` / top-level ``motifs`` / ``n_drivers``) do not exist in the
+    persisted schema and therefore recorded ``None`` / ``[]`` every run.
+
+    Deterministic, cheap, no rendering, no LLM.
+    """
+    from .store import iter_genomes
+    pool = pool or build_gene_pool(cfg)
+    if genomes is None:
+        genomes = [g for g in iter_genomes() if isinstance(g, dict)]
+
+    def _wall(g: dict):
+        w = (g.get("render") or {}).get("wall_s")
+        return w if isinstance(w, (int, float)) else None
+
+    rated = [g for g in genomes if isinstance(g.get("rating"), (int, float))]
+    rated.sort(key=lambda g: -(g.get("rating") or 0))
+    top_rated = []
+    for g in rated[:top_k]:
+        graph = g.get("graph") or {}
+        dev = g.get("deviation") or {}
+        top_rated.append({
+            "genome_id": g.get("genome_id"),
+            "rating": g.get("rating"),
+            "origin": g.get("origin"),
+            "generation": g.get("generation"),
+            "motifs": list(graph.get("motifs") or []),
+            "n_drivers": _genome_driver_count(graph, pool),
+            "deviation_kind": dev.get("kind"),
+            "wall_s": _wall(g),
+        })
+
+    alive = [g for g in genomes if (g.get("liveness") or {}).get("alive")]
+    cheap_alive = 0
+    for g in alive:
+        w = _wall(g)
+        if w is not None and w < cheap_wall_s:
+            cheap_alive += 1
+
+    motif_coverage: dict[str, int] = {}
+    for g in alive:
+        for m in ((g.get("graph") or {}).get("motifs") or []):
+            motif_coverage[m] = motif_coverage.get(m, 0) + 1
+
+    return {
+        "n_genomes": len(genomes),
+        "n_rated": len(rated),
+        "n_alive": len(alive),
+        "cheap_alive": cheap_alive,
+        "top_rated": top_rated,
+        "motif_coverage": dict(sorted(motif_coverage.items(),
+                                      key=lambda kv: -kv[1])),
+    }
