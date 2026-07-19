@@ -253,8 +253,19 @@ def method_lfo(out_dir: Path, seed: int, params=None):
     elif waveform == "square":
         bipolar = 1.0 if math.sin(phase) >= 0 else -1.0
     elif waveform == "random":
-        # Step random: new value every N frames
-        rng = random.Random(seed + frame // 6)
+        # Step random: a new random value every few frames. The step cadence is
+        # driven by `rate` (Hz, cycles-per-second — SAME semantics as the
+        # continuous waveforms above, where omega = 2*pi*rate/fps) so the
+        # `rate` control is LIVE. Previously this branch hardcoded
+        # `frame // 6`, which made `rate` have NO effect whatsoever — a silent
+        # dead param that inflated the shootout dead-clip rate for
+        # random-LFO-driven graphs (the #1 dead-genome method is __lfo__).
+        # We lay `n_steps` evenly across the clip and advance the random seed
+        # once per step, so a higher rate yields more, faster random flips.
+        clip_seconds = max(1e-3, total_frames_for_phase / max(1.0, fps))
+        n_steps = max(1, int(round(rate * clip_seconds * 4.0)))  # ~4 random flips per Hz-second
+        step_idx = int(frame * n_steps / max(1, total_frames_for_phase))
+        rng = random.Random(seed + step_idx)
         bipolar = rng.uniform(-1, 1)
     elif waveform == "noise":
         # Perlin-like smooth random

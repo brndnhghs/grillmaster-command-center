@@ -293,3 +293,15 @@ selective-surfacing endpoint + test, or returns to #1 ELO wiring).
 
 **Index:** rotate evolution-research-index.txt 6 → 7 (sub-problem #6 finalized this run; next lever: #7 drift/stagnation detection — auto-widen explore_ratio or fresh-random reset when a generation plateaus in dead-rate AND rating mean).
 ---
+
+## 2026-07-19T19:00:00Z — Sub-problem #1 (Selection-pressure: cost-proxy actuator for over-budget culls)
+
+**Observed (real probe, this run):** dead reasons over 649 genomes = static 76 / flat 73 / timeout 58 / over-budget 56 / flicker 10 / skipped 8 / no-output 7 / node_error 4. So **timeout+over-budget = 114 deaths (39% of all dead genomes)** are cost-driven, NOT quality-driven — the liveness gate is correctly rejecting them, but evolution keeps *proposing* graphs it cannot afford to render, wasting the render budget on guaranteed-timeouts. 165 renders exceeded the 150s cap (max 669s; the heavy-cap extension masks this, it does not reduce it).
+
+**Technique — cost-aware offspring curation (MAP-Elites over a (cost, liveness) bi-objective):** instead of admitting every proposed offspring to the render queue, pre-estimate each graph's render cost from its node composition (sum of per-node `node_timings` medians from prior rendered genomes / a `utilization.py` cost table) and reject-or-reroute any graph whose estimated cost > `max_render_timeout_s` BEFORE it reaches the renderer. This is the *learned* form of the already-shipped heavy-cap extension: that extension raises the cap post-hoc; the cost-proxy actuator *prevents* the spend. Closest published reference: "Quality-Diversity optimization with cost constraints" (Gaier and Mouret, *Data-Efficient Design Exploration through Surrogate-Assisted Illumination*, 2019, arXiv:1902.02557) — a surrogate model gates candidate evaluation by predicted cost.
+
+**Module:** `utilization.py` (build/maintain a per-method_id median-render-time table from the genome store) plus `evolve.py next_generation` (estimate proposed-graph cost; if > cap, either (a) drop the expensive node and re-roll, or (b) skip to next offspring, keeping the population size via replacement) plus `session.py` (expose `max_render_timeout_s` already exists). Pure additive; the liveness gate is untouched.
+
+**Expected effect:** render budget spent only on affordable graphs -> fewer over-budget deaths -> dead-rate drops from the cost-driven 39% tail without touching clip quality. Measurable: over-150s count should fall below 165 after rollout.
+
+**Verification (headless):** unit test in `image_pipeline/tests/test_shootout_cost_proxy.py` — (a) a synthetic graph whose summed node costs exceed `max_render_timeout_s` is flagged `over_budget` pre-render; (b) a cheap graph passes; (c) the cost table aggregates medians from a synthetic genome list correctly. Gate behind `cost_proxy_enabled=False` until enabled and measured.
