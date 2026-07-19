@@ -955,6 +955,21 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
                           "center_y": "center_y", "rotation": "rotation",
                           "r_scale": "r_scale", "mirror": "mirror",
                           "warp_amount": "warp_amount", "warp_scale": "warp_scale"}},
+    # 1004 Thin Film Interference -> typed-uniform closed-form twin
+    # thin_film_gpu. Every numeric param (thickness/thickness_range/ior/drainage/
+    # view_angle/brightness/anim_speed) and the choice param anim_mode map BY NAME
+    # to the twin's u_<name> uniforms (contract #5/#6). `source` is a choice param
+    # (procedural/input_image, pitfall #14) left unmapped -> the preview always
+    # renders the procedural fbm thickness field. `time` is the system clock.
+    # Pure per-pixel f(uv,t) spectral integral (P0.6 field-eval family); CPU numpy
+    # node 1004 stays authoritative for exact export (69-sample spectrum + rng
+    # fbm scale), the twin is a 35-sample live-preview approximation.
+    "1004": {"shader": "thin_film_spectral_gpu", "type": "procedural", "typed": True,
+             "param_map": {"thickness": "thickness",
+                           "thickness_range": "thickness_range", "ior": "ior",
+                           "drainage": "drainage", "view_angle": "view_angle",
+                           "brightness": "brightness", "anim_speed": "anim_speed",
+                           "anim_mode": "anim_mode"}},
 }
 
 # ── GPU coverage contract: no SILENT param drops ────────────────────────────

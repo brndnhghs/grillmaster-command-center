@@ -1827,6 +1827,156 @@ void main() {
           )
 
 
+# ── Thin-Film Interference (node 1004) ──────────────────────────────────────
+# Closed-form client-GPU twin of the CPU spectral thin-film node. A film of
+# refractive index n and thickness d reflects a two-beam interference spectrum
+# with phase delta = 4*pi*n*d*cos(theta_t)/lambda + pi (single phase reversal at
+# the air->film interface, Hecht Optics 4ed §9.5). The reflected spectrum is
+# integrated against the CIE 1931 2-deg colour-matching functions (Wyman, Sloan
+# & Shirley 2013 analytic gaussian fit) and converted XYZ->linear-sRGB, so the
+# full violet->magenta->red band wrap is reproduced rather than a naive RGB pick.
+# A procedural fbm thickness field paints the bands; a drainage term thins the
+# film toward the top like a real draining bubble. No inter-frame state -> pure
+# f(uv,t), the P0.6 field-eval family. CPU numpy node 1004 stays authoritative
+# for export; this twin is the live-preview approximation (35-sample spectrum vs
+# the CPU's 69, single fbm scale vs the CPU's rng-jittered scale).
+_TF_HELPERS = '''
+float _tf_hash(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+}
+float _tf_vnoise(vec2 x) {
+    vec2 xi = floor(x); vec2 xf = fract(x);
+    vec2 u = xf * xf * (3.0 - 2.0 * xf);
+    float a = _tf_hash(xi);
+    float b = _tf_hash(xi + vec2(1.0, 0.0));
+    float c = _tf_hash(xi + vec2(0.0, 1.0));
+    float d = _tf_hash(xi + vec2(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y) * 2.0 - 1.0;
+}
+float _tf_fbm(vec2 x) {
+    float outv = 0.0, amp = 1.0, freq = 1.0, norm = 0.0;
+    for (int o = 0; o < 5; o++) {
+        outv += amp * _tf_vnoise(x * freq);
+        norm += amp; amp *= 0.5; freq *= 2.0;
+    }
+    return outv / max(norm, 1e-6);
+}
+// One-sided gaussian (Wyman et al. 2013 CIE-CMF building block).
+float _tf_g(float x, float mu, float s1, float s2) {
+    float s = x < mu ? s1 : s2;
+    float t = (x - mu) / s;
+    return exp(-0.5 * t * t);
+}
+vec3 _tf_cmf(float lam) {
+    float xb = 1.056 * _tf_g(lam, 599.8, 37.9, 31.0)
+             + 0.362 * _tf_g(lam, 442.0, 16.0, 26.7)
+             - 0.065 * _tf_g(lam, 501.1, 20.4, 26.2);
+    float yb = 0.821 * _tf_g(lam, 568.8, 46.9, 40.5)
+             + 0.286 * _tf_g(lam, 530.9, 16.3, 31.1);
+    float zb = 1.217 * _tf_g(lam, 437.0, 11.8, 36.0)
+             + 0.681 * _tf_g(lam, 459.0, 26.0, 13.8);
+    return vec3(xb, yb, zb);
+}
+vec3 _tf_xyz2srgb(vec3 xyz) {
+    mat3 M = mat3( 3.2404542, -0.9692660,  0.0556434,
+                  -1.5371385,  1.8760108, -0.2040259,
+                  -0.4985314,  0.0415560,  1.0572252);
+    vec3 lin = max(M * xyz, 0.0);
+    vec3 a = vec3(0.055);
+    bvec3 hi = greaterThan(lin, vec3(0.0031308));
+    vec3 srgb = mix(12.92 * lin, 1.055 * pow(lin, vec3(1.0/2.4)) - a, vec3(hi));
+    return clamp(srgb, 0.0, 1.0);
+}
+'''
+
+_register("thin_film_spectral_gpu",
+          "Spectral thin-film interference iridescence (client-GPU twin of node 1004)",
+          "procedural",
+          _TF_HELPERS + '''
+void main() {
+    // ── Named uniforms match node 1004's REAL params ──
+    // thickness, thickness_range, ior, drainage, view_angle, brightness,
+    // anim_speed + the choice param anim_mode (none/flow/swirl/pulse).
+    vec2 res = u_resolution;
+    vec2 uv = v_uv;
+    float mx = max(res.x, res.y);
+    // Match the CPU coordinate frame: u = x/max, v = y/max in [0, ~1].
+    float u = uv.x * res.x / mx;
+    float v = (1.0 - uv.y) * res.y / mx;   // flip: CPU row 0 is the top
+
+    int amode = int(clamp(floor(u_anim_mode + 0.5), 0.0, 3.0)); // 0 none,1 flow,2 swirl,3 pulse
+    float t = (amode == 0) ? 0.0 : u_time * max(u_anim_speed, 0.0);
+
+    // ── Thickness field (procedural fbm bands + drainage) ──
+    float cx = 0.5, cy = 0.5;
+    float dx = u - cx, dy = v - cy;
+    if (amode == 2) {           // swirl: rotate the sample frame
+        float ca = cos(t), sa = sin(t);
+        float rx = ca * dx - sa * dy;
+        float ry = sa * dx + ca * dy;
+        dx = rx; dy = ry;
+    }
+    float fx = dx + (amode == 1 ? t : 0.0);   // flow: bands travel in x
+    float fy = dy;
+    float scale = 4.0;          // CPU uses 3..5 (rng); twin fixes a mid value
+    float h = _tf_fbm(vec2(fx * scale * 6.0, fy * scale * 6.0));
+    h = 0.5 + 0.5 * h;
+    // Drainage: film thins toward the top (v small at top).
+    h = clamp(h - u_drainage * (0.5 - v), 0.0, 1.0);
+    float thickness01 = clamp(h, 0.0, 1.0);
+
+    // pulse: thickness range breathes (smooth offset sine, no cusp).
+    float trange = u_thickness_range;
+    if (amode == 3) trange *= (0.1 + 0.9 * (0.5 + 0.5 * sin(t)));
+
+    // ── View-angle cos(theta_t) via Snell (dome normal tilt) ──
+    float nx = (uv.x - 0.5) * u_view_angle;
+    float ny = (uv.y - 0.5) * u_view_angle;
+    float sin_i = clamp(sqrt(nx * nx + ny * ny), 0.0, 0.999);
+    float cosT = clamp(sqrt(clamp(1.0 - (sin_i * sin_i) / (u_ior * u_ior), 1e-4, 1.0)), 0.05, 1.0);
+
+    // ── Spectral interference integral against CIE CMF ──
+    float d_nm = u_thickness + trange * (thickness01 - 0.5);
+    vec3 xyz = vec3(0.0);
+    vec3 white = vec3(0.0);
+    const float PI = 3.14159265;
+    for (int k = 0; k < 35; k++) {
+        float lam = 380.0 + float(k) * 10.0;   // 380..720 nm, 10 nm step
+        vec3 cmf = _tf_cmf(lam);
+        float delta = (4.0 * PI * u_ior * d_nm * cosT) / lam + PI;
+        float Rk = 0.5 * (1.0 + cos(delta));
+        xyz += cmf * Rk;
+        white += cmf;
+    }
+    xyz /= max(white.y, 1e-6);
+    xyz *= u_brightness;
+    vec3 rgb = _tf_xyz2srgb(xyz);
+    f_color = vec4(rgb, 1.0);
+}
+''',
+          uniforms={
+              "thickness":       {"glsl": "float", "min": 100.0, "max": 1200.0, "default": 380.0,
+                                  "description": "base film thickness (nm); dominant colour = d*n"},
+              "thickness_range": {"glsl": "float", "min": 0.0, "max": 900.0, "default": 420.0,
+                                  "description": "thickness variation (nm) — drives the colour bands"},
+              "ior":             {"glsl": "float", "min": 1.05, "max": 2.5, "default": 1.33,
+                                  "description": "film refractive index (soap 1.33, oil 1.45)"},
+              "drainage":        {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.35,
+                                  "description": "vertical thinning gradient (drains toward top)"},
+              "view_angle":      {"glsl": "float", "min": 0.0, "max": 1.2, "default": 0.5,
+                                  "description": "surface tilt (rad) — oblique edge colour shift"},
+              "brightness":      {"glsl": "float", "min": 0.2, "max": 1.5, "default": 0.9,
+                                  "description": "overall reflected intensity scale"},
+              "anim_speed":      {"glsl": "float", "min": 0.1, "max": 3.0, "default": 1.0,
+                                  "description": "animation speed multiplier"},
+              "anim_mode":       {"glsl": "choice", "choices": ["none", "flow", "swirl", "pulse"],
+                                  "default": "none", "description": "animation mode"},
+          }
+          )
+
+
 _register("spherical_harmonics_gpu",
           "Spherical harmonics banding (client-GPU twin of node 104)",
           "procedural", '''
