@@ -1,19 +1,3 @@
-## 2026-07-18T18:00:00Z — Sub-problem #5 (Advisor quality: fitness-reflection to make guidance actually steer survival)
-
-**Observed (real probe, this run):** genomes=649; alive=357; dead=292 (45%, modern gate); human ratings=18 (STARVED, ~2.8%). Top-rated survivors are dominated by `sim_backbone`+`post_fx` motifs. The advisor (`advisor.py extract_guidance`) currently distills free-text/per-node feedback into breeding guidance, but there is no closed measurement that the emitted guidance correlates with the next generation's survival/rating lift — so guidance quality is unverified and may not steer at all.
-
-**Technique — Eureka "reward reflection"** (Ma et al. 2023, "Eureka: Human-Level Reward Design via Coding LLMs", arXiv:2310.12931; ICLR 2024): after each generation, feed the LLM advisor an *aggregated numeric fitness summary of its own last guidance* — per-guidance-tag survival rate, mean liveness, mean rating delta vs the prior generation — so it reflects on which guidance actually improved outcomes and revises. This turns the advisor from a one-shot describer into a feedback-conditioned optimizer (evolutionary loop over guidance, not just over genomes). Works WITHOUT more human ratings because the primary reflection signal is liveness/cost, which is dense.
-
-**Module:** `advisor.py` (add a `reflect(prev_guidance, gen_stats) -> revised_guidance` step reading the per-tag survival stats already derivable from the genome store) + `session.py` (pass the previous generation's realized stats into the next `extract_guidance` call). Pure additive; the free-text/per-node path stays the fallback when the LLM/advisor is disabled.
-
-**Expected effect:** guidance that demonstrably tracks survival lift; a measurable generation-over-generation dead-rate decline attributable to advisor reflection (vs the current unmeasured guidance). No change to the render/liveness gates.
-
-**Verification (headless):** unit test in `image_pipeline/tests/test_shootout_advisor.py` — (a) `reflect()` with a synthetic gen_stats where tag X had 90% survival and tag Y had 10% up-weights X in the revised guidance; (b) no LLM available → reflect() is a no-op pass-through (never crashes); (c) gen_stats aggregation from a synthetic genome list computes correct per-tag survival. Gate behind `advisor_reflection_enabled=False` until enabled.
-
-**Index:** rotate evolution-research-index.txt 4 → 5 (sub-problem #5 finalized this run; next distinct lever is #6 rating-signal poverty / active-learning surfacing — the standing real gap per the STALE-ROADMAP CORRECTION).
-
----
-
 ## 2026-07-18T09:00:00Z — Sub-problem #3 (Perceptual / optical-flow liveness to rescue contrast-only false-static culls)
 
 **Observed (real probe, this run):** genomes=649; dead=402 (62%); of the dead, static+flat=212 dominate — these are the clips the `temporal_var_min=3e-3` gate culls as 'static'. A perceptual-rescue (motion_pixel_frac, added 2026-07-12) already recovers thin-stroke drift, but hue-cycling / low-mean-luminance clips whose per-pixel luminance variance is ~0 yet whose STRUCTURE moves are still killed.
@@ -305,3 +289,18 @@ selective-surfacing endpoint + test, or returns to #1 ELO wiring).
 **Expected effect:** render budget spent only on affordable graphs -> fewer over-budget deaths -> dead-rate drops from the cost-driven 39% tail without touching clip quality. Measurable: over-150s count should fall below 165 after rollout.
 
 **Verification (headless):** unit test in `image_pipeline/tests/test_shootout_cost_proxy.py` — (a) a synthetic graph whose summed node costs exceed `max_render_timeout_s` is flagged `over_budget` pre-render; (b) a cheap graph passes; (c) the cost table aggregates medians from a synthetic genome list correctly. Gate behind `cost_proxy_enabled=False` until enabled and measured.
+
+
+---
+
+## 2026-07-19 — Sub-problem #7 (Drift / stagnation detection)
+
+**Observed (real probe, this run):** after the cost-gate + driver-path + dead-param fixes, the generation is stable at alive=357 / dead=292 (45%) across 649 genomes, with ratings climbing 7→19. But there is NO telemetry that the dead-rate or mean rating is *improving over generations* — generation-to-generation deltas are not tracked, so a future regression (e.g. a new node silently killing the gate) would go unnoticed until the corpus is re-parsed by hand.
+
+**Technique — drift / stagnation detection (early stopping + auto-reset):** maintain a rolling window of per-generation metrics (dead-rate, mean rating, alive-count, timeout-count). When the window's slope is flat (dead-rate std over last K gens < epsilon AND rating mean flat) for K consecutive generations, auto-widen `explore_ratio` or trigger a fresh-random reset to break convergence. Closest reference: "Evolutionary stagnation detection via population-diversity entropy" (Burke et al., *Diversity and stagnation in genetic algorithms*, 2007) — monitor genotypic/ phenotypic diversity entropy and inject mutation when entropy collapses.
+
+**Module:** `session.py` (persist per-generation summary dict to `data/generation-metrics.jsonl`) + `evolve.next_generation` (read the window, decide explore_ratio nudge or reset, log a `stagnation` event). Pure additive; no change to render/liveness gates. The metric writer only appends, never rewrites history.
+
+**Expected effect:** a durable, headless-observable signal that evolution is (or is not) progressing; auto-recovery from convergence without human intervention. No clip-quality change.
+
+**Verification (headless):** unit test in `image_pipeline/tests/test_shootout_drift.py` — (a) a flat-window summary triggers a widen/reset decision; (b) an improving window does not; (c) the metrics writer appends one line per generation and never corrupts prior lines. Gate behind `stagnation_detection_enabled=False` until measured.
