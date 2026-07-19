@@ -727,6 +727,15 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # preview is a procedural noise+rainbow displacement. Exact parity preview.
     "57": {"shader": "slitscan_gpu", "type": "procedural",
            "param_map": {"amplitude": "p1", "frequency": "p2", "slit_type": "p3"}},
+    # 471 Nishita Atmospheric Sky: typed-uniform twin (nishita_sky_gpu). Every
+    # numeric param of node 471 is mapped by NAME to u_<name> (contract #5, so
+    # CPU numpy node 471 stays authoritative for export. The twin glides the sun
+    # elevation with the executor's `time` uniform for live animation parity.
+    "471": {"shader": "nishita_sky_gpu", "type": "procedural", "typed": True,
+            "param_map": {"sun_elevation": "sun_elevation", "sun_azimuth": "sun_azimuth",
+                          "rayleigh_k": "rayleigh_k", "mie_k": "mie_k",
+                          "exposure": "exposure", "fov": "fov",
+                          "sun_disk_radius": "sun_disk_radius"}},
     # 312 Water Caustics: scale->p1, caustic_gain->p2, sharpen->p3, anim_speed->p4.
     # colormode/anim_mode are choice strings (pitfall 14) left unmapped; the twin
     # renders the default ocean colormap in flow-mode. Closed-form f(uv,t) ->
