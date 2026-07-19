@@ -466,3 +466,30 @@
 - ACTION: fixed `random` branch to derive step cadence from `rate` (Hz) — `n_steps = round(rate * clip_seconds * 4)` so higher rate = more/faster random flips, same semantics as the continuous waveforms (omega = 2*pi*rate/fps). Verified: random now rate-responsive (tv 0.047 @0.5Hz to 0.325 @2.0Hz); continuous waveforms unchanged. Added regression test test_lfo_rate_responsive.py asserting rate-liveness for `random` (the exact dead-param the prior vary-test missed) plus guarding the 5 continuous ones.
 - VERIFIED: 3/3 new + 6/6 existing driver-generator vary + full 15-test driver family pass; server import OK; /api/node-defs 537 defs incl __lfo__; AST clean.
 - RECOMMENDATION: next run — (1) the dominant remaining failure modes are now CLEAR: static+flat=149 (51% of dead) and timeout+over-budget=114 (39%). The random-LFO fix trims the driver-path tail of static. Next highest-leverage: (a) re-run the shootout to MEASURE whether dead-rate drops below 45% post-fix; (b) attack the 165 over-150s culls via the cost-proxy actuator (evolution-research sub-problem #1, still unbuilt) — the heavy-cap extension masks but does not reduce them; (c) starved rating corpus (19/649) -> Route 8 sub-problem #6 active-learning UX remains the highest-value untouched lever.
+
+## 2026-07-19 (later run) — dead-param frontier CLEARED + GPU twin 460
+- PHASE 1 re-run: re-audited the 8 suspects from the 01:49 report after the
+  recent dead-param fix commits. RESULT: 8/8 now ALIVE (changed>0.10, tvar>
+  1e-3). Node 524 confirmed alive (changed=0.272) — the prior orbit=0 fix holds.
+  The entire node-level dead-param frontier is now clear; remaining ~45% shootout
+  rejection is legacy gen-0 history + timeout culls, NOT live dead params.
+- ACTION (GPU-First P0 categorical coverage): added node 460 Kaleidoscope Mirror
+  typed-uniform client-GPU twin (kaleidoscope_mirror_gpu filter shader +
+  typed:True CLIENT_GPU_SHIMS entry). Dihedral mirror-fold live preview mirroring
+  node 460's real numeric params; CPU numpy node stays authoritative export.
+  Verified headlessly: gl330+webgl2 compile, non-black on structured input,
+  segments+center params live (delta>0.05), warp_amount t-evolution present.
+  Bumped both GPU_SHADER_NODE_MAP count guards 275->276; 897 GPU parity tests pass.
+- CONCURRENCY NOTE: an active sibling subagent (8cf21a8c) had already bumped
+  test_gpu_coverage_audit.py EXPECTED_MAP_ENTRIES to 276 with NO shader/shim
+  change of its own — it converged on the same correct value once my 460 shim
+  landed. No clobber, no double-count; committed together.
+- RECOMMENDATION next run: dead-param frontier is clear — STOP re-running it.
+  Highest-value remaining levers: (1) starved rating corpus (19/649, below the
+  20 threshold) — Route 8 #6 active-learning UX; (2) the 165 over-150s culls —
+  cost-proxy pre-render actuator (evolution-research #1) still unbuilt. P0/P1 GPU
+  twin coverage is now at an honest safe-completion point for the geometric-filter
+  family; do NOT force thin twins. If more GPU work, next honest gap is the
+  gradient/derivative-field FILTER category (Sobel/Scharr/Laplacian already exist
+  as typed nodes; node 425 HBAO is the one remaining geometry/stippling filter
+  without a twin). P2 WebGPU remains sign-off-gated.
