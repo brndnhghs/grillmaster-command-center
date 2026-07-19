@@ -2031,3 +2031,25 @@ def test_audit_recovers_alias_only_modes_from_source():
     stub = {"params": {"anim_mode": {"description": "the animation", "default": "none"}}}
     assert _non_none_modes(stub) == []            # no mid → no source scan
     assert _non_none_modes(stub, "402") == modes  # mid → source scan recovers
+
+
+def test_clahe_clip_sweep_reaches_pixels():
+    """Node 436 CLAHE `clip_sweep` was a genuine dead-param (Route 8): the
+    clip_limit sweep alone is nearly invisible on smooth/low-contrast sources
+    (CLAHE has almost nothing to expand), and its 0.4 sweep frequency barely
+    moved inside the shootout / audit phase window, so the clip rendered static
+    and the liveness gate culled it. The fix co-breathes `strength` and sweeps
+    `tile_size` at a faster (1.6) frequency so the animation reaches the pixels
+    on the DEFAULT `procedural` source. Guard it via the same audit_node path
+    the shootout dead-param frontier uses so a future edit cannot silently
+    regress it back to a culled static clip.
+    """
+    import image_pipeline.methods  # noqa: F401
+    from image_pipeline.core.graph import get_all_node_defs
+    from image_pipeline.shootout.audit_dead_params import audit_node
+    defs = get_all_node_defs()
+    defn = defs.get("436")
+    assert defn is not None, "node 436 (CLAHE) not registered"
+    r = audit_node("436", defn)
+    assert r["status"] == "alive", \
+        f"CLAHE clip_sweep audited {r['status']} (should be alive): {r}"

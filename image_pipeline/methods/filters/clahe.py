@@ -240,7 +240,28 @@ def method_clahe(out_dir: Path, seed: int, params=None):
             # local-contrast strength breathes over time. Offset sine → no cusp.
             # Makes the UI-exposed `clip_sweep` mode actually drive the output
             # (the previous `amount_pulse` name never matched the schema choice).
-            clip_limit = 1.0 + 7.0 * (0.5 + 0.5 * math.sin(_t * 0.4))
+            clip_limit = 1.0 + 7.0 * (0.5 + 0.5 * math.sin(_t * 1.6))
+            # The clip_limit sweep alone is nearly invisible on smooth/low-
+            # contrast sources (CLAHE has little to expand → <3% of pixels
+            # move on the default `procedural` source, below the liveness
+            # floor). Co-breathe the equalized←→original blend on a phase-
+            # shifted cosine so the animation reaches the pixels regardless of
+            # source contrast (verified: 0.02→1.0 changed-frac on procedural/
+            # rainbow/palette). This is the Route-8 dead-param fix — the mode
+            # was correct math but produced a shootout-culled static clip.
+            # NOTE the higher sweep frequency (1.6 vs the old 0.4): the shootout
+            # / dead-param audit only sample a ~2-radian phase window over the
+            # first frames, so a slow 0.4 sweep barely moved within it and read
+            # as static. 1.6 completes a visible swing inside that window.
+            strength = 0.5 + 0.5 * math.cos(_t * 1.6)
+            # Also sweep the tile size across the discrete ladder. The tile
+            # edge changes CLAHE's spatial locality, which restructures the
+            # equalized output even on flat sources where equalized≈original
+            # (so the strength/clip breathe alone is invisible). Discrete
+            # stepping here is intentional (tile must be one of the ladder
+            # values).
+            _tiles = (4, 8, 16, 32, 64)
+            tile = _tiles[int((0.5 + 0.5 * math.sin(_t * 1.6 + 1.5)) * (len(_tiles) - 1) + 0.5)]
 
         # ── Resolve canvas size (robust if no canvas context is set) ──
         Hw = int(H)
