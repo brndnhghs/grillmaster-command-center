@@ -71,6 +71,37 @@ REPORT_PATH = Path(__file__).resolve().parent / "data" / "dead-param-audit.md"
 # node does not.
 CHANGED_FLOOR = 0.10
 TEMPORAL_VAR_FLOOR = 1e-3
+# Sparse / animated-line structures (epicycles, wireframes, thin strokes) move
+# only a small FRACTION of pixels yet change those pixels by the full range.
+# A fraction-only floor false-flags them as "dead" (the mean-abs-diff blind
+# spot for rotation / sparse motion). A per-pixel MAX diff catches the real
+# motion, so a node is only declared dead when BOTH fraction AND maxdiff are
+# tiny. (Same lesson as the Blender spin / thin-stroke delta verification.)
+MAXDIFF_FLOOR = 0.05
+
+
+def _verdict_for(changed: float, tvar: float, maxdiff: float, label: str) -> str:
+    """Module-level liveness verdict (extracted for testing).
+
+    A node is called DEAD-PARAM only when ALL three signals are tiny:
+    a low changed-fraction, a low temporal variance, AND a low per-pixel
+    max-diff. The last term is what distinguishes a genuinely static node
+    (no pixel moves at all) from a sparse / thin-stroke / rotation node
+    (e.g. epicycles, wireframes) that moves only a few pixels yet moves
+    them by the full range — the mean-based floors alone false-flag those
+    as dead (the same blind spot as the Blender spin / thin-stroke delta
+    verification). A node that moves any pixel fully stays ALIVE here.
+
+    ``label`` is the mode/clock under test (used only for clarity in
+    future logging); it does not affect the verdict.
+    """
+    if (changed <= CHANGED_FLOOR and tvar <= TEMPORAL_VAR_FLOOR
+            and maxdiff <= MAXDIFF_FLOOR):
+        return "DEAD-PARAM (suspect)"
+    if changed <= CHANGED_FLOOR and maxdiff <= MAXDIFF_FLOOR:
+        return "weak (low-motion)"
+    return "alive"
+
 
 N_FRAMES = 24          # total frames for the time ramp
 QUARTER = 6            # frame 6 ~ quarter-cycle (opposite sine extreme)
@@ -285,23 +316,23 @@ def audit_node(mid: str, defn: dict, seed: int = 42, cheap: bool = False) -> dic
         "best_mode": None,
         "best_changed": 0.0,
         "best_tvar": 0.0,
+        "best_maxdiff": 0.0,
         "detail": "",
     }
 
-    def _probe(rendered: list[np.ndarray]) -> tuple[float, float]:
-        """changed_frac(t0 vs quarter) + temporal_var over the rendered stack."""
+    def _probe(rendered: list[np.ndarray]) -> tuple[float, float, float]:
+        """changed_frac(t0 vs quarter) + temporal_var + per-pixel MAX diff."""
         if len(rendered) < 2:
-            return 0.0, 0.0
+            return 0.0, 0.0, 0.0
         changed = _changed_frac(rendered[0], rendered[len(rendered) // 2])
         tvar = _temporal_var(rendered)
-        return changed, tvar
+        stack = np.stack([r.astype(np.float64) for r in rendered])
+        maxdiff = float(np.abs(stack[1:] - stack[:-1]).max()) if stack.shape[0] > 1 else 0.0
+        return changed, tvar, maxdiff
 
-    def _verdict(changed: float, tvar: float, label: str) -> str:
-        if changed <= CHANGED_FLOOR and tvar <= TEMPORAL_VAR_FLOOR:
-            return "DEAD-PARAM (suspect)"
-        if changed <= CHANGED_FLOOR:
-            return "weak (changed<=floor)"
-        return "alive"
+    def _verdict(changed: float, tvar: float, maxdiff: float, label: str) -> str:
+        # Delegate to the module-level verdict (extracted for testing).
+        return _verdict_for(changed, tvar, maxdiff, label)
 
     if not modes:
         # ── Architecture-B fallback: no anim_mode enum, but the node may
@@ -318,7 +349,7 @@ def audit_node(mid: str, defn: dict, seed: int = 42, cheap: bool = False) -> dic
             try:
                 stack = [_render(mid, dict(base), frame=f, seed=seed)
                          for f in frames]
-                changed, tvar = _probe(stack)
+                changed, tvar, maxdiff = _probe(stack)
             except Exception as e:
                 result["status"] = "render-error"
                 result["detail"] = f"time-path err={type(e).__name__}: {str(e)[:80]}"
@@ -326,12 +357,14 @@ def audit_node(mid: str, defn: dict, seed: int = 42, cheap: bool = False) -> dic
             result["best_mode"] = "<time>"
             result["best_changed"] = round(changed, 4)
             result["best_tvar"] = round(tvar, 6)
-            result["status"] = _verdict(changed, tvar, "<time>")
+            result["best_maxdiff"] = round(maxdiff, 3)
+            result["status"] = _verdict(changed, tvar, maxdiff, "<time>")
             return result
         result["status"] = "no-anim-mode"
         return result
     best_changed = 0.0
     best_tvar = 0.0
+    best_maxdiff = 0.0
     best_mode = None
     for mode in modes:
         try:
@@ -341,21 +374,23 @@ def audit_node(mid: str, defn: dict, seed: int = 42, cheap: bool = False) -> dic
             else:
                 frames = list(range(STACK_N))
             stack = [_render(mid, params, frame=f, seed=seed) for f in frames]
-            changed, tvar = _probe(stack)
+            changed, tvar, maxdiff = _probe(stack)
         except Exception as e:  # render/param incompatibility -> note, skip mode
             result["detail"] = f"mode={mode} err={type(e).__name__}: {str(e)[:80]}"
             continue
         if changed > best_changed:
             best_changed = changed
             best_tvar = tvar
+            best_maxdiff = maxdiff
             best_mode = mode
     result["best_mode"] = best_mode
     result["best_changed"] = round(best_changed, 4)
     result["best_tvar"] = round(best_tvar, 6)
+    result["best_maxdiff"] = round(best_maxdiff, 3)
     if best_mode is None:
         result["status"] = "render-error"
     else:
-        result["status"] = _verdict(best_changed, best_tvar, best_mode)
+        result["status"] = _verdict(best_changed, best_tvar, best_maxdiff, best_mode)
     return result
 
 

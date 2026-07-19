@@ -103,3 +103,32 @@ def test_cheap_mode_keeps_known_alive_node_alive():
     assert "DEAD-PARAM" not in r_full["status"], f"full mis-flagged dead: {r_full}"
     # Cheap must render FEWER frames (faster) — sanity on the probe contract.
     assert r_cheap["best_changed"] > 0.05
+
+
+# ── Verdict precision (no-render, locks the MAXDIFF_FLOOR fix) ──────
+# A node that moves only a FEW pixels — but moves them by the full range
+# (sparse geometry, wireframes, thin strokes, rotation of a sparse shape) —
+# must NOT be false-flaggged as DEAD-PARAM. The mean-based changed_frac is
+# tiny for those nodes, so the per-pixel MAX diff must rescue them. A
+# truly static node (no pixel moves at all) keeps maxdiff≈0 and is dead.
+
+def test_verdict_sparse_full_motion_is_alive():
+    """Few pixels move but each moves fully -> rescued as alive (not DEAD)."""
+    from image_pipeline.shootout.audit_dead_params import _verdict_for
+    # tiny changed fraction + tiny temporal var, but a FULL per-pixel diff
+    v = _verdict_for(changed=0.02, tvar=1e-4, maxdiff=0.95, label="rotate")
+    assert v == "alive", f"sparse-full-motion wrongly flagged: {v}"
+
+
+def test_verdict_static_node_is_dead():
+    """No pixel moves at all (maxdiff~0) -> genuine DEAD-PARAM."""
+    from image_pipeline.shootout.audit_dead_params import _verdict_for
+    v = _verdict_for(changed=0.01, tvar=1e-5, maxdiff=0.0, label="none")
+    assert "DEAD-PARAM" in v, f"truly static node not flagged: {v}"
+
+
+def test_verdict_low_fraction_low_maxdiff_is_weak():
+    """Low fraction AND low maxdiff but nonzero tvar -> weak, not dead."""
+    from image_pipeline.shootout.audit_dead_params import _verdict_for
+    v = _verdict_for(changed=0.05, tvar=5e-3, maxdiff=0.01, label="x")
+    assert v == "weak (low-motion)", f"expected weak, got: {v}"
