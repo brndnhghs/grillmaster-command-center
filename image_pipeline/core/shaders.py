@@ -340,60 +340,8 @@ def shader_sources_for_client() -> dict:
 
 # ── PROCEDURAL (generate from scratch) ──
 
-_register("mandelbrot", "Mandelbrot set zoom region", "procedural", '''
-void main() {
-    vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);
-    float zoom = exp(u_params.x * 3.0);
-    vec2 c = vec2(-0.5, 0.0) + uv * zoom;
-    vec2 z = vec2(0.0);
-    int n = 0;
-    for (int i = 0; i < 100; i++) {
-        z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
-        if (dot(z, z) > 4.0) break;
-        n++;
-    }
-    float t = float(n) / 100.0;
-    f_color = vec4(0.5 + 0.5 * cos(t * 6.28 + vec3(0, 2, 4)), 1.0);
-}
-''')
 
-_register("julia", "Julia set fractal (client-GPU twin of node 66)", "procedural",
-          '''
-void main() {
-    vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);
-    vec2 c = vec2(-0.7269, 0.1889);  // node 66's famous default constant (string param unmapped)
-    vec2 z = uv * 3.0;              // fixed full view (node 66 has no zoom param)
-    int n = 0;
-    float last2 = 0.0;
-    const float MAXI = 500.0;
-    for (int i = 0; i < 500; i++) {
-        z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
-        last2 = dot(z, z);
-        if (last2 > u_escape_radius * u_escape_radius || n >= u_iterations) break;
-        n++;
-    }
-    float t = (n >= u_iterations - 0.5) ? 0.0
-            : clamp((n + 1.0 - log(max(log(last2)*0.5, 1.0001))/log(2.0)) / u_iterations, 0.0, 1.0);
-    f_color = vec4(0.5 + 0.5 * cos(t * 6.28318 + vec3(0.0, 2.0, 4.0)), 1.0);
-}
-''',
-    uniforms={
-    "iterations": {"glsl": "float", "min": 30.0, "max": 500.0, "default": 100, "description": "max iterations"},
-    "escape_radius": {"glsl": "float", "min": 1.5, "max": 10.0, "default": 2.0, "description": "escape radius"}
-}
-    )
 
-_register("plasma", "Multi-octave colored plasma", "procedural", '''
-void main() {
-    vec2 uv = v_uv;
-    float t = u_time * 0.1;
-    float v = sin(uv.x * 8.0 + t) * cos(uv.y * 6.0 + t * 0.7);
-    v += sin(uv.x * 16.0 - t * 1.2) * cos(uv.y * 12.0 + t * 0.5) * 0.5;
-    v += sin((uv.x + uv.y) * 24.0 + t * 0.3) * 0.25;
-    v = v * 0.5 + 0.5;
-    f_color = vec4(0.5 + 0.5 * cos(v * 6.28 + vec3(0, 2, 4)), 1.0);
-}
-''')
 
 #  P0.3 — Escape-time / deterministic fractal CPU-twin shaders (client-GPU live
 #  preview of nodes 33/51/52/66/67/69). These are ADDITIVE: the server's CPU
@@ -716,47 +664,8 @@ void main() {
 }
     )
 
-_register("domain_warp", "Domain-warped fractal noise", "procedural", '''
-void main() {
-    vec2 uv = v_uv * 3.0;
-    float t = u_time * 0.05;
-    float warp = 2.0 + u_params.x * 3.0;
-    vec2 q = vec2(fbm(uv + t), fbm(uv + vec2(5.2, 1.3) + t * 0.7));
-    vec2 r = vec2(fbm(uv + warp * q + vec2(1.7, 9.2) + t * 0.3),
-                  fbm(uv + warp * q + vec2(8.3, 2.8) + t * 0.4));
-    float v = fbm(uv + warp * r);
-    f_color = vec4(0.5 + 0.5 * cos(v * 6.28 + vec3(0, 2, 4)), 1.0);
-}
-''')
 
-_register("voronoi", "Voronoi/Worley noise cells", "procedural", '''
-void main() {
-    vec2 uv = v_uv * (5.0 + u_params.x * 5.0);
-    vec2 i = floor(uv); vec2 f = fract(uv);
-    float md = 1.0;
-    for (int y = -1; y <= 1; y++) {
-        for (int x = -1; x <= 1; x++) {
-            vec2 n = vec2(float(x), float(y));
-            vec2 p = hash21(i + n) * vec2(1.0);
-            float d = length(n + p - f);
-            md = min(md, d);
-        }
-    }
-    f_color = vec4(md, md * 0.5, 1.0 - md, 1.0);
-}
-''')
 
-_register("voronoise", "Smooth voronoi layers", "procedural", '''
-void main() {
-    vec2 uv = v_uv * 4.0;
-    float t = u_time * 0.02;
-    vec2 q = vec2(fbm(uv + t), fbm(uv + vec2(3.7, 1.2) + t));
-    vec2 r = vec2(fbm(uv + 4.0 * q + vec2(1.7, 9.2)),
-                  fbm(uv + 4.0 * q + vec2(8.3, 2.8)));
-    float v = fbm(uv + 4.0 * r);
-    f_color = vec4(0.5 + 0.5 * cos(v * 4.0 + vec3(0, 2, 4)), 1.0);
-}
-''')
 
 # Typed-uniform twin of CPU node 528 (Voronoise). Closed-form f(uv,t): the
 # Voronoi feature points orbit with u_time so the live preview is genuinely
@@ -888,70 +797,9 @@ void main() {
                   "description": "seed-circle bend -> inversion curvature"},
 })
 
-_register("ripples", "Concentric ripple pattern", "procedural", '''
-void main() {
-    vec2 uv = v_uv - 0.5;
-    float d = length(uv);
-    float r = sin(d * 30.0 - u_time * 2.0) * 0.5 + 0.5;
-    float g = sin(d * 30.0 - u_time * 2.0 + 2.0) * 0.5 + 0.5;
-    float b = sin(d * 30.0 - u_time * 2.0 + 4.0) * 0.5 + 0.5;
-    f_color = vec4(r, g, b, 1.0) * (1.0 - d);
-}
-''')
 
-_register("cells", "Cellular growth simulation", "procedural", '''
-void main() {
-    vec2 uv = v_uv * 8.0;
-    vec2 i = floor(uv); vec2 f = fract(uv);
-    float md = 8.0;
-    vec2 mp = vec2(0.0);
-    for (int y = -1; y <= 1; y++) {
-        for (int x = -1; x <= 1; x++) {
-            vec2 n = vec2(float(x), float(y));
-            vec2 p = hash21(i + n) * vec2(1.0);
-            float d = length(n + p - f);
-            if (d < md) { md = d; mp = n + p; }
-        }
-    }
-    float c = hash21(i + mp);
-    vec3 col = 0.5 + 0.5 * cos(c * 6.28 + vec3(0, 2, 4));
-    col *= 1.0 - md * 1.2;
-    col += vec3(0.05) / (md * md + 0.01);
-    f_color = vec4(col, 1.0);
-}
-''')
 
-_register("bubble_chamber", "Simulated bubble chamber trails", "procedural", '''
-void main() {
-    vec2 uv = v_uv * 2.0 - 1.0;
-    float t = u_time * 0.3;
-    float v = 0.0;
-    for (int i = 0; i < 20; i++) {
-        float fi = float(i);
-        vec2 p = vec2(sin(fi * 1.7 + t * 0.5), cos(fi * 2.3 + t * 0.7)) * 0.8;
-        float d = length(uv - p) - 0.03;
-        v += 0.005 / (d * d + 0.001);
-    }
-    f_color = vec4(v * 0.5, v * 0.8, v, 1.0);
-}
-''')
 
-_register("stars", "Starfield with parallax", "procedural", '''
-void main() {
-    vec2 uv = v_uv;
-    float t = u_time * 0.05;
-    vec3 col = vec3(0.0);
-    for (int i = 0; i < 50; i++) {
-        float fi = float(i);
-        vec2 p = fract(vec2(sin(fi * 127.1 + t), cos(fi * 311.7 + t * 0.7)));
-        float d = length(uv - p);
-        float brightness = 0.003 / (d * d);
-        vec3 star_col = 0.5 + 0.5 * cos(fi + vec3(0, 2, 4));
-        col += brightness * star_col;
-    }
-    f_color = vec4(col, 1.0);
-}
-''')
 
 _register("hash_field_gpu",
           "Multiresolution Hash Encoding field (client-GPU twin of node 309)",
@@ -1013,212 +861,20 @@ void main() {
     "contrast": {"glsl": "float", "min": 0.2, "max": 2.5, "default": 1.35, "description": "tone contrast"},
 })
 
-_register("lightning_fractal", "Fractal lightning branching", "procedural", '''
-void main() {
-    vec2 uv = v_uv * 2.0 - 1.0;
-    float t = u_time * 0.2;
-    vec2 p = vec2(0.0);
-    float v = 0.0;
-    for (int i = 0; i < 64; i++) {
-        float fi = float(i);
-        p += vec2(sin(fi * 0.3 + t), cos(fi * 0.7 + t * 0.5)) * 0.02;
-        float d = length(uv - p);
-        v += 0.02 / (d + 0.01);
-    }
-    f_color = vec4(v * 0.3, v * 0.5, v, 1.0);
-}
-''')
 
-_register("spiral", "Logarithmic spiral galaxy", "procedural", '''
-void main() {
-    vec2 uv = v_uv - 0.5;
-    float a = atan(uv.y, uv.x);
-    float r = length(uv);
-    float spiral = sin(a * 4.0 - r * 15.0 + u_time * 0.5) * 0.5 + 0.5;
-    float fade = exp(-r * 3.0);
-    float col = spiral * fade;
-    f_color = vec4(col * 1.2, col * 0.8, col * fade + 0.1, 1.0);
-}
-''')
 
-_register("dendritic", "Dendritic / tree-like branching", "procedural", '''
-void main() {
-    vec2 uv = v_uv * 2.0 - 1.0;
-    float t = u_time * 0.1;
-    float d = length(uv);
-    float a = atan(uv.y, uv.x) * 3.0;
-    float branch = sin(a * 8.0 + log(d + 0.001) * 10.0 + t) * 0.5 + 0.5;
-    float v = branch * exp(-d * 2.0);
-    f_color = vec4(v * 0.3, v * 0.6, v * 0.2, 1.0);
-}
-''')
 
-_register("barnsley", "Barnsley fern approximation", "procedural", '''
-void main() {
-    vec2 uv = v_uv * 3.0 - 1.5;
-    float t = u_time * 0.1;
-    float v = 0.0;
-    for (int i = 0; i < 100; i++) {
-        float fi = float(i);
-        vec2 p = vec2(sin(fi * 0.5 + t), cos(fi * 0.3 + t * 0.7));
-        float dx = uv.x - p.x * 0.5;
-        float dy = uv.y - p.y * 0.8 - 0.5;
-        v += 0.001 / (dx*dx + dy*dy + 0.001);
-    }
-    f_color = vec4(v * 0.2, v * 0.8, v * 0.2, 1.0);
-}
-''')
 
-_register("spectral", "Spectral / rainbow interference", "procedural", '''
-void main() {
-    vec2 uv = v_uv * 2.0 - 1.0;
-    float t = u_time * 0.1;
-    float a = atan(uv.y, uv.x);
-    float r = length(uv);
-    float v = sin(r * 20.0 - t) + cos(a * 5.0 + t * 0.5);
-    v = v * 0.25 + 0.5;
-    f_color = vec4(0.5 + 0.5 * cos(v * 6.28 + vec3(0, 2, 4)), 1.0);
-}
-''')
 
-_register("truchet", "Truchet tile pattern", "procedural", '''
-void main() {
-    vec2 uv = v_uv * 6.0;
-    vec2 i = floor(uv); vec2 f = fract(uv) - 0.5;
-    float flip = hash21(i) > 0.5 ? 1.0 : -1.0;
-    float d = length(f * flip);
-    float v = smoothstep(0.4, 0.5, d);
-    float c = hash21(i + vec2(1.0));
-    vec3 col = mix(vec3(0.9, 0.9, 0.95), 0.5 + 0.5 * cos(c * 6.28 + vec3(0, 2, 4)), v);
-    f_color = vec4(col, 1.0);
-}
-''')
 
-_register("kaleidoscope_fractal", "Kaleidoscope IFS fractal", "procedural", '''
-void main() {
-    vec2 uv = v_uv * 2.0 - 1.0;
-    float t = u_time * 0.1;
-    for (int i = 0; i < 10; i++) {
-        uv = abs(uv);
-        float a = sin(t + float(i) * 0.5);
-        uv = rot(a) * uv;
-        uv = uv * 1.5 - vec2(0.5);
-    }
-    float v = length(uv);
-    f_color = vec4(0.5 + 0.5 * cos(v * 10.0 + vec3(0, 2, 4)), 1.0);
-}
-''')
 
-_register("waves_3d", "3D wave interference", "procedural", '''
-void main() {
-    vec2 uv = v_uv * 4.0 - 2.0;
-    float t = u_time * 0.5;
-    float v = 0.0;
-    for (int i = 0; i < 10; i++) {
-        float fi = float(i);
-        vec2 p = vec2(sin(fi * 1.3 + t), cos(fi * 1.7 + t * 0.8));
-        v += sin(dot(uv, p) * 3.0 + t) * 0.1;
-    }
-    vec3 col = 0.5 + 0.5 * cos(v * 4.0 + vec3(0, 2, 4));
-    f_color = vec4(col, 1.0);
-}
-''')
 
-_register("pixel_sort_gpu", "Edge-directed pixel sorting on GPU", "procedural", '''
-void main() {
-    vec2 uv = v_uv;
-    float v = fbm(uv * 4.0 + u_time * 0.02);
-    vec2 step = vec2(1.0 / u_resolution.x, 1.0 / u_resolution.y);
-    float dx = fbm((uv + vec2(step.x, 0)) * 4.0) - v;
-    float dy = fbm((uv + vec2(0, step.y)) * 4.0) - v;
-    float edge = abs(dx) + abs(dy);
-    float bands = floor(uv.x * 20.0 + v * 10.0) / 20.0 + v * 0.1;
-    vec3 col = 0.5 + 0.5 * cos(bands * 6.28 + vec3(0, 2, 4));
-    col = mix(col, vec3(0.1), edge * 5.0);
-    f_color = vec4(col, 1.0);
-}
-''')
 
-_register("ocean", "Procedural ocean waves", "procedural", '''
-void main() {
-    vec2 uv = v_uv * 3.0;
-    float t = u_time * 0.3;
-    float v = sin(uv.x * 5.0 + t) * cos(uv.y * 3.0 + t * 0.7);
-    v += sin(uv.x * 8.0 - t * 1.3) * sin(uv.y * 6.0 + t) * 0.5;
-    v += sin((uv.x + uv.y) * 12.0 + t * 0.5) * 0.25;
-    v = v * 0.5 + 0.5;
-    vec3 col = mix(vec3(0.0, 0.2, 0.5), vec3(0.1, 0.6, 0.8), v);
-    col += vec3(0.3, 0.4, 0.5) * pow(v, 4.0);
-    f_color = vec4(col, 1.0);
-}
-''')
 
-_register("nebula_gpu", "Space nebula gas clouds", "procedural", '''
-void main() {
-    vec2 uv = v_uv * 2.0;
-    float t = u_time * 0.03;
-    vec2 q = vec2(fbm(uv + t), fbm(uv + vec2(5.2, 1.3) + t * 0.7));
-    vec2 r = vec2(fbm(uv + 3.0 * q + vec2(1.7, 9.2) + t * 0.3),
-                  fbm(uv + 3.0 * q + vec2(8.3, 2.8) + t * 0.4));
-    float v = fbm(uv + 3.0 * r);
-    float mask = 1.0 - abs(v_uv.y - 0.5) * 2.0;
-    vec3 col = 0.3 + 0.7 * (0.5 + 0.5 * cos(v * 4.0 + vec3(0, 1, 2)));
-    col *= mask;
-    f_color = vec4(col, 1.0);
-}
-''')
 
-_register("terrain", "Procedural terrain heightmap", "procedural", '''
-void main() {
-    vec2 uv = v_uv * 3.0;
-    float t = u_time * 0.02;
-    float h = fbm(uv + t);
-    float h2 = fbm(uv * 2.0 + t * 1.5) * 0.5;
-    float h3 = fbm(uv * 4.0 + t * 2.0) * 0.25;
-    h = h * 0.6 + h2 * 0.3 + h3 * 0.1;
-    vec3 col;
-    if (h < 0.3) col = vec3(0.1, 0.3, 0.6);
-    else if (h < 0.45) col = vec3(0.2, 0.5, 0.2);
-    else if (h < 0.6) col = vec3(0.3, 0.3, 0.1);
-    else if (h < 0.75) col = vec3(0.4, 0.25, 0.1);
-    else col = vec3(0.8, 0.8, 0.9);
-    float shade = 0.5 + 0.5 * cos(h * 20.0);
-    f_color = vec4(col * shade, 1.0);
-}
-''')
 
-_register("wood_grain_gpu", "Concentric wood grain rings", "procedural", '''
-void main() {
-    vec2 uv = v_uv - 0.5;
-    float d = length(uv) * 10.0;
-    float grain = sin(d * 8.0 + fbm(uv * 10.0) * 0.5) * 0.5 + 0.5;
-    vec3 col = mix(vec3(0.3, 0.15, 0.05), vec3(0.6, 0.3, 0.1), grain);
-    f_color = vec4(col, 1.0);
-}
-''')
 
-_register("fire_gpu", "Animated fire/flame", "procedural", '''
-void main() {
-    vec2 uv = v_uv;
-    float t = u_time * 0.5;
-    float v = fbm(vec2(uv.x * 3.0, (1.0 - uv.y) * 5.0 + t));
-    v = v * (1.0 - uv.y);
-    vec3 col = mix(vec3(1.0, 0.9, 0.4), vec3(0.8, 0.2, 0.0), v);
-    col = mix(col, vec3(0.1, 0.0, 0.0), 1.0 - v);
-    f_color = vec4(col, 1.0);
-}
-''')
 
-_register("smoke_gpu", "Rising smoke / steam", "procedural", '''
-void main() {
-    vec2 uv = v_uv;
-    float t = u_time * 0.1;
-    float v = fbm(uv * 3.0 + vec2(0.0, t));
-    v = v * (1.0 - uv.y) * 0.8;
-    vec3 col = mix(vec3(0.8, 0.8, 0.85), vec3(0.2, 0.2, 0.25), v);
-    f_color = vec4(col, 1.0);
-}
-''')
 
 
 # ── Gabor Noise (CPU node 477 twin) — anisotropic sparse Gabor convolution ──
@@ -2363,72 +2019,6 @@ void main() {
 # characteristic fingerprint/wood-grain ridges with locally controllable
 # frequency and orientation. Closed-form per pixel → exact GPU live preview;
 # CPU numpy stays authoritative for export.
-_register("phasor_noise_gpu",
-          "Procedural Phasor Noise — Tricard 2019 sum-of-complex-Gabor-kernel phasor field (node 322)",
-          "procedural", _inferno_local('') + '''
-// One complex Gabor kernel: returns vec2(real, imag).
-// p       = sample point (kernel-local grid space)
-// center  = kernel center
-// freq    = spatial frequency (cycles per unit)
-// theta   = kernel orientation (radians)
-// bw      = Gaussian bandwidth (kernel spatial extent)
-vec2 gabor_kernel(vec2 p, vec2 center, float freq, float theta, float bw) {
-    vec2 d = p - center;
-    float g = exp(-3.14159265 * bw * bw * dot(d, d));   // Gaussian envelope
-    vec2 f = vec2(cos(theta), sin(theta)) * freq;       // frequency vector
-    float phase = 6.2831853 * dot(f, d);                // 2π f·(x-x_i)
-    return g * vec2(cos(phase), sin(phase));            // complex kernel
-}
-void main() {
-    // 0.5-neutral encoding → node defaults (pitfall #15).
-    float freq   = mix(2.0, 22.0, u_frequency);   // ridge frequency
-    float theta0 = u_orientation * 6.2831853;      // base orientation
-    float spread = u_spread * 3.14159265;          // orientation randomness
-    float bw     = mix(2.6, 1.2, u_bandwidth);     // kernel extent (lower=broader)
-    float hue    = u_hue;
-    float t = u_time * 0.15;
-
-    // Work in a jittered grid so kernels tile the plane. cell size ~ 1 kernel.
-    float scale = 6.0;                 // grid resolution across the [0,1] canvas
-    vec2 pg = v_uv * scale;
-    vec2 base = floor(pg);
-    vec2 accum = vec2(0.0);            // accumulated complex phasor
-    // Sum kernels from the 3x3 neighborhood of grid cells (support radius).
-    for (int j = -1; j <= 1; j++) {
-        for (int i = -1; i <= 1; i++) {
-            vec2 cell = base + vec2(float(i), float(j));
-            vec2 h = vec2(hash21(cell), hash21(cell + 17.3));
-            vec2 center = cell + h;                       // jittered kernel center
-            // Per-kernel orientation: base + random spread, slowly rotating in t.
-            float th = theta0 + (h.x - 0.5) * 2.0 * spread + t * (0.3 + 0.4 * h.y);
-            float amp = 0.6 + 0.4 * hash21(cell + 5.1);
-            accum += amp * gabor_kernel(pg, center, freq, th, bw);
-        }
-    }
-    // Phasor field = argument (phase) of the accumulated complex sum.
-    float phase = atan(accum.y, accum.x);
-    // sin(phase) → oscillating ridges with intensity-decoupled contrast.
-    float osc = 0.5 + 0.5 * sin(phase);
-    // Local intensity (magnitude) gently modulates brightness at kernel gaps.
-    float mag = clamp(length(accum), 0.0, 1.0);
-    float val = clamp(osc * (0.55 + 0.45 * mag), 0.0, 1.0);
-
-    vec3 col = inferno(val);
-    // Hue control tints the ridges via a cosine palette blended on the ridge band.
-    float ridge = smoothstep(0.35, 0.65, osc);
-    vec3 tint = 0.5 + 0.5 * cos(6.2831853 * (hue + val) + vec3(0.0, 2.0, 4.0));
-    col = mix(col, col * (0.5 + 1.0 * tint), 0.4 * ridge);
-    f_color = vec4(clamp(col, 0.0, 1.0), 1.0);
-}
-''',
-    uniforms={
-    "frequency": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "ridge frequency (cycles per kernel)"},
-    "orientation": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "base ridge orientation"},
-    "spread": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "orientation randomness (0=aligned, 1=isotropic)"},
-    "bandwidth": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "kernel bandwidth (higher=sharper/narrower kernels)"},
-    "hue": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "ridge tint hue"}
-    }
-    )
 
 _register("heatmap_gpu",
           "Density heatmap (client-GPU twin of node 43)",
@@ -3204,16 +2794,6 @@ _register("fxaa_gpu", "GPU FXAA anti-aliasing (edge-tangent luma blend)", "filte
 '''))
 
 # 74 Swirl Displacement — polar swirl remap (GPU live twin)
-_register("swirl_gpu", "GPU swirl/pinch displacement", "filter", _filter_shader('''
-    vec2 p = uv - 0.5;
-    float r = length(p);
-    float a = atan(p.y, p.x);
-    float strength = (u_params.x - 0.5) * 6.0;          // 0.5 -> none
-    float swirl = strength * (1.0 - r);
-    float ca = cos(a + swirl), sa = sin(a + swirl);
-    vec2 q = vec2(ca, sa) * r + 0.5;
-    f_color = texture(u_texture, q);
-'''))
 
 # 13 Dithering — Bayer 8x8 ordered dither with N-level quantization (GPU live
 # twin). The CPU node's default `fs` (Floyd-Steinberg error diffusion) is an

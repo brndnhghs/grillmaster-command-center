@@ -278,3 +278,18 @@ high-σ clips first; (b) no NaN/Inf when σ is undefined (prior used). Gate behi
 
 **Index:** set evolution-research-index.txt → 6 (current lever; next run implements the
 selective-surfacing endpoint + test, or returns to #1 ELO wiring).
+
+## 2026-07-19T08:12:38Z — Sub-problem #6 (Rating-signal poverty: surface the MOST informative clips for human rating via active learning)
+
+**Observed (real probe, this run):** human ratings=19 across 649 genomes (~2.9%, STARVED). The active-learning rating UI loop was closed in a prior run (Route 8 #6), so clips CAN be rated frictionlessly — but WHICH clips are surfaced is still first-come / random. With only ~19 ratings, every rating must be maximally informative or the taste model stays untrained (~7 ratings/293 genomes earlier).
+
+**Technique — Bayesian Active Learning by Disagreement (BALD)** (Houlsby et al. 2011, "Bayesian Active Learning for Classification and Preference Learning", arXiv:1112.5745): acquire the item whose rating would most reduce model uncertainty = max mutual information between the clip's latent preference and the model posterior. Cheaper surrogates that need no Bayesian net: (a) **variance/expected-model-change** over the taste model's score for a clip (high variance = informative), (b) **disagreement** between the taste-model score and the dense liveness/cost signal (a clip the taste model loves but the liveness gate would cull is a high-teaching-moment), (c) **novelty/coverage** of the motif combo (surface under-represented motif niches). These mirror the Eureka reward-reflection loop from sub-problem #5 but operate on rating acquisition instead of advisor guidance.
+
+**Module:** `rating_suggest.py` already exists in `image_pipeline/shootout/` — extend it to rank candidate (unrated) clips by an acquisition score = w1*score_variance + w2*|taste_score - liveness_alive| + w3*novelty, and have the UI pull the top-K from that ranking instead of arbitrary order. Pure additive; falls back to current order when the taste model is absent. No change to render/liveness gates.
+
+**Expected effect:** rating budget concentrates on teachable clips → taste model trains faster from the same ~19 ratings, so evolution's selection pressure becomes real instead of near-blind. Directly attacks the standing "rating-signal poverty" gap.
+
+**Verification (headless):** extend `image_pipeline/tests/test_shootout.py` (or a new `test_rating_suggest.py`) — given a synthetic unrated pool with known score-variance, `suggest_top_k()` returns the highest-variance clips first; when the taste model is absent it returns clips in stable order (no crash). Gate behind a flag until enabled.
+
+**Index:** rotate evolution-research-index.txt 6 → 7 (sub-problem #6 finalized this run; next lever: #7 drift/stagnation detection — auto-widen explore_ratio or fresh-random reset when a generation plateaus in dead-rate AND rating mean).
+---

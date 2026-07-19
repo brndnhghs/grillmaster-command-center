@@ -397,3 +397,11 @@
 - CLIP/SAM/Blender-MCP/3D-sidecar ALL OFFLINE → Routes 1-4 blocked this run.
 - DECISION: no safe high-value UNBUILT route this run. (a) Driver→pixels (Route 8 #1) already wired + tested in graph.py + test_driver_animation_reaches_pixels. (b) Timeout ceiling (Route 8 #2) done last run. (c) Rating active-learning loop (sub-problem #6) closed last run; /api/shootout/suggest-ratings verified live (returned 3 novel high-info unrated genomes w/ mp4_url). (d) Remaining 21 untyped p1..p4 shims need NEW named-uniform GLSL twins — large risky batch, NOT a one-run safe chunk.
 - SINGLE ACTION: record honest state + recommend next route. NEXT PRIORITY: the genuine unbuilt lever is the dead-param FRONTIER audit (`audit_dead_params.py --cheap --resume`) across heavy sims (141/137/97/...) to finish the static/flat frontier; OR when ratings reach ~25+, add 1-click grid rating. Do NOT fabricate ratings or re-open closed routes.
+
+## 2026-07-19T08:12:38Z — candidate manifest (Route 8 #1 dead-param frontier)
+- genomes=649 alive=357 dead=292 (45%, down from ~70% pre-Route-8)
+- top-3 rated (promotion seeds): g-e181c881=5, g-328f0d37=5, g-f8849674=5
+- cheap-alive recombine seeds: 180
+- dead-reason breakdown: static=76, flat=73, over-budget=56, timeout=58(legacy), flicker=10, no-output=7, node_error=4, skipped=8
+- ACTION THIS RUN: launched full dead-param liveness audit across ALL time-varying nodes (8 --cheap shards) to surface remaining dead-param suspects causing static/flat deaths. Timeouts largely mitigated by prior runs (render_timeout_s=300 + heavy_render_timeout_factor=2.0 + max 450; 58 timeout deaths are legacy pre-fix).
+- NEXT: fix top DEAD-PARAM suspects found by the audit, re-verify, commit.
