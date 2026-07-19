@@ -20,8 +20,6 @@ quietly inflating the dead-rate.
 """
 import random
 
-import pytest
-
 from image_pipeline.shootout.config import ShootoutConfig
 from image_pipeline.shootout.generator import build_gene_pool
 from image_pipeline.shootout.evolve import (
@@ -29,11 +27,9 @@ from image_pipeline.shootout.evolve import (
 )
 from image_pipeline.shootout.repair import repair_genome, sample_valid_genome
 
-# These breed real genomes (sample_valid_genome / repair render to validate),
-# so they are slower than the pure-logic shootout tests. Mark them slow so the
-# default `-m "not slow"` run skips them, matching the repo convention for the
-# other render-health contracts.
-pytestmark = pytest.mark.slow
+# These breed real genomes and assert wire-validity purely structurally
+# (no rendering): repair/sample run with terminal_variance_probe=False, so the
+# test stays fast + deterministic and runs under the default (non-slow) suite.
 
 
 def _cfg():
@@ -47,6 +43,11 @@ def _cfg():
     c.mutations_per_offspring = (1, 3)
     c.cross_breed_probability = 1.0
     c.frames = 24
+    # Headless: keep repair/sample purely structural -- without this, every
+    # mutate()/crossover()/next_generation() call triggers a full render_stack
+    # (up to the 150s cap each) and the test takes minutes instead of
+    # seconds. Matches the grammar_mut test's fix for the same default.
+    c.terminal_variance_probe = False
     return c
 
 
