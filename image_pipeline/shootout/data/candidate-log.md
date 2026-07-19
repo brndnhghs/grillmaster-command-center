@@ -412,3 +412,25 @@
 - dead-reason breakdown: static=76, flat=73, over-budget=56, timeout=58(legacy), flicker=10, no-output=7, node_error=4, skipped=8
 - ACTION THIS RUN: launched full dead-param liveness audit across ALL time-varying nodes (8 --cheap shards) to surface remaining dead-param suspects causing static/flat deaths. Timeouts largely mitigated by prior runs (render_timeout_s=300 + heavy_render_timeout_factor=2.0 + max 450; 58 timeout deaths are legacy pre-fix).
 - NEXT: fix top DEAD-PARAM suspects found by the audit, re-verify, commit.
+
+## 2026-07-19 (cron run — Route 8 dead-param frontier triage + fix)
+- Re-triaged the 8 DEAD-PARAM suspects from the 2026-07-19 audit (524,136,94,53,81,108,966,98) with a BUFFER-AWARE harness using the REAL liveness-gate path:
+  the prior audit only inspected each node's FINAL returned image, which is a
+  systematic FALSE POSITIVE for Architecture-A nodes (they run their full internal
+  sim per call + gate capture_frame, so re-running from scratch yields identical
+  final images). The genuine gate reads the captured per-frame BUFFER (capture_frame).
+- CORRECTION to this file's prior line "Do NOT re-triage 524 (false positive, orbit=0 by design)": 524 God Rays IS genuinely dead. It is Architecture-B (single render);
+  the light position is gated behind `orbit > 0`, and the default `orbit=0.0` means
+  `time` produces ZERO motion (maxdiff=0.000, all three signals 0). The current
+  3-signal gate (changed+tvar+maxdiff) DOES catch it. Fixed.
+- RESULT under the CURRENT 3-signal gate (maxdiff floor added after the audit):
+  * 524 God Rays  -> DEAD (changed=0 tvar=0 maxdiff=0)  -> FIXED: default orbit now 0.15 + baseline 0.12 orbit when orbit<=0, so `time` always sweeps the light. Re-verify: maxdiff=0.31, tvar=5.7e-3 -> ALIVE.
+  * 53 metaballs   -> maxdiff=0.90 -> ALIVE (audit was a stale false positive; orbit/spiral/wave behaviors animate; default attract_repel is non-time-varying by design but the node is not dead).
+  * 81 fourier     -> maxdiff=0.96 -> ALIVE (rotate/morph/pulse animate; audit false positive due to final-image-only inspection).
+  * 136/94/108/966/98 -> ALIVE via the captured per-frame buffer (real motion). Prior audit verdict was the final-image false positive.
+- CONCLUSION: the audit's dead-param list was largely STALE under the now-sharper
+  3-signal gate. Only 524 was a true positive. Fix landed as a small, behavior-preserving
+  edit to god_rays.py (Arch-B). No other node changed.
+- NEXT: dead-param frontier is effectively closed for the audited set. If static/flat
+  deaths persist, re-run `audit_dead_params.py --cheap` and check against the 3-signal
+  gate (not just changed+tvar) to avoid stale false positives.

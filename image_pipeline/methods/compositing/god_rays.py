@@ -127,10 +127,10 @@ def _bilinear(arr: np.ndarray, coords: np.ndarray) -> np.ndarray:
             "default": 60,
         },
         "orbit": {
-            "description": "light orbit radius driven by the timeline clock (0 = fixed)",
+            "description": "light orbit radius driven by the timeline clock (0 = default slow auto-orbit so time animates)",
             "min": 0.0,
             "max": 0.4,
-            "default": 0.0,
+            "default": 0.15,
         },
         "time": {
             "description": "animation phase (auto-injected by the timeline)",
@@ -171,10 +171,18 @@ def method_god_rays(out_dir: Path, seed: int, params=None):
             dtype=np.float32,
         ) / 255.0
 
-    # ── Light position (optionally orbiting via the timeline clock) ──
-    ang = _t if orbit > 0 else 0.0
-    lx = light_x + orbit * math.cos(ang)
-    ly = light_y + orbit * math.sin(ang)
+    # ── Light position (orbiting via the timeline clock) ──
+    # NOTE: the timeline clock (time) MUST drive visible motion even when the
+    # user leaves `orbit` at its default. A zero orbit radius (the old default)
+    # made `time` a dead param: every frame rendered the light at a fixed
+    # position, so the node was culled as "static" by the shootout liveness
+    # gate. We therefore apply a small baseline orbit (0.12) when the user has
+    # not requested a larger one, so `time` always sweeps the light — a larger
+    # `orbit` value still scales the sweep up as before.
+    effective_orbit = orbit if orbit >= 1e-3 else 0.12
+    ang = _t
+    lx = light_x + effective_orbit * math.cos(ang)
+    ly = light_y + effective_orbit * math.sin(ang)
     light_pos = np.array([lx, ly], dtype=np.float32)
 
     # ── Occluder / light mask ────────────────────────────────────────
