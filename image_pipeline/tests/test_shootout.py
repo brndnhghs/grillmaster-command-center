@@ -2075,3 +2075,41 @@ def test_fast_bilateral_solver_sweeps_reach_pixels():
     r = audit_node("924", defn)
     assert r["status"] == "alive", \
         f"FBS sweeps audited {r['status']} (should be alive): {r}"
+
+
+@pytest.mark.parametrize("mid", ["436", "924", "493", "340", "462", "74", "349", "975"])
+def test_dead_param_frontier_filters_alive(mid):
+    """Route 8 dead-param frontier regression for the FILTER category.
+
+    A curated, diverse sample of filter nodes that the headless liveness audit
+    classified ALIVE must never silently regress to a dead-param (a non-`none`
+    anim_mode that renders a static frame stack and gets culled by the liveness
+    gate). This is the exact bug class that hit 436 CLAHE `clip_sweep` and 924
+    Fast Bilateral Solver `spatial_sweep` — both repaired and now included here
+    as permanent guards.
+
+    The sample spans the animation primitives so a regression in ANY of them is
+    caught, not just the two previously-fixed nodes:
+      * 436 clip_sweep   (clip-limit + strength + tile co-breathe)
+      * 924 spatial_sweep(Fast Bilateral Solver — source drift + amount blend)
+      * 493 exposure_sweep / 349 lambda_sweep (scalar sweeps)
+      * 340 flow          (translation/drift sweep)
+      * 462 pulse         (breathing sweep)
+      * 74  rotation_cycle(spin sweep)
+      * 975 morph         (structural morph sweep)
+
+    We guard on the precise bug class ("DEAD-PARAM (suspect)") rather than the
+    stricter "alive": a node that merely becomes 'weak' (changed_frac below the
+    0.10 floor but temporal_var still above the 1e-3 liveness floor) still
+    passes the shootout gate and is NOT a dead-param regression, so it must not
+    spuriously fail this test.
+    """
+    import image_pipeline.methods  # noqa: F401
+    from image_pipeline.core.graph import get_all_node_defs
+    from image_pipeline.shootout.audit_dead_params import audit_node
+    defs = get_all_node_defs()
+    defn = defs.get(mid)
+    assert defn is not None, f"node {mid} not registered"
+    r = audit_node(mid, defn)
+    assert "DEAD-PARAM" not in r["status"], \
+        f"node {mid} regressed to dead-param ({r['status']}): {r}"
