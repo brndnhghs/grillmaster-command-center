@@ -240,8 +240,28 @@ def _render(mid: str, params: dict, frame: int, seed: int = 42) -> np.ndarray:
         return img.astype(np.float32)
 
 
+def _anim_param_key(defn: dict) -> str:
+    """Return the node's real animation-mode param key.
+
+    Most nodes declare ``anim_mode`` (the pipeline canonical key, see
+    graph.py / the executor). A handful of older fractal nodes (49 Buddhabrot,
+    51 Burning Ship, 52 Newton) declare ``animation_mode`` instead. The audit
+    must inject the SAME key the node actually reads, otherwise it always
+    sees ``none`` and a genuinely-animating node is mis-classified as a
+    dead-param suspect. Route 8 (2026-07-18): closes this last audit blind
+    spot — the harness now honours both spellings.
+    """
+    params = defn.get("params") or {}
+    if "anim_mode" in params:
+        return "anim_mode"
+    if "animation_mode" in params:
+        return "animation_mode"
+    return "anim_mode"  # fallback: most nodes use this
+
+
 def audit_node(mid: str, defn: dict, seed: int = 42) -> dict:
     modes = _non_none_modes(defn, mid)
+    anim_key = _anim_param_key(defn)
     # sensible source so motion is visible where the node needs structure
     base: dict[str, object] = {"anim_speed": 1.0}
     params_schema = defn.get("params") or {}
@@ -291,7 +311,7 @@ def audit_node(mid: str, defn: dict, seed: int = 42) -> dict:
     best_mode = None
     for mode in modes:
         try:
-            params = {**base, "anim_mode": mode}
+            params = {**base, anim_key: mode}
             # build a small stack for temporal_var
             stack = []
             for f in range(STACK_N):

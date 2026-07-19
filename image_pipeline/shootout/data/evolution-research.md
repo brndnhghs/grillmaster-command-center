@@ -214,3 +214,32 @@ rescue the 212 contrast-only false-static culls). evolution-research.md now exce
 its 300-line cap (609) — manual trim of the oldest IMPLEMENTED entries (2026-07-15 #1
 pre-render-cost-proxy, 2026-07-16 #4 niching ACTUATOR) recommended at a quiet moment;
 do NOT trim the standing open items (#2 BC-archive above, #3 liveness metric).
+
+---
+
+## 2026-07-18T21:00:00Z — Frontier observability fix (prerequisite for sub-problem #6 rating poverty)
+
+**Observed (real probe, this run):** the dead-param liveness audit
+(`audit_dead_params.py`) injected only the canonical key `anim_mode`, but nodes
+49 (Buddhabrot), 51 (Burning Ship), 52 (Newton) declare their animation enum as
+`animation_mode`. The mismatch made a genuinely-animating node render `none`
+every frame → historically mis-classified as `render-error` / false dead-param
+suspect. That corrupted the frontier report's "suspects" list and, downstream,
+any rating-prioritization that ranked nodes by dead-param status.
+
+**Fix:** `_anim_param_key(defn)` resolves the node's real key (`anim_mode` else
+`animation_mode`); `audit_node` injects that key. Verified: 49/51/52 now
+classify `alive` (changed_frac 0.24–0.82). Added
+`test_dead_param_frontier_animation_mode_key` regression guard.
+
+**Why this matters for #6:** a trustworthy dead-param frontier is the input to
+active-learning surfacing (Raj 2022, PMLR v162 "Convergence of Uncertainty
+Sampling for Active Learning" — established technique: surface the highest-
+uncertainty / most-informative clips for rating). If the frontier mislabels
+alive nodes as dead, the surfacing signal is polluted. With the key-blind-spot
+closed, the next run can implement #6 (teachable-moment surfacing of the most
+informative unrated clips) against clean frontier data.
+
+**Index:** rotate evolution-research-index.txt 5 → 6 (sub-problem #6 rating-
+signal poverty / active-learning surfacing is now the standing next lever, and
+its prerequisite frontier is trustworthy).

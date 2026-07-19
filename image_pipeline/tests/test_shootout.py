@@ -2113,3 +2113,35 @@ def test_dead_param_frontier_filters_alive(mid):
     r = audit_node(mid, defn)
     assert "DEAD-PARAM" not in r["status"], \
         f"node {mid} regressed to dead-param ({r['status']}): {r}"
+
+
+@pytest.mark.parametrize("mid", ["49", "51", "52"])
+def test_dead_param_frontier_animation_mode_key(mid):
+    """Route 8 dead-param frontier — `animation_mode` key blind spot.
+
+    Nodes 49 (Buddhabrot), 51 (Burning Ship), 52 (Newton) declare their
+    animation-mode enum under the key ``animation_mode`` rather than the
+    pipeline-canonical ``anim_mode``. The dead-param audit must inject the
+    SAME key the node reads; otherwise it always sees ``none`` and a
+    genuinely-animating node is mis-classified (historically as
+    ``render-error`` / a false dead-param suspect), corrupting the frontier
+    report.
+
+    This test pins the fix: these nodes must be classified ALIVE (their
+    ``animation_mode`` reaches pixels) — never a DEAD-PARAM suspect. If the
+    harness ever reverts to injecting ``anim_mode`` only, they would render
+    static and this guard fails loudly.
+    """
+    import image_pipeline.methods  # noqa: F401
+    from image_pipeline.core.graph import get_all_node_defs
+    from image_pipeline.shootout.audit_dead_params import audit_node
+    defs = get_all_node_defs()
+    defn = defs.get(mid)
+    assert defn is not None, f"node {mid} not registered"
+    # Sanity: the node really does declare the non-canonical key.
+    assert "animation_mode" in (defn.get("params") or {}), \
+        f"node {mid} unexpectedly stopped declaring animation_mode"
+    r = audit_node(mid, defn)
+    assert r["status"] == "alive", \
+        f"node {mid} ({defn.get('name')}) animation_mode key not honoured " \
+        f"by audit -> {r['status']}: {r}"
