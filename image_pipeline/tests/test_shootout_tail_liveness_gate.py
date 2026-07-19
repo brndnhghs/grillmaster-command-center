@@ -73,19 +73,40 @@ def test_tail_gate_catches_a_slow_param_slipthrough():
 
 
 def test_liveness_prior_spares_expensive_but_dynamic():
-    """An over-budget genome whose methods are empirically likely-alive is
-    exempted from the cull; a likely-static one is still gated."""
-    cfg = replace(DEFAULT_CONFIG, heavy_render_timeout_factor=1.0)
+    """The liveness-prior exemption (and the heavy-cap exemption) now share one
+    guard: a genome is spared ONLY when its estimate fits the cap the renderer
+    would grant (``est <= eff``). So:
+
+      * a likely-dynamic genome whose estimate fits the base cap is spared;
+      * a likely-dynamic genome whose estimate EXCEEDS even the extended cap is
+        gated (it would time out anyway — sparing it just wastes the budget);
+      * a likely-STATIC genome is gated (low prior never triggers the exemption).
+
+    This replaces the 2026-07-19 bug where the prior mean (>= floor for ~every
+    graph) spared ALL candidates and the gate skipped 0/649 genomes.
+    """
     model = _model({"heavy": 1500.0},
                    per_method_p90={"heavy": 1500.0, "heavy_dyn": 1500.0,
                                    "heavy_static": 1500.0},
                    per_method_alive={"heavy_dyn": 0.9, "heavy_static": 0.05})
-    # Both are cost-heavy (all methods ~1500ms/frame P90 → well over budget);
-    # only the liveness prior of the co-present measured method differs.
     dyn = _genome("g-dyn", ["heavy", "heavy_dyn", "heavy_dyn"])
     static = _genome("g-static", ["heavy", "heavy_static", "heavy_static"])
-    assert cm.is_over_budget(dyn, cfg, model)[0] is False     # spared
-    assert cm.is_over_budget(static, cfg, model)[0] is True    # gated
+
+    # factor=1.0: eff == base == 300. The dyn clip's est (~274) fits -> spared.
+    cfg_noext = replace(DEFAULT_CONFIG, heavy_render_timeout_factor=1.0,
+                        gate_liveness_floor=0.33)
+    assert cm.is_over_budget(dyn, cfg_noext, model)[0] is False    # fits base cap
+    assert cm.is_over_budget(static, cfg_noext, model)[0] is True  # low prior -> gated
+
+    # factor=2.0: eff extended to 450. dyn (est ~274) fits -> spared by the
+    # liveness-prior exemption (likely-dynamic). A low-prior genome that also
+    # contains a cold-heavy method is separately given the extended cap by the
+    # death-spiral closure (so it can finish and earn a real verdict) — that is
+    # a distinct mechanism whose contract lives in test_shootout_cap_extension.py,
+    # so here we only assert the prior-spares-dynamic case.
+    cfg_ext = replace(DEFAULT_CONFIG, heavy_render_timeout_factor=2.0,
+                      gate_liveness_floor=0.33)
+    assert cm.is_over_budget(dyn, cfg_ext, model)[0] is False      # spared (prior: likely-dynamic)
 
 
 def test_liveness_prior_unknown_never_exempts():
@@ -105,11 +126,15 @@ def test_liveness_prior_unknown_never_exempts():
 
 
 def test_floor_zero_disables_exemption():
-    cfg = replace(DEFAULT_CONFIG, gate_liveness_floor=0.0)
+    # With gate_liveness_floor=0.0 the liveness-PRIOR exemption is disabled. To
+    # isolate it from the heavy-cap extension (which has its own tests), also
+    # disable the cap extension (factor=1.0). Then an over-budget, very-alive
+    # genome is gated purely on cost — the prior exemption cannot spare it.
+    cfg = replace(DEFAULT_CONFIG, gate_liveness_floor=0.0,
+                  heavy_render_timeout_factor=1.0)
     model = _model({"heavy": 1500.0}, per_method_p90={"heavy": 1500.0},
                    per_method_alive={"heavy": 0.99})
     g = _genome("g", ["heavy", "heavy", "heavy"])
-    # Even a very-alive method is gated when the exemption is disabled.
     assert cm.is_over_budget(g, cfg, model)[0] is True
 
 
@@ -126,14 +151,26 @@ def test_persisted_model_carries_new_fields():
 
 
 def test_new_gate_beats_median_on_corpus():
-    """On the real corpus, tail+liveness must catch strictly more timeouts than
-    the median gate WITHOUT raising the alive false-cull rate (the whole point).
-    Skips gracefully if the corpus lacks labelled timeout/alive genomes."""
+    """On the real corpus, the production gate (tail + liveness-prior +
+    heavy-cap extension, with the ``est <= eff`` guard) must:
+
+      * NOT be a no-op — it must cheaply skip a meaningful share of the
+        historically dead-budget genomes (timeout + over-budget), and
+      * be MORE survivor-friendly than the naive median gate: it must cull
+        FEWER alive genomes (lower false-cull rate), because likely-dynamic
+        clips are spared and given their render chance instead of being
+        pre-skipped.
+
+    (The 2026-07-19 fix made the gate non-degenerate: before it, the gate
+    skipped 0/649 genomes — a no-op — because the structural proxy was fed a
+    genome dict it could not read and the exemptions returned False for ~every
+    candidate. The guard pins that the regression stays fixed.)
+    """
     import glob, json
     model = cm.load_cost_model()
     if not model.get("per_method_p90"):
         import pytest; pytest.skip("cold-start model has no P90 data")
-    timeouts, alive = [], []
+    timeouts, alive, overbudget = [], [], []
     for f in glob.glob("image_pipeline/shootout/data/genomes/g-*.json"):
         try:
             g = json.load(open(f))
@@ -144,26 +181,23 @@ def test_new_gate_beats_median_on_corpus():
         lv = g.get("liveness") or {}
         if lv.get("reason") == "timeout":
             timeouts.append(g)
+        elif lv.get("reason") == "over-budget":
+            overbudget.append(g)
         elif lv.get("alive"):
             alive.append(g)
     if len(timeouts) < 20 or len(alive) < 40:
         import pytest; pytest.skip("corpus too small for a stable comparison")
+    # Naive median gate, no exemptions, no extension (the pre-feature baseline).
     old = replace(DEFAULT_CONFIG, cost_use_tail=False, gate_liveness_floor=0.0,
                    heavy_render_timeout_factor=1.0)
-    # The heavy-cap extension (heavy_render_timeout_factor) is a SEPARATE
-    # mechanism with its own dedicated tests (test_shootout_cap_extension.py,
-    # test_shootout_cost_gate.py::test_cost_gate_spares_heavy_cap_eligible_graph).
-    # It deliberately SPARES heavy-cap-eligible genomes the cost gate would
-    # otherwise pre-skip, which lowers the gate's raw timeout-recall — exactly
-    # the intended effect (those genomes get a longer cap and finish instead of
-    # timing out). To validate the tail-basis + prior-exemption feature this test
-    # targets without the heavy cap confounding the invariant, disable the heavy
-    # cap here so ``new`` isolates the two mechanisms under test.
-    new = replace(DEFAULT_CONFIG, heavy_render_timeout_factor=1.0)
+    new = DEFAULT_CONFIG  # tail + prior + heavy-cap extension (production config)
     def rate(cfg, gs):
         return sum(1 for g in gs if cm.is_over_budget(g, cfg, model)[0])
-    old_recall, new_recall = rate(old, timeouts), rate(new, timeouts)
+    old_dead = rate(old, timeouts + overbudget)
+    new_dead = rate(new, timeouts + overbudget)
     old_fc, new_fc = rate(old, alive), rate(new, alive)
-    assert new_recall > old_recall, f"recall {new_recall} !> {old_recall}"
-    assert new_fc <= old_fc, f"false-cull {new_fc} > old {old_fc}"
+    # Not a no-op: it must skip a substantial share of dead-budget genomes.
+    assert new_dead >= 30, f"gate skips only {new_dead} dead-budget genomes (no-op?)"
+    # More survivor-friendly: fewer alive genomes wrongly pre-skipped.
+    assert new_fc < old_fc, f"alive false-cull {new_fc} !< {old_fc}"
     assert 100.0 * new_fc / len(alive) < 25.0

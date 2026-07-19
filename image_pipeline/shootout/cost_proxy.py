@@ -244,12 +244,34 @@ def load_structural_model(rebuild_if_missing: bool = True) -> dict | None:
     return None
 
 
+def _as_graph(obj: dict) -> dict:
+    """Normalise a genome OR graph dict to the graph sub-dict.
+
+    The corpus stores genomes as ``{"graph": {"nodes": [...], "edges": [...]}}``
+    but callers (``is_over_budget``, ``estimate_cost_tail_s``) pass the FULL
+    genome. ``_extract_features`` reads ``graph["nodes"]``, so feeding it a
+    genome yields an empty feature vector and a constant prediction for every
+    genome — which silently neuters the proxy. Normalize here so the proxy
+    actually sees the nodes/edges regardless of which shape the caller passes.
+    """
+    if not isinstance(obj, dict):
+        return {}
+    g = obj.get("graph")
+    if isinstance(g, dict):
+        return g
+    # Already a graph (has nodes/edges at top level) or empty.
+    return obj
+
+
 def structural_estimate_s(graph: dict, model: dict | None = None) -> float:
     """Predict a genome's render wall time (seconds) from graph structure.
 
     Returns 0.0 when no trusted model is available (abstain → never gates), so
     callers can ``est = max(per_node_est, structural_estimate_s(...))`` with no
     behavioural change when the proxy is untrained.
+
+    ``graph`` may be a full genome (``{"graph": {...}}``) or the graph sub-dict
+    directly — both shapes are normalized via ``_as_graph``.
     """
     if model is None:
         model = load_structural_model()
@@ -257,7 +279,7 @@ def structural_estimate_s(graph: dict, model: dict | None = None) -> float:
         return 0.0
     schema = model["schema"]
     w = np.asarray(model["weights"], dtype=np.float64)
-    x = np.asarray(_extract_features(graph, schema), dtype=np.float64)
+    x = np.asarray(_extract_features(_as_graph(graph), schema), dtype=np.float64)
     if x.shape[0] != w.shape[0]:
         return 0.0
     pred = float(w @ x + model.get("intercept", 0.0))

@@ -256,20 +256,42 @@ def refresh_cost_model() -> dict:
 # (cost_skip_factor × render_timeout_s) actually means real seconds — without
 # calibration the loose gate systematically misses the genuine heavy-sim
 # timeout outliers (empirical wall/est ratio up to ~800× on the worst clips).
-# Recomputed whenever build_cost_model() runs.
+# Recomputed whenever build_cost_model() runs. These are the FALLBACK values
+# used only when a model dict does not carry its own calibration (e.g. a test
+# fixture). Calibration is PER-MODEL, not a module global: ``_recalibrate``
+# stamps the fitted slope/intercept into the model dict, and the estimate
+# functions read them from the model they are handed. This avoids the old
+# shared-mutable-global trap where ``load_cost_model`` silently mutated
+# CAL_SLOPE/CAL_INTERCEPT for every later call in the process (and every later
+# test), so a test that loaded the real corpus model changed the numbers a
+# subsequent synthetic-model test computed.
 CAL_SLOPE = 0.557
 CAL_INTERCEPT = 33.7
-_CAL_FIT_SAMPLES = 0  # set by build_cost_model when a real fit is available
+_CAL_FIT_SAMPLES = 0  # informational only; calibration lives on the model now
+
+
+def _model_calibration(model: dict) -> tuple[float, float]:
+    """Return (slope, intercept) for a cost-model dict, falling back to defaults.
+
+    A model built by ``build_cost_model`` carries ``calibration``; test fixtures
+    may not, in which case the module fallbacks are used so behaviour is stable
+    and never depends on process-global state.
+    """
+    slope = model.get("cal_slope", CAL_SLOPE)
+    intercept = model.get("cal_intercept", CAL_INTERCEPT)
+    return float(slope), float(intercept)
 
 
 def _recalibrate(model: dict) -> None:
-    """Replace the hardcoded slope/intercept with a corpus fit if available."""
-    global CAL_SLOPE, CAL_INTERCEPT, _CAL_FIT_SAMPLES
+    """Stamp the corpus-fit slope/intercept onto the model dict (per-model)."""
     fit = model.get("calibration")
     if fit and isinstance(fit.get("slope"), (int, float)) and fit["slope"] > 0:
-        CAL_SLOPE = float(fit["slope"])
-        CAL_INTERCEPT = float(fit.get("intercept", CAL_INTERCEPT))
-        _CAL_FIT_SAMPLES = int(model.get("n_samples", 0))
+        model["cal_slope"] = float(fit["slope"])
+        model["cal_intercept"] = float(fit.get("intercept", CAL_INTERCEPT))
+    else:
+        # Ensure the keys always exist so downstream readers are uniform.
+        model.setdefault("cal_slope", CAL_SLOPE)
+        model.setdefault("cal_intercept", CAL_INTERCEPT)
 
 
 def estimate_cost_s(genome: dict, frames: int, model: dict | None = None) -> float:
@@ -283,8 +305,8 @@ def estimate_cost_s(genome: dict, frames: int, model: dict | None = None) -> flo
         mid = nd.get("method_id")
         total_ms_per_frame += per_method.get(mid, default_ms)
     raw = total_ms_per_frame * frames / 1000.0
-    # Calibrated wall = slope·raw + intercept (fit over the corpus).
-    return CAL_SLOPE * raw + CAL_INTERCEPT
+    slope, intercept = _model_calibration(model)
+    return slope * raw + intercept
 
 
 def estimate_cost_tail_s(genome: dict, frames: int,
@@ -316,7 +338,8 @@ def estimate_cost_tail_s(genome: dict, frames: int,
         mid = nd.get("method_id")
         total_ms_per_frame += p90.get(mid, per_method.get(mid, default_ms))
     raw = total_ms_per_frame * frames / 1000.0
-    est = CAL_SLOPE * raw + CAL_INTERCEPT
+    slope, intercept = _model_calibration(model)
+    est = slope * raw + intercept
     if cfg is not None and getattr(cfg, "structural_cost_enabled", True):
         try:
             sest = _proxy.structural_estimate_s(genome)
@@ -372,36 +395,43 @@ def is_over_budget(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
     threshold = cfg.render_timeout_s * getattr(cfg, "cost_skip_factor", 0.9)
     if est <= threshold:
         return False, est
-    # Over budget by cost — but spare likely-dynamic clips.
-    floor = getattr(cfg, "gate_liveness_floor", 0.0)
-    if floor and floor > 0.0:
-        prior = liveness_prior(genome, model)
-        if prior is not None and prior >= floor:
-            return False, est
-        # Heavy-cap exemption (Route 8 cost-gate vs cap-extension reconciliation,
-        # 2026-07-15): ``effective_render_timeout_s`` RAISES the per-clip render
-        # cap for heavy-but-likely-dynamic genomes so they can FINISH instead of
-        # being culled as 'timeout' at the base cap. But the pre-render cost gate
-        # here sits in FRONT of that extension and pre-culls exactly those genomes
-        # as 'over-budget' before they ever reach the renderer — so the heavy-cap
-        # extension is dead code for the 56 over-budget culls it was built to save.
-        # Do NOT pre-skip a genome the renderer would extend the cap for: it runs
-        # under the longer cap and is judged by the liveness gate as normal. This
-        # is strictly non-destructive — it only ever REDUCES pre-skips, and every
-        # other genome keeps its existing gate verdict. Gated behind the same
-        # ``floor > 0`` condition as the liveness-prior exemption so a floor=0.0
-        # config (prior exemption explicitly disabled) still gates purely on cost
-        # and the heavy-cap extension's own prior-floor coupling cannot invert the
-        # gate's behaviour. Empirically on the 643-genome corpus this re-admits
-        # ~76 of 177 pre-skipped graphs; 52 current 'timeout' culls also receive
-        # the longer cap.
-        if (getattr(cfg, "heavy_render_timeout_factor", 1.0) or 1.0) > 1.0:
-            try:
-                eff = effective_render_timeout_s(genome, cfg, model)
-            except Exception:
-                eff = float(cfg.render_timeout_s)
-            if eff > float(cfg.render_timeout_s) + 1e-6:
+    # Over budget by cost — but the renderer can EXTEND the per-clip cap for
+    # slow-but-likely-dynamic genomes (``effective_render_timeout_s``). The gate
+    # must only SPARE a genome the renderer would actually let finish. The cap
+    # the renderer would grant (``eff``) is computed once; BOTH exemptions below
+    # are gated on ``est <= eff`` so a genome that is still over-budget even
+    # under the extended cap is gated and skipped cheaply instead of burning the
+    # full budget and being culled as 'timeout' anyway.
+    #
+    # HISTORY: an earlier exemption spared ANY genome with a liveness prior
+    # >= floor OR any heavy-cap-eligible genome (``eff > base``). But the
+    # liveness prior is a MEAN over ALL a genome's nodes — it is >= floor for
+    # almost every graph (dominated by cheap high-alive nodes), so it returned
+    # False (spare) for ~every candidate and the gate skipped 0/649 genomes;
+    # the entire timeout cluster (58 clips, est up to 908s) kept rendering and
+    # was culled as 'timeout' regardless. The ``est <= eff`` guard is the
+    # correction: it only ever spares genomes whose estimate actually fits the
+    # cap the renderer would grant. Monotonic-safe: a genome the estimate says
+    # fits is never pre-skipped; one that doesn't is gated no matter its prior.
+    factor = getattr(cfg, "heavy_render_timeout_factor", 1.0) or 1.0
+    eff = float(cfg.render_timeout_s)
+    if factor > 1.0:
+        try:
+            eff = effective_render_timeout_s(genome, cfg, model)
+        except Exception:
+            eff = float(cfg.render_timeout_s)
+    if est <= eff + 1e-6:
+        # Estimate fits inside the cap the renderer would grant — spare it.
+        floor = getattr(cfg, "gate_liveness_floor", 0.0)
+        if floor and floor > 0.0:
+            prior = liveness_prior(genome, model)
+            if prior is not None and prior >= floor:
                 return False, est
+        # Heavy-cap-eligible genome (eff was raised above the base cap) that the
+        # estimate says fits: the renderer will extend its cap and let it finish,
+        # judged by the liveness gate as normal. Spared.
+        if eff > float(cfg.render_timeout_s) + 1e-6:
+            return False, est
     return True, est
 
 
