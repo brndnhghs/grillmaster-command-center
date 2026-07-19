@@ -535,6 +535,26 @@ def render_genome(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
     # which nodes threw so the clip can be culled instead of shipped.
     node_error_nodes: set[str] = set()
     node_error_sample: str = ""
+    # ── Precise hard-wall timer (Route 8 timeout-overrun fix, 2026-07-19) ──
+    # The heartbeat watchdog's hard-wall check (render_many) only fires
+    # ``request_skip`` on its coarse poll cadence and only BETWEEN frames, so a
+    # heavy Arch-A sim whose internal ``capture_frame`` calls are sparse can
+    # overrun the documented ``max_render_timeout_s`` ceiling (the cost-gate
+    # clamp) to ~669s before the next frame boundary arrives — wasting the
+    # whole budget on a clip that will be culled as 'timeout' anyway. The
+    # executor's sim loop already polls ``cancel_event`` (per-node at
+    # graph.py:614 and per-capture_frame at animation.py:137-141), so a
+    # *precise* one-shot timer that sets the cancel event exactly at the
+    # clamp bounds the worst case to clamp + one capture interval. Additive +
+    # monotonic-safe: only ever RAISES the abort (never extends a render), and
+    # it cancels on normal completion so it never fires late on a healthy clip.
+    _clamp_s = float(getattr(cfg, "max_render_timeout_s", 0.0) or eff_timeout)
+    if _clamp_s > eff_timeout:
+        _clamp_s = eff_timeout  # never abort a light graph before its own cap
+    _clamp_s = _clamp_s * float(getattr(cfg, "hard_wall_factor", 1.15))
+    _hw_timer = threading.Timer(_clamp_s, lambda: skip_ev.set())
+    _hw_timer.daemon = True
+    _hw_timer.start()
     # Per-node compute, summed across every rendered frame. The executor
     # reports ms-per-node for the *last* frame only (last_frame_stats), so
     # we fold each frame's timings in here to get total compute per node.
@@ -608,6 +628,7 @@ def render_genome(genome: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
         if progress_cb:
             progress_cb(f"{gid}: encode failed: {exc}")
     finally:
+        _hw_timer.cancel()  # never fire the hard-wall cancel on a finished clip
         mon.finish(gid)
 
     liveness = acc.stats()
