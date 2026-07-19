@@ -41,6 +41,7 @@ no node, no server path, no GPU.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 import time
@@ -259,7 +260,16 @@ def _anim_param_key(defn: dict) -> str:
     return "anim_mode"  # fallback: most nodes use this
 
 
-def audit_node(mid: str, defn: dict, seed: int = 42) -> dict:
+def audit_node(mid: str, defn: dict, seed: int = 42, cheap: bool = False) -> dict:
+    """Audit one node.
+
+    When ``cheap`` is True, render only 3 frames (f=0, QUARTER, 2·QUARTER)
+    instead of the full STACK_N (8) — the high-frequency (cosmetic) modes the
+    full stack would expose are irrelevant to the binary dead/alive frontier,
+    and the three spread samples still catch a genuinely dead param (which is
+    flat at EVERY phase). The cheap path is ~2.7× faster and is the mode the
+    cron budget needs to finish the 455-node frontier in one run.
+    """
     modes = _non_none_modes(defn, mid)
     anim_key = _anim_param_key(defn)
     # sensible source so motion is visible where the node needs structure
@@ -277,6 +287,22 @@ def audit_node(mid: str, defn: dict, seed: int = 42) -> dict:
         "best_tvar": 0.0,
         "detail": "",
     }
+
+    def _probe(rendered: list[np.ndarray]) -> tuple[float, float]:
+        """changed_frac(t0 vs quarter) + temporal_var over the rendered stack."""
+        if len(rendered) < 2:
+            return 0.0, 0.0
+        changed = _changed_frac(rendered[0], rendered[len(rendered) // 2])
+        tvar = _temporal_var(rendered)
+        return changed, tvar
+
+    def _verdict(changed: float, tvar: float, label: str) -> str:
+        if changed <= CHANGED_FLOOR and tvar <= TEMPORAL_VAR_FLOOR:
+            return "DEAD-PARAM (suspect)"
+        if changed <= CHANGED_FLOOR:
+            return "weak (changed<=floor)"
+        return "alive"
+
     if not modes:
         # ── Architecture-B fallback: no anim_mode enum, but the node may
         # animate purely via the injected ``time`` clock. Render across the
@@ -285,11 +311,14 @@ def audit_node(mid: str, defn: dict, seed: int = 42) -> dict:
         # former "no-anim-mode" blind spot into a real verdict.
         if _has_time_param(defn):
             result["modes"] = ["<time>"]
+            if cheap:
+                frames = [0, QUARTER, min(2 * QUARTER, N_FRAMES - 1)]
+            else:
+                frames = list(range(STACK_N))
             try:
                 stack = [_render(mid, dict(base), frame=f, seed=seed)
-                         for f in range(STACK_N)]
-                changed = _changed_frac(stack[0], stack[QUARTER])
-                tvar = _temporal_var(stack)
+                         for f in frames]
+                changed, tvar = _probe(stack)
             except Exception as e:
                 result["status"] = "render-error"
                 result["detail"] = f"time-path err={type(e).__name__}: {str(e)[:80]}"
@@ -297,12 +326,7 @@ def audit_node(mid: str, defn: dict, seed: int = 42) -> dict:
             result["best_mode"] = "<time>"
             result["best_changed"] = round(changed, 4)
             result["best_tvar"] = round(tvar, 6)
-            if changed <= CHANGED_FLOOR and tvar <= TEMPORAL_VAR_FLOOR:
-                result["status"] = "DEAD-PARAM (suspect)"
-            elif changed <= CHANGED_FLOOR:
-                result["status"] = "weak (changed<=floor)"
-            else:
-                result["status"] = "alive"
+            result["status"] = _verdict(changed, tvar, "<time>")
             return result
         result["status"] = "no-anim-mode"
         return result
@@ -312,12 +336,12 @@ def audit_node(mid: str, defn: dict, seed: int = 42) -> dict:
     for mode in modes:
         try:
             params = {**base, anim_key: mode}
-            # build a small stack for temporal_var
-            stack = []
-            for f in range(STACK_N):
-                stack.append(_render(mid, params, frame=f, seed=seed))
-            changed = _changed_frac(stack[0], stack[QUARTER])
-            tvar = _temporal_var(stack)
+            if cheap:
+                frames = [0, QUARTER, min(2 * QUARTER, N_FRAMES - 1)]
+            else:
+                frames = list(range(STACK_N))
+            stack = [_render(mid, params, frame=f, seed=seed) for f in frames]
+            changed, tvar = _probe(stack)
         except Exception as e:  # render/param incompatibility -> note, skip mode
             result["detail"] = f"mode={mode} err={type(e).__name__}: {str(e)[:80]}"
             continue
@@ -330,13 +354,53 @@ def audit_node(mid: str, defn: dict, seed: int = 42) -> dict:
     result["best_tvar"] = round(best_tvar, 6)
     if best_mode is None:
         result["status"] = "render-error"
-    elif best_changed <= CHANGED_FLOOR and best_tvar <= TEMPORAL_VAR_FLOOR:
-        result["status"] = "DEAD-PARAM (suspect)"
-    elif best_changed <= CHANGED_FLOOR:
-        result["status"] = "weak (changed<=floor)"
     else:
-        result["status"] = "alive"
+        result["status"] = _verdict(best_changed, best_tvar, best_mode)
     return result
+
+
+def _progress_path() -> Path:
+    """Where the cross-run progress manifest is kept (enables --resume)."""
+    return REPORT_PATH.parent / "dead-param-progress.json"
+
+
+def _load_progress() -> dict:
+    p = _progress_path()
+    if p.exists():
+        try:
+            return json.loads(p.read_text())
+        except (json.JSONDecodeError, OSError):
+            return {}
+    return {}
+
+
+def _save_progress(data: dict) -> None:
+    _progress_path().write_text(json.dumps(data, indent=1, sort_keys=True))
+
+
+def _split_shards(ids: list[str], shard: int, of: int) -> list[str]:
+    """Deterministic shard fan-out: 1-based ``shard`` of ``of`` total."""
+    return [mid for i, mid in enumerate(ids) if i % of == (shard - 1)]
+
+
+def _filter_resume(ids: list[str], done: set[str]) -> list[str]:
+    """Drop ids already completed in a prior run (enables --resume)."""
+    return [mid for mid in ids if mid not in done]
+
+
+def _merge_shards(merge_dir: Path) -> list[dict]:
+    """Collect per-shard result JSON files into one ordered row list.
+
+    Shards are written by a `--shard N/M --merge-dir D` run as ``D/M_<N>.json``.
+    Order is stable (sorted by shard index) so the merged report is deterministic.
+    """
+    rows: list[dict] = []
+    for f in sorted(merge_dir.glob("M_*.json"), key=lambda p: int(p.stem.split("_")[1])):
+        try:
+            rows.extend(json.loads(f.read_text()))
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"  [merge] skip {f.name}: {e}")
+    return rows
 
 
 def main() -> int:
@@ -344,23 +408,58 @@ def main() -> int:
     ap.add_argument("--ids", help="comma-separated method ids to audit (else all time-varying)")
     ap.add_argument("--limit", type=int, help="cap number of nodes audited")
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--cheap", action="store_true",
+                    help="cheap 3-frame probe (fast; good enough for the dead/alive frontier)")
+    ap.add_argument("--resume", action="store_true",
+                    help="skip ids already recorded as done in the progress manifest")
+    ap.add_argument("--shard", type=int, metavar="N",
+                    help="1-based shard index for fan-out (use with --of / --merge-dir)")
+    ap.add_argument("--of", type=int, metavar="M", default=1,
+                    help="total shard count (default 1 = full run)")
+    ap.add_argument("--merge-dir", type=str, default=None,
+                    help="dir to write per-shard result JSON (shard mode) or to merge (*.json) when --merge is set")
+    ap.add_argument("--merge", action="store_true",
+                    help="merge per-shard JSON files from --merge-dir into the combined report")
     args = ap.parse_args()
+
+    # ── Merge mode: assemble the combined report from shard outputs ──
+    if args.merge:
+        mdir = Path(args.merge_dir or (REPORT_PATH.parent / "shards"))
+        rows = _merge_shards(mdir)
+        print(f"[merge] {len(rows)} rows from {mdir}")
+        return _emit_report(rows)
 
     defs = get_all_node_defs()
     if args.ids:
         ids = [s.strip() for s in args.ids.split(",") if s.strip()]
     else:
         ids = _time_varying_ids()
+
+    # ── Shard fan-out: deterministically split the id list ──
+    if args.of > 1:
+        ids = _split_shards(ids, args.shard, args.of)
+        print(f"[shard] index={args.shard}/{args.of}  ->  {len(ids)} nodes for this shard")
+
+    # ── Resume: drop ids already completed in a prior run ──
+    if args.resume:
+        prog = _load_progress()
+        done = set(prog.get("done", []))
+        skipped = len(_filter_resume(ids, done))
+        ids = _filter_resume(ids, done)
+        if skipped:
+            print(f"[resume] skipping {skipped} already-audited id(s)")
+
     if args.limit:
         ids = ids[: args.limit]
 
-    print(f"Auditing {len(ids)} time-varying node(s)...")
-    rows: list[dict] = []
+    print(f"Auditing {len(ids)} time-varying node(s) "
+          f"({'cheap' if args.cheap else 'full'})...")
+    rows = []
     t0 = time.time()
     for i, mid in enumerate(ids, 1):
         defn = defs.get(mid, {})
         try:
-            r = audit_node(mid, defn, seed=args.seed)
+            r = audit_node(mid, defn, seed=args.seed, cheap=args.cheap)
         except Exception as e:
             r = {"id": mid, "name": defs.get(mid, {}).get("name", mid),
                    "status": "exception", "detail": f"{type(e).__name__}: {str(e)[:80]}",
@@ -370,8 +469,31 @@ def main() -> int:
         print(f"  [{i:3d}/{len(ids)}] {mid:8s} {r['status']:22s} "
               f"changed={r['best_changed']:.3f} tvar={r['best_tvar']:.2e} "
               f"mode={r['best_mode']}{flag}")
-    dt = time.time() - t0
 
+    # Update the cross-run progress manifest (for --resume).
+    if not args.merge:
+        prog = _load_progress()
+        done = set(prog.get("done", []))
+        done.update(r["id"] for r in rows)
+        prog["done"] = sorted(done)
+        prog["last_run"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+        _save_progress(prog)
+
+    # In shard mode we persist just this shard's rows and bail before merging.
+    if args.of > 1 and args.merge_dir:
+        mdir = Path(args.merge_dir)
+        mdir.mkdir(parents=True, exist_ok=True)
+        (mdir / f"M_{args.shard}.json").write_text(json.dumps(rows))
+        print(f"[shard] wrote {len(rows)} rows -> {mdir / f'M_{args.shard}.json'}")
+        return 0
+
+    dt = time.time() - t0
+    print(f"\nElapsed: {dt:.0f}s")
+    return _emit_report(rows)
+
+
+def _emit_report(rows: list[dict]) -> int:
+    """Write the markdown audit report from a list of per-node rows."""
     suspects = [r for r in rows if "DEAD-PARAM" in r["status"]]
     weak = [r for r in rows if r["status"] == "weak (changed<=floor)"]
     alive = [r for r in rows if r["status"] == "alive"]
@@ -381,7 +503,7 @@ def main() -> int:
         "# Dead-Param Liveness Audit",
         "",
         f"Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}  "
-        f"nodes audited: {len(rows)}  elapsed: {dt:.0f}s",
+        f"nodes audited: {len(rows)}",
         "",
         "## Summary",
         "",
