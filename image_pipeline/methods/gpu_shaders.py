@@ -734,6 +734,18 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     "312": {"shader": "caustics_gpu", "type": "procedural",
             "param_map": {"scale": "p1", "caustic_gain": "p2",
                           "sharpen": "p3", "anim_speed": "p4"}},
+    # 528 Voronoise: typed-uniform twin. scale/jitter/smoothness/octaves/
+    # lacunarity/gain/contrast map by NAME (the client typed-live path reads
+    # node params by uniform name). colormode/palette/anim_mode/source are
+    # choice/string params (pitfall #14) left unmapped -> preview uses the
+    # inferno default (node 528's default colormode). Closed-form f(uv,t):
+    # feature points orbit with u_time so the live preview is genuinely
+    # animated. CPU numpy node 528 stays authoritative for export.
+    "528": {"shader": "voronoise_typed", "type": "procedural", "typed": True,
+            "param_map": {"scale": "scale", "jitter": "jitter",
+                          "smoothness": "smoothness", "octaves": "octaves",
+                          "lacunarity": "lacunarity", "gain": "gain",
+                          "contrast": "contrast"}},
     # 68 Anisotropic Kuwahara → typed-uniform twin. `radius`/`anisotropy` wired
     # by name (contract #5); presmooth/blend are not mapped — the twin renders
     # the default strength. CPU numpy node stays authoritative for export.
