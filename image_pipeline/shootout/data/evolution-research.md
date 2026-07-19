@@ -50,7 +50,27 @@ Rotating sub-problem index is tracked in evolution-research-index.txt.
 > RATING CORPUS (sub-problem #6), not a missing liveness actuator. This file is
 > kept as the historical technique archive; treat #3 / cost-gate entries as
 > DONE.
-
+>
+> **CORRIGENDUM (2026-07-19).** The 2026-07-18 correction above was right that
+> the cost-proxy was WIRED (not unbuilt), but it was INCOMPLETE: the gate worked
+> yet LEAKED on heavy sims. Two defects survived: (1) the ridge snapshot was
+> frozen on the 581-genome build — `load_structural_model` only retrained when
+> the file was *absent*, never when the corpus grew, so genuine heavy sims
+> (141/137/84/51/87) were never flagged as the corpus reached 649; (2) the
+> heavy-feature set was saturated by `__`-prefixed driver/control nodes (wired
+> into ~every graph but rendering no pixels), pushing real sims out of top-K; and
+> (3) `effective_render_timeout_s` extended the cap only for nodes present in the
+> per-method ms/frame table, so heavy RD/CA/PDE sims (which time out before
+> logging ms/frame) were never extended and were culled at the base cap forever.
+> Result: 56/58 timeout-culled genomes slipped past the gate (est < threshold)
+> and burned a full render budget. Fixed 2026-07-19 (cost_proxy.py +
+> cost_model.py): bimodality-aware heavy flag (max wall_s >= 250s), exclude
+> driver/control nodes from heavy_ids, TOP_K 30->40, staleness-aware retrain
+> (>=16 new genomes), and structural-heavy cross-pollination into the cap
+> extension. Post-fix: 54/58 timeout genomes now receive the extended cap. So the
+> 2026-07-18 "DONE, do not re-attempt" should read "wired + leak-closed 2026-07-19";
+> do not re-litigate the gate, but the original "unbuilt actuator" framing was
+> doubly wrong (it was built AND it leaked).
 ---
 
 ## 2026-07-17T03:20:34Z — Sub-problem #7 (Drift / stagnation detection)

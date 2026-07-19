@@ -72,7 +72,25 @@ COST_PROXY_PATH = DATA_DIR / "cost_proxy.json"
 # that contain it (computed from real recorded wall_s, including timeouts) is
 # above this threshold. Top-K such methods become binary presence flags.
 HEAVY_WALL_MEDIAN_S = 45.0
-TOP_K_HEAVY = 30
+TOP_K_HEAVY = 40
+
+# BIMODALITY-AWARE second signal (Route 8 #2 leak fix, 2026-07-19).
+# Heavy RD / CA / PDE sims (e.g. 141 Gray-Scott, 137, 84, 51, 87) are
+# *bimodal*: cheap when their parameters make them fast, but catastrophic
+# (timeout) at other parameters. Their MEDIAN wall_s can sit below
+# HEAVY_WALL_MEDIAN_S, so the median-only rule above never flags them — yet
+# they are exactly the genomes that blow the render budget. Any method whose
+# recorded wall_s EVER exceeds this ceiling (i.e. it has at least a few
+# timeout-class / near-timeout outcomes) is flagged heavy regardless of median.
+HEAVY_WALL_MAX_S = 250.0
+
+# Staleness guard (Route 8 #2 leak fix, 2026-07-19). The persisted ridge
+# snapshot is only retrained when the logged corpus has grown by at least this
+# many genomes since the snapshot was built. Without this, the proxy stays
+# frozen on an early snapshot where heavy sims were under-represented, so it
+# never learns their heavy flags and 56/58 heavy timeout genomes slip past the
+# gate (est < skip threshold) and burn a full render budget anyway.
+RETRAIN_CORPUS_DELTA = 16
 
 # Ridge regularisation strength (L2). Keeps the predictor from over-fitting the
 # heavy flags onto a handful of lucky genomes; tuned conservatively so a light
@@ -122,11 +140,30 @@ def _build_feature_schema(genomes: list[dict]) -> dict:
             wall_by_mid.setdefault(mid, []).append(float(wall))
     heavy = []
     for mid, walls in wall_by_mid.items():
+        # Route 8 #2 (2026-07-19): driver / control system nodes (LFO, counter,
+        # noise1d, ramp, strobe, envelope, image_to_mask ...) are wired into
+        # nearly every graph but do NOT render pixels, so they are never the
+        # render-cost CAUSE. They crowd the heavy feature set with incidental
+        # ubiquity and push genuine heavy sims out of the top-K, so exclude them.
+        if mid.startswith("__"):
+            continue
         if len(walls) < 3:
             continue
         med = statistics.median(walls)
-        if med >= HEAVY_WALL_MEDIAN_S:
-            heavy.append((mid, med))
+        mx = max(walls)
+        # Median rule: steady heavy methods.
+        median_heavy = med >= HEAVY_WALL_MEDIAN_S
+        # Bimodality rule (Route 8 #2 leak fix): a method that has EVER produced
+        # a near-timeout / timeout-class wall time is intrinsically timeout-prone
+        # even if its median is low — flag it so the proxy raises the estimate
+        # and the gate grants the extended cap (heavy sims finish instead of
+        # being culled at the base cap). This catches Gray-Scott / CA / PDE sims
+        # that the median-only rule systematically misses.
+        bimodal_heavy = mx >= HEAVY_WALL_MAX_S
+        if median_heavy or bimodal_heavy:
+            # Sort key: median (so the top-K stays median-led), but bimodal
+            # methods with no high median still enter and are kept below.
+            heavy.append((mid, max(med, mx * 0.6 if bimodal_heavy else 0.0)))
     heavy.sort(key=lambda x: -x[1])
     heavy_ids = [m for m, _ in heavy[:TOP_K_HEAVY]]
     # Also collect the set of categories seen, for stable feature columns.
@@ -231,17 +268,45 @@ def train_structural_model(persist: bool = True) -> dict | None:
 
 
 def load_structural_model(rebuild_if_missing: bool = True) -> dict | None:
-    """Load the cached structural model, building it once if absent."""
+    """Load the cached structural model, refreshing it when the corpus has grown.
+
+    Route 8 #2 leak fix (2026-07-19): the snapshot is only (re)built when a
+    *missing* file is found, so once it exists it is frozen forever — even as
+    the logged corpus grows from 581 to 649+ genomes where heavy RD / CA / PDE
+    sims become well-represented. A frozen snapshot never learns their heavy
+    flags, so the proxy under-estimates them and the gate lets 56/58 heavy
+    timeout genomes slip through (est < skip threshold) and burn a full render
+    budget anyway. Now we ALSO retrain when the live corpus is at least
+    ``RETRAIN_CORPUS_DELTA`` genomes larger than the snapshot's ``n_samples``,
+    so the proxy tracks the corpus it predicts on.
+    """
+    _ensure_registry()
+    need_rebuild = False
     if COST_PROXY_PATH.exists():
         try:
             m = json.loads(COST_PROXY_PATH.read_text())
-            if m.get("schema", {}).get("heavy_ids"):
-                return m
+            if not m.get("schema", {}).get("heavy_ids"):
+                need_rebuild = True
+            else:
+                # Staleness check: count live genome files (cheap; bounded by
+                # glob on a single directory).
+                n_live = sum(1 for _ in _iter_genome_files())
+                prev = int(m.get("n_samples", 0) or 0)
+                if n_live - prev >= RETRAIN_CORPUS_DELTA:
+                    need_rebuild = True
         except (OSError, ValueError):
-            pass
-    if rebuild_if_missing:
-        return train_structural_model(persist=True)
-    return None
+            need_rebuild = True
+    else:
+        need_rebuild = True
+    if need_rebuild:
+        if rebuild_if_missing:
+            return train_structural_model(persist=True)
+        return None
+    # Re-read the (possibly fresh) file.
+    try:
+        return json.loads(COST_PROXY_PATH.read_text())
+    except (OSError, ValueError):
+        return None
 
 
 def _as_graph(obj: dict) -> dict:

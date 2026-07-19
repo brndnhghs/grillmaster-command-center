@@ -460,6 +460,29 @@ def partition_by_budget(genomes: list[dict], cfg: ShootoutConfig = DEFAULT_CONFI
     return affordable, skipped
 
 
+def _structural_heavy_ids(cfg: ShootoutConfig = DEFAULT_CONFIG) -> frozenset[str]:
+    """Heavy method ids learned by the structural cost proxy.
+
+    Route 8 #2 (2026-07-19): heavy RD / CA / PDE sims time out before they log
+    per-method ms/frame, so they are absent from ``per_method`` and the
+    per-method cap-extension branch can never see them. The structural proxy
+    (cost_proxy.py) learns their heavy flags from recorded timeout wall_s
+    instead. Surface those ids so the cap-extension path can use the same signal.
+    Returns an empty set when the proxy is untrained (monotonic-safe: no
+    extension granted that the proxy didn't earn).
+    """
+    if not getattr(cfg, "structural_cost_enabled", True):
+        return frozenset()
+    try:
+        from . import cost_proxy as _proxy
+        m = _proxy.load_structural_model()
+    except Exception:
+        return frozenset()
+    if not m:
+        return frozenset()
+    return frozenset(m.get("schema", {}).get("heavy_ids", []))
+
+
 def effective_render_timeout_s(genome: dict,
                                cfg: ShootoutConfig = DEFAULT_CONFIG,
                                model: dict | None = None) -> float:
@@ -528,19 +551,30 @@ def effective_render_timeout_s(genome: dict,
     # culls it cheaply in a single generation instead of looping forever).
     _COLD_HEAVY_EXTENDS = True
     cand = base  # the cap we would grant (raised only for heavy likely-dynamic)
+    _structural_heavy = _structural_heavy_ids(cfg)
     for nd in genome.get("graph", {}).get("nodes", []):
         mid = nd.get("method_id")
         if mid is None:
             continue
-        ms = pm.get(mid)
-        if ms is None or ms < heavy_ms:
-            continue
         prior = pma.get(mid)
-        if _COLD_HEAVY_EXTENDS and prior is None:
+        ms = pm.get(mid)
+        if ms is not None and ms >= heavy_ms:
+            if _COLD_HEAVY_EXTENDS and prior is None:
+                cand = base * float(factor)
+                break
+            if prior is not None and prior >= prior_floor:
+                cand = base * float(factor)
+                break
+        # Route 8 #2 (2026-07-19): heavy RD / CA / PDE sims time out BEFORE they
+        # log per-method ms/frame, so they never appear in ``pm`` and the
+        # per-method branch above never extends their cap — they get culled as
+        # 'timeout' at the base cap every generation. But the structural cost
+        # proxy DOES learn their heavy flags (from recorded timeout wall_s). If a
+        # node id is in the structural proxy's heavy set, treat its presence as
+        # the heavy signal and extend, exactly like a cold high-ms method.
+        elif _structural_heavy and mid in _structural_heavy:
             cand = base * float(factor)
             break
-        if prior is not None and prior >= prior_floor:
-            cand = base * float(factor)
             break
     # Eligibility 1 (fallback): no single heavy method, but the SUM of many
     # medium methods is estimated heavy. Keep the calibrated est-floor so we do
