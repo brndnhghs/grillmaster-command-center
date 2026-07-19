@@ -49,6 +49,21 @@ MIN_ALIVE_SAMPLES = 4
 # the estimate without dominating it.
 _FALLBACK_MS_PER_FRAME = 5.0
 
+# Outlier-robustness cap for the per-method P90 tail (Route 8 cost-gate fix,
+# 2026-07-19). ``estimate_cost_tail_s`` sums per-method P90 ms/frame so the
+# gate catches methods that occasionally explode on unlucky params. But a SINGLE
+# pathological run (e.g. a sim that hit a degenerate initial condition and ran
+# an unbounded warmup) writes one ~2000-3000 ms/frame datum that the P90 then
+# adopts verbatim, poisoning EVERY genome containing that method: its estimate
+# is computed as if it *always* runs at the pathological worst case. Empirically
+# 7 methods had P90 > 20x their median, which made ``est`` over-predict real wall
+# time by a median factor of 6.6x across the corpus — so the gate false-culled
+# dynamic heavy graphs as 'over-budget'. Clamping the P90 to ``median * CAP``
+# keeps the tail-sensitive catch for genuinely-heavy methods (whose median is
+# already high) while neutralising one bad run. Set <= 1.0 to restore verbatim
+# P90.
+_P90_OUTLIER_CAP = 4.0
+
 _CACHE: dict | None = None
 
 
@@ -128,7 +143,8 @@ def build_cost_model(persist: bool = True) -> dict:
     # Per-method P90 (tail) ms/frame — the gating basis under cost_use_tail.
     # Captures the slow-param instances the median masks (see cost_use_tail).
     model_per_method_p90 = {
-        m: round(sorted(v)[min(len(v) - 1, int(0.9 * len(v)))], 3)
+        m: round(min(sorted(v)[min(len(v) - 1, int(0.9 * len(v)))],
+                     statistics.median(v) * _P90_OUTLIER_CAP), 3)
         for m, v in per_method.items() if v
     }
     all_vals = [v for vs in per_method.values() for v in vs]
