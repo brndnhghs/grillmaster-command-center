@@ -1,46 +1,3 @@
-## 2026-07-18T09:00:00Z — Sub-problem #3 (Perceptual / optical-flow liveness to rescue contrast-only false-static culls)
-
-**Observed (real probe, this run):** genomes=649; dead=402 (62%); of the dead, static+flat=212 dominate — these are the clips the `temporal_var_min=3e-3` gate culls as 'static'. A perceptual-rescue (motion_pixel_frac, added 2026-07-12) already recovers thin-stroke drift, but hue-cycling / low-mean-luminance clips whose per-pixel luminance variance is ~0 yet whose STRUCTURE moves are still killed.
-
-**Technique — optical-flow variance liveness** (Horn & Schunck 1981 "Determining Optical Flow"; Brox et al. 2004 high-accuracy optical flow; Teed & Deng 2020 RAFT, arXiv:2003.12039): add a second liveness signal = frame-to-frame optical-flow magnitude variance (cheap Farneback, or RAFT on the rendered sequence). When temporal_var < floor BUT mean(|flow|) or flow-variance > threshold, classify alive. This is a STRUCTURAL (not luminance) motion proof, so hue-cycling and low-mean clips survive. Combine with the existing motion_pixel_frac rescue (OR of the two).
-
-**Module:** `evaluator.py` LivenessAccumulator (add `flow_var` stat + config `flow_var_min`); feed into the same alive/dead verdict as motion_pixel_frac.
-
-**Expected effect:** recover the residual contrast-only false-static clips (the 212 bucket shrinks) without re-admitting genuine flicker; the 165 timeout cull is untouched.
-
-**Verification (headless):** on a hue-cycling clip (temporal_var≈0, flow≠0) and a thin drifting stroke, both score alive where temporal_var alone kills them; a frozen checkerboard still dead; 2-3 new tests in test_shootout_liveness_rescue.py.
-
----
-
-## 2026-07-18T05:00:00Z — Sub-problem #1 (Selection pressure: ELO/Bradley-Terry survivor weighting to counter untrained taste-model bias)
-
-**Observed (real probe, this run):** genomes=649; dead=402 (62%); rated_total ≈18 (still starved, ~2.8%). The survivor weight in `evolve.next_generation` mixes raw `rating` with liveness/structural fitness, but with only ~18 ratings the untrained taste model is near-blind, so a few human ratings dominate selection pressure in a way that does not generalize. The cost-proxy actuator (#1, 2026-07-15) is still unbuilt, so slow genomes keep getting rendered and culled.
-
-**Technique — ELO / Bradley-Terry survivor scoring** (Elo 1978 "The Rating of Chessplayers"; Bradley & Terry 1952; Herbrich et al. 2007 TrueSkill): replace the raw `rating` term in the survivor weight with a *Bayesian* skill estimate `elo(g)` updated only from the pairwise comparisons that exist (rating_A > rating_B ⇒ A beats B). Clips with <2 comparisons fall back to a prior so the near-blind model cannot over-steer. Combine:
-  `survivor_weight = w_live * liveness_score + w_elo * norm(elo(g)) + w_div * diversity_bonus(g)`
-where `diversity_bonus` reuses the inverse-frequency motif niching already built (sub-problem #2 actuator). This keeps liveness/structure as the primary driver (robust without ratings) while ratings act as a *sparse, uncertainty-aware* bonus rather than a dominant raw signal.
-
-**Module:** `evolve.next_generation` (survivor weight) + a small `taste_elo.py` (per-genome μ/σ maintained from the rating store; `elo(g)`→μ, `uncertainty(g)`→σ). The existing `seed_ids` promotion hook (config) stays the live path for top-rated seeds.
-
-**Expected effect:** selection pressure no longer whipsaws on a near-blind taste model; diversity (sub-problem #2) is preserved; the 165 timeout culls are untouched by this change (cost-proxy is the separate fix).
-
-**Verification (headless):** unit test in `image_pipeline/tests/test_shootout_elo.py` — (a) clips with 0/1 comparisons get the prior (equal elo, no NaN/Inf); (b) a clip that beats 5 others gets higher elo than one that loses to 5; (c) survivor_weight ordering matches elo ordering on a synthetic rated set; (d) a no-rating genome never yields NaN/Inf. Gate behind config (`elo_fitness_enabled=False` → pass-through to current behavior) so the live path is unchanged until enabled.
-
-**Index:** rotate evolution-research-index.txt 6 → 0 (re-engage sub-problem #1 on the ELO/survivor-weighting axis, distinct from the cost-proxy axis which remains the unbuilt actuator).
-
----
-
-# Shootout Generational-Evolution Research (dated proposals; rotate < 300 lines)
-
-Concrete, cited technique → module → expected effect → verification.
-Rotating sub-problem index is tracked in evolution-research-index.txt.
-
-> **STALE-ROADMAP CORRECTION (2026-07-18T17:21Z).** Several prior entries
-> (esp. Sub-problem #3 and the cost-proxy gate) are framed as "highest-value
-> UNBUILT actuators." They are in fact ALREADY SHIPPED + WIRED IN:
-> - Optical-flow liveness rescue: committed `3c63416` (flow_var/flow_coherence
->   in LivenessAccumulator, verdict branch at evaluator.py:316).
-> - Color-aware chroma rescue: committed `3106867` (color_change_frac/
 >   color_struct_corr).
 > - Spectral-coherence rescue: committed `1358457`.
 > - Cost-proxy pre-render gate (`is_over_budget`/`partition_by_budget`) invoked
@@ -341,3 +298,16 @@ selective-surfacing endpoint + test, or returns to #1 ELO wiring).
 ## 2026-07-19T15:59:03Z — Sub-problem #2 (Diversity maintenance: MAP-Elites feature diversity) — IMPLEMENTED (gated)
 - Closed by this run: `behavior_features` + `behavior_cell` + `_diversity_bonus` shipped in `features.py`/`evolve.py`; `diversity_enabled=False` gate in `config.py`; `behavior_features` persisted in `store.save_genome`; `test_shootout_diversity_bonus.py` green. This replaces the blind motif-based booster (motif tags empty for all 649 genomes) with a real structural+evaluator behavior-cell bonus on the PARENT-selection weight. Additive to selection — never changes which clips are alive, only which alive clips breed. Next safe CODE lever: sub-problem #7 (drift/stagnation detection).
 
+## 2026-07-19T(cron) — Sub-problem #5 (Advisor quality: data-driven QD steering + structured per-node preference)
+
+**Observed (real probe, this run):** dead-rate 45% is genuine content death (2026-07-19e proved 0/216 flips). The LLM advisor (advisor.extract_guidance) is the one component that can STEER future generations away from the incoherent-flicker / hue-noise patterns the gate correctly culls. Two questions: (a) does the advisor ingest the now-attributable per-genome dead-signals (flow_coherence, color_struct_corr) to avoid repeating them? (b) does structured per-node like/dislike converge faster than free-text guidance?
+
+**Technique — advisor as a Quality-Diversity (QD) steering operator** (Mouret & Clune 2015 MAP-Elites; Kumar et al. 2026 "Digital Red Queen" uses an LLM as the primary mutation/steering operator inside MAP-Elites, arXiv:2605.27130; survey EC+LLM 2025, arXiv:2505.15741): reframe extract_guidance from a free-text->text generator into a QD operator that (1) reads the attributable dead-signal distribution (which motif/pattern combos yield low flow_coherence / low color_struct_corr) and emits EXPLICIT avoid/steer constraints (not prose), and (2) consumes structured per-node like/dislike as HARD constraints fed straight into the mutation mask (Interactive Evolutionary Computation, Takagi 2001 — structured preference converges faster and with less user fatigue than free-text). Free-text guidance becomes a LOW-priority hint; the data-driven dead-signal avoid-list and per-node preferences are HARD constraints.
+
+**Module:** `advisor.py extract_guidance` (add a `dead_signal_summary` input computed from the revalidated corpus signals; add a `node_prefs` dict intake mapping method_id->like/dislike that masks the mutation operator). Keep the existing LLM call but pass the structured constraints as a system rubric; gate behind config (`advisor_qd_steering=False` -> current behavior) so the live path is unchanged until enabled.
+
+**Expected effect:** future generations stop producing the incoherent-flicker / hue-noise patterns that are the residual dead bucket; per-node preferences give the user a fast, high-signal steering lever (converges faster than free-text, Takagi 2001). Does NOT touch liveness/timeout/cost (those are solved). Rating corpus (19/649) still the long-pole — but advisor steering works WITHOUT ratings (data-driven from dead-signals).
+
+**Verification (headless):** unit test in test_shootout_advisor.py — (a) given a dead-signal summary flagging motif X as low-coherence, extract_guidance emits an avoid constraint for X; (b) node_prefs{'141':dislike} removes 141 from the offspring mutation pool; (c) free-text-only path unchanged when qd_steering disabled. Gate behind config so live path unaffected.
+
+**Index:** rotate evolution-research-index.txt 4 -> 5 (sub-problem #5 engaged).
