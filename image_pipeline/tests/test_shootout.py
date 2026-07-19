@@ -2145,3 +2145,88 @@ def test_dead_param_frontier_animation_mode_key(mid):
     assert r["status"] == "alive", \
         f"node {mid} ({defn.get('name')}) animation_mode key not honoured " \
         f"by audit -> {r['status']}: {r}"
+
+
+# ── Route 8 / sub-problem #6: active-learning rating loop ───────────────
+def _fake_genome(gid, alive=True, rated=None, tvar=0.5, n_nodes=3, mp4="/x.mp4"):
+    """Minimal genome envelope with exactly the fields the suggester reads."""
+    g = {
+        "genome_id": gid,
+        "graph": {"nodes": [{"id": f"n{i}"} for i in range(n_nodes)]},
+        "liveness": {"alive": alive, "temporal_var": tvar},
+        "render": {"mp4": mp4},
+    }
+    if rated is not None:
+        g["rating"] = rated
+    return g
+
+
+def test_suggest_for_rating_prefers_unrated_alive_and_carries_mp4():
+    """The suggester must surface UNRATED + ALIVE clips, carry mp4_url, and
+    skip dead / already-rated genomes. This is the data the UI rating queue
+    consumes — if it ever drops mp4_url or leaks rated clips, the queue breaks.
+    """
+    from image_pipeline.shootout.rating_suggest import suggest_for_rating
+
+    genomes = [
+        _fake_genome("g-rated", rated=4),        # already rated -> excluded
+        _fake_genome("g-dead", alive=False),     # dead -> excluded
+        _fake_genome("g-a", rated=None, tvar=0.9),
+        _fake_genome("g-b", rated=None, tvar=0.3),
+        _fake_genome("g-c", rated=None, tvar=0.6),
+    ]
+    out = suggest_for_rating(k=5, genomes=genomes)
+    ids = {s["genome_id"] for s in out}
+    assert "g-rated" not in ids, "rated clip leaked into suggestions"
+    assert "g-dead" not in ids, "dead clip leaked into suggestions"
+    assert ids == {"g-a", "g-b", "g-c"}, ids
+    for s in out:
+        assert s["mp4_url"], f"suggestion {s['genome_id']} missing mp4_url"
+        assert isinstance(s["reason"], str) and s["reason"]
+
+
+def test_rate_external_writes_genome_and_appends_once(tmp_path, monkeypatch):
+    """Session-independent rating must persist genome['rating'] AND append to
+    the training corpus exactly once (re-rating must not double-count). This
+    mirrors server.rate_external without a live server so it runs hermetic."""
+    from image_pipeline.shootout import store as shoot_store
+    from image_pipeline.shootout import features as shoot_features
+    from image_pipeline.shootout import generator as shoot_generator
+    from image_pipeline.shootout.config import DEFAULT_CONFIG
+
+    # Point the store at an isolated tmp dir.
+    monkeypatch.setattr(shoot_store, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(shoot_store, "GENOMES_DIR", tmp_path / "genomes")
+    monkeypatch.setattr(shoot_store, "RATINGS_PATH", tmp_path / "ratings.jsonl")
+    monkeypatch.setattr(shoot_store, "SESSIONS_DIR", tmp_path / "sessions")
+    monkeypatch.setattr(shoot_store, "_ratings_lock", __import__("threading").Lock())
+    shoot_store._ensure_dirs()
+
+    gid = "g-a"
+    genome = _fake_genome(gid, rated=None)
+    shoot_store.save_genome(genome)
+    cfg = DEFAULT_CONFIG
+    pool = shoot_generator.build_gene_pool(cfg)
+
+    def persist(ratings: dict):
+        for g2, stars in ratings.items():
+            gm = shoot_store.load_genome(g2)
+            assert gm is not None
+            gm["rating"] = max(1, min(5, int(stars)))
+            shoot_store.save_genome(gm)
+            existing = {r["genome_id"] for r in shoot_store.load_ratings() if r}
+            if g2 not in existing:
+                shoot_store.append_rating(
+                    g2, "external", stars,
+                    shoot_features.genome_features(gm, pool, cfg))
+
+    before = len(shoot_store.load_ratings())
+    persist({gid: 4})
+    mid = len(shoot_store.load_ratings())
+    persist({gid: 5})  # re-rate
+    after = len(shoot_store.load_ratings())
+
+    assert mid == before + 1, (before, mid)
+    assert after == mid, "append-once guard broke on re-rate"
+    assert shoot_store.load_genome(gid)["rating"] == 5
+

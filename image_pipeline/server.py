@@ -1185,6 +1185,20 @@ class ShootoutConfigRequest(BaseModel):
     reset: bool = False
 
 
+class ShootoutExternalRateRequest(BaseModel):
+    """Session-independent rating for genomes surfaced by the active-learning
+    suggester (which may come from ANY past generation, not just the live one).
+
+    The normal ``/api/shootout/rate`` only persists ratings for genomes in the
+    current session's ``shown`` set, so suggested clips would be silently
+    dropped. This endpoint writes the genome's rating + appends to the training
+    corpus directly (reusing the store helpers) so the rating-signal loop stays
+    open no matter which clip the user rates.
+    """
+    ratings: dict[str, int]  # genome_id -> stars (1..5)
+    notes: dict[str, str] | None = None
+
+
 @app.get("/api/shootout/config")
 def shootout_get_config():
     """Tunable settings + current values for the /shootout settings menu."""
@@ -1341,6 +1355,56 @@ def shootout_suggest_ratings(k: int = 5):
     except Exception as exc:  # pragma: no cover - defensive
         raise HTTPException(500, f"suggest-ratings failed: {exc}")
     return {"suggestions": sug, "k": k}
+
+
+@app.post("/api/shootout/rate-external")
+def shootout_rate_external(req: ShootoutExternalRateRequest):
+    """Session-independent rating for suggested (any-generation) genomes.
+
+    The active-learning suggester surfaces high-information-gain clips that may
+    be from older generations, outside the current session's ``shown`` set.
+    ``/api/shootout/rate`` silently skips those, so this endpoint writes each
+    genome's ``rating`` and appends to the training corpus directly (mirroring
+    ``session.rate``) — closing the loop so the user can actually rate what the
+    suggester recommends (Route 8, rating-signal poverty).
+    """
+    from image_pipeline.shootout import features as _shootout_features
+    from image_pipeline.shootout import generator as _shootout_generator
+    cfg = _shootout_config.effective_config()
+    pool = _shootout_generator.build_gene_pool(cfg)
+
+    appended = 0
+    rated = 0
+    for gid, stars in (req.ratings or {}).items():
+        genome = _shootout_store.load_genome(gid)
+        if genome is None:
+            continue
+        stars = max(1, min(5, int(stars)))
+        genome["rating"] = stars
+        note_text = (req.notes or {}).get(gid, "") or genome.get("notes", "") or ""
+        if note_text:
+            genome["notes"] = note_text
+        _shootout_store.save_genome(genome)
+
+        # Append-once to the training corpus (matches session.rate's guard).
+        existing = {row.get("genome_id") for row in _shootout_store.load_ratings()}
+        if gid not in existing:
+            _shootout_store.append_rating(
+                gid, "external", stars,
+                _shootout_features.genome_features(genome, pool, cfg),
+                notes=note_text or "",
+            )
+            appended += 1
+        rated += 1
+
+    n_total = len(_shootout_store.load_ratings())
+    return {"ok": True, "rated": rated, "appended": appended, "n_ratings_total": n_total}
+
+
+@app.get("/api/shootout/rate-external-count")
+def shootout_rate_external_count():
+    """Total size of the persistent rating corpus — shown in the suggest UI."""
+    return {"n_ratings_total": len(_shootout_store.load_ratings())}
 
 
 @app.post("/api/shootout/contribution/{genome_id}")

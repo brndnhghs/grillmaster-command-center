@@ -273,6 +273,39 @@ try {
     line-height: 1.35; margin-top: 1px; }
   .cfg-label .name { font-family: var(--font-mono); font-size: 11px;
     color: var(--muted); }
+  }
+
+  /* ── Suggest-clips rating queue ──────────────────────────────── */
+  #suggest-overlay {
+    display: none; position: fixed; inset: 0; z-index: 101;
+    background: rgba(0,0,0,0.6); align-items: flex-start; justify-content: center;
+    overflow-y: auto; padding: 40px 16px;
+  }
+  #suggest-overlay.visible { display: flex; }
+  #suggest-modal {
+    background: var(--bg1); border: 1px solid var(--border-strong);
+    border-radius: var(--radius-l); box-shadow: var(--shadow-2);
+    max-width: 760px; width: 100%; padding: 22px 26px;
+  }
+  #suggest-modal h2 { font-size: 15px; margin-bottom: 8px; }
+  #suggest-modal .dim { font-size: 12.5px; color: var(--muted); line-height: 1.5;
+    margin-bottom: 14px; }
+  #suggest-modal .dim b { color: var(--accent2); }
+  #suggest-list { display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+    max-height: 60vh; overflow-y: auto; padding-right: 4px; }
+  .sug-card { background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius-l); overflow: hidden; display: flex;
+    flex-direction: column; }
+  .sug-card video { width: 100%; aspect-ratio: 3/2; background: #000; display: block; }
+  .sug-body { padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+  .sug-id { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+  .sug-reason { font-size: 11.5px; color: var(--text); line-height: 1.4;
+    background: var(--bg0); border-radius: var(--radius-s); padding: 5px 7px; }
+  .sug-meta { font-size: 10.5px; color: var(--muted2);
+    font-family: var(--font-mono); }
+  #suggest-actions { display: flex; align-items: center; gap: 10px; margin-top: 16px; }
+  #suggest-actions .primary { margin-left: auto; }
+  #suggest-status { font-size: 12px; color: var(--muted); flex: 1; }
   .cfg-grid input[type="number"] {
     width: 100%; background: var(--bg2); color: var(--text);
     border: 1px solid var(--border); border-radius: var(--radius-s);
@@ -312,6 +345,7 @@ try {
   <span class="spacer"></span>
   <button id="btn-about" class="small" title="How the shootout works + settings">ⓘ About / Settings</button>
   <button id="btn-train" class="small" title="Retrain the taste model from all ratings">Train taste</button>
+  <button id="btn-suggest" class="small" title="Surface the highest-information-gain clips to rate (active-learning)">💡 Suggest clips</button>
   <button id="btn-new">New session</button>
   <button id="btn-go" class="primary" disabled>Generate</button>
 </header>
@@ -370,6 +404,21 @@ try {
       <button id="cfg-reset" class="small" title="Back to code defaults">Reset defaults</button>
       <button id="cfg-save" class="small">Save settings</button>
       <button id="modal-close" class="small">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="suggest-overlay">
+  <div id="suggest-modal">
+    <h2>💡 Rate the most informative clips first</h2>
+    <p class="dim">Active-learning picked these alive, unrated clips by information gain
+      (novelty + diversity + how dynamic they are). Rate a few to grow the taste-model
+      corpus — currently <b id="sug-corpus">?</b> rated clips.</p>
+    <div id="suggest-list"></div>
+    <div id="suggest-actions">
+      <span id="suggest-status"></span>
+      <button id="suggest-more" class="small">More suggestions</button>
+      <button id="suggest-submit" class="primary">Save ratings → corpus</button>
     </div>
   </div>
 </div>
@@ -1080,10 +1129,110 @@ $('modal-overlay').onclick = (e) => {
   if (e.target === $('modal-overlay')) $('modal-overlay').classList.remove('visible');
 };
 
+// ── active-learning rating suggester (Route 8, rating-signal poverty) ──
+let SUG_RATINGS = {};   // genome_id -> stars (within the suggest queue)
+
+async function loadSuggestions(k = 6) {
+  const r = await fetch(`/api/shootout/suggest-ratings?k=${k}`);
+  if (!r.ok) throw new Error(`suggest-ratings: ${r.status}`);
+  const d = await r.json();
+  return d.suggestions || [];
+}
+
+async function renderSuggestQueue() {
+  const list = $('suggest-list');
+  list.innerHTML = '';
+  const sug = await loadSuggestions(6);
+  for (const s of sug) {
+    const card = document.createElement('div');
+    card.className = 'sug-card';
+    const v = document.createElement('video');
+    v.src = s.mp4_url || `/api/sequences/shootout-${s.genome_id}/video.mp4`;
+    v.autoplay = true; v.loop = true; v.muted = true; v.playsInline = true;
+    v.onerror = () => { v.style.display = 'none'; };
+    card.appendChild(v);
+    const body = document.createElement('div');
+    body.className = 'sug-body';
+    const idEl = document.createElement('div');
+    idEl.className = 'sug-id';
+    idEl.textContent = s.genome_id;
+    body.appendChild(idEl);
+    const reason = document.createElement('div');
+    reason.className = 'sug-reason';
+    reason.textContent = s.reason;
+    body.appendChild(reason);
+    const meta = document.createElement('div');
+    meta.className = 'sug-meta';
+    meta.textContent = `tvar=${(s.temporal_var||0).toFixed(4)} · ${s.n_nodes} nodes · fitness=${s.fitness}`;
+    body.appendChild(meta);
+    const stars = starWidget(s.genome_id, SUG_RATINGS[s.genome_id] || 0);
+    [...stars.children].forEach((c, i) => {
+      c.onclick = () => {
+        SUG_RATINGS[s.genome_id] = i + 1;
+        [...stars.children].forEach((cc, j) => cc.classList.toggle('lit', j < i + 1));
+      };
+    });
+    body.appendChild(stars);
+    card.appendChild(body);
+    list.appendChild(card);
+  }
+  if (!sug.length) {
+    list.innerHTML = '<p class="dim">No unrated alive clips left — the corpus is fully rated! 🎉</p>';
+  }
+  try {
+    const cr = await fetch('/api/shootout/rate-external-count');
+    if (cr.ok) { const cd = await cr.json(); $('sug-corpus').textContent = cd.n_ratings_total; }
+  } catch (_) {}
+}
+
+async function openSuggest() {
+  SUG_RATINGS = {};
+  $('suggest-status').textContent = '';
+  $('suggest-overlay').classList.add('visible');
+  setStatus('loading suggestions…');
+  try {
+    await renderSuggestQueue();
+    setStatus('rate the clips you like, then Save ratings → corpus');
+  } catch (e) {
+    setStatus('suggest failed: ' + e.message, 'error');
+  }
+}
+
+async function submitSuggestRatings() {
+  const rated = {};
+  for (const [gid, st] of Object.entries(SUG_RATINGS)) {
+    if (st) rated[gid] = st;
+  }
+  if (!Object.keys(rated).length) {
+    $('suggest-status').textContent = 'rate at least one clip first';
+    return;
+  }
+  $('suggest-status').textContent = 'saving…';
+  try {
+    const r = await fetch('/api/shootout/rate-external', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ ratings: rated }),
+    });
+    const d = await r.json();
+    $('suggest-status').textContent = `✓ saved ${d.appended} new rating(s) (corpus now ${d.n_ratings_total})`;
+    setTaste(null, d.n_ratings_total);
+    SUG_RATINGS = {};
+    await renderSuggestQueue();
+  } catch (e) {
+    $('suggest-status').textContent = 'save failed: ' + e.message;
+  }
+}
+
 // ── boot ───────────────────────────────────────────────────────
 $('btn-new').onclick = newSession;
 $('btn-go').onclick = runGeneration;
 $('btn-train').onclick = trainTaste;
+$('btn-suggest').onclick = openSuggest;
+$('suggest-submit').onclick = submitSuggestRatings;
+$('suggest-more').onclick = () => renderSuggestQueue();
+$('suggest-overlay').onclick = (e) => {
+  if (e.target === $('suggest-overlay')) $('suggest-overlay').classList.remove('visible');
+};
 
 (async () => {
   const prev = localStorage.getItem('shootout-session');

@@ -140,6 +140,7 @@ def suggest_for_rating(k: int = 5, cfg: ShootoutConfig = DEFAULT_CONFIG,
         return [{"genome_id": g["genome_id"], "fitness": 0.0, "novelty": 0.0,
                  "temporal_var": 0.0,
                  "n_nodes": len(g.get("graph", {}).get("nodes", [])),
+                 "mp4_url": (g.get("render") or {}).get("mp4") or "",
                  "reason": "no features available"} for g in cands[:k]]
 
     X = np.array([[feat_dicts[g["genome_id"]].get(kk, 0.0)
@@ -158,12 +159,14 @@ def suggest_for_rating(k: int = 5, cfg: ShootoutConfig = DEFAULT_CONFIG,
     out = []
     for i in selected:
         g = cands[i]
+        render = g.get("render") or {}
         out.append({
             "genome_id": g["genome_id"],
             "fitness": round(float(fit[i]), 4),
             "novelty": round(float(unc[i]), 4),
             "temporal_var": float(tv[i]),
             "n_nodes": len(g.get("graph", {}).get("nodes", [])),
+            "mp4_url": render.get("mp4") or "",
             "reason": _reason(float(fit[i]), float(unc[i])),
         })
     return out
