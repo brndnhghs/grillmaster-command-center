@@ -837,37 +837,37 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # stays authoritative for export; these are live-preview twins only.
     # 16 Flow Field → flow_field_typed (procedural). `speed` is the sole 1:1
     # scalar (both = animation speed 0..N). n_particles/wave params diverge.
-    "16": {"shader": "flow_field_typed", "type": "procedural", "typed": False,
+    "16": {"shader": "flow_field_typed", "type": "procedural", "typed": True,
            "param_map": {"speed": "speed"}},
     # 65 Waveform → waveform_typed (procedural). freq1/2/3 ↔ k1/2/3 (wave
     # number = cyclic frequency, same knob); amp/thick are render-only.
-    "65": {"shader": "waveform_typed", "type": "procedural", "typed": False,
+    "65": {"shader": "waveform_typed", "type": "procedural", "typed": True,
            "param_map": {"freq1": "k1", "freq2": "k2", "freq3": "k3"}},
     # 78 Circle Packing → circle_packing_typed (procedural). min_r/max_r are
     # normalized radius bounds (CPU min_radius/max_radius are px but both scale
     # the same normalized range); speed ↔ speed.
-    "78": {"shader": "circle_packing_typed", "type": "procedural", "typed": False,
+    "78": {"shader": "circle_packing_typed", "type": "procedural", "typed": True,
            "param_map": {"min_radius": "min_r", "max_radius": "max_r",
                          "anim_speed": "speed"}},
     # 56 Maze → maze_typed (procedural). wall_thickness ↔ wall (edge width),
     # cell_size ↔ scale (tile size). algorithm/style are choice strings unmapped.
-    "56": {"shader": "maze_typed", "type": "procedural", "typed": False,
+    "56": {"shader": "maze_typed", "type": "procedural", "typed": True,
            "param_map": {"wall_thickness": "wall", "cell_size": "scale"}},
     # 81 Fourier Circles → fourier_circles_typed (procedural). Only `speed`
     # maps cleanly to a CPU param; freq1/2/3 are shader-only harmonic knobs
     # (the CPU node uses n_circles/scale/shape — no freq synth params).
-    "81": {"shader": "fourier_circles_typed", "type": "procedural", "typed": False,
+    "81": {"shader": "fourier_circles_typed", "type": "procedural", "typed": True,
            "param_map": {"speed": "speed"}},
     # 406 Harmonograph → harmonograph_typed (procedural). freq1/freq2 ↔ fx/fy,
     # phase ↔ px (both phase offset, default 0), scale ↔ scale (same framing).
     # freq3/4/damping/line_width diverge from the twin's decay/turns/steps.
-    "406": {"shader": "harmonograph_typed", "type": "procedural", "typed": False,
+    "406": {"shader": "harmonograph_typed", "type": "procedural", "typed": True,
             "param_map": {"freq1": "fx", "freq2": "fy", "phase": "px",
                           "scale": "scale"}},
     # 409 Superformula → superformula_typed (procedural). `m` ↔ `m` (exact
     # symmetry count). n1/n2/n3 (CPU supershape exponents) don't match the
     # twin's n/b/c/p uniforms, so they stay unmapped.
-    "409": {"shader": "superformula_typed", "type": "procedural", "typed": False,
+    "409": {"shader": "superformula_typed", "type": "procedural", "typed": True,
             "param_map": {"m": "m"}},
     # ── P0.6 field-eval completion (2026-07-12) ──
     # 104 Spherical Harmonics → closed-form twin. max_l/amplitude/glow_strength/
@@ -907,13 +907,13 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # export (two-tier precision). Typed-True shims map the node's REAL numeric
     # params 1:1 to the shader's u_<name> uniforms (contract #5). Choice/string
     # params are intentionally left unmapped (pitfall #14).
-    '431': {'shader': 'domain_coloring_typed', 'type': 'procedural', 'typed': False,
-            'param_map': {'exponent': 'exponent', 'scale': 'scale',
-                          'center_x': 'center_x', 'center_y': 'center_y'}},
-    '432': {'shader': 'maurer_rose_typed', 'type': 'procedural', 'typed': False,
-            'param_map': {'k': 'petals', 'd': 'deg', 'n_lines': 'steps',
-                          'line_width': 'thick', 'anim_speed': 'speed'}},
-    '433': {'shader': 'low_discrepancy_typed', 'type': 'procedural', 'typed': False,
+    "431": {"shader": "domain_coloring_typed", "type": "procedural", "typed": True,
+            "param_map": {"exponent": "exponent", "scale": "scale",
+                          "center_x": "center_x", "center_y": "center_y"}},
+    "432": {"shader": "maurer_rose_typed", "type": "procedural", "typed": True,
+            "param_map": {"k": "petals", "d": "deg", "n_lines": "steps",
+                          "line_width": "thick", "anim_speed": "speed"}},
+    '433': {'shader': 'low_discrepancy_typed', 'type': 'procedural', 'typed': True,
             'param_map': {'count': 'count', 'radius': 'radius', 'anim_speed': 'speed'}},
     '464': {'shader': 'thin_film_gpu', 'type': 'filter', 'typed': False,
             'param_map': {'thickness': 'thickness', 'thickness_scale': 'thickness_range',

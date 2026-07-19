@@ -208,6 +208,40 @@ def test_gpu_shadow_map_count_guard():
     )
 
 
+def test_typed_flag_matches_shader_uniforms():
+    """GPU-Procedural-Shader-Expansion contract: a ``*_typed`` shader MUST be
+    flagged ``typed: True`` in the node-map.
+
+    A ``*_typed`` shader reads named ``u_<name>`` uniforms (never the legacy
+    ``u_params`` p1..p4 slots), so it MUST be flagged ``typed: True``. The
+    browser's ``renderGpuShader`` selects its typed branch off the shader's
+    declared ``uniforms=`` and uses ``param_map`` to fill those ``u_<name>``
+    uniforms from the CPU node's real params — so the flag must agree. Flagging a
+    named-uniform ``*_typed`` shader ``typed: False`` is exactly the pitfall-#15c
+    lie (claims p1..p4 while the client would read ``u_<name>``). This guard
+    fails the build on any ``*_typed`` shader that is not ``typed: True`` so the
+    mislabel can never be reintroduced. (Legacy shims whose shaders read
+    ``u_params`` correctly stay ``typed: False`` and are intentionally exempt.)
+    """
+    breaches = []
+    for mid, entry in GPU_SHADER_NODE_MAP.items():
+        # Ping-pong sims (CLIENT_GPU_SIMS) carry seed/step/display, not a
+        # single procedural "shader" — they are verified by the sims suite.
+        if entry.get("type") == "sim" or "shader" not in entry:
+            continue
+        sname = entry["shader"]
+        if not sname.endswith("_typed"):
+            continue  # legacy p1..p4 shader — typed: False is correct
+        if not entry.get("typed"):
+            breaches.append((mid, sname))
+    assert not breaches, (
+        "GPU map entry references a `*_typed` shader but is not flagged "
+        "`typed: True` (pitfall #15c lie — claims p1..p4 while the shader "
+        "reads named u_<name> uniforms):\n"
+        + "\n".join(f"  node {m} ({s})" for m, s in breaches)
+    )
+
+
 def test_typed_uniforms_exposed_as_params():
     """GPU-First guardrail #2: every declared typed uniform is a node param.
 
@@ -215,12 +249,20 @@ def test_typed_uniforms_exposed_as_params():
     The factory turns each into a node param, but a typo or a renamed uniform
     would silently drop the control. This fails the build if any declared
     uniform is missing from the served node-def params.
+
+    Note: this invariant holds for FULL typed nodes (registered with no
+    ``param_map`` — every shader uniform maps 1:1 to a node param). Client-GPU
+    shims that carry a ``param_map`` intentionally remap only a SUBSET of the
+    CPU node's params onto a subset of the shader's uniforms (the remainder are
+    shader-internal render knobs); those are exempt from this check.
     """
     import image_pipeline.methods  # noqa: F401 — ensure registration
 
     breaches = []
     for mid, entry in GPU_SHADER_NODE_MAP.items():
         if not entry.get("typed"):
+            continue
+        if entry.get("param_map"):  # partial-remap shim — exempt
             continue
         info = SHADERS.get(entry["shader"])
         if not info:
