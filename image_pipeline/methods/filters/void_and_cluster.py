@@ -239,12 +239,18 @@ def method_void_cluster(out_dir, seed: int, params=None):
         # energy dominates low-freq. Report hp/lp ratio.
         f = np.fft.fft2(thr - thr.mean())
         mag = np.abs(np.fft.fftshift(f))
-        n = thr.shape[0]
-        cy, cx = n // 2, n // 2
-        yy, xx = np.mgrid[0:n, 0:n]
+        # Build the radial mask from the ACTUAL (H, W) threshold-map shape — the
+        # FFT is (H, W), not necessarily square. A square n×n mask (the old code
+        # used n = thr.shape[0]) mismatches mag's width whenever W != H (e.g. the
+        # executor's 768×512 canvas) and raises "boolean index did not match
+        # indexed array", crashing the whole node into a gray fallback.
+        n_h, n_w = thr.shape
+        cy, cx = n_h // 2, n_w // 2
+        yy, xx = np.mgrid[0:n_h, 0:n_w]
         r = np.sqrt((yy - cy) ** 2 + (xx - cx) ** 2)
-        lp_mask = r < n * 0.15
-        hp_mask = r > n * 0.35
+        radial_max = max(n_h, n_w)
+        lp_mask = r < radial_max * 0.15
+        hp_mask = r > radial_max * 0.35
         lp = float(mag[lp_mask].mean()) if lp_mask.any() else 0.0
         hp = float(mag[hp_mask].mean()) if hp_mask.any() else 0.0
         blue_ratio = float(hp / lp) if lp > 0 else 0.0

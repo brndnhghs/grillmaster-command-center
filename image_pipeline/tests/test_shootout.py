@@ -2077,7 +2077,36 @@ def test_fast_bilateral_solver_sweeps_reach_pixels():
         f"FBS sweeps audited {r['status']} (should be alive): {r}"
 
 
-@pytest.mark.parametrize("mid", ["436", "924", "493", "340", "462", "74", "349", "975"])
+def test_void_and_cluster_renders_non_square_canvas():
+    """Node 533 Void-and-Cluster Dither crashed on NON-SQUARE canvases
+    (Route 8 dead-param frontier, 2026-07-18).
+
+    Its blue-noise spectrum analysis built a radial mask from a SQUARE n×n
+    grid (n = thr.shape[0]) while the FFT magnitude is (H, W) — whenever W != H
+    (the executor's default 768×512) indexing ``mag[lp_mask]`` raised
+    "boolean index did not match indexed array" and the node fell back to a
+    static gray image, which the liveness gate culled as dead. The fix builds
+    the mask from the real (H, W) threshold-map shape.
+
+    The audit renders on the default non-square canvas, so a clean `alive`
+    verdict proves the crash is gone (a `render-error` status would mean the
+    W!=H exception still fires). Added as a permanent guard so a future edit
+    cannot silently re-introduce the square-canvas assumption.
+    """
+    import image_pipeline.methods  # noqa: F401
+    from image_pipeline.core.graph import get_all_node_defs
+    from image_pipeline.shootout.audit_dead_params import audit_node
+    defs = get_all_node_defs()
+    defn = defs.get("533")
+    assert defn is not None, "node 533 (Void-and-Cluster Dither) not registered"
+    r = audit_node("533", defn)
+    assert r["status"] != "render-error", \
+        f"Void-and-Cluster still crashes on non-square canvas: {r}"
+    assert r["status"] == "alive", \
+        f"Void-and-Cluster audited {r['status']} (should be alive): {r}"
+
+
+@pytest.mark.parametrize("mid", ["436", "924", "493", "340", "462", "74", "349", "975", "533"])
 def test_dead_param_frontier_filters_alive(mid):
     """Route 8 dead-param frontier regression for the FILTER category.
 
