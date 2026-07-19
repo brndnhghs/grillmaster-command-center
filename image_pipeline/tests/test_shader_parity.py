@@ -166,7 +166,7 @@ def test_gpu_shader_node_map_resolves():
     #             hash_field_gpu).
     # 257 -> 258: +1 typed-uniform GPU node 327 GPU Hex Tiling (Heitz-Neyret
     #             HPG 2018 stochastic hex-tiling filter; typed FILTER node).
-    assert len(GPU_SHADER_NODE_MAP) == 275, len(GPU_SHADER_NODE_MAP)
+    assert len(GPU_SHADER_NODE_MAP) == 276, len(GPU_SHADER_NODE_MAP)
     for mid, entry in GPU_SHADER_NODE_MAP.items():
         if entry.get("type") == "sim":
             # P1 ping-pong sim: seed/step/display must all resolve to shaders.

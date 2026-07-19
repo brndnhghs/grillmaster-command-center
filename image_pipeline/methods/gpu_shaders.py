@@ -926,6 +926,19 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # left unmapped (pitfall #14) — the twin renders the canonical Möbius map.
     "503": {"shader": "conformal_gpu", "type": "procedural", "typed": True,
             "param_map": {"scale": "scale", "warp": "warp", "anim_speed": "anim_speed"}},
+    # 460 Kaleidoscope Mirror -> typed-uniform filter twin kaleidoscope_mirror_gpu
+    # (live-preview path; CPU numpy node 460 stays authoritative for export).
+    # REAL numeric params segments/center_x/center_y/rotation/r_scale/mirror/
+    # warp_amount/warp_scale map by NAME (contract #5/#6) — the client typed-live
+    # path reads node params by uniform name. `source`/`palette`/`anim_mode` are
+    # choice/string params (pitfall #14) left unmapped -> preview uses the wired
+    # input image (or perlin source) with the default mirror-fold. Genuine
+    # per-pixel wrap avoids the contrast-only static cull.
+    "460": {"shader": "kaleidoscope_mirror_gpu", "type": "filter", "typed": True,
+            "param_map": {"segments": "segments", "center_x": "center_x",
+                          "center_y": "center_y", "rotation": "rotation",
+                          "r_scale": "r_scale", "mirror": "mirror",
+                          "warp_amount": "warp_amount", "warp_scale": "warp_scale"}},
 }
 
 # ── GPU coverage contract: no SILENT param drops ────────────────────────────
