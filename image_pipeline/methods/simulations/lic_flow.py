@@ -307,117 +307,84 @@ def _compute_lic(u, v, noise, clen, ds):
 # ── Coloring ──
 
 def _direction_color(u, v, lic_val):
-    """Color by flow direction with LIC intensity as brightness."""
-    h, w = u.shape
-    img = np.zeros((h, w, 3), dtype=np.uint8)
-    for ci in range(h):
-        for cj in range(w):
-            uu = u[ci, cj]
-            vv = v[ci, cj]
-            angle = math.atan2(vv, uu)
-            # Hue from direction, saturation from speed, value from LIC
-            hue = (angle / (2 * math.pi) + 0.5) % 1.0
-            speed = min(1.0, math.hypot(uu, vv) * 0.5)
-            # Two-tone narrow hue: blue->cyan->teal vs amber->orange
-            if speed > 0.3:
-                # Fast flow: warm (amber/orange) hues
-                h_mod = 0.08 + 0.12 * ((angle + math.pi) / (2 * math.pi))
-            else:
-                # Slow flow: cool (blue/teal) hues
-                h_mod = 0.55 + 0.15 * ((angle + math.pi) / (2 * math.pi))
-            # LIC value determines brightness
-            brightness = lic_val[ci, cj] / 255.0
-            img[ci, cj] = _hsv_to_rgb(h_mod % 1.0, 0.8, 0.4 + 0.6 * brightness)
-    return img
+    """Color by flow direction with LIC intensity as brightness (vectorized)."""
+    angle = np.arctan2(v, u)
+    frac = (angle + np.pi) / (2.0 * np.pi)
+    speed = np.minimum(1.0, np.hypot(u, v) * 0.5)
+    h_mod = np.where(speed > 0.3, 0.08 + 0.12 * frac, 0.55 + 0.15 * frac)
+    brightness = lic_val.astype(np.float64) / 255.0
+    r, g, b = _hsv_to_rgb(h_mod % 1.0, 0.8, 0.4 + 0.6 * brightness)
+    return np.stack([r, g, b], axis=-1)
 
 
 def _magnitude_color(u, v, lic_val):
-    """Thermal coloring by flow speed with LIC detail."""
-    h, w = u.shape
+    """Thermal coloring by flow speed with LIC detail (vectorized)."""
     speed = np.sqrt(u * u + v * v)
     vmax = np.percentile(speed[speed > 0], 95) if speed.max() > 0 else 1.0
     vmax = max(vmax, 1.0)
-    img = np.zeros((h, w, 3), dtype=np.uint8)
-    for ci in range(h):
-        for cj in range(w):
-            t = min(1.0, speed[ci, cj] / vmax)
-            detail = lic_val[ci, cj] / 255.0
-            # Thermal palette: dark purple → blue → cyan → white
-            r = detail * (0.2 + 0.8 * t)
-            g = detail * (0.1 + 0.9 * t ** 0.7)
-            b = detail * (0.5 + 0.5 * (1 - t) ** 0.5)
-            img[ci, cj] = (int(r * 255), int(g * 255), int(b * 255))
-    return img
+    t = np.minimum(1.0, speed / vmax)
+    detail = lic_val.astype(np.float64) / 255.0
+    r = (detail * (0.2 + 0.8 * t) * 255.0).astype(np.uint8)
+    g = (detail * (0.1 + 0.9 * t ** 0.7) * 255.0).astype(np.uint8)
+    b = (detail * (0.5 + 0.5 * (1.0 - t) ** 0.5) * 255.0).astype(np.uint8)
+    return np.stack([r, g, b], axis=-1)
 
 
 def _phase_color(u, v, lic_val):
-    """Phase/direction sweep — full hue range but desaturated."""
-    h, w = u.shape
-    img = np.zeros((h, w, 3), dtype=np.uint8)
-    for ci in range(h):
-        for cj in range(w):
-            angle = math.atan2(v[ci, cj], u[ci, cj])
-            hue = (angle / (2 * math.pi) + 0.5) % 1.0
-            detail = lic_val[ci, cj] / 255.0
-            img[ci, cj] = _hsv_to_rgb(hue, 0.4, 0.3 + 0.7 * detail)
-    return img
+    """Phase/direction sweep — full hue range but desaturated (vectorized)."""
+    angle = np.arctan2(v, u)
+    hue = (angle / (2.0 * np.pi) + 0.5) % 1.0
+    detail = lic_val.astype(np.float64) / 255.0
+    r, g, b = _hsv_to_rgb(hue, 0.4, 0.3 + 0.7 * detail)
+    return np.stack([r, g, b], axis=-1)
 
 
 def _thermal_color(u, v, lic_val):
-    """Classic thermal: dark → red → orange → white by speed + LIC detail."""
-    h, w = u.shape
+    """Classic thermal: dark → red → orange → white by speed + LIC detail (vectorized)."""
     speed = np.sqrt(u * u + v * v)
     vmax = np.percentile(speed[speed > 0], 95) if speed.max() > 0 else 1.0
     vmax = max(vmax, 1.0)
-    img = np.zeros((h, w, 3), dtype=np.uint8)
-    for ci in range(h):
-        for cj in range(w):
-            t = min(1.0, speed[ci, cj] / vmax)
-            detail = lic_val[ci, cj] / 255.0
-            # Thermal: black → dark red → orange → pale yellow → white
-            if t < 0.25:
-                fp = t / 0.25
-                r, g, b = 0.1 + 0.9 * fp, 0.02 * fp, 0.0
-            elif t < 0.5:
-                fp = (t - 0.25) / 0.25
-                r, g, b = 1.0, 0.02 + 0.8 * fp, 0.0
-            elif t < 0.75:
-                fp = (t - 0.5) / 0.25
-                r, g, b = 1.0, 0.82 + 0.18 * fp, 0.0 + 0.3 * fp
-            else:
-                fp = (t - 0.75) / 0.25
-                r, g, b = 1.0, 1.0, 0.3 + 0.7 * fp
-            r = min(1.0, r * (0.3 + 0.7 * detail))
-            g = min(1.0, g * (0.3 + 0.7 * detail))
-            b = min(1.0, b * (0.3 + 0.7 * detail))
-            img[ci, cj] = (int(r * 255), int(g * 255), int(b * 255))
-    return img
+    t = np.minimum(1.0, speed / vmax)
+    detail = lic_val.astype(np.float64) / 255.0
+    m1 = t < 0.25
+    m2 = (t >= 0.25) & (t < 0.5)
+    m3 = (t >= 0.5) & (t < 0.75)
+    m4 = t >= 0.75
+    r = np.where(m1, 0.1 + 0.9 * (t / 0.25),
+        np.where(m2, 1.0,
+        np.where(m3, 1.0, 1.0)))
+    g = np.where(m1, 0.02 * (t / 0.25),
+        np.where(m2, 0.02 + 0.8 * ((t - 0.25) / 0.25),
+        np.where(m3, 0.82 + 0.18 * ((t - 0.5) / 0.25), 1.0)))
+    b = np.where(m1, 0.0,
+        np.where(m2, 0.0,
+        np.where(m3, 0.3 * ((t - 0.5) / 0.25),
+                 0.3 + 0.7 * ((t - 0.75) / 0.25))))
+    r = np.minimum(1.0, r * (0.3 + 0.7 * detail))
+    g = np.minimum(1.0, g * (0.3 + 0.7 * detail))
+    b = np.minimum(1.0, b * (0.3 + 0.7 * detail))
+    return np.stack([(r * 255.0).astype(np.uint8),
+                    (g * 255.0).astype(np.uint8),
+                    (b * 255.0).astype(np.uint8)], axis=-1)
 
 
 def _bipolar_color(u, v, lic_val):
-    """Two-tone bipolar: positive curl = warm, negative curl = cool."""
+    """Two-tone bipolar: positive curl = warm, negative curl = cool (vectorized)."""
     h, w = u.shape
     # Compute vorticity (curl) from velocity
     curl = np.zeros((h, w))
     curl[1:-1, 1:-1] = (v[2:, 1:-1] - v[:-2, 1:-1]) * 0.5 - (u[1:-1, 2:] - u[1:-1, :-2]) * 0.5
     curl_abs_max = max(np.abs(curl).max(), 1e-6)
-    img = np.zeros((h, w, 3), dtype=np.uint8)
-    for ci in range(h):
-        for cj in range(w):
-            w_val = curl[ci, cj] / curl_abs_max  # [-1, 1]
-            detail = lic_val[ci, cj] / 255.0
-            if w_val > 0:
-                # CW rotation: warm amber
-                r = detail * (0.8 + 0.2 * w_val)
-                g = detail * (0.5 + 0.3 * w_val)
-                b = detail * (0.1 + 0.1 * w_val)
-            else:
-                # CCW rotation: cool blue
-                r = detail * (0.1 + 0.1 * abs(w_val))
-                g = detail * (0.3 + 0.3 * abs(w_val))
-                b = detail * (0.7 + 0.3 * abs(w_val))
-            img[ci, cj] = (int(r * 255), int(g * 255), int(b * 255))
-    return img
+    w_val = curl / curl_abs_max  # [-1, 1]
+    detail = lic_val.astype(np.float64) / 255.0
+    pos = w_val > 0
+    absw = np.abs(w_val)
+    r = np.where(pos, detail * (0.8 + 0.2 * w_val), detail * (0.1 + 0.1 * absw))
+    g = np.where(pos, detail * (0.5 + 0.3 * w_val), detail * (0.3 + 0.3 * absw))
+    b = np.where(pos, detail * (0.1 + 0.1 * w_val), detail * (0.7 + 0.3 * absw))
+    return np.stack([(r * 255.0).astype(np.uint8),
+                    (g * 255.0).astype(np.uint8),
+                    (b * 255.0).astype(np.uint8)], axis=-1)
 
 
 _COLOR_MODES = {
@@ -430,21 +397,24 @@ _COLOR_MODES = {
 
 
 def _hsv_to_rgb(h, s, v):
-    """Convert HSV to RGB tuple of ints."""
-    h = h % 1.0
-    s = max(0.0, min(1.0, s))
-    v = max(0.0, min(1.0, v))
-    hi = int(h * 6) % 6
-    f = h * 6 - hi
-    p = v * (1 - s)
-    q = v * (1 - f * s)
-    t = v * (1 - (1 - f) * s)
-    rgb_map = {
-        0: (v, t, p), 1: (q, v, p), 2: (p, v, t),
-        3: (p, q, v), 4: (t, p, v), 5: (v, p, q),
-    }
-    r, g, b = rgb_map[hi]
-    return (int(r * 255), int(g * 255), int(b * 255))
+    """Vectorized HSV->RGB. h,s,v are float arrays; returns (r,g,b) uint8 arrays.
+    Mirrors the scalar int()-truncation path: for in-range values the
+    per-element IEEE math is identical to the previous per-pixel loop,
+    so output is bit-exact for the [0,1] inputs these callers produce."""
+    h = np.asarray(h, dtype=np.float64) % 1.0
+    s = np.clip(np.asarray(s, dtype=np.float64), 0.0, 1.0)
+    v = np.clip(np.asarray(v, dtype=np.float64), 0.0, 1.0)
+    hi = (h * 6.0).astype(np.int64) % 6
+    f = h * 6.0 - hi
+    p = v * (1.0 - s)
+    q = v * (1.0 - f * s)
+    t = v * (1.0 - (1.0 - f) * s)
+    r = np.where(hi == 0, v, np.where(hi == 1, q, np.where(hi == 2, p, np.where(hi == 3, p, np.where(hi == 4, t, v)))))
+    g = np.where(hi == 0, t, np.where(hi == 1, v, np.where(hi == 2, v, np.where(hi == 3, q, np.where(hi == 4, p, p)))))
+    b = np.where(hi == 0, p, np.where(hi == 1, p, np.where(hi == 2, t, np.where(hi == 3, v, np.where(hi == 4, v, q)))))
+    return ((r * 255.0).astype(np.uint8),
+            (g * 255.0).astype(np.uint8),
+            (b * 255.0).astype(np.uint8))
 
 
 # ── Particle tracers ──
