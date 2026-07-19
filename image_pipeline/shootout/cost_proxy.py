@@ -72,7 +72,7 @@ COST_PROXY_PATH = DATA_DIR / "cost_proxy.json"
 # that contain it (computed from real recorded wall_s, including timeouts) is
 # above this threshold. Top-K such methods become binary presence flags.
 HEAVY_WALL_MEDIAN_S = 45.0
-TOP_K_HEAVY = 40
+TOP_K_HEAVY = 80
 
 # BIMODALITY-AWARE second signal (Route 8 #2 leak fix, 2026-07-19).
 # Heavy RD / CA / PDE sims (e.g. 141 Gray-Scott, 137, 84, 51, 87) are
@@ -83,6 +83,21 @@ TOP_K_HEAVY = 40
 # recorded wall_s EVER exceeds this ceiling (i.e. it has at least a few
 # timeout-class / near-timeout outcomes) is flagged heavy regardless of median.
 HEAVY_WALL_MAX_S = 250.0
+
+# Over-budget / timeout-death heaviness signal (Route 8 #2 leak-fix follow-up,
+# 2026-07-19). A method that causes >= OB_HEAVY_MIN over-budget / timeout
+# rejections is intrinsically heavy EVEN WHEN its *completed* genomes recorded a
+# modest wall_s — the render aborted before wall_s was logged (it is None), so
+# the median / max rules above never saw it. This is the signal that used to be
+# thrown away (over-budget genomes have wall_s=None and were skipped), which is
+# exactly why DLA / Buddhabrot / SPH (almost always over-budget) were never
+# flagged and kept blowing the render budget. Conservative: only methods with
+# several real over-budget deaths qualify, so a light graph is never mis-flagged
+# heavy (precision over recall on the alive pool). The score weight makes a
+# method with OB_HEAVY_MIN deaths outrank a median-only method, so it survives
+# the TOP_K truncation and reaches the gate.
+OB_HEAVY_MIN = 4
+OB_DEATH_SCORE = 60.0
 
 # Staleness guard (Route 8 #2 leak fix, 2026-07-19). The persisted ridge
 # snapshot is only retrained when the logged corpus has grown by at least this
@@ -123,15 +138,48 @@ def _category(mid: str) -> str:
 
 
 def _build_feature_schema(genomes: list[dict]) -> dict:
-    """Decide the heavy-method flag set from the corpus (data-driven)."""
+    """Decide the heavy-method flag set from the corpus (data-driven).
+
+    Two complementary heaviness signals:
+
+      * *Recorded wall_s* (median / max) from genomes that finished rendering.
+        This is the original signal and catches steady-heavy and bimodal
+        (timeout-prone) methods.
+      * *Over-budget / timeout-death frequency* (NEW, Route 8 #2 follow-up):
+        a method that causes >= ``OB_HEAVY_MIN`` over-budget / timeout
+        rejections is intrinsically heavy EVEN WHEN its completed genomes
+        recorded a modest wall_s. Those rejections are the strongest evidence
+        — the render aborted before ``wall_s`` could be logged (it is ``None``),
+        so the median / max rules above never saw them. Previously the
+        over-budget genomes were discarded entirely, which is exactly why
+        DLA / Buddhabrot / SPH (almost always over-budget) were never flagged
+        and kept blowing the render budget. Counting every genome (including
+        ``wall_s=None``) closes that leak.
+
+    Over-budget-heavy methods are GUARANTEED a heavy flag (they bypass the
+    ``TOP_K_HEAVY`` truncation that used to drop DLA / Buddhabrot / SPH beneath
+    the 40-slot cap), so the gate finally recognises the methods responsible
+    for the majority of the cost deaths.
+    """
     _ensure_registry()
-    # method_id -> list of wall_s for genomes that contain it
+    # method_id -> list of recorded wall_s (finished genomes only)
     wall_by_mid: dict[str, list[float]] = {}
+    # method_id -> count of over-budget / timeout rejections (ALL genomes)
+    ob_by_mid: dict[str, int] = {}
     for g in genomes:
+        reason = (g.get("liveness") or {}).get("reason")
+        if reason in ("over-budget", "timeout"):
+            seen: set[str] = set()
+            for nd in (g.get("graph") or {}).get("nodes", []):
+                mid = nd.get("method_id")
+                if mid is None or mid in seen:
+                    continue
+                seen.add(mid)
+                ob_by_mid[mid] = ob_by_mid.get(mid, 0) + 1
         wall = (g.get("render") or {}).get("wall_s")
         if not isinstance(wall, (int, float)) or wall <= 0:
             continue
-        seen: set[str] = set()
+        seen = set()
         for nd in g.get("graph", {}).get("nodes", []):
             mid = nd.get("method_id")
             if mid is None or mid in seen:
@@ -155,17 +203,29 @@ def _build_feature_schema(genomes: list[dict]) -> dict:
         median_heavy = med >= HEAVY_WALL_MEDIAN_S
         # Bimodality rule (Route 8 #2 leak fix): a method that has EVER produced
         # a near-timeout / timeout-class wall time is intrinsically timeout-prone
-        # even if its median is low — flag it so the proxy raises the estimate
-        # and the gate grants the extended cap (heavy sims finish instead of
-        # being culled at the base cap). This catches Gray-Scott / CA / PDE sims
-        # that the median-only rule systematically misses.
+        # even if its median is low.
         bimodal_heavy = mx >= HEAVY_WALL_MAX_S
-        if median_heavy or bimodal_heavy:
-            # Sort key: median (so the top-K stays median-led), but bimodal
-            # methods with no high median still enter and are kept below.
-            heavy.append((mid, max(med, mx * 0.6 if bimodal_heavy else 0.0)))
+        ob = ob_by_mid.get(mid, 0)
+        ob_heavy = ob >= OB_HEAVY_MIN
+        if median_heavy or bimodal_heavy or ob_heavy:
+            # Score so over-budget-heavy methods outrank median-only ones and
+            # survive the TOP_K truncation.
+            score = max(med,
+                        mx * 0.6 if bimodal_heavy else 0.0,
+                        float(ob) * OB_DEATH_SCORE if ob_heavy else 0.0)
+            heavy.append((mid, score))
     heavy.sort(key=lambda x: -x[1])
-    heavy_ids = [m for m, _ in heavy[:TOP_K_HEAVY]]
+    # Guarantee over-budget-heavy methods a flag (bypass TOP_K truncation).
+    ob_heavy_ids = [mid for mid, c in ob_by_mid.items()
+                    if c >= OB_HEAVY_MIN and not mid.startswith("__")]
+    selected: list[str] = list(ob_heavy_ids)
+    for mid, _ in heavy:
+        if mid in selected:
+            continue
+        selected.append(mid)
+        if len(selected) >= TOP_K_HEAVY:
+            break
+    heavy_ids = selected[:TOP_K_HEAVY]
     # Also collect the set of categories seen, for stable feature columns.
     cats: set[str] = set()
     for g in genomes:
@@ -173,7 +233,8 @@ def _build_feature_schema(genomes: list[dict]) -> dict:
             mid = nd.get("method_id")
             if mid:
                 cats.add(_category(mid))
-    return {"heavy_ids": heavy_ids, "categories": sorted(c for c in cats if c)}
+    return {"heavy_ids": heavy_ids, "ob_heavy_ids": ob_heavy_ids,
+            "categories": sorted(c for c in cats if c)}
 
 
 def _extract_features(graph: dict, schema: dict) -> list[float]:
@@ -210,25 +271,31 @@ def train_structural_model(persist: bool = True) -> dict | None:
     """Train the ridge regressor on the logged corpus.
 
     Returns the model dict, or None if there are too few usable samples.
+
+    The heavy-method *schema* is built from EVERY logged genome (including the
+    over-budget / timeout ones whose ``wall_s`` is None) so the over-budget-death
+    heaviness signal is counted. The ridge *weights* are trained only on genomes
+    that recorded a positive ``wall_s`` (the regression target), but using that
+    same schema — so a heavy flag learned from over-budget deaths still drives
+    the prediction.
     """
-    genomes: list[dict] = []
+    all_genomes: list[dict] = []
     for p in _iter_genome_files():
         try:
             g = json.loads(p.read_text())
         except (OSError, ValueError):
             continue
-        wall = (g.get("render") or {}).get("wall_s")
-        if not isinstance(wall, (int, float)) or wall <= 0:
-            continue
-        if not (g.get("graph") or {}).get("nodes"):
-            continue
-        genomes.append(g)
-    if len(genomes) < MIN_TRAIN_SAMPLES:
-        return None
-
-    schema = _build_feature_schema(genomes)
+        all_genomes.append(g)
+    # Schema from ALL genomes (counts over-budget / timeout deaths).
+    schema = _build_feature_schema(all_genomes)
     if not schema["heavy_ids"]:
-        # No heavy methods observed yet — nothing structural to learn; abstain.
+        return None
+    # Ridge training rows: only genomes with a positive recorded wall_s.
+    genomes = [g for g in all_genomes
+               if isinstance((g.get("render") or {}).get("wall_s"), (int, float))
+               and (g.get("render") or {}).get("wall_s", 0.0) > 0
+               and (g.get("graph") or {}).get("nodes")]
+    if len(genomes) < MIN_TRAIN_SAMPLES:
         return None
 
     X, y = [], []
@@ -255,6 +322,7 @@ def train_structural_model(persist: bool = True) -> dict | None:
         "weights": [float(v) for v in w],
         "intercept": float(intercept),
         "n_samples": len(genomes),
+        "n_live_files": len(all_genomes),
         "lambda": RIDGE_LAMBDA,
         "built": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
@@ -291,7 +359,7 @@ def load_structural_model(rebuild_if_missing: bool = True) -> dict | None:
                 # Staleness check: count live genome files (cheap; bounded by
                 # glob on a single directory).
                 n_live = sum(1 for _ in _iter_genome_files())
-                prev = int(m.get("n_samples", 0) or 0)
+                prev = int(m.get("n_live_files", m.get("n_samples", 0)) or 0)
                 if n_live - prev >= RETRAIN_CORPUS_DELTA:
                     need_rebuild = True
         except (OSError, ValueError):
@@ -343,6 +411,26 @@ def structural_estimate_s(graph: dict, model: dict | None = None) -> float:
     if not model or not model.get("schema", {}).get("heavy_ids"):
         return 0.0
     schema = model["schema"]
+    # Direct over-budget-death signal (Route 8 #2 leak-fix follow-up,
+    # 2026-07-19). The ridge is trained only on *completed* genomes, so it
+    # under-predicts graphs whose heavy params would blow the budget (those
+    # aborted before wall_s was logged). A method proven to blow the budget
+    # (>= OB_HEAVY_MIN over-budget / timeout rejections in the corpus) is
+    # therefore under-flagged by the soft ridge. Force a high structural
+    # estimate for any graph containing such a method so the gate ACTS on it:
+    # it is either skipped cheaply (no wasted full-budget render) or granted
+    # the extended render cap and allowed to finish. Monotonic-safe: only ever
+    # RAISES the estimate.
+    ob_ids = set(schema.get("ob_heavy_ids", []))
+    if ob_ids:
+        g = _as_graph(graph)
+        if any(nd.get("method_id") in ob_ids for nd in g.get("nodes", [])):
+            # Just above the skip threshold so the gate triggers, but below the
+            # typical extended cap (render_timeout_s * heavy_render_timeout_factor)
+            # so the genome is SPARED and rendered within the extended cap rather
+            # than hard-culled pre-render. This stops the full base-cap budget
+            # being wasted on a graph that would otherwise be culled as 'timeout'.
+            return float(DEFAULT_CONFIG.render_timeout_s) * 1.5
     w = np.asarray(model["weights"], dtype=np.float64)
     x = np.asarray(_extract_features(_as_graph(graph), schema), dtype=np.float64)
     if x.shape[0] != w.shape[0]:

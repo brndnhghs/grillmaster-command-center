@@ -69,10 +69,19 @@ def test_heavy_high_prior_extends():
 
 def test_no_heavy_method_no_extension():
     """A light graph with no method meeting heavy_method_ms_floor AND a summed
-    estimate below the est-floor keeps the base cap."""
+    estimate below the est-floor keeps the base cap.
+
+    Hermetic: ``structural_cost_enabled=False`` isolates the *per-method*
+    cap-extension branch under test. (The structural proxy's heavy set is loaded
+    from the persisted corpus in production and intentionally also raises the cap
+    for genuinely over-budget-heavy methods — e.g. 68 Anisotropic Kuwahara has
+    real over-budget deaths in the live corpus — so enabling it would make this
+    "light" fixture heavy. The structural path is covered separately in
+    test_structural_cost_proxy.py.)
+    """
     cfg = _cfg(render_timeout_s=BASE, heavy_render_timeout_factor=2.0,
                heavy_method_ms_floor=50.0, heavy_extend_est_floor=0.99,
-               gate_liveness_floor=0.33)
+               gate_liveness_floor=0.33, structural_cost_enabled=False)
     model = _model({"79": 1.0, "68": 1.0}, {"79": 0.9, "68": 0.9})
     g = {"graph": {"nodes": [{"method_id": "79"}, {"method_id": "68"}]}}
     assert cm.effective_render_timeout_s(g, cfg, model) == BASE
@@ -104,10 +113,18 @@ def test_max_render_timeout_s_disabled_lets_factor_through():
 
 def test_max_render_timeout_s_does_not_raise_light_cap():
     """Light graphs (base cap, no heavy method) must stay at base — the clamp
-    only ever LOWERS an extended cap, never raises a base one."""
+    only ever LOWERS an extended cap, never raises a base one.
+
+    Hermetic: ``structural_cost_enabled=False`` isolates the per-method branch;
+    in production the structural proxy also raises the cap for genuinely
+    over-budget-heavy methods (e.g. 68 Anisotropic Kuwahara), which is intended
+    Route 8 #2 behavior, not a light-graph raise. Covered in
+    test_structural_cost_proxy.py.
+    """
     cfg = _cfg(render_timeout_s=BASE, heavy_render_timeout_factor=2.0,
                max_render_timeout_s=450.0, heavy_method_ms_floor=50.0,
-               heavy_extend_est_floor=0.99, gate_liveness_floor=0.33)
+               heavy_extend_est_floor=0.99, gate_liveness_floor=0.33,
+               structural_cost_enabled=False)
     model = _model({"79": 1.0, "68": 1.0}, {"79": 0.9, "68": 0.9})
     g = {"graph": {"nodes": [{"method_id": "79"}, {"method_id": "68"}]}}
     assert cm.effective_render_timeout_s(g, cfg, model) == BASE

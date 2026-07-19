@@ -152,6 +152,56 @@ def test_effective_cap_extends_for_structural_heavy_sim():
         _P.load_structural_model = real_load
 
 
+def test_build_feature_schema_flags_overbudget_death():
+    """Route 8 #2 over-budget-death follow-up (2026-07-19).
+
+    A method that caused >= OB_HEAVY_MIN ``over-budget`` / ``timeout`` rejections
+    must be flagged ``ob_heavy`` EVEN THOUGH every such genome aborted before its
+    ``wall_s`` was logged (``wall_s`` is None). Previously those genomes were
+    skipped entirely, so DLA / Buddhabrot / SPH (almost always over-budget) were
+    never flagged and kept blowing the render budget. The death count must be the
+    signal, independent of any recorded wall_s.
+    """
+    gen = []
+    # OB_HEAVY_MIN over-budget deaths with NO recorded wall_s -> the death
+    # count is the only evidence, and it must qualify the method as heavy.
+    for _ in range(P.OB_HEAVY_MIN + 1):
+        gen.append({"graph": {"nodes": [{"method_id": "D"}]},
+                    "render": {"wall_s": None},
+                    "liveness": {"alive": False, "reason": "over-budget"}})
+    # A method with fewer than OB_HEAVY_MIN deaths must NOT qualify on deaths.
+    for _ in range(P.OB_HEAVY_MIN - 1):
+        gen.append({"graph": {"nodes": [{"method_id": "L"}]},
+                    "render": {"wall_s": None},
+                    "liveness": {"alive": False, "reason": "timeout"}})
+    schema = P._build_feature_schema(gen)
+    assert "D" in schema["ob_heavy_ids"], "over-budget-death method must be flagged"
+    assert "D" in schema["heavy_ids"], "ob_heavy must bypass TOP_K into heavy_ids"
+    assert "L" not in schema["ob_heavy_ids"], "sub-threshold deaths must not qualify"
+    # Deaths must be counted even when wall_s is None (the leak this closes).
+    assert all(g["render"].get("wall_s") is None for g in gen[:P.OB_HEAVY_MIN + 1])
+
+
+def test_structural_estimate_forces_high_for_overbudget_heavy():
+    """Route 8 #2 over-budget-death follow-up (2026-07-19).
+
+    ``structural_estimate_s`` must RAISE the estimate to
+    ``render_timeout_s * 1.5`` for ANY graph containing an ``ob_heavy`` method,
+    even when the ridge weights are all zero — the soft ridge (trained only on
+    *finished* genomes) under-predicts graphs that abort before logging wall_s,
+    so the death signal must force the gate to act. Monotonic-safe: only raises.
+    """
+    schema = {"heavy_ids": ["D"], "ob_heavy_ids": ["D"], "categories": []}
+    model = {"schema": schema, "weights": [0.0] * 4, "intercept": 0.0}
+    g = {"nodes": [{"method_id": "D"}], "edges": []}
+    est = P.structural_estimate_s(g, model)
+    expected = float(P.DEFAULT_CONFIG.render_timeout_s) * 1.5
+    assert est == expected, f"ob_heavy graph must force est={expected}, got {est}"
+    # A light, absent-heavy graph must still abstain (est unchanged by the force).
+    g2 = {"nodes": [{"method_id": "X"}], "edges": []}
+    assert P.structural_estimate_s(g2, model) == 0.0
+
+
 def test_estimate_cost_tail_structural_off_matches_legacy(monkeypatch):
     """With structural disabled, the estimate equals the pure per-node path."""
     monkeypatch.setattr(P, "load_structural_model", lambda *a, **k: None)
