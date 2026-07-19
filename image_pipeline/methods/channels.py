@@ -210,6 +210,7 @@ def method_lfo(out_dir: Path, seed: int, params=None):
             fps = float(getattr(_tl, "fps", fps))
             total_frames_for_phase = int(getattr(_tl, "total_frames", total_frames_for_phase))
     # Derive the cyclic phase from the live frame so t advances per frame.
+    # `rate` is documented as cycles-per-second (Hz) ... [see note below]
     t = (frame / max(1, total_frames_for_phase - 1)) * (2.0 * math.pi)
 
     waveform = params.get("waveform", "sine")
@@ -232,8 +233,16 @@ def method_lfo(out_dir: Path, seed: int, params=None):
     if amp_override is not None:
         max_val = min_val + float(amp_override)
 
-    # Compute phase
-    phase = (t * rate + phase_offset * 2 * math.pi) % (2 * math.pi)
+    # Compute phase.
+    # `rate` is documented as cycles-per-second (Hz): one full cycle spans
+    # `fps / rate` frames, so phase advances by `2*pi*rate/fps` radians PER
+    # FRAME (angular frequency omega). The legacy `phase = t*rate` (with
+    # t = frame/total*2pi) made `rate` span cycles-per-CLIP, so any rate < 0.5
+    # completed < half a cycle over the clip and square/saw/triangle collapsed
+    # to DC (constant) output — the dominant cause of "static"/"flat" shootout
+    # deaths for LFO-driven graphs. True Hz makes low-rate LFOs actually sweep.
+    _omega = 2.0 * math.pi * rate / max(1.0, fps)
+    phase = (frame * _omega + phase_offset * 2 * math.pi) % (2 * math.pi)
 
     if waveform == "sine":
         bipolar = math.sin(phase)

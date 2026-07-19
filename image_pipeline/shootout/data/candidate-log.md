@@ -434,3 +434,28 @@
 - NEXT: dead-param frontier is effectively closed for the audited set. If static/flat
   deaths persist, re-run `audit_dead_params.py --cheap` and check against the 3-signal
   gate (not just changed+tvar) to avoid stale false positives.
+
+## 2026-07-19T{cron} — Route 8 driver-path empirical re-audit + LFO rate=Hz fix
+- RE-PROBE (contradicts prior run's "Route 8 #1 done" claim): re-rendered 8 real
+  dead-with-driver (static/flat) genomes through the CURRENT production path
+  (evaluator.render_genome). RESULT: 8/8 STILL DEAD (6 flat, 2 static), 0 flipped.
+  Terminal chain freezes progressively: n1/n2 (self-animating Arch-A) live, but
+  n3/n4/n5 (downstream Arch-A sims) are FROZEN (tvar ~ 0).
+- ROOT CAUSE (isolated, reproducible): the LFO `rate` param is documented as
+  "cycles per second (Hz)" but was implemented as `phase = (frame/total)*2pi*rate`
+  => `rate` = cycles-per-CLIP. Any rate < 0.5 completed < half a cycle over the
+  clip, so square/saw/triangle LFOs collapsed to DC (constant) output. Direct
+  call of method_lfo confirmed square at rate=0.27 over a 96-frame clip NEVER
+  crossed pi -> constant max. These frozen drivers feed Arch-A sims whose params
+  never move -> static/flat deaths. (The committed e2e test only covers an
+  Arch-B filter target with a sine LFO, so this DC class was never exercised.)
+- FIX: channels.py method_lfo now uses true angular frequency
+  `omega = 2*pi*rate/fps` so `phase = frame*omega + ...`. Verified: low-rate
+  square/saw/triangle now sweep both states within the clip; a sine LFO ->
+  Arch-A sim 282 'speed' now animates its OUTPUT (tvar 0.048) through the
+  executor. Added regression test_lfo_rate_is_hertz_not_per_clip.
+- NOTE: this fixes the LFO-DC class but NOT the whole 45% death rate. Residual
+  causes for remaining dead-with-driver genomes: (a) `random` LFO ignores `rate`
+  entirely (steps every frame//6); (b) heavy Arch-A sims cache per-call / are
+  short-windowed; (c) some sims don't self-animate and depend solely on a driver.
+  These need a follow-up Route 8 run (re-audit after this fix).

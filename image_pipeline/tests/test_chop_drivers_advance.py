@@ -73,3 +73,32 @@ def test_chop_driver_uses_real_timeline(mid):
         vals.append(float(out[key]))
     spread = max(vals) - min(vals)
     assert spread > 1e-3, f"{mid} frozen under real make_timeline (spread={spread})"
+
+
+def test_lfo_rate_is_hertz_not_per_clip():
+    """Route 8 fix (2026-07-19): ``rate`` is documented as cycles-per-second
+    (Hz), but the phase was ``(frame/total)*2pi*rate`` — i.e. ``rate`` cycles
+    *per clip*. Any rate < 0.5 then completed < half a cycle over the clip, so
+    square/saw/triangle waveforms collapsed to a DC (constant) output and every
+    LFO-driven graph rendered a frozen clip (the dominant 'static'/'flat'
+    shootout death). With true Hz, a low-rate LFO must sweep across the clip.
+
+    Assert a square LFO at rate=0.27 sweeps both states over a 96-frame/24fps
+    clip (4 s -> ~1.1 cycles), not sit at one value.
+    """
+    meta = get_meta("__lfo__")
+    out_min, out_max = 1e9, -1e9
+    for f in range(96):
+        tl = make_timeline(global_frame=f, total_frames=96, fps=24, speed=1.0)
+        out = meta.fn(
+            None, 7,
+            params={"_timeline": tl, "waveform": "square", "rate": 0.27,
+                    "min": 0.0, "max": 1.0},
+        )
+        v = float(out["value"])
+        out_min, out_max = min(out_min, v), max(out_max, v)
+    # square spans [min,max]; it must reach BOTH extremes within the clip.
+    assert out_max - out_min > 0.5, (
+        f"square LFO rate=0.27 stayed DC (range={out_max - out_min:.3f}); "
+        f"rate must be true Hz so it sweeps the clip"
+    )
