@@ -154,3 +154,51 @@ def test_revalidate_skips_missing_mp4(tmp_path: Path):
     finally:
         rv.SEQUENCES_DIR = orig
     assert updated is None
+
+
+def test_revalidate_annotates_still_dead_with_full_signals(tmp_path: Path):
+    """A re-decodable *genuinely* dead genome (frozen checkerboard) stays dead
+    but gets the full modern rescue-signal set persisted by ``_annotate_signals``
+    (close the corpus blind spot). alive/reason are preserved; original_reason +
+    reevaluated stamp the audit trail. Idempotent: the rewritten verdict now
+    matches EVALUATOR_VERSION, so a second pass would skip it.
+    """
+    from image_pipeline.shootout.evaluator import EVALUATOR_VERSION
+    from image_pipeline.tests.test_shootout_liveness_rescue import (
+        _structured_static_stack,
+    )
+    seq_dir = tmp_path / "shootout-g-frozen2"
+    seq_dir.mkdir()
+    mp4 = seq_dir / "output.mp4"
+    _write_mp4(mp4, _structured_static_stack())
+
+    # Legacy verdict: only the 7-key stale dict (no rescue signals).
+    legacy = {**_legacy_static_verdict(),
+              "temporal_var": 0.0, "spatial_var": 0.1,
+              "frame_corr": 1.0, "frame_drop": 0}
+    g = {
+        "genome_id": "g-frozen2",
+        "graph": {"nodes": [{"id": "n1", "method_id": "10"}]},
+        "render": {"seq_name": "shootout-g-frozen2", "frames": 40},
+        "liveness": legacy,
+    }
+
+    # Run the CURRENT gate on the stored frames to obtain the full signal set.
+    frames = rv._load_frames(mp4, max_frames=80)
+    assert frames is not None
+    new = rv.evaluate_frames(frames, DEFAULT_CONFIG)
+    assert new.get("alive") is False, "frozen checkerboard must stay dead"
+
+    ann = rv._annotate_signals(g, new, legacy, DEFAULT_CONFIG)
+    lv = ann["liveness"]
+    assert lv["alive"] is False, "frozen checkerboard must stay dead"
+    assert lv["reevaluated"] is True
+    assert lv["original_reason"] == "static"
+    assert lv["evaluator_version"] == EVALUATOR_VERSION
+    for sig in ("motion_pixel_frac", "spectral_peak", "flow_var",
+                "color_change_frac", "color_struct_corr"):
+        assert sig in lv, f"rescue signal {sig} missing after annotate"
+    # Idempotent: modern version is now current, so nothing re-writes.
+    assert rv._needs_reeval(lv) is False
+
+

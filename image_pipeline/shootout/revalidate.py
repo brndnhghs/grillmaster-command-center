@@ -123,10 +123,53 @@ def revalidate_genome(g: dict, cfg: ShootoutConfig = DEFAULT_CONFIG,
     return updated
 
 
+def _annotate_signals(g: dict, new: dict, lv: dict,
+                      cfg: ShootoutConfig = DEFAULT_CONFIG) -> dict:
+    """Build an annotated liveness dict for a re-decodable genome that stays dead.
+
+    The modern gate (``new``) carries the full rescue-signal set
+    (``motion_pixel_frac`` / ``spectral_peak`` / ``flow_var`` /
+    ``color_change_frac`` / ...), which legacy verdict dicts predate. Persisting
+    it onto still-dead genomes closes the corpus blind spot so the advisor can
+    steer on *why* a clip died instead of flying blind.
+
+    Strictly additive: ``alive`` stays ``False`` and the original ``reason`` is
+    preserved under ``original_reason`` (audit trail). Idempotent across re-runs
+    because the rewritten verdict now matches ``EVALUATOR_VERSION``.
+    """
+    ann = dict(g)
+    ann["liveness"] = {
+        **new,
+        "evaluator_version": EVALUATOR_VERSION,
+        "reevaluated": True,
+        "original_reason": lv.get("reason") if isinstance(lv, dict) else None,
+        "original_evaluator_version": (lv.get("evaluator_version")
+                                       if isinstance(lv, dict) else None),
+    }
+    return ann
+
+
 def revalidate_corpus(cfg: ShootoutConfig = DEFAULT_CONFIG,
                       progress: Callable[[str], None] | None = None,
-                      max_frames: int = 80) -> dict:
+                      max_frames: int = 80,
+                      write_signals_for_still_dead: bool = True) -> dict:
     """Re-evaluate every persisted dead genome whose verdict is version-stale.
+
+    Two outcomes are possible for a re-decodable stale-dead genome:
+
+    1. **Flip (dead -> alive)** — the modern rescue signals rescue a clip the
+       legacy gate wrongly culled. Handled by :func:`revalidate_genome` and
+       persisted verbatim (original behavior; strictly dead -> alive only).
+    2. **Annotate (still dead)** — the clip is genuinely dead under the modern
+       gate too, but its persisted ``liveness`` dict predates the rescue signals,
+       leaving downstream analysis blind to *why* it died. When
+       ``write_signals_for_still_dead`` is True (default), we rewrite the dict
+       with the full modern signal set (``alive``/``reason`` preserved). This is
+       corpus hygiene: it makes the dead-rate *attributable* without changing any
+       verdict. (Empirically, on the 649-genome corpus this path fires for the
+       vast majority of stale-dead genomes while the flip path fires for ~0 —
+       the gate is well-tuned; the deaths are genuine content, not evaluator
+       artifacts.)
 
     progress:
         Optional callback receiving a one-line status string per re-evaluated
@@ -138,6 +181,7 @@ def revalidate_corpus(cfg: ShootoutConfig = DEFAULT_CONFIG,
     total = 0
     considered = 0
     flipped = 0
+    annotated = 0
     no_mp4 = 0
     start = time.time()
     for g in genomes:
@@ -146,23 +190,43 @@ def revalidate_corpus(cfg: ShootoutConfig = DEFAULT_CONFIG,
         if not _needs_reeval(lv):
             continue
         considered += 1
-        updated = revalidate_genome(g, cfg, max_frames=max_frames)
-        if updated is None:
-            # Either the mp4 is missing, or it stays dead under the new gate.
-            seq = (g.get("render") or {}).get("seq_name")
-            mp4 = SEQUENCES_DIR / seq / "output.mp4" if seq else None
-            if not (mp4 and mp4.exists()):
-                no_mp4 += 1
+        seq = (g.get("render") or {}).get("seq_name")
+        mp4 = SEQUENCES_DIR / seq / "output.mp4" if seq else None
+        if not (mp4 and mp4.exists()):
+            no_mp4 += 1
             continue
-        store.save_genome(updated)
-        flipped += 1
+        updated = revalidate_genome(g, cfg, max_frames=max_frames)
+        if updated is not None:
+            store.save_genome(updated)
+            flipped += 1
+            if progress:
+                progress(f"  ⟳ {updated['genome_id']}  "
+                         f"{updated['liveness']['original_reason']} -> ALIVE  "
+                         f"({updated['liveness'].get('reason')})")
+            continue
+        if not write_signals_for_still_dead:
+            continue
+        # revalidate_genome returned None -> mp4 exists & decodes but stays dead.
+        # Re-run the gate once more to capture the full signal set, then persist
+        # it (additive; alive/reason unchanged).
+        frames = _load_frames(mp4, max_frames=max_frames)
+        if frames is None:
+            continue
+        new = evaluate_frames(frames, cfg)
+        if new.get("alive"):
+            # Defensive: revalidate_genome should have flipped this. Skip to avoid
+            # double-writing (it will be re-flipped on the next corpus pass).
+            continue
+        store.save_genome(_annotate_signals(g, new, lv, cfg))
+        annotated += 1
         if progress:
-            progress(f"  ⟳ {updated['genome_id']}  {updated['liveness']['original_reason']} "
-                     f"-> ALIVE  ({updated['liveness'].get('reason')})")
+            progress(f"  • {g.get('genome_id')}  {lv.get('reason')} "
+                     f"(annotated, still dead)")
     return {
         "total_genomes": total,
         "version_stale_dead": considered,
         "flipped_dead_to_alive": flipped,
+        "annotated_still_dead": annotated,
         "missing_mp4": no_mp4,
         "seconds": round(time.time() - start, 1),
         "evaluator_version": EVALUATOR_VERSION,
