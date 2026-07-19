@@ -2053,3 +2053,25 @@ def test_clahe_clip_sweep_reaches_pixels():
     r = audit_node("436", defn)
     assert r["status"] == "alive", \
         f"CLAHE clip_sweep audited {r['status']} (should be alive): {r}"
+
+
+def test_fast_bilateral_solver_sweeps_reach_pixels():
+    """Node 924 Fast Bilateral Solver was a genuine dead-param (Route 8): on the
+    default `noise` source the noise field is static per seed and the sweep
+    params (sigma_s / sigma_r / spatial_iterations) barely move the smoothed
+    output frame to frame, so every sweep mode rendered a near-static stack
+    (changed_frac ~0.08 < 0.10 floor) and the liveness gate culled it. The fix
+    (a) drifts the source band with the time clock and (b) co-breathes `amount`
+    (source↔full-smoothing blend) at a faster 1.6 frequency in every sweep mode
+    so the output visibly restructures inside the audit phase window. Guard it
+    via the same audit_node path so a future edit cannot silently regress it.
+    """
+    import image_pipeline.methods  # noqa: F401
+    from image_pipeline.core.graph import get_all_node_defs
+    from image_pipeline.shootout.audit_dead_params import audit_node
+    defs = get_all_node_defs()
+    defn = defs.get("924")
+    assert defn is not None, "node 924 (Fast Bilateral Solver) not registered"
+    r = audit_node("924", defn)
+    assert r["status"] == "alive", \
+        f"FBS sweeps audited {r['status']} (should be alive): {r}"

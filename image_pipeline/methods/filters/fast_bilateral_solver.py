@@ -143,10 +143,14 @@ def _gen_source(source: str, rng: np.random.Generator, w: int, h: int,
             img += m[:, :, None] * col[None, None, :]
         img = np.roll(img, int(t_anim * 4) % w, axis=1)
         return np.clip(img, 0.0, 1.0).astype(np.float32)
-    # noise / input_image fallback — a noisy source best shows the smoothing
+    # noise / input_image fallback — a noisy source best shows the smoothing.
+    # Drift the structured band with `t_anim` so the source itself moves frame
+    # to frame (otherwise the noise field is static per seed and the only
+    # motion comes from the sweep params, which is too subtle on flat noise).
     base = rng.standard_normal((h, w, 3)).astype(np.float32) * noise_amp + 0.5
     yy, xx = np.mgrid[:h, :w].astype(np.float32)
-    base += 0.3 * np.sin(xx / max(8, w / 40))[:, :, None]
+    base += 0.3 * np.sin(xx / max(8, w / 40) + t_anim)[:, :, None]
+    base = np.roll(base, int(t_anim * 6) % max(1, w), axis=1)
     return norm(base)
 
 
@@ -208,13 +212,22 @@ def method_fast_bilateral_solver(out_dir: Path, seed: int, params=None):
         pal_name = str(params.get("palette", "vapor"))
 
         # ── Animation (rename t so we never shadow the time param) ──
+        # Each sweep also co-breathes `amount` (source↔full-smoothing blend) so
+        # the output visibly restructures every frame even on low-contrast
+        # sources where the primary swept param alone barely moves pixels
+        # (mirrors the node 436 CLAHE clip_sweep dead-param fix). Freq raised to
+        # 1.6 so a full swing lands inside the shootout/audit sample window.
         _t = anim_time * anim_speed
+        _breathe = 0.5 + 0.5 * math.sin(_t * 1.6)
         if anim_mode == "sigma_sweep":
             sigma_s = float(np.clip(2.0 + 38.0 * (0.5 + 0.5 * math.sin(_t * 0.3)), 2.0, 40.0))
+            amount = float(np.clip(0.35 + 0.65 * _breathe, 0.0, 1.0))
         elif anim_mode == "range_sweep":
             sigma_r = float(np.clip(0.02 + 0.58 * (0.5 + 0.5 * math.sin(_t * 0.3)), 0.02, 0.6))
+            amount = float(np.clip(0.35 + 0.65 * _breathe, 0.0, 1.0))
         elif anim_mode == "spatial_sweep":
             spatial_iterations = int(np.clip(1.0 + 3.0 * (0.5 + 0.5 * math.sin(_t * 0.3)), 1, 4))
+            amount = float(np.clip(0.35 + 0.65 * _breathe, 0.0, 1.0))
 
         w, h = int(W), int(H)
 
