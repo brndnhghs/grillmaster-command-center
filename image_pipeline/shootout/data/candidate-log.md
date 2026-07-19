@@ -394,3 +394,16 @@
 - ACTION (feature this run): (a) fixed node 533 W≠H crash in image_pipeline/methods/filters/void_and_cluster.py; (b) added regression test test_void_and_cluster_renders_non_square_canvas + added "533" to the test_dead_param_frontier_filters_alive parametrized sample (test_shootout.py). 10/10 tests pass. This is a genuine dead-param-class fix: 533 was effectively dead on all non-square renders (the shootout default).
 - RECOMMENDATION: next run — (a) the remaining genuine lever is the heavy-sim dead-param frontier (141/137/97/119/236/399/...); these need a sharded/cheap audit that finishes in budget — consider a --heavy shard mode that skips the >120s sims and audits only the fast-to-render subset, OR raises the cron render-timeout so full cheap shards complete; (b) nodes 15/416 are weak-but-correct (subtle animations) — leave as-is unless the user wants stronger motion; (c) do NOT re-triage 533/924/436/406/402 (resolved).
 - {"top3": "None=5; None=5; None=5", "dead_rate": "45%", "cheap_alive": 180}
+
+## 2026-07-19 (cron run — Route 8 #2 timeout ceiling)
+- genomes=649 alive=357 dead=292 (45%)
+- dead-reason: static=76 flat=73 timeout=58 over-budget=56 flicker=10 skipped=8 no-output=7 node_error=4
+- DONE THIS RUN: clamped the heavy-cap render extension to max_render_timeout_s=450s
+  (was unbounded 300*2.0=600s; per-frame watchdog let single heavy frames hit 669s).
+  Worst-case bounded to ~518s; only 1 alive clip (620s) sits above 450s and is protected
+  by min_render_frames_frac. Preventive + monotonic-safe.
+- TOP-3 rated ids (promotion seeds): g-e181c881 (5), g-328f0d37 (5), g-f8849674 (5)
+- cheap-alive=180 (explorer/recombine parents)
+- SINGLE ACTION TAKEN: commit feat(shootout): bounded heavy-cap render extension.
+  NEXT PRIORITY: rating-signal poverty (19 ratings ≈ 20 target) + static/flat dead
+  (149/292) → driver-modulation / liveness frontier (Route 8 #1 continued).

@@ -497,6 +497,7 @@ def effective_render_timeout_s(genome: dict,
     # becomes known-alive (or known-static, in which case the liveness gate
     # culls it cheaply in a single generation instead of looping forever).
     _COLD_HEAVY_EXTENDS = True
+    cand = base  # the cap we would grant (raised only for heavy likely-dynamic)
     for nd in genome.get("graph", {}).get("nodes", []):
         mid = nd.get("method_id")
         if mid is None:
@@ -506,15 +507,29 @@ def effective_render_timeout_s(genome: dict,
             continue
         prior = pma.get(mid)
         if _COLD_HEAVY_EXTENDS and prior is None:
-            return base * float(factor)
+            cand = base * float(factor)
+            break
         if prior is not None and prior >= prior_floor:
-            return base * float(factor)
+            cand = base * float(factor)
+            break
     # Eligibility 1 (fallback): no single heavy method, but the SUM of many
     # medium methods is estimated heavy. Keep the calibrated est-floor so we do
     # NOT extend light graphs (preserves the original narrow-extension intent).
-    est_floor = getattr(cfg, "heavy_extend_est_floor", 0.5)
-    est = estimate_cost_tail_s(genome, cfg.frames, model, cfg) if hasattr(
-        cfg, "frames") else estimate_cost_tail_s(genome, 48, model, cfg)
-    if est >= base * est_floor:
-        return base * float(factor)
-    return base
+    if cand == base:
+        est_floor = getattr(cfg, "heavy_extend_est_floor", 0.5)
+        est = estimate_cost_tail_s(genome, cfg.frames, model, cfg) if hasattr(
+            cfg, "frames") else estimate_cost_tail_s(genome, 48, model, cfg)
+        if est >= base * est_floor:
+            cand = base * float(factor)
+    # Route 8 #2 (2026-07-19): hard ceiling on the extended cap. The heavy-cap
+    # extension turned the intended 300s cap into 600s and — because the
+    # per-frame timeout only fires BETWEEN frames — a single heavy frame ran to
+    # ~669s, wasting the whole budget on dead clips. Clamp the granted cap to
+    # max_render_timeout_s so the worst case is bounded; the hard_wall watchdog
+    # (anchored to this value) then reclaims over-runs at ~450*hard_wall_factor.
+    # Monotonic-safe: only ever LOWERS an extended cap; light graphs (cand==
+    # base, already <= ceiling) are untouched. Disabled when the ceiling <= 0.
+    ceiling = getattr(cfg, "max_render_timeout_s", 0.0)
+    if ceiling > 0.0 and cand > ceiling:
+        cand = ceiling
+    return cand

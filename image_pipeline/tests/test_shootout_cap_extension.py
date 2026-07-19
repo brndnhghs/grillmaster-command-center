@@ -55,7 +55,7 @@ def test_cold_heavy_method_gets_extension_death_spiral_closure():
                heavy_extend_est_floor=0.01)
     model = _model({"85": 2000.0}, {})  # no per_method_alive -> cold
     g = {"graph": {"nodes": [{"method_id": "85"}]}}
-    assert cm.effective_render_timeout_s(g, cfg, model) == BASE * 2.0
+    assert cm.effective_render_timeout_s(g, cfg, model) == 450.0
 
 
 def test_heavy_high_prior_extends():
@@ -64,7 +64,7 @@ def test_heavy_high_prior_extends():
                gate_liveness_floor=0.33)
     model = _model({"85": 2000.0}, {"85": 0.9})
     g = {"graph": {"nodes": [{"method_id": "85"}]}}
-    assert cm.effective_render_timeout_s(g, cfg, model) == BASE * 2.0
+    assert cm.effective_render_timeout_s(g, cfg, model) == 450.0
 
 
 def test_no_heavy_method_no_extension():
@@ -73,6 +73,41 @@ def test_no_heavy_method_no_extension():
     cfg = _cfg(render_timeout_s=BASE, heavy_render_timeout_factor=2.0,
                heavy_method_ms_floor=50.0, heavy_extend_est_floor=0.99,
                gate_liveness_floor=0.33)
+    model = _model({"79": 1.0, "68": 1.0}, {"79": 0.9, "68": 0.9})
+    g = {"graph": {"nodes": [{"method_id": "79"}, {"method_id": "68"}]}}
+    assert cm.effective_render_timeout_s(g, cfg, model) == BASE
+
+
+def test_max_render_timeout_s_clamps_extension():
+    """max_render_timeout_s is a hard ceiling on the extended cap (Route 8 #2,
+    2026-07-19). A heavy likely-dynamic genome would get base × factor (600),
+    but the ceiling bounds it to 450 — reclaiming the 600-669s dead render tail
+    while still doubling the base 300s cap for slow-but-dynamic clips."""
+    cfg = _cfg(render_timeout_s=BASE, heavy_render_timeout_factor=2.0,
+               max_render_timeout_s=450.0, heavy_extend_est_floor=0.01)
+    model = _model({"85": 2000.0}, {"85": 0.9})
+    g = {"graph": {"nodes": [{"method_id": "85"}]}}
+    assert cm.effective_render_timeout_s(g, cfg, model) == 450.0
+    cfg.max_render_timeout_s = 360.0
+    assert cm.effective_render_timeout_s(g, cfg, model) == 360.0
+
+
+def test_max_render_timeout_s_disabled_lets_factor_through():
+    """A <=0 ceiling disables the clamp: the raw base × factor (600) is granted,
+    preserving the prior behaviour when an operator opts out."""
+    cfg = _cfg(render_timeout_s=BASE, heavy_render_timeout_factor=2.0,
+               max_render_timeout_s=0.0, heavy_extend_est_floor=0.01)
+    model = _model({"85": 2000.0}, {"85": 0.9})
+    g = {"graph": {"nodes": [{"method_id": "85"}]}}
+    assert cm.effective_render_timeout_s(g, cfg, model) == BASE * 2.0
+
+
+def test_max_render_timeout_s_does_not_raise_light_cap():
+    """Light graphs (base cap, no heavy method) must stay at base — the clamp
+    only ever LOWERS an extended cap, never raises a base one."""
+    cfg = _cfg(render_timeout_s=BASE, heavy_render_timeout_factor=2.0,
+               max_render_timeout_s=450.0, heavy_method_ms_floor=50.0,
+               heavy_extend_est_floor=0.99, gate_liveness_floor=0.33)
     model = _model({"79": 1.0, "68": 1.0}, {"79": 0.9, "68": 0.9})
     g = {"graph": {"nodes": [{"method_id": "79"}, {"method_id": "68"}]}}
     assert cm.effective_render_timeout_s(g, cfg, model) == BASE

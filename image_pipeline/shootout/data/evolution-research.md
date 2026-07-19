@@ -243,3 +243,38 @@ informative unrated clips) against clean frontier data.
 **Index:** rotate evolution-research-index.txt 5 → 6 (sub-problem #6 rating-
 signal poverty / active-learning surfacing is now the standing next lever, and
 its prerequisite frontier is trustworthy).
+
+---
+
+## 2026-07-19 — Sub-problem #6 re-engaged (Rating-signal poverty; real probe this run)
+
+**Observed (real probe, this run):** genomes=649; alive=357 (55%); dead=292 (45%).
+human ratings=19 (~2.9%) — still STARVED, ~1 short of the 20 target. Dead-reason
+breakdown: static=76, flat=73, timeout=58, over-budget=56, flicker=10, skipped=8,
+no-output=7, node_error=4. So 149/292 dead (51%) are static/flat — the driver-path /
+liveness frontier (Route 8 #1) remains the dominant *surviving* failure, NOT render
+timeouts (which this run bounded to 518s worst-case). Rating corpus is the binding
+constraint on selection quality.
+
+**Technique — uncertainty/active-learning rating surfacing (from 2026-07-17 writeup,
+still unactioned):** surface the MOST informative (highest-posterior-variance) clips
+to the user for a star rating instead of random/unrated ones, and ship a frictionless
+rating UX (one-click ★ on the live preview). Reference: Settles 2009 "Active Learning
+Literature Survey" (UC Berkeley TR); Houlsby et al. 2011 "Bayesian Active Learning for
+Classification and Preference Learning" (bald). The taste model (`elo_fitness_enabled`,
+Bradley-Terry per 2026-07-17 #1) is already ELO-shaped, so uncertainty = ELO σ — the
+exact quantity needed to pick teachable clips. The Route 8 #6 UI active-learning loop
+(da0aa76) already closed the *capture* path; the missing piece is *selective surfacing*
+(order candidates by ELO σ, not by recency).
+
+**Module:** `image_pipeline/shootout/store.py` + `server.py /api/shootout/candidates`
+— return candidates ranked by `uncertainty(g)` (ELO σ) descending, capped to N, so the
+user rates the clips that move the taste model most. Additive to the existing rating UI.
+
+**Verification (headless):** `test_shootout_active_learning.py` — (a) given two unrated
+clips with high σ and one rated clip with low σ, the candidate endpoint returns the two
+high-σ clips first; (b) no NaN/Inf when σ is undefined (prior used). Gate behind
+`active_learning_ranking=False` until enabled.
+
+**Index:** set evolution-research-index.txt → 6 (current lever; next run implements the
+selective-surfacing endpoint + test, or returns to #1 ELO wiring).

@@ -430,6 +430,19 @@ class ShootoutConfig:
     # heavy_render_timeout_factor is the multiplier applied to render_timeout_s
     # for worth-extending genomes (2.0 → 600s cap). Set <= 1.0 to disable.
     heavy_render_timeout_factor: float = 2.0
+    # Hard ceiling on the extended cap (Route 8 #2, 2026-07-19). The heavy-cap
+    # extension multiplies render_timeout_s × heavy_render_timeout_factor, but
+    # that was unbounded: factor=2.0 turned the intended 300s cap into a 600s
+    # cap, and because the per-frame timeout only fires BETWEEN frames a single
+    # heavy frame ran to ~669s — wasting the full budget on dead clips (the
+    # 2026-07-19 corpus had 165 genomes > 150s with a 669s max). Worse, the
+    # hard_wall_factor watchdog is anchored to eff_timeout, so a 600s eff cap
+    # allowed 690s before a force-skip. clamp the extended cap to this ceiling
+    # (450s) so the worst case is bounded. 450s still doubles the base 300s cap
+    # for heavy likely-dynamic clips (only 1 of 351 alive clips ever exceeded
+    # 450s, and min_render_frames_frac keeps what it rendered), while reclaiming
+    # the entire 600-669s dead tail. Set <= 0 to disable the clamp (no ceiling).
+    max_render_timeout_s: float = 450.0
     # A method is "heavy" (worth a cap extension when its alive-prior is high)
     # only if its empirical median ms/frame meets this floor. Keeps light
     # methods from triggering the extension. Empirically the genomes that
@@ -536,6 +549,7 @@ TUNABLE_FIELDS: dict[str, tuple[str, float | None, float | None]] = {
     "gate_liveness_floor": ("Cost-gate exemption: an over-budget genome whose mean empirical P(alive) over its methods is ≥ this is spared the cull (0 disables — protects slow-but-dynamic clips)", 0.0, 1.0),
     "cost_use_tail": ("Cost gate estimates render wall from per-method P90 (tail) ms/frame instead of the median — catches high-variance timeout slip-throughs", None, None),
     "heavy_render_timeout_factor": ("Heavy-sim cap extension: slow-but-dynamic clips (heavy method with high P(alive)) get render_timeout_s × this so they finish instead of timing out (<=1 disables)", 1.0, 6.0),
+    "max_render_timeout_s": ("Hard ceiling on the extended cap: the heavy-cap extension may never exceed this (anchors the hard_wall watchdog so a heavy frame can't run to ~669s). <=0 disables the clamp", 0.0, 3600.0),
     "heavy_method_ms_floor": ("A method is 'heavy' (eligible for the cap extension) only above this median ms/frame", 10.0, 500.0),
     "heavy_extend_est_floor": ("Cap extension eligibility: a genome is extended only if its calibrated cost estimate reaches this fraction of render_timeout_s (keeps the extension narrow)", 0.1, 1.0),
     "render_concurrency": ("Clips rendered in parallel", 1, 8),

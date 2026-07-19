@@ -1888,7 +1888,8 @@ def test_heavy_method_presence_extends_cap_despite_low_estimate():
     )
     g = _genome_with(["light", "999"])
     eff = cm.effective_render_timeout_s(g, cfg, model)
-    assert eff == 300.0 * 2.0, f"heavy-presence must extend cap, got {eff}"
+    # 300 × 2 = 600 clamped to max_render_timeout_s default (450).
+    assert eff == 450.0, f"heavy-presence must extend cap, got {eff}"
     # Without the heavy method, the light-only genome keeps the base cap.
     g_light = _genome_with(["light", "light"])
     assert cm.effective_render_timeout_s(g_light, cfg, model) == 300.0
@@ -1910,7 +1911,8 @@ def test_heavy_method_without_prior_gets_extension_death_spiral():
         per_method_alive={"999": None},  # no trusted prior
     )
     g = _genome_with(["999"])
-    assert cm.effective_render_timeout_s(g, cfg, model) == 600.0
+    # 300 × 2 = 600 clamped to max_render_timeout_s default (450).
+    assert cm.effective_render_timeout_s(g, cfg, model) == 450.0
 
 
 def test_est_floor_fallback_still_extends_heavy_sum():
@@ -1930,7 +1932,8 @@ def test_est_floor_fallback_still_extends_heavy_sum():
         per_method_p90={"a": 800.0, "b": 800.0, "c": 800.0},
     )
     g = _genome_with(["a", "b", "c"])
-    assert cm.effective_render_timeout_s(g, cfg, model) == 600.0
+    # 300 × 2 = 600 clamped to max_render_timeout_s default (450).
+    assert cm.effective_render_timeout_s(g, cfg, model) == 450.0
 
 
 # ── Dead-param audit: Architecture-B (time-param) fallback ──────────────────
