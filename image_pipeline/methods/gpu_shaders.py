@@ -1040,7 +1040,7 @@ GPU_PREVIEW_DROP_ALLOW: dict[str, dict[str, str]] = {
     "142": {"morph_speed": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "noise": "param not wired to GPU twin; CPU export authoritative for this param"},
     "143": {"diff_n": "param not wired to GPU twin; CPU export authoritative for this param", "init_radius": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "noise_intensity": "param not wired to GPU twin; CPU export authoritative for this param"},
     "144": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "nonlinear": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "146": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "noise": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "146": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
     "148": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
     "150": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
     "153": {"grid_size": "param not wired to GPU twin; CPU export authoritative for this param", "init_coop": "param not wired to GPU twin; CPU export authoritative for this param", "mutation_rate": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "steps_per_frame": "param not wired to GPU twin; CPU export authoritative for this param"},
@@ -1076,6 +1076,11 @@ GPU_PREVIEW_DROP_ALLOW: dict[str, dict[str, str]] = {
     "464": {"noise_freq": "param not wired to GPU twin; CPU export authoritative for this param"},
     "473": {"contrast": "param not wired to GPU twin; CPU export authoritative for this param", "scale": "param not wired to GPU twin; CPU export authoritative for this param"},
     "499": {"gamma": "param not wired to GPU twin; CPU export authoritative for this param", "n_steps_per_frame": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "513": {"resolution": "hash-table grid resolution is a CPU-domain export knob; the closed-form GLSL twin renders at the canvas resolution (GPU coverage contract: explicit drop)"},
+    "999": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "1003": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "dt": "param not wired to GPU twin; CPU export authoritative for this param", "pace_period": "param not wired to GPU twin; CPU export authoritative for this param", "pace_radius": "param not wired to GPU twin; CPU export authoritative for this param", "rot_radius": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "1008": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "dt": "param not wired to GPU twin; CPU export authoritative for this param", "n_seeds": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "131": {"grid_size": "param not wired to GPU twin; CPU export authoritative for this param", "noise": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "steps_per_frame": "param not wired to GPU twin; CPU export authoritative for this param"},
 }
 
 def is_param_justified_drop(mid: str, param: str) -> bool:
