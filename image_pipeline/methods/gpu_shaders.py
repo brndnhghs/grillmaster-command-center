@@ -746,6 +746,13 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
                           "smoothness": "smoothness", "octaves": "octaves",
                           "lacunarity": "lacunarity", "gain": "gain",
                           "contrast": "contrast"}},
+    # 514 Apollonian Gasket → typed closed-form fold+inversion twin. The CPU
+    # node uses depth/seed_curv/color_mode; the GPU twin exposes its own
+    # closed-form controls (zoom/iterations/fold/hue_shift/contrast) — a visual
+    # parity preview, not a pixel-exact match of the circle-packing CPU render
+    # (CPU numpy path stays authoritative for export). All uniforms wired by name.
+    "514": {"shader": "apollonian_gpu", "type": "procedural", "typed": True,
+            "param_map": {"depth": "depth", "seed_curv": "seed_curv"}},
     # 68 Anisotropic Kuwahara → typed-uniform twin. `radius`/`anisotropy` wired
     # by name (contract #5); presmooth/blend are not mapped — the twin renders
     # the default strength. CPU numpy node stays authoritative for export.
