@@ -348,6 +348,55 @@ def _op_rewire(graph: dict, pool: GenePool, cfg: ShootoutConfig,
         edge["dst_node"], edge["dst_port"] = rng.choice(targets)
 
 
+def _op_retarget_driver(graph: dict, pool: GenePool, cfg: ShootoutConfig,
+                        rng: random.Random) -> None:
+    """Grammar-aware mutation (Route 8 / Phase 1C sub-problem #3/#4): rewire an
+    existing driver node (LFO / counter / noise1d / ramp / envelope / strobe)
+    onto a *different* target param port.
+
+    The dead-corpus is dominated by driver/control nodes: a driver is wired into
+    a graph but its modulation never reaches the rendered pixels, so the clip
+    dies at the liveness gate. Plain numeric jitter only re-noises the *same*
+    frozen wiring. This op moves the driver onto a fresh (node, port) target so
+    the breeder can discover which params actually respond to driver
+    modulation — a SEMANTIC edit, not parameter noise. It is purely additive:
+    with no driver present it is a no-op, and it is only admitted to the
+    mutation table when ``cfg.grammar_mut_ratio > 0`` (evolve.mutate), so the
+    default live path never fires it.
+    """
+    frozen = getattr(cfg, "frozen_params", ()) or ()
+    drivers = [n for n in graph["nodes"]
+               if n["method_id"] in pool.scalar_drivers
+               and any(e["src_node"] == n["id"] for e in graph["edges"])]
+    if not drivers:
+        return
+    d = rng.choice(drivers)
+    d_edges = [e for e in graph["edges"] if e["src_node"] == d["id"]]
+    e = rng.choice(d_edges)
+    # Exclude the driver's own current target so we actually RE-target.
+    fed_by_others = {(ed["dst_node"], ed["dst_port"])
+                      for ed in graph["edges"] if ed["src_node"] != d["id"]}
+    targets = []
+    for n in graph["nodes"]:
+        if n["id"] == d["id"]:
+            continue
+        for p in pool.wireable_params(n["method_id"]):
+            if p in frozen:
+                continue
+            if (n["id"], p) in fed_by_others:
+                continue
+            if n["id"] == e["dst_node"] and p == e["dst_port"]:
+                continue  # the current target — skip so we move elsewhere
+            targets.append((n["id"], p))
+    if not targets:
+        return
+    new_tgt, new_port = rng.choice(targets)
+    e["dst_node"], e["dst_port"] = new_tgt, new_port
+    # Keep the source port aligned with the driver's scalar output.
+    e["src_port"] = (pool.output_port_for(d["method_id"], "scalar")
+                     or e.get("src_port") or "value")
+
+
 _MUTATION_OPS = [
     (_op_param_jitter, 3.0),
     (_op_node_swap, 2.0),
@@ -390,7 +439,16 @@ def mutate(parent: dict, pool: GenePool, cfg: ShootoutConfig,
     evolution was.
     """
     import copy
-    op_table = _GENTLE_OPS if gentle else _MUTATION_OPS
+    if gentle:
+        op_table = _GENTLE_OPS
+    else:
+        op_table = _MUTATION_OPS
+        # Grammar-aware mutation (Route 8 / sub-problem #3/#4): admit the
+        # retarget-driver op only when explicitly enabled, so the default live
+        # path is behaviour-preserving. The op is structural (not param jitter).
+        gm = getattr(cfg, "grammar_mut_ratio", 0.0)
+        if gm and gm > 0.0:
+            op_table = op_table + [(_op_retarget_driver, float(gm))]
     op_names = [op for op, _ in op_table]
     op_weights = [w for _, w in op_table]
     structural_ops = [op for op in op_names if op is not _op_param_jitter]

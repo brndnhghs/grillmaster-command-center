@@ -86,6 +86,13 @@ class ShootoutConfig:
     param_jitter_sigma: float = 0.15   # gaussian sigma as fraction of param range
     min_divergence: float = 0.3        # breeder aims for this graph-distance (0..1) from the parent
     max_divergence_attempts: int = 5   # mutation retries to hit min_divergence before accepting best-so-far
+    # Grammar-aware mutation (Route 8 / Phase 1C sub-problem #3/#4): admit a
+    # "retarget_driver" op that rewires an existing driver node (LFO / counter /
+    # noise1d / ramp / envelope / strobe) onto a DIFFERENT target param port, so
+    # the breeder discovers which params actually respond to driver modulation
+    # instead of re-noising the same frozen wiring. 0.0 = disabled (default live
+    # path unchanged — the op is only added to the mutation table when > 0).
+    grammar_mut_ratio: float = 0.0
     min_rating_to_parent: int = 2      # genomes rated below this never breed
     # Liveness-breeding fallback (Route 8, 2026-07-13): when human ratings are
     # starved (the corpus had only ~18 ratings / 525 genomes), ``select_parents``
@@ -553,6 +560,7 @@ TUNABLE_FIELDS: dict[str, tuple[str, float | None, float | None]] = {
     "mutations_per_offspring": ("Mutation ops per bred offspring (1–2 = subtle, higher = wilder evolutions)", 0, 5),
     "motif_coverage_boost": ("Explorer diversification: fresh-randoms upsample under-represented motifs (1 = off, identical to prior; higher = wider motif spread)", 1.0, 8.0),
     "param_jitter_sigma": ("Mutation strength — fraction of each param's range a tweak can move (higher = more extreme)", 0.0, 1.0),
+    "grammar_mut_ratio": ("Grammar-aware mutation: chance a breeder rewires an existing driver (LFO/counter/noise) onto a different param port to find which params actually respond to driver modulation (0 disables — standard numeric-jitter mutation)", 0.0, 5.0),
     "min_divergence":   ("Bred offspring must differ from the parent by at least this graph-distance (0..1); the breeder escalates mutation until it does (higher = more extreme evolutions)", 0.0, 1.0),
     "max_divergence_attempts": ("Mutation retries to reach min_divergence before accepting the best attempt (higher = more effort pushing extreme changes)", 1, 12),
     "min_rating_to_parent": ("Clips rated below this never breed", 1, 5),
