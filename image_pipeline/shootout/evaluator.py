@@ -413,7 +413,9 @@ def _terminal_image(flat: dict, terminal_id, nodes: list[dict]):
 
 def render_stack(nodes: list[dict], edges: list[dict], seed: int,
                  cfg: ShootoutConfig, frames: int,
-                 progress_cb: Callable[[str], None] | None = None
+                 progress_cb: Callable[[str], None] | None = None,
+                 width: int | None = None, height: int | None = None,
+                 render_timeout_s: float | None = None
                  ) -> LivenessAccumulator:
     """Render (nodes, edges) into a LivenessAccumulator of downsampled
     frames — no mp4, no disk artifact. Node/edge lists are copied, so the
@@ -421,11 +423,20 @@ def render_stack(nodes: list[dict], edges: list[dict], seed: int,
     (never raises), same as the full render path.
 
     Shared by contribution ablation: baseline and every ablated variant go
-    through here so their frame stacks are directly comparable."""
+    through here so their frame stacks are directly comparable.
+
+    ``width``/``height`` override the canvas resolution (default ``cfg``) so
+    callers can run a cheap low-res probe — e.g. the terminal-variance
+    liveness guard renders a small 2-frame stack instead of a full-res
+    clip, which keeps expensive methods (Morphology node 485 at a large
+    radius → O(N·A) scipy filters) from wedging generation. ``render_timeout_s``
+    overrides the internal per-stack wall so a probe thread can never linger
+    for the full ``cfg.render_timeout_s`` budget."""
     import tempfile
     import shutil
     from image_pipeline.core.utils import set_canvas
-    set_canvas(cfg.width, cfg.height)
+    set_canvas(width or cfg.width, height or cfg.height)
+    _rt = cfg.render_timeout_s if render_timeout_s is None else render_timeout_s
 
     nodes = _pin_n_frames([dict(n, dirty=True) for n in nodes], frames)
     edges = [dict(e) for e in edges]
@@ -437,7 +448,7 @@ def render_stack(nodes: list[dict], edges: list[dict], seed: int,
     t0 = time.time()
     try:
         for frame in range(frames):
-            if time.time() - t0 > cfg.render_timeout_s:
+            if time.time() - t0 > _rt:
                 break
             arr = None
             try:

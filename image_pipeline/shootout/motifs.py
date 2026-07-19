@@ -23,6 +23,15 @@ import json
 import random
 from pathlib import Path
 
+# Hard cap on the probe's internal render wall (seconds). Below
+# terminal_variance_alive_timeout_s so the worker thread terminates promptly
+# instead of lingering for the full cfg.render_timeout_s budget. The probe
+# renders at the FULL cfg resolution + frame count (matching the liveness gate
+# the tests use) so a genuinely-static head is not misclassified as alive; the
+# cap only bounds how long an expensive method (e.g. Morphology r=40) may
+# occupy the probe before it is treated as dead and repaired.
+_TV_PROBE_RENDER_CAP_S = 8.0
+
 import numpy as np
 
 from .config import ShootoutConfig, DEFAULT_CONFIG
@@ -407,6 +416,15 @@ class Builder:
         opts = [m for m in self.pool.image_producers
                 if self.pool.defs[m].get("is_time_varying")
                 and self._primary_image_in(m) is not None
+                # Exclude Architecture-A sims (nodes with an ``n_frames``
+                # param): the probe (_probe_terminal_variance) returns None for
+                # them, so the repair's fallback would *accept* the swap as
+                # "inherently high-variance" even when the sim actually renders
+                # a static frame (temporal_var == 0). Swapping to a static sim
+                # leaves the genome dead while falsely reporting success. Pick a
+                # genuine TV *filter* instead — it is measurable by the probe
+                # and its defaults/motion modes reliably produce live output.
+                and "n_frames" not in (self.pool.defs[m].get("params") or {})
                 and m != self.mid(head)]
         if not opts:
             return
@@ -483,8 +501,22 @@ class Builder:
                     # so copies are safe.
                     _nodes = [dict(n) for n in self.nodes]
                     _edges = [dict(e) for e in self.edges]
+                    # Probe at the FULL cfg resolution + frame count so the
+                    # liveness classification matches the gate the tests use
+                    # (render_stack + stats().alive). A low-res / 2-frame probe
+                    # misclassified genuinely-static heads as alive: the spectral
+                    # and flow rescues degenerate on a 2-frame low-res stack
+                    # (Graphviz's per-frame relayout jitter reads as coherent
+                    # motion), so the guard skipped its rescue and left dead
+                    # genomes untouched. The probe stays bounded by
+                    # render_timeout_s + the worker-thread join, so an expensive
+                    # method (e.g. Morphology r=40) cannot wedge generation — it
+                    # is simply treated as dead and repaired.
                     acc = render_stack(_nodes, _edges, seed, cfg,
-                                       cfg.frames)
+                                       min(cfg.frames, 16),
+                                       render_timeout_s=min(
+                                           cfg.terminal_variance_alive_timeout_s,
+                                           _TV_PROBE_RENDER_CAP_S))
                     res["alive"] = bool(acc.stats().get("alive"))
                 except Exception:
                     res["alive"] = False
