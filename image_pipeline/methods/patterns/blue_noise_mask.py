@@ -151,12 +151,22 @@ def _vac_mask(H: int, W: int, M: int, G_full: np.ndarray, G: np.ndarray, dy: np.
 
     # Local stamp = add/subtract the Gaussian prototype (periodic) so the energy
     # field stays exact without recomputing the convolution from scratch.
-    def _stamp(p: int, sign: float):
+    def _stamp(target: np.ndarray, p: int, sign: float):
         y = p // W
         x = p % W
         yy = (y + dy) % H
         xx = (x + dx) % W
-        E[yy * W + xx] += sign * G
+        target[yy * W + xx] += sign * G
+
+    # Working masked-energy array: TRUE energy at non-sample pixels, ±inf at
+    # sample pixels so argmin/argmax select only non-sample pixels — exactly
+    # equivalent to the old ``np.where(samples, ±inf, E)`` but maintained
+    # *incrementally* (O(1) per step) instead of reallocated every iteration.
+    # Void-and-cluster is an O(N)-step loop, so the old per-step full-array
+    # ``np.where`` (O(N) alloc + copy) dominated the cost — this removes it and
+    # is the key speedup. Output is bit-for-bit identical to the old masking.
+    Ew = E.copy()
+    Ew[init_idx] = np.inf
 
     # ── Phase 0: initial seeds own the lowest ranks 0 .. M-1 ──
     R[init_idx] = np.arange(M, dtype=np.int64)
@@ -165,23 +175,29 @@ def _vac_mask(H: int, W: int, M: int, G_full: np.ndarray, G: np.ndarray, dy: np.
     rank = M
     target = N - M  # stop when total sample count reaches N - M
     while int(samples.sum()) < target:
-        masked = np.where(samples, np.inf, E)
-        p = int(np.argmin(masked))
+        p = int(np.argmin(Ew))
         samples[p] = True
         R[p] = rank
         rank += 1
-        _stamp(p, 1.0)
+        _stamp(E, p, 1.0)
+        _stamp(Ew, p, 1.0)
+        Ew[p] = np.inf
 
     # ── Phase 2: clusters — remove the M densest samples (argmax energy) ──
     rank = N - M
     floor = N - 2 * M  # stop when sample count drops to N - 2M
+    # Rebuild the masked working array for the cluster phase (excluded =
+    # non-samples -> -inf so argmax only considers current samples).
+    Ew = E.copy()
+    Ew[~samples] = -np.inf
     while int(samples.sum()) > floor:
-        masked = np.where(samples, E, -np.inf)
-        p = int(np.argmax(masked))
+        p = int(np.argmax(Ew))
         samples[p] = False
         R[p] = rank
         rank += 1
-        _stamp(p, -1.0)
+        _stamp(E, p, -1.0)
+        _stamp(Ew, p, -1.0)
+        Ew[p] = -np.inf
 
     return R.reshape(H, W)
 
