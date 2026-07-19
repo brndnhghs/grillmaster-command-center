@@ -746,6 +746,22 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
                           "smoothness": "smoothness", "octaves": "octaves",
                           "lacunarity": "lacunarity", "gain": "gain",
                           "contrast": "contrast"}},
+    # 425 Horizon Ambient Occlusion (HBAO): typed-uniform twin. Every numeric
+    # param (freq/octaves/height_scale/radius/directions/steps/jitter/light_az/
+    # light_el/ambient/contrast) and the choice params (mode/colormode/anim_mode)
+    # map BY NAME to the twin's u_<name> uniforms; the client typed-live path
+    # reads them by name (pitfall #14b). Closed-form f(uv,t) over a procedural
+    # fbm height field -> the one remaining honest P0.6-category gap (the only
+    # geometry/stippling filter without a twin). CPU numpy node 425 stays
+    # authoritative for exact export; the twin is a live-preview approximation.
+    "425": {"shader": "hbao_gpu", "type": "procedural", "typed": True,
+            "param_map": {"freq": "freq", "octaves": "octaves",
+                          "height_scale": "height_scale", "radius": "radius",
+                          "directions": "directions", "steps": "steps",
+                          "jitter": "jitter", "mode": "mode",
+                          "light_az": "light_az", "light_el": "light_el",
+                          "ambient": "ambient", "contrast": "contrast",
+                          "colormode": "colormode", "anim_mode": "anim_mode"}},
     # 514 Apollonian Gasket → typed closed-form fold+inversion twin. The CPU
     # node uses depth/seed_curv/color_mode; the GPU twin exposes its own
     # closed-form controls (zoom/iterations/fold/hue_shift/contrast) — a visual
