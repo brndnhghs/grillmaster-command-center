@@ -996,6 +996,27 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
                            "drainage": "drainage", "view_angle": "view_angle",
                            "brightness": "brightness", "anim_speed": "anim_speed",
                            "anim_mode": "anim_mode"}},
+    # === P0 shims: CPU pattern/math-art nodes -> existing typed GPU twins (cron run) ===
+    # Faithful matches: node param names align with shader uniforms so the live
+    # preview reflects the sliders; unmapped params stay CPU-authoritative.
+    "963": {"shader": "gerstner_ocean_gpu", "type": "procedural", "typed": True,
+             "param_map": {"n_waves": "n_waves", "base_wavelength": "base_wavelength", "wavelength_falloff": "wavelength_falloff", "amplitude": "amplitude", "steepness": "steepness", "wind_angle": "wind_angle", "wind_spread": "wind_spread", "sun_angle": "sun_angle", "sun_height": "sun_height", "shininess": "shininess", "glint": "glint", "deep_hue": "deep_hue", "crest_hue": "crest_hue", "exposure": "exposure", "gamma": "gamma"}},
+    "964": {"shader": "gyroid_tpms_gpu", "type": "procedural", "typed": True,
+             "param_map": {"surface": "surface", "freq": "freq", "level": "level", "thickness": "thickness", "warp": "warp", "contrast": "contrast", "shell": "shell"}},
+    "1006": {"shader": "phasor_noise_gpu", "type": "procedural", "typed": True,
+             "param_map": {"scale": "scale", "anisotropy": "anisotropy", "falloff": "falloff", "frequency": "frequency", "profile": "profile", "sharpness": "sharpness"}},
+    "498": {"shader": "de_jong_typed", "type": "procedural", "typed": True,
+             "param_map": {"a": "a", "b": "b", "c": "c", "d": "d", "exposure": "exposure"}},
+    "342": {"shader": "strange_attractor_typed", "type": "procedural", "typed": True,
+             "param_map": {"a": "a", "b": "b", "c": "c", "d": "d"}},
+    "957": {"shader": "strange_attractor_typed", "type": "procedural", "typed": True,
+             "param_map": {"a": "a", "b": "b", "c": "c", "d": "d"}},
+    "962": {"shader": "torusknot_typed", "type": "procedural", "typed": True,
+             "param_map": {"p": "p", "q": "q"}},
+    "444": {"shader": "droste_typed", "type": "procedural", "typed": True,
+             "param_map": {"twist": "twist", "zoom": "zoom"}},
+    "510": {"shader": "flow_field_typed", "type": "procedural", "typed": True,
+             "param_map": {"speed": "speed"}}
 }
 
 # ── GPU coverage contract: no SILENT param drops ────────────────────────────
