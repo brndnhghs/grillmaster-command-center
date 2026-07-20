@@ -404,80 +404,100 @@ def method_particles(out_dir: Path, seed: int, params=None):
                 sx, sy = int(sp[0]), int(sp[1])
                 draw.ellipse([sx-3, sy-3, sx+3, sy+3], fill=(255, 255, 255))
 
-        for p in list(ps):
-            # ── Physics (driven by mode_physics from anim_mode) ──
-            if mode_physics == "gravity":
-                p["vx"] += effective_gravity_x
-                p["vy"] += effective_gravity_y
-            elif mode_physics == "attractor":
-                dx = emitter_cx - p["x"]
-                dy = emitter_cy - p["y"]
-                dist = math.sqrt(dx*dx + dy*dy) + 1
-                p["vx"] += dx / dist * effective_attractor_strength * 2
-                p["vy"] += dy / dist * effective_attractor_strength * 2
-            elif mode_physics == "repulsion":
-                dx = p["x"] - W // 2
-                dy = p["y"] - H // 2
-                dist = math.sqrt(dx*dx + dy*dy) + 1
-                p["vx"] += dx / dist * 0.8
-                p["vy"] += dy / dist * 0.8
-                if abs(effective_gravity_y) > 0.01:
-                    p["vy"] += effective_gravity_y
-            elif mode_physics == "wind":
-                p["vx"] += effective_wind_strength * 0.12 * math.cos(effective_wind_angle)
-                p["vy"] += effective_wind_strength * 0.06 * math.sin(effective_wind_angle * 2)
-            elif mode_physics == "turbulence":
-                t_phase = anim_time * 0.75 * anim_speed
-                noise_val = math.sin(p["y"] * 0.05 + t_phase) * 0.3 * effective_turb_scale + math.cos(p["x"] * 0.03 + t_phase) * 0.3 * effective_turb_scale
-                p["vx"] += noise_val * 0.12
-                p["vy"] += math.sin(p["x"] * 0.04 + t_phase * 2.5) * 0.12 * effective_turb_scale
-            elif mode_physics == "vortex":
-                # Tangential velocity around emitter
-                dx = p["x"] - emitter_cx
-                dy = p["y"] - emitter_cy
-                dist = math.sqrt(dx*dx + dy*dy) + 1
-                # Tangential (perpendicular to radius)
-                p["vx"] += -dy / dist * 0.5
-                p["vy"] += dx / dist * 0.5
-                # Slight inward pull
-                p["vx"] -= dx / dist * 0.04
-                p["vy"] -= dy / dist * 0.04
-            elif mode_physics == "dual_attractor":
-                # Two attractors — particles pulled toward both emitters
-                dx1 = dual_e1x - p["x"]
-                dy1 = dual_e1y - p["y"]
-                dist1 = math.sqrt(dx1*dx1 + dy1*dy1) + 1
-                dx2 = dual_e2x - p["x"]
-                dy2 = dual_e2y - p["y"]
-                dist2 = math.sqrt(dx2*dx2 + dy2*dy2) + 1
-                p["vx"] += dx1 / dist1 * 0.08 + dx2 / dist2 * 0.08
-                p["vy"] += dy1 / dist1 * 0.08 + dy2 / dist2 * 0.08
+        # ── Vectorized per-particle physics (output-identical to the
+        #    scalar loop: forces depend only on each particle's own
+        #    (x, y, vx, vy) and global constants, so the same arithmetic
+        #    applied element-wise is bit-equivalent). RNG is consumed in
+        #    the exact same order as the old scalar loop: one vx draw then
+        #    one vy draw per particle. ──
+        N = len(ps)
+        X = np.fromiter((p["x"] for p in ps), dtype=np.float64, count=N)
+        Y = np.fromiter((p["y"] for p in ps), dtype=np.float64, count=N)
+        VX = np.fromiter((p["vx"] for p in ps), dtype=np.float64, count=N)
+        VY = np.fromiter((p["vy"] for p in ps), dtype=np.float64, count=N)
+        Life = np.fromiter((p["life"] for p in ps), dtype=np.float64, count=N)
 
-            # Jitter (noise) — uses mode_jitter from anim_mode
-            p["vx"] += rng.uniform(-mode_jitter, mode_jitter)
-            p["vy"] += rng.uniform(-mode_jitter, mode_jitter)
+        dvx = np.zeros(N, dtype=np.float64)
+        dvy = np.zeros(N, dtype=np.float64)
 
-            # Drag (velocity damping)
-            if effective_drag > 0:
-                p["vx"] *= (1.0 - effective_drag)
-                p["vy"] *= (1.0 - effective_drag)
+        if mode_physics == "gravity":
+            dvx += effective_gravity_x
+            dvy += effective_gravity_y
+        elif mode_physics == "attractor":
+            dx = emitter_cx - X
+            dy = emitter_cy - Y
+            dist = np.sqrt(dx * dx + dy * dy) + 1.0
+            dvx += dx / dist * effective_attractor_strength * 2.0
+            dvy += dy / dist * effective_attractor_strength * 2.0
+        elif mode_physics == "repulsion":
+            dx = X - (W // 2)
+            dy = Y - (H // 2)
+            dist = np.sqrt(dx * dx + dy * dy) + 1.0
+            dvx += dx / dist * 0.8
+            dvy += dy / dist * 0.8
+            if abs(effective_gravity_y) > 0.01:
+                dvy += effective_gravity_y
+        elif mode_physics == "wind":
+            dvx += effective_wind_strength * 0.12 * math.cos(effective_wind_angle)
+            dvy += effective_wind_strength * 0.06 * math.sin(effective_wind_angle * 2)
+        elif mode_physics == "turbulence":
+            t_phase = anim_time * 0.75 * anim_speed
+            noise_val = (np.sin(Y * 0.05 + t_phase) * 0.3 * effective_turb_scale
+                         + np.cos(X * 0.03 + t_phase) * 0.3 * effective_turb_scale)
+            dvx += noise_val * 0.12
+            dvy += np.sin(X * 0.04 + t_phase * 2.5) * 0.12 * effective_turb_scale
+        elif mode_physics == "vortex":
+            dx = X - emitter_cx
+            dy = Y - emitter_cy
+            dist = np.sqrt(dx * dx + dy * dy) + 1.0
+            dvx += -dy / dist * 0.5 - dx / dist * 0.04
+            dvy += dx / dist * 0.5 - dy / dist * 0.04
+        elif mode_physics == "dual_attractor":
+            dx1 = dual_e1x - X
+            dy1 = dual_e1y - Y
+            dist1 = np.sqrt(dx1 * dx1 + dy1 * dy1) + 1.0
+            dx2 = dual_e2x - X
+            dy2 = dual_e2y - Y
+            dist2 = np.sqrt(dx2 * dx2 + dy2 * dy2) + 1.0
+            dvx += dx1 / dist1 * 0.08 + dx2 / dist2 * 0.08
+            dvy += dy1 / dist1 * 0.08 + dy2 / dist2 * 0.08
 
-            # Position update
-            p["x"] += p["vx"]
-            p["y"] += p["vy"]
+        # Jitter — consume the SAME interleaved RNG stream as the old loop
+        # (one vx draw then one vy draw per particle). The stdlib Random has
+        # no bulk-draw, so fill two arrays in the exact original order.
+        jx = np.empty(N, dtype=np.float64)
+        jy = np.empty(N, dtype=np.float64)
+        for _i in range(N):
+            jx[_i] = rng.uniform(-mode_jitter, mode_jitter)
+            jy[_i] = rng.uniform(-mode_jitter, mode_jitter)
+        VX += dvx + jx
+        VY += dvy + jy
 
-            p["life"] -= mode_life_decay
+        if effective_drag > 0:
+            VX *= (1.0 - effective_drag)
+            VY *= (1.0 - effective_drag)
 
-            # Bounce / wrap
-            if p["x"] < 0 or p["x"] > W:
-                p["vx"] *= -1
-                p["x"] = max(0, min(W, p["x"]))
-            if p["y"] < 0 or p["y"] > H:
-                p["vy"] *= -1
-                p["y"] = max(0, min(H, p["y"]))
+        X += VX
+        Y += VY
+        Life -= mode_life_decay
 
-            # Trail buffer
-            idx = ps.index(p)
+        # Bounce / wrap
+        m = (X < 0) | (X > W)
+        VX[m] = -VX[m]
+        X[m] = np.clip(X[m], 0, W)
+        m = (Y < 0) | (Y > H)
+        VY[m] = -VY[m]
+        Y[m] = np.clip(Y[m], 0, H)
+
+        # Write back into the agent dicts (kept as source of truth for draw),
+        # then trail + draw exactly as before.
+        for i, p in enumerate(ps):
+            p["x"] = float(X[i])
+            p["y"] = float(Y[i])
+            p["vx"] = float(VX[i])
+            p["vy"] = float(VY[i])
+            p["life"] = float(Life[i])
+            idx = i
             if idx in trail_buf and mode_trail > 0:
                 trail_buf[idx].append((p["x"], p["y"]))
                 if len(trail_buf[idx]) > mode_trail:
@@ -539,7 +559,7 @@ def method_particles(out_dir: Path, seed: int, params=None):
                     draw.point((px, py), fill=c)
 
         # Respawn dead particles
-        for p in ps:
+        for i, p in enumerate(ps):
             if p["life"] <= 0:
                 life = rng.uniform(mode_life_min, mode_life_max)
 
@@ -584,7 +604,7 @@ def method_particles(out_dir: Path, seed: int, params=None):
                     p["vy"] = rng.uniform(-mode_speed, mode_speed)
                 p["life"] = life
                 p["init_life"] = life
-                idx = ps.index(p)
+                idx = i
                 if idx in trail_buf:
                     trail_buf[idx] = []
 
