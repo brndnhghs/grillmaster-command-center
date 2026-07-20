@@ -3323,6 +3323,116 @@ _register("dither13_gpu", "GPU Bayer-4 ordered dithering (node 13 twin)", "filte
     })
 
 
+# ── GPU-First gap mirrors: closed-form f(uv,t) twins for CPU nodes 523/954/512 ──
+# These three CPU nodes are per-pixel closed-form fields with NO close existing
+# twin (Aurora Borealis, Autostereogram, SIREN Field). Each maps to a client-GPU
+# shim in image_pipeline/methods/gpu_shaders.py (typed-uniform contract: every
+# numeric CPU param becomes a named u_<name> uniform, bound to a real SCALAR
+# port). CPU fns stay authoritative for export; parity is approximate by design.
+# No late helpers (inferno/hsv2rgb) are used — a local cosine palette is inlined
+# to avoid the late-helper ordering pitfall.
+
+_register("aurora_gpu", "Aurora Borealis (client-GPU twin of node 523)", "procedural",
+'''void main() {
+    vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);
+    float t = u_time;
+    vec3 col = vec3(0.01, 0.02, 0.06) * (1.0 - 0.4 * uv.y);
+    // starfield
+    vec2 sg = floor(uv * 220.0);
+    float h = hash21(sg);
+    if (h > 1.0 - clamp(u_star_density, 0.0, 1.0) * 0.5) {
+        float d = length(fract(uv * 220.0) - 0.5);
+        col += vec3(smoothstep(0.12, 0.0, d)) * (0.4 + 0.6 * hash21(sg + 2.1));
+    }
+    int N = int(clamp(u_curtain_count, 1.0, 8.0));
+    for (int i = 0; i < 8; i++) {
+        if (i >= N) break;
+        float fi = float(i);
+        float baseY = -0.45 + fi * 0.22;
+        float wob = fbm(vec2(uv.x * u_turbulence + t * u_drift_speed * 0.25 + fi * 3.1, t * 0.12));
+        float yc = baseY + (wob - 0.5) * 0.7 + 0.12 * sin(t * 0.3 + fi);
+        float dist = abs(uv.y - yc);
+        float width = 0.16 * (0.6 + 0.6 * wob);
+        float beam = exp(-dist * dist / (width * width));
+        float streak = 0.6 + 0.4 * sin(uv.x * 38.0 + t * u_drift_speed * 2.0 + fi * 5.0);
+        beam *= streak;
+        vec3 ac = mix(vec3(0.1, 1.0, 0.45), vec3(1.0, 0.25, 0.35),
+                      clamp(u_red_fringe, 0.0, 1.0) * abs(uv.x));
+        ac = mix(ac, vec3(0.35, 0.75, 1.0), 0.25 * sin(fi * 1.7));
+        col += ac * beam * u_intensity * (0.35 + 0.65 * fbm(vec2(uv.x * 3.0 - t * 0.2, fi)));
+    }
+    // vertical extent mask driven by beam_height
+    col *= smoothstep(u_beam_height + 0.4, u_beam_height - 0.4, max(uv.y, -1.0));
+    col += vec3(0.05, 0.0, 0.08) * u_color_shift;
+    f_color = vec4(clamp(col, 0.0, 1.0), 1.0);
+}
+''',
+uniforms={
+    "curtain_count": {"glsl": "float", "min": 1.0, "max": 8.0, "default": 4.0, "description": "number of aurora curtains"},
+    "drift_speed": {"glsl": "float", "min": 0.0, "max": 3.0, "default": 1.0, "description": "horizontal drift speed"},
+    "intensity": {"glsl": "float", "min": 0.2, "max": 2.5, "default": 1.0, "description": "overall brightness"},
+    "beam_height": {"glsl": "float", "min": 0.2, "max": 0.9, "default": 0.6, "description": "vertical extent of curtains"},
+    "color_shift": {"glsl": "float", "min": -1.0, "max": 1.0, "default": 0.0, "description": "palette color offset"},
+    "turbulence": {"glsl": "float", "min": 0.5, "max": 6.0, "default": 2.5, "description": "fbm turbulence frequency"},
+    "star_density": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.35, "description": "starfield density"},
+    "red_fringe": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "red fringe amount"},
+})
+
+_register("siren_gpu", "SIREN Field (client-GPU twin of node 512)", "procedural",
+'''void main() {
+    vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);
+    float t = u_time;
+    vec2 p = uv * u_coord_scale;
+    float v = 0.0;
+    for (int k = 0; k < 6; k++) {
+        float fk = float(k);
+        vec2 w = vec2(cos(fk * 1.7), sin(fk * 2.3));
+        float b = fk * 0.9;
+        float om = mix(u_omega0, u_omega, fract(fk * 0.37));
+        float s = sin(om * dot(w, p + 0.08 * t) + b + t * 0.3);
+        v += s * (0.5 + 0.5 * sin(fk * 1.1));
+    }
+    v *= u_weight_scale / 6.0;
+    v = v * 0.5 + 0.5;
+    // cosine palette (Inigo Quilez) — no dependency on late helpers
+    vec3 cmap = 0.5 + 0.5 * cos(6.2831853 * (v + vec3(0.0, 0.33, 0.67)));
+    f_color = vec4(clamp(cmap, 0.0, 1.0), 1.0);
+}
+''',
+uniforms={
+    "omega0": {"glsl": "float", "min": 1.0, "max": 60.0, "default": 30.0, "description": "base frequency"},
+    "omega": {"glsl": "float", "min": 1.0, "max": 60.0, "default": 30.0, "description": "top frequency"},
+    "weight_scale": {"glsl": "float", "min": 0.1, "max": 3.0, "default": 1.0, "description": "output gain"},
+    "coord_scale": {"glsl": "float", "min": 0.5, "max": 12.0, "default": 3.0, "description": "coordinate scale"},
+})
+
+_register("autostereogram_gpu", "Autostereogram (client-GPU twin of node 954)", "procedural",
+'''void main() {
+    vec2 res = u_resolution;
+    float px = gl_FragCoord.x;
+    float py = gl_FragCoord.y;
+    vec2 uv = (vec2(px, py) - 0.5 * res) / min(res.x, res.y);
+    float t = u_time;
+    float r2 = dot(uv, uv);
+    float depth = clamp(1.0 - r2 * 2.5 + 0.06 * sin(t + py * 0.01), 0.0, 1.0);
+    depth *= u_depth_scale;
+    float shift = depth * u_separation;
+    float sx = px - shift;
+    vec2 gp = vec2(sx, py) / u_tile_size;
+    vec2 cell = fract(gp) - 0.5;
+    float dotm = smoothstep(0.35, 0.3, length(cell));
+    vec3 base = vec3(0.82);
+    vec3 col = mix(base, vec3(0.08), dotm);
+    f_color = vec4(col, 1.0);
+}
+''',
+uniforms={
+    "separation": {"glsl": "float", "min": 4.0, "max": 80.0, "default": 40.0, "description": "stereo separation (px)"},
+    "depth_scale": {"glsl": "float", "min": 0.1, "max": 1.5, "default": 1.0, "description": "depth relief"},
+    "tile_size": {"glsl": "float", "min": 4.0, "max": 48.0, "default": 16.0, "description": "dot tile size (px)"},
+})
+
+
 # ═══════════════════════════════════════════════
 #  RENDER ENGINE
 # ═══════════════════════════════════════════════

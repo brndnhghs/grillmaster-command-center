@@ -494,6 +494,22 @@ for _mid, _sname, _mname in _TYPED_SHADER_NODES:
 # (p1..p4). Merged into GPU_SHADER_NODE_MAP so the existing /api/shader-sources
 # endpoint serves it; client3d.js renderGpuShader reads `param_map`.
 CLIENT_GPU_SHIMS: dict[str, dict] = {
+    # ── GPU-First gap mirrors: closed-form f(uv,t) twins (typed-uniform contract) ──
+    # 523 Aurora Borealis, 954 Autostereogram, 512 SIREN Field — each has no close
+    # existing twin, so we add a brand-new closed-form GLSL twin (core/shaders.py)
+    # and route the CPU node's live preview to it. CPU fns stay authoritative for
+    # export; every numeric CPU param is bound to a named u_<name> uniform/port.
+    "523": {"shader": "aurora_gpu", "type": "procedural", "typed": True,
+            "param_map": {"curtain_count": "curtain_count", "drift_speed": "drift_speed",
+                          "intensity": "intensity", "beam_height": "beam_height",
+                          "color_shift": "color_shift", "turbulence": "turbulence",
+                          "star_density": "star_density", "red_fringe": "red_fringe"}},
+    "954": {"shader": "autostereogram_gpu", "type": "procedural", "typed": True,
+            "param_map": {"separation": "separation", "depth_scale": "depth_scale",
+                          "tile_size": "tile_size"}},
+    "512": {"shader": "siren_gpu", "type": "procedural", "typed": True,
+            "param_map": {"omega0": "omega0", "omega": "omega",
+                          "weight_scale": "weight_scale", "coord_scale": "coord_scale"}},
     "04": {"shader": "worley_gpu", "type": "procedural",
            "param_map": {"jitter": "p1", "fractal_gain": "p2"}},
     "02": {"shader": "quasicrystal_gpu", "type": "procedural",
@@ -1177,6 +1193,8 @@ GPU_PREVIEW_DROP_ALLOW: dict[str, dict[str, str]] = {
     "464": {"noise_freq": "param not wired to GPU twin; CPU export authoritative for this param"},
     "473": {"contrast": "param not wired to GPU twin; CPU export authoritative for this param", "scale": "param not wired to GPU twin; CPU export authoritative for this param"},
     "499": {"gamma": "param not wired to GPU twin; CPU export authoritative for this param", "n_steps_per_frame": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "512": {"resolution": "param not wired to GPU twin; CPU export authoritative for this param (output resolution is a CPU-domain export knob; the closed-form GLSL twin renders at canvas resolution)", "hidden": "param not wired to GPU twin; CPU export authoritative for this param (SIREN hidden-layer width is compute topology, not a live-preview visual control)", "layers": "param not wired to GPU twin; CPU export authoritative for this param (SIREN layer count is compute topology, not a live-preview visual control)"},
+    "523": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param (export frame count, timeline-driven)"},
     "513": {"resolution": "hash-table grid resolution is a CPU-domain export knob; the closed-form GLSL twin renders at the canvas resolution (GPU coverage contract: explicit drop)"},
     "999": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
     "1003": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "dt": "param not wired to GPU twin; CPU export authoritative for this param", "pace_period": "param not wired to GPU twin; CPU export authoritative for this param", "pace_radius": "param not wired to GPU twin; CPU export authoritative for this param", "rot_radius": "param not wired to GPU twin; CPU export authoritative for this param"},
