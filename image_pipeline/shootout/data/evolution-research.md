@@ -307,3 +307,37 @@ bit-identical refactor.
   research rotation — all of #1/#3/#5/#6/#7 are shipped or refuted; #2's
   MAP-Elites archive is gated/implemented and #4 grammar-mut is the other
   standing follow-up.
+
+## 2026-07-20 (cron) — ROTATION COMPLETE: all sub-problems #1–#7 shipped/refuted/gated
+
+**Audit of the research rotation (real probe, this run):** `evolution-research-index.txt`
+was `2`, but sub-problem #2 (MAP-Elites diversity bonus) was ALREADY implemented and
+committed (2026-07-19T15:59:03Z, `diversity_enabled=False` gate). Tracing every
+sub-problem against HEAD + commit history:
+
+- #1 selection pressure / fitness shaping ...... **SHIPPED** (w_live/w_elo survivor weights in `evolve.select_parents`)
+- #2 diversity maintenance (MAP-Elites) ...... **IMPLEMENTED + GATED** (`behavior_features`/`behavior_cell`/`_diversity_bonus` in features.py/evolve.py; `diversity_enabled=False`)
+- #3 liveness metric / rescues ............... **SHIPPED** (perceptual + spectral + optical-flow + color-aware rescues in evaluator.py)
+- #4 grammar-aware mutation .................. **IMPLEMENTED + GATED** (`_op_retarget_driver` + `grammar_mut_ratio=0.0`)
+- #5 advisor quality (QD steering) .......... **RESEARCH ENTRY ONLY** (proposal in this file; not yet wired into advisor.py) — the one item with no shipped code
+- #6 rating-signal poverty (active-learning)  **SHIPPED** (rating_suggest.py + server endpoint + UI + tests)
+- #7 drift/stagnation detection ............. **SHIPPED** (stagnation.py + per-generation ledger + tests)
+
+**Conclusion:** there is NO remaining OPEN research sub-problem to rotate to. The
+2026-07-20 hygiene run's "rotate 7→2" was a STALE pivot — it pointed at an already-
+shipped sub-problem, exactly the waste the roadmap-hygiene rule exists to prevent.
+Set `evolution-research-index.txt` → `complete` (with a comment block) so future
+cron runs stop re-proposing #1–#7.
+
+**Two genuinely-remaining levers (NOT research sub-problems, both already scoped):**
+1. **Enable + MEASURE the two GATED levers** (#2 diversity, #4 grammar-mut) in a real
+   generation — confirm they widen coverage without regressing the 45% liveness floor.
+   Both are gated OFF by default, so the live path is provably unchanged until measured.
+2. **GPU-First new-GLSL twin effort** for the ~215 categorical gap nodes
+   (Mandelbulb/Buddhabrot/L-System/Fractal Flame/Pythagorean Tree/Kaleidoscopic IFS/
+   Symmetric Icon — different algorithms; the easy reuse wins are exhausted).
+
+The starved rating corpus (19/649) remains a USER-ENGAGEMENT matter, not code — do NOT
+fabricate ratings. Per the cron's own guidance, do NOT re-litigate cost-gate/driver-
+path/dead-param/hard-wall/rescues (all green and empirically verified in prior runs).
+

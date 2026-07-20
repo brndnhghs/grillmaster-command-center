@@ -1,1 +1,19 @@
-2
+complete
+# 2026-07-20: evolution-research rotation is FINISHED. Sub-problems #1-#7 are
+# all SHIPPED / REFUTED / GATED (see the correction entry at the bottom of
+# evolution-research.md, verified against HEAD):
+#   #1 selection pressure/fitness shaping ...... SHIPPED
+#   #2 diversity maintenance (MAP-Elites) ...... IMPLEMENTED + GATED (diversity_enabled=False)
+#   #3 liveness metric / rescues ............... SHIPPED (spectral+flow+color rescues)
+#   #4 grammar-aware mutation .................. IMPLEMENTED + GATED (grammar_mut_ratio=0.0)
+#   #5 advisor quality (QD steering) .......... SHIPPED (research entry only; not yet wired)
+#   #6 rating-signal poverty (active-learning)  SHIPPED (rating_suggest.py + UI + tests)
+#   #7 drift/stagnation detection ............. SHIPPED (stagnation.py + tests)
+# There is NO remaining open research sub-problem to rotate to. DO NOT re-propose
+# any of #1-#7 as "open" in future runs — that wastes a tick (the exact stale-
+# roadmap failure this file exists to prevent). Real remaining levers are:
+#   (a) enable + MEASURE the two GATED levers (#2 diversity, #4 grammar-mut) in a
+#       real generation to confirm they improve coverage without regressing liveness;
+#   (b) the starved rating corpus (19/649) — user-engagement, not code;
+#   (c) GPU-First new-GLSL twin effort for the ~215 categorical gap nodes
+#       (Mandelbulb/Buddhabrot/L-System/Fractal Flame/etc. — reuse is exhausted).
