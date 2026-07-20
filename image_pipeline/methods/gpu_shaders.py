@@ -582,6 +582,25 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
                           "tracking": "tracking", "roll_speed": "roll_speed",
                           "skew": "skew", "saturation": "saturation",
                           "contrast": "contrast", "brightness": "brightness"}},
+    # ── 445 Diffraction Grating → diffraction_gpu (typed-uniform filter twin) ──
+    # Faithful closed-form preview of node 445's Stam/GPU-Gems iridescence. Every
+    # numeric CPU param (groove_spacing/curvature/interp/light_x/light_y/strength/
+    # saturation) is wired by name to a u_<name> uniform/SCALAR port. `source`/
+    # `palette`/`anim_mode`/`noise_scale` are CPU-only (choice/flow-source) and
+    # left unmapped (pitfall #14); the twin renders the default concentric sheen
+    # and animates continuously from u_time. CPU node stays authoritative.
+    "445": {"shader": "diffraction_gpu", "type": "filter", "typed": True,
+            "param_map": {"groove_spacing": "groove_spacing", "curvature": "curvature",
+                          "interp": "interp", "light_x": "light_x", "light_y": "light_y",
+                          "strength": "strength", "saturation": "saturation"}},
+    # ── 489 Film Grain → film_grain_gpu (typed-uniform filter twin) ──
+    # Luminance-adaptive emulsion grain. intensity/adapt/grain_size wired by name.
+    # `color`/`source`/`palette`/`anim_mode`/`noise_amp`/`blur_sigma` are CPU-only
+    # (choice/source-generation) and left unmapped (pitfall #14); the twin grains
+    # the live preview and flickers with u_time. CPU node authoritative.
+    "489": {"shader": "film_grain_gpu", "type": "filter", "typed": True,
+            "param_map": {"intensity": "intensity", "adapt": "adapt",
+                          "grain_size": "grain_size"}},
     "04": {"shader": "worley_gpu", "type": "procedural",
            "param_map": {"jitter": "p1", "fractal_gain": "p2"}},
     "02": {"shader": "quasicrystal_gpu", "type": "procedural",
