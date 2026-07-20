@@ -1041,6 +1041,18 @@ def _terminal_animated_floor(b: Builder) -> None:
     the fallback ``random_graph`` path, guaranteeing TV nodes are born
     animated. Does not touch nodes that already have a driver or a non-none
     mode — so it only ever ADDS motion, never removes it.
+
+    EXTENSION (Route 8 driverless-terminal fix, 2026-07-19): a TV node whose
+    ONLY animation lever is a *numeric* time-scale/speed/phase-like param (no
+    ``anim_mode`` enum with a ``"none"`` choice, and excluded from driver
+    targeting by ``_drivable_params``' clock-param filter) could still be born
+    frozen even after the enum flip — the floor had no lever to pull. The
+    corpus showed 91/92 no-driver ``static``/``flat`` deaths had drivable
+    params available but got neither a driver NOR a live enum. So when a TV
+    node has neither a driver NOR a live enum, fall through to attaching a
+    driver onto its best drivable param (reusing the same machinery as
+    ``apply_driver_policy``). Monotonic-safe: only fires for undriven +
+    enum-less TV nodes, so it can only add motion.
     """
     pool, rng = b.pool, b.rng
     fed = b.fed_ports()
@@ -1056,6 +1068,7 @@ def _terminal_animated_floor(b: Builder) -> None:
         if driven:
             continue
         schema = pool.defs[n["method_id"]].get("params") or {}
+        enum_flipped = False
         for pname, spec in schema.items():
             if not isinstance(spec, dict):
                 continue
@@ -1066,6 +1079,41 @@ def _terminal_animated_floor(b: Builder) -> None:
                 live = [c for c in choices if c != "none"]
                 if live:
                     n["params"][pname] = rng.choice(live)
+                    enum_flipped = True
+        if enum_flipped:
+            continue
+        # No live enum to flip (and no driver): attach a driver to the best
+        # drivable param so the node is born animating. Reuse the same
+        # pick / configure / wire path as apply_driver_policy.
+        cands = [(p, s) for p, s in _drivable_params(pool, b.cfg, n["method_id"])
+                 if (n["id"], p) not in fed]
+        # Prefer continuous (float, non-choice) targets so the driver produces
+        # real sub-perceptual-spanning motion rather than collapsing to one
+        # value via the executor's choice-mapping.
+        cont = [(p, s) for p, s in cands
+                if not (isinstance(s, dict)
+                        and (s.get("choices")
+                             or isinstance(s.get("default"), int)
+                             and not isinstance(s.get("default"), bool)))]
+        if cont:
+            cands = cont
+        if not cands:
+            continue
+        pname, spec = cands[0]
+        drv_mid = _driver_for(pname, rng, set(pool.scalar_drivers))
+        if drv_mid is None:
+            continue
+        try:
+            drv_id = b.add(drv_mid)
+            full_spec = (pool.defs[n["method_id"]].get("params") or {}).get(pname)
+            _configure_driver(b, drv_id, drv_mid, full_spec, pname)
+            b.wire(drv_id, pool.output_port_for(drv_mid, "scalar") or "value",
+                   n["id"], pname)
+            fed.add((n["id"], pname))
+        except Exception:
+            # Failure-soft: if the attach fails for any reason, leave the
+            # graph as-is rather than risk corrupting it.
+            continue
 
 
 def apply_driver_policy(b: Builder) -> None:

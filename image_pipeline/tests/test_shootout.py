@@ -29,6 +29,7 @@ from image_pipeline.shootout.evolve import (
 )
 from image_pipeline.shootout.features import genome_features
 from image_pipeline.shootout import taste, store
+from image_pipeline.shootout.stagnation import detect_stagnation, recommended_explore_ratio
 
 CFG = ShootoutConfig()
 POOL = build_gene_pool(CFG)
@@ -2430,3 +2431,57 @@ def test_shootout_suggest_ratings_cold_start(monkeypatch):
     d = np.linalg.norm(feats[:, None, :] - feats[None, :, :], axis=2)
     np.fill_diagonal(d, np.inf)
     assert d.min() > 1e-3, "cold-start selection collapsed to identical features"
+
+
+# ── Stagnation / drift detector (Route 8, sub-problem #7) ──────────────────
+# The research entry for sub-problem #7 planned a headless stub for the
+# detector but it was never added. These tests exercise the pure decision
+# core (detect_stagnation) with synthetic per-generation metric histories so
+# the non-destructive auto-widen / auto-reset safeguard stays regression-safe.
+
+def _flat_history(n: int, dead: float = 0.45, tv: float = 0.0) -> list[dict]:
+    return [{"dead_rate": dead, "alive_tv_mean": tv} for _ in range(n)]
+
+
+def test_stagnation_short_history_is_keep():
+    cfg = ShootoutConfig()
+    assert detect_stagnation(_flat_history(3), cfg) == "keep"
+
+
+def test_stagnation_plateau_triggers_widen():
+    cfg = ShootoutConfig()
+    # 5 flat generations: window (4) plateau confirmed, cf=5 < window+reset_after (8)
+    assert detect_stagnation(_flat_history(5), cfg) == "widen"
+
+
+def test_stagnation_persistent_plateau_triggers_reset():
+    cfg = ShootoutConfig()
+    # 9 flat generations: cf=9 >= window(4)+reset_after(4)=8 -> deep plateau
+    assert detect_stagnation(_flat_history(9), cfg) == "reset"
+
+
+def test_stagnation_moving_window_is_keep():
+    cfg = ShootoutConfig()
+    # dead-rate monotonically declines -> window std >= eps -> not stagnant
+    hist = [{"dead_rate": d, "alive_tv_mean": 0.0}
+            for d in [0.70, 0.60, 0.50, 0.45, 0.42]]
+    assert detect_stagnation(hist, cfg) == "keep"
+
+
+def test_stagnation_flat_dead_but_improving_tv_is_keep():
+    cfg = ShootoutConfig()
+    # dead-rate flat but alive-clip dynamic richness is rising -> not stagnant
+    hist = [{"dead_rate": 0.45, "alive_tv_mean": t} for t in [0.1, 0.2, 0.3, 0.4]]
+    assert detect_stagnation(hist, cfg) == "keep"
+
+
+def test_stagnation_disabled_is_keep():
+    cfg = ShootoutConfig()
+    cfg.stagnation_enabled = False
+    assert detect_stagnation(_flat_history(9), cfg) == "keep"
+
+
+def test_stagnation_widen_bumps_explore_ratio():
+    cfg = ShootoutConfig()
+    assert recommended_explore_ratio(cfg, "widen") == pytest.approx(0.65)
+    assert recommended_explore_ratio(cfg, "keep") == pytest.approx(0.45)
