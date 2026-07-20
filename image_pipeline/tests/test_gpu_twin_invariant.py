@@ -323,6 +323,36 @@ _TWIN_UNIFORM_ALLOW = {
            "via param_map (thickness_range/angle/strength/saturation); the twin names "
            "them by optical role (thickness_range/angle/strength) rather than the CPU "
            "param names (thickness_scale/tilt/intensity) — all bridged, no dead control",
+    # Closed-form live-preview twins (pattern / math-art) whose artistic uniforms
+    # have NO clean CPU-node float synonym by design — the backing CPU node is a
+    # different/serial algorithm (particle/attractor integrator, parametric tube
+    # generator) whose params do not map 1:1 onto the twin's per-pixel knobs. The
+    # twin is a live-preview approximation and the CPU fn stays authoritative
+    # (two-tier precision). Same intentional-exception pattern as 16/65/78/56/81/
+    # 406/409/431/432/433 above.
+    "342": "strange_attractor_typed: band/gain/speed are shader-only artistic knobs "
+           "(attractor color/intensity/animation) with no CPU-node float synonym; CPU "
+           "node 342 is a serial particle integrator (a/b/c/d/points/brightness)",
+    "444": "droste_typed: bands/fg/bg/speed are shader-only render knobs (ring count/"
+           "colors/animation) with no CPU-node float synonym; CPU node 444 is a "
+           "different spiral algorithm (ring_spacing/twist/zoom)",
+    "498": "de_jong_typed: morph/sharp/density_scale/speed are shader-only artistic "
+           "knobs with no CPU-node float synonym; CPU node 498 is a serial attractor "
+           "integrator (walkers/steps/discard)",
+    "510": "flow_field_typed: zoom/swirl/freq/density/fg/bg are shader-only flow knobs "
+           "with no CPU-node float synonym (CPU node 510 uses noise_scale/particles/dt/"
+           "steps); twin is a live-preview approximation",
+    "957": "strange_attractor_typed: band/gain/speed are shader-only artistic knobs "
+           "with no CPU-node float synonym; same pattern as node 342",
+    "962": "torusknot_typed: rad/steps/scale/thick/speed/bg are shader-only render "
+           "knobs (tube radius/steps/scale/thickness/animation/bg) with no CPU-node "
+           "float synonym; CPU node 962 is a parametric tube generator (major_r/tube_r/"
+           "line_width/n_points/glow)",
+    "964": "gyroid_tpms_gpu: rotate is a shader-only artistic knob (surface rotation) "
+           "with no CPU-node float synonym; twin is a live-preview approximation",
+    "1006": "phasor_noise_gpu: contrast/animate are shader-only artistic knobs "
+           "(contrast/animation toggle) with no CPU-node float synonym; twin is a "
+           "live-preview approximation",
 }
 
 
