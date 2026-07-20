@@ -7,10 +7,12 @@ are wild *within* type correctness (plan §6). `repair.py` is the safety net.
 """
 from __future__ import annotations
 
+import json
 import math
 import random
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from image_pipeline.core.graph import get_all_node_defs
 from image_pipeline.core.port_types import all_port_types
@@ -20,6 +22,48 @@ from .config import ShootoutConfig, DEFAULT_CONFIG
 
 # Params that are file/asset references — never sampled, never jittered.
 _UNSAMPLED_NAME_FRAGMENTS = ("path", "url", "file", "prompt")
+
+
+# ── Driver-dead-param blacklist (Route 8, 2026-07-20) ──
+# Mirror of motifs._DRIVER_DEAD_PARAMS: params that an LFO/CHOP driver can
+# wire to but that DO NOT reach the rendered pixels (silent dead controls,
+# pitfall #4 / #19 class). generator.py's own driver wiring (the random_graph
+# loop at random_graph() and the born-animated floor in _ensure_animated) goes
+# through GenePool.driver_targets, which previously IGNORED this blacklist —
+# so drivers were still attached to dead params and ~91/175 flat/static deaths
+# contained a driver that moved nothing. motifs._drivable_params (used by
+# apply_driver_policy / _terminal_animated_floor) already consulted it; this
+# makes the generator-path wiring consult the SAME committed JSON so the
+# blacklist is enforced everywhere a driver is attached. Loading an
+# absent/empty file = no filtering (behaviour unchanged until the audit
+# populates it). generator.py must NOT import motifs (circular import), so the
+# loader lives here too, reading the same data/driver-dead-params.json.
+_DRIVER_DEAD_PARAMS_PATH = (
+    Path(__file__).resolve().parent / "data" / "driver-dead-params.json"
+)
+_DRIVER_DEAD_PARAMS: dict[str, list[str]] = {}
+
+
+def _load_driver_dead_params() -> None:
+    """Populate ``_DRIVER_DEAD_PARAMS`` from the audit-produced JSON.
+
+    Safe: any parse / IO error leaves the blacklist empty (no filtering).
+    Exposed for tests (monkeypatch the module global before calling).
+    """
+    global _DRIVER_DEAD_PARAMS
+    _DRIVER_DEAD_PARAMS = {}
+    try:
+        if _DRIVER_DEAD_PARAMS_PATH.exists():
+            data = json.loads(_DRIVER_DEAD_PARAMS_PATH.read_text())
+            if isinstance(data, dict):
+                _DRIVER_DEAD_PARAMS = {
+                    k: v for k, v in data.items() if isinstance(v, list)
+                }
+    except (json.JSONDecodeError, OSError):
+        _DRIVER_DEAD_PARAMS = {}
+
+
+_load_driver_dead_params()
 
 
 @dataclass
@@ -121,6 +165,11 @@ class GenePool:
         "n_agents", "population", "count", "n_cells",
     )
 
+    def _is_dead_param(self, method_id: str, param: str) -> bool:
+        """True when ``param`` on ``method_id`` is a known dead control for
+        drivers (wired but does not reach the rendered pixels)."""
+        return param in _DRIVER_DEAD_PARAMS.get(method_id, [])
+
     def driver_targets(self, method_id: str) -> list[str]:
         """Ports a scalar driver can legally feed: auto param ports plus
         declared scalar structural inputs (speed/rate/… on sims), PLUS
@@ -152,6 +201,8 @@ class GenePool:
             if p in self._CLOCK_PARAMS:
                 continue
             if is_arch_a and p in self._INIT_ONLY_HINTS:
+                continue
+            if self._is_dead_param(method_id, p):
                 continue
             out.append(p)
         return out

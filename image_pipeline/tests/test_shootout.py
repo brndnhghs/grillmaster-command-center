@@ -166,6 +166,68 @@ def test_next_generation_rescues_static_bred_offspring(monkeypatch):
         f"next_generation let {n_on} static bred children through")
 
 
+def test_terminal_animated_floor_no_driver_regression():
+    """Route 8 (2026-07-20) regression: `_terminal_animated_floor` must NOT
+    regress into a driver-on-driver infinite loop. A prior bug checked a node's
+    *method_id* against a set of *node* ids (always false), so driver nodes were
+    never skipped and each appended driver was later found 'undriven +
+    time-varying' and got yet another driver — genome generation hung forever.
+    We pin this with a wall-clock alarm so any reintroduction fails the test
+    fast instead of hanging the whole suite."""
+    import signal
+    from image_pipeline.shootout.motifs import compose_graph
+
+    def _fail(signum, frame):
+        raise AssertionError(
+            "compose_graph did not terminate — driver-on-driver infinite loop "
+            "regression in _terminal_animated_floor")
+    old = signal.signal(signal.SIGALRM, _fail)
+    try:
+        signal.alarm(30)
+        g = compose_graph(POOL, CFG, random.Random(1))
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old)
+    assert _graph_has_animation_source(g, POOL), "composed graph not animated"
+    # A single composed graph must stay bounded (the bug produced unbounded
+    # growth); several-thousand nodes would itself be a red flag.
+    assert len(g["nodes"]) < 2000, (
+        f"compose_graph produced {len(g['nodes'])} nodes — runaway growth")
+
+
+def test_generator_driver_targets_respects_blacklist():
+    """Route 8 (2026-07-20): the generator's driver wiring path — the
+    random_graph driver loop AND the born-animated floor in _ensure_animated —
+    draws candidate driver targets from ``GenePool.driver_targets``. That
+    method MUST consult the audit-produced driver-dead-param blacklist
+    (data/driver-dead-params.json), otherwise drivers get attached to silent
+    dead controls (pitfall #4 / #19) and the clip renders static despite
+    carrying a driver — the dominant remaining flat/static death cause
+    (~91/175 in the 649-genome corpus). Assert blacklisted params never
+    surface as generator driver targets, while non-blacklisted params stay."""
+    from image_pipeline.shootout.motifs import _drivable_params
+
+    # Blacklisted params must be absent from the generator target pool.
+    assert "feather" not in POOL.driver_targets("141"), \
+        "generator driver_targets leaked a dead param (141.feather)"
+    assert "value_a" not in POOL.driver_targets("138"), \
+        "generator driver_targets leaked a dead param (138.value_a)"
+    assert "iterations" not in POOL.driver_targets("19"), \
+        "generator driver_targets leaked a dead param (19.iterations)"
+
+    # A node with SOME blacklisted params keeps its non-dead targets.
+    targets_05 = POOL.driver_targets("05")
+    assert "cell_points" not in targets_05  # blacklisted on 05
+    assert len(targets_05) >= 5, "05 lost too many non-dead driver targets"
+
+    # The generator path shares the SAME blacklist source as motifs; every
+    # generator target must also be a motifs-drivable param (consistency).
+    drivable_05 = {p for p, _ in _drivable_params(POOL, CFG, "05")}
+    for p in targets_05:
+        assert p in drivable_05, (
+            f"{p} is a generator driver target but not motifs-drivable")
+
+
 def test_random_genome_is_born_animated():
     import copy
     cfg = copy.deepcopy(CFG)

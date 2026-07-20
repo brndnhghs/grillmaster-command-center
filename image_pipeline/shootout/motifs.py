@@ -1100,10 +1100,17 @@ def _terminal_animated_floor(b: Builder) -> None:
     """
     pool, rng = b.pool, b.rng
     fed = b.fed_ports()
-    driver_ids = {n["id"] for n in b.nodes
-                  if n["method_id"] in pool.scalar_drivers}
-    for n in b.nodes:
-        if n["method_id"] in driver_ids:
+    # Snapshot the node list so newly-attached driver nodes are NOT revisited
+    # while we iterate (the loop appends drivers). Skip control/driver nodes by
+    # method_id. NOTE: the previous code built `driver_ids` as a set of *node*
+    # ids and then tested `n["method_id"] in driver_ids`, which never matched —
+    # so driver nodes were never skipped and each added driver was later found
+    # "undriven + time-varying" and got yet another driver, regressing forever
+    # (driver-on-driver infinite loop that hangs genome generation). Route 8
+    # (2026-07-20) fix: test the method_id against the driver set directly, as
+    # apply_driver_policy already does.
+    for n in list(b.nodes):
+        if n["method_id"] in pool.scalar_drivers:
             continue
         if not pool.defs[n["method_id"]].get("is_time_varying"):
             continue
