@@ -118,6 +118,21 @@ def _temporal_var(stack: list[np.ndarray]) -> float:
     return float(arr.var(axis=0).mean())
 
 
+def _probe_stack(stack: list[np.ndarray]) -> tuple[float, float, float]:
+    """changed_frac(t0 vs mid) + temporal_var + per-pixel MAX diff.
+
+    Module-level so both ``audit_node`` (via its local alias) and the new
+    driver-live audit (``audit_driver_param``) share one liveness probe.
+    """
+    if len(stack) < 2:
+        return 0.0, 0.0, 0.0
+    changed = _changed_frac(stack[0], stack[len(stack) // 2])
+    tvar = _temporal_var(stack)
+    arr = np.stack([s.astype(np.float64) for s in stack])
+    maxdiff = float(np.abs(arr[1:] - arr[:-1]).max()) if arr.shape[0] > 1 else 0.0
+    return changed, tvar, maxdiff
+
+
 def _derive_modes_from_source(mid: str) -> list[str]:
     """Recover the anim_mode enum from a method's own source via AST.
 
@@ -394,6 +409,125 @@ def audit_node(mid: str, defn: dict, seed: int = 42, cheap: bool = False) -> dic
     return result
 
 
+def _drivable_numeric_params(defn: dict) -> list[str]:
+    """Numeric, ranged params a CHOP driver could feed (mirrors the
+    selection in ``motifs._drivable_params`` minus clock params)."""
+    schema = defn.get("params") or {}
+    out: list[str] = []
+    for p, spec in schema.items():
+        if not isinstance(spec, dict):
+            continue
+        if p in ("time", "time_scale", "phase", "dt", "global_frame",
+                 "total_frames", "seed"):
+            continue
+        d = spec.get("default")
+        if (isinstance(d, (int, float)) and not isinstance(d, bool)
+                and spec.get("min") is not None
+                and spec.get("max") is not None):
+            out.append(p)
+    return out
+
+
+def _render_driver(mid: str, defn: dict, param: str,
+                   seed: int, frames: list[int]) -> list[np.ndarray] | None:
+    """Render an LFO -> target(param) 2-node graph across frames.
+
+    Mirrors the proven graph construction in
+    ``test_driver_animation_reaches_pixels``: an ``__lfo__`` (id ``drv``)
+    SCALAR-wired (``value`` port) into the target node's ``param``. The
+    executor injects ``_timeline.global_frame`` per frame so the LFO
+    advances; if the driven param actually moves pixels, the clip's
+    changed_frac / temporal_var clear the floor.
+    """
+    drv = {"id": "drv", "method_id": "__lfo__",
+           "params": {"waveform": "sine", "min": 0.0, "max": 1.0, "rate": 0.6}}
+    tgt_params = {
+        k: (v.get("default") if isinstance(v, dict) else v)
+        for k, v in (defn.get("params") or {}).items()
+    }
+    tgt_params["anim_mode"] = "none"
+    tgt = {"id": "tgt", "method_id": mid, "params": tgt_params}
+    edges = [{"src_node": "drv", "src_port": "value",
+              "dst_node": "tgt", "dst_port": param}]
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        ex = GraphExecutor(out_dir=Path(tmp), fps=24, in_memory=True)
+        stack: list[np.ndarray] = []
+        for f in frames:
+            res, _term, errs = ex.execute(
+                nodes=[drv, tgt], edges=edges, seed=seed,
+                frame=f, frames=max(frames) + 1)
+            if errs:
+                return None
+            img = (res.get("tgt", {}) or {}).get("image")
+            if img is None:
+                return None
+            stack.append(np.array(img) if not isinstance(img, np.ndarray) else img)
+        return stack
+
+
+def audit_driver_param(mid: str, defn: dict, param: str,
+                       seed: int = 42, cheap: bool = False) -> dict:
+    """Wire an LFO into one numeric ``param`` and judge whether it moves pixels."""
+    frames = ([0, QUARTER, min(2 * QUARTER, N_FRAMES - 1)]
+              if cheap else list(range(STACK_N)))
+    try:
+        stack = _render_driver(mid, defn, param, seed, frames)
+    except Exception as e:  # render/param incompatibility -> note, skip param
+        return {"param": param, "status": "render-error",
+                "detail": f"{type(e).__name__}: {str(e)[:80]}"}
+    if not stack or len(stack) < 2:
+        return {"param": param, "status": "no-output"}
+    changed, tvar, maxdiff = _probe_stack(stack)
+    verdict = _verdict_for(changed, tvar, maxdiff, f"driver:{param}")
+    return {"param": param, "status": verdict,
+            "changed": round(changed, 4), "tvar": round(tvar, 6),
+            "maxdiff": round(maxdiff, 3)}
+
+
+def audit_node_drivers(mid: str, defn: dict, seed: int = 42,
+                       cheap: bool = False) -> dict:
+    """Driver-live audit for one node: LFO into each numeric param.
+
+    Returns ``{"id", "name", "dead_params": [...], "rows": [...]}``. A param
+    is a ``driver-dead`` control when its driven clip is flat (the same
+    pitfall #4 / #19 class the anim_mode audit targets, but invisible to it
+    because the node's OWN animation reaches pixels — only the specific
+    numeric param driven by an LFO is inert).
+    """
+    cat = (defn.get("category") or "").lower()
+    params = _drivable_numeric_params(defn)
+    rows: list[dict] = []
+    dead: list[str] = []
+    for p in params:
+        r = audit_driver_param(mid, defn, p, seed=seed, cheap=cheap)
+        r["id"] = mid
+        rows.append(r)
+        if "DEAD-PARAM" in r["status"]:
+            dead.append(p)
+    return {"id": mid, "name": defn.get("name", mid),
+            "dead_params": dead, "rows": rows}
+
+
+DRIVER_DEAD_PATH = REPORT_PATH.parent / "driver-dead-params.json"
+
+
+def _emit_driver_report(rows: list[dict]) -> int:
+    """Write the driver-dead-param blacklist JSON (consumed by motifs._drivable_params)."""
+    blacklist: dict[str, list[str]] = {}
+    n_dead = 0
+    for r in rows:
+        if r.get("dead_params"):
+            blacklist[r["id"]] = r["dead_params"]
+            n_dead += len(r["dead_params"])
+    DRIVER_DEAD_PATH.parent.mkdir(parents=True, exist_ok=True)
+    DRIVER_DEAD_PATH.write_text(json.dumps(blacklist, indent=1, sort_keys=True))
+    print(f"\nDriver-dead blacklist -> {DRIVER_DEAD_PATH}")
+    print(f"Nodes with >=1 dead driver param: {len(blacklist)}  "
+          f"total dead params: {n_dead}")
+    return 0
+
+
 def _progress_path() -> Path:
     """Where the cross-run progress manifest is kept (enables --resume)."""
     return REPORT_PATH.parent / "dead-param-progress.json"
@@ -455,6 +589,9 @@ def main() -> int:
                     help="dir to write per-shard result JSON (shard mode) or to merge (*.json) when --merge is set")
     ap.add_argument("--merge", action="store_true",
                     help="merge per-shard JSON files from --merge-dir into the combined report")
+    ap.add_argument("--driver", action="store_true",
+                    help="DRIVER-LIVE audit: wire an LFO into each numeric param and "
+                         "report which params are dead controls (writes driver-dead-params.json)")
     args = ap.parse_args()
 
     # ── Merge mode: assemble the combined report from shard outputs ──
@@ -486,6 +623,31 @@ def main() -> int:
 
     if args.limit:
         ids = ids[: args.limit]
+
+    # ── Driver-live audit branch ──
+    # Wire an LFO into each numeric param of each node and record which params
+    # are silent dead controls (the dominant remaining static-death cause: a
+    # driver is attached but the driven param does not move pixels). Writes
+    # driver-dead-params.json, the blacklist motifs._drivable_params consumes.
+    if args.driver:
+        print(f"Driver-live audit: {len(ids)} node(s) "
+              f"({'cheap' if args.cheap else 'full'})...")
+        rows = []
+        t0 = time.time()
+        for i, mid in enumerate(ids, 1):
+            defn = defs.get(mid, {})
+            try:
+                r = audit_node_drivers(mid, defn, seed=args.seed, cheap=args.cheap)
+            except Exception as e:
+                r = {"id": mid, "name": defn.get("name", mid),
+                     "dead_params": [], "rows": [{"param": "?", "status": "exception",
+                     "detail": f"{type(e).__name__}: {str(e)[:80]}"}]}
+            rows.append(r)
+            nd = len(r.get("dead_params", []))
+            print(f"  [{i:3d}/{len(ids)}] {mid:8s} dead_params={nd} {r['dead_params']}")
+        dt = time.time() - t0
+        print(f"\nElapsed: {dt:.0f}s")
+        return _emit_driver_report(rows)
 
     print(f"Auditing {len(ids)} time-varying node(s) "
           f"({'cheap' if args.cheap else 'full'})...")
