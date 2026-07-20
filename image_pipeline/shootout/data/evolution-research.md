@@ -1,18 +1,7 @@
-population-based training (Jaderberg et al. 2017 PBT) and CMA-ES step-size
-adaptation (Hansen 2006) — both raise diversity when progress flattens.
-
-**Module:** `image_pipeline/shootout/session.py` (track per-generation
-dead-rate + rating-mean in the existing run ledger) -> a `detect_stagnation()` in
-`evolve.py` reading the last K ledger rows; on trigger, set `cfg.explore_ratio`
-override and log a `stagnation_event`. **Verification:** synthetic ledger where
-dead-rate is flat at 0.62 for N+1 gens with flat rating-mean ->
-`detect_stagnation()` returns True and the override is applied; a ledger with
-monotonic dead-rate decline -> returns False. Add a stub to
-`image_pipeline/tests/test_shootout.py`.
-
-**Note:** the more urgent, lower-risk win this run is the driver-reachability
-signal above (sub-problem #3 family) — drift detection is the scheduled rotation
-item, logged here for the next implementer.
+<!-- 2026-07-20: superseded #7 (Drift/stagnation) research entry removed —
+     implementation SHIPPED (stagnation.py, commit 99613a2); see the
+     2026-07-20 correction entry at the bottom of this file. Trimmed to keep
+     the file under the ~300-line rotation cap. -->
 
 ---
 
@@ -159,40 +148,12 @@ its prerequisite frontier is trustworthy).
 
 ---
 
-## 2026-07-19 — Sub-problem #6 re-engaged (Rating-signal poverty; real probe this run)
-
-**Observed (real probe, this run):** genomes=649; alive=357 (55%); dead=292 (45%).
-human ratings=19 (~2.9%) — still STARVED, ~1 short of the 20 target. Dead-reason
-breakdown: static=76, flat=73, timeout=58, over-budget=56, flicker=10, skipped=8,
-no-output=7, node_error=4. So 149/292 dead (51%) are static/flat — the driver-path /
-liveness frontier (Route 8 #1) remains the dominant *surviving* failure, NOT render
-timeouts (which this run bounded to 518s worst-case). Rating corpus is the binding
-constraint on selection quality.
-
-**Technique — uncertainty/active-learning rating surfacing (from 2026-07-17 writeup,
-still unactioned):** surface the MOST informative (highest-posterior-variance) clips
-to the user for a star rating instead of random/unrated ones, and ship a frictionless
-rating UX (one-click ★ on the live preview). Reference: Settles 2009 "Active Learning
-Literature Survey" (UC Berkeley TR); Houlsby et al. 2011 "Bayesian Active Learning for
-Classification and Preference Learning" (bald). The taste model (`elo_fitness_enabled`,
-Bradley-Terry per 2026-07-17 #1) is already ELO-shaped, so uncertainty = ELO σ — the
-exact quantity needed to pick teachable clips. The Route 8 #6 UI active-learning loop
-(da0aa76) already closed the *capture* path; the missing piece is *selective surfacing*
-(order candidates by ELO σ, not by recency).
-
-**Module:** `image_pipeline/shootout/store.py` + `server.py /api/shootout/candidates`
-— return candidates ranked by `uncertainty(g)` (ELO σ) descending, capped to N, so the
-user rates the clips that move the taste model most. Additive to the existing rating UI.
-
-**Verification (headless):** `test_shootout_active_learning.py` — (a) given two unrated
-clips with high σ and one rated clip with low σ, the candidate endpoint returns the two
-high-σ clips first; (b) no NaN/Inf when σ is undefined (prior used). Gate behind
-`active_learning_ranking=False` until enabled.
-
-**Index:** set evolution-research-index.txt → 6 (current lever; next run implements the
-selective-surfacing endpoint + test, or returns to #1 ELO wiring).
+<!-- 2026-07-20: superseded #6 "re-engaged" entry removed — active-learning
+     rating suggester SHIPPED (rating_suggest.py); see the 2026-07-20
+     correction entry at the bottom. Trimmed for the rotation cap. -->
 
 ## 2026-07-19T08:12:38Z — Sub-problem #6 (Rating-signal poverty: surface the MOST informative clips for human rating via active learning)
+
 
 **Observed (real probe, this run):** human ratings=19 across 649 genomes (~2.9%, STARVED). The active-learning rating UI loop was closed in a prior run (Route 8 #6), so clips CAN be rated frictionlessly — but WHICH clips are surfaced is still first-come / random. With only ~19 ratings, every rating must be maximally informative or the taste model stays untrained (~7 ratings/293 genomes earlier).
 
@@ -320,10 +281,29 @@ bit-identical refactor.
 - **Verification (headless):** test_driver_dead_param_blacklist.py — blacklist exclusion, _is_driver_dead_param, JSON loader, probe/selection — all pass. Background run populating the blacklist for a first target-node set (patterns/filters/fractals).
 - **Index:** sub-problem #7 (drift/stagnation) was already implemented (per-generate metrics ledger); the dead-param frontier (sub-problem #3 family) is now executed via the driver-live blacklist. No further numbered sub-problem remains open — future runs should (a) expand the `--driver` audit across ALL non-driver nodes to fully populate data/driver-dead-params.json, then (b) re-measure the flat/static death count to confirm the residual is evolution-quality. Set index 6 -> 7 (stagnation implemented; frontier executed).
 
-## 2026-07-20 — Sub-problem #6 (rating-signal poverty) — PROPOSAL (not yet executed)
-- **Observed (real probe, this run):** human ratings = 19 / 649 genomes (still starved, just under the 20 threshold). The `auto_promote_seeds` hook (session.py) can only consume ratings that exist, so with ~19 seeds the evolution runs nearly blind on taste. The taste model is untrained.
-- **Technique — active learning / uncertainty sampling (cited):** Settles, B. (2009). *Active Learning Literature Survey*, University of Wisconsin-Madison, Computer Sciences Technical Report 1648. Core idea: when labels are expensive, query the instances whose label the current model is *least certain* about (least-confidence / margin / entropy sampling). Applied here: rank unrated alive genomes by an uncertainty/teachability score and surface those first in the rating UI, so each human rating maximizes information gain.
-- **Module to absorb it:** a new `suggest_for_rating()` in `advisor.py` (or `session.py`) that returns alive genomes ordered by `teachability = liveness_quality * novelty`, where novelty = 1 - max pairwise similarity to already-rated genomes (using the existing per-genome liveness vector: temporal_var / motion_pixel_frac / flow_var / spectral_ac_active / frame_corr). This reuses signals the evaluator already computes — no new rendering. The rating UI (Route 8 #3) should consume this queue instead of a raw recency order.
-- **Expected effect:** faster, higher-information corpus growth → the taste model trains → selection pressure becomes real (Route 8 #1's original goal, which the driver-path refutation showed was never about the driver path). Does NOT fabricate ratings.
-- **Verification (headless):** add `test_shootout_rating_suggestion.py` asserting (a) `suggest_for_rating()` returns only alive genomes, (b) results are ranked by descending teachability, (c) after injecting one synthetic rating, the suggestion set changes (proves the active-learning loop responds). Re-measure rating count after a week of use.
-- **Index:** rotate 7 -> 6 (rating-signal poverty is the open high-leverage lever; the 7 sub-problems are otherwise addressed per the ledger above).
+## 2026-07-20 (correction) — Sub-problem #6 (rating-signal poverty) — SHIPPED, not open
+- **HYGIENE CORRECTION (verified this run against HEAD):** the prior "PROPOSAL
+  (not yet executed)" entry for #6 was STALE. The active-learning rating
+  suggester is fully SHIPPED and wired:
+  - `image_pipeline/shootout/rating_suggest.py` → `suggest_for_rating(k, cfg)`
+    (commit 9232788 feat + da0aa76 UI close-the-loop).
+  - Server endpoint in `server.py` (~L1349) calls `suggest_for_rating(...)`; the
+    UI consumes the queue (Route 8 #3 rating UI).
+  - Tests green: `test_rating_suggest.py` (5 passed) + a contract lock in
+    `test_shootout.py` (commit 8ff68a6).
+- **Likewise SHIPPED (re-verified this run):** #7 drift/stagnation detection
+  (`stagnation.py`, wired in `session.py` L242-263, tested in `test_shootout.py`
+  + `test_shootout_stagnation*.py`, commit 99613a2), and the #3-family
+  driver-live dead-param blacklist (commits 165c342/2bf92f4). The
+  `auto_promote_seeds` promotion hook also exists (`session.py` L311-338,
+  `config.py` L155-167) — the earlier "seed_ids hook STILL missing" note was
+  wrong (genomes carry `genome_id`, not `id`).
+- **Remaining genuinely-open lever:** the corpus itself is still rating-STARVED
+  at 19/649 — the *machinery* is done but needs real human ratings to bite. No
+  code change fixes that; it is a usage/UX signal-collection matter (do NOT
+  fabricate ratings). The next high-leverage CODE work is the GPU-First
+  new-GLSL twin effort (215 categorical gaps), not more evolver plumbing.
+- **Index:** rotate to sub-problem #2 (diversity maintenance) for the next run's
+  research rotation — all of #1/#3/#5/#6/#7 are shipped or refuted; #2's
+  MAP-Elites archive is gated/implemented and #4 grammar-mut is the other
+  standing follow-up.

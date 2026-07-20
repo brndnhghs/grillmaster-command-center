@@ -1,21 +1,7 @@
-- HYGIENE: reconciled test_sim_deferral_is_exhaustive (standing pre-existing failure) by adding the 5 genuinely-Arch-A sims committed without mirrors (915 Active Matter, 993 Bitangent-Noise Flow, 998 FTLE, 359 Lenia, 996 Swift-Hohenberg) to DEFERRED_SIM_IDS with P2/WebGPU reasons and trimming 2 now-ported stale ids (89,90). Test now green.
-- RECOMMENDATION: keep shipping cheap morphing-field generators to dilute the 165-timeout + 212-static dead-buckets. Sub-problem #7 (drift/stagnation detection) is the next evolution-research item; rating corpus still starved (18) — sub-problem #6 active-learning remains the real unlock.
 
-
-## ## 2026-07-17 13:23 UTC
-- genomes=649 alive=247 dead/rejected=402 (62%)
-- renders>150s(cap)=165 >100s=194 max=669s
-- human ratings=18 (STARVED if <20)
-- top-3 rated: ? r=5 (explorer), ? r=5 (random), ? r=5 (random)
-- cheap-alive(recombine seeds)=135
-- top-dead methods: __lfo__(1081), __counter__(305), __noise1d__(165), __ramp__(135), __strobe__(59), __envelope__(51), __image_to_mask__(47), 137(41)
-- ACTION: finished leftover in-progress batch (Sel'kov #1003 pacemaker) + regen wiring report; committed aaad3f4. Route 8 driver-death hypothesis already disproven/closed in prior runs — no new driver work. Next: GPU P0/P1 shim expansion or Leverage-tier test/perf pass (3D sidecar + Blender MCP offline, CLIP/SAM installed).
-
-## ## 2026-07-18T10:00:00Z — autonomous run (Bayesian Bradley-Terry taste model, Route 8 / sub-problem #1)
-- genomes=649 alive=247 dead/rejected=402 (62%); renders>150s=165 (timeout cull); rated=18/649 (starved standing gap).
-- ACTION: committed leftover auto-promote-seeds feature (ed1b7dd) then implemented Bradley-Terry taste model (taste_elo.py). The model converts all 18 ratings into pairwise comparisons, fits a Bradley-Terry MLE via the MM algorithm with a virtual prior opponent (prevents divergence for undefeated genomes), and applies count-based Bayesian shrinkage (alpha = n_comps / (n_comps + 5)). The LCB (μ − 0.5σ) is mapped through a logistic to [0,1] for survivor weighting. Gated behind `elo_fitness_enabled` (default False).
-- Verified on real corpus: 5-star shrinks 1.0→0.83, 1-star shrinks 0.04→0.11 (ratio 25x→7.5x). 12 tests pass. Server healthy (532 nodes).
-- RECOMMENDATION: enable `elo_fitness_enabled` in a future run and measure the effect on generation diversity. Next evolution lever = sub-problem #4 (mutation/crossover operators) or sub-problem #7 (drift/stagnation detection).
+<!-- 2026-07-20: trimmed two oldest entries (2026-07-17, 2026-07-18T10:00) to
+     stay under the ~400-line cap. Their conclusions (Sel'kov #1003 batch;
+     Bradley-Terry taste_elo.py shipped) are captured in git history. -->
 
 ## ## 2026-07-18T11:30:00Z — autonomous run (Route 8 #1 REFUTED; ship headless dead-param liveness audit)
 - PHASE 1 diagnostic (real data, full 649-genome corpus): dead/rejected=292 (45%); breakdown by reason: static 76, flat 73, timeout 58, over-budget 56, flicker 10, skipped 8, no-output 7, node_error 4. alive=357; cheap-alive=180; rated=18 (starved).
@@ -398,3 +384,17 @@ direct default-render wall-time profiler (_profile_slow.py) over the methods act
 - ACTION (feature 1, committed): finished + committed the in-flight GPU-P0 justification batch — GPU_PREVIEW_DROP_ALLOW + _TWIN_UNIFORM_ALLOW entries for closed-form twins of nodes 342/444/498/510/957/962. Verified: reverting the drop-allow fails test_gpu_coverage_no_silent_numeric_drops on exactly those 6 nodes; with it, full GPU headless suite green (928 passed).
 - ACTION (feature 2, in progress): launched the documented driver-dead-param audit expansion (audit_dead_params.py --driver) across 134 visual nodes (patterns/filters/fractals/math_art/compositing), merge-safe, to fully populate data/driver-dead-params.json. Was only 1 node ('05'); this run's 4-node probe added 19/49/50 (10 dead params); full background run populating the rest.
 - RECOMMENDATION: (1) let the driver-audit expansion finish + re-measure flat/static deaths — closing the last Route-8 frontier (drivers onto dead controls). (2) Highest-leverage evolver-quality lever remains rating-corpus growth (19/649) — see evolution-research.md sub-problem #6. (3) Next GPU-First chunk = write NEW twin shaders for the 215 gap nodes; start with escape-time fractals + per-pixel filters that map to new GLSL in the existing style.
+
+## 2026-07-20 — autonomous run (GPU-P0 orphan finish #2 + shootout 1B/1C)
+- PHASE 1 (649-genome corpus): dead/rejected=292 (45%) [plateau vs ~70% pre-driver-blacklist]; alive=357; cheap-alive=180; rated=19/649 (starved, just under 20). 165 renders>150s(cap), max=669s.
+- TOP-DEAD methods: __lfo__(800), __counter__(233), __noise1d__(118), __ramp__(93), __envelope__(39), __image_to_mask__(38), __strobe__(37), 141(31). Drivers still dominate dead genomes but at lower per-genome rate after the driver-dead-param blacklist.
+- TOP-3 rated (promotion seeds): genome.id is None in corpus -> seed_ids promotion hook STILL missing in session.py; advisor.extract_guidance/avoid_methods present (per-node dead-hotspot feedback path viable).
+- ACTION (this run, committed 3907e3a): finished + committed the SECOND in-flight GPU-P0 batch -- 7 CLIENT_GPU_SHIMS wiring CPU closed-form nodes 355/343/470/62/351/997/991 to existing *_typed twins (1:1 param_map; remaining CPU params CPU-authoritative via GPU_PREVIEW_DROP_ALLOW; artistic shader uniforms in _TWIN_UNIFORM_ALLOW). Bumped both map-count guards 288->295. Headless GPU suite green (1263 passed, 32 skipped).
+- RECOMMENDATION: (1) Next GPU-First chunk = write NEW twin shaders for the 215 gap nodes (different algorithms: Mandelbulb/Buddhabrot/L-System/Fractal Flame/etc.) -- reuse is exhausted. (2) Rating-corpus growth (19/649) remains the top evolver-quality lever (sub-problem #6). (3) Implement sub-problem #7 drift/stagnation detection (this run enriched with Cuccu2011 novelty-restarts, Rajabi&Witt2024 radius-memory, Doerr2023 fast-mutation) to auto-widen explore_ratio on plateau.
+
+## 2026-07-20 — autonomous run (roadmap/prompt hygiene, Route 0)
+- PHASE 1 probe (649-genome corpus): alive=357 (55%), dead=292 (45%); dead reasons: flat=90, static=85, over-budget=56, timeout=23, flicker=19, skipped=8, no-output=7, node_error=4. cheap-alive(<30s)=180. ratings=19/649 (still STARVED). renders>150s(cap)=165, max=669s.
+- TOP-3 rated survivors: g-e181c881(5), g-328f0d37(5), g-f8849674(5) — all gen-0 explorer/random. NOTE: genomes carry `genome_id` (not `id`); prior manifest's "id is None → seed_ids hook missing" claim was WRONG. The `auto_promote_seeds` promotion hook DOES exist (session.py L311-338, config.py L155-167).
+- HYGIENE CORRECTION (verified vs HEAD, no code change needed): all three evolver sub-problems the prior recommendations flagged as "open" are in fact SHIPPED — #6 rating-signal active-learning suggester (rating_suggest.py + server.py L1349 + UI, tests green: test_rating_suggest.py 5 passed), #7 drift/stagnation detection (stagnation.py wired session.py L242-263, tested), and the #3-family driver-live dead-param blacklist (165c342/2bf92f4). Updated evolution-research.md (removed 2 superseded entries, appended a SHIPPED correction, rotated index 7→2) so future runs stop re-proposing already-built work.
+- ENVIRONMENT NOTE: a concurrent sibling cron was actively finalizing a GPU-twin batch (hex_mosaic_gpu/metaballs_gpu/truchet_sdf_gpu; map 295→298, both count guards + shaders.py/gpu_shaders.py uncommitted). Per the active-sibling safety rule this run did NOT touch those files and committed ONLY shootout data via targeted `git add`.
+- REMAINING open lever: corpus is rating-STARVED (19/649) — machinery done, needs real human ratings (no code fix; do NOT fabricate). Next CODE work = GPU-First new-GLSL twins for the ~215 categorical gap nodes (different algorithms; reuse is exhausted).
