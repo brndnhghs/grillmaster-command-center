@@ -524,6 +524,23 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
             "param_map": {"speed_xw": "speed_xw", "speed_yw": "speed_yw",
                           "proj_radius": "proj_radius", "line_width": "line_width",
                           "inner_hue": "inner_hue", "outer_hue": "outer_hue"}},
+    # 486 Radial & Spin Blur, 438 Subsurface Scatter (SSSS), 451 Gabor Filter —
+    # each is a per-pixel closed-form filter with no close existing twin, so it
+    # gets a brand-new typed-uniform GLSL twin (core/shaders.py) wired via a
+    # CLIENT_GPU_SHIMS entry. Every numeric CPU param is bound to a named
+    # u_<name> uniform/SCALAR port (typed-uniform contract). Choice params and
+    # the CPU-only source generators are dropped (GPU_PREVIEW_DROP_ALLOW).
+    "486": {"shader": "radial_spin_blur_gpu", "type": "filter", "typed": True,
+            "param_map": {"length": "length", "center_x": "center_x",
+                          "center_y": "center_y", "anim_speed": "anim_speed"}},
+    "438": {"shader": "ssss_gpu", "type": "filter", "typed": True,
+            "param_map": {"radius": "radius", "samples": "samples",
+                          "falloff": "falloff", "strength": "strength",
+                          "anim_speed": "anim_speed"}},
+    "439": {"shader": "gabor_filter_gpu", "type": "filter", "typed": True,
+            "param_map": {"orientation": "orientation", "frequency": "frequency",
+                          "sigma": "sigma", "aspect": "aspect", "phase": "phase",
+                          "contrast": "contrast", "anim_speed": "anim_speed"}},
     "04": {"shader": "worley_gpu", "type": "procedural",
            "param_map": {"jitter": "p1", "fractal_gain": "p2"}},
     "02": {"shader": "quasicrystal_gpu", "type": "procedural",
@@ -1112,6 +1129,9 @@ GPU_PREVIEW_DROP_ALLOW: dict[str, dict[str, str]] = {
     "03": {"amplitude": "param not wired to GPU twin; CPU export authoritative for this param", "freq_variation": "param not wired to GPU twin; CPU export authoritative for this param", "grids": "param not wired to GPU twin; CPU export authoritative for this param", "thickness": "param not wired to GPU twin; CPU export authoritative for this param", "wobble": "param not wired to GPU twin; CPU export authoritative for this param"},
     "487": {"star_count": "param not wired to GPU twin; CPU export authoritative for this param (Galaxy Generator samples this many stars on the CPU; the closed-form GLSL twin renders a continuous density field at canvas resolution)"},
     "108": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param (export frame count, timeline-driven)"},
+    "486": {"blur_type": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin always applies a combined radial-zoom + spin motion blur; the CPU node honours the exact blur_type choice)", "source": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin samples the wired upstream image)", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "palette": "param not wired to GPU twin; CPU export authoritative for this param", "anim_mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin animates continuously from u_time)"},
+    "438": {"source": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin samples the wired upstream image)", "tint": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "palette": "param not wired to GPU twin; CPU export authoritative for this param", "anim_mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin animates continuously from u_time)", "time": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "439": {"source": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin samples the wired upstream image)", "n_orientations": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin renders a single-orientation response)", "combine": "param not wired to GPU twin; CPU export authoritative for this param", "output": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin renders the energy magnitude)", "anim_mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin animates continuously from u_time)"},
     "04": {"cell_border": "param not wired to GPU twin; CPU export authoritative for this param", "feature": "param not wired to GPU twin; CPU export authoritative for this param", "fractal": "param not wired to GPU twin; CPU export authoritative for this param", "points": "param not wired to GPU twin; CPU export authoritative for this param", "tile_size": "param not wired to GPU twin; CPU export authoritative for this param"},
     "05": {"cell_borders": "param not wired to GPU twin; CPU export authoritative for this param", "cell_points": "param not wired to GPU twin; CPU export authoritative for this param", "domain_warp": "param not wired to GPU twin; CPU export authoritative for this param", "erosion": "param not wired to GPU twin; CPU export authoritative for this param", "gain": "param not wired to GPU twin; CPU export authoritative for this param", "lacunarity": "param not wired to GPU twin; CPU export authoritative for this param", "ring_count": "param not wired to GPU twin; CPU export authoritative for this param", "ring_wobble": "param not wired to GPU twin; CPU export authoritative for this param", "water_level": "param not wired to GPU twin; CPU export authoritative for this param"},
     "06": {"gap": "param not wired to GPU twin; CPU export authoritative for this param", "penrose_generations": "param not wired to GPU twin; CPU export authoritative for this param", "star_rays": "param not wired to GPU twin; CPU export authoritative for this param", "tile_size": "param not wired to GPU twin; CPU export authoritative for this param"},
