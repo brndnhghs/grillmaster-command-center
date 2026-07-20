@@ -353,6 +353,25 @@ _TWIN_UNIFORM_ALLOW = {
     "1006": "phasor_noise_gpu: contrast/animate are shader-only artistic knobs "
            "(contrast/animation toggle) with no CPU-node float synonym; twin is a "
            "live-preview approximation",
+    # P0 closed-form CPU nodes -> faithful typed twins (cron run). Each routes its
+    # real numeric params 1:1 via param_map; remaining shader uniforms are artistic
+    # / render knobs with no CPU-node float synonym (the CPU node is a different or
+    # serial algorithm, or the knob is purely cosmetic). Two-tier precision: CPU fn
+    # stays authoritative. Same intentional-exception pattern as 342/444/498/510/957/962.
+    "355": "curl_noise_gpu: brightness is a shader-only render knob; scale/octaves map 1:1 "
+           "to CPU node 355 (Curl-Noise Warp) — faithful live preview",
+    "343": "hex_grid_typed: thickness/flow/offset_x/offset_y/fill_a/fill_b/line are shader-only "
+           "grid render knobs; scale maps 1:1 to CPU node 343 (Hex Distance Field)",
+    "470": "mandelbulb_gpu: cam_angle/bailout/spec/base_color/glow_color/bg/anim_speed are "
+           "shader-only render knobs; power/iterations/cam_dist map 1:1 to CPU node 470 (Mandelbulb)",
+    "62": "strange_attractor_typed: band/gain/speed are shader-only artistic knobs; a/b/c/d map "
+           "1:1 to CPU node 62 (Chaotic Map) — faithful live preview of the attractor",
+    "351": "mandelbrot_gpu: color_shift is a shader-only palette knob; zoom/center_x/center_y/"
+           "iterations/escape_radius map 1:1 to CPU node 351 (Kaleidoscopic IFS)",
+    "997": "color_grade_gpu: contrast/hue_rotate/temperature/tint/vignette are shader-only grade "
+           "knobs; exposure/gamma/saturation map 1:1 to CPU node 997 (Tone Mapping)",
+    "991": "bilateral_grid_gpu: grid_scale is a shader-only internal knob; blend/sigma_r/sigma_s "
+           "map 1:1 to CPU node 991 (Domain Transform filter)",
 }
 
 

@@ -1016,7 +1016,28 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     "444": {"shader": "droste_typed", "type": "procedural", "typed": True,
              "param_map": {"twist": "twist", "zoom": "zoom"}},
     "510": {"shader": "flow_field_typed", "type": "procedural", "typed": True,
-             "param_map": {"speed": "speed"}}
+             "param_map": {"speed": "speed"}},
+    # === P0 shims: CPU closed-form nodes -> faithful typed GPU twins (cron run) ===
+    # Each node is the SAME closed-form algorithm as its twin, so the live preview
+    # is faithful; node params with no twin uniform stay CPU-authoritative (two-tier
+    # precision, GPU-First guardrail) and are listed in GPU_PREVIEW_DROP_ALLOW. Twin
+    # uniforms with no clean CPU-node synonym (secondary artistic knobs) are
+    # documented in test_gpu_twin_invariant._TWIN_UNIFORM_ALLOW.
+    "355": {"shader": "curl_noise_gpu", "type": "procedural", "typed": True,
+             "param_map": {"scale": "scale", "octaves": "octaves"}},
+    "343": {"shader": "hex_grid_typed", "type": "procedural", "typed": True,
+             "param_map": {"scale": "scale"}},
+    "470": {"shader": "mandelbulb_gpu", "type": "procedural", "typed": True,
+             "param_map": {"power": "power", "iterations": "iterations", "cam_dist": "cam_dist"}},
+    "62": {"shader": "strange_attractor_typed", "type": "procedural", "typed": True,
+            "param_map": {"a": "a", "b": "b", "c": "c", "d": "d"}},
+    "351": {"shader": "mandelbrot_gpu", "type": "procedural", "typed": True,
+             "param_map": {"center_x": "center_x", "center_y": "center_y",
+                           "escape_radius": "escape_radius", "iterations": "iterations", "zoom": "zoom"}},
+    "997": {"shader": "color_grade_gpu", "type": "procedural", "typed": True,
+             "param_map": {"exposure": "exposure", "gamma": "gamma", "saturation": "saturation"}},
+    "991": {"shader": "bilateral_grid_gpu", "type": "procedural", "typed": True,
+             "param_map": {"blend": "blend", "sigma_r": "sigma_r", "sigma_s": "sigma_s"}}
 }
 
 # ── GPU coverage contract: no SILENT param drops ────────────────────────────
@@ -1156,6 +1177,42 @@ GPU_PREVIEW_DROP_ALLOW: dict[str, dict[str, str]] = {
     "510": {"dt": "param not wired to GPU twin; CPU export authoritative for this param", "exposure": "param not wired to GPU twin; CPU export authoritative for this param", "noise_scale": "param not wired to GPU twin; CPU export authoritative for this param", "particles": "param not wired to GPU twin; CPU export authoritative for this param", "steps": "param not wired to GPU twin; CPU export authoritative for this param"},
     "957": {"dot_size": "param not wired to GPU twin; CPU export authoritative for this param", "exposure": "param not wired to GPU twin; CPU export authoritative for this param", "gamma": "param not wired to GPU twin; CPU export authoritative for this param", "hue": "param not wired to GPU twin; CPU export authoritative for this param", "n_points": "param not wired to GPU twin; CPU export authoritative for this param", "sat": "param not wired to GPU twin; CPU export authoritative for this param"},
     "962": {"exposure": "param not wired to GPU twin; CPU export authoritative for this param", "gamma": "param not wired to GPU twin; CPU export authoritative for this param", "glow": "param not wired to GPU twin; CPU export authoritative for this param", "hue": "param not wired to GPU twin; CPU export authoritative for this param", "line_width": "param not wired to GPU twin; CPU export authoritative for this param", "major_r": "param not wired to GPU twin; CPU export authoritative for this param", "n_points": "param not wired to GPU twin; CPU export authoritative for this param", "sat": "param not wired to GPU twin; CPU export authoritative for this param", "tube_r": "param not wired to GPU twin; CPU export authoritative for this param"},
+    # === P0 closed-form CPU nodes -> faithful typed twins (cron run) ===
+    # Preview-approximation twins: node numeric params with no twin uniform are
+    # CPU-authoritative (two-tier precision, GPU-First guardrail). Twin uniforms
+    # with no CPU-node synonym are documented in test_gpu_twin_invariant._TWIN_UNIFORM_ALLOW.
+    "355": {"warp_strength": "param not wired to GPU twin; CPU export authoritative for this param",
+            "anisotropy": "param not wired to GPU twin; CPU export authoritative for this param",
+            "substeps": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "343": {"contrast": "param not wired to GPU twin; CPU export authoritative for this param",
+            "edge_width": "param not wired to GPU twin; CPU export authoritative for this param",
+            "jitter": "param not wired to GPU twin; CPU export authoritative for this param",
+            "octaves": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "470": {"detail": "param not wired to GPU twin; CPU export authoritative for this param",
+            "elevation": "param not wired to GPU twin; CPU export authoritative for this param",
+            "palette_shift": "param not wired to GPU twin; CPU export authoritative for this param",
+            "steps": "param not wired to GPU twin; CPU export authoritative for this param",
+            "warp_strength": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "62": {"bifurcation_max": "param not wired to GPU twin; CPU export authoritative for this param",
+           "bifurcation_min": "param not wired to GPU twin; CPU export authoritative for this param",
+           "density_inc": "param not wired to GPU twin; CPU export authoritative for this param",
+           "lorenz_beta": "param not wired to GPU twin; CPU export authoritative for this param",
+           "lorenz_rho": "param not wired to GPU twin; CPU export authoritative for this param",
+           "lorenz_sigma": "param not wired to GPU twin; CPU export authoritative for this param",
+           "n": "param not wired to GPU twin; CPU export authoritative for this param",
+           "poincare_mod": "param not wired to GPU twin; CPU export authoritative for this param",
+           "trace_length": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "351": {"box_size": "param not wired to GPU twin; CPU export authoritative for this param",
+            "c_imag": "param not wired to GPU twin; CPU export authoritative for this param",
+            "c_real": "param not wired to GPU twin; CPU export authoritative for this param",
+            "fold_rot": "param not wired to GPU twin; CPU export authoritative for this param",
+            "folds": "param not wired to GPU twin; CPU export authoritative for this param",
+            "scale": "param not wired to GPU twin; CPU export authoritative for this param",
+            "warp_strength": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "997": {"white": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "991": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param",
+            "iterations": "param not wired to GPU twin; CPU export authoritative for this param",
+            "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param"},
 }
 
 def is_param_justified_drop(mid: str, param: str) -> bool:
