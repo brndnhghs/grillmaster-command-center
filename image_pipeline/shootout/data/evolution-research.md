@@ -1,51 +1,3 @@
->   color_struct_corr).
-> - Spectral-coherence rescue: committed `1358457`.
-> - Cost-proxy pre-render gate (`is_over_budget`/`partition_by_budget`) invoked
->   at session.py:367; `cost_proxy.py` structural ridge proxy exists + imported.
-> Do NOT re-attempt these as "next levers." The honest dead-rate (modern gate,
-> post-revalidation) is now 45%, and the remaining real gap is the STARVED
-> RATING CORPUS (sub-problem #6), not a missing liveness actuator. This file is
-> kept as the historical technique archive; treat #3 / cost-gate entries as
-> DONE.
->
-> **CORRIGENDUM (2026-07-19).** The 2026-07-18 correction above was right that
-> the cost-proxy was WIRED (not unbuilt), but it was INCOMPLETE: the gate worked
-> yet LEAKED on heavy sims. Two defects survived: (1) the ridge snapshot was
-> frozen on the 581-genome build — `load_structural_model` only retrained when
-> the file was *absent*, never when the corpus grew, so genuine heavy sims
-> (141/137/84/51/87) were never flagged as the corpus reached 649; (2) the
-> heavy-feature set was saturated by `__`-prefixed driver/control nodes (wired
-> into ~every graph but rendering no pixels), pushing real sims out of top-K; and
-> (3) `effective_render_timeout_s` extended the cap only for nodes present in the
-> per-method ms/frame table, so heavy RD/CA/PDE sims (which time out before
-> logging ms/frame) were never extended and were culled at the base cap forever.
-> Result: 56/58 timeout-culled genomes slipped past the gate (est < threshold)
-> and burned a full render budget. Fixed 2026-07-19 (cost_proxy.py +
-> cost_model.py): bimodality-aware heavy flag (max wall_s >= 250s), exclude
-> driver/control nodes from heavy_ids, TOP_K 30->40, staleness-aware retrain
-> (>=16 new genomes), and structural-heavy cross-pollination into the cap
-> extension. Post-fix: 54/58 timeout genomes now receive the extended cap. So the
-> 2026-07-18 "DONE, do not re-attempt" should read "wired + leak-closed 2026-07-19";
-> do not re-litigate the gate, but the original "unbuilt actuator" framing was
-> doubly wrong (it was built AND it leaked).
----
-
-## 2026-07-17T03:20:34Z — Sub-problem #7 (Drift / stagnation detection)
-
-**Observed (real probe, this run):** 643 genomes; dead/rejected = 62% (flat vs
-the ~70% baseline — improvement has plateaued). rated_total = 18 of 643
-(~2.8%) — rating signal is STARVED, so selection pressure has almost nothing to
-steer on. 68% of dead genomes contain a driver/control node yet still die
-(timeout or contrast-only cull), i.e. the evolution is thrashing on
-driver-not-reaching-pixels rather than exploring productive structure.
-
-**Technique — drift / stagnation detector (rotating cursor reached #7):**
-standard in evolutionary computation — monitor the sliding-window coefficient of
-variation (CV) of (a) dead-rate and (b) rating-mean over the last K generations;
-if both CVs fall below a threshold for N consecutive generations, declare
-stagnation and auto-trigger a recovery: widen `explore_ratio` (e.g. 0.45 -> 0.65)
-and/or inject a fresh-random `reset` cohort, then relax the threshold so the
-detector re-arms. This is the EDD / early-stop-divergence idea from
 population-based training (Jaderberg et al. 2017 PBT) and CMA-ES step-size
 adaptation (Hansen 2006) — both raise diversity when progress flattens.
 
@@ -311,3 +263,51 @@ selective-surfacing endpoint + test, or returns to #1 ELO wiring).
 **Verification (headless):** unit test in test_shootout_advisor.py — (a) given a dead-signal summary flagging motif X as low-coherence, extract_guidance emits an avoid constraint for X; (b) node_prefs{'141':dislike} removes 141 from the offspring mutation pool; (c) free-text-only path unchanged when qd_steering disabled. Gate behind config so live path unaffected.
 
 **Index:** rotate evolution-research-index.txt 4 -> 5 (sub-problem #5 engaged).
+
+
+## 2026-07-20 — Empirical refutation of two standing assumptions (Route 5 / Route 8)
+
+Two plan-level hypotheses were tested against the live genome corpus (n=649, 537 nodes live)
+and MEASURED, not assumed:
+
+### (A) Route 8 driver hypothesis — REFUTED
+The playbook's Route 8 #1 states drivers (__lfo__/__counter__/__noise1d__/__ramp__/__envelope__/
+__strobe__) fail to modulate target params, producing static clips culled by the liveness gate.
+Measured driver appearance:
+  ANY_DRIVER: alive 68% vs dead 69%  →  death rate 45% WITH driver == 45% WITHOUT driver.
+Drivers appear at near-identical rates in alive and dead genomes, so they are NOT the cause of
+death. The prior Route 8 driver-path + born-animated-floor work already resolved this.
+ACTION: stop Route 8 driver work. The recent commits (driverless-terminal fix, born-animated
+floor) were the right fix and it landed.
+
+### (B) Route 5 "vectorize the loop" — EXHAUSTED for the heavy methods
+Rejection rate is 45% (down from the ~70% baseline). The 175 flat/static deaths were checked:
+  89% of `static` deaths have frame_corr >= 0.999 (pixel-IDENTICAL frames) — genuinely static.
+  100% of `flat` deaths have spatial_var < 0.005 — genuinely uniform/blank.
+So the liveness gate is CORRECT; there is no contrast-only false-positive to rescue (PHASE 1C #3
+residual does not dominate this corpus).
+
+A two-pass wall-time profiler over the 416 methods actually used in shoots ranked the slowest:
+N-Body(76.9s), Swarmalators(13.6s), Spring-Mass(11.7s), Anisotropic Kuwahara(11.3s), and the
+spectral-PDE family (KS 39s, Sine-Gordon 17s, CGL 16s, Faraday 20s, Multi-Scale Turing 17.5s).
+Inspecting each: _compute_gravity (113), _step (102), the spring-mass force loop (114), and the
+Kuwahara window loop (68) are ALREADY fully vectorized (numpy broadcasting / integral images).
+A tried optimization on N-Body — reusing preallocated (N,N) gravity scratch buffers to cut
+allocation — measured 8.85s vs 8.74s original: a NO-OP (cost is pure N^2 FLOPs; numpy memory
+pools absorb allocation). Conclusion: remaining cost is INHERENT algorithmic complexity
+(O(N^2) direct summation, spectral FFTs, CA iterations), not un-vectorized Python loops.
+
+### Recommendation (where the next high-value work actually is)
+1. The 79 budget/timeout deaths (over-budget 56 + timeout 23) are the one addressable failure
+   mode. The render-budget system is already sophisticated (cost_proxy.py pre-render gate,
+   heavy_render_timeout_factor=2.0, max_render_timeout_s=450). Tuning it is evolution-engine
+   work, not a quick fix — propose as its own route, verify by re-running a generation and
+   checking the budget-death count, NOT by loosening the cap blindly (risk: leak broken clips).
+2. Rating corpus is starved (19 ratings / 649 genomes). Active-learning / frictionless rating UX
+   (Route 8 #3 / PHASE 1C #6) is the highest-leverage evolver-quality lever.
+3. GPU-First P0/P1 twin coverage is the dominant additive workstream; it is independent of the
+   sim-perf finding above. Continue it.
+DO NOT re-attempt Route 8 driver fixes or Route 5 loop-vectorization on the heavy sims — the data
+shows both are already done. Any further sim speedup requires algorithmic rewrites (e.g. Barnes-Hut
+for N-body) that change numerics and need an explicit speed-vs-bit-exactness decision, not a
+bit-identical refactor.

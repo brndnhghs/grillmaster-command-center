@@ -263,7 +263,87 @@ def test_clip_score_does_not_silently_fallback(tmp_path: Path):
     )
 
 
-# ── ComfyUI capture_frame contract (Leverage Tier regression) ──────────────
+@pytest.mark.skipif(_sam_skip, reason=_sam_skip_reason)
+def test_sam_segment_does_not_silently_fallback(tmp_path: Path):
+    """SAM skill + grillmaster Pitfalls #18-#20: prove SAM actually RAN, not a
+    silent fallback.
+
+    ``__sam_segment__`` wraps the SAM load/run in try/except and on any
+    exception writes a uniform empty mask (score=0, coverage=0) as if it had
+    succeeded. A downstream consumer reading scalars.json cannot tell
+    "SAM found nothing" from "SAM crashed" unless it checks the ``sam_ran``
+    honesty flag. A genuine run always sets ``sam_ran=1.0`` and, on an input
+    with a clear foreground disk on a gray field, finds foreground
+    (coverage>0). This is the SAM twin of the CLIP node's
+    ``test_clip_score_does_not_silently_fallback``.
+    """
+    h, w = 256, 256
+    img = _disk(h, w)  # foreground disk on a gray field
+    Image.fromarray((img * 255).astype(np.uint8)).save(tmp_path / "_input.png")
+    params = {
+        "input_image": str(tmp_path / "_input.png"),
+        "mode": "automatic",
+        "checkpoint": "vit_b",
+        "device": "cpu",
+        "points_per_side": 16,
+    }
+    _call("__sam_segment__", tmp_path, params, (h, w))
+
+    scalars = tmp_path / "scalars.json"
+    assert scalars.exists(), "__sam_segment__: no scalars.json"
+    sc = json.loads(scalars.read_text())
+    assert sc.get("sam_ran", 0.0) == 1.0, (
+        "__sam_segment__: sam_ran=0 — SAM did NOT execute (silent fallback)"
+    )
+    # A clear foreground disk must be found (Pitfall #20: never the background).
+    assert float(sc["coverage"]) > 0.0, (
+        "__sam_segment__: coverage=0 — SAM found no foreground on a disk input"
+    )
+    assert float(sc["coverage"]) < 0.5, (
+        "__sam_segment__: coverage>=0.5 — SAM picked the background (Pitfall #20)"
+    )
+
+
+@pytest.mark.skipif(_clip_skip or _sam_skip,
+                    reason="CLIP + SAM (cached weights) required")
+def test_clip_sam_does_not_silently_fallback(tmp_path: Path):
+    """Compound CLIP-guided SAM node must also report an honest ``sam_ran`` flag.
+
+    ``__clip_sam__`` runs CLIP + SAM; on any failure it falls back to an empty
+    mask silently. Mirror the SAM node's guard: a genuine run on a disk input
+    with prompt 'a white circle' sets sam_ran=1.0 and finds foreground.
+    """
+    h, w = 256, 256
+    img = _disk(h, w)
+    Image.fromarray((img * 255).astype(np.uint8)).save(tmp_path / "_input.png")
+    params = {
+        "input_image": str(tmp_path / "_input.png"),
+        "prompt": "a white circle",
+        "prompt_prefix": "a photo of",
+        "checkpoint": "vit_b",
+        "points_per_side": 16,
+        "max_masks": 20,
+        "device": "cpu",
+        "model_name": "ViT-B/32",
+    }
+    _call("__clip_sam__", tmp_path, params, (h, w))
+
+    scalars = tmp_path / "scalars.json"
+    assert scalars.exists(), "__clip_sam__: no scalars.json"
+    sc = json.loads(scalars.read_text())
+    assert sc.get("sam_ran", 0.0) == 1.0, (
+        "__clip_sam__: sam_ran=0 — CLIP+SAM did NOT execute (silent fallback)"
+    )
+    assert float(sc["coverage"]) > 0.0, (
+        "__clip_sam__: coverage=0 — no foreground found for 'a white circle'"
+    )
+    assert float(sc["coverage"]) < 0.5, (
+        "__clip_sam__: coverage>=0.5 — background selected (Pitfall #20)"
+    )
+
+
+# ── ComfyUI capture_frame contract (Leverage Tier regression) ──────
+# ── ComfyUI capture_frame contract (Leverage Tier regression) ──────
 # Adding 2026-07: ml_models.py method_comfyui called capture_frame("28", <Path>)
 # without importing capture_frame AND without passing a numpy array — a latent
 # NameError + TypeError that only surfaced during --animate. Guard both: the

@@ -545,6 +545,12 @@ def method_sam_segment(out_dir: Path, seed: int, params=None):
     out_mask = _np.zeros((int(H), int(W)), dtype=_np.float32)
     out_score = 0.0
     out_img = base_u8
+    # Honesty flag: True ONLY when SAM genuinely produced a segmentation from a
+    # real model run. Mirrors __clip_score__'s clip_ran. A silent failure (the
+    # except branch below) leaves this False so a downstream consumer can tell
+    # "model ran and found nothing" from "model fell back" — see SAM skill
+    # ("verify the model actually ran") and grillmaster Pitfalls #18-#20.
+    sam_ran = False
 
     try:
         import os
@@ -623,13 +629,15 @@ def method_sam_segment(out_dir: Path, seed: int, params=None):
                     # predictor.predict() scores are raw logits; clamp to [0,1].
                     out_score = float(min(1.0, max(0.0, float(scores[idx]))))
 
+        sam_ran = True  # reached the end of the model path with no exception
         print(f"  ✓ SAM Segment: mode={mode} score={out_score:.3f} "
-              f"coverage={out_mask.mean():.3f}")
+              f"coverage={out_mask.mean():.3f} sam_ran={sam_ran}")
     except Exception as e:
         print(f"  ✗ SAM Segment: {e}")
 
     # ── Write scalar + mask outputs ──
-    write_scalars(out_dir, score=float(out_score), coverage=float(out_mask.mean()))
+    write_scalars(out_dir, score=float(out_score), coverage=float(out_mask.mean()),
+                 sam_ran=1.0 if sam_ran else 0.0)
     write_mask(out_dir, out_mask)
 
     # ── Build the annotated visualization image ──
@@ -768,6 +776,9 @@ def method_clip_sam(out_dir: Path, seed: int, params=None):
     # Default outputs (overwritten on success)
     out_mask = _np.zeros((int(H), int(W)), dtype=_np.float32)
     out_score = 0.0
+    # Honesty flag: True only when CLIP+SAM genuinely produced a segmentation
+    # (mirrors __sam_segment__'s sam_ran and __clip_score__'s clip_ran).
+    sam_ran = False
 
     try:
         import os
@@ -848,6 +859,7 @@ def method_clip_sam(out_dir: Path, seed: int, params=None):
                 best_i = int(probs.argmax())
                 best = valid[best_i]
                 out_mask = best["segmentation"].astype(_np.float32)
+                sam_ran = True
                 # CLIP softmax prob is already in [0,1]; clamp defensively so the
                 # advertised SCALAR [0,1] contract holds for any downstream consumer.
                 out_score = float(min(1.0, max(0.0, float(probs[best_i]))))
@@ -858,7 +870,8 @@ def method_clip_sam(out_dir: Path, seed: int, params=None):
         print(f"  ✗ CLIP-SAM: {e}")
 
     # ── Write scalar + mask outputs ──
-    write_scalars(out_dir, score=float(out_score), coverage=float(out_mask.mean()))
+    write_scalars(out_dir, score=float(out_score), coverage=float(out_mask.mean()),
+                 sam_ran=1.0 if sam_ran else 0.0)
     write_mask(out_dir, out_mask)
 
     # ── Build the annotated visualization image ──
