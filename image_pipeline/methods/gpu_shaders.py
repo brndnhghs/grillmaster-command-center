@@ -686,16 +686,27 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # shimmer. `m_end`/`n_end` are morph endpoints (used only in anim_mode !=
     # none) and are left unmapped — the live preview shows the start mode. The
     # twin is an exact closed-form preview of the per-pixel displacement field.
-    "125": {"shader": "chladni_gpu", "type": "procedural",
-            "param_map": {"m_start": "p1", "n_start": "p2",
-                          "rotation_speed": "p3", "phase_speed_x": "p4"}},
-    # 164 Moiré: `mode` (radial/linear/spiral/hex -> 0..3) maps onto p1,
-    # `speed1` -> p2, `speed2` -> p3, `frequency` -> p4. `grid_div` is a choice
-    # integer and the twin renders at full res, so it is left unmapped. The twin
-    # is an exact parity preview (closed-form function of uv, t).
-    "164": {"shader": "moire_gpu", "type": "procedural",
-            "param_map": {"mode": "p1", "speed1": "p2",
-                          "speed2": "p3", "frequency": "p4"}},
+    # 125 Chladni: typed-uniform twin (GPU-First contract #5) — node params
+    # route BY NAME to the twin's u_<name> uniforms. The legacy p1..p4 mapping
+    # was a SILENT NO-OP: the twin declares `uniforms=`, so the client's
+    # typed-live branch ignores p-slots and freezes controls at defaults
+    # (pitfall #14b / frozen-typed class). Now m_start/n_start/rotation_speed/
+    # phase_speed_x drive u_m_start/u_n_start/u_rotation_speed/u_phase_speed_x.
+    # `m_end`/`n_end` are morph endpoints (anim_mode != none only) left unmapped
+    # — the live preview shows the start mode. CPU export stays authoritative.
+    "125": {"shader": "chladni_gpu", "type": "procedural", "typed": True,
+            "param_map": {"m_start": "m_start", "n_start": "n_start",
+                          "rotation_speed": "rotation_speed",
+                          "phase_speed_x": "phase_speed_x"}},
+    # 164 Moiré: typed-uniform twin (GPU-First contract #5) — node params route
+    # BY NAME to the twin's u_<name> uniforms. Legacy p1..p4 was a SILENT NO-OP
+    # (twin declares `uniforms=`, client typed-live branch ignores p-slots,
+    # pitfall #14b / frozen-typed class). mode/speed1/speed2/frequency now drive
+    # u_mode/u_speed1/u_speed2/u_frequency. `grid_div` (choice int, full-res
+    # render) left unmapped. CPU export stays authoritative.
+    "164": {"shader": "moire_gpu", "type": "procedural", "typed": True,
+            "param_map": {"mode": "mode", "speed1": "speed1",
+                          "speed2": "speed2", "frequency": "frequency"}},
     # 172 Sand Dune Migration: `wind_strength` -> p1, `sediment_supply` -> p2.
     # `anim_mode`/`render_style` are choice strings (pitfall #14) so they are
     # left unmapped — the live preview renders the closed-form "evolve"+
@@ -902,14 +913,20 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # param_map-resolves test + documentation only. CPU numpy node stays
     # authoritative for exact spherical-harmonic export.
     "104": {"shader": "spherical_harmonics_gpu", "type": "procedural",
-            "param_map": {"max_l": "p1", "amplitude": "p2",
-                          "glow_strength": "p3", "anim_speed": "p4"}},
-    # 161 Spectral Tapestry → closed-form twin. n_modes/coupling/drift_speed/
-    # noise are the node's REAL numeric params (contract #5), wired by name.
-    # The CPU spectral-PDE node stays authoritative for export.
+             "typed": True,
+             "param_map": {"max_l": "max_l", "amplitude": "amplitude",
+                           "glow_strength": "glow_strength",
+                           "anim_speed": "anim_speed"}},
+    # 161 Spectral Tapestry -> typed-uniform twin (GPU-First contract #5).
+    # n_modes/coupling/drift_speed are the node's REAL numeric params, wired BY
+    # NAME to u_n_modes/u_coupling/u_drift_speed. Legacy p1..p3 was a SILENT
+    # NO-OP (twin declares `uniforms=`, client typed-live branch ignores
+    # p-slots, pitfall #14b / frozen-typed class). `noise`/anim_mode/n_frames are
+    # left unmapped (CPU export stays authoritative).
     "161": {"shader": "spectral_tapestry_gpu", "type": "procedural",
-            "param_map": {"n_modes": "p1", "coupling": "p2",
-                          "drift_speed": "p3"}},
+             "typed": True,
+             "param_map": {"n_modes": "n_modes", "coupling": "coupling",
+                           "drift_speed": "drift_speed"}},
     # 473 Gabor Noise -> closed-form twin (live-preview path; the CPU numpy
     # node stays authoritative for exact export). REAL numeric params
     # anisotropy/frequency/falloff (bandwidth) mapped to the twin's p2..p4;
@@ -1022,6 +1039,7 @@ GPU_PREVIEW_DROP_ALLOW: dict[str, dict[str, str]] = {
     "41": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "brush_size": "param not wired to GPU twin; CPU export authoritative for this param", "edge_threshold": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "noise_offset": "param not wired to GPU twin; CPU export authoritative for this param", "quantize_levels": "param not wired to GPU twin; CPU export authoritative for this param"},
     "42": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "exposure": "param not wired to GPU twin; CPU export authoritative for this param", "gamma": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "tint_b": "param not wired to GPU twin; CPU export authoritative for this param", "tint_g": "param not wired to GPU twin; CPU export authoritative for this param", "tint_r": "param not wired to GPU twin; CPU export authoritative for this param"},
     "43": {"contour_levels": "param not wired to GPU twin; CPU export authoritative for this param", "light_alt": "param not wired to GPU twin; CPU export authoritative for this param", "light_angle": "param not wired to GPU twin; CPU export authoritative for this param", "n_clusters": "param not wired to GPU twin; CPU export authoritative for this param", "point_speed": "param not wired to GPU twin; CPU export authoritative for this param", "points": "param not wired to GPU twin; CPU export authoritative for this param", "ridge_spacing": "param not wired to GPU twin; CPU export authoritative for this param", "scatter_alpha": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "471": {"num_samples": "param not wired to GPU twin; CPU export authoritative for this param (MSAA-style sampling count, meaningless for the closed-form sky preview)", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param (export frame count, timeline-driven)"},
     "51": {"anim_zoom_speed": "param not wired to GPU twin; CPU export authoritative for this param", "antialias": "param not wired to GPU twin; CPU export authoritative for this param", "escape_radius": "param not wired to GPU twin; CPU export authoritative for this param", "exponent": "param not wired to GPU twin; CPU export authoritative for this param", "warp_strength": "param not wired to GPU twin; CPU export authoritative for this param"},
     "52": {"anim_float_amplitude": "param not wired to GPU twin; CPU export authoritative for this param", "anim_zoom_speed": "param not wired to GPU twin; CPU export authoritative for this param", "tol": "param not wired to GPU twin; CPU export authoritative for this param", "warp_strength": "param not wired to GPU twin; CPU export authoritative for this param"},
     "53": {"balls": "param not wired to GPU twin; CPU export authoritative for this param", "color_speed": "param not wired to GPU twin; CPU export authoritative for this param", "multi_threshold_levels": "param not wired to GPU twin; CPU export authoritative for this param", "radius_max": "param not wired to GPU twin; CPU export authoritative for this param", "radius_min": "param not wired to GPU twin; CPU export authoritative for this param", "trail_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
