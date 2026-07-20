@@ -123,14 +123,29 @@ class GenePool:
 
     def driver_targets(self, method_id: str) -> list[str]:
         """Ports a scalar driver can legally feed: auto param ports plus
-        declared scalar structural inputs (speed/rate/… on sims).
+        declared scalar structural inputs (speed/rate/… on sims), PLUS
+        numeric slider params (those carrying min/max bounds).
+
+        The UI auto-detect (graph.py _make_node_def) deliberately keeps
+        min/max-bounded params OUT of ``param_ports`` (they render as sliders,
+        not wire ports) — but a slider *is* a scalar, and a CHOP driver
+        modulating a slider is exactly how the evolution engine should animate
+        a clip. The executor already injects any ``edge.dst_port in
+        node.params`` (graph.py, the driver-edge loop), so wiring a driver to a
+        slider param works end-to-end; only the generator's target pool was
+        too narrow. Extending the pool here lets the born-animated floor save
+        otherwise-genuinely-frozen single-node graphs (e.g. a seam-carving
+        terminal whose only tunables are ``seams``/``noise_amp``/``blur_sigma``
+        — all sliders, none wireable), closing a real Route 8 static-rejection
+        source without touching the UI contract.
         Executor-owned clock params are excluded (see _CLOCK_PARAMS); for
         Architecture-A methods (no "time" param) init-only params are also
         excluded because they are consumed once at sim init and cannot
         animate the clip."""
         d = self.defs[method_id]
         cands = self.wireable_params(method_id) + \
-            [p for p, t in _declared_ports(d) if t == "scalar"]
+            [p for p, t in _declared_ports(d) if t == "scalar"] + \
+            _numeric_slider_params(d)
         is_arch_a = "time" not in (d.get("params") or {})
         out = []
         for p in cands:
@@ -181,6 +196,34 @@ def build_gene_pool(cfg: ShootoutConfig = DEFAULT_CONFIG) -> GenePool:
 
 
 # ── Sampling ──────────────────────────────────────────────────────────
+
+
+def _numeric_slider_params(d: dict) -> list[str]:
+    """Numeric min/max-bounded params usable as driver targets.
+
+    The UI auto-detect (graph.py ``_make_node_def``) keeps these OUT of
+    ``param_ports`` so they render as sliders rather than wire ports — but a
+    slider is a scalar, so the evolution engine may still modulate it. We
+    surface them as candidate driver targets here. Choice-only params (a
+    ``choices`` list but no numeric range) and string/bool params are skipped:
+    a discrete-choice sweep is the caller's job via ``_inject_typed`` only when
+    the target is already a param, and string/bool are not animatable scalars.
+    """
+    out = []
+    for pname, spec in (d.get("params") or {}).items():
+        if not isinstance(spec, dict):
+            continue
+        if "min" not in spec and "max" not in spec:
+            continue
+        default = spec.get("default")
+        if isinstance(default, bool):
+            continue
+        if isinstance(default, str):
+            continue
+        if not isinstance(default, (int, float)):
+            continue
+        out.append(pname)
+    return out
 
 
 def _declared_ports(d: dict) -> list[tuple[str, str]]:

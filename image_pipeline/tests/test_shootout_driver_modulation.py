@@ -122,6 +122,79 @@ def test_driver_modulation_reaches_pixels(driver_id):
         f"control (no driver) unexpectedly animated: tv={tv_ctrl:.6f}")
 
 
+def test_born_animated_floor_reaches_slider_terminal():
+    """Route 8 (2026-07-19): the born-animated floor must animate a single-node
+    Architecture-A terminal whose ONLY tunables are min/max slider params.
+
+    Prior to the fix, ``GenePool.driver_targets`` drew targets only from
+    ``param_ports`` (UI wire ports) + declared scalar inputs. The UI auto-detect
+    deliberately keeps min/max-bounded params OUT of ``param_ports`` (they render
+    as sliders), so a slider-only terminal (e.g. node 39 posterize:
+    ``n_colors``/``anim_speed`` are sliders, none wireable) had an EMPTY
+    driver-target set.
+    The floor silently no-op'd, the graph was genuinely frozen, and the liveness
+    gate culled it as ``static`` — ~59 such genomes (34% of all flat/static
+    deaths) at last scan.
+
+    This test builds that exact single-node graph, runs the floor, asserts a
+    driver edge was injected onto a slider param, then renders the floor-applied
+    graph and confirms temporal_var clears the liveness floor (modulation reaches
+    pixels). If a future refactor re-narrows driver_targets, this fails loudly.
+    """
+    import random
+    import image_pipeline.shootout.generator as gen
+    from image_pipeline.shootout.config import DEFAULT_CONFIG
+
+    pool = gen.build_gene_pool(DEFAULT_CONFIG)
+    # A real terminal whose tunables are sliders only (not wire ports).
+    # Node 39 (posterize): n_colors/anim_speed are min/max sliders, none wireable;
+    # driving n_colors per-frame strongly animates the clip (tv~0.24).
+    term_mid = "39"
+    assert not pool.driver_targets(term_mid) == [], "precondition: must have slider targets"
+    assert pool.wireable_params(term_mid) == [], "precondition: term has no UI wire ports"
+
+    # Materialize concrete default param VALUES (not the {min,max,default} specs).
+    def _defaults(mid):
+        out = {}
+        for pname, spec in (pool.defs[mid].get("params") or {}).items():
+            out[pname] = spec.get("default") if isinstance(spec, dict) else spec
+        return out
+
+    graph = {
+        "version": 1, "name": "t",
+        "nodes": [{"id": "n1", "method_id": term_mid,
+                   "params": _defaults(term_mid),
+                   "x": 0, "y": 0, "render": True}],
+        "edges": [],
+    }
+    assert not gen._graph_has_animation_source(graph, pool), \
+        "precondition: genuinely frozen before floor"
+
+    rng = random.Random(7)
+    g2 = gen._ensure_animated(graph, pool, DEFAULT_CONFIG, rng, None)
+
+    assert gen._graph_has_animation_source(g2, pool), \
+        "floor must inject an animation source"
+    mid_by_id = {n["id"]: n["method_id"] for n in g2["nodes"]}
+    drv_edges = [e for e in g2["edges"]
+                 if mid_by_id.get(e["src_node"]) in pool.scalar_drivers]
+    assert drv_edges, "floor must add a driver edge"
+    assert drv_edges[0]["dst_port"] in pool.driver_targets(term_mid), \
+        "driver wired to a slider target"
+
+    # Render the floor-applied graph and confirm it actually animates.
+    nodes = [{"id": n["id"], "method_id": n["method_id"],
+              "params": dict(n.get("params", {})), "render": n.get("render", False),
+              "dirty": True}
+             for n in g2["nodes"]]
+    edges = [dict(e) for e in g2["edges"]]
+    set_canvas(W, H)
+    tv, _ = _render(nodes, edges)
+    assert tv > CFG.temporal_var_min, (
+        f"floor-applied slider-terminal clip did NOT animate: tv={tv:.6f} "
+        f"<= floor {CFG.temporal_var_min}")
+
+
 def test_driver_less_static_than_control():
     """Sanity: a driven clip must be strictly more alive than its control."""
     set_canvas(W, H)
