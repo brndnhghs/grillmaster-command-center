@@ -20,6 +20,8 @@ from image_pipeline.shootout.audit_dead_params import (
     _filter_resume,
     _merge_shards,
     _emit_report,
+    _emit_driver_report,
+    DRIVER_DEAD_PATH,
     audit_node,
 )
 from image_pipeline.core.graph import get_all_node_defs
@@ -132,3 +134,67 @@ def test_verdict_low_fraction_low_maxdiff_is_weak():
     from image_pipeline.shootout.audit_dead_params import _verdict_for
     v = _verdict_for(changed=0.05, tvar=5e-3, maxdiff=0.01, label="x")
     assert v == "weak (low-motion)", f"expected weak, got: {v}"
+
+
+# ── Merge-safe driver-blacklist emit (Route 8 dead-param closure) ──────────
+# A partial --ids/--limit driver run covers only a SUBSET of nodes. The
+# blacklist produced by prior (or concurrent shard) runs must survive for the
+# nodes this run did NOT revisit. Without the upsert fix, a small re-audit
+# would overwrite driver-dead-params.json and wipe every other node's
+# dead-param findings — silently re-poisoning the evolution's driver wiring.
+
+def test_emit_driver_report_merges_preserves_absent_nodes(tmp_path: Path):
+    """Partial driver run upserts per node; it never clobbers the rest."""
+    import json
+
+    import image_pipeline.shootout.audit_dead_params as m
+
+    old = m.DRIVER_DEAD_PATH
+    target = tmp_path / "driver-dead-params.json"
+    m.DRIVER_DEAD_PATH = target
+    try:
+        # Simulate a prior run that already flagged node 05's dead params.
+        target.write_text(json.dumps({"05": ["cell_points", "erosion"]}, indent=1))
+
+        # This run only revisits 07 (newly dead) and 09 (re-audited clean).
+        rc = m._emit_driver_report([
+            {"id": "07", "dead_params": ["zoom"]},
+            {"id": "09", "dead_params": []},  # clean -> dropped, never added
+        ])
+        assert rc == 0  # exit-code contract: 0 == audit completed (findings in file)
+
+        out = json.loads(target.read_text())
+        # 05 preserved (absent from this run's rows).
+        assert out.get("05") == ["cell_points", "erosion"], out
+        # 07 upserted.
+        assert out.get("07") == ["zoom"], out
+        # 09 absent (clean re-audit popped it).
+        assert "09" not in out, out
+        # Nothing else vanished.
+        assert set(out.keys()) == {"05", "07"}, out
+    finally:
+        m.DRIVER_DEAD_PATH = old
+
+
+def test_emit_driver_report_creates_from_empty(tmp_path: Path):
+    """A first-ever driver run (no prior file) seeds the blacklist cleanly."""
+    import json
+
+    import image_pipeline.shootout.audit_dead_params as m
+
+    old = m.DRIVER_DEAD_PATH
+    target = tmp_path / "driver-dead-params.json"
+    m.DRIVER_DEAD_PATH = target
+    try:
+        assert not target.exists()
+        rc = m._emit_driver_report([
+            {"id": "12", "dead_params": ["rate", "phase"]},
+            {"id": "33", "dead_params": []},
+        ])
+        assert rc == 0  # 0 == completed; findings are in the file, not the code
+        out = json.loads(target.read_text())
+        assert out == {"12": ["rate", "phase"]}, out
+        assert "33" not in out
+    finally:
+        m.DRIVER_DEAD_PATH = old
+

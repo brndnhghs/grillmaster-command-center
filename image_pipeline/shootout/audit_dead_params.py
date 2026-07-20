@@ -513,13 +513,34 @@ DRIVER_DEAD_PATH = REPORT_PATH.parent / "driver-dead-params.json"
 
 
 def _emit_driver_report(rows: list[dict]) -> int:
-    """Write the driver-dead-param blacklist JSON (consumed by motifs._drivable_params)."""
+    """Write the driver-dead-param blacklist JSON (consumed by motifs._drivable_params).
+
+    MERGE semantics (not overwrite): the existing ``driver-dead-params.json`` is
+    upserted per node id, so a *partial* run (``--ids`` / ``--limit`` / a single
+    shard) can never clobber dead-param findings from nodes it did not revisit.
+    For every node present in ``rows`` we replace its entry with the fresh audit
+    (an empty ``dead_params`` clears a stale entry); nodes absent from ``rows``
+    are preserved untouched. This makes incremental / sharded population safe.
+    """
     blacklist: dict[str, list[str]] = {}
+    if DRIVER_DEAD_PATH.exists():
+        try:
+            blacklist = json.loads(DRIVER_DEAD_PATH.read_text())
+        except (json.JSONDecodeError, OSError):
+            blacklist = {}
+    if not isinstance(blacklist, dict):
+        blacklist = {}
     n_dead = 0
     for r in rows:
-        if r.get("dead_params"):
-            blacklist[r["id"]] = r["dead_params"]
-            n_dead += len(r["dead_params"])
+        mid = r.get("id")
+        if mid is None:
+            continue
+        dead = r.get("dead_params") or []
+        if dead:
+            blacklist[mid] = dead
+        else:
+            blacklist.pop(mid, None)  # re-audited clean -> drop stale entry
+        n_dead += len(dead)
     DRIVER_DEAD_PATH.parent.mkdir(parents=True, exist_ok=True)
     DRIVER_DEAD_PATH.write_text(json.dumps(blacklist, indent=1, sort_keys=True))
     print(f"\nDriver-dead blacklist -> {DRIVER_DEAD_PATH}")
