@@ -1037,7 +1037,24 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     "997": {"shader": "color_grade_gpu", "type": "procedural", "typed": True,
              "param_map": {"exposure": "exposure", "gamma": "gamma", "saturation": "saturation"}},
     "991": {"shader": "bilateral_grid_gpu", "type": "procedural", "typed": True,
-             "param_map": {"blend": "blend", "sigma_r": "sigma_r", "sigma_s": "sigma_s"}}
+             "param_map": {"blend": "blend", "sigma_r": "sigma_r", "sigma_s": "sigma_s"}},
+    # ── P0.7 closed-form pattern twins (gap nodes) ──
+    # CPU node stays authoritative for export; these route the live preview to
+    # the new typed GLSL twins (core/shaders.py). Only the node's numeric (float)
+    # params are wired by name; choice params (anim_mode/color_mode/orientation/
+    # source/bg/palette/...) are intentionally left unmapped — the twin animates
+    # continuously from u_time so the preview is always live (pitfall #14).
+    "466": {"shader": "hex_mosaic_gpu", "type": "procedural", "typed": True,
+            "param_map": {"hex_size": "hex_size", "rotation": "rotation",
+                          "grout": "grout", "grout_color": "grout_color",
+                          "anim_speed": "anim_speed"}},
+    "505": {"shader": "metaballs_505_gpu", "type": "procedural", "typed": True,
+            "param_map": {"balls": "balls", "ball_size": "ball_size",
+                          "threshold": "threshold", "edge_soft": "edge_soft",
+                          "drift_amp": "drift_amp", "anim_speed": "anim_speed"}},
+    "426": {"shader": "truchet_sdf_gpu", "type": "procedural", "typed": True,
+            "param_map": {"tile_size": "tile_size", "stroke": "stroke",
+                          "edge_glow": "edge_glow", "anim_speed": "anim_speed"}}
 }
 
 # ── GPU coverage contract: no SILENT param drops ────────────────────────────
@@ -1212,7 +1229,7 @@ GPU_PREVIEW_DROP_ALLOW: dict[str, dict[str, str]] = {
     "997": {"white": "param not wired to GPU twin; CPU export authoritative for this param"},
     "991": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param",
             "iterations": "param not wired to GPU twin; CPU export authoritative for this param",
-            "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param"},
+            "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param"}
 }
 
 def is_param_justified_drop(mid: str, param: str) -> bool:

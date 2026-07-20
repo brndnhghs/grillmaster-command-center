@@ -1182,6 +1182,115 @@ _register("shader_kaleidoscope", "GPU kaleidoscope mirror", "filter", _filter_ty
 # the wrap is genuine per-pixel motion). CPU node 460 stays authoritative;
 # this is the live-preview path only. `step` is the prologue-reserved vec2, so
 # the warp accumulator uses `q`/`wp` locals (pitfall #15b).
+# ══════════════════════════════════════════════════════════════════════════
+#  P0.7 closed-form pattern twins (gap nodes 466 / 505 / 426)
+#  Live-preview GPU twins for pattern nodes whose CPU algorithm is a faithful
+#  closed-form f(uv,t). CPU node stays authoritative for export; these drive the
+#  client-side live preview. Choice params (anim_mode / color_mode / orientation
+#  / source / bg / palette ...) are intentionally omitted — the twins animate
+#  continuously from u_time so the preview is always live; the CPU export honours
+#  the exact choice. Helper functions are inlined (only _PROLOGUE helpers +
+#  u_time / u_resolution are used) to avoid the late-helper ordering pitfall.
+# ══════════════════════════════════════════════════════════════════════════
+
+# ── 466 Hexagonal Mosaic ──
+_register("hex_mosaic_gpu", "Hexagonal Mosaic (client-GPU twin of node 466)", "procedural", '''
+float hexDist(vec2 p) {
+    p = abs(p);
+    return max(dot(p, vec2(0.8660254, 0.5)), p.x);
+}
+void main() {
+    float scale = max(4.0, u_hex_size);
+    float latRot = u_rotation + u_time * 0.12 * u_anim_speed;
+    scale *= 1.0 + 0.15 * sin(u_time * u_anim_speed);   // gentle breathe
+    vec2 uv = (v_uv - 0.5) * u_resolution;
+    uv = rot(latRot) * uv;                              // rot() is the prologue helper
+    vec2 rr = vec2(1.0, 1.7320508) * scale;
+    vec2 h = rr * 0.5;
+    vec2 a = mod(uv, rr) - h;
+    vec2 b = mod(uv + h, rr) - h;
+    vec2 gv = dot(a, a) < dot(b, b) ? a : b;
+    vec2 cellId = uv - gv;
+    float hexR = 0.8660254 * scale;                     // center-to-edge
+    float edge = smoothstep(hexR * (1.0 - u_grout), hexR, hexDist(gv));
+    float hsh = hash21(cellId * 0.013);
+    vec3 col = 0.5 + 0.5 * cos(6.2831853 * (hsh + vec3(0.0, 0.33, 0.67)));
+    col = mix(col, vec3(u_grout_color), edge);
+    f_color = vec4(col, 1.0);
+}
+''',
+    uniforms={
+        "hex_size": {"glsl": "float", "min": 4.0, "max": 60.0, "default": 18.0, "description": "hex cell radius (px)"},
+        "rotation": {"glsl": "float", "min": 0.0, "max": 6.2832, "default": 0.0, "description": "lattice rotation (rad)"},
+        "grout": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.12, "description": "grout line width"},
+        "grout_color": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.0, "description": "grout grayscale"},
+        "anim_speed": {"glsl": "float", "min": 0.1, "max": 3.0, "default": 1.0, "description": "animation speed"},
+    })
+
+# ── 505 Metaballs (Procedural) ──
+_register("metaballs_505_gpu", "Metaballs (client-GPU twin of node 505)", "procedural", '''
+void main() {
+    vec2 uv = v_uv;
+    float t = u_time * u_anim_speed;
+    int N = int(clamp(u_balls, 2.0, 16.0));
+    float field = 0.0;
+    for (int i = 0; i < 16; i++) {
+        if (i >= N) break;
+        float fi = float(i);
+        float ang = fi * 2.3999632 + t * (0.5 + 0.1 * fi);   // golden-angle spread
+        float rad = u_drift_amp * (0.5 + 0.5 * sin(t * 0.7 + fi));
+        vec2 c = vec2(0.5) + rad * vec2(cos(ang), sin(ang))
+                 + 0.10 * vec2(sin(t + fi), cos(t * 1.1 + fi * 2.0));
+        vec2 d = uv - c;
+        float bs = u_ball_size * (1.0 + 0.25 * sin(t + fi));  // pulse
+        field += (bs * bs) / max(dot(d, d), 1e-4);
+    }
+    float m = smoothstep(u_threshold - u_edge_soft, u_threshold + u_edge_soft, field);
+    float hue = fract(field * 0.15 + t * 0.05);
+    vec3 col = 0.5 + 0.5 * cos(6.2831853 * (hue + vec3(0.0, 0.33, 0.67)));
+    col *= m;
+    f_color = vec4(col, 1.0);
+}
+''',
+    uniforms={
+        "balls": {"glsl": "float", "min": 2.0, "max": 16.0, "default": 8.0, "description": "number of metaballs"},
+        "ball_size": {"glsl": "float", "min": 0.02, "max": 0.3, "default": 0.1, "description": "ball radius (frac of canvas)"},
+        "threshold": {"glsl": "float", "min": 0.3, "max": 3.0, "default": 1.0, "description": "iso-level"},
+        "edge_soft": {"glsl": "float", "min": 0.0, "max": 0.6, "default": 0.15, "description": "edge softness"},
+        "drift_amp": {"glsl": "float", "min": 0.0, "max": 0.3, "default": 0.12, "description": "orbit amplitude"},
+        "anim_speed": {"glsl": "float", "min": 0.1, "max": 3.0, "default": 1.0, "description": "animation speed"},
+    })
+
+# ── 426 Smooth Truchet (SDF) ──
+_register("truchet_sdf_gpu", "Smooth Truchet (client-GPU twin of node 426)", "procedural", '''
+void main() {
+    float tile = max(8.0, u_tile_size);
+    vec2 uv = v_uv * u_resolution;
+    vec2 cell = floor(uv / tile);
+    vec2 local = fract(uv / tile);                       // [0,1]
+    local = rot(u_time * u_anim_speed) * (local - 0.5) + 0.5;   // flow
+    float rnd = hash21(cell);
+    if (rnd > 0.5) local.x = 1.0 - local.x;
+    float d1 = abs(length(local) - 0.5);                 // arc at corner (0,0)
+    float d2 = abs(length(local - 1.0) - 0.5);           // arc at corner (1,1)
+    float d = min(d1, d2);
+    float aa = 2.0 / tile;
+    float lineMask = smoothstep(u_stroke * 0.5 + aa, u_stroke * 0.5 - aa, abs(d));
+    float glow = u_edge_glow * smoothstep(0.12, 0.0, abs(d));
+    float hue = fract(rnd + u_time * 0.05);
+    vec3 base = 0.5 + 0.5 * cos(6.2831853 * (hue + vec3(0.0, 0.33, 0.67)));
+    vec3 col = mix(vec3(0.05), base, lineMask);
+    col += glow * base;
+    f_color = vec4(col, 1.0);
+}
+''',
+    uniforms={
+        "tile_size": {"glsl": "float", "min": 24.0, "max": 200.0, "default": 56.0, "description": "tile size (px)"},
+        "stroke": {"glsl": "float", "min": 0.04, "max": 0.4, "default": 0.13, "description": "tube width (frac of tile)"},
+        "edge_glow": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.25, "description": "outer glow strength"},
+        "anim_speed": {"glsl": "float", "min": 0.1, "max": 3.0, "default": 0.6, "description": "animation speed"},
+    })
+
 _register("kaleidoscope_mirror_gpu", "Kaleidoscope Mirror (client-GPU twin of node 460)", "filter", _filter_typed('''
     vec2 ctr = vec2(u_center_x, u_center_y);
     vec2 p = uv - ctr;
