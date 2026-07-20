@@ -4,7 +4,11 @@ __pycache__/
 *.pyc
 .DS_Store
 *.sqlite3
-data/
+**/data/*
+# Curated learned artifact (dead-param blacklist the generator consumes to avoid
+# wiring drivers onto inert controls). Ship it so fresh clones start with a
+# populated blacklist instead of empty. Genomes/ratings/cost models stay ignored.
+!**/data/driver-dead-params.json
 noise_output/
 _grid_params/
 *.bak

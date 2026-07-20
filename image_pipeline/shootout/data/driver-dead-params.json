@@ -1,0 +1,368 @@
+{
+ "05": [
+  "cell_points",
+  "cell_borders",
+  "ring_wobble",
+  "ring_count",
+  "water_level",
+  "erosion"
+ ],
+ "137": [
+  "opacity"
+ ],
+ "138": [
+  "value_a",
+  "value_b"
+ ],
+ "139": [
+  "scale_a",
+  "scale_b"
+ ],
+ "141": [
+  "feather"
+ ],
+ "19": [
+  "iterations",
+  "start_y_offset"
+ ],
+ "238": [
+  "max_iter"
+ ],
+ "242": [
+  "depth"
+ ],
+ "332": [
+  "max_points",
+  "iters",
+  "dot_size",
+  "anim_speed"
+ ],
+ "334": [
+  "noise_amp",
+  "blur_sigma"
+ ],
+ "336": [
+  "sigma",
+  "rho",
+  "epsilon",
+  "kappa",
+  "noise_amp",
+  "blur_sigma",
+  "anim_speed"
+ ],
+ "338": [
+  "n_points",
+  "iterations",
+  "gamma",
+  "dot_scale",
+  "anim_speed"
+ ],
+ "341": [
+  "noise_amp",
+  "blur_sigma",
+  "anim_speed"
+ ],
+ "344": [
+  "grid",
+  "stiffness",
+  "wind",
+  "anim_speed"
+ ],
+ "347": [
+  "lambda",
+  "noise_amp",
+  "blur_sigma",
+  "anim_speed"
+ ],
+ "349": [
+  "amount",
+  "noise_amp",
+  "blur_sigma",
+  "anim_speed"
+ ],
+ "406": [
+  "damping"
+ ],
+ "421": [
+  "etf_kernel",
+  "etf_iters",
+  "sigma_c",
+  "rho",
+  "sigma_m",
+  "tau",
+  "noise_amp",
+  "blur_sigma",
+  "anim_speed"
+ ],
+ "424": [
+  "scale",
+  "octaves",
+  "steps",
+  "step_len",
+  "contrast",
+  "anim_speed"
+ ],
+ "430": [
+  "noise_amp",
+  "blur_sigma",
+  "anim_speed"
+ ],
+ "434": [
+  "light_x",
+  "light_y",
+  "num_ghosts",
+  "ghost_start",
+  "ghost_end",
+  "ghost_size",
+  "halo_radius",
+  "halo_thickness",
+  "halo_intensity",
+  "streak_len",
+  "streak_wid",
+  "streak_intensity",
+  "chroma",
+  "hue_shift",
+  "anim_speed"
+ ],
+ "436": [
+  "clip_limit",
+  "noise_amp",
+  "blur_sigma",
+  "anim_speed"
+ ],
+ "439": [
+  "sigma",
+  "n_orientations",
+  "anim_speed"
+ ],
+ "441": [
+  "n_levels",
+  "grid_step",
+  "flow_amp",
+  "noise_amp",
+  "anim_speed"
+ ],
+ "442": [
+  "obstacle_strength",
+  "seed_count",
+  "n_iso",
+  "line_width",
+  "anim_speed"
+ ],
+ "445": [
+  "groove_spacing",
+  "curvature",
+  "interp",
+  "noise_scale",
+  "anim_speed"
+ ],
+ "447": [
+  "sigma_small",
+  "sigma_mid",
+  "sigma_large",
+  "alpha",
+  "beta",
+  "offset",
+  "noise_amp",
+  "blur_sigma",
+  "anim_speed"
+ ],
+ "451": [
+  "lambda_",
+  "sigma",
+  "window",
+  "iters",
+  "amount",
+  "noise_amp",
+  "anim_speed"
+ ],
+ "452": [
+  "p",
+  "q",
+  "detail",
+  "line_width",
+  "anim_speed"
+ ],
+ "461": [
+  "iterations",
+  "line_width",
+  "anim_speed"
+ ],
+ "482": [
+  "cutoff"
+ ],
+ "487": [
+  "arms",
+  "tightness",
+  "arm_spread",
+  "bulge_size",
+  "star_count",
+  "inclination",
+  "rotation_speed",
+  "anim_speed"
+ ],
+ "489": [
+  "adapt",
+  "grain_size",
+  "noise_amp",
+  "blur_sigma",
+  "anim_speed"
+ ],
+ "49": [
+  "max_iter"
+ ],
+ "50": [
+  "particles"
+ ],
+ "500": [
+  "R",
+  "r",
+  "anim_speed"
+ ],
+ "52": [
+  "warp_strength",
+  "max_iter",
+  "color_speed",
+  "color_offset",
+  "anim_zoom_speed",
+  "anim_float_amplitude"
+ ],
+ "522": [
+  "curvature",
+  "scanline",
+  "scan_freq",
+  "mask_strength",
+  "vignette",
+  "chroma",
+  "roll_speed",
+  "flicker",
+  "anim_speed"
+ ],
+ "523": [
+  "anim_speed",
+  "curtain_count",
+  "drift_speed",
+  "beam_height",
+  "color_shift",
+  "turbulence",
+  "red_fringe",
+  "n_frames"
+ ],
+ "524": [
+  "radius",
+  "threshold"
+ ],
+ "527": [
+  "chroma_smear",
+  "chroma_shift",
+  "luma_noise",
+  "line_jitter",
+  "tracking",
+  "roll_speed",
+  "skew",
+  "saturation",
+  "contrast",
+  "anim_speed"
+ ],
+ "529": [
+  "levels",
+  "anim_speed"
+ ],
+ "531": [
+  "scale",
+  "line_width",
+  "warp",
+  "anim_speed"
+ ],
+ "533": [
+  "sigma",
+  "levels",
+  "anim_speed"
+ ],
+ "534": [
+  "n_spots",
+  "spot_size",
+  "stretch"
+ ],
+ "54": [
+  "max_num",
+  "density_sigma",
+  "prime_size",
+  "composite_alpha",
+  "anim_speed"
+ ],
+ "72": [
+  "start_length",
+  "branch_width",
+  "taper",
+  "wind",
+  "anim_speed"
+ ],
+ "76": [
+  "glitch_lines",
+  "glitch_intensity",
+  "glow_radius",
+  "led_radius",
+  "scanline_speed",
+  "anim_speed"
+ ],
+ "923": [
+  "anim_speed"
+ ],
+ "924": [
+  "sigma_r"
+ ],
+ "925": [
+  "scale",
+  "sigma",
+  "kappa",
+  "beta",
+  "phi",
+  "anim_speed"
+ ],
+ "940": [
+  "order",
+  "line_width",
+  "anim_speed"
+ ],
+ "950": [
+  "bands",
+  "anim_speed"
+ ],
+ "953": [
+  "anim_speed",
+  "tine_strength",
+  "tine_sharpness",
+  "n_tines"
+ ],
+ "960": [
+  "sigma",
+  "rho",
+  "n_points",
+  "exposure",
+  "anim_speed"
+ ],
+ "967": [
+  "frame_width"
+ ],
+ "977": [
+  "anim_speed",
+  "flow_amount",
+  "delta",
+  "smoothness",
+  "iters",
+  "viz_scale"
+ ],
+ "989": [
+  "threshold",
+  "search_steps",
+  "jitter_amt",
+  "anim_speed"
+ ],
+ "997": [
+  "exposure",
+  "gamma",
+  "white",
+  "anim_speed"
+ ]
+}
