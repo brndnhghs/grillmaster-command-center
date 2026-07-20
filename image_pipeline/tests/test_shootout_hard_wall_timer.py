@@ -84,8 +84,10 @@ def test_hard_wall_timer_aborts_slow_sim_at_clamp():
     cfg = ShootoutConfig(
         width=32, height=24, frames=1,
         render_timeout_s=300.0,
-        max_render_timeout_s=0.3,    # clamp the test fast
-        hard_wall_factor=1.0,        # timer fires exactly at clamp
+        # Hard-wall clamp: the timer fires at max_render_timeout_s ×
+        # hard_wall_factor = 0.3s.
+        max_render_timeout_s=0.3,
+        hard_wall_factor=1.0,
     )
     g = _tiny_genome("g-hwt-slow")
     _clear_skip(g["genome_id"])
@@ -93,7 +95,15 @@ def test_hard_wall_timer_aborts_slow_sim_at_clamp():
     evaluator.GraphExecutor = _SlowFakeExecutor
     try:
         t0 = time.time()
-        result = evaluator.render_genome(g, cfg)
+        # Pass render_timeout_s explicitly (600s) so the per-genome cap
+        # ``eff_timeout`` is deterministically LARGER than the hard-wall clamp
+        # (0.3s). The timer is then the *binding* abort authority: it sets the
+        # cancel event at 0.3s, well before the per-frame loop-timeout check
+        # at 600s. (If eff_timeout were ≤ the clamp — e.g. a light graph where
+        # the cost model returns the base 300s cap that equals the clamp — the
+        # loop check would win the race and the timer would never be observed,
+        # so the test would not exercise the code under test.)
+        result = evaluator.render_genome(g, cfg, None, 600.0)
         wall = time.time() - t0
     finally:
         evaluator.GraphExecutor = real_exec
