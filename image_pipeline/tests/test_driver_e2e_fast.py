@@ -13,9 +13,13 @@ would freeze every driver-driven clip without tripping the fn-level test.
 
 This test closes that gap with a FULL executor render of a tiny driver→target
 graph and asserts the terminal clip's temporal variance clears the shootout
-liveness floor. It is deliberately FAST (96×64 canvas, 8 frames, a cheap
-patterns node) so it belongs in the DEFAULT suite — NOT marked ``slow`` — so
-the executor path is exercised every CI run, not just on demand.
+liveness floor. It is marked ``slow``: its chosen target (node 952, Blue-Noise
+Dither) is a genuinely expensive generator (~25 s per 8-frame batch), so the
+full test costs ~50 s. That made the DEFAULT ``-m "not slow"`` suite stall for
+a minute, looking hung. The SCALAR→param executor wiring it validates is still
+covered in the default suite by ``test_shootout_driver_generators_vary`` (~1 s)
+and ``test_shootout_driver_modulation`` (~2 s), which render cheaper targets —
+so this heavier check runs only under the ``slow`` marker.
 
 If this test ever fails, a refactor broke the SCALAR→param edge wiring and
 driver-driven animation would silently die again.
@@ -44,6 +48,7 @@ TARGET_PARAM = "matrix_size"
 FLOOR = DEFAULT_CONFIG.temporal_var_min
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("driver_mid", ("__lfo__", "__counter__"))
 def test_driver_scalar_reaches_pixels_e2e(driver_mid):
     """A driver wired into a target's numeric param must animate the clip."""
