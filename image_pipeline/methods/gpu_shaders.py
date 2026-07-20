@@ -541,6 +541,47 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
             "param_map": {"orientation": "orientation", "frequency": "frequency",
                           "sigma": "sigma", "aspect": "aspect", "phase": "phase",
                           "contrast": "contrast", "anim_speed": "anim_speed"}},
+    # 995 Gravitational Lensing, 950 SDF Scene, 967 Interior Mapping — each is a
+    # per-pixel closed-form f(uv,t) procedural generator with no close existing
+    # twin, so each gets a brand-new typed-uniform GLSL twin (core/shaders.py)
+    # wired via a CLIENT_GPU_SHIMS entry. Every numeric CPU param is bound to a
+    # named u_<name> uniform/SCALAR port (typed-uniform contract). Choice params
+    # (palette/mode/pattern/color_mode) and CPU-only per-frame frame counts are
+    # dropped (GPU_PREVIEW_DROP_ALLOW); the twins animate continuously from
+    # u_time so the preview is always live and the CPU export is authoritative.
+    "995": {"shader": "grav_lens_gpu", "type": "procedural", "typed": True,
+            "param_map": {"einstein_radius": "einstein_radius",
+                          "star_density": "star_density", "nebula": "nebula",
+                          "neb_scale": "neb_scale", "exposure": "exposure",
+                          "ring_brightness": "ring_brightness",
+                          "ring_width": "ring_width", "anim_speed": "anim_speed"}},
+    "950": {"shader": "sdf_scene_gpu", "type": "procedural", "typed": True,
+            "param_map": {"scale": "scale", "blend": "blend",
+                          "repetition": "repetition", "glow": "glow",
+                          "bands": "bands", "band_mix": "band_mix",
+                          "anim_speed": "anim_speed"}},
+    "967": {"shader": "interior_mapping_gpu", "type": "procedural", "typed": True,
+            "param_map": {"n_cols": "n_cols", "n_rows": "n_rows",
+                          "room_depth": "room_depth", "perspective": "perspective",
+                          "pan_x": "pan_x", "pan_y": "pan_y",
+                          "frame_width": "frame_width", "lit_fraction": "lit_fraction",
+                          "warmth": "warmth", "anim_speed": "anim_speed"}},
+    # 522 CRT Emulation, 527 VHS Tape — per-pixel closed-form filter twins.
+    # Every numeric CPU slider is bound to a named u_<name> uniform/SCALAR port
+    # (typed-uniform contract). Choice params (source/palette/anim_mode) and the
+    # timeline-driven time/anim_speed are auto-justified per the coverage guard.
+    "522": {"shader": "crt_emulation_gpu", "type": "filter", "typed": True,
+            "param_map": {"curvature": "curvature", "scanline": "scanline",
+                          "scan_freq": "scan_freq", "mask_strength": "mask_strength",
+                          "vignette": "vignette", "chroma": "chroma",
+                          "roll_speed": "roll_speed", "flicker": "flicker",
+                          "brightness": "brightness"}},
+    "527": {"shader": "vhs_tape_gpu", "type": "filter", "typed": True,
+            "param_map": {"chroma_smear": "chroma_smear", "chroma_shift": "chroma_shift",
+                          "luma_noise": "luma_noise", "line_jitter": "line_jitter",
+                          "tracking": "tracking", "roll_speed": "roll_speed",
+                          "skew": "skew", "saturation": "saturation",
+                          "contrast": "contrast", "brightness": "brightness"}},
     "04": {"shader": "worley_gpu", "type": "procedural",
            "param_map": {"jitter": "p1", "fractal_gain": "p2"}},
     "02": {"shader": "quasicrystal_gpu", "type": "procedural",
@@ -1129,6 +1170,9 @@ GPU_PREVIEW_DROP_ALLOW: dict[str, dict[str, str]] = {
     "03": {"amplitude": "param not wired to GPU twin; CPU export authoritative for this param", "freq_variation": "param not wired to GPU twin; CPU export authoritative for this param", "grids": "param not wired to GPU twin; CPU export authoritative for this param", "thickness": "param not wired to GPU twin; CPU export authoritative for this param", "wobble": "param not wired to GPU twin; CPU export authoritative for this param"},
     "487": {"star_count": "param not wired to GPU twin; CPU export authoritative for this param (Galaxy Generator samples this many stars on the CPU; the closed-form GLSL twin renders a continuous density field at canvas resolution)"},
     "108": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param (export frame count, timeline-driven)"},
+    "995": {"palette": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin inlines the cosmic palette; CPU node honours the exact palette choice)", "mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin animates continuously from u_time — a drift+breathe superposition)", "anim_mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin animates continuously from u_time)", "time": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin drives phase from u_time)"},
+    "950": {"pattern": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin renders the combo composition; CPU node honours the exact pattern choice)", "color_mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin inlines the amber palette)", "anim_mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin animates continuously from u_time — rotate+drift+pulse superposition)", "time": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin drives phase from u_time)"},
+    "967": {"anim_mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin animates continuously from u_time — pan+lights superposition)", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param (export frame count for Architecture-A capture)", "time": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin drives phase from u_time)"},
     "486": {"blur_type": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin always applies a combined radial-zoom + spin motion blur; the CPU node honours the exact blur_type choice)", "source": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin samples the wired upstream image)", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "palette": "param not wired to GPU twin; CPU export authoritative for this param", "anim_mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin animates continuously from u_time)"},
     "438": {"source": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin samples the wired upstream image)", "tint": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "palette": "param not wired to GPU twin; CPU export authoritative for this param", "anim_mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin animates continuously from u_time)", "time": "param not wired to GPU twin; CPU export authoritative for this param"},
     "439": {"source": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin samples the wired upstream image)", "n_orientations": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin renders a single-orientation response)", "combine": "param not wired to GPU twin; CPU export authoritative for this param", "output": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin renders the energy magnitude)", "anim_mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin animates continuously from u_time)"},

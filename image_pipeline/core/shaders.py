@@ -11854,3 +11854,308 @@ _register("gabor_filter_gpu",
     "anim_speed":  {"glsl": "float", "min": 0.1, "max": 3.0, "default": 1.0,
                     "description": "animation speed"},
 })
+
+
+# ── 522 CRT Emulation (client-GPU twin) ──
+_register("crt_emulation_gpu",
+          "CRT Emulation (client-GPU twin of node 522)",
+          "filter", _filter_typed('''
+    // Barrel distortion (curvature), aperture-grille mask, scanlines, edge
+    // vignette, RGB chroma shift, and a u_time-driven vertical roll + brightness
+    // flicker so the live preview is animated (cos term, not sin, to avoid the
+    // 0/pi phase degeneracy).
+    vec2 p = uv * 2.0 - 1.0;
+    float r2 = dot(p, p);
+    vec2 quv = (p * (1.0 + u_curvature * r2)) * 0.5 + 0.5;
+    quv.y = fract(quv.y + u_time * 0.05 * u_roll_speed);
+    vec3 col;
+    col.r = sample(clamp(quv + vec2(u_chroma * 0.01 * (quv.x - 0.5), 0.0), 0.0, 1.0)).r;
+    col.g = sample(clamp(quv, 0.0, 1.0)).g;
+    col.b = sample(clamp(quv - vec2(u_chroma * 0.01 * (quv.x - 0.5), 0.0), 0.0, 1.0)).b;
+    float scan = 0.5 + 0.5 * sin(quv.y * u_resolution.y * 0.5 * u_scan_freq);
+    col *= 1.0 - u_scanline * (1.0 - scan);
+    float m = 0.5 + 0.5 * cos(quv.x * u_resolution.x * 1.04719755);
+    col *= 1.0 - u_mask_strength * (1.0 - m);
+    col *= 1.0 - u_vignette * r2;
+    col *= u_brightness * (1.0 - u_flicker * (0.5 + 0.5 * cos(u_time * 7.0)));
+    f_color = vec4(clamp(col, 0.0, 1.0), 1.0);
+'''), uniforms={
+    "curvature":  {"glsl": "float", "min": 0.0, "max": 0.45, "default": 0.18, "description": "barrel distortion amount"},
+    "scanline":   {"glsl": "float", "min": 0.0, "max": 1.0,  "default": 0.35, "description": "scanline darkness"},
+    "scan_freq":  {"glsl": "float", "min": 1.0, "max": 8.0,  "default": 2.5,  "description": "scanline frequency"},
+    "mask_strength": {"glsl": "float", "min": 0.0, "max": 1.0,  "default": 0.35, "description": "aperture-grille mask strength"},
+    "vignette":   {"glsl": "float", "min": 0.0, "max": 1.0,  "default": 0.3,  "description": "edge vignette"},
+    "chroma":     {"glsl": "float", "min": 0.0, "max": 1.0,  "default": 0.25, "description": "RGB chroma shift"},
+    "roll_speed": {"glsl": "float", "min": 0.0, "max": 3.0,  "default": 1.0,  "description": "vertical roll speed"},
+    "flicker":    {"glsl": "float", "min": 0.0, "max": 0.3,  "default": 0.06, "description": "brightness flicker"},
+    "brightness": {"glsl": "float", "min": 0.4, "max": 2.0,  "default": 1.1,  "description": "overall brightness"},
+})
+
+# ── 527 VHS Tape (client-GPU twin) ──
+_register("vhs_tape_gpu",
+          "VHS Tape (client-GPU twin of node 527)",
+          "filter", _filter_typed('''
+    // Chroma smear + per-line chroma shift, horizontal line jitter and a
+    // tracking-band distortion driven by u_time, luma noise, and
+    // saturation/contrast/brightness grading. cos/linear temporal terms (not
+    // sin) keep the live preview honest.
+    float n = hash21(vec2(uv.x * 100.0, floor(uv.y * u_resolution.y)));
+    float jit = (hash21(vec2(floor(uv.y * 40.0), u_time)) - 0.5) * u_line_jitter * 0.05;
+    vec2 quv = vec2(uv.x + jit + (uv.y - 0.5) * u_skew * 0.15,
+                    fract(uv.y + u_time * 0.02 * u_roll_speed));
+    float off = u_chroma_smear * 0.02 + u_chroma_shift * 0.0005 * sin(uv.y * 80.0 + u_time);
+    vec3 col;
+    col.r = sample(clamp(quv + vec2(off, 0.0), 0.0, 1.0)).r;
+    col.g = sample(clamp(quv, 0.0, 1.0)).g;
+    col.b = sample(clamp(quv - vec2(off, 0.0), 0.0, 1.0)).b;
+    col += (n - 0.5) * u_luma_noise;
+    float track = smoothstep(0.0, 0.08,
+        abs(fract(uv.y - u_time * 0.1 * u_roll_speed) - 0.5) - (0.45 - 0.1 * u_tracking));
+    col *= 1.0 - track * 0.5;
+    float l = dot(col, vec3(0.299, 0.587, 0.114));
+    col = (col - l) * u_saturation + l;
+    col = (col - 0.5) * u_contrast + 0.5;
+    col *= u_brightness;
+    f_color = vec4(clamp(col, 0.0, 1.0), 1.0);
+'''), uniforms={
+    "chroma_smear": {"glsl": "float", "min": 0.0, "max": 1.0,  "default": 0.55, "description": "horizontal chroma smear"},
+    "chroma_shift": {"glsl": "float", "min": 0.0, "max": 24.0, "default": 8.0,  "description": "per-line chroma offset"},
+    "luma_noise":   {"glsl": "float", "min": 0.0, "max": 0.6,  "default": 0.12, "description": "luma noise amount"},
+    "line_jitter":  {"glsl": "float", "min": 0.0, "max": 1.0,  "default": 0.45, "description": "horizontal line jitter"},
+    "tracking":     {"glsl": "float", "min": 0.0, "max": 1.0,  "default": 0.5,  "description": "tracking band strength"},
+    "roll_speed":     {"glsl": "float", "min": 0.0, "max": 3.0,  "default": 1.0,  "description": "vertical roll speed"},
+    "skew":         {"glsl": "float", "min": 0.0, "max": 1.0,  "default": 0.35, "description": "tape skew"},
+    "saturation":   {"glsl": "float", "min": 0.0, "max": 2.0,  "default": 1.25, "description": "saturation"},
+    "contrast":     {"glsl": "float", "min": 0.3, "max": 2.0,  "default": 1.1,  "description": "contrast"},
+    "brightness":   {"glsl": "float", "min": 0.4, "max": 2.0,  "default": 1.05, "description": "brightness"},
+})
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  CPU-node closed-form procedural twins (Route 0 / GPU-First gap mirror)
+#  Live-preview GPU twins for three pattern/math_art nodes whose CPU algorithm
+#  is a faithful per-pixel closed-form f(uv, t) generator with NO close
+#  existing twin. CPU node stays authoritative for export; these drive the
+#  client-side live preview. Every numeric CPU param becomes a named u_<name>
+#  uniform/SCALAR port (typed-uniform contract). Choice params (palette / mode
+#  / pattern / color_mode) are dropped to GPU_PREVIEW_DROP_ALLOW — the twins
+#  animate continuously from u_time so the preview is always live, and the CPU
+#  export honours the exact choices. Palettes are inlined (no late-helper
+#  _INFERNO ordering pitfall). Animation uses cos()/linear terms so the
+#  t=0 vs t=pi audit is never a sin-phase false negative.
+# ══════════════════════════════════════════════════════════════════════════
+
+# ── 995 Gravitational Lensing / Einstein Ring (client-GPU twin) ──
+_register("grav_lens_gpu",
+          "Gravitational Lensing Einstein Ring (client-GPU twin of node 995)",
+          "procedural",
+'''void main() {
+    // Thin-lens deflection: beta = theta * (1 - thetaE^2/|theta|^2). Sample a
+    // procedural sky (fbm nebula + hashed stars) at the mapped source position
+    // and brighten by the magnification mu. Continuous drift keeps it live.
+    vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);
+    uv *= 2.2;                                    // world scale ~ CPU node
+    float t = u_time * u_anim_speed;
+
+    float tE = u_einstein_radius;
+    // drift the source in a slow circle (matches CPU 'drift' mode)
+    vec2 p = uv + 0.25 * vec2(sin(t), cos(t));
+    // breathe the lens mass a touch (cos, no 0/pi degeneracy)
+    tE *= 0.85 + 0.15 * cos(t * 0.7);
+
+    float r2 = dot(p, p) + 1e-4;
+    float inv = (tE * tE) / r2;
+    vec2 beta = p * (1.0 - inv);                  // source position
+    float mu = 1.0 / abs(1.0 - inv * inv);
+    mu = clamp(mu, 1.0, 8.0);
+
+    // procedural sky at beta
+    vec2 sky_uv = beta * (2.0 + u_neb_scale * 0.6);
+    float neb = pow(clamp(fbm(sky_uv + vec2(0.0, t * 0.05)) , 0.0, 1.0), 1.6) * u_nebula;
+    float star = smoothstep(1.0 - u_star_density * 40.0, 1.0, hash21(floor(beta * 240.0)));
+    star += 0.5 * smoothstep(0.985, 1.0, hash21(floor(beta * 90.0 + 7.0)));
+
+    // palette (cosmic default, inlined)
+    vec3 neb_rgb = vec3(0.32, 0.22, 0.55);
+    vec3 star_rgb = vec3(0.80, 0.86, 1.0);
+    vec3 sky = neb_rgb * neb + star_rgb * star;
+
+    float rr = sqrt(r2);
+    float ring = exp(-((rr - tE) * (rr - tE)) / (2.0 * u_ring_width * u_ring_width));
+    vec3 glow = star_rgb * ring * u_ring_brightness;
+
+    vec3 col = clamp(sky * mu + glow, 0.0, 1.0);
+    col = clamp(col * u_exposure, 0.0, 1.0);
+    f_color = vec4(col, 1.0);
+}
+''',
+uniforms={
+    "einstein_radius": {"glsl": "float", "min": 0.05, "max": 0.9, "default": 0.35, "description": "Einstein radius (lens mass, ring size)"},
+    "star_density":    {"glsl": "float", "min": 0.0005, "max": 0.02, "default": 0.004, "description": "fraction of pixels that are stars"},
+    "nebula":          {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "nebula cloud intensity"},
+    "neb_scale":       {"glsl": "float", "min": 1.0, "max": 8.0, "default": 3.0, "description": "nebula fbm frequency"},
+    "exposure":        {"glsl": "float", "min": 0.2, "max": 4.0, "default": 1.4, "description": "output brightness multiplier"},
+    "ring_brightness": {"glsl": "float", "min": 0.0, "max": 3.0, "default": 1.2, "description": "Einstein-ring glow strength"},
+    "ring_width":      {"glsl": "float", "min": 0.01, "max": 0.3, "default": 0.06, "description": "Einstein-ring glow width"},
+    "anim_speed":      {"glsl": "float", "min": 0.1, "max": 5.0, "default": 1.0, "description": "animation speed"},
+})
+
+# ── 950 SDF Scene (client-GPU twin) ──
+_register("sdf_scene_gpu",
+          "SDF Scene (client-GPU twin of node 950)",
+          "procedural",
+'''float sd_circle(vec2 p, float r) { return length(p) - r; }
+float sd_box(vec2 p, vec2 b) {
+    vec2 d = abs(p) - b;
+    return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+}
+float sd_ring(vec2 p, float r, float th) { return abs(length(p) - r) - th; }
+float smin_p(float a, float b, float k) {
+    float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+    return mix(b, a, h) - k * h * (1.0 - h);
+}
+void main() {
+    vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);
+    uv *= 2.0 * u_scale;
+    float t = u_time * u_anim_speed;
+
+    // rotate + drift (closed-form, live). cos/sin drift, angle=t.
+    vec2 p = uv + 0.30 * vec2(sin(t), cos(t * 0.7));
+    p = rot(t * 0.5) * p;
+
+    // domain repetition (tiling)
+    if (u_repetition > 1e-4) {
+        float rep = max(1e-3, u_repetition);
+        p = mod(p + 0.5 * rep, rep) - 0.5 * rep;
+    }
+    float k = max(1e-3, u_blend);
+    float dc = sd_circle(p, 0.16);
+    float db = sd_box(p, vec2(0.20));
+    float dr = sd_ring(p, 0.34, 0.022);
+    float d = smin_p(smin_p(dc, db, k), dr, k);
+
+    // shading from the field
+    vec3 bg = vec3(0.03, 0.02, 0.05);
+    vec3 ink = vec3(0.98, 0.78, 0.36);
+    float edge = 0.014;
+    float inside = clamp(0.5 - d / (2.0 * edge), 0.0, 1.0);
+    float glow_eff = u_glow * (1.0 + 0.5 * cos(t));
+    float glow_f = exp(-3.0 * max(d, 0.0)) * glow_eff;
+    float band_f = 0.5 + 0.5 * sin(d * max(0.0, u_bands) - t);
+    float band_factor = (1.0 - u_band_mix) + u_band_mix * band_f;
+
+    vec3 col = mix(bg, ink, inside) + ink * glow_f;
+    col *= band_factor;
+    f_color = vec4(clamp(col, 0.0, 1.0), 1.0);
+}
+''',
+uniforms={
+    "scale":      {"glsl": "float", "min": 0.5, "max": 4.0, "default": 1.6, "description": "scene zoom / world scale"},
+    "blend":      {"glsl": "float", "min": 0.01, "max": 0.6, "default": 0.18, "description": "smooth-min blend softness"},
+    "repetition": {"glsl": "float", "min": 0.0, "max": 1.5, "default": 0.0, "description": "domain-repetition cell size (0=off)"},
+    "glow":       {"glsl": "float", "min": 0.0, "max": 2.0, "default": 0.8, "description": "outside halo strength"},
+    "bands":      {"glsl": "float", "min": 0.0, "max": 40.0, "default": 12.0, "description": "distance isoline count"},
+    "band_mix":   {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "contour-band modulation amount"},
+    "anim_speed": {"glsl": "float", "min": 0.1, "max": 5.0, "default": 1.0, "description": "animation speed"},
+})
+
+# ── 967 Interior Mapping (client-GPU twin) ──
+_register("interior_mapping_gpu",
+          "Interior Mapping (client-GPU twin of node 967)",
+          "procedural",
+'''void main() {
+    // Fake 3D rooms behind a flat facade (van Dongen 2008): per-pixel ray-box
+    // intersection into a tiled window grid. Continuous camera pan keeps it live.
+    vec2 gu = gl_FragCoord.xy / u_resolution;
+    float t = u_time * u_anim_speed;
+
+    float pan_x = u_pan_x + 0.6 * sin(t);
+    float pan_y = u_pan_y + 0.25 * cos(t * 0.7);
+    float persp = u_perspective;
+
+    vec2 f = gu * vec2(u_n_cols, u_n_rows);
+    vec2 ci = floor(f);
+    vec2 lxy = (f - ci) - 0.5;                    // local window coord [-0.5,0.5]
+    float lx = lxy.x, ly = lxy.y;
+
+    bool in_frame = (abs(lx) > (0.5 - u_frame_width)) || (abs(ly) > (0.5 - u_frame_width));
+
+    // per-window hashed room params
+    float rd = hash21(ci + 1.0);
+    float depth = u_room_depth * (0.75 + 0.5 * rd);
+    float wall_h = hash21(ci + 2.0);
+    float lit_h = hash21(ci + 3.0);
+    // flicker lit set over time
+    float flick = 0.5 + 0.5 * sin(t * (0.6 + lit_h * 2.0) + wall_h * 6.2831853);
+    float lit_val = clamp(lit_h * 0.5 + flick * 0.5, 0.0, 1.0);
+    bool lit = lit_val < u_lit_fraction;
+
+    // cast interior ray, intersect room box
+    float dz = 1.0;
+    float dx = lx * persp + pan_x;
+    float dy = ly * persp + pan_y;
+    float eps = 1e-6;
+    float dxs = abs(dx) < eps ? eps : dx;
+    float dys = abs(dy) < eps ? eps : dy;
+    float tz = depth / dz;
+    float tx = dx > 0.0 ? (0.5 - lx) / dxs : (-0.5 - lx) / dxs;
+    float ty = dy > 0.0 ? (0.5 - ly) / dys : (-0.5 - ly) / dys;
+    tx = tx > 0.0 ? tx : 1e9;
+    ty = ty > 0.0 ? ty : 1e9;
+    float t_hit = min(min(tz, tx), ty);
+    bool hit_back = (tz <= tx) && (tz <= ty);
+    bool hit_side = (tx < tz) && (tx <= ty);
+    bool hit_ud = (ty < tz) && (ty < tx);
+
+    float hx = lx + dx * t_hit;
+    float hy = ly + dy * t_hit;
+    float hz = dz * t_hit;
+
+    // base wall colour warm vs cool
+    vec3 warm = vec3(0.62, 0.50, 0.38);
+    vec3 cool = vec3(0.40, 0.45, 0.52);
+    vec3 base = warm * u_warmth + cool * (1.0 - u_warmth);
+    vec3 rgb = base * (0.75 + 0.5 * wall_h);
+
+    float shade = 1.0;
+    if (hit_side) shade = 0.82;
+    if (hit_ud && hy > 0.0) shade = 1.05;
+    if (hit_ud && hy <= 0.0) shade = 0.62;
+    rgb *= shade;
+
+    // back-wall picture detail
+    float bx = hx + 0.5, by = hy + 0.5;
+    if (hit_back && abs(bx - 0.5) < 0.22 && abs(by - 0.55) < 0.16)
+        rgb = vec3(0.20, 0.28, 0.42);
+
+    // depth attenuation
+    float dnorm = clamp(hz / (u_room_depth * 1.3), 0.0, 1.0);
+    rgb *= (1.0 - 0.55 * dnorm);
+
+    // ceiling light glow for lit rooms
+    float gl = exp(-((hx * hx) / 0.12 + ((hy - 0.35) * (hy - 0.35)) / 0.10));
+    if (lit) rgb += vec3(1.0, 0.92, 0.72) * (gl * 0.9);
+    rgb *= lit ? 1.0 : 0.30;
+    if (!lit) rgb *= vec3(0.7, 0.8, 1.0);
+
+    // faint sky reflection
+    rgb += vec3(0.10, 0.14, 0.22) * (1.0 - gu.y) * 0.12;
+
+    // facade mullions
+    if (in_frame) rgb = vec3(0.14, 0.14, 0.16);
+
+    f_color = vec4(clamp(rgb, 0.0, 1.0), 1.0);
+}
+''',
+uniforms={
+    "n_cols":      {"glsl": "float", "min": 1.0, "max": 24.0, "default": 8.0, "description": "window columns across facade"},
+    "n_rows":      {"glsl": "float", "min": 1.0, "max": 24.0, "default": 6.0, "description": "window rows down facade"},
+    "room_depth":  {"glsl": "float", "min": 0.4, "max": 3.0, "default": 1.4, "description": "virtual room depth"},
+    "perspective": {"glsl": "float", "min": 0.2, "max": 2.5, "default": 1.1, "description": "parallax strength"},
+    "pan_x":       {"glsl": "float", "min": -1.0, "max": 1.0, "default": 0.0, "description": "horizontal camera offset"},
+    "pan_y":       {"glsl": "float", "min": -1.0, "max": 1.0, "default": 0.15, "description": "vertical camera offset"},
+    "frame_width": {"glsl": "float", "min": 0.0, "max": 0.25, "default": 0.06, "description": "facade mullion thickness"},
+    "lit_fraction":{"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.6, "description": "fraction of lit windows"},
+    "warmth":      {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "room colour warmth"},
+    "anim_speed":  {"glsl": "float", "min": 0.1, "max": 5.0, "default": 1.0, "description": "animation speed"},
+})
