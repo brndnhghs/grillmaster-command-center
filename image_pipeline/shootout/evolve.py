@@ -750,6 +750,7 @@ def next_generation(rated: list[dict], generation: int,
     sampling. Returns cfg.render_pool unrendered, repaired genomes."""
     from .advisor import bias_from_guidance
     from .repair import sample_valid_genome
+    from . import generator as _gen
     pool = pool or build_gene_pool(cfg)
     rng = rng or random.Random()
 
@@ -806,6 +807,18 @@ def next_generation(rated: list[dict], generation: int,
             child["deviation"] = {"kind": "random",
                                   "text": "fresh random graph (no parent — pure exploration)",
                                   "ops": []}
+        # Route 8 (2026-07-20): born-animated floor for BRED offspring.
+        # sample_valid_genome (the random/explorer fallback above) already
+        # applies this, but mutate()/crossover() do NOT — so a bred child can
+        # be structurally static (mutation set anim_mode='none', crossover
+        # dropped the driver edge) and gets culled as 'static'/'flat', wasting
+        # a full render. _ensure_animated is idempotent (no-op when a source
+        # already exists), so re-applying here only RESCUES static offspring
+        # and never disturbs an animated one (monotonic-safe).
+        if cfg.guarantee_born_animated and not _gen._graph_has_animation_source(
+                child["graph"], pool):
+            child["graph"] = _gen._ensure_animated(
+                child["graph"], pool, cfg, rng, bias)
         out.append(child)
 
     while len(out) < n_total:

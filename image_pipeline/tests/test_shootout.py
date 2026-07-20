@@ -90,6 +90,82 @@ def test_ensure_animated_disabled_is_noop():
     assert out is g  # unchanged when the floor is disabled
 
 
+def test_next_generation_rescues_static_bred_offspring(monkeypatch):
+    """Route 8 (2026-07-20): bred offspring (mutate/crossover) must be
+    born-animated too. mutate()/crossover() don't apply the floor, so
+    next_generation must — otherwise a static bred child gets culled as
+    'static'/'flat', wasting a full render. We force every bred child to be
+    structurally static (via monkeypatch) and stub the slow explorer path so
+    the test runs fast and deterministically, then assert next_generation
+    rescues all bred children."""
+    import copy
+    rng = random.Random(7)
+    cfg = copy.deepcopy(CFG)
+    cfg.guarantee_born_animated = True
+    cfg.explore_ratio = 0.0  # only one explorer child
+    # Hand-built ANIMATED parent: terminal + a driver edge.
+    drv = POOL.scalar_drivers[0]
+    term_mid = next(mid for mid, d in POOL.defs.items()
+                    if not mid.startswith("__") and POOL.driver_targets(mid))
+    drv_port = POOL.output_port_for(drv, "scalar") or "value"
+    term_tgt = POOL.driver_targets(term_mid)[0]
+    parent = {
+        "genome_id": "p1", "generation": 0, "parents": [], "origin": "random",
+        "seed": 1, "rating": 5,
+        "graph": {"version": 1, "name": "",
+                  "nodes": [
+                      {"id": "n1", "method_id": term_mid, "params": {},
+                       "render": True},
+                      {"id": "d1", "method_id": drv, "params": {},
+                       "render": False},
+                  ],
+                  "edges": [{"src_node": "d1", "src_port": drv_port,
+                             "dst_node": "n1", "dst_port": term_tgt}]},
+        "deviation": {}, "render": None, "liveness": None,
+    }
+    assert _graph_has_animation_source(parent["graph"], POOL)
+    # Structurally STATIC bred-style child.
+    static = {
+        "genome_id": "static-child", "generation": 1, "parents": ["p1"],
+        "origin": "mutation", "seed": 1,
+        "graph": {"version": 1, "name": "",
+                  "nodes": [{"id": "n1", "method_id": term_mid, "params": {},
+                             "render": True}], "edges": []},
+        "deviation": {"kind": "mutation", "ops": []},
+        "render": None, "liveness": None, "rating": None,
+    }
+    assert not _graph_has_animation_source(static["graph"], POOL)
+
+    def _quick_animated(gid):
+        return {"genome_id": gid, "generation": 1, "parents": ["p1"],
+                "origin": "random", "seed": 1,
+                "graph": copy.deepcopy(parent["graph"]),
+                "deviation": {}, "render": None, "liveness": None,
+                "rating": None}
+
+    # Force the bred path to return the static child and stub the slow
+    # explorer generation so the test stays fast + deterministic.
+    monkeypatch.setattr("image_pipeline.shootout.evolve.mutate",
+                        lambda *a, **k: static)
+    monkeypatch.setattr("image_pipeline.shootout.evolve.crossover",
+                        lambda *a, **k: None)
+    monkeypatch.setattr("image_pipeline.shootout.repair.sample_valid_genome",
+                        lambda *a, **k: _quick_animated("explorer"))
+    # Negative control: floor off -> static bred children slip through.
+    cfg_off = copy.deepcopy(cfg)
+    cfg_off.guarantee_born_animated = False
+    children_off = next_generation([parent], 1, POOL, cfg_off, rng)
+    n_off = sum(1 for c in children_off
+                if not _graph_has_animation_source(c["graph"], POOL))
+    # Positive: floor on -> every bred child rescued.
+    children_on = next_generation([parent], 1, POOL, cfg, rng)
+    n_on = sum(1 for c in children_on
+               if not _graph_has_animation_source(c["graph"], POOL))
+    assert n_off > 0, "negative control broken (regression test would be inert)"
+    assert n_on == 0, (
+        f"next_generation let {n_on} static bred children through")
+
+
 def test_random_genome_is_born_animated():
     import copy
     cfg = copy.deepcopy(CFG)
