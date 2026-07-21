@@ -1346,7 +1346,10 @@ GPU_PREVIEW_DROP_ALLOW: dict[str, dict[str, str]] = {
     "997": {"white": "param not wired to GPU twin; CPU export authoritative for this param"},
     "991": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param",
             "iterations": "param not wired to GPU twin; CPU export authoritative for this param",
-            "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param"}
+            "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "445": {"noise_scale": "param not wired to GPU twin; closed-form diffraction_gpu renders a parametric Stam iridescence model (no procedural flow groove substrate); CPU export authoritative for this param"},
+    "489": {"noise_amp": "param not wired to GPU twin; closed-form film_grain_gpu renders hash-based grain (no source-based noise field); CPU export authoritative for this param",
+            "blur_sigma": "param not wired to GPU twin; closed-form film_grain_gpu has no source-based noise field to blur; CPU export authoritative for this param"},
 }
 
 def is_param_justified_drop(mid: str, param: str) -> bool:
