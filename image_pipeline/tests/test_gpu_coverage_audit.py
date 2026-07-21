@@ -52,7 +52,8 @@ from image_pipeline.methods.gpu_shaders import GPU_SHADER_NODE_MAP
 #             encoding; live preview routed to hash_field_gpu).
 # 309 -> 312: +3 closed-form typed-uniform procedural twins (995/950/967).
 # 312 -> 314: +2 closed-form typed-uniform filter twins (445/489).
-EXPECTED_MAP_ENTRIES = 314
+# 314 -> 316: +2 closed-form typed-uniform procedural twins (353/416).
+EXPECTED_MAP_ENTRIES = 316
 #             gpu-twin-candidate CPU nodes (431, 432, 433, 464).
 
 # Simulations-category CPU nodes that are intentionally NOT GPU-mirrored yet.

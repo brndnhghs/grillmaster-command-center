@@ -1161,7 +1161,27 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
                           "drift_amp": "drift_amp", "anim_speed": "anim_speed"}},
     "426": {"shader": "truchet_sdf_gpu", "type": "procedural", "typed": True,
             "param_map": {"tile_size": "tile_size", "stroke": "stroke",
-                          "edge_glow": "edge_glow", "anim_speed": "anim_speed"}}
+                          "edge_glow": "edge_glow", "anim_speed": "anim_speed"}},
+    # ── Node 353: IFS Fractal attractor ─────────────────────────────────────────
+    # Typed-uniform closed-form GPU twin (ifs_fractal_gpu in core/shaders.py).
+    # Every numeric CPU param (preset/points/hue_shift/anim_speed) is bound to a
+    # named u_<name> uniform. Choice params (coloring/anim_mode) and the legacy
+    # time slot are dropped (GPU_PREVIEW_DROP_ALLOW); the preview is live via
+    # the orbit-dispatch + u_time. CPU numpy fn stays authoritative export.
+    "353": {"shader": "ifs_fractal_gpu", "type": "procedural", "typed": True,
+            "param_map": {"preset": "preset", "points": "points",
+                          "hue_shift": "hue_shift", "anim_speed": "anim_speed"}},
+    # ── Node 416: Symmetric Icon attractor ──────────────────────────────────────
+    # Typed-uniform closed-form GPU twin (symmetric_icon_gpu in core/shaders.py).
+    # Every numeric CPU param (symmetry/a0..a4/palette_shift/anim_speed/
+    # seed_strength) is bound to a named u_<name> uniform. Choice params
+    # (colormode/source/anim_mode) and the legacy time slot are dropped; preview
+    # is live via orbit dispatch + u_time. CPU numpy fn stays authoritative.
+    "416": {"shader": "symmetric_icon_gpu", "type": "procedural", "typed": True,
+            "param_map": {"symmetry": "symmetry", "a0": "a0", "a1": "a1",
+                          "a2": "a2", "a3": "a3", "a4": "a4",
+                          "palette_shift": "palette_shift", "anim_speed": "anim_speed",
+                          "seed_strength": "seed_strength"}},
 }
 
 # ── GPU coverage contract: no SILENT param drops ────────────────────────────
@@ -1350,6 +1370,26 @@ GPU_PREVIEW_DROP_ALLOW: dict[str, dict[str, str]] = {
     "445": {"noise_scale": "param not wired to GPU twin; closed-form diffraction_gpu renders a parametric Stam iridescence model (no procedural flow groove substrate); CPU export authoritative for this param"},
     "489": {"noise_amp": "param not wired to GPU twin; closed-form film_grain_gpu renders hash-based grain (no source-based noise field); CPU export authoritative for this param",
             "blur_sigma": "param not wired to GPU twin; closed-form film_grain_gpu has no source-based noise field to blur; CPU export authoritative for this param"},
+    # ── Node 353: IFS Fractal attractor ─────────────────────────────────────────
+    # Typed-uniform closed-form GPU twin (ifs_fractal_gpu in core/shaders.py).
+    # Every numeric CPU param (preset/points/hue_shift/anim_speed) is bound to a
+    # named u_<name> uniform. Choice params (coloring/anim_mode) and the legacy
+    # time slot are dropped (GPU_PREVIEW_DROP_ALLOW); the preview is live via
+    # the orbit-dispatch + u_time. CPU numpy fn stays authoritative export.
+    "353": {"shader": "ifs_fractal_gpu", "type": "procedural", "typed": True,
+            "param_map": {"preset": "preset", "points": "points",
+                          "hue_shift": "hue_shift", "anim_speed": "anim_speed"}},
+    # ── Node 416: Symmetric Icon attractor ──────────────────────────────────────
+    # Typed-uniform closed-form GPU twin (symmetric_icon_gpu in core/shaders.py).
+    # Every numeric CPU param (symmetry/a0..a4/palette_shift/anim_speed/
+    # seed_strength) is bound to a named u_<name> uniform. Choice params
+    # (colormode/source/anim_mode) and the legacy time slot are dropped; preview
+    # is live via orbit dispatch + u_time. CPU numpy fn stays authoritative.
+    "416": {"shader": "symmetric_icon_gpu", "type": "procedural", "typed": True,
+            "param_map": {"symmetry": "symmetry", "a0": "a0", "a1": "a1",
+                          "a2": "a2", "a3": "a3", "a4": "a4",
+                          "palette_shift": "palette_shift", "anim_speed": "anim_speed",
+                          "seed_strength": "seed_strength"}},
 }
 
 def is_param_justified_drop(mid: str, param: str) -> bool:
