@@ -5,6 +5,46 @@
 
 ---
 
+## 2026-07-22
+
+- **Added** `tools/audit_node_contract.py` — runs every registered method
+  through the real `GraphExecutor` and validates the payload it emits against
+  the port types it declares. Fills the gap between the existing audits:
+  `audit_methods.py` is a static AST scan, `validate_image_wiring.py` is
+  graph-level, and `node_tester.py` runs methods with "no graph wiring". None
+  of them checked runtime payload against declared type, which is the contract
+  the UI colours wires from and `_inject_typed` routes values by.
+- **Findings across 527 methods:** 102 ERROR, 602 WARN, 486 INFO. The largest
+  ERROR group is a single executor line, not per-node breakage: `graph.py`
+  builds the payload with `"field": extra_outputs.get("field", arr)`, so a
+  method declaring a FIELD output but writing no field sidecar silently
+  receives the (H,W,3) image as its field — 53 nodes affected. The auditor
+  reports these as `field_defaulted_to_image` so they don't bury the ~27
+  genuine per-node mismatches (wrong dtype, wrong shape, out-of-range values).
+- **Recorded** a contract inconsistency in the authoring model:
+  `_make_node_def` excludes any param carrying `min`/`max` from `param_ports`
+  ("internal control, not wireable") while `_eligible_params` — what the
+  executor actually injects through — includes them. Result: **493 of 527
+  methods (94%) advertise zero driveable params**, and 2,508 params are
+  injectable but not exposed as ports. The better-bounded a node is, the less
+  driveable it appears.
+- **Investigated and rejected** the obvious fix. Clamping injected values to
+  the declared `min`/`max` turns an out-of-range-but-animated param into a
+  frozen constant: an LFO at its default 0..1 range aimed at node 63's
+  `thread_step` (`min=4`) pins at 4 forever. `test_driver_modulation` caught
+  it. Static output is the worse failure, so this needs range *mapping* (what
+  the discrete-`choices` branch already does), which is a semantic decision —
+  logged rather than shipped.
+- **Added** `tools/node_issue.py` — capture / replay / list / promote for the
+  esoteric node issues found while using the editor. Because the pipeline is
+  deterministic, a report can *be* the failure rather than describe it: a
+  capture freezes the exact nodes, edges, seed, frame and canvas, records what
+  the node produced, and `replay` diffs that against current code. `promote`
+  emits a pytest regression test from a capture so a fixed bug cannot return
+  silently.
+
+---
+
 ## 2026-07-14
 
 - **Added** `image_pipeline/tests/test_graph_executor_e2e.py` — the first
