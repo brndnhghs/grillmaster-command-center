@@ -2928,12 +2928,62 @@ _ND_RUNNER = Path(__file__).resolve().parent / "nd_runner.py"
 #   HERMES_PYTHON    — interpreter to run nd_runner.py under
 #                      (default <HERMES_AGENT_DIR>/venv/bin/python)
 # nd_runner.py resolves the same variables, so both processes agree.
-HERMES_AGENT_DIR = Path(
-    os.environ.get("HERMES_AGENT_DIR", str(Path.home() / ".hermes" / "hermes-agent"))
-)
-_HERMES_PY = Path(
-    os.environ.get("HERMES_PYTHON", str(HERMES_AGENT_DIR / "venv" / "bin" / "python"))
-)
+def _hermes_venv_python(agent_dir: Path) -> Path | None:
+    """The venv interpreter inside a hermes-agent checkout, either layout.
+
+    Windows venvs put the interpreter in ``venv/Scripts/python.exe``; POSIX
+    uses ``venv/bin/python``. Probing both means the same code works on either
+    platform instead of silently reporting "backend not found" on Windows.
+    """
+    for rel in (("venv", "Scripts", "python.exe"), ("venv", "bin", "python")):
+        cand = agent_dir.joinpath(*rel)
+        if cand.exists():
+            return cand
+    return None
+
+
+def _resolve_hermes() -> tuple[Path, Path | None]:
+    """Locate the hermes-agent checkout and its interpreter.
+
+    CONFIGURATION.md advertises HERMES_PYTHON as "Auto-detected", which was
+    aspirational: the default was a hardcoded POSIX path under a single
+    hardcoded directory, so any install that was not at ~/.hermes/hermes-agent
+    with a POSIX venv reported "backend not found" and Node Doctor was dead.
+
+    Resolution order — explicit config always wins:
+      1. HERMES_AGENT_DIR, if set.
+      2. Known install locations, in order of how standard they are.
+    The interpreter is HERMES_PYTHON if set, else the venv inside whichever
+    directory we settled on.
+    """
+    explicit = os.environ.get("HERMES_AGENT_DIR")
+    if explicit:
+        agent_dir = Path(explicit)
+    else:
+        local_appdata = os.environ.get("LOCALAPPDATA")
+        candidates = [
+            Path.home() / ".hermes" / "hermes-agent",
+            Path.home() / "AppData" / "Local" / "hermes" / "hermes-agent",
+            Path.home() / "hermes" / "hermes-agent",
+        ]
+        if local_appdata:
+            candidates.insert(1, Path(local_appdata) / "hermes" / "hermes-agent")
+        # Prefer a candidate that actually has an interpreter; fall back to the
+        # documented default so the error message still names the expected path.
+        agent_dir = next(
+            (c for c in candidates if _hermes_venv_python(c) is not None),
+            candidates[0],
+        )
+
+    env_py = os.environ.get("HERMES_PYTHON")
+    py = Path(env_py) if env_py else _hermes_venv_python(agent_dir)
+    return agent_dir, py
+
+
+HERMES_AGENT_DIR, _HERMES_PY_OPT = _resolve_hermes()
+# Keep the documented default in the message when nothing was found, so the
+# warning tells the user which path to point HERMES_AGENT_DIR at.
+_HERMES_PY = _HERMES_PY_OPT or (HERMES_AGENT_DIR / "venv" / "bin" / "python")
 
 if _HERMES_PY.exists():
     print(f"[node-doctor] Hermes backend found: {_HERMES_PY}")
@@ -2956,11 +3006,17 @@ async def _nd_stream(system: str, messages: list, timeout: int = 120):
 
     stdin_bytes = json.dumps({"system_prompt": system, "messages": messages}).encode()
     try:
+        # nd_runner.py resolves HERMES_AGENT_DIR independently and defaults to
+        # ~/.hermes/hermes-agent. When the server AUTO-detected a different
+        # install, that default is wrong, so pass the resolved directory down
+        # explicitly — otherwise the child imports from a path that isn't there.
+        _child_env = {**os.environ, "HERMES_AGENT_DIR": str(HERMES_AGENT_DIR)}
         proc = await asyncio.create_subprocess_exec(
             str(_HERMES_PY), str(_ND_RUNNER),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=_child_env,
         )
         stdout, stderr = await asyncio.wait_for(
             proc.communicate(input=stdin_bytes), timeout=timeout
