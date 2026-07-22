@@ -16,12 +16,19 @@ floor. It is marked ``slow``: its chosen target (node 952, Blue-Noise Dither)
 is a genuinely expensive generator (~25 s per 8-frame batch), so the full test
 costs ~50 s, which made the DEFAULT ``-m "not slow"`` suite look hung.
 
-COVERAGE GAP (2026-07-21): the two cheap default-suite tests that used to
-cover this same wiring — ``test_shootout_driver_generators_vary`` (~1 s) and
-``test_shootout_driver_modulation`` (~2 s) — were deleted with the
-evolutionary generator. This is now the ONLY end-to-end guard on the
-SCALAR→param path, and it does not run under ``-m "not slow"``. A cheap
-replacement targeting a fast filter node is worth adding.
+COVERAGE GAP — CLOSED (2026-07-21): the two cheap default-suite tests that
+used to cover this same wiring — ``test_shootout_driver_generators_vary``
+(~1 s) and ``test_shootout_driver_modulation`` (~2 s) — were deleted with the
+evolutionary generator, briefly leaving this ``slow`` test as the ONLY
+end-to-end guard on the SCALAR→param path. The cheap replacement now lives in
+``test_driver_e2e_fast_filter.py``: same executor render, but targeting node
+417 (Chromatic Aberration) on a static ``gradient`` source, so it costs ~0.05 s
+per clip and runs UNMARKED under ``-m "not slow"``. It also asserts the
+undriven control stays static, isolating the driver as the motion source.
+
+Keep this ``slow`` test anyway: node 952 drives a ``choices`` param, exercising
+the discrete-choice mapping branch of ``_inject_typed`` that the int-param
+filter twin does not reach.
 
 If this test ever fails, a refactor broke the SCALAR→param edge wiring and
 driver-driven animation would silently die again.

@@ -1056,15 +1056,25 @@ def get_wire_payload(job_id: str, src_node_id: str):
 def get_node_defs():
     from image_pipeline.core.graph import get_all_node_defs
     defs = get_all_node_defs()
+    # `get_all_node_defs` is @cache'd and hands back the SHARED dict. Enriching
+    # it in place permanently rewrote core's node-def contract for every other
+    # consumer (executor port derivation, tests) and made that state depend on
+    # whether this endpoint had been hit yet. Choice-enrichment is presentation
+    # only — build a shallow per-node copy so it never reaches the model.
+    #
     # Map method_id -> function so enrichment can derive anim_mode choices
     # from each method's own source (handles aliased anim-mode variables).
     _meta_by_id = registry.get_all()
-    for nd in defs.values():
+    out: dict[str, dict] = {}
+    for _key, nd in defs.items():
         if nd.get('params'):
-            _mid = nd.get('method_id', '')
-            _meta = _meta_by_id.get(_mid)
-            nd['params'] = _enrich_params(nd['params'], _meta.fn if _meta else None)
-    return defs
+            _meta = _meta_by_id.get(nd.get('method_id', ''))
+            out[_key] = {**nd,
+                         'params': _enrich_params(nd['params'],
+                                                  _meta.fn if _meta else None)}
+        else:
+            out[_key] = nd
+    return out
 
 
 @app.get("/api/shader-sources")
