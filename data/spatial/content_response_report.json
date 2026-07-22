@@ -2,8 +2,8 @@
   {
     "method_id": "09",
     "param": "content",
-    "verdict": "INERT",
-    "delta": 0.0,
+    "verdict": "WIRED",
+    "delta": 0.11007852852344513,
     "direct_delta": 0.0,
     "name": "QR Code"
   },
@@ -34,18 +34,16 @@
   {
     "method_id": "24",
     "param": "bottom_text",
-    "verdict": "ERROR",
-    "error": "RuntimeError: node emitted no image",
-    "delta": 0.0,
+    "verdict": "WIRED",
+    "delta": 0.007787535898387432,
     "direct_delta": 0.0,
     "name": "pyfiglet"
   },
   {
     "method_id": "24",
     "param": "top_text",
-    "verdict": "ERROR",
-    "error": "RuntimeError: node emitted no image",
-    "delta": 0.0,
+    "verdict": "WIRED",
+    "delta": 0.007787535898387432,
     "direct_delta": 0.0,
     "name": "pyfiglet"
   },
