@@ -467,6 +467,9 @@ class GraphExecutor:
         self._sim_params_hash: dict[str, int] = {}
         # node_ids of the graph currently in execute() — never evicted mid-clip.
         self._active_node_ids: set[str] = set()
+        # Per-node output dirs already created by this executor — see the
+        # mkdir call in execute(). Purely a syscall cache; the dirs persist.
+        self._ensured_dirs: set[Path] = set()
         # Cached sub-executors for group nodes, keyed by group node id.
         # A fresh executor per frame would lose feedback state and re-run
         # Arch-A sims inside groups from scratch every frame (BUG-6).
@@ -550,6 +553,14 @@ class GraphExecutor:
         gedges = [GraphEdge(**{k: v for k, v in e.items() if k in GraphEdge.__dataclass_fields__}) for e in edges]
 
         node_map = {n.id: n for n in gnodes}
+        # Nodes whose per-pixel luminance is explicitly wired somewhere. The
+        # H,W grayscale array costs a full-image reduction per node per frame
+        # (5.2ms at 768x512) and in most graphs nothing reads it: every
+        # implicit-inheritance consumer collapses it straight back to
+        # float(mean). Only an explicit `luminance` edge needs the array (it
+        # can drive a FIELD input), so compute it for those producers and hand
+        # everyone else the scalar, which is ~13x cheaper.
+        _lum_array_needed = {e.src_node for e in gedges if e.src_port == "luminance"}
         order = self._topo_sort(gnodes, gedges)
         terminal_id = self._find_terminal(gnodes, gedges, order)
         # Stop execution at the terminal — don't run downstream nodes
@@ -977,7 +988,12 @@ class GraphExecutor:
             # (explicit edges below will override any pre-seeded values)
 
             node_dir = self.out_dir / node_id
-            node_dir.mkdir(parents=True, exist_ok=True)
+            # mkdir(exist_ok=True) still costs a syscall every call (~0.2ms per
+            # node per frame). The directory outlives the frame, so remember
+            # the ones we've made and only pay on first sight.
+            if node_dir not in self._ensured_dirs:
+                node_dir.mkdir(parents=True, exist_ok=True)
+                self._ensured_dirs.add(node_dir)
 
             image_candidates: list[np.ndarray] = []
             image_edge_keys: list[str] = []  # src->dst of the image edges into this node
@@ -1345,8 +1361,15 @@ class GraphExecutor:
             _core_utils.set_method_id(None)
 
             # ── Build flat_outputs ──
-            # luminance is always computed as per-pixel grayscale (H,W) float32
-            _lum = np.mean(arr, axis=-1) if arr is not None else 0.0
+            # luminance is per-pixel grayscale (H,W) float32 ONLY when an edge
+            # explicitly wires it (it may drive a FIELD input). Otherwise the
+            # scalar mean, which is what every other consumer derives anyway.
+            if arr is None:
+                _lum = 0.0
+            elif node_id in _lum_array_needed:
+                _lum = np.mean(arr, axis=-1)
+            else:
+                _lum = float(arr.mean())
             flat_outputs[node_id] = {
                 "image":     arr,
                 "luminance": _lum,
