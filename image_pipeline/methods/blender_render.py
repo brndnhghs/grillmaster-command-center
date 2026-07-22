@@ -592,7 +592,7 @@ print("BLENDER_RENDER_DONE path=%s exists=%s" % (r"{out_path}", os.path.exists(r
                 "cone", "monkey", "plane",
             ],
         },
-        "model_path": {
+        "model_path": {"content": True, 
             "description": (
                 "absolute or workspace-relative path to a model file "
                 "(GLTF/GLB/OBJ/STL/FBX). Ignored unless source=model_file."

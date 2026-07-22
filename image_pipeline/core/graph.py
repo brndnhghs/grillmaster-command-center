@@ -62,7 +62,7 @@ def _make_node_def(meta: registry.MethodMeta) -> NodeDef:
     _PORT_TYPE_MAP = {
         "IMAGE": "image", "SCALAR": "scalar",
         "FIELD": "field", "PARTICLES": "particles",
-        "MASK": "mask", "ANY": "any",
+        "MASK": "mask", "TEXT": "text", "ANY": "any",
     }
     outputs: dict[str, str] = {
         k: _PORT_TYPE_MAP.get(v.upper(), "any")
@@ -101,6 +101,15 @@ def _make_node_def(meta: registry.MethodMeta) -> NodeDef:
         if pname in declared_inputs:
             continue  # already explicitly declared
         if not isinstance(spec, dict):
+            continue
+        if spec.get("content"):
+            # Opt-in TEXT port: prose, source code, or a file/asset path. The
+            # type system otherwise conflates "str default" with "categorical
+            # choice", so a free-text param was inexpressible — QR payloads,
+            # GLSL source and model paths all had to be typed into the sidebar
+            # and could never be produced by an upstream node.
+            inputs[pname] = "text"
+            param_ports.add(pname)
             continue
         if spec.get("spatial"):
             # Opt-in per-pixel param: gets a FIELD port REGARDLESS of min/max.
@@ -233,6 +242,12 @@ def _eligible_params(params: dict, src_type: str) -> list[tuple[str, dict]]:
         elif src_type == "field":
             if isinstance(default, (list, tuple)):
                 out.append((k, spec))
+        elif src_type == "text":
+            # Only params that opted in. Every categorical `choices` param also
+            # has a str default, and letting text land on those would let an
+            # upstream string silently select a render mode.
+            if spec.get("content"):
+                out.append((k, spec))
     return out
 
 
@@ -308,6 +323,19 @@ def _inject_typed(
             logging.warning(
                 "graph: FIELD→%s type mismatch for param %r, skipping",
                 type(orig).__name__, param,
+            )
+
+    elif src_type == "text":
+        # TEXT lands only on params that opted in with content: True. Guarding on
+        # the declaration rather than on `isinstance(orig, str)` matters: every
+        # categorical `choices` param also holds a str, and an upstream string
+        # dropped into one of those would silently switch a render mode.
+        if spec and spec.get("content"):
+            run_params[param] = str(value)
+        else:
+            logging.warning(
+                "graph: TEXT wire to param %r which is not declared content: True, skipping",
+                param,
             )
 
 
@@ -1187,6 +1215,12 @@ class GraphExecutor:
                         float(np.mean(raw)) if isinstance(raw, np.ndarray) else float(raw)
                     )
                     src_type = "scalar"
+                elif isinstance(slot_val, str):
+                    # TEXT payload — prose, source code, or a file/asset path.
+                    # Strings used to fall through to the `continue` below, so a
+                    # node emitting text could not drive anything downstream.
+                    src_val = slot_val
+                    src_type = "text"
                 elif edge.src_port in ("image", "field"):
                     # field slot now holds the real field array if written, else image fallback
                     src_val = slot.get(edge.src_port, src_img)

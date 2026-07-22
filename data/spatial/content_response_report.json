@@ -1,0 +1,86 @@
+[
+  {
+    "method_id": "09",
+    "param": "content",
+    "verdict": "INERT",
+    "delta": 0.0,
+    "direct_delta": 0.0,
+    "name": "QR Code"
+  },
+  {
+    "method_id": "15",
+    "param": "content",
+    "verdict": "WIRED",
+    "delta": 0.28966596722602844,
+    "direct_delta": 0.0,
+    "name": "Typography"
+  },
+  {
+    "method_id": "22",
+    "param": "font_path",
+    "verdict": "WIRED",
+    "delta": 0.029971370473504066,
+    "direct_delta": 0.0,
+    "name": "ffmpeg Frame"
+  },
+  {
+    "method_id": "22",
+    "param": "text",
+    "verdict": "WIRED",
+    "delta": 0.029971370473504066,
+    "direct_delta": 0.0,
+    "name": "ffmpeg Frame"
+  },
+  {
+    "method_id": "24",
+    "param": "bottom_text",
+    "verdict": "ERROR",
+    "error": "RuntimeError: node emitted no image",
+    "delta": 0.0,
+    "direct_delta": 0.0,
+    "name": "pyfiglet"
+  },
+  {
+    "method_id": "24",
+    "param": "top_text",
+    "verdict": "ERROR",
+    "error": "RuntimeError: node emitted no image",
+    "delta": 0.0,
+    "direct_delta": 0.0,
+    "name": "pyfiglet"
+  },
+  {
+    "method_id": "48",
+    "param": "text_content",
+    "verdict": "INERT",
+    "delta": 0.0,
+    "direct_delta": 0.0,
+    "name": "FFT Art"
+  },
+  {
+    "method_id": "__blender_render__",
+    "param": "model_path",
+    "verdict": "ERROR",
+    "error": "RuntimeError: node errors: {'n0': 'Traceback (most recent call last):\\n  File \"/Users/admin/Documents/GitHub/grillmaster-command-center/image_pipeline/methods/blender_render.py\", line 58, in _blender_exec\\n    s.connect((_BLENDER_HOST, _BLENDER_PORT))\\nConnectionRefusedError: [Errno 61] Connection refused\\n\\nThe above exception was the direct cause of the following exception:\\n\\nTraceback (most recent call last):\\n  File \"/Users/admin/Documents/GitHub/grillmaster-command-center/image_pipeline/core/graph.py\", line 1365, in execute\\n    _fn_result = meta.fn(node_dir, node_seed, params=run_params)\\n                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\\n  File \"/Users/admin/Documents/GitHub/grillmaster-command-center/image_pipeline/methods/blender_render.py\", line 776, in method_blender_render\\n    reply = _blender_exec(script, timeout=120.0)\\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\\n  File \"/Users/admin/Documents/GitHub/grillmaster-command-center/image_pipeline/methods/blender_render.py\", line 60, in _blender_exec\\n    raise ConnectionError(\\nConnectionError: Blender Render: cannot reach Blender MCP at localhost:9876. Open Blender, enable the \\'Blender MCP\\' addon, and click Start Server in the sidebar.\\n'}",
+    "delta": 0.0,
+    "direct_delta": 0.0,
+    "name": "Blender Render"
+  },
+  {
+    "method_id": "__custom_shader__",
+    "param": "glsl_code",
+    "verdict": "WIRED",
+    "delta": 0.3333197236061096,
+    "direct_delta": 0.0,
+    "name": "Custom GLSL Shader"
+  },
+  {
+    "method_id": "__image_import__",
+    "param": "file_path",
+    "verdict": "ERROR",
+    "error": "RuntimeError: node errors: {'n0': 'Traceback (most recent call last):\\n  File \"/Users/admin/Documents/GitHub/grillmaster-command-center/image_pipeline/core/graph.py\", line 1365, in execute\\n    _fn_result = meta.fn(node_dir, node_seed, params=run_params)\\n                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\\n  File \"/Users/admin/Documents/GitHub/grillmaster-command-center/image_pipeline/methods/io_nodes.py\", line 67, in method_image_import\\n    raise FileNotFoundError(f\"Image Import: file not found: {p}\")\\nFileNotFoundError: Image Import: file not found: ALPHA-0001\\n'}",
+    "delta": 0.0,
+    "direct_delta": 0.0,
+    "name": "Image Import"
+  }
+]

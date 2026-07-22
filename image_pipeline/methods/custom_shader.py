@@ -27,6 +27,13 @@ from ..core.shaders import render_custom_shader, CUSTOM_SHADER_TEMPLATE
     inputs={"image_in": "IMAGE"},
     params={
         "glsl_code": {
+            "content": True,
+            # Audit tool reads content_probe to pick GLSL-valid probe strings
+            # (prose would be rejected by the compiler and report a false ERROR).
+            "content_probe": [
+                "void main() { f_color = vec4(vec3(v_uv.x), 1.0); }",
+                "void main() { f_color = vec4(vec3(1.0 - v_uv.y), 1.0); }",
+            ],
             "description": "GLSL fragment shader body (void main)",
             "default": CUSTOM_SHADER_TEMPLATE,
             "multiline": True,

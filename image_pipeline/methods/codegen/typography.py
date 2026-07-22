@@ -26,7 +26,7 @@ from ...core.animation import capture_frame
          },
          outputs={"image": "IMAGE", "luminance": "FIELD"},
          params={
-             "content": {"description": "input text content to render", "default": "Hello World"},
+             "content": {"content": True, "description": "input text content to render", "default": "Hello World"},
              "source_mode": {"description": "text source / render mode",
                              "choices": ["text", "words", "text_wall", "url", "gradient", "image",
                                          "quote", "clock", "calendar", "typewriter",

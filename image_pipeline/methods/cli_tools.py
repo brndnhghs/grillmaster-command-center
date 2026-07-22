@@ -24,11 +24,11 @@ from ..core.animation import capture_frame
         },
         outputs={"image": "IMAGE", "luminance": "FIELD"},
         params={
-            "text": {"description": "overlay text on frame", "default": "ffmpeg Frame"},
+            "text": {"content": True, "description": "overlay text on frame", "default": "ffmpeg Frame"},
             "bg_color": {"description": "background hex color", "default": "#0a0a12"},
             "text_color": {"description": "text hex color", "default": "#4a3a2a"},
             "font_size": {"description": "text font size", "default": 24},
-            "font_path": {"description": "TTF font file path", "default": "/System/Library/Fonts/Helvetica.ttc"},
+            "font_path": {"content": True, "description": "TTF font file path", "default": "/System/Library/Fonts/Helvetica.ttc"},
         })
 def method_ffmpeg(out_dir: Path, seed: int, params=None):
     """Generate a frame with ffmpeg drawtext filter, with PIL fallback.
@@ -247,8 +247,8 @@ def method_imagemagick(out_dir: Path, seed: int, params=None):
 
 @method(id="24", name="pyfiglet", category="cli_tools", tags=["text", "expanded"],
         params={
-            "top_text": {"description": "first figlet line content", "default": "METHOD #24"},
-            "bottom_text": {"description": "second figlet line content", "default": "pyfiglet"},
+            "top_text": {"content": True, "description": "first figlet line content", "default": "METHOD #24"},
+            "bottom_text": {"content": True, "description": "second figlet line content", "default": "pyfiglet"},
             "top_font": {"description": "pyfiglet font for top line", "default": "doom"},
             "bottom_font": {"description": "pyfiglet font for bottom line", "default": "banner"},
             "bg_color": {"description": "background RGB tuple as string", "default": "10,10,18"},

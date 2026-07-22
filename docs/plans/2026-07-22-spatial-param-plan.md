@@ -149,9 +149,30 @@ Every non-KEPT param is restored byte-for-byte; a failed attempt costs nothing. 
 
 Still open: the three legacy liars (#01, #11, #45) — none migrated, all still advertising `_field_` support they do not honour. Worth fixing precisely because declaring nothing would be more honest.
 
-### Phase 4 — Class D, content inputs — STATUS: not started
+### Phase 4 — Class D, content inputs — STATUS: **done**
 
-Independent of everything above; can run in parallel. New `text` / `code` / `asset` param types and a `CONTENT` port type, wired to the existing `/api/assets/upload` infrastructure that `io_nodes.py` already uses for image and video import. Unblocks SVG source, shader source, font files and model imports in one pass.
+One `TEXT` port type rather than three (`text`/`code`/`asset`): prose, source code and file paths are all a string on the wire, and the differences are validation concerns belonging to the consuming node, not the type system. Splitting them would have tripled the plumbing for no expressive gain.
+
+- `TEXT` registered in `core/port_types.py`.
+- `content: True` on a param spec grants a TEXT port (mirrors `spatial: True`).
+- Strings now route through edges. They previously hit a bare `continue` in the injection block, so a node emitting text could not drive anything.
+- `_inject_typed` accepts TEXT **only** for params declaring `content: True`. Guarding on the declaration and not on `isinstance(orig, str)` is load-bearing: every categorical `choices` param also holds a str, so the loose check would let an upstream string silently switch a render mode.
+- New **Text Source** node (`__text_source__`) emits a string, from a param or a file read under `output/assets/`.
+- 11 params marked across 9 nodes.
+
+Verified with `tools/audit_content_response.py` (`--scan`), the TEXT counterpart to the field probe — render twice with different strings; identical output means the wire is not read.
+
+| verdict | n | meaning |
+|---|---|---|
+| **WIRED** | **4** | `15.content` (Δ=0.290), `__custom_shader__.glsl_code` (Δ=0.333), `22.text`, `22.font_path` (Δ=0.030) |
+| INERT | 2 | `09.content`, `48.text_content` — inert *with no wire at all*, so a node bug, not a port bug |
+| ERROR | 4 | pyfiglet ×2 (dependency missing), Blender (binary missing), image path (machine-specific payload) |
+
+The probe distinguishes INERT from NOT_WIRED with a **direct-set control**: set the param without a wire and see whether anything moves. Without that control a node whose param is inert for its own reasons is indistinguishable from one whose wire is broken, and those get fixed in completely different places. QR Code #09 is the clean example — with `qrcode` uninstalled its fallback renders the same pattern for any payload, so Δ=0.0 even with no wire involved.
+
+Gate: `image_pipeline/tests/test_content_params.py`, 23 passing. It enforces only `NOT_WIRED` — the routing defect this contract owns — and reports INERT/ERROR without failing, so the suite is not hostage to which optional dependencies happen to be installed.
+
+**Not done:** #30 SVG Vector still has no content param. It declares `inputs={}` and its `pattern` is categorical, so accepting SVG source means adding a new param, not converting one. Now a small change on top of this infrastructure.
 
 ### Phase 5 — lock it — STATUS: **done** (`image_pipeline/tests/test_spatial_params.py`)
 

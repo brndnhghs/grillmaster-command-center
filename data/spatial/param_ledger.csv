@@ -2264,6 +2264,8 @@ C,82,GPU Procedural Shaders,anim_speed,non-spatial by name,image_pipeline/method
 D,__image_import__,Image Import,file_path,categorical/str,image_pipeline/methods/io_nodes.py,False
 D,__video_import__,Video Import,file_path,categorical/str,image_pipeline/methods/io_nodes.py,False
 C,__video_import__,Video Import,loop,categorical/str,image_pipeline/methods/io_nodes.py,False
+D,__text_source__,Text Source,text,categorical/str,image_pipeline/methods/io_nodes.py,False
+D,__text_source__,Text Source,file_path,categorical/str,image_pipeline/methods/io_nodes.py,False
 C,523,Aurora Borealis,anim_mode,categorical/str,image_pipeline/methods/math_art/aurora_borealis.py,False
 C,523,Aurora Borealis,anim_speed,non-spatial by name,image_pipeline/methods/math_art/aurora_borealis.py,False
 A,523,Aurora Borealis,curtain_count,3 arithmetic use(s) of `curtain_count`,image_pipeline/methods/math_art/aurora_borealis.py,False
