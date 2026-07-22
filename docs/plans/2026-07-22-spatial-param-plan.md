@@ -164,15 +164,25 @@ Verified with `tools/audit_content_response.py` (`--scan`), the TEXT counterpart
 
 | verdict | n | meaning |
 |---|---|---|
-| **WIRED** | **4** | `15.content` (Δ=0.290), `__custom_shader__.glsl_code` (Δ=0.333), `22.text`, `22.font_path` (Δ=0.030) |
-| INERT | 2 | `09.content`, `48.text_content` — inert *with no wire at all*, so a node bug, not a port bug |
-| ERROR | 4 | pyfiglet ×2 (dependency missing), Blender (binary missing), image path (machine-specific payload) |
+| **WIRED** | **7** | `__custom_shader__.glsl_code` (Δ=0.333), `15.content` (0.290), `09.content` (0.110), `22.text` / `22.font_path` (0.030), `24.top_text` / `24.bottom_text` (0.008) |
+| INERT | 1 | `48.text_content` — inert *with no wire at all*, so a node bug, not a port bug |
+| ERROR | 2 | Blender (binary missing), image path (machine-specific payload) |
+
+`qrcode` and `pyfiglet` were installed into `.venv` — both were already listed in `requirements.txt`, commented, as optional extras. That moved three params from ERROR/INERT to WIRED and cost nothing else. Whether to promote them to hard requirements is an owner call; they are left commented.
 
 The probe distinguishes INERT from NOT_WIRED with a **direct-set control**: set the param without a wire and see whether anything moves. Without that control a node whose param is inert for its own reasons is indistinguishable from one whose wire is broken, and those get fixed in completely different places. QR Code #09 is the clean example — with `qrcode` uninstalled its fallback renders the same pattern for any payload, so Δ=0.0 even with no wire involved.
 
 Gate: `image_pipeline/tests/test_content_params.py`, 23 passing. It enforces only `NOT_WIRED` — the routing defect this contract owns — and reports INERT/ERROR without failing, so the suite is not hostage to which optional dependencies happen to be installed.
 
-**Not done:** #30 SVG Vector still has no content param. It declares `inputs={}` and its `pattern` is categorical, so accepting SVG source means adding a new param, not converting one. Now a small change on top of this infrastructure.
+**Not done — #30 SVG Vector, and two reasons it is bigger than it looks.**
+
+*Accepting* SVG source needs a rasteriser the repo does not have. The node builds an SVG string, writes it to disk, and then draws the PNG **separately with PIL** — two parallel implementations of the same patterns. Arbitrary SVG in means `cairosvg` (system `libcairo`) or `svglib`; a system-level dependency is an owner call, so it was not added.
+
+*Emitting* the SVG it already builds looks free, and is not. Attempting it surfaced a general executor limitation worth recording:
+
+> **Arch-A sim nodes silently drop declared extra outputs.** Any node that calls `capture_frame` takes the sim-cache path, which rebuilds `flat_outputs` from a fixed key set — `image` / `luminance` / `field` / `particles` / `mask` — so a declared `svg: TEXT` (or any other extra output) never reaches downstream nodes. This is the same class as the sim-sidecar bug fixed in `adcdc60`, one layer up.
+
+`tools/audit_node_contract.py` caught the resulting discrepancy immediately (`declares svg:text but the payload has no value`), which is the existing gate doing exactly its job. The change was reverted byte-clean rather than shipped as a declaration the executor cannot honour. Carrying extra outputs through the sim path is the real fix, and belongs with the sim-cache work rather than here.
 
 ### Phase 5 — lock it — STATUS: **done** (`image_pipeline/tests/test_spatial_params.py`)
 
