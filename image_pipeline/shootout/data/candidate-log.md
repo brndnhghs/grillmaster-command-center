@@ -235,3 +235,18 @@ direct default-render wall-time profiler (_profile_slow.py) over the methods act
 - HOOK-EXISTS CORRECTION: a prior log entry claimed the seed_ids promotion hook was "STILL missing" — FALSE. auto_promote_seeds exists (session.py L311-338); seed_ids/avoid_methods in config.py/advisor.py. Promotion path is wired; top-rated are all r=5 (undifferentiated) so no distinct seed to wire yet.
 - ROADMAP STALENESS (finding, not fixed — SKILL.md exceeds 100K char write cap): skill claims 293 genomes / "P0 DONE, P1.3=106/145 only". Actual: 537 nodes / 63 CPU-only sims (922 Brusselator, 951 Cahn-Hilliard, 1000/1007 LBM/MLS-MPM, 970 Percolation, 560 SmoothLife, 996 Swift-Hohenberg, 151 4D Polytope, 429 Water Ripple, etc.). Re-derive coverage from /api/node-defs, not the skill prose.
 - NEXT RUN: GPU-First P0/P1 categorical twins for the 63 CPU-only sims + escape-time (33/51/52/66/67/69) / per-pixel-filter (42/63/64/74) gaps. Do NOT re-litigate driver-path/dead-param/hard-wall/rescues (all green).
+
+## 2026-07-22T01:30:20Z — autonomous run (Route 0 / PHASE 1B: corpus diagnostic repair + seed promotion)
+
+- CONTEXT: The skill's inline Phase 1/1B probes crashed on the upgraded genome schema (top-level `rating`/`motifs`/`n_drivers` no longer exist; `render` can be null; `motifs` lives under `graph.motifs`). Separately, an uncommitted broken edit to `gpu_shaders.py` had corrupted the GPU shim mappings for nodes 353 (IFS Fractal) and 416 (Symmetric Icon) into `{}` / prose strings — reverted to HEAD (GPU parity 1007 passed; :7860 node_map confirms valid typed bindings).
+- ACTION (diagnostic repair): added `image_pipeline/shootout/scripts/diagnose_corpus.py` — a schema-correct, reusable corpus diagnostic (alive/dead rate, render wall-time stats, top-dead-methods, cheap-alive recombine seeds, motif coverage, rating count). Replaces the stale inline probes.
+- CORPUS STATE (real probe, 649 genomes):
+  - alive=357, dead/rejected=292 (45%) — genuine content death (Route 8 liveness-gate closure already disproven the "evaluator artifact" hypothesis per prior manifest entries).
+  - render wall_s: >150s(cap)=165, >100s=194, max=669s, n=581 timed.
+  - cheap-alive(<30s recombine seeds)=180.
+  - human ratings=19 (NOT 0 — prior probe bug used `g.get('id')` instead of `g.get('genome_id')`; top-3: g-e181c881=5, g-328f0d37=5, g-f8849674=5).
+  - TOP methods in DEAD genomes: __lfo__ 800, __counter__ 233, __noise1d__ 118, __ramp__ 93, __envelope__ 39, __image_to_mask__ 38, __strobe__ 37.
+  - surviving-motif coverage: post_fx 725, sim_backbone 264, masked_composite 92, pattern_blend 85, feedback_loop 40, field_modulate 3.
+- ACTION (seed promotion): `seed_ids` hook EXISTS (config.py). Wired top-3 rated IDs into `/api/shootout/config` `{"overrides":{"seed_ids":[...]}}` on the LIVE :7860 server (confirmed via GET). This biases the next generation toward top-rated survivors (Route 8 Step B2). Optional future: also POST `avoid_methods` for the top driver nodes (__lfo__/__counter__/__noise1d__/__ramp__) as dead-hotspot feedback.
+- RECOMMENDATION next run: (1) rating corpus growth (19/649 — user-engagement lever, not code); (2) static/flat liveness bucket (~149 genomes) optical-flow rescue (evolution-research #3); (3) GPU typed-uniform batch completion (CLIENT_GPU_SHIMS=115, CLIENT_GPU_SIMS=46 — verify gradient/derivative, ASCII/text, composite categories have twins). Do NOT re-litigate cost-gate/driver-path/dead-param/hard-wall (all green/closed). P2 WebGPU sign-off-gated.
+- STALE SKILL NOTE: the skill's inline prose ("~7 ratings/293 genomes", "~70% rejected") is stale vs the real 19/649 and 45%. Logged here; skill SKILL.md is read-only (size cap) so not edited this run.
