@@ -238,7 +238,7 @@ def method_comfyui(out_dir: Path, seed: int, params=None):
     category="ml_models",
     tags=["ml", "clip", "vision-language", "scoring", "utility"],
     inputs={"image_in": "IMAGE"},
-    outputs={"image": "IMAGE", "score": "SCALAR", "weights": "FIELD"},
+    outputs={"image": "IMAGE", "score": "SCALAR", "clip_ran": "SCALAR", "clip_discriminated": "SCALAR", "weights": "FIELD"},
     params={
         "labels": {
             "description": "one candidate label per line; the image is scored against each",
@@ -326,6 +326,7 @@ def method_clip_score(out_dir: Path, seed: int, params=None):
     probs = _np.full(len(label_list), 1.0 / len(label_list), dtype=_np.float32)
     top_score = float(probs.max())
     clip_ran = False  # set True only when CLIP genuinely executed
+    clip_discriminated = False  # set True only when CLIP genuinely discriminated
     top_label = label_list[int(probs.argmax())]
 
     try:
@@ -354,6 +355,14 @@ def method_clip_score(out_dir: Path, seed: int, params=None):
         top_idx = int(probs.argmax())
         top_label = label_list[top_idx]
         clip_ran = True
+        # Discrimination check (clip skill best-practice #8): a genuine CLIP
+        # run must peak ABOVE the uniform baseline 1/n_cand. A near-uniform
+        # distribution means the model ran but expressed no real preference —
+        # downstream consumers must be able to tell "ran + discriminated" from
+        # "ran but effectively guessing".
+        n_cand = probs.shape[-1]
+        peak = float(probs.max())
+        clip_discriminated = bool(peak > 1.0 / n_cand + 1e-3)
     except Exception as e:
         # Honest fallback: keep a valid (uniform) output so the graph keeps
         # flowing, but DO NOT claim CLIP scored the image. A uniform
@@ -373,6 +382,7 @@ def method_clip_score(out_dir: Path, seed: int, params=None):
         score=top_score,
         n_labels=float(len(label_list)),
         clip_ran=1.0 if clip_ran else 0.0,
+        clip_discriminated=1.0 if clip_discriminated else 0.0,
     )
     # Field = per-label probability column broadcast over the canvas (H×W FIELD)
     col = probs.reshape(1, 1, -1)  # (1, 1, n_labels)
@@ -915,7 +925,7 @@ def method_clip_sam(out_dir: Path, seed: int, params=None):
     tags=["ml", "clip", "vision-language", "recolor", "palette", "utility"],
     inputs={"image_in": "IMAGE"},
     outputs={"image": "IMAGE", "palette": "SCALAR", "score": "SCALAR",
-             "mask": "MASK", "weights": "FIELD"},
+             "clip_discriminated": "SCALAR", "mask": "MASK", "weights": "FIELD"},
     params={
         "palettes": {
             "description": "one palette per line: 'Name: #hex1,#hex2,#hex3' (3-5 hex colors, dark→light). Named presets (fire/ocean/forest/neon/noir/sunset) are used when no hex is given.",
@@ -1055,6 +1065,10 @@ def method_clip_palette(out_dir: Path, seed: int, params=None):
     top_idx = 0
     top_score = float(probs.max())
     top_name = names[top_idx]
+    # Honesty flag: True only when CLIP genuinely executed AND discriminated
+    # (peaked above the uniform baseline). Mirrors __clip_score__'s
+    # clip_discriminated. See clip skill best-practice #8.
+    clip_discriminated = False
 
     try:
         import clip
@@ -1075,6 +1089,11 @@ def method_clip_palette(out_dir: Path, seed: int, params=None):
         top_idx = int(probs.argmax())
         top_score = float(probs.max())
         top_name = names[top_idx]
+        # Discrimination check (clip skill best-practice #8): a genuine CLIP
+        # run must peak ABOVE the uniform baseline 1/n_cand. See __clip_score__.
+        n_cand = probs.shape[-1]
+        peak = float(probs.max())
+        clip_discriminated = bool(peak > 1.0 / n_cand + 1e-3)
     except Exception as e:
         print(f"  ✗ CLIP Palette: {e}")
 
@@ -1100,7 +1119,8 @@ def method_clip_palette(out_dir: Path, seed: int, params=None):
 
     # ── Write scalar + field + mask outputs ──
     write_scalars(out_dir, palette=float(top_idx), score=top_score,
-                  n_palettes=float(len(names)))
+                  n_palettes=float(len(names)),
+                  clip_discriminated=1.0 if clip_discriminated else 0.0)
     col = probs.reshape(1, 1, -1)  # (1, 1, N)
     weights_field = _np.repeat(_np.repeat(col, int(W), axis=1), int(H), axis=0)
     write_field(out_dir, weights_field.astype(_np.float32))
