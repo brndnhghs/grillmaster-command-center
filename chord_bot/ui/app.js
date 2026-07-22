@@ -433,15 +433,6 @@ async function init() {
   try { S.nodeDefs = await apiNodeDefs(); }
   catch (e) { console.warn('No node defs:', e); }
 
-  // Fetch tunnel URLs for cross-links
-  try {
-    const t = await (await fetch('/api/tunnel-url')).json();
-    const chordEl = document.getElementById('tunnelLink');
-    if (t.chord && t.chord.url) { chordEl.href = t.chord.url; chordEl.textContent = '🌐 ' + t.chord.url.replace(/^https?:\/\//, '').replace(/\.trycloudflare\.com$/, ''); }
-    const pipeEl = document.getElementById('pipelineLink');
-    if (t.pipeline && t.pipeline.url) { pipeEl.href = t.pipeline.url; }
-  } catch (e) { /* no tunnel */ }
-
   // Wire module callbacks
   const drawerCb = { removeNode, pushHistory, saveToLocal, renderGraph, getNodeMeta, getVChildren, getAugSummary, isHoriz };
   const railCb   = { removeNode, showNodePicker, renderParamDrawer, openDrawer, pushHistory, saveToLocal, getHChain, getVChildren, setChainOrder, blockWidth, getNodeMeta, getAugSummary, isHoriz };

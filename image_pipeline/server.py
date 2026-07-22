@@ -354,7 +354,7 @@ async def lifespan(app: FastAPI):
 # ── Mutating-endpoint auth ────────────────────────────────────────────
 # Endpoints that write method source, restart the process, or spawn cook
 # loops are unauthenticated by default (localhost use). When the server is
-# exposed (e.g. --tunnel), set GRILLMASTER_API_TOKEN; those endpoints then
+# reachable beyond localhost, set GRILLMASTER_API_TOKEN; those endpoints then
 # require the X-Api-Token header. The UI attaches it automatically from
 # localStorage['api-token'].
 API_TOKEN = os.environ.get("GRILLMASTER_API_TOKEN", "")
@@ -904,28 +904,35 @@ async def sse_events():
 async def live_mjpeg_stream():
     """MJPEG multipart/x-mixed-replace stream of the live preview buffer."""
     def _wait_for_new_frame(last_id):
-        """Block until a new frame is available or timeout."""
+        """Block until a frame newer than last_id exists, or timeout."""
         with _LIVE_FRAME_COND:
-            if _LIVE_FRAME_ID == last_id:
-                _LIVE_FRAME_COND.wait(timeout=1.0)
+            if _LIVE_FRAME is not None and _LIVE_FRAME_ID != last_id:
+                return
+            _LIVE_FRAME_COND.wait(timeout=1.0)
 
     async def generate():
-        last_id = -1
+        # None = nothing delivered yet. Must not be a sentinel int: _LIVE_FRAME_ID
+        # starts at 0, so a -1 sentinel reads as "new frame available" before the
+        # live loop has published anything.
+        last_id = None
         loop = asyncio.get_event_loop()
         while True:
-            if _LIVE_FRAME_ID == last_id:
-                await loop.run_in_executor(None, _wait_for_new_frame, last_id)
             with _LIVE_FRAME_LOCK:
                 fid = _LIVE_FRAME_ID
                 data = _LIVE_FRAME
-            if data is not None and fid != last_id:
-                last_id = fid
-                yield (
-                    b"--frame\r\n"
-                    b"Content-Type: image/jpeg\r\n"
-                    b"Content-Length: " + str(len(data)).encode() + b"\r\n"
-                    b"\r\n" + data + b"\r\n"
-                )
+            if data is None or fid == last_id:
+                # Nothing new. This is the only path back to the top of the
+                # loop, and it always awaits — otherwise the generator spins
+                # and starves the event loop, wedging the whole server.
+                await loop.run_in_executor(None, _wait_for_new_frame, last_id)
+                continue
+            last_id = fid
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n"
+                b"Content-Length: " + str(len(data)).encode() + b"\r\n"
+                b"\r\n" + data + b"\r\n"
+            )
 
     return StreamingResponse(
         generate(),
@@ -2678,19 +2685,6 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Image Pipeline server")
     parser.add_argument("--port", type=int, default=7860, help="Port to listen on")
-    parser.add_argument("--tunnel", action="store_true", help="Open a public ngrok tunnel")
     args = parser.parse_args()
-
-    if args.tunnel:
-        if not API_TOKEN:
-            print(
-                "⚠  WARNING: tunneling without GRILLMASTER_API_TOKEN set — "
-                "anyone with the URL can write method source and restart the "
-                "server. Set the env var and put the token in the UI's "
-                "localStorage['api-token']."
-            )
-        from pyngrok import ngrok
-        tunnel = ngrok.connect(args.port, bind_tls=True)
-        print(f"🌐 Public URL: {tunnel.public_url}")
 
     uvicorn.run("image_pipeline.server:app", host="0.0.0.0", port=args.port, reload=False, log_config=None)

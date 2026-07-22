@@ -6,7 +6,6 @@ Launch:
 """
 from __future__ import annotations
 
-import json
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -150,21 +149,6 @@ async def api_export_midi(req: GraphRequest) -> FileResponse:
 @app.get("/health")
 async def health() -> dict:
     return {"ok": True}
-
-
-TUNNEL_INFO_PATH = Path(__file__).parent.parent / "data" / "tunnel-info.json"
-
-
-@app.get("/api/tunnel-url")
-async def tunnel_url() -> dict:
-    try:
-        data = json.loads(TUNNEL_INFO_PATH.read_text())
-        return data
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {
-            "chord": {"url": None, "local": "http://127.0.0.1:7861"},
-            "pipeline": {"url": None, "local": "http://127.0.0.1:7860"},
-        }
 
 
 @app.get("/api/nodes")

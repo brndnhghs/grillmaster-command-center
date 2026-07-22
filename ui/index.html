@@ -4536,6 +4536,15 @@ async function gGraphClientRenderable() {
   } catch { return false; }
 }
 
+// Single writer for live state: the button's lit/unlit look must never drift
+// from gLiveMode, or the toggle strands itself in the "on" position and every
+// later click re-runs the start path instead of stopping.
+function _gSetLiveState(on) {
+  gLiveMode = on;
+  gLiveBtn.classList.toggle('active', on);
+  gLiveBtnDesk.classList.toggle('active', on);
+}
+
 async function gSetLive(on) {
   // Live preview runs on the browser GPU when the whole graph is client-
   // renderable (feature #1): 3D/p5/custom-shader nodes AND the existing GPU
@@ -4543,9 +4552,7 @@ async function gSetLive(on) {
   // graph/live + WS path (untouched) drives the preview. Run/export are
   // unaffected — the server stays authoritative for those.
   if (on && await gGraphClientRenderable()) {
-    gLiveMode = true;
-    gLiveBtn.classList.toggle('active', true);
-    gLiveBtnDesk.classList.toggle('active', true);
+    _gSetLiveState(true);
     try {
       await _gStartClientLive();
       _gSetPreviewMode('client');
@@ -4556,35 +4563,41 @@ async function gSetLive(on) {
       // Graphs with client-only nodes cannot fall back to the server.
       if (gGraphHasClientNode()) {
         gSetStatus('Client live error: ' + e.message);
-        gLiveMode = false;
-        gLiveBtn.classList.toggle('active', false);
-        gLiveBtnDesk.classList.toggle('active', false);
+        _gSetLiveState(false);
         return;
       }
       gSetStatus('Client render unavailable — using server preview');
-      // fall through to the server WS path below
+      // Drop back to "off" before the server path so a failure there leaves
+      // the button unlit rather than stuck lit.
+      _gSetLiveState(false);
     }
   }
   if (!on && _gClientLiveActive) {
     _gStopClientLive();
-    gLiveMode = false;
-    gLiveBtn.classList.toggle('active', false);
-    gLiveBtnDesk.classList.toggle('active', false);
+    _gSetLiveState(false);
     _gSetPreviewMode('—');
     gSetStatus('Live stopped.');
     return;
   }
 
   try {
+    // Always time out: an unresponsive server used to leave this fetch pending
+    // forever, so the toggle never resolved and the button stayed lit.
     await fetch('/api/graph/live', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(gLiveGraphBody(!on)),
+      signal: AbortSignal.timeout(15000),
     });
-  } catch(e) { gSetStatus('Live: ' + e.message); return; }
+  } catch(e) {
+    _gSetLiveState(false);
+    _gSetPreviewMode('—');
+    gSetStatus(e.name === 'TimeoutError'
+      ? 'Live: server not responding (timed out)'
+      : 'Live: ' + e.message);
+    return;
+  }
 
-  gLiveMode = on;
-  gLiveBtn.classList.toggle('active', on);
-  gLiveBtnDesk.classList.toggle('active', on);
+  _gSetLiveState(on);
   _gSetPreviewMode(on ? 'server' : '—');
 
   if (on) {

@@ -14,15 +14,12 @@ child process (using the repo .venv) and proxies their status via /health.
 from __future__ import annotations
 
 import os
-import json
 import signal
 import subprocess
-import sys
 import time
 from pathlib import Path
-from typing import Optional
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -73,6 +70,93 @@ def _is_port_open(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(0.4)
         return s.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _is_healthy(port: int, timeout: float = 1.0) -> bool:
+    """True only if /health actually answers — a listening socket is not enough.
+    A wedged server keeps its socket in LISTEN while answering nothing."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=timeout) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
+def _reclaim_port(port: int) -> bool:
+    """Kill whatever is listening on `port`. Returns True if something was killed.
+
+    Without this a leftover instance (typically one that hung and stopped
+    answering) keeps the port, every relaunch dies with 'address already in
+    use', and the UI reports 'starting' forever.
+    """
+    try:
+        out = subprocess.run(
+            ["lsof", "-ti", f"tcp:{port}", "-sTCP:LISTEN"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout.split()
+    except Exception:
+        return False
+    killed = False
+    for raw in out:
+        try:
+            pid = int(raw)
+        except ValueError:
+            continue
+        try:
+            # Kill the whole group like _stop does — killing only the listener
+            # would orphan any children it spawned.
+            os.killpg(os.getpgid(pid), signal.SIGKILL)
+            killed = True
+        except (ProcessLookupError, PermissionError):
+            try:
+                os.kill(pid, signal.SIGKILL)
+                killed = True
+            except (ProcessLookupError, PermissionError):
+                pass
+    if killed:
+        time.sleep(1.0)
+    return killed
+
+
+def _wait_ready(port: int, timeout: float = 20.0) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if _is_healthy(port, timeout=1.0):
+            return True
+        time.sleep(0.5)
+    return False
+
+
+def _begin_start(name: str, cfg: dict) -> bool:
+    """Spawn one service, reclaiming a stale port first.
+
+    Returns False if it was already up and healthy (nothing spawned).
+    """
+    port = cfg["port"]
+    proc = _PROCS.get(name)
+    if proc and proc.poll() is None and _is_healthy(port):
+        return False
+    if _is_port_open(port):
+        if _is_healthy(port):
+            return False
+        _reclaim_port(port)   # listening but wedged/orphaned — take the port back
+    _stop(name)
+    if cfg.get("node"):
+        _spawn_node(name, cfg["node"], port)
+    else:
+        _spawn(name, cfg["module"], port)
+    return True
+
+
+def _finish_start(name: str, port: int) -> str:
+    """Wait for a just-spawned service and report what actually happened."""
+    if _wait_ready(port):
+        return "running"
+    p = _PROCS.get(name)
+    if p is not None and p.poll() is not None:
+        return f"failed (exited {p.returncode}, see data/logs/{name}.log)"
+    return f"failed (no response on :{port}, see data/logs/{name}.log)"
 
 
 def service_status(name: str, port: int) -> dict:
@@ -126,22 +210,28 @@ def _spawn_node(name: str, script: Path, port: int) -> subprocess.Popen:
 
 
 def launch_all() -> dict:
-    results = {}
+    # Spawn everything first, then wait — waiting per service in turn would
+    # stack one readiness timeout on top of the next.
+    results: dict[str, str] = {}
+    starting: list[str] = []
     for name, cfg in SERVICES.items():
-        if _PROCS.get(name) and _PROCS[name].poll() is None:
-            results[name] = "already running"
-            continue
-        if cfg.get("node"):
-            _spawn_node(name, cfg["node"], cfg["port"])
+        if _begin_start(name, cfg):
+            starting.append(name)
         else:
-            _spawn(name, cfg["module"], cfg["port"])
-        results[name] = "starting"
+            results[name] = "already running"
+    for name in starting:
+        results[name] = _finish_start(name, SERVICES[name]["port"])
     return results
 
 
 def stop_all() -> dict:
     for name in list(_PROCS):
         _stop(name)
+    # Same reason as api_stop_one: untracked leftovers must lose the port too.
+    time.sleep(0.5)
+    for cfg in SERVICES.values():
+        if _is_port_open(cfg["port"]):
+            _reclaim_port(cfg["port"])
     return {name: "stopped" for name in SERVICES}
 
 
@@ -163,26 +253,6 @@ def api_status() -> JSONResponse:
     })
 
 
-@app.get("/api/tunnel-info")
-def api_tunnel_info() -> JSONResponse:
-    """Public backend URLs for embedding through a tunnel.
-
-    When the dashboard is reached via a public tunnel, the embedded iframes
-    and 'Open' links must point at the backends' PUBLIC urls (not 127.0.0.1,
-    which is the visitor's own localhost). Sourced from data/tunnel-info.json,
-    which the launch/tunnel scripts write. Missing keys fall back to
-    127.0.0.1 in the UI.
-    """
-    info: dict = {}
-    p = DATA_DIR / "tunnel-info.json"
-    if p.exists():
-        try:
-            info = json.loads(p.read_text())
-        except Exception:
-            info = {}
-    return JSONResponse(info)
-
-
 @app.post("/api/launch")
 def api_launch() -> JSONResponse:
     return JSONResponse(launch_all())
@@ -198,10 +268,11 @@ def api_launch_one(name: str) -> JSONResponse:
     cfg = SERVICES.get(name)
     if cfg is None:
         return JSONResponse({"error": f"unknown service {name}"}, status_code=404)
-    if _PROCS.get(name) and _PROCS[name].poll() is None:
+    if not _begin_start(name, cfg):
         return JSONResponse({name: "already running"})
-    _spawn(name, cfg["module"], cfg["port"])
-    return JSONResponse({name: "starting"})
+    status = _finish_start(name, cfg["port"])
+    return JSONResponse({name: status},
+                        status_code=200 if status == "running" else 500)
 
 
 @app.post("/api/stop/{name}")
@@ -210,40 +281,17 @@ def api_stop_one(name: str) -> JSONResponse:
     if cfg is None:
         return JSONResponse({"error": f"unknown service {name}"}, status_code=404)
     _stop(name)
+    # The dashboard forgets _PROCS across its own restarts, so also clear
+    # anything still holding the port — otherwise Stop looks like a no-op.
+    time.sleep(0.5)
+    if _is_port_open(cfg["port"]):
+        _reclaim_port(cfg["port"])
     return JSONResponse({name: "stopped"})
 
 
 @app.get("/", response_class=HTMLResponse)
 def index() -> HTMLResponse:
-    html = (UI_DIR / "index.html").read_text()
-    # Inject the live public backend URLs server-side so the embedded iframes
-    # work through a tunnel — no client-side fetch race, and it survives
-    # subdomain rotation (tunnel-info.json is re-read on every request).
-    tunnel = {"pipeline": None, "chord": None}
-    dash_url = None
-    p = DATA_DIR / "tunnel-info.json"
-    if p.exists():
-        try:
-            info = json.loads(p.read_text())
-            for k in ("pipeline", "chord"):
-                if isinstance(info.get(k), dict) and info[k].get("url"):
-                    tunnel[k] = {"url": info[k]["url"]}
-            if isinstance(info.get("dashboard"), dict) and info["dashboard"].get("url"):
-                dash_url = info["dashboard"]["url"]
-        except Exception:
-            pass
-    html = html.replace(
-        "const TUNNEL = { pipeline: null, chord: null };",
-        "const TUNNEL = " + json.dumps(tunnel) + ";",
-        1,
-    )
-    if dash_url:
-        html = html.replace(
-            '<span class="pill" id="dash-pill">dashboard :7870</span>',
-            f'<span class="pill" id="dash-pill" title="{dash_url}">🌐 {dash_url.replace("https://", "")}</span>',
-            1,
-        )
-    return HTMLResponse(html)
+    return HTMLResponse((UI_DIR / "index.html").read_text())
 
 
 # Serve the dashboard's own static assets (css/js) if present.

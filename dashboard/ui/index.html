@@ -71,7 +71,8 @@
     </div>
     <div class="card">
       <h2>Status Log</h2>
-      <div class="log" id="log">dashboard ready.\n</div>
+      <div class="log" id="log">dashboard ready.
+</div>
     </div>
   </div>
 
@@ -98,20 +99,11 @@ const SVC = {
   chord:    {name:"Chord Bot",      port:7861, desc:"Harmonic node graph (planing, Neapolitan, …)"}
 };
 
-// Tunnel-aware URLs. When the dashboard is reached through a public tunnel, the
-// embedded backends must also be reached through THEIR public URLs — not
-// 127.0.0.1, which is localhost of the *visitor's* machine and will hang.
-// Populated from /api/tunnel-info (falls back to 127.0.0.1 if absent).
-const TUNNEL = { pipeline: null, chord: null };
-
 const $ = (s)=>document.querySelector(s);
 const log = (m)=>{ const el=$("#log"); el.textContent += m+"\n"; el.scrollTop=el.scrollHeight; };
 
-function svcUrl(k){
-  const t = TUNNEL[k];
-  if(t && t.url) return t.url;
-  return "http://127.0.0.1:" + SVC[k].port;
-}
+// Local-only for now — tunnelling was removed and will be rebuilt later.
+function svcUrl(k){ return "http://127.0.0.1:" + SVC[k].port; }
 
 function render(){
   const list = $("#svc-list"); list.innerHTML="";
@@ -153,9 +145,28 @@ async function status(){
   }catch(e){ /* dashboard itself down? */ }
 }
 
-async function launchAll(){ log("launching both services…"); await fetch("/api/launch",{method:"POST"}); };
-async function launchOne(k){ log("launching "+SVC[k].name+"…"); await fetch("/api/launch/"+k,{method:"POST"}); loadFrame(k); };
-async function stopOne(k){ log("stopping "+SVC[k].name+"…"); await fetch("/api/stop/"+k,{method:"POST"}); if(currentTab===k) $("#frame").src="about:blank"; };
+// Launch waits for the service to actually answer /health, so these calls can
+// take a few seconds and report a real result — not just "starting".
+async function launchAll(){
+  log("launching all services…");
+  try{
+    const d = await (await fetch("/api/launch",{method:"POST"})).json();
+    for(const [k,v] of Object.entries(d)) log("  "+k+": "+v);
+  }catch(e){ log("  launch failed: "+e.message); }
+}
+async function launchOne(k){
+  log("launching "+SVC[k].name+"…");
+  try{
+    const d = await (await fetch("/api/launch/"+k,{method:"POST"})).json();
+    log("  "+SVC[k].name+": "+(d[k] ?? JSON.stringify(d)));
+  }catch(e){ log("  launch failed: "+e.message); }
+  loadFrame(k);
+}
+async function stopOne(k){
+  log("stopping "+SVC[k].name+"…");
+  try{ await fetch("/api/stop/"+k,{method:"POST"}); }catch(e){ log("  stop failed: "+e.message); }
+  if(currentTab===k) $("#frame").src="about:blank";
+}
 
 let currentTab="pipeline";
 function loadFrame(k){
@@ -189,10 +200,6 @@ loadFrame("pipeline");
 status();
 setInterval(status, 2000);
 log("tip: click 'Launch Both', wait for dots to turn green, then switch tabs above.");
-
-// Backend (pipeline/chord) URLs are injected server-side into TUNNEL from
-// data/tunnel-info.json, so the embedded iframes + Open links work through a
-// public tunnel with no client-side fetch race. Nothing else to do here.
 </script>
 </body>
 </html>
