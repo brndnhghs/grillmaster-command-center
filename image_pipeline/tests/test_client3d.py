@@ -69,12 +69,53 @@ def test_ui_static_mount_serves_client_assets():
                     "buildLight", "buildCamera", "renderSceneRender", "buildGltf"):
         assert handler in mod.text, f"{handler} missing from client3d.js"
 
-    # Vendored GLTF loader chain serves, with imports rewritten off bare 'three'.
-    for path in ("/ui/vendor/GLTFLoader.js", "/ui/vendor/BufferGeometryUtils.js"):
+    # Vendored addon chain serves. Since the r185 upgrade the addons are copied
+    # verbatim from node_modules and keep their bare 'three' imports — an import
+    # map in index.html does the resolving, so nothing is hand-rewritten. That
+    # inverts the old assertion: a bare import is now correct, and what must
+    # hold is that the map covers every specifier the addons actually use.
+    for path in ("/ui/vendor/addons/loaders/GLTFLoader.js",
+                 "/ui/vendor/addons/utils/BufferGeometryUtils.js",
+                 "/ui/vendor/addons/controls/OrbitControls.js",
+                 "/ui/vendor/addons/controls/TransformControls.js"):
         v = client.get(path)
         assert v.status_code == 200, path
-        assert "from 'three'" not in v.text, f"{path} has an unrewritten bare import"
-        assert "/ui/vendor/three.module.js" in v.text
+
+    # The three.js builds the map points at must all serve.
+    for path in ("/ui/vendor/three.module.js", "/ui/vendor/three.core.js"):
+        assert client.get(path).status_code == 200, path
+
+    index = client.get("/").text
+    assert 'type="importmap"' in index, "import map missing — bare 'three' will not resolve"
+    for spec in ('"three":', '"three/addons/":'):
+        assert spec in index, f"import map is missing {spec}"
+
+
+def test_every_addon_specifier_in_ui_code_resolves():
+    """Every `three/addons/...` the UI imports must exist under ui/vendor/addons.
+
+    Most of these are *lazy* dynamic imports (GLTFLoader, USDZLoader, fflate)
+    that only run when a user opens a model, so a re-vendor that misses a file
+    breaks nothing until then — and r185 grew the chain (USDZLoader now pulls
+    USDLoader + usd/*, GLTFLoader pulls SkeletonUtils). Resolving the specifiers
+    the code actually uses is what catches that, rather than a hand-kept list.
+    """
+    import re
+
+    from fastapi.testclient import TestClient
+    from image_pipeline.server import app
+
+    client = TestClient(app)
+    specs: set[str] = set()
+    for js in sorted(Path("ui/js").glob("*.js")):
+        specs |= set(re.findall(r"['\"]three/addons/([^'\"]+)['\"]", js.read_text()))
+
+    assert specs, "no three/addons/ specifiers found — did the import style change?"
+    for rel in sorted(specs):
+        assert (Path("ui/vendor/addons") / rel).is_file(), (
+            f"three/addons/{rel} is imported by ui/js but missing from ui/vendor/addons"
+        )
+        assert client.get(f"/ui/vendor/addons/{rel}").status_code == 200, rel
 
 
 # ── 3. Keyframe parity: client sampler == server _evaluate_param_track ────────
@@ -117,6 +158,20 @@ def test_2d_graph_still_renders_server_side():
 
 # ── 5. Graph FX overlay safety invariants (#4c-safe) ─────────────────────────
 
+def _ui_js(client) -> str:
+    """Every UI script the document loads, concatenated, as actually served.
+
+    index.html is markup plus <script src> only — the editor's JavaScript lives
+    in ui/js/*.js. Assertions about editor *behaviour* therefore have to look at
+    the modules, not the document, and resolving them from the <script> tags
+    keeps these tests working the next time a file is split out.
+    """
+    import re
+    html = client.get("/").text
+    return "\n".join(client.get(s).text
+                     for s in re.findall(r'<script[^>]+src="(/ui/js/[^"]+)"', html))
+
+
 def test_graph_overlay_is_noninteractive_and_default_off():
     """The decorative FX overlay must never own graph interaction and must be
     off by default, so the existing DOM/SVG graph is byte-for-byte unaffected
@@ -142,8 +197,9 @@ def test_graph_overlay_is_noninteractive_and_default_off():
     css = re.search(r"#graph-overlay\s*\{[^}]*\}", css_text, re.S)
     assert css and "pointer-events: none" in css.group(0)
     # Default off — the controller initializes disabled and only restores when
-    # the user previously enabled it.
-    assert "let gOverlayEnabled = false" in html
+    # the user previously enabled it. The controller is JS, so assert against
+    # the served modules rather than the (now markup-only) document.
+    assert "let gOverlayEnabled = false" in _ui_js(client)
     # Minimap starts hidden.
     assert 'id="graph-minimap" style="display:none"' in html
 
@@ -183,10 +239,12 @@ def test_edge_transport_surfaced_and_consumed():
     # server plumbs it into the live WS payload + diagnostics stats
     srv = Path("image_pipeline/server.py").read_text()
     assert 'edge_transport' in srv and 'ws_meta.get("edge_transport"' in srv
-    # overlay consumes the real per-edge value
-    html = Path("ui/index.html").read_text()
-    assert "edgeTransport: d.edge_transport" in html
-    assert "_gOvlTele.edgeTransport" in html
+    # overlay consumes the real per-edge value (now in the served JS modules)
+    from fastapi.testclient import TestClient
+    from image_pipeline.server import app
+    js = _ui_js(TestClient(app))
+    assert "edgeTransport: d.edge_transport" in js
+    assert "_gOvlTele.edgeTransport" in js
 
 
 # ── 7. Typed-shim param_map rename resolves (frozen-preview class) ────────────

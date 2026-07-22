@@ -28,7 +28,6 @@
   let undoStack = [];   // states, oldest → newest; the LAST entry is "now"
   let redoStack = [];
   let applying  = false; // guard so our own restore doesn't re-record
-  let lastAt    = 0;
   let lastSig   = null;
 
   // Structural fingerprint: node identities + wiring. Moving a node or
@@ -41,28 +40,54 @@
                  .sort().join(',');
   }
 
+  // `dirty` and the physics scratch fields (_pinned/_vx/_vy) are execution and
+  // layout state, not document state. Carrying `dirty` in particular would
+  // resurrect pre-run flags on undo and defeat the selective re-cook described
+  // in DESIGN.md → "Dirty flags / selective recooking": the post-run
+  // all-clean state is never saved, so every snapshot would pin dirty=true.
+  // Stripping it also stops a bare flag flip from creating a phantom entry.
   function snapshot() {
-    return JSON.stringify({ nodes: gNodes, edges: gEdges });
+    return JSON.stringify({
+      nodes: gNodes.map(({ dirty, _pinned, _vx, _vy, ...keep }) => keep),
+      edges: gEdges,
+      // Timeline clips are part of the document a user expects Clear to undo.
+      clips: tlClips.map(({ _selected, _origStart, _origEnd, ...keep }) => keep),
+    });
   }
+
+  // Snapshotting serialises the whole graph, and gSave() fires on every slider
+  // `input` event. So the expensive part is deferred: a run of same-shape edits
+  // (a scrub, a drag) settles into ONE trailing commit instead of one per tick.
+  // A structural change commits immediately, or two quick node adds would
+  // collapse into a single undo step.
+  let pendingT = 0;
 
   function record() {
     if (applying) return;
-    const snap = snapshot();
-    const top  = undoStack[undoStack.length - 1];
-    if (snap === top) return;          // no-op save (pan, zoom, re-save) — ignore
-
-    const now = Date.now();
     const sig = signature();
-    // Same wiring + still inside the gesture window → fold into the current
-    // entry rather than stacking one undo step per pointermove.
-    if (top && sig === lastSig && now - lastAt < COALESCE_MS && undoStack.length > 1) {
-      undoStack[undoStack.length - 1] = snap;
-    } else {
-      undoStack.push(snap);
-      if (undoStack.length > LIMIT) undoStack.shift();
-    }
+    if (sig !== lastSig) { flush(); commit(sig); return; }
+    clearTimeout(pendingT);
+    pendingT = setTimeout(() => { pendingT = 0; commit(sig); }, COALESCE_MS);
+  }
+
+  // Land any deferred snapshot now — undo/redo must not read a stale stack.
+  // Caveat: the deferred state is only ever re-read from the live graph, so a
+  // scrub followed within COALESCE_MS by a structural edit lands as ONE entry
+  // covering both. Undo still returns to a coherent earlier state; it just
+  // rewinds slightly further than a per-tick stack would.
+  function flush() {
+    if (!pendingT) return;
+    clearTimeout(pendingT);
+    pendingT = 0;
+    commit(signature());
+  }
+
+  function commit(sig) {
+    const snap = snapshot();
+    if (snap === undoStack[undoStack.length - 1]) return;   // pan/zoom/re-save
+    undoStack.push(snap);
+    if (undoStack.length > LIMIT) undoStack.shift();
     lastSig = sig;
-    lastAt  = now;
     redoStack.length = 0;              // new edit invalidates the redo branch
     refresh();
   }
@@ -73,11 +98,34 @@
     applying = true;
     try {
       const s = JSON.parse(snapStr);
-      gNodes = s.nodes || [];
+
+      // Re-derive `dirty` instead of restoring it: a node only needs re-cooking
+      // if this undo actually changed its params. Blanket-dirtying would force
+      // a full re-cook of an untouched graph; blanket-clean would serve stale
+      // cached output for the node that did change.
+      const before = new Map(gNodes.map(n => [n.id, n]));
+      gNodes = (s.nodes || []).map(n => {
+        const old = before.get(n.id);
+        const changed = !old || JSON.stringify(old.params) !== JSON.stringify(n.params);
+        return { ...n, dirty: changed ? true : !!old.dirty };
+      });
       gEdges = s.edges || [];
-      // Keep the id counter ahead of anything restored, or the next wire
-      // reuses an existing edge id.
-      gEdgeCounter = Math.max(0, ...gEdges.map(e => parseInt(e.id?.slice(1)) || 0));
+      gRecomputeEdgeCounter();
+
+      // Clips ride along so Clear → undo restores the timeline too, not just
+      // the nodes. Mirrors tlLoadClips()'s reconstruction of the derived fields.
+      if (s.clips) {
+        tlClips = s.clips.map(c => ({
+          srcLength: c.endFrame - c.startFrame + 1,
+          ...c,
+          looped: c.looped ?? false,
+          _origStart: c.startFrame,
+          _origEnd: c.endFrame,
+        }));
+        tlClipIdCounter = Math.max(
+          ...tlClips.map(c => parseInt(String(c.id).replace('clip_', '')) || 0), 0);
+        tlSaveClips();
+      }
 
       gSelectedNode = null;
       gSelectedEdge = null;
@@ -91,27 +139,30 @@
       gShowNodeParams(null);
       if (isMobile()) gParamsSheetClose();
 
+      renderTimelineRuler();          // clip lanes + per-node KF lanes
       gSave();                        // persist; applying=true keeps it silent
     } finally {
       applying = false;
     }
+    // Judge the next edit against what is actually on screen now.
+    lastSig = signature();
     refresh();
   }
 
   function undo() {
+    flush();                          // land any deferred snapshot first
     if (undoStack.length < 2) { gShowToast('Nothing to undo'); return; }
     redoStack.push(undoStack.pop());
     apply(undoStack[undoStack.length - 1]);
-    lastSig = null;                   // don't coalesce across an undo
     gShowToast('Undo');
   }
 
   function redo() {
+    flush();
     if (!redoStack.length) { gShowToast('Nothing to redo'); return; }
     const snap = redoStack.pop();
     undoStack.push(snap);
     apply(snap);
-    lastSig = null;
     gShowToast('Redo');
   }
 
@@ -165,5 +216,7 @@
   refresh();
 
   // Exposed for the clipboard module and for debugging.
-  window.gHistory = { undo, redo, record, depth: () => undoStack.length - 1 };
+  // `flush` is public so a caller can force a deferred snapshot to land —
+  // used by undo/redo above, and by tests that need a deterministic stack.
+  window.gHistory = { undo, redo, record, flush, depth: () => undoStack.length - 1 };
 })();

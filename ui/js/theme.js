@@ -120,18 +120,11 @@
     }, 16);
   }
 
-  // Resolved value of a token as it would render with `custom` removed —
-  // i.e. what the preset alone says. Used to seed the editor's inputs.
-  function presetValue(token) {
-    const saved = custom[token];
-    if (saved !== undefined) root.style.removeProperty(token);
-    const v = getComputedStyle(root).getPropertyValue(token).trim();
-    if (saved !== undefined) root.style.setProperty(token, saved);
-    return v;
-  }
-
+  // What the editor's control should show for a token: an override wins
+  // outright, and with none set the computed value already IS the preset's —
+  // so reading it needs no temporary strip-and-restore of the inline property.
   function currentValue(token) {
-    return (custom[token] ?? presetValue(token)).trim();
+    return (custom[token] ?? getComputedStyle(root).getPropertyValue(token)).trim();
   }
 
   // ── Boot ───────────────────────────────────────────────────────
