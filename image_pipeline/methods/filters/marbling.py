@@ -95,9 +95,16 @@ def _build_background(bg_mode: str, palette: list, rng: np.random.Generator) -> 
     # vertical gradient between two palette colors
     top = np.asarray(palette[-1], dtype=np.float32)
     bot = np.asarray(palette[0], dtype=np.float32)
-    yy = np.linspace(0.0, 1.0, H, dtype=np.float32)[:, None]
-    grad = top[None, None, :] * (1.0 - yy) + bot[None, None, :] * yy
-    return grad.astype(np.uint8)
+    # yy must carry a trailing axis. With `[:, None]` it is (H,1), which
+    # broadcasts against the (1,1,3) colours as (1,H,3) — the WIDTH axis
+    # disappears and every downstream shape is wrong. `_tine_warp` then sizes
+    # itself from that, so the node emitted a 1-pixel-tall image on every
+    # default render (bg_mode="gradient" is the default; the "solid" branch
+    # above was unaffected, which is why this survived).
+    yy = np.linspace(0.0, 1.0, H, dtype=np.float32)[:, None, None]
+    grad = top * (1.0 - yy) + bot * yy            # (H,1,3)
+    # astype copies, so the result is writable — _inject_drops mutates it.
+    return np.broadcast_to(grad, (H, W, 3)).astype(np.uint8)
 
 
 def _inject_drops(field: np.ndarray, n_drops: int, rings: int,
@@ -276,11 +283,16 @@ def method_marbling(out_dir: Path, seed: int, params=None):
     )
 
     # ── Emit ──
-    result = warped  # full-coverage RGB
+    # The IMAGE port contract is H×W×3 float32 in [0,1]; the bath is built in
+    # uint8 0-255, so convert once here rather than leaking 0-255 floats into
+    # every downstream consumer (it also made `luminance` come out ~138).
+    result = warped.astype(np.float32) / 255.0
     save(result, mn(437, f"Marbling t={_t:.2f}"), out_dir)
     write_field(out_dir, disp.astype(np.float32))
-    lum = float(np.mean(result) / 255.0)
-    write_scalars(out_dir, luminance=lum, n_tines=float(n_tines),
-                  ring_count=float(n_drops * rings))
+    lum = float(np.mean(result))
+    # n_tines / ring_count are not declared in outputs=, so nothing can wire
+    # them; emitting them only pollutes the payload. luminance is computed by
+    # the executor itself.
+    write_scalars(out_dir, luminance=lum)
     capture_frame("437", result)
     return result

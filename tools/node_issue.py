@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import pprint
 import sys
 import tempfile
 import time
@@ -368,8 +369,8 @@ import image_pipeline.methods  # noqa: F401
 from image_pipeline.core.graph import GraphExecutor
 from image_pipeline.core.utils import set_canvas
 
-NODES = {json.dumps(r["nodes"], indent=4)}
-EDGES = {json.dumps(r["edges"])}
+NODES = {pprint.pformat(r["nodes"], width=78)}
+EDGES = {pprint.pformat(r["edges"], width=78)}
 
 
 def test_{rec['id'].replace('-', '_')}_node_{rec['method_id']}_is_healthy():
