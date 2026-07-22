@@ -1,0 +1,5 @@
+3
+# Evolution research index — last sub-problem addressed (rotation list):
+# 0=selection pressure, 1=diversity, 2=liveness, 3=mutation/crossover,
+# 4=advisor quality, 5=rating-signal poverty, 6=drift/stagnation.
+# Last addressed: 3 (render-timeout pre-check) — 2026-07-22
