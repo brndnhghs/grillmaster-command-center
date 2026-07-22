@@ -51,6 +51,7 @@ from ...core.utils import (
 from ...core.animation import capture_frame
 
 import cv2
+from image_pipeline.core.spatial import sparam
 
 
 # ── Procedural self-contained source scene ──
@@ -166,7 +167,7 @@ def _gauss_h(ch: np.ndarray, sigma: float) -> np.ndarray:
                       "min": 0.0, "max": 3.0, "default": 1.0},
         "skew": {"description": "tape wobble / horizontal shear amount",
                   "min": 0.0, "max": 1.0, "default": 0.35},
-        "saturation": {"description": "chroma saturation boost (1 = unchanged)",
+        "saturation": {"spatial": True, "description": "chroma saturation boost (1 = unchanged)",
                        "min": 0.0, "max": 2.0, "default": 1.25},
         "contrast": {"description": "overall contrast",
                      "min": 0.3, "max": 2.0, "default": 1.10},
@@ -211,7 +212,7 @@ def method_vhs(out_dir: Path, seed: int, params=None):
         tracking = float(params.get("tracking", 0.5))
         roll_speed = float(params.get("roll_speed", 1.0))
         skew = float(params.get("skew", 0.35))
-        saturation = float(params.get("saturation", 1.25))
+        saturation = sparam(params, "saturation", 1.25)
         contrast = float(params.get("contrast", 1.10))
         brightness = float(params.get("brightness", 1.05))
         pal_name = str(params.get("palette", "vapor"))

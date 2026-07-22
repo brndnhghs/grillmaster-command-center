@@ -50,6 +50,7 @@ from ...core.utils import (
     wired_source_lum,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ── Helpers ──
@@ -125,7 +126,7 @@ def _palette(n: int, seed: int) -> list[tuple[float, float, float]]:
             "description": "number of colored drops injected",
             "min": 1, "max": 60, "default": 14,
         },
-        "drop_radius": {
+        "drop_radius": {"spatial": True, 
             "description": "base drop radius (fraction of min(W,H))",
             "min": 0.01, "max": 0.3, "default": 0.09,
         },
@@ -178,7 +179,7 @@ def method_marbling(out_dir: Path, seed: int, params=None):
     anim_speed = float(params.get("anim_speed", 1.0))
     _t = t * anim_speed
     n_drops = int(params.get("n_drops", 14))
-    drop_r = float(params.get("drop_radius", 0.09))
+    drop_r = sparam(params, "drop_radius", 0.09)
     tine_strength = float(params.get("tine_strength", 0.22))
     tine_c = float(params.get("tine_sharpness", 0.14))
     n_tines = int(params.get("n_tines", 3))

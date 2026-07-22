@@ -10,6 +10,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageOps
 from ...core.registry import method
 from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES, quantize_to_palette, load_input
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 try:
     import cv2
@@ -34,7 +35,7 @@ except ImportError:
         "color_mode": {"description": "coloring: edge_intensity, sine, palette, heatmap, fire, ice, spectral, per_dot_hue, gradient", "default": "edge_intensity"},
         "palette_name": {"description": "palette name (retro palettes)", "default": "vapor"},
         "background": {"description": "background: dark, light, transparent, gradient, radial", "default": "dark"},
-        "noise_amp": {"description": "source noise amplitude", "min": 0.1, "max": 2.0, "default": 0.5},
+        "noise_amp": {"spatial": True, "description": "source noise amplitude", "min": 0.1, "max": 2.0, "default": 0.5},
         "dot_variation": {"description": "random dot size variation", "min": 0.0, "max": 1.0, "default": 0.3}}
 )
 def method_edge_halftone(out_dir: Path, seed: int, params=None):
@@ -80,7 +81,7 @@ def method_edge_halftone(out_dir: Path, seed: int, params=None):
     color_mode = str(params.get("color_mode", "edge_intensity"))
     pal_name = str(params.get("palette_name", "vapor"))
     bg = str(params.get("background", "dark"))
-    noise_amp = float(params.get("noise_amp", 0.5))
+    noise_amp = sparam(params, "noise_amp", 0.5)
     dot_variation = float(params.get("dot_variation", 0.3))
     anim_mode = str(params.get("anim_mode", "none"))
     anim_speed = float(params.get("anim_speed", 1.0))

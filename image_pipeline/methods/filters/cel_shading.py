@@ -49,6 +49,7 @@ from ...core.utils import (
     write_mask,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 def _hsv2rgb(h: float, s: float, v: float) -> tuple[float, float, float]:
@@ -151,7 +152,7 @@ def _build_scene(source: str, hh: int, ww: int, rng: np.random.Generator, seed: 
                             "min": 5.0, "max": 85.0, "default": 45.0},
         "bands": {"description": "number of quantized toon light levels (2=hard, 8=smooth)",
                   "min": 2, "max": 8, "default": 4},
-        "specular": {"description": "hard toon-specular disc intensity (0=off)",
+        "specular": {"spatial": True, "description": "hard toon-specular disc intensity (0=off)",
                      "min": 0.0, "max": 2.0, "default": 0.7},
         "spec_threshold": {"description": "specular disc half-vector threshold (higher=smaller disc)",
                            "min": 0.30, "max": 0.95, "default": 0.75},
@@ -159,7 +160,7 @@ def _build_scene(source: str, hh: int, ww: int, rng: np.random.Generator, seed: 
                 "min": 0.0, "max": 2.0, "default": 0.6},
         "outline": {"description": "cartoon-outline slope threshold (0=off, ~1=rims only, 3=every ripple)",
                     "min": 0.0, "max": 3.0, "default": 1.0},
-        "ambient": {"description": "ambient light floor so shadowed bands are not black",
+        "ambient": {"spatial": True, "description": "ambient light floor so shadowed bands are not black",
                     "min": 0.0, "max": 0.5, "default": 0.18},
         "base_hue": {"description": "albedo base hue [0,1] (0=red,0.33=green,0.66=blue)",
                      "min": 0.0, "max": 1.0, "default": 0.58},
@@ -199,11 +200,11 @@ def method_cel_shading(out_dir: Path, seed: int, params=None):
         light_el = float(params.get("light_elevation", 45.0))
         bands = int(params.get("bands", 4))
         bands = max(2, min(8, bands))
-        specular = float(params.get("specular", 0.7))
+        specular = sparam(params, "specular", 0.7)
         spec_th = float(params.get("spec_threshold", 0.75))
         rim = float(params.get("rim", 0.6))
         outline = float(params.get("outline", 0.22))
-        ambient = float(params.get("ambient", 0.18))
+        ambient = sparam(params, "ambient", 0.18)
         base_hue = float(params.get("base_hue", 0.58))
         bg_mode = str(params.get("bg_mode", "sky"))
 

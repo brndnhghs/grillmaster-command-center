@@ -9,6 +9,7 @@ from PIL import Image, ImageDraw, ImageFont
 from ...core.registry import method
 from ...core.utils import save, norm, mn, seed_all, get_font, BG_DEFAULT, W, H
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 try:
     import cv2
@@ -29,10 +30,10 @@ except ImportError:
                 "bg_style":{"description":"bg","choices":["dark","light","gradient","grid"],"default":"dark"},
                 "outline_width":{"description":"outline","min":0,"max":5,"default":1},
                 "outline_color":{"description":"outline color","default":"auto"},
-                "gap":{"description":"gap","min":0,"max":10,"default":1},
+                "gap":{"spatial": True, "description":"gap","min":0,"max":10,"default":1},
                 "concentric_rings":{"description":"rings","min":1,"max":10,"default":3},
                 "sunburst_rays":{"description":"rays","min":3,"max":20,"default":8},
-                "halftone_density":{"description":"halftone","min":0.1,"max":1.0,"default":0.5},
+                "halftone_density":{"spatial": True, "description":"halftone","min":0.1,"max":1.0,"default":0.5},
                 "relaxation_iters":{"description":"relaxation","min":1,"max":20,"default":5},
                 "anim_mode":{"description":"animation mode","choices":["none","radius_pulse","position_drift","color_cycle"],"default":"none"},
                 "anim_speed":{"description":"animation speed multiplier","min":0.0,"max":5.0,"default":1.0},})
@@ -82,10 +83,10 @@ def method_circle_packing(out_dir: Path, seed: int, params=None):
     bg_style = params.get("bg_style", "dark")
     outline_w = int(params.get("outline_width", 1))
     outline_c = params.get("outline_color", "auto")
-    gap = int(params.get("gap", 1))
+    gap = sparam(params, "gap", 1)
     conc_r = int(params.get("concentric_rings", 3))
     sun_r = int(params.get("sunburst_rays", 8))
-    half_d = float(params.get("halftone_density", 0.5))
+    half_d = sparam(params, "halftone_density", 0.5)
     relax_i = int(params.get("relaxation_iters", 5))
     from ...core.utils import PALETTES, quantize_to_palette
     pal = PALETTES.get(pal_name, [])

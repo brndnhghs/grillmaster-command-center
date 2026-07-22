@@ -10,6 +10,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageOps
 from ...core.registry import method
 from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES, quantize_to_palette, load_input
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 try:
     import cv2
@@ -34,9 +35,9 @@ except ImportError:
         "style": {"description": "rendering style: standard, mirrored, feedback, trail, edge_detect, tiled, offset, xor", "default": "standard"},
         "color_mode": {"description": "color method: tinted, palette, per_slit, gradient, hsv_shift, source, inverted", "default": "tinted"},
         "palette_name": {"description": "palette name (retro palettes)", "default": "vapor"},
-        "tint_r": {"description": "red channel tint", "min": 0.3, "max": 3.0, "default": 1.5},
-        "tint_g": {"description": "green channel tint", "min": 0.3, "max": 3.0, "default": 1.0},
-        "tint_b": {"description": "blue channel tint", "min": 0.2, "max": 2.0, "default": 0.8},
+        "tint_r": {"spatial": True, "description": "red channel tint", "min": 0.3, "max": 3.0, "default": 1.5},
+        "tint_g": {"spatial": True, "description": "green channel tint", "min": 0.3, "max": 3.0, "default": 1.0},
+        "tint_b": {"spatial": True, "description": "blue channel tint", "min": 0.2, "max": 2.0, "default": 0.8},
         "feedback_decay": {"description": "feedback decay rate (0-1)", "min": 0.1, "max": 0.99, "default": 0.6},
         "anim_mode": {"description": "animation: none, drift, phase_scroll, amplitude_mod, wave_morph, bounce", "default": "none"},
         "anim_speed": {"description": "animation speed factor", "min": 0.1, "max": 3.0, "default": 1.0}}
@@ -102,9 +103,9 @@ def method_slitscan(out_dir: Path, seed: int, params=None):
         style = str(params.get("style", "standard"))
         color_mode = str(params.get("color_mode", "tinted"))
         pal_name = str(params.get("palette_name", "vapor"))
-        tint_r = float(params.get("tint_r", 1.5))
-        tint_g = float(params.get("tint_g", 1.0))
-        tint_b = float(params.get("tint_b", 0.8))
+        tint_r = sparam(params, "tint_r", 1.5)
+        tint_g = sparam(params, "tint_g", 1.0)
+        tint_b = sparam(params, "tint_b", 0.8)
         feedback_decay = float(params.get("feedback_decay", 0.6))
 
         # ── Generate source content ──

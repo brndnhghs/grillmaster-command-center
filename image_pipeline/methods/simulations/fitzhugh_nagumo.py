@@ -38,6 +38,7 @@ from PIL import Image
 from ...core.registry import method
 from ...core.utils import save, mn, seed_all, W, H, write_field, wired_source_lum
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ── Constants ──
@@ -108,11 +109,11 @@ def _render_u(u: np.ndarray, v: np.ndarray, mode: str = "u") -> Image.Image:
     inputs={"image_in": "IMAGE"},
     params={
         "source": {"description": "initial-condition seed: random patches or the wired upstream image's luminance", "choices": ["random", "input_image"], "default": "random"},
-        "diff_u": {
+        "diff_u": {"spatial": True, 
             "description": "diffusion coefficient for excitation u",
             "min": 0.1, "max": 5.0, "default": 1.5,
         },
-        "diff_v": {
+        "diff_v": {"spatial": True, 
             "description": "diffusion coefficient for recovery v",
             "min": 0.0, "max": 3.0, "default": 0.0,
         },
@@ -120,11 +121,11 @@ def _render_u(u: np.ndarray, v: np.ndarray, mode: str = "u") -> Image.Image:
             "description": "timescale separation (small = slow recovery)",
             "min": 0.01, "max": 0.5, "default": 0.12,
         },
-        "param_a": {
+        "param_a": {"spatial": True, 
             "description": "excitability threshold (lower = more excitable)",
             "min": 0.3, "max": 1.2, "default": 0.5,
         },
-        "param_b": {
+        "param_b": {"spatial": True, 
             "description": "recovery rate",
             "min": 0.3, "max": 1.5, "default": 0.5,
         },
@@ -182,11 +183,11 @@ def method_fitzhugh_nagumo(out_dir: Path, seed: int, params=None):
     anim_mode = str(params.get("anim_mode", "spiral"))
     anim_speed = float(params.get("anim_speed", 1.0))
 
-    D_u = float(params.get("diff_u", D_U_DEFAULT))
-    D_v = float(params.get("diff_v", D_V_DEFAULT))
+    D_u = sparam(params, "diff_u", D_U_DEFAULT)
+    D_v = sparam(params, "diff_v", D_V_DEFAULT)
     eps = float(params.get("epsilon", EPS_DEFAULT))
-    a = float(params.get("param_a", A_DEFAULT))
-    b = float(params.get("param_b", B_DEFAULT))
+    a = sparam(params, "param_a", A_DEFAULT)
+    b = sparam(params, "param_b", B_DEFAULT)
     n_frames = int(params.get("n_frames", 300))
     dt = float(params.get("dt", 0.2))
     ampl = float(params.get("amplitude", 1.0))

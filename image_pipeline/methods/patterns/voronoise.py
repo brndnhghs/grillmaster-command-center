@@ -7,6 +7,7 @@ import numpy as np
 from ...core.registry import method
 from ...core.utils import save, mn, seed_all, W, H, PALETTES, wired_source_lum
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ── Vectorized deterministic 3-channel cell hash ──
@@ -66,13 +67,13 @@ def _voronoise(x: np.ndarray, y: np.ndarray, u: float, v: float, seed: int) -> n
     id='528', name='Voronoise', category='patterns',
     tags=['procedural', 'noise', 'voronoi', 'iq', 'cellular', 'animation'],
     params={
-        'scale': {'description': 'grid frequency / zoom of the field', 'min': 1.0, 'max': 24.0, 'default': 8.0},
+        'scale': {"spatial": True, 'description': 'grid frequency / zoom of the field', 'min': 1.0, 'max': 24.0, 'default': 8.0},
         'jitter': {'description': 'u: grid jitter (0=regular noise grid, 1=Voronoi jittered)', 'min': 0.0, 'max': 1.0, 'default': 1.0},
         'smoothness': {'description': 'v: metric (1=averaged noise, 0=min-distance Voronoi cells)', 'min': 0.0, 'max': 1.0, 'default': 1.0},
         'octaves': {'description': 'fBM octaves stacked for extra detail', 'min': 1, 'max': 5, 'default': 1},
         'lacunarity': {'description': 'frequency multiplier per octave', 'min': 1.5, 'max': 3.0, 'default': 2.0},
         'gain': {'description': 'amplitude falloff per octave', 'min': 0.3, 'max': 0.8, 'default': 0.5},
-        'contrast': {'description': 'final tone contrast', 'min': 0.5, 'max': 3.0, 'default': 1.0},
+        'contrast': {"spatial": True, 'description': 'final tone contrast', 'min': 0.5, 'max': 3.0, 'default': 1.0},
         'colormode': {'description': 'color mapping (grayscale/rainbow/inferno/viridis/palette/fire/ice)', 'default': 'inferno'},
         'palette': {'description': 'palette name for palette mode', 'default': 'vapor'},
         'anim_mode': {'description': 'animation mode: none, metric_morph, jitter_pulse, drift', 'default': 'none'},
@@ -94,13 +95,13 @@ def method_voronoise(out_dir, seed: int, params=None):
         t = float(params.get("time", 0.0))
         seed_all(seed)
 
-        scale = float(params.get("scale", 8.0))
+        scale = sparam(params, "scale", 8.0)
         u = float(np.clip(params.get("jitter", 1.0), 0.0, 1.0))
         v = float(np.clip(params.get("smoothness", 1.0), 0.0, 1.0))
         octaves = int(params.get("octaves", 1))
         lacunarity = float(params.get("lacunarity", 2.0))
         gain = float(params.get("gain", 0.5))
-        contrast = float(params.get("contrast", 1.0))
+        contrast = sparam(params, "contrast", 1.0)
         cmode = params.get("colormode", "inferno")
         pal_name = params.get("palette", "vapor")
         anim_mode = params.get("anim_mode", "none")

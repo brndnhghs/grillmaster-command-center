@@ -62,6 +62,7 @@ from ...core.utils import (
     write_scalars, write_field, write_mask,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ── IQ cosine palette (smooth, periodic, vivid) ──
@@ -140,7 +141,7 @@ REGIMES = {
             "description": "local (nearest-neighbour) coupling strength K",
             "min": 0.0, "max": 6.0, "default": 2.5,
         },
-        "omega_scale": {
+        "omega_scale": {"spatial": True, 
             "description": "spread of natural frequencies (how non-identical oscillators are)",
             "min": 0.0, "max": 3.0, "default": 1.2,
         },
@@ -172,7 +173,7 @@ def method_kuramoto(out_dir: Path, seed: int, params=None):
     n_frames = int(params.get("n_frames", 150))
     dt = float(params.get("dt", 0.08))
     K = float(params.get("coupling", 2.5))
-    omega_scale = float(params.get("omega_scale", 1.2))
+    omega_scale = sparam(params, "omega_scale", 1.2)
     gK = float(params.get("global_coupling", 0.6))
     render_style = str(params.get("render_style", "phase"))
 

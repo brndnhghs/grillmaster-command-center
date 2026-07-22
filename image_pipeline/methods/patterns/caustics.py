@@ -11,6 +11,7 @@ from ...core.utils import (
     save, mn, seed_all, W, H, write_scalars, write_field,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 def _spectral(v: np.ndarray) -> np.ndarray:
@@ -30,7 +31,7 @@ def _spectral(v: np.ndarray) -> np.ndarray:
     "resolution": {"description": "internal evaluation grid (caustic is sampled at this many points per axis, then resized to canvas)", "min": 64, "max": 384, "default": 256},
     "depth": {"description": "water-column depth: the vertical distance the refracted ray travels to the floor (larger = more dramatic focusing)", "min": 0.2, "max": 3.0, "default": 1.0},
     "waves": {"description": "number of superimposed directional sine waves forming the water surface", "min": 2, "max": 7, "default": 4},
-    "scale": {"description": "spatial frequency of the surface waves (higher = finer ripples)", "min": 1.0, "max": 20.0, "default": 6.0},
+    "scale": {"spatial": True, "description": "spatial frequency of the surface waves (higher = finer ripples)", "min": 1.0, "max": 20.0, "default": 6.0},
     "gain": {"description": "caustic brightness gain (how hot the focusing filaments get)", "min": 0.5, "max": 8.0, "default": 3.0},
     "colormode": {"description": "tint applied to the caustic filaments over the deep-water floor",
                   "choices": ["aqua", "gold", "mono", "spectral"], "default": "aqua"},
@@ -88,7 +89,7 @@ def method_caustics(out_dir: Path, seed: int, params=None):
         depth = float(params.get("depth", 1.0))
         n_waves = int(params.get("waves", 4))
         n_waves = max(2, min(7, n_waves))
-        scale = float(params.get("scale", 6.0))
+        scale = sparam(params, "scale", 6.0)
         gain = float(params.get("gain", 3.0))
         colormode = params.get("colormode", "aqua")
         anim_mode = params.get("anim_mode", "none")

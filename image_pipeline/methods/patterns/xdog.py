@@ -11,6 +11,7 @@ from ...core.utils import (
     write_scalars, write_field, write_mask,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ── Cosmetic ink / paper palettes (color_intrinsic: false) ──
@@ -110,9 +111,9 @@ def _build_source(source: str, seed: int, scale: float, W: int, H: int) -> np.nd
     "scale": {"description": "spatial zoom of the procedural source", "min": 1.0, "max": 12.0, "default": 4.0},
     "sigma": {"description": "base Gaussian blur radius (line sharpness/scale)", "min": 0.5, "max": 6.0, "default": 1.6},
     "kappa": {"description": "blur ratio sigma2 = kappa*sigma (edge band width)", "min": 1.2, "max": 3.0, "default": 1.6},
-    "tau": {"description": "second-Gaussian weight (edge strength / ghosting)", "min": 0.7, "max": 1.3, "default": 0.98},
-    "beta": {"description": "tanh sharpness (higher = crisper ink lines)", "min": 1.0, "max": 60.0, "default": 18.0},
-    "phi": {"description": "edge threshold (line density)", "min": -0.3, "max": 0.5, "default": 0.12},
+    "tau": {"spatial": True, "description": "second-Gaussian weight (edge strength / ghosting)", "min": 0.7, "max": 1.3, "default": 0.98},
+    "beta": {"spatial": True, "description": "tanh sharpness (higher = crisper ink lines)", "min": 1.0, "max": 60.0, "default": 18.0},
+    "phi": {"spatial": True, "description": "edge threshold (line density)", "min": -0.3, "max": 0.5, "default": 0.12},
     "ink": {"description": "ink color", "default": "black"},
     "paper": {"description": "paper/background color", "default": "white"},
     "invert": {"description": "swap ink and paper", "min": 0, "max": 1, "default": 0},
@@ -146,9 +147,9 @@ def method_xdog(out_dir, seed: int, params=None):
         scale = float(params.get("scale", 4.0))
         sigma = float(params.get("sigma", 1.6))
         kappa = float(params.get("kappa", 1.6))
-        tau = float(params.get("tau", 0.98))
-        beta = float(params.get("beta", 18.0))
-        phi = float(params.get("phi", 0.0))
+        tau = sparam(params, "tau", 0.98)
+        beta = sparam(params, "beta", 18.0)
+        phi = sparam(params, "phi", 0.0)
         ink_name = params.get("ink", "black")
         paper_name = params.get("paper", "white")
         invert = int(params.get("invert", 0)) > 0

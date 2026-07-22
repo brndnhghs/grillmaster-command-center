@@ -9,6 +9,7 @@ from ...core.utils import (
     save, mn, seed_all, W, H, write_scalars, write_field, PALETTES,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ── Vectorized signed value noise (deterministic, seed-stable) ──
@@ -89,13 +90,13 @@ def _hsv2rgb(h: np.ndarray, s: np.ndarray, v: np.ndarray) -> np.ndarray:
         inputs={},
         outputs={"image": "IMAGE", "luminance": "FIELD"},
         params={
-    "scale": {"description": "zoom of the noise potential field", "min": 1.0, "max": 12.0, "default": 5.0},
+    "scale": {"spatial": True, "description": "zoom of the noise potential field", "min": 1.0, "max": 12.0, "default": 5.0},
     "octaves": {"description": "fbm octaves for the potential field", "min": 1, "max": 6, "default": 4},
     "render_style": {"description": "visualization: hue (angle→color) or strands (integral curves)", "default": "hue"},
     "colormode": {"description": "hue colormap (spectral/hsv/inferno/grayscale)", "default": "spectral"},
     "palette": {"description": "strand line palette name", "default": "vapor"},
     "line_density": {"description": "number of advected strands (strands mode)", "min": 200, "max": 4000, "default": 1500},
-    "brightness": {"description": "overall brightness multiplier", "min": 0.2, "max": 2.0, "default": 1.0},
+    "brightness": {"spatial": True, "description": "overall brightness multiplier", "min": 0.2, "max": 2.0, "default": 1.0},
     "bg_style": {"description": "strand background (dark/light)", "default": "dark"},
     "anim_mode": {"description": "animation mode: none, drift, evolve, pulse", "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
@@ -130,13 +131,13 @@ def method_curl_noise(out_dir, seed: int, params=None):
         seed_all(seed)
         rng = np.random.default_rng(seed)
 
-        scale = float(params.get("scale", 5.0))
+        scale = sparam(params, "scale", 5.0)
         octaves = int(params.get("octaves", 4))
         render_style = params.get("render_style", "hue")
         cmode = params.get("colormode", "spectral")
         pal_name = params.get("palette", "vapor")
         line_density = int(params.get("line_density", 1500))
-        brightness = float(params.get("brightness", 1.0))
+        brightness = sparam(params, "brightness", 1.0)
         bg_style = params.get("bg_style", "dark")
         anim_mode = params.get("anim_mode", "none")
         anim_speed = float(params.get("anim_speed", 1.0))

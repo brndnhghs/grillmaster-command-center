@@ -28,6 +28,7 @@ from PIL import Image, ImageFilter
 from ...core.registry import method
 from ...core.utils import save, mn, seed_all, W, H, write_field
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 def _load_image_seed(path: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -111,7 +112,7 @@ def _render_lv(u: np.ndarray, v: np.ndarray) -> Image.Image:
     timeout=180,
     outputs={"image": "IMAGE", "luminance": "SCALAR", "field": "FIELD"},
     params={
-        "alpha": {"description": "prey birth rate",
+        "alpha": {"spatial": True, "description": "prey birth rate",
                   "min": 0.1, "max": 3.0, "default": 1.0},
         "beta": {"description": "predation rate",
                  "min": 0.1, "max": 2.0, "default": 0.5},
@@ -119,13 +120,13 @@ def _render_lv(u: np.ndarray, v: np.ndarray) -> Image.Image:
                "min": 0.01, "max": 1.0, "default": 0.2},
         "n_frames": {"description": "simulation frames",
                      "min": 50, "max": 600, "default": 300},
-        "du_x": {"description": "prey diffusion in x (high=elongated)",
+        "du_x": {"spatial": True, "description": "prey diffusion in x (high=elongated)",
                  "min": 0.01, "max": 0.5, "default": 0.3},
-        "du_y": {"description": "prey diffusion in y (low=compressed)",
+        "du_y": {"spatial": True, "description": "prey diffusion in y (low=compressed)",
                  "min": 0.01, "max": 0.5, "default": 0.03},
-        "dv_x": {"description": "predator diffusion in x",
+        "dv_x": {"spatial": True, "description": "predator diffusion in x",
                  "min": 0.01, "max": 0.8, "default": 0.4},
-        "dv_y": {"description": "predator diffusion in y",
+        "dv_y": {"spatial": True, "description": "predator diffusion in y",
                  "min": 0.01, "max": 0.8, "default": 0.2},
         "noise_amp": {"description": "initial noise amplitude",
                       "min": 0.01, "max": 0.3, "default": 0.1},"anim_mode": {"description": "animation / initial condition mode",
@@ -165,14 +166,14 @@ def method_lv_aniso(out_dir: Path, seed: int, params=None):
     anim_mode = str(params.get("anim_mode", "none"))
     anim_speed = float(params.get("anim_speed", 1.0))
 
-    alpha = float(params.get("alpha", ALPHA))
+    alpha = sparam(params, "alpha", ALPHA)
     beta = float(params.get("beta", BETA))
     delta = float(params.get("delta", DELTA))
     gamma_lv = float(params.get("gamma", GAMMA_LV))
-    du_x = float(params.get("du_x", DU_X))
-    du_y = float(params.get("du_y", DU_Y))
-    dv_x = float(params.get("dv_x", DV_X))
-    dv_y = float(params.get("dv_y", DV_Y))
+    du_x = sparam(params, "du_x", DU_X)
+    du_y = sparam(params, "du_y", DU_Y)
+    dv_x = sparam(params, "dv_x", DV_X)
+    dv_y = sparam(params, "dv_y", DV_Y)
     dt = float(params.get("dt", DT))
     n_frames = int(params.get("n_frames", 300))
     noise_amp = float(params.get("noise_amp", 0.1))

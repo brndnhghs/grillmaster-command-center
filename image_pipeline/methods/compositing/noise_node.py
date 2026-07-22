@@ -21,6 +21,7 @@ import numpy as np
 from ...core.registry import method
 from ...core.utils import seed_all, W, H
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 _ERROR_FIELD = np.zeros((H, W), dtype=np.float32)
@@ -55,7 +56,7 @@ _ERROR_FIELD = np.zeros((H, W), dtype=np.float32)
                 "value", "checkerboard", "sine_wave", "plasma", "gabor",
             ],
         },
-        "scale": {
+        "scale": {"spatial": True, 
             "description": "noise frequency scale (smaller = more detail)",
             "min": 0.001, "max": 0.5, "default": 0.02,
         },
@@ -130,7 +131,7 @@ def method_noise(out_dir: Path, seed: int, params=None):
     np_rng = np.random.default_rng(seed)
 
     noise_type = params.get("noise_type", "perlin")
-    base_scale = float(params.get("scale", 0.02))
+    base_scale = sparam(params, "scale", 0.02)
     octaves = int(params.get("octaves", 4))
     persistence = float(params.get("persistence", 0.5))
     lacunarity = float(params.get("lacunarity", 2.0))

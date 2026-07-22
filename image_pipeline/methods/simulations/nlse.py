@@ -26,6 +26,7 @@ from PIL import Image
 from ...core.registry import method
 from ...core.utils import save, mn, seed_all, W, H, write_field
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ── Constants ──
@@ -310,9 +311,9 @@ def _init_gaussian(rng: np.random.Generator, n_packets: int = 3,
     timeout=180,
     outputs={"image": "IMAGE", "field": "FIELD"},
     params={
-        "beta": {"description": "dispersion coefficient",
+        "beta": {"spatial": True, "description": "dispersion coefficient",
                  "min": 0.01, "max": 2.0, "default": 0.5},
-        "g": {"description": "nonlinearity (positive = focusing)",
+        "g": {"spatial": True, "description": "nonlinearity (positive = focusing)",
               "min": -2.0, "max": 2.0, "default": 1.0},
         "dt": {"description": "timestep",
                "min": 0.001, "max": 0.1, "default": 0.02},
@@ -380,8 +381,8 @@ def method_nlse(out_dir: Path, seed: int, params=None):
     anim_mode = str(params.get("anim_mode", "none"))
     anim_speed = float(params.get("anim_speed", 1.0))
 
-    beta = float(params.get("beta", BETA))
-    g = float(params.get("g", G_NLSE))
+    beta = sparam(params, "beta", BETA)
+    g = sparam(params, "g", G_NLSE)
     dt = float(params.get("dt", DT))
     n_frames = int(params.get("n_frames", N_FRAMES))
     substeps = int(params.get("substeps", SUBSTEPS))

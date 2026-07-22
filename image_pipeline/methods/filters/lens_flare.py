@@ -8,6 +8,7 @@ import numpy as np
 from ...core.registry import method
 from ...core.utils import (save, mn, seed_all, W, H, load_input)
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ── HSV -> RGB (full saturation/value helpers for ghost colour ramps) ──
@@ -99,8 +100,8 @@ def _render_flare(xx: np.ndarray, yy: np.ndarray, w: int, h: int,
     outputs={"image": "IMAGE"},
     params={
         "source": {"description": "background when no image is wired (black/gradient)", "choices": ["black", "gradient"], "default": "black"},
-        "light_x": {"description": "light source X position, normalised [0,1] (off-screen <0 or >1 ok)", "min": -0.5, "max": 1.5, "default": 0.28},
-        "light_y": {"description": "light source Y position, normalised [0,1]", "min": -0.5, "max": 1.5, "default": 0.32},
+        "light_x": {"spatial": True, "description": "light source X position, normalised [0,1] (off-screen <0 or >1 ok)", "min": -0.5, "max": 1.5, "default": 0.28},
+        "light_y": {"spatial": True, "description": "light source Y position, normalised [0,1]", "min": -0.5, "max": 1.5, "default": 0.32},
         "num_ghosts": {"description": "number of reflected ghosts along the light->centre axis", "min": 1, "max": 14, "default": 8},
         "ghost_start": {"description": "near weight (negative = before the light)", "min": -1.5, "max": 0.5, "default": -0.6},
         "ghost_end": {"description": "far weight (past the centre)", "min": 0.5, "max": 2.5, "default": 1.4},
@@ -161,8 +162,8 @@ def method_lens_flare(out_dir: Path, seed: int, params=None):
         w, h = int(W), int(H)
         yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
 
-        light_x = float(params.get("light_x", 0.28))
-        light_y = float(params.get("light_y", 0.32))
+        light_x = sparam(params, "light_x", 0.28)
+        light_y = sparam(params, "light_y", 0.32)
 
         # ── Animation (rename t so we never shadow the time param) ──
         _t = anim_time * anim_speed

@@ -42,6 +42,7 @@ from ...core.utils import (
     save, mn, seed_all, W, H, write_field, write_scalars, wired_source_lum,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ── Colormaps (color is intrinsic phase concentration) ──────────────────────
@@ -96,7 +97,7 @@ COLORMAPS = {
             "choices": ["random", "input_image"],
             "default": "random",
         },
-        "epsilon": {
+        "epsilon": {"spatial": True, 
             "description": "interface width ε (larger = sharper, slower-coarsening domains)",
             "min": 0.5, "max": 6.0, "default": 2.0,
         },
@@ -121,7 +122,7 @@ COLORMAPS = {
             "description": "internal timestep (clamped to the stable CH range)",
             "min": 0.002, "max": 0.02, "default": 0.012,
         },
-        "seed_variance": {
+        "seed_variance": {"spatial": True, 
             "description": "initial-condition noise amplitude (phase variance)",
             "min": 0.01, "max": 0.5, "default": 0.1,
         },
@@ -151,11 +152,11 @@ def method_cahn_hilliard(out_dir: Path, seed: int, params=None):
     anim_mode = str(params.get("anim_mode", "spinodal"))
     anim_speed = float(params.get("anim_speed", 1.0))
 
-    epsilon = float(params.get("epsilon", 2.0))
+    epsilon = sparam(params, "epsilon", 2.0)
     mobility = float(params.get("mobility", 1.0))
     n_frames = int(params.get("n_frames", 400))
     dt = float(params.get("dt", 0.012))
-    seed_var = float(params.get("seed_variance", 0.1))
+    seed_var = sparam(params, "seed_variance", 0.1)
     n_seeds = int(params.get("n_seeds", 12))
     render_style = str(params.get("render_style", "diverging"))
     src_mode = str(params.get("source", "random"))

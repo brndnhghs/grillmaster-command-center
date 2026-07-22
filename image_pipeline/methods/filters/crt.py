@@ -47,6 +47,7 @@ from ...core.utils import (
 from ...core.animation import capture_frame
 
 import cv2
+from image_pipeline.core.spatial import sparam
 
 
 # ── Procedural self-contained source scene ──
@@ -149,7 +150,7 @@ def _warp_maps(Ww: int, Hh: int, k: float, scale: float = 1.0):
         "scan_freq": {"description": "scanline density (lines across the screen)", "min": 1.0, "max": 8.0, "default": 2.5},
         "mask_strength": {"description": "aperture-grille RGB phosphor mask strength (0 = none)", "min": 0.0, "max": 1.0, "default": 0.35},
         "vignette": {"description": "corner darkening", "min": 0.0, "max": 1.0, "default": 0.30},
-        "chroma": {"description": "edge chromatic aberration (R/B radial split)", "min": 0.0, "max": 1.0, "default": 0.25},
+        "chroma": {"spatial": True, "description": "edge chromatic aberration (R/B radial split)", "min": 0.0, "max": 1.0, "default": 0.25},
         "roll_speed": {"description": "vertical roll / scan-band animation rate", "min": 0.0, "max": 3.0, "default": 1.0},
         "flicker": {"description": "brightness flicker amount (animated modes)", "min": 0.0, "max": 0.3, "default": 0.06},
         "brightness": {"description": "output brightness gain", "min": 0.4, "max": 2.0, "default": 1.10},
@@ -187,7 +188,7 @@ def method_crt(out_dir: Path, seed: int, params=None):
         scan_freq = float(params.get("scan_freq", 2.5))
         mask_strength = float(params.get("mask_strength", 0.35))
         vignette = float(params.get("vignette", 0.30))
-        chroma = float(params.get("chroma", 0.25))
+        chroma = sparam(params, "chroma", 0.25)
         roll_speed = float(params.get("roll_speed", 1.0))
         flicker = float(params.get("flicker", 0.06))
         brightness = float(params.get("brightness", 1.10))

@@ -9,6 +9,7 @@ from ...core.utils import (
     save, mn, seed_all, W, H, PALETTES, wired_source_rgb, norm, quantize_to_palette,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ── R2 low-discrepancy sequence (Martin Roberts, 2018) ──
@@ -72,7 +73,7 @@ def _bayer8() -> np.ndarray:
             "description": "output quantization levels (2=binary, 3-8=multi-tone)",
             "min": 2, "max": 8, "default": 2,
         },
-        "contrast": {
+        "contrast": {"spatial": True, 
             "description": "source contrast boost before dithering",
             "min": 0.5, "max": 3.0, "default": 1.0,
         },
@@ -137,7 +138,7 @@ def method_r2_dither(out_dir, seed: int, params=None):
 
         mode = params.get("mode", "r2")
         levels = max(2, min(8, int(params.get("levels", 2))))
-        contrast = float(params.get("contrast", 1.0))
+        contrast = sparam(params, "contrast", 1.0)
         gamma = float(np.clip(params.get("gamma", 1.0), 0.3, 2.5))
         pal_name = params.get("palette", "none")
 

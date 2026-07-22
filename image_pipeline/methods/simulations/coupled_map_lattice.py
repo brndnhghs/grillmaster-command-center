@@ -21,6 +21,7 @@ from PIL import Image
 from ...core.registry import method
 from ...core.utils import save, mn, seed_all, W, H
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 @method(
@@ -36,12 +37,12 @@ from ...core.animation import capture_frame
             "choices": ["evolve", "frozen", "spiral", "sweep", "morph", "obstacle"],
             "default": "evolve",
         },
-        "r": {"min": 3.5, "max": 4.0, "default": 3.8},
-        "epsilon": {"min": 0.0, "max": 1.0, "default": 0.25},
+        "r": {"spatial": True, "min": 3.5, "max": 4.0, "default": 3.8},
+        "epsilon": {"spatial": True, "min": 0.0, "max": 1.0, "default": 0.25},
         "n_frames": {"min": 100, "max": 1200, "default": 360},
         "grid_div": {"choices": [1, 2, 3, 4], "default": 1},
         "noise": {"min": 0.0, "max": 0.05, "default": 0.002},
-        "decay": {"min": 0.5, "max": 0.99, "default": 0.85, "description": "Trail accumulation decay (0.5=short, 0.99=long trails)"},
+        "decay": {"spatial": True, "min": 0.5, "max": 0.99, "default": 0.85, "description": "Trail accumulation decay (0.5=short, 0.99=long trails)"},
         "subsample": {"choices": [1, 2, 3, 4], "default": 1, "description": "Update lattice every N frames (1=every frame, 2=every other)"},
         "morph_speed": {"min": 0.001, "max": 0.1, "default": 0.005},
     }
@@ -50,32 +51,32 @@ def cml(out_dir, seed, params=None):
     if params is None:
         params = {}
     am = str(params.get("anim_mode", "evolve"))
-    r = float(params.get("r", 3.8))
-    eps = float(params.get("epsilon", 0.25))
+    r = sparam(params, "r", 3.8)
+    eps = sparam(params, "epsilon", 0.25)
     nf = int(params.get("n_frames", 360))
     gd = int(params.get("grid_div", 1))
     noise_amp = float(params.get("noise", 0.002))
     morph_sp = float(params.get("morph_speed", 0.005))
-    decay = float(params.get("decay", 0.85))
+    decay = sparam(params, "decay", 0.85)
     sub = int(params.get("subsample", 1))
 
     seed_all(seed)
     rng = np.random.default_rng(seed)
 
     if am == "frozen":
-        r = float(params.get("r", 3.72))
-        eps = float(params.get("epsilon", 0.4))
+        r = sparam(params, "r", 3.72)
+        eps = sparam(params, "epsilon", 0.4)
     elif am == "spiral":
-        r = float(params.get("r", 3.85))
-        eps = float(params.get("epsilon", 0.35))
+        r = sparam(params, "r", 3.85)
+        eps = sparam(params, "epsilon", 0.35)
         nf = int(params.get("n_frames", 480))
     elif am == "sweep":
-        r = float(params.get("r", 3.8))
-        eps = float(params.get("epsilon", 0.3))
+        r = sparam(params, "r", 3.8)
+        eps = sparam(params, "epsilon", 0.3)
         nf = int(params.get("n_frames", 480))
     elif am == "morph":
-        r = float(params.get("r", 3.7))
-        eps = float(params.get("epsilon", 0.3))
+        r = sparam(params, "r", 3.7)
+        eps = sparam(params, "epsilon", 0.3)
         nf = int(params.get("n_frames", 600))
 
     sh, sw = H // gd, W // gd

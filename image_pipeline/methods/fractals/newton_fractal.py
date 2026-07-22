@@ -9,6 +9,7 @@ from PIL import Image, ImageDraw
 from ...core.registry import method
 from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES, wired_source_lum
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 # ── Optional libraries ──
 try:
@@ -29,7 +30,7 @@ def _render_flame_preview(density, colors, h, w):
         result = np.random.rand(h, w, 3).astype(np.float32) * 0.08 + 0.02
     return result
 
-@method(id='52', name='Newton Fractal', category='fractals', tags=['classic', 'expanded', 'animation', 'fast'], inputs={'image_in': 'IMAGE'}, params={'source': {'description': "domain-warp the initial complex coordinate plane from the wired image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}, 'warp_strength': {'description': 'domain-warp strength applied to the per-pixel initial complex coordinate', 'min': 0.0, 'max': 2.0, 'default': 0.6}, 'max_iter': {'description': 'max Newton iterations', 'min': 10, 'max': 200, 'default': 50}, 'tol': {'description': 'root convergence tolerance', 'min': 1e-12, 'max': 0.01, 'default': 1e-08}, 'viewpoint': {'description': 'complex plane range as xmin,xmax,ymin,ymax', 'default': '-2,2,-2,2'}, 'polynomial': {'description': 'polynomial: cubic, quartic, quintic, cubic_plus, sin, cos, exp, z3_minus_z, custom', 'default': 'cubic'}, 'color_mode': {'description': 'coloring: root_index, smooth_iteration, gradient, palette, distance_estimate, mixed, root_density', 'default': 'root_index'}, 'palette_name': {'description': 'palette name: amber, gameboy, pico8, vapor, sepia, etc.', 'default': 'vapor'}, 'color_speed': {'description': 'color rotation speed', 'min': 0.5, 'max': 8.0, 'default': 2.0}, 'color_offset': {'description': 'hue shift offset', 'min': 0.0, 'max': 6.28, 'default': 0.0}, 'animation_mode': {'description': 'animation: none, zoom, color_cycle, param_morph, float', 'default': 'none'}, 'anim_zoom_speed': {'description': 'zoom speed factor', 'min': 0.1, 'max': 2.0, 'default': 0.5}, 'anim_float_amplitude': {'description': 'float amplitude for viewpoint drift', 'min': 0.01, 'max': 1.0, 'default': 0.1}})
+@method(id='52', name='Newton Fractal', category='fractals', tags=['classic', 'expanded', 'animation', 'fast'], inputs={'image_in': 'IMAGE'}, params={'source': {'description': "domain-warp the initial complex coordinate plane from the wired image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}, 'warp_strength': {'description': 'domain-warp strength applied to the per-pixel initial complex coordinate', 'min': 0.0, 'max': 2.0, 'default': 0.6}, 'max_iter': {'description': 'max Newton iterations', 'min': 10, 'max': 200, 'default': 50}, 'tol': {'description': 'root convergence tolerance', 'min': 1e-12, 'max': 0.01, 'default': 1e-08}, 'viewpoint': {'description': 'complex plane range as xmin,xmax,ymin,ymax', 'default': '-2,2,-2,2'}, 'polynomial': {'description': 'polynomial: cubic, quartic, quintic, cubic_plus, sin, cos, exp, z3_minus_z, custom', 'default': 'cubic'}, 'color_mode': {'description': 'coloring: root_index, smooth_iteration, gradient, palette, distance_estimate, mixed, root_density', 'default': 'root_index'}, 'palette_name': {'description': 'palette name: amber, gameboy, pico8, vapor, sepia, etc.', 'default': 'vapor'}, 'color_speed': {"spatial": True, 'description': 'color rotation speed', 'min': 0.5, 'max': 8.0, 'default': 2.0}, 'color_offset': {"spatial": True, 'description': 'hue shift offset', 'min': 0.0, 'max': 6.28, 'default': 0.0}, 'animation_mode': {'description': 'animation: none, zoom, color_cycle, param_morph, float', 'default': 'none'}, 'anim_zoom_speed': {"spatial": True, 'description': 'zoom speed factor', 'min': 0.1, 'max': 2.0, 'default': 0.5}, 'anim_float_amplitude': {"spatial": True, 'description': 'float amplitude for viewpoint drift', 'min': 0.01, 'max': 1.0, 'default': 0.1}})
 def method_newton_fractal(out_dir: Path, seed: int, params=None):
     """Render a Newton fractal — basins of attraction for polynomial roots.
 
@@ -74,8 +75,8 @@ def method_newton_fractal(out_dir: Path, seed: int, params=None):
         polynomial = str(params.get("polynomial", "cubic"))
         color_mode = str(params.get("color_mode", "root_index"))
         pal_name = str(params.get("palette_name", "magma"))
-        c_speed = float(params.get("color_speed", 2.0))
-        c_off = float(params.get("color_offset", 0.0))
+        c_speed = sparam(params, "color_speed", 2.0)
+        c_off = sparam(params, "color_offset", 0.0)
 
         # ── Animation ──
         t = anim_time * anim_speed
@@ -136,13 +137,13 @@ def method_newton_fractal(out_dir: Path, seed: int, params=None):
 
         # ── Animation viewpoint ──
         if anim_mode == "zoom":
-            zt = float(params.get("anim_zoom_speed", 0.5))
+            zt = sparam(params, "anim_zoom_speed", 0.5)
             cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
             factor = 1.0 - 0.4 * min(1.0, t * zt)
             hw, hh = (x1 - x0) / 2 * factor, (y1 - y0) / 2 * factor
             x0, x1, y0, y1 = cx - hw, cx + hw, cy - hh, cy + hh
         elif anim_mode == "float":
-            amp = float(params.get("anim_float_amplitude", 0.1))
+            amp = sparam(params, "anim_float_amplitude", 0.1)
             dx = amp * math.sin(t * 0.7) * (x1 - x0)
             dy = amp * math.cos(t * 0.5) * (y1 - y0)
             x0, x1 = x0 + dx, x1 + dx

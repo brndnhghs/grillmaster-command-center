@@ -17,6 +17,7 @@ except ImportError:
 from ...core.registry import method
 from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, wired_source_lum
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ── Constants ──
@@ -222,7 +223,7 @@ def _wave(phase_rad: float) -> float:
     return math.sin(phase_rad)
 
 
-@method(id='104', name='Spherical Harmonics', category='math_art', tags=['quantum', '3d', 'glow', 'expanded', 'animation'], params={'max_l': {'description': 'maximum angular momentum quantum number', 'min': 1, 'max': 8, 'default': 5}, 'amplitude': {'description': 'orbital size scale', 'min': 0.5, 'max': 3.0, 'default': 1.5}, 'glow_strength': {'description': 'glow intensity', 'min': 0.5, 'max': 3.0, 'default': 1.5}, 'anim_mode': {'description': 'animation mode', 'choices': ['none', 'morph', 'spin', 'breathe', 'phase_color', 'twist', 'combined', 'superposition'], 'default': 'morph'}, 'twist_wave': {'description': 'waveform for ring spin profile (sine=organic twist, square=banded, sawtooth=shear)', 'choices': ['sine', 'square', 'sawtooth', 'triangle', 'pulse', 'gaussian', 'chirp', 'noise'], 'default': 'sine'}, 'twist_drive': {'description': 'how twist evolves — spatial=static waveform profile, oscillator=independent ring oscillators create propagating waves', 'choices': ['spatial', 'oscillator'], 'default': 'spatial'}, 'osc_spread': {'description': 'frequency spread per ring (oscillator mode only; higher = more chaotic wave propagation)', 'min': 0.0, 'max': 5.0, 'default': 1.5}, 'twist_speed': {'description': 'twist rotation speed multiplier', 'min': 0.1, 'max': 5.0, 'default': 1.0}, 'twist_amplitude': {'description': 'twist intensity (rings per cycle)', 'min': 0.5, 'max': 5.0, 'default': 2.0}, 'n_frames': {'description': 'simulation frames', 'min': 60, 'max': 500, 'default': 180}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 5.0, 'default': 1.0}, 'source': {'description': 'wired upstream image as a domain-warp / seed source', 'choices': ['none', 'input_image'], 'default': 'none'}}, inputs={'image_in': 'IMAGE'})
+@method(id='104', name='Spherical Harmonics', category='math_art', tags=['quantum', '3d', 'glow', 'expanded', 'animation'], params={'max_l': {"spatial": True, 'description': 'maximum angular momentum quantum number', 'min': 1, 'max': 8, 'default': 5}, 'amplitude': {"spatial": True, 'description': 'orbital size scale', 'min': 0.5, 'max': 3.0, 'default': 1.5}, 'glow_strength': {'description': 'glow intensity', 'min': 0.5, 'max': 3.0, 'default': 1.5}, 'anim_mode': {'description': 'animation mode', 'choices': ['none', 'morph', 'spin', 'breathe', 'phase_color', 'twist', 'combined', 'superposition'], 'default': 'morph'}, 'twist_wave': {'description': 'waveform for ring spin profile (sine=organic twist, square=banded, sawtooth=shear)', 'choices': ['sine', 'square', 'sawtooth', 'triangle', 'pulse', 'gaussian', 'chirp', 'noise'], 'default': 'sine'}, 'twist_drive': {'description': 'how twist evolves — spatial=static waveform profile, oscillator=independent ring oscillators create propagating waves', 'choices': ['spatial', 'oscillator'], 'default': 'spatial'}, 'osc_spread': {"spatial": True, 'description': 'frequency spread per ring (oscillator mode only; higher = more chaotic wave propagation)', 'min': 0.0, 'max': 5.0, 'default': 1.5}, 'twist_speed': {"spatial": True, 'description': 'twist rotation speed multiplier', 'min': 0.1, 'max': 5.0, 'default': 1.0}, 'twist_amplitude': {"spatial": True, 'description': 'twist intensity (rings per cycle)', 'min': 0.5, 'max': 5.0, 'default': 2.0}, 'n_frames': {'description': 'simulation frames', 'min': 60, 'max': 500, 'default': 180}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 5.0, 'default': 1.0}, 'source': {'description': 'wired upstream image as a domain-warp / seed source', 'choices': ['none', 'input_image'], 'default': 'none'}}, inputs={'image_in': 'IMAGE'})
 def method_spherical_harmonics(out_dir: Path, seed: int, params=None):
     """Animated Spherical Harmonics — 3D atomic orbital visualisation.
 
@@ -248,16 +249,16 @@ def method_spherical_harmonics(out_dir: Path, seed: int, params=None):
     anim_mode = str(params.get("anim_mode", "morph"))
     anim_speed = float(params.get("anim_speed", 1.0))
 
-    max_l = int(params.get("max_l", 5))
-    amplitude = float(params.get("amplitude", 1.5))
+    max_l = sparam(params, "max_l", 5)
+    amplitude = sparam(params, "amplitude", 1.5)
     glow_strength = float(params.get("glow_strength", 1.5))
     n_frames = int(params.get("n_frames", 180))
 
     twist_wave = str(params.get("twist_wave", "sine"))
     twist_drive = str(params.get("twist_drive", "spatial"))
-    twist_speed = float(params.get("twist_speed", 1.0))
-    twist_amplitude = float(params.get("twist_amplitude", 2.0))
-    osc_spread = float(params.get("osc_spread", 1.5))
+    twist_speed = sparam(params, "twist_speed", 1.0)
+    twist_amplitude = sparam(params, "twist_amplitude", 2.0)
+    osc_spread = sparam(params, "osc_spread", 1.5)
 
     seed_all(seed)
     rng = np.random.default_rng(seed)

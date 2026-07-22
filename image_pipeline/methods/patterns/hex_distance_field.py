@@ -11,6 +11,7 @@ from ...core.utils import (
     write_field, write_mask, write_scalars,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ── Vectorized signed value noise (deterministic, seed-stable) ──
@@ -85,7 +86,7 @@ def _sd_hexagon(px: np.ndarray, py: np.ndarray, r: float) -> np.ndarray:
         'scale': {'description': 'hex cell size (centre-to-vertex), in pixels', 'min': 6.0, 'max': 80.0, 'default': 28.0},
         'jitter': {'description': 'organic per-cell centre displacement (0 = perfect lattice)', 'min': 0.0, 'max': 1.0, 'default': 0.0},
         'octaves': {'description': 'FBM octaves for procedural cell colour', 'min': 1, 'max': 6, 'default': 4},
-        'contrast': {'description': 'final tone contrast', 'min': 0.5, 'max': 3.0, 'default': 1.1},
+        'contrast': {"spatial": True, 'description': 'final tone contrast', 'min': 0.5, 'max': 3.0, 'default': 1.1},
         'colormode': {'description': 'color mapping (grayscale/rainbow/inferno/viridis/palette/fire/ice)', 'default': 'inferno'},
         'palette': {'description': 'palette name for palette mode', 'default': 'vapor'},
         'edge_width': {'description': 'cell-border thickness as a fraction of cell size (0 = none)', 'min': 0.0, 'max': 0.4, 'default': 0.12},
@@ -122,7 +123,7 @@ def method_hex_distance_field(out_dir, seed: int, params=None):
         scale = float(params.get("scale", 28.0))
         jitter = float(params.get("jitter", 0.0))
         octaves = int(params.get("octaves", 4))
-        contrast = float(params.get("contrast", 1.1))
+        contrast = sparam(params, "contrast", 1.1)
         cmode = params.get("colormode", "inferno")
         pal_name = params.get("palette", "vapor")
         edge_width = float(params.get("edge_width", 0.12))

@@ -14,6 +14,7 @@ from PIL import Image
 from ...core.registry import method
 from ...core.utils import save, mn, seed_all, W, H
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 @method(
     inputs={},id="164", name="Moiré Patterns", category="simulations",
@@ -22,7 +23,7 @@ from ...core.animation import capture_frame
             "mode": {"choices": ["radial", "linear", "spiral", "hex"], "default": "radial"},
             "speed1": {"min": 0.1, "max": 5.0, "default": 1.0},
             "speed2": {"min": 0.1, "max": 5.0, "default": 1.3},
-            "frequency": {"min": 5, "max": 50, "default": 20},
+            "frequency": {"spatial": True, "min": 5, "max": 50, "default": 20},
             "n_frames": {"min": 100, "max": 1500, "default": 480},
             "grid_div": {"choices": [1, 2, 3, 4], "default": 1},
         })
@@ -31,7 +32,7 @@ def moire(out_dir, seed, params=None):
     mode = str(params.get("mode", "radial"))
     s1 = float(params.get("speed1", 1.0))
     s2 = float(params.get("speed2", 1.3))
-    freq = int(params.get("frequency", 20))
+    freq = sparam(params, "frequency", 20)
     nf = int(params.get("n_frames", 480))
     gd = int(params.get("grid_div", 1))
     seed_all(seed)

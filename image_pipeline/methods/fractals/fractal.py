@@ -9,6 +9,7 @@ from PIL import Image, ImageDraw
 from ...core.registry import method
 from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES, wired_source_lum
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 # ── Optional libraries ──
 try:
@@ -29,7 +30,7 @@ def _render_flame_preview(density, colors, h, w):
         result = np.random.rand(h, w, 3).astype(np.float32) * 0.08 + 0.02
     return result
 
-@method(id='33', name='Fractal Explorer', category='fractals', tags=['classic', 'fast', 'animated', 'expanded'], inputs={'image_in': 'IMAGE'}, params={'source': {'description': "domain-warp the initial complex coordinate plane from the wired image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}, 'warp_strength': {'description': 'domain-warp strength applied to the per-pixel initial complex coordinate', 'min': 0.0, 'max': 2.0, 'default': 0.6}, 'formula': {'description': 'fractal formula', 'default': 'mandelbrot', 'choices': ['mandelbrot', 'julia', 'burning_ship', 'tricorn', 'celtic', 'mandelbrot3', 'mandelbrot4']}, 'julia_c': {'description': "Julia constant as 're,im' (e.g. '-0.7,0.27')", 'default': '-0.7,0.27'}, 'iterations': {'description': 'max iterations', 'min': 50, 'max': 2000, 'default': 200}, 'center_x': {'description': 'view center X (real axis)', 'min': -2.5, 'max': 2.5, 'default': -0.5}, 'center_y': {'description': 'view center Y (imag axis)', 'min': -2.0, 'max': 2.0, 'default': 0.0}, 'zoom': {'description': 'zoom level (1=full view, 100=deep)', 'min': 0.5, 'max': 100000.0, 'default': 1.0}, 'escape_radius': {'description': 'divergence threshold', 'min': 1.5, 'max': 100.0, 'default': 4.0}, 'colormap': {'description': "matplotlib colormap name, or 'palette' for PALETTES", 'default': 'none'}, 'palette': {'description': "PALETTES name (used when colormap='palette')", 'default': 'none'}, 'smooth': {'description': 'smooth (normalized) coloring', 'default': True}, 'trap_x': {'description': 'orbital trap point X (0=off)', 'min': -2.0, 'max': 2.0, 'default': 0.0}, 'trap_y': {'description': 'orbital trap point Y (0=off)', 'min': -2.0, 'max': 2.0, 'default': 0.0}, 'trap_strength': {'description': 'orbital trap blend strength (0=off)', 'min': 0.0, 'max': 1.0, 'default': 0.0}, 'color_shift': {'description': 'hue rotation for default coloring', 'min': 0.0, 'max': 6.28, 'default': 0.0}})
+@method(id='33', name='Fractal Explorer', category='fractals', tags=['classic', 'fast', 'animated', 'expanded'], inputs={'image_in': 'IMAGE'}, params={'source': {'description': "domain-warp the initial complex coordinate plane from the wired image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}, 'warp_strength': {'description': 'domain-warp strength applied to the per-pixel initial complex coordinate', 'min': 0.0, 'max': 2.0, 'default': 0.6}, 'formula': {'description': 'fractal formula', 'default': 'mandelbrot', 'choices': ['mandelbrot', 'julia', 'burning_ship', 'tricorn', 'celtic', 'mandelbrot3', 'mandelbrot4']}, 'julia_c': {'description': "Julia constant as 're,im' (e.g. '-0.7,0.27')", 'default': '-0.7,0.27'}, 'iterations': {'description': 'max iterations', 'min': 50, 'max': 2000, 'default': 200}, 'center_x': {"spatial": True, 'description': 'view center X (real axis)', 'min': -2.5, 'max': 2.5, 'default': -0.5}, 'center_y': {"spatial": True, 'description': 'view center Y (imag axis)', 'min': -2.0, 'max': 2.0, 'default': 0.0}, 'zoom': {"spatial": True, 'description': 'zoom level (1=full view, 100=deep)', 'min': 0.5, 'max': 100000.0, 'default': 1.0}, 'escape_radius': {'description': 'divergence threshold', 'min': 1.5, 'max': 100.0, 'default': 4.0}, 'colormap': {'description': "matplotlib colormap name, or 'palette' for PALETTES", 'default': 'none'}, 'palette': {'description': "PALETTES name (used when colormap='palette')", 'default': 'none'}, 'smooth': {'description': 'smooth (normalized) coloring', 'default': True}, 'trap_x': {'description': 'orbital trap point X (0=off)', 'min': -2.0, 'max': 2.0, 'default': 0.0}, 'trap_y': {'description': 'orbital trap point Y (0=off)', 'min': -2.0, 'max': 2.0, 'default': 0.0}, 'trap_strength': {'description': 'orbital trap blend strength (0=off)', 'min': 0.0, 'max': 1.0, 'default': 0.0}, 'color_shift': {"spatial": True, 'description': 'hue rotation for default coloring', 'min': 0.0, 'max': 6.28, 'default': 0.0}})
 def method_fractal(out_dir: Path, seed: int, params=None):
     """Multi-formula fractal explorer with smooth coloring, deep zoom,
     orbital traps, and colormap support.
@@ -72,9 +73,9 @@ def method_fractal(out_dir: Path, seed: int, params=None):
         formula = params.get("formula", "mandelbrot")
         julia_c_str = params.get("julia_c", "-0.7,0.27")
         max_iter = int(params.get("iterations", 200))
-        cx = float(params.get("center_x", -0.5))
-        cy = float(params.get("center_y", 0.0))
-        zoom = float(params.get("zoom", 1.0))
+        cx = sparam(params, "center_x", -0.5)
+        cy = sparam(params, "center_y", 0.0)
+        zoom = sparam(params, "zoom", 1.0)
         escape_r = float(params.get("escape_radius", 4.0))
         cmap_name = params.get("colormap", "none")
         pal = params.get("palette", "none")
@@ -82,7 +83,7 @@ def method_fractal(out_dir: Path, seed: int, params=None):
         trap_x = float(params.get("trap_x", 0.0))
         trap_y = float(params.get("trap_y", 0.0))
         trap_strength = float(params.get("trap_strength", 0.0))
-        color_shift = float(params.get("color_shift", 0.0))
+        color_shift = sparam(params, "color_shift", 0.0)
         trap_orbit_radius = float(params.get("trap_orbit_radius", 0.5))
         julia_orbit_radius = float(params.get("julia_orbit_radius", 0.3))
         deep_zoom_target = params.get("deep_zoom_target", "-0.7435,0.1314")

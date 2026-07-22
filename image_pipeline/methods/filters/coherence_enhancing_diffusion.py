@@ -10,6 +10,7 @@ from ...core.utils import (
     save, norm, mn, seed_all, W, H, PALETTES, write_scalars, write_mask,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 try:
     import cv2
@@ -37,7 +38,7 @@ except ImportError:
         "source_blur": {"description": "pre-smooth sigma before diffusion", "min": 0.0, "max": 30.0, "default": 3.0},
         "noise_amp": {"description": "noise amplitude for generated sources", "min": 0.1, "max": 1.0, "default": 0.45},
         "blur_sigma": {"description": "gaussian blur sigma for noise source", "min": 5, "max": 80, "default": 12},
-        "gradient_scale": {"description": "amplify local gradients before the conduction test (puts mid-tones into the K-sensitive band)", "min": 1.0, "max": 20.0, "default": 6.0},
+        "gradient_scale": {"spatial": True, "description": "amplify local gradients before the conduction test (puts mid-tones into the K-sensitive band)", "min": 1.0, "max": 20.0, "default": 6.0},
         "palette": {"description": "palette name for palette source", "default": "vapor"},
         "anim_mode": {"description": "animation mode (none/reveal/flow/diffuse)", "choices": ["none", "reveal", "flow", "diffuse"], "default": "none"},
         "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
@@ -107,7 +108,7 @@ def method_coherence_enhancing_diffusion(out_dir: Path, seed: int, params=None):
     source_blur = float(params.get("source_blur", 3.0))
     noise_amp = float(params.get("noise_amp", 0.45))
     blur_sigma = float(params.get("blur_sigma", 12))
-    grad_scale = float(params.get("gradient_scale", 6.0))
+    grad_scale = sparam(params, "gradient_scale", 6.0)
     pal_name = str(params.get("palette", "vapor"))
     anim_mode = str(params.get("anim_mode", "none"))
     anim_speed = float(params.get("anim_speed", 1.0))

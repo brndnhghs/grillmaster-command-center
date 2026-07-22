@@ -39,6 +39,7 @@ from ...core.registry import method
 from ...core.utils import save, mn, seed_all, W, H, write_field, wired_source_lum
 from ...core.animation import capture_frame
 from PIL import ImageFilter
+from image_pipeline.core.spatial import sparam, is_field
 
 
 # ── Spatial pixelation (luminance-driven block size) ──
@@ -171,19 +172,19 @@ DEFAULT_REGIME = "spots"
             "choices": ["random", "input_image"],
             "default": "random",
         },
-        "diff_u": {
+        "diff_u": {"spatial": True, 
             "description": "diffusion coefficient for substrate U",
             "min": 0.01, "max": 1.0, "default": 0.16,
         },
-        "diff_v": {
+        "diff_v": {"spatial": True, 
             "description": "diffusion coefficient for activator V",
             "min": 0.01, "max": 1.0, "default": 0.08,
         },
-        "feed": {
+        "feed": {"spatial": True, 
             "description": "feed rate F (fresh U added)",
             "min": 0.01, "max": 0.06, "default": 0.035,
         },
-        "kill": {
+        "kill": {"spatial": True, 
             "description": "kill rate k (V removed)",
             "min": 0.02, "max": 0.08, "default": 0.065,
         },
@@ -255,10 +256,10 @@ def method_gray_scott(out_dir: Path, seed: int, params=None):
     anim_mode = str(params.get("anim_mode", DEFAULT_REGIME))
     anim_speed = float(params.get("anim_speed", 1.0))
 
-    Du = float(params.get("diff_u", 0.16))
-    Dv = float(params.get("diff_v", 0.08))
-    F = float(params.get("feed", 0.035))
-    k_rate = float(params.get("kill", 0.065))
+    Du = sparam(params, "diff_u", 0.16)
+    Dv = sparam(params, "diff_v", 0.08)
+    F = sparam(params, "feed", 0.035)
+    k_rate = sparam(params, "kill", 0.065)
     n_frames = int(params.get("n_frames", 300))
     dt = float(params.get("dt", 1.0))
     render_style = str(params.get("render_style", "v"))
@@ -267,12 +268,19 @@ def method_gray_scott(out_dir: Path, seed: int, params=None):
     cell_min = int(params.get("cell_min", 1))
     cell_max = int(params.get("cell_max", 64))
 
-    # Override F/k from regime if anim_mode is a named regime
+    # Override F/k from regime if anim_mode is a named regime.
+    # A wired FIELD outranks the preset: anim_mode defaults to a named regime
+    # ("spots"), so overriding unconditionally silently discarded a per-pixel
+    # feed/kill map the user had explicitly connected.
     if anim_mode in REGIMES:
         regime = REGIMES[anim_mode]
-        F = regime["F"]
-        k_rate = regime["k"]
-        print(f"  Regime: {anim_mode} — {regime['desc']} (F={F}, k={k_rate})")
+        if not is_field(F):
+            F = regime["F"]
+        if not is_field(k_rate):
+            k_rate = regime["k"]
+        print(f"  Regime: {anim_mode} — {regime['desc']} "
+              f"(F={'<field>' if is_field(F) else F}, "
+              f"k={'<field>' if is_field(k_rate) else k_rate})")
     elif anim_mode == "sweep":
         print(f"  Regime: sweep (F varies across field)")
     elif anim_mode == "phase_diagram":

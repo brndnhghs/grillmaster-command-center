@@ -47,6 +47,7 @@ from ...core.utils import (
     load_input,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ── smooth scalar field (cheap stand-in for value noise) ───────────────────
@@ -101,7 +102,7 @@ def _curl_flow(rng: np.random.Generator, hh: int, ww: int, t: float, scale: floa
         "swirl": {"description": "global swirl rotation rate (turns over 2π)", "min": -2.0, "max": 2.0, "default": 0.3},
         "thickness": {"description": "liquid body tint strength (thicker = deeper color)", "min": 0.0, "max": 1.0, "default": 0.5},
         "fresnel": {"description": "rim/Fresnel intensity", "min": 0.0, "max": 1.5, "default": 0.7},
-        "specular": {"description": "specular highlight strength", "min": 0.0, "max": 1.0, "default": 0.6},
+        "specular": {"spatial": True, "description": "specular highlight strength", "min": 0.0, "max": 1.0, "default": 0.6},
         "anim_mode": {"description": "animation mode (none/flow/swirl/waves)", "choices": ["none", "flow", "swirl", "waves"], "default": "none"},
         "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
     },
@@ -137,7 +138,7 @@ def method_screen_fluid(out_dir: Path, seed: int, params=None):
         swirl = float(params.get("swirl", 0.3))
         thickness = float(params.get("thickness", 0.5))
         fresnel = float(params.get("fresnel", 0.7))
-        specular = float(params.get("specular", 0.6))
+        specular = sparam(params, "specular", 0.6)
 
         # ── Flow field (morphs with _t) ──
         vx, vy, gy, gx = _curl_flow(rng, hh, ww, _t, flow_scale)

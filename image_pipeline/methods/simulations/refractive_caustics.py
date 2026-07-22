@@ -33,6 +33,7 @@ from PIL import Image, ImageDraw, ImageFilter
 from ...core.registry import method
 from ...core.utils import save, mn, norm, seed_all, W, H
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ── Constants ──
@@ -259,13 +260,13 @@ def _intensity_to_rgb(intensity: np.ndarray, palette_name: str) -> np.ndarray:
             "max": 12,
             "default": 6,
         },
-        "depth": {
+        "depth": {"spatial": True, 
             "description": "water depth — caustic sharpness",
             "min": 0.5,
             "max": 3.0,
             "default": 1.5,
         },
-        "chromatic_strength": {
+        "chromatic_strength": {"spatial": True, 
             "description": "chromatic aberration strength",
             "min": 0.0,
             "max": 0.5,
@@ -307,8 +308,8 @@ def refractive_caustics(out_dir: Path, seed: int, params=None):
         params = {}
     wave_amp = float(params.get("wave_amplitude", 2.0))
     n_waves = int(params.get("n_waves", 6))
-    depth = float(params.get("depth", 1.5))
-    chrom_strength = float(params.get("chromatic_strength", 0.3))
+    depth = sparam(params, "depth", 1.5)
+    chrom_strength = sparam(params, "chromatic_strength", 0.3)
     palette = str(params.get("palette", "gold_teal"))
     t = float(params.get("time", 0.0))
     anim_mode = str(params.get("anim_mode", "wave_train"))

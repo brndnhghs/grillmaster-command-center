@@ -25,6 +25,7 @@ from PIL import Image, ImageDraw, ImageFilter
 from ...core.registry import method
 from ...core.utils import save, mn, seed_all, W, H, write_field, wired_source_lum
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ── Constants ──
@@ -97,17 +98,17 @@ def _render_mono(u: np.ndarray, v: np.ndarray, channel: str) -> Image.Image:
     inputs={"image_in": "IMAGE"},
     params={
         "source": {"description": "initial-condition seed: random patches or the wired upstream image's luminance", "choices": ["random", "input_image"], "default": "random"},
-        "alpha": {"description": "prey birth rate",
+        "alpha": {"spatial": True, "description": "prey birth rate",
                   "min": 0.1, "max": 3.0, "default": 1.0},
         "beta": {"description": "predation rate",
                  "min": 0.1, "max": 2.0, "default": 0.5},
-        "delta": {"description": "predator growth from prey",
+        "delta": {"spatial": True, "description": "predator growth from prey",
                   "min": 0.1, "max": 2.0, "default": 0.5},
-        "gamma": {"description": "predator death rate",
+        "gamma": {"spatial": True, "description": "predator death rate",
                   "min": 0.1, "max": 2.0, "default": 1.0},
-        "du": {"description": "prey diffusion",
+        "du": {"spatial": True, "description": "prey diffusion",
                "min": 0.01, "max": 0.5, "default": 0.1},
-        "dv": {"description": "predator diffusion (higher = spiral waves)",
+        "dv": {"spatial": True, "description": "predator diffusion (higher = spiral waves)",
                "min": 0.01, "max": 1.0, "default": 0.3},
         "dt": {"description": "timestep",
                "min": 0.01, "max": 1.0, "default": 0.2},
@@ -149,12 +150,12 @@ def method_lotka_volterra(out_dir: Path, seed: int, params=None):
     anim_mode = str(params.get("anim_mode", "none"))
     anim_speed = float(params.get("anim_speed", 1.0))
 
-    alpha = float(params.get("alpha", ALPHA))
+    alpha = sparam(params, "alpha", ALPHA)
     beta = float(params.get("beta", BETA))
-    delta = float(params.get("delta", DELTA))
-    gamma_lv = float(params.get("gamma", GAMMA_LV))
-    du = float(params.get("du", DU))
-    dv = float(params.get("dv", DV))
+    delta = sparam(params, "delta", DELTA)
+    gamma_lv = sparam(params, "gamma", GAMMA_LV)
+    du = sparam(params, "du", DU)
+    dv = sparam(params, "dv", DV)
     dt = float(params.get("dt", DT))
     n_frames = int(params.get("n_frames", 300))
     init_amp = float(params.get("init_amp", 0.1))

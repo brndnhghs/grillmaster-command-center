@@ -9,6 +9,7 @@ from PIL import Image, ImageDraw, ImageFont
 from ...core.registry import method
 from ...core.utils import save, norm, mn, seed_all, get_font, BG_DEFAULT, W, H
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 try:
     import cv2
@@ -19,7 +20,7 @@ except ImportError:
 @method(
     inputs={},id="76", name="Binary Counter", category="math_art", tags=["code","fast", "expanded"],
          params={"bits":{"description":"bit rows","min":4,"max":16,"default":8},
-                 "glitch_lines":{"description":"glitch lines","min":10,"max":200,"default":50},
+                 "glitch_lines":{"spatial": True, "description":"glitch lines","min":10,"max":200,"default":50},
                  "data_source":{"description":"data source","choices":["x_position","sine_wave","noise","prime_sequence","time_animated","gray_code","fibonacci","audio_waveform"],"default":"x_position"},
                  "layout":{"description":"layout","choices":["vertical_rows","horizontal_cols","radial_rings","matrix_rain","barcode","3d_perspective"],"default":"vertical_rows"},
                  "style":{"description":"style","choices":["solid_bars","palette","gradient_bars","glow_bars","led_matrix","oscilloscope","heat_map","rgb_per_bit"],"default":"solid_bars"},
@@ -27,11 +28,11 @@ except ImportError:
                  "glitch_type":{"description":"glitch","choices":["none","random_lines","bit_flip","row_shift","color_noise","scanline","vhs_tracking","pixel_sort","all"],"default":"none"},
                  "glitch_intensity":{"description":"intensity","min":0.0,"max":1.0,"default":0.3},
                  "bg_style":{"description":"bg","choices":["dark","light","gradient","grid","scanline_bg"],"default":"dark"},
-                 "bit_spacing":{"description":"spacing","min":1,"max":20,"default":4},
-                 "bar_height":{"description":"bar height","min":0.3,"max":1.0,"default":0.8},
+                 "bit_spacing":{"spatial": True, "description":"spacing","min":1,"max":20,"default":4},
+                 "bar_height":{"spatial": True, "description":"bar height","min":0.3,"max":1.0,"default":0.8},
                  "glow_radius":{"description":"glow","min":1,"max":10,"default":3},
                  "led_radius":{"description":"LED","min":1,"max":6,"default":3},
-                 "scanline_speed":{"description":"scan speed","min":0.0,"max":5.0,"default":1.0},
+                 "scanline_speed":{"spatial": True, "description":"scan speed","min":0.0,"max":5.0,"default":1.0},
                  "anim_mode":{"description":"animation mode","choices":["none","data_cycle","glitch_pulse","scanline_drift","color_cycle"],"default":"none"},
                  "anim_speed":{"description":"animation speed multiplier","min":0.0,"max":5.0,"default":1.0},})
 def method_binary_counter(out_dir: Path, seed: int, params=None):
@@ -67,7 +68,7 @@ def method_binary_counter(out_dir: Path, seed: int, params=None):
     anim_speed = float(params.get("anim_speed", 1.0))
     t = anim_time * anim_speed
     bits = int(params.get("bits", 8))
-    glitch_n = int(params.get("glitch_lines", 50))
+    glitch_n = sparam(params, "glitch_lines", 50)
     data_src = params.get("data_source", "x_position")
     layout = params.get("layout", "vertical_rows")
     style = params.get("style", "solid_bars")
@@ -75,11 +76,11 @@ def method_binary_counter(out_dir: Path, seed: int, params=None):
     glitch = params.get("glitch_type", "none")
     glitch_int = float(params.get("glitch_intensity", 0.3))
     bg_style = params.get("bg_style", "dark")
-    spacing = int(params.get("bit_spacing", 4))
-    bar_h = float(params.get("bar_height", 0.8))
+    spacing = sparam(params, "bit_spacing", 4)
+    bar_h = sparam(params, "bar_height", 0.8)
     glow_r = int(params.get("glow_radius", 3))
     led_r = int(params.get("led_radius", 3))
-    scan_speed = float(params.get("scanline_speed", 1.0))
+    scan_speed = sparam(params, "scanline_speed", 1.0)
     from ...core.utils import PALETTES, quantize_to_palette
     pal = PALETTES.get(pal_name, [])
 

@@ -10,6 +10,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageOps
 from ...core.registry import method
 from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES, quantize_to_palette, load_input
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 try:
     import cv2
@@ -28,12 +29,12 @@ except ImportError:
         "source": {"description": "source (noise/gradient/input_image/palette/rainbow/procedural)", "default": "noise"},
         "colormode": {"description": "color mode (source/palette/heatmap/spectral/fire/ice/dual_layer)", "default": "source"},
         "palette": {"description": "color palette name", "default": "vapor"},
-        "strength": {"description": "displacement strength", "min": 0.0, "max": 0.5, "default": 0.01},
+        "strength": {"spatial": True, "description": "displacement strength", "min": 0.0, "max": 0.5, "default": 0.01},
         "blur_sigma": {"description": "gaussian blur sigma for noise source", "min": 1, "max": 50, "default": 15},
         "noise_amp": {"description": "noise amplitude", "min": 0.1, "max": 1.0, "default": 0.3},
         "frequency": {"description": "spatial frequency for wave/ripple", "min": 0.01, "max": 0.5, "default": 0.05},
         "amplitude": {"description": "wave amplitude for displacement", "min": 1.0, "max": 100.0, "default": 20.0},
-        "rotation": {"description": "global rotation offset", "min": 0.0, "max": 6.2832, "default": 0.0},
+        "rotation": {"spatial": True, "description": "global rotation offset", "min": 0.0, "max": 6.2832, "default": 0.0},
         "zoom": {"description": "zoom factor for kaleidoscope", "min": 0.5, "max": 5.0, "default": 1.0},
         "segments": {"description": "symmetry segments for kaleidoscope", "min": 2, "max": 32, "default": 6},
         "anim_mode": {"description": "animation mode (none/morph/speed_pulse/rotation_cycle)", "choices": ["none", "morph", "speed_pulse", "rotation_cycle"], "default": "none"},
@@ -73,12 +74,12 @@ def method_swirl(out_dir: Path, seed: int, params=None):
     source = params.get("source", "noise")
     cmode = params.get("colormode", "source")
     pal_name = params.get("palette", "vapor")
-    strength = float(params.get("strength", 0.01))
+    strength = sparam(params, "strength", 0.01)
     blur_sigma = float(params.get("blur_sigma", 15))
     noise_amp = float(params.get("noise_amp", 0.3))
     freq = float(params.get("frequency", 0.05))
     amp = float(params.get("amplitude", 20.0))
-    rot = float(params.get("rotation", 0.0))
+    rot = sparam(params, "rotation", 0.0)
     zoom = float(params.get("zoom", 1.0))
     segs = int(params.get("segments", 6))
     anim_mode = params.get("anim_mode", "none")

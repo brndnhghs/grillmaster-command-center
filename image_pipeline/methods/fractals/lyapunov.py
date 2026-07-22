@@ -9,6 +9,7 @@ from PIL import Image, ImageDraw
 from ...core.registry import method
 from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES, wired_source_lum
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 # ── Optional libraries ──
 try:
@@ -29,7 +30,7 @@ def _render_flame_preview(density, colors, h, w):
         result = np.random.rand(h, w, 3).astype(np.float32) * 0.08 + 0.02
     return result
 
-@method(id='69', name='Lyapunov Fractal', category='fractals', tags=['classic', 'expanded', 'animation'], inputs={'image_in': 'IMAGE'}, params={'source': {'description': "seed the primary scalar field (r-parameter grid) from the wired image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}, 'seed_strength': {'description': 'blend weight between the procedural r-grid and the wired luminance field', 'min': 0.0, 'max': 1.0, 'default': 0.6}, 'sequence': {'description': 'A/B perturbation pattern (A/B string)', 'default': 'ABABABAB'}, 'warmup': {'description': 'warmup iterations before measuring', 'min': 10, 'max': 500, 'default': 80}, 'measure': {'description': 'iterations used for lyapunov sum', 'min': 10, 'max': 500, 'default': 80}, 'r_min': {'description': 'min r value for both axes', 'min': 1.5, 'max': 4.0, 'default': 2.0}, 'r_max': {'description': 'max r value for both axes', 'min': 2.0, 'max': 5.0, 'default': 4.0}, 'equation': {'description': 'logistic map variant: logistic, logistic_tent, cubic, gauss, circle, henon_map, sine_map, custom', 'default': 'logistic'}, 'color_mode': {'description': 'coloring: lyapunov_value, sine, palette, heatmap, fire, ice, spectral, dual_layer, stability, bifurcation', 'default': 'lyapunov_value'}, 'palette_name': {'description': 'palette name (retro palettes)', 'default': 'vapor'}, 'r2_min': {'description': 'optional second axis r_min (if not set, uses r_min/r_max)', 'default': None}, 'r2_max': {'description': 'optional second axis r_max', 'default': None}, 'stable_color': {'description': 'color for stable (negative exponent) regions: dark, green, blue, auto', 'default': 'dark'}})
+@method(id='69', name='Lyapunov Fractal', category='fractals', tags=['classic', 'expanded', 'animation'], inputs={'image_in': 'IMAGE'}, params={'source': {'description': "seed the primary scalar field (r-parameter grid) from the wired image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}, 'seed_strength': {"spatial": True, 'description': 'blend weight between the procedural r-grid and the wired luminance field', 'min': 0.0, 'max': 1.0, 'default': 0.6}, 'sequence': {'description': 'A/B perturbation pattern (A/B string)', 'default': 'ABABABAB'}, 'warmup': {'description': 'warmup iterations before measuring', 'min': 10, 'max': 500, 'default': 80}, 'measure': {'description': 'iterations used for lyapunov sum', 'min': 10, 'max': 500, 'default': 80}, 'r_min': {'description': 'min r value for both axes', 'min': 1.5, 'max': 4.0, 'default': 2.0}, 'r_max': {'description': 'max r value for both axes', 'min': 2.0, 'max': 5.0, 'default': 4.0}, 'equation': {'description': 'logistic map variant: logistic, logistic_tent, cubic, gauss, circle, henon_map, sine_map, custom', 'default': 'logistic'}, 'color_mode': {'description': 'coloring: lyapunov_value, sine, palette, heatmap, fire, ice, spectral, dual_layer, stability, bifurcation', 'default': 'lyapunov_value'}, 'palette_name': {'description': 'palette name (retro palettes)', 'default': 'vapor'}, 'r2_min': {'description': 'optional second axis r_min (if not set, uses r_min/r_max)', 'default': None}, 'r2_max': {'description': 'optional second axis r_max', 'default': None}, 'stable_color': {'description': 'color for stable (negative exponent) regions: dark, green, blue, auto', 'default': 'dark'}})
 def method_lyapunov(out_dir: Path, seed: int, params=None):
     """Generate Lyapunov fractal exponent maps with various equation variants and color modes.
 
@@ -148,7 +149,7 @@ def method_lyapunov(out_dir: Path, seed: int, params=None):
     if str(params.get("source", "none")) == "input_image":
         lum = wired_source_lum(params, W, H)
         if lum is not None:
-            sst = float(params.get("seed_strength", 0.6))
+            sst = sparam(params, "seed_strength", 0.6)
             ra_grid = (1.0 - sst) * ra_grid + sst * (lum * (r_max - r_min) + r_min)
             rb_grid = (1.0 - sst) * rb_grid + sst * (lum * (r_max - r_min) + r_min)
 

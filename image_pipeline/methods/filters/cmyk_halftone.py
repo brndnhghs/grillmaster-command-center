@@ -9,6 +9,7 @@ from PIL import Image, ImageDraw
 from ...core.registry import method
 from ...core.utils import save, mn, seed_all, W, H, load_input, write_scalars
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # Standard CMYK screen angles (degrees). Per-channel rotation is what gives
@@ -111,7 +112,7 @@ def _procedural_source(Hh: int, Ww: int, seed: int) -> np.ndarray:
     outputs={"image": "IMAGE"},
     params={
         "spacing": {"description": "screen frequency / dot grid spacing (px)", "min": 2, "max": 40, "default": 8},
-        "max_dot": {"description": "max dot diameter as fraction of spacing", "min": 0.3, "max": 1.4, "default": 1.0},
+        "max_dot": {"spatial": True, "description": "max dot diameter as fraction of spacing", "min": 0.3, "max": 1.4, "default": 1.0},
         "angle_offset": {"description": "rotate all screens by this many degrees", "min": -45.0, "max": 45.0, "default": 0.0},
         "ink_set": {"description": "which inks to print", "default": "cmyk", "choices": ["cmyk", "cmy", "gray", "rgb"]},
         "paper": {"description": "paper color", "default": "white", "choices": ["white", "cream", "black"]},
@@ -141,7 +142,7 @@ def method_cmyk_halftone(out_dir: Path, seed: int, params=None):
         seed_all(seed)
 
         spacing = float(params.get("spacing", 8))
-        max_dot = float(params.get("max_dot", 1.0))
+        max_dot = sparam(params, "max_dot", 1.0)
         angle_offset = float(params.get("angle_offset", 0.0))
         ink_set = params.get("ink_set", "cmyk")
         paper = params.get("paper", "white")

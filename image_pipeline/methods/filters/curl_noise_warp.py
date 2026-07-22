@@ -9,6 +9,7 @@ from ...core.utils import (
     save, mn, seed_all, W, H, write_scalars, write_field, wired_source_rgb, PALETTES,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ── Vectorized signed value noise (deterministic, seed-stable) ──
@@ -99,7 +100,7 @@ def _build_source(source: str, w: int, h: int, seed: int) -> np.ndarray:
     "warp_strength": {"description": "displacement distance along the flow (px)", "min": 0.0, "max": 80.0, "default": 24.0},
     "scale": {"description": "zoom of the noise potential field", "min": 1.0, "max": 12.0, "default": 5.0},
     "octaves": {"description": "fbm octaves for the potential field", "min": 1, "max": 6, "default": 4},
-    "anisotropy": {"description": "per-axis field skew (1.0 = isotropic; the 2025 'anisotropic curl-noise' twist)", "min": 0.3, "max": 3.0, "default": 1.0},
+    "anisotropy": {"spatial": True, "description": "per-axis field skew (1.0 = isotropic; the 2025 'anisotropic curl-noise' twist)", "min": 0.3, "max": 3.0, "default": 1.0},
     "substeps": {"description": "advection integration steps (smoother stream-like warp)", "min": 1, "max": 8, "default": 3},
     "source": {"description": "fallback content when no image is wired", "choices": ["perlin", "checkerboard", "gradient"], "default": "perlin"},
     "anim_mode": {"description": "animation mode: none, drift, evolve, pulse", "choices": ["none", "drift", "evolve", "pulse"], "default": "none"},
@@ -142,7 +143,7 @@ def method_curl_noise_warp(out_dir, seed: int, params=None):
         warp_strength = float(params.get("warp_strength", 24.0))
         scale = float(params.get("scale", 5.0))
         octaves = int(params.get("octaves", 4))
-        anisotropy = float(params.get("anisotropy", 1.0))
+        anisotropy = sparam(params, "anisotropy", 1.0)
         substeps = max(1, int(params.get("substeps", 3)))
         source = params.get("source", "perlin")
         anim_mode = params.get("anim_mode", "none")

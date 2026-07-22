@@ -9,6 +9,7 @@ from PIL import Image, ImageDraw, ImageFont
 from ...core.registry import method
 from ...core.utils import save, norm, mn, seed_all, get_font, BG_DEFAULT, W, H, wired_source_lum
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 try:
     import cv2
@@ -16,7 +17,7 @@ try:
 except ImportError:
     _has_cv2 = False
 
-@method(id='48', name='FFT Art', category='math_art', new_image_contract=True, tags=['frequency', 'fast', 'expanded'], inputs={'image_in': 'IMAGE'}, params={'filter_type': {'description': 'filter type', 'choices': ['ring', 'concentric', 'spiral', 'star', 'checkerboard', 'text_mask', 'input_mask', 'gabor_bank', 'fractal_noise', 'polar_fft', 'phase_swap', 'convolution_kernel', 'frequency_paint', 'radial_pattern', 'time_frequency'], 'default': 'ring'}, 'source': {'description': 'source', 'choices': ['random', 'perlin', 'wave_interference', 'color_noise', 'input_image', 'texture_synth'], 'default': 'random'}, 'color_mode': {'description': 'coloring', 'choices': ['gradient', 'palette', 'phase', 'magnitude', 'multi_channel', 'phase_magnitude_blend', 'rainbow', 'heatmap', 'channel_swap'], 'default': 'gradient'}, 'palette': {'description': 'PALETTES', 'default': ''}, 'n_rings': {'description': 'rings', 'min': 2, 'max': 20, 'default': 5}, 'ring1_center': {'description': 'ring1 center', 'min': 20, 'max': 200, 'default': 60}, 'ring1_sigma': {'description': 'ring1 sigma', 'min': 5, 'max': 60, 'default': 15}, 'ring2_center': {'description': 'ring2 center', 'min': 20, 'max': 300, 'default': 120}, 'ring2_sigma': {'description': 'ring2 sigma', 'min': 5, 'max': 60, 'default': 20}, 'spiral_turns': {'description': 'spiral turns', 'min': 1, 'max': 10, 'default': 4}, 'star_arms': {'description': 'star arms', 'min': 2, 'max': 20, 'default': 6}, 'checker_size': {'description': 'checker size', 'min': 4, 'max': 40, 'default': 16}, 'text_content': {'description': 'text', 'default': 'FFT'}, 'gabor_freqs': {'description': 'gabor freqs', 'min': 1, 'max': 10, 'default': 4}, 'gabor_orientations': {'description': 'gabor orients', 'min': 1, 'max': 8, 'default': 4}, 'fractal_exponent': {'description': 'fractal exponent', 'min': 0.5, 'max': 3.0, 'default': 1.5}, 'phase_swap_source': {'description': 'phase swap source', 'choices': ['perlin', 'random', 'input'], 'default': 'perlin'}, 'kernel_type': {'description': 'conv kernel', 'choices': ['gaussian', 'sobel', 'laplacian', 'emboss', 'sharpen'], 'default': 'gaussian'}, 'kernel_size': {'description': 'kernel size', 'min': 3, 'max': 31, 'default': 7}, 'polar_radial_freq': {'description': 'polar radial freq', 'min': 1, 'max': 20, 'default': 4}, 'polar_angular_freq': {'description': 'polar angular freq', 'min': 1, 'max': 20, 'default': 6}, 'anim_mode': {'description': 'animation mode', 'choices': ['none', 'filter_rotate', 'source_drift', 'gabor_sweep'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 5.0, 'default': 1.0}})
+@method(id='48', name='FFT Art', category='math_art', new_image_contract=True, tags=['frequency', 'fast', 'expanded'], inputs={'image_in': 'IMAGE'}, params={'filter_type': {'description': 'filter type', 'choices': ['ring', 'concentric', 'spiral', 'star', 'checkerboard', 'text_mask', 'input_mask', 'gabor_bank', 'fractal_noise', 'polar_fft', 'phase_swap', 'convolution_kernel', 'frequency_paint', 'radial_pattern', 'time_frequency'], 'default': 'ring'}, 'source': {'description': 'source', 'choices': ['random', 'perlin', 'wave_interference', 'color_noise', 'input_image', 'texture_synth'], 'default': 'random'}, 'color_mode': {'description': 'coloring', 'choices': ['gradient', 'palette', 'phase', 'magnitude', 'multi_channel', 'phase_magnitude_blend', 'rainbow', 'heatmap', 'channel_swap'], 'default': 'gradient'}, 'palette': {'description': 'PALETTES', 'default': ''}, 'n_rings': {'description': 'rings', 'min': 2, 'max': 20, 'default': 5}, 'ring1_center': {"spatial": True, 'description': 'ring1 center', 'min': 20, 'max': 200, 'default': 60}, 'ring1_sigma': {"spatial": True, 'description': 'ring1 sigma', 'min': 5, 'max': 60, 'default': 15}, 'ring2_center': {"spatial": True, 'description': 'ring2 center', 'min': 20, 'max': 300, 'default': 120}, 'ring2_sigma': {"spatial": True, 'description': 'ring2 sigma', 'min': 5, 'max': 60, 'default': 20}, 'spiral_turns': {"spatial": True, 'description': 'spiral turns', 'min': 1, 'max': 10, 'default': 4}, 'star_arms': {"spatial": True, 'description': 'star arms', 'min': 2, 'max': 20, 'default': 6}, 'checker_size': {"spatial": True, 'description': 'checker size', 'min': 4, 'max': 40, 'default': 16}, 'text_content': {'description': 'text', 'default': 'FFT'}, 'gabor_freqs': {'description': 'gabor freqs', 'min': 1, 'max': 10, 'default': 4}, 'gabor_orientations': {'description': 'gabor orients', 'min': 1, 'max': 8, 'default': 4}, 'fractal_exponent': {'description': 'fractal exponent', 'min': 0.5, 'max': 3.0, 'default': 1.5}, 'phase_swap_source': {'description': 'phase swap source', 'choices': ['perlin', 'random', 'input'], 'default': 'perlin'}, 'kernel_type': {'description': 'conv kernel', 'choices': ['gaussian', 'sobel', 'laplacian', 'emboss', 'sharpen'], 'default': 'gaussian'}, 'kernel_size': {'description': 'kernel size', 'min': 3, 'max': 31, 'default': 7}, 'polar_radial_freq': {"spatial": True, 'description': 'polar radial freq', 'min': 1, 'max': 20, 'default': 4}, 'polar_angular_freq': {"spatial": True, 'description': 'polar angular freq', 'min': 1, 'max': 20, 'default': 6}, 'anim_mode': {'description': 'animation mode', 'choices': ['none', 'filter_rotate', 'source_drift', 'gabor_sweep'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 5.0, 'default': 1.0}})
 def method_fft_art(out_dir: Path, seed: int, params=None):
     """Generate frequency-domain art via FFT filtering with 15 filter types.
 
@@ -69,13 +70,13 @@ def method_fft_art(out_dir: Path, seed: int, params=None):
         cm = params.get("color_mode", "gradient")
         pal_name = params.get("palette", "")
         n_rings = int(params.get("n_rings", 5))
-        r1c = float(params.get("ring1_center", 60))
-        r1s = float(params.get("ring1_sigma", 15))
-        r2c = float(params.get("ring2_center", 120))
-        r2s = float(params.get("ring2_sigma", 20))
-        st = float(params.get("spiral_turns", 4))
-        sa = float(params.get("star_arms", 6))
-        cks = float(params.get("checker_size", 16))
+        r1c = sparam(params, "ring1_center", 60)
+        r1s = sparam(params, "ring1_sigma", 15)
+        r2c = sparam(params, "ring2_center", 120)
+        r2s = sparam(params, "ring2_sigma", 20)
+        st = sparam(params, "spiral_turns", 4)
+        sa = sparam(params, "star_arms", 6)
+        cks = sparam(params, "checker_size", 16)
         txt = params.get("text_content", "FFT")
         gf = int(params.get("gabor_freqs", 4))
         go = int(params.get("gabor_orientations", 4))
@@ -83,8 +84,8 @@ def method_fft_art(out_dir: Path, seed: int, params=None):
         pss = params.get("phase_swap_source", "perlin")
         kt = params.get("kernel_type", "gaussian")
         ks = int(params.get("kernel_size", 7))
-        prf = float(params.get("polar_radial_freq", 4))
-        paf = float(params.get("polar_angular_freq", 6))
+        prf = sparam(params, "polar_radial_freq", 4)
+        paf = sparam(params, "polar_angular_freq", 6)
 
         # ── Animation ──
         t = anim_time * anim_speed

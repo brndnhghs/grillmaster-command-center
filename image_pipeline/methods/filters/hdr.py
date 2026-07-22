@@ -10,6 +10,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageOps
 from ...core.registry import method
 from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES, quantize_to_palette, load_input
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 try:
     import cv2
@@ -32,9 +33,9 @@ except ImportError:
         "exposure": {"description": "exposure multiplier before tonemap", "min": 1.0, "max": 20.0, "default": 5.0},
         "blur_sigma": {"description": "gaussian blur sigma for noise source", "min": 5, "max": 60, "default": 15},
         "noise_amp": {"description": "noise amplitude", "min": 0.1, "max": 2.0, "default": 0.5},
-        "tint_r": {"description": "red channel tint multiplier", "min": 0.3, "max": 2.0, "default": 1.2},
-        "tint_g": {"description": "green channel tint multiplier", "min": 0.3, "max": 2.0, "default": 1.0},
-        "tint_b": {"description": "blue channel tint multiplier", "min": 0.3, "max": 2.0, "default": 0.9},
+        "tint_r": {"spatial": True, "description": "red channel tint multiplier", "min": 0.3, "max": 2.0, "default": 1.2},
+        "tint_g": {"spatial": True, "description": "green channel tint multiplier", "min": 0.3, "max": 2.0, "default": 1.0},
+        "tint_b": {"spatial": True, "description": "blue channel tint multiplier", "min": 0.3, "max": 2.0, "default": 0.9},
         "contrast": {"description": "contrast boost", "min": 0.5, "max": 3.0, "default": 1.0},
         "saturation": {"description": "color saturation", "min": 0.0, "max": 3.0, "default": 1.2},
         "vignette": {"description": "vignette strength (0=off)", "min": 0.0, "max": 1.0, "default": 0.0},
@@ -95,9 +96,9 @@ def method_hdr(out_dir: Path, seed: int, params=None):
         base_exposure = float(params.get("exposure", 5.0))
         blur_sigma = float(params.get("blur_sigma", 15))
         noise_amp = float(params.get("noise_amp", 0.5))
-        base_tint_r = float(params.get("tint_r", 1.2))
-        base_tint_g = float(params.get("tint_g", 1.0))
-        base_tint_b = float(params.get("tint_b", 0.9))
+        base_tint_r = sparam(params, "tint_r", 1.2)
+        base_tint_g = sparam(params, "tint_g", 1.0)
+        base_tint_b = sparam(params, "tint_b", 0.9)
         contrast = float(params.get("contrast", 1.0))
         saturation = float(params.get("saturation", 1.2))
         vignette = float(params.get("vignette", 0.0))

@@ -11,6 +11,7 @@ from ...core.utils import (
     save, mn, seed_all, W, H, write_scalars, write_field, load_input, wired_source_lum,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ── Deterministic value-noise / FBM (seed-stable, no extra deps) ──
@@ -131,7 +132,7 @@ def _iq_ramp(t: np.ndarray):
     return np.stack([r, g, b], axis=-1)
 
 
-@method(id='441', name='Marching Squares Contours', category='math_art', new_image_contract=True, tags=['contour', 'isoline', 'topographic', 'marching-squares', 'line-art', 'expanded', 'animation'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE'}, params={'source': {'description': 'scalar field source: procedural, radial, gradient, noise, input_image', 'default': 'procedural'}, 'n_levels': {'description': 'number of contour thresholds (isoline density)', 'min': 3, 'max': 24, 'default': 10}, 'grid_step': {'description': 'cell size in px (smaller = finer contours)', 'min': 2, 'max': 16, 'default': 5}, 'color_mode': {'description': 'line color: ink (black), level (rainbow ramp), monochrome (gray ramp)', 'choices': ['ink', 'level', 'monochrome'], 'default': 'level'}, 'line_alpha': {'description': 'contour opacity 0-1', 'min': 0.1, 'max': 1.0, 'default': 0.9}, 'flow_amp': {'description': 'time-driven field ripple amplitude (drives flow animation)', 'min': 0.0, 'max': 0.5, 'default': 0.2}, 'noise_amp': {'description': 'noise source amplitude', 'min': 0.1, 'max': 1.0, 'default': 0.6}, 'anim_mode': {'description': 'animation mode: none, flow, reveal, rotate', 'choices': ['none', 'flow', 'reveal', 'rotate'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 5.0, 'default': 1.0}, 'time': {'description': 'animation time in radians', 'min': 0.0, 'max': 6.2832, 'default': 0.0}})
+@method(id='441', name='Marching Squares Contours', category='math_art', new_image_contract=True, tags=['contour', 'isoline', 'topographic', 'marching-squares', 'line-art', 'expanded', 'animation'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE'}, params={'source': {'description': 'scalar field source: procedural, radial, gradient, noise, input_image', 'default': 'procedural'}, 'n_levels': {'description': 'number of contour thresholds (isoline density)', 'min': 3, 'max': 24, 'default': 10}, 'grid_step': {'description': 'cell size in px (smaller = finer contours)', 'min': 2, 'max': 16, 'default': 5}, 'color_mode': {'description': 'line color: ink (black), level (rainbow ramp), monochrome (gray ramp)', 'choices': ['ink', 'level', 'monochrome'], 'default': 'level'}, 'line_alpha': {'description': 'contour opacity 0-1', 'min': 0.1, 'max': 1.0, 'default': 0.9}, 'flow_amp': {"spatial": True, 'description': 'time-driven field ripple amplitude (drives flow animation)', 'min': 0.0, 'max': 0.5, 'default': 0.2}, 'noise_amp': {"spatial": True, 'description': 'noise source amplitude', 'min': 0.1, 'max': 1.0, 'default': 0.6}, 'anim_mode': {'description': 'animation mode: none, flow, reveal, rotate', 'choices': ['none', 'flow', 'reveal', 'rotate'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 5.0, 'default': 1.0}, 'time': {'description': 'animation time in radians', 'min': 0.0, 'max': 6.2832, 'default': 0.0}})
 def method_marching_squares(out_dir: Path, seed: int, params=None):
     """Marching Squares Contours — isoline extraction from a scalar field.
 
@@ -192,8 +193,8 @@ def method_marching_squares(out_dir: Path, seed: int, params=None):
         color_mode = str(params.get("color_mode", "level"))
         line_alpha = float(params.get("line_alpha", 0.9))
         line_alpha = max(0.1, min(1.0, line_alpha))
-        flow_amp = float(params.get("flow_amp", 0.2))
-        noise_amp = float(params.get("noise_amp", 0.6))
+        flow_amp = sparam(params, "flow_amp", 0.2)
+        noise_amp = sparam(params, "noise_amp", 0.6)
 
         # none mode must be static regardless of the passed clock
         _t = 0.0 if anim_mode == "none" else anim_time * anim_speed

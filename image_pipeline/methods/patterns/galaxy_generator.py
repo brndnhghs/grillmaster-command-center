@@ -11,6 +11,7 @@ from ...core.utils import (
     save, mn, seed_all, W, H, write_scalars,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 @method(
@@ -25,19 +26,19 @@ from ...core.animation import capture_frame
     params={
         'arms': {'description': 'number of logarithmic spiral arms', 'min': 1, 'max': 6,
                  'default': 2},
-        'tightness': {'description': 'log-spiral winding tightness b (r = a*exp(b*theta))',
+        'tightness': {"spatial": True, 'description': 'log-spiral winding tightness b (r = a*exp(b*theta))',
                       'min': 0.1, 'max': 1.5, 'default': 0.5},
-        'arm_spread': {'description': 'perpendicular thickness of arms (fraction of radius)',
+        'arm_spread': {"spatial": True, 'description': 'perpendicular thickness of arms (fraction of radius)',
                        'min': 0.02, 'max': 0.4, 'default': 0.15},
-        'bulge_size': {'description': 'central bulge radius (fraction of disk)',
+        'bulge_size': {"spatial": True, 'description': 'central bulge radius (fraction of disk)',
                        'min': 0.05, 'max': 0.5, 'default': 0.2},
         'star_count': {'description': 'number of stars rendered', 'min': 5000, 'max': 120000,
                        'default': 40000},
         'inclination': {'description': 'viewing tilt (0 face-on .. 1 edge-on)',
                         'min': 0.0, 'max': 1.0, 'default': 0.3},
-        'rotation_speed': {'description': 'pattern rotation rate for animation',
+        'rotation_speed': {"spatial": True, 'description': 'pattern rotation rate for animation',
                           'min': 0.0, 'max': 3.0, 'default': 1.0},
-        'brightness': {'description': 'exposure / overall brightness', 'min': 0.2, 'max': 3.0,
+        'brightness': {"spatial": True, 'description': 'exposure / overall brightness', 'min': 0.2, 'max': 3.0,
                        'default': 1.0},
         'scheme': {'description': 'star color scheme',
                    'choices': ['natural', 'inferno', 'ice', 'mono'], 'default': 'natural'},
@@ -91,14 +92,14 @@ def method_galaxy_generator(out_dir: Path, seed: int, params=None):
 
         arms = int(params.get("arms", 2))
         arms = max(1, min(6, arms))
-        tightness = float(params.get("tightness", 0.5))
-        arm_spread = float(params.get("arm_spread", 0.15))
-        bulge_size = float(params.get("bulge_size", 0.2))
+        tightness = sparam(params, "tightness", 0.5)
+        arm_spread = sparam(params, "arm_spread", 0.15)
+        bulge_size = sparam(params, "bulge_size", 0.2)
         star_count = int(params.get("star_count", 40000))
         star_count = max(2000, min(120000, star_count))
         incl = float(params.get("inclination", 0.3))
-        rotation_speed = float(params.get("rotation_speed", 1.0))
-        brightness = float(params.get("brightness", 1.0))
+        rotation_speed = sparam(params, "rotation_speed", 1.0)
+        brightness = sparam(params, "brightness", 1.0)
         scheme = str(params.get("scheme", "natural"))
 
         HH = int(H)

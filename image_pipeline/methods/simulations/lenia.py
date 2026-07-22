@@ -43,6 +43,7 @@ from ...core.utils import (
     save, mn, seed_all, W, H, wired_source_lum, write_scalars,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ── Defaults (validated living config) ──
@@ -154,7 +155,7 @@ def _render(A: np.ndarray) -> np.ndarray:
         "r": {"description": "kernel radius (cells)", "min": 5.0, "max": 25.0, "default": 13.0},
         "beta": {"description": "kernel core order (shape of the growth core)", "min": 1, "max": 12, "default": 4},
         "t_env": {"description": "kernel envelope thickness (ring sharpness)", "min": 0.05, "max": 0.4, "default": 0.12},
-        "mu": {"description": "growth-curve center (target neighborhood sum)", "min": 0.05, "max": 0.4, "default": 0.15},
+        "mu": {"spatial": True, "description": "growth-curve center (target neighborhood sum)", "min": 0.05, "max": 0.4, "default": 0.15},
         "sigma": {"description": "growth-curve width (sharpness of the life threshold)", "min": 0.005, "max": 0.06, "default": 0.025},
         "dt": {"description": "growth update rate", "min": 0.05, "max": 0.4, "default": 0.10},
         "n_frames": {"description": "simulation frames", "min": 50, "max": 600, "default": 240},
@@ -190,7 +191,7 @@ def method_lenia(out_dir: Path, seed: int, params=None):
     r = float(params.get("r", R))
     beta = int(params.get("beta", BETA))
     t_env = float(params.get("t_env", T))
-    mu = float(params.get("mu", MU))
+    mu = sparam(params, "mu", MU)
     sigma = float(params.get("sigma", SIGMA))
     dt = float(params.get("dt", DT))
     n_frames = int(params.get("n_frames", N_FRAMES))

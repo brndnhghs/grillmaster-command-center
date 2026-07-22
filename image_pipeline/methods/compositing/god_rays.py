@@ -26,6 +26,7 @@ from PIL import Image
 from ...core.animation import capture_frame
 from ...core.registry import method
 from ...core.utils import save, mn, W, H, BG_DEFAULT
+from image_pipeline.core.spatial import sparam
 
 
 def _get_image(params: dict, port: str) -> np.ndarray | None:
@@ -84,7 +85,7 @@ def _bilinear(arr: np.ndarray, coords: np.ndarray) -> np.ndarray:
             "max": 1.0,
             "default": 0.5,
         },
-        "radius": {
+        "radius": {"spatial": True, 
             "description": "procedural glow radius (fraction of screen)",
             "min": 0.02,
             "max": 0.6,
@@ -147,7 +148,7 @@ def method_god_rays(out_dir: Path, seed: int, params=None):
     source_mode = params.get("source_mode", "procedural")
     light_x = float(params.get("light_x", 0.5))
     light_y = float(params.get("light_y", 0.5))
-    radius = float(params.get("radius", 0.18))
+    radius = sparam(params, "radius", 0.18)
     threshold = float(params.get("threshold", 0.5))
     exposure = float(params.get("exposure", 0.6))
     decay = float(params.get("decay", 0.95))

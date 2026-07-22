@@ -10,6 +10,7 @@ from ...core.utils import (
     save, mn, seed_all, W, H, write_scalars, write_field, wired_source_lum,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ── Vectorized signed value noise (deterministic, seed-stable) ──
@@ -40,7 +41,7 @@ def _value_noise(x: np.ndarray, y: np.ndarray, seed: int) -> np.ndarray:
     return (a + (b - a) * v) * 2.0 - 1.0
 
 
-@method(id='312', name='Water Caustics', category='patterns', tags=['procedural', 'caustics', 'water', 'height-field', 'refraction', 'animation'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'luminance': 'FIELD'}, params={'scale': {'description': 'base zoom of the water surface', 'min': 1.0, 'max': 16.0, 'default': 6.0}, 'waves': {'description': 'number of summed plane waves in the height field', 'min': 2, 'max': 10, 'default': 6}, 'amplitude': {'description': 'wave height amplitude', 'min': 0.1, 'max': 2.0, 'default': 0.8}, 'caustic_gain': {'description': 'refraction displacement strength (lensing sharpness)', 'min': 0.1, 'max': 3.0, 'default': 1.2}, 'sharpen': {'description': 'caustic intensity exponent', 'min': 0.5, 'max': 4.0, 'default': 1.6}, 'colormode': {'description': 'color mapping (ocean/aqua/gold/inferno/viridis/grayscale)', 'default': 'ocean'}, 'anim_mode': {'description': 'animation mode: none, flow, ripple, drift', 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 3.0, 'default': 1.0}, 'time': {'description': 'animation phase [0, 2pi)', 'min': 0.0, 'max': 6.28, 'default': 0.0}, 'source': {'description': "wired upstream image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}})
+@method(id='312', name='Water Caustics', category='patterns', tags=['procedural', 'caustics', 'water', 'height-field', 'refraction', 'animation'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'luminance': 'FIELD'}, params={'scale': {'description': 'base zoom of the water surface', 'min': 1.0, 'max': 16.0, 'default': 6.0}, 'waves': {'description': 'number of summed plane waves in the height field', 'min': 2, 'max': 10, 'default': 6}, 'amplitude': {"spatial": True, 'description': 'wave height amplitude', 'min': 0.1, 'max': 2.0, 'default': 0.8}, 'caustic_gain': {'description': 'refraction displacement strength (lensing sharpness)', 'min': 0.1, 'max': 3.0, 'default': 1.2}, 'sharpen': {'description': 'caustic intensity exponent', 'min': 0.5, 'max': 4.0, 'default': 1.6}, 'colormode': {'description': 'color mapping (ocean/aqua/gold/inferno/viridis/grayscale)', 'default': 'ocean'}, 'anim_mode': {'description': 'animation mode: none, flow, ripple, drift', 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 3.0, 'default': 1.0}, 'time': {'description': 'animation phase [0, 2pi)', 'min': 0.0, 'max': 6.28, 'default': 0.0}, 'source': {'description': "wired upstream image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}})
 def method_water_caustics(out_dir, seed: int, params=None):
     """Render water caustics from an animated height field.
 
@@ -65,7 +66,7 @@ def method_water_caustics(out_dir, seed: int, params=None):
 
         scale = float(params.get("scale", 6.0))
         nwaves = int(params.get("waves", 6))
-        amplitude = float(params.get("amplitude", 0.8))
+        amplitude = sparam(params, "amplitude", 0.8)
         caustic_gain = float(params.get("caustic_gain", 1.2))
         sharpen = float(params.get("sharpen", 1.6))
         cmode = params.get("colormode", "ocean")

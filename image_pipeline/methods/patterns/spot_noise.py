@@ -50,6 +50,7 @@ import numpy as np
 from ...core.registry import method
 from ...core.utils import save, mn, seed_all, W, H, PALETTES, wired_source_lum
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 def _flow_angle(fx: np.ndarray, fy: np.ndarray, kind: str, seed: int,
@@ -109,7 +110,7 @@ def _sample_angle_at(px: np.ndarray, py: np.ndarray, kind: str, seed: int,
         'spot_size': {'description': 'base spot radius in px (before stretch)', 'min': 3.0, 'max': 40.0, 'default': 14.0},
         'stretch': {'description': 'anisotropy: elongation along the flow direction', 'min': 1.0, 'max': 12.0, 'default': 5.0},
         'flow': {'description': 'flow field (circular/sine/saddle/curl/radial)', 'choices': ['circular', 'sine', 'saddle', 'curl', 'radial'], 'default': 'circular'},
-        'contrast': {'description': 'final tone contrast', 'min': 0.5, 'max': 3.0, 'default': 1.4},
+        'contrast': {"spatial": True, 'description': 'final tone contrast', 'min': 0.5, 'max': 3.0, 'default': 1.4},
         'colormode': {'description': 'color mapping (grayscale/rainbow/inferno/viridis/palette/fire/ice)', 'default': 'viridis'},
         'palette': {'description': 'palette name for palette mode', 'default': 'vapor'},
         'anim_mode': {'description': 'animation mode: none, advect, swirl, pulse', 'default': 'none'},
@@ -135,7 +136,7 @@ def method_spot_noise(out_dir, seed: int, params=None):
         spot_size = float(np.clip(params.get("spot_size", 14.0), 3.0, 40.0))
         stretch = float(np.clip(params.get("stretch", 5.0), 1.0, 12.0))
         flow = params.get("flow", "circular")
-        contrast = float(params.get("contrast", 1.4))
+        contrast = sparam(params, "contrast", 1.4)
         cmode = params.get("colormode", "viridis")
         pal_name = params.get("palette", "vapor")
         anim_mode = params.get("anim_mode", "none")

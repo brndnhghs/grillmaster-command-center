@@ -52,6 +52,7 @@ from ...core.utils import (
     write_mask,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ── Convolution helpers (importable for headless verification) ──
@@ -172,7 +173,7 @@ def _render(acc: np.ndarray) -> Image.Image:
             "description": "survival band half-width (fraction of N)",
             "min": 0.02, "max": 0.3, "default": 0.13,
         },
-        "decay": {
+        "decay": {"spatial": True, 
             "description": "EMA trail smoothing (higher = longer trails)",
             "min": 0.5, "max": 0.99, "default": 0.9,
         },
@@ -220,7 +221,7 @@ def method_larger_than_life(out_dir: Path, seed: int, params=None):
 
     b_lo, b_hi = _band(bc, bw)
     s_lo, s_hi = _band(sc, sw)
-    decay = float(params.get("decay", 0.9))
+    decay = sparam(params, "decay", 0.9)
     n_frames = int(params.get("n_frames", 200))
 
     seed_all(seed)

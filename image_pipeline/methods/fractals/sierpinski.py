@@ -9,6 +9,7 @@ from PIL import Image, ImageDraw
 from ...core.registry import method
 from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES, write_field, wired_source_lum
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 # ── Optional libraries ──
 try:
@@ -29,7 +30,7 @@ def _render_flame_preview(density, colors, h, w):
         result = np.random.rand(h, w, 3).astype(np.float32) * 0.08 + 0.02
     return result
 
-@method(id='67', name='Sierpinski Carpet', category='fractals', new_image_contract=True, tags=['deterministic', 'fast', 'expanded', 'animation'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'field': 'FIELD'}, params={'depth': {'description': 'subdivision depth (1-7)', 'min': 1, 'max': 7, 'default': 5}, 'fractal_type': {'description': 'fractal type: carpet, triangle, hexagon, pentagon, menger_sponge, vicsek, carpet_triangle_hybrid', 'default': 'carpet'}, 'color_mode': {'description': 'coloring: sine, palette, heatmap, fire, ice, spectral, per_level, depth_gradient, neon, rainbow, input_blend', 'default': 'sine'}, 'palette_name': {'description': 'palette name (retro palettes)', 'default': 'vapor'}, 'fill_style': {'description': 'fill style: standard, inverted, outline, glow, dotted, checkerboard, concentric, radial_fade', 'default': 'standard'}, 'source': {'description': "wired upstream image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}})
+@method(id='67', name='Sierpinski Carpet', category='fractals', new_image_contract=True, tags=['deterministic', 'fast', 'expanded', 'animation'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'field': 'FIELD'}, params={'depth': {"spatial": True, 'description': 'subdivision depth (1-7)', 'min': 1, 'max': 7, 'default': 5}, 'fractal_type': {'description': 'fractal type: carpet, triangle, hexagon, pentagon, menger_sponge, vicsek, carpet_triangle_hybrid', 'default': 'carpet'}, 'color_mode': {'description': 'coloring: sine, palette, heatmap, fire, ice, spectral, per_level, depth_gradient, neon, rainbow, input_blend', 'default': 'sine'}, 'palette_name': {'description': 'palette name (retro palettes)', 'default': 'vapor'}, 'fill_style': {'description': 'fill style: standard, inverted, outline, glow, dotted, checkerboard, concentric, radial_fade', 'default': 'standard'}, 'source': {'description': "wired upstream image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}})
 def method_sierpinski(out_dir: Path, seed: int, params=None):
     """Generate Sierpinski carpet and related fractal patterns with various color modes and fill styles.
 
@@ -60,7 +61,7 @@ def method_sierpinski(out_dir: Path, seed: int, params=None):
         seed_all(seed)
         rng = random.Random(seed)
 
-        depth = int(params.get("depth", 5))
+        depth = sparam(params, "depth", 5)
         fractal_type = str(params.get("fractal_type", "carpet"))
         color_mode = str(params.get("color_mode", "sine"))
         pal_name = str(params.get("palette_name", "vapor"))

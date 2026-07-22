@@ -29,6 +29,7 @@ from PIL import Image
 from ...core.registry import method
 from ...core.utils import save, mn, seed_all, W, H
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 def _render(u):
@@ -49,8 +50,8 @@ def _render(u):
             "choices": ["evolve", "bigspots", "noise", "obstacle"],
             "default": "evolve",
         },
-        "epsilon": {"min": 0.5, "max": 5.0, "default": 1.5},
-        "alpha": {"min": 0.0, "max": 8.0, "default": 2.0},
+        "epsilon": {"spatial": True, "min": 0.5, "max": 5.0, "default": 1.5},
+        "alpha": {"spatial": True, "min": 0.0, "max": 8.0, "default": 2.0},
         "n_frames": {"min": 100, "max": 600, "default": 200},
         "dt": {"min": 0.05, "max": 1.0, "default": 0.3},
         "noise": {"min": 0.0, "max": 0.05, "default": 0.003},
@@ -61,20 +62,20 @@ def acd(out_dir, seed, params=None):
     if params is None:
         params = {}
     am = str(params.get("anim_mode", "evolve"))
-    eps = float(params.get("epsilon", 1.5))
-    alpha = float(params.get("alpha", 2.0))
+    eps = sparam(params, "epsilon", 1.5)
+    alpha = sparam(params, "alpha", 2.0)
     nf = int(params.get("n_frames", 200))
     dt = float(params.get("dt", 0.3))
     noise_amp = float(params.get("noise", 0.003))
     gd = int(params.get("grid_div", 1))
 
     if am == "bigspots":
-        eps = float(params.get("epsilon", 2.0))
-        alpha = float(params.get("alpha", 1.5))
+        eps = sparam(params, "epsilon", 2.0)
+        alpha = sparam(params, "alpha", 1.5)
         noise_amp = float(params.get("noise", 0.002))
     elif am == "noise":
-        eps = float(params.get("epsilon", 1.0))
-        alpha = float(params.get("alpha", 4.0))
+        eps = sparam(params, "epsilon", 1.0)
+        alpha = sparam(params, "alpha", 4.0)
         noise_amp = float(params.get("noise", 0.008))
 
     seed_all(seed)

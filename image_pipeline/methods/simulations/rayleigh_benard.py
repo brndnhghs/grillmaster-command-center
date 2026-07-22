@@ -15,6 +15,7 @@ from PIL import Image
 from ...core.registry import method
 from ...core.utils import save, mn, seed_all, W, H
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 def _render(f):
@@ -38,8 +39,8 @@ def _render(f):
                         "chaos", "obstacle", "sweep", "morph"],
             "default": "evolve",
         },
-        "r": {"min": -1.0, "max": 5.0, "default": 1.5},
-        "q0": {"min": 0.02, "max": 0.3, "default": 0.08},
+        "r": {"spatial": True, "min": -1.0, "max": 5.0, "default": 1.5},
+        "q0": {"spatial": True, "min": 0.02, "max": 0.3, "default": 0.08},
         "n_frames": {"min": 100, "max": 1200, "default": 360},
         "dt": {"min": 0.01, "max": 0.5, "default": 0.05},
         "grid_div": {"choices": [1, 2, 3, 4, 6], "default": 1},
@@ -54,8 +55,8 @@ def sh(out_dir, seed, params=None):
     if params is None:
         params = {}
     am = str(params.get("anim_mode", "evolve"))
-    r = float(params.get("r", 1.5))
-    q0 = float(params.get("q0", 0.08))
+    r = sparam(params, "r", 1.5)
+    q0 = sparam(params, "q0", 0.08)
     nf = int(params.get("n_frames", 360))
     dt = float(params.get("dt", 0.05))
     gd = int(params.get("grid_div", 1))
@@ -67,26 +68,26 @@ def sh(out_dir, seed, params=None):
 
     # Mode defaults
     if am == "hexagons":
-        r = float(params.get("r", 1.2))
+        r = sparam(params, "r", 1.2)
     elif am == "stripes":
-        r = float(params.get("r", 2.5))
+        r = sparam(params, "r", 2.5)
         dt = float(params.get("dt", 0.1))
     elif am == "spots":
-        r = float(params.get("r", 2.5))
-        q0 = float(params.get("q0", 0.12))
+        r = sparam(params, "r", 2.5)
+        q0 = sparam(params, "q0", 0.12)
     elif am == "chaos":
-        r = float(params.get("r", 3.5))
+        r = sparam(params, "r", 3.5)
         nf = int(params.get("n_frames", 480))
         noise_amp = float(params.get("noise", 0.008))
     elif am == "obstacle":
-        r = float(params.get("r", 2.0))
+        r = sparam(params, "r", 2.0)
         nf = int(params.get("n_frames", 600))
     elif am == "sweep":
-        r = float(params.get("r", 2.5))
+        r = sparam(params, "r", 2.5)
         nf = int(params.get("n_frames", 480))
         dt = float(params.get("dt", 0.06))
     elif am == "morph":
-        r = float(params.get("r", 2.0))
+        r = sparam(params, "r", 2.0)
         nf = int(params.get("n_frames", 720))
         dt = float(params.get("dt", 0.06))
 

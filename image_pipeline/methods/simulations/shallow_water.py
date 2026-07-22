@@ -33,6 +33,7 @@ from PIL import Image, ImageFilter
 from ...core.registry import method
 from ...core.utils import save, mn, seed_all, W, H, load_input
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ── Constants ──
@@ -239,7 +240,7 @@ def _render_velocity(u: np.ndarray, v: np.ndarray) -> Image.Image:
     tags=["physics", "fluid", "waves", "shallow-water", "surface"],
     timeout=300,
     params={
-        "gravity": {
+        "gravity": {"spatial": True, 
             "description": "gravitational acceleration",
             "min": 1.0, "max": 20.0, "default": 9.81,
         },
@@ -323,7 +324,7 @@ def method_shallow_water(out_dir: Path, seed: int, params=None):
     anim_mode = str(params.get("anim_mode", "none"))
     anim_speed = float(params.get("anim_speed", 1.0))
 
-    gravity = float(params.get("gravity", G))
+    gravity = sparam(params, "gravity", G)
     h0 = float(params.get("base_depth", BASE_DEPTH))
     dt = float(params.get("dt", 0.08))
     n_frames = int(params.get("n_frames", 200))

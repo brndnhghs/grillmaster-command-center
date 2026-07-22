@@ -13,6 +13,7 @@ from ...core.utils import (
     write_scalars, write_field, write_mask, write_particles, load_input,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -181,7 +182,7 @@ def _render(pts_canvas: np.ndarray, src_lum: np.ndarray, w: int, h: int,
                    "choices": ["none", "input_image"], "default": "none"},
         "density": {"description": "number of stipple points (target dot count)", "min": 50, "max": 2400, "default": 550},
         "n_iter": {"description": "CVT/Lloyd relaxation iterations (more = smoother even tone)", "min": 1, "max": 30, "default": 8},
-        "dot_radius": {"description": "ink dot radius in pixels", "min": 0.5, "max": 6.0, "default": 1.4},
+        "dot_radius": {"spatial": True, "description": "ink dot radius in pixels", "min": 0.5, "max": 6.0, "default": 1.4},
         "color_mode": {"description": "dot colouring: mono (paper/ink), source (tone-mapped grey), density (ink by local density)",
                        "choices": ["mono", "source", "density"], "default": "mono"},
         "background": {"description": "paper colour", "choices": ["white", "black"], "default": "white"},
@@ -236,7 +237,7 @@ def method_weighted_voronoi_stippling(out_dir: Path, seed: int, params=None):
         density = max(50, min(2400, density))
         n_iter = int(params.get("n_iter", 8))
         n_iter = max(1, min(30, n_iter))
-        dot_radius = float(params.get("dot_radius", 1.4))
+        dot_radius = sparam(params, "dot_radius", 1.4)
         color_mode = str(params.get("color_mode", "mono"))
         background = str(params.get("background", "white"))
 

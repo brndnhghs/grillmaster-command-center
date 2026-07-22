@@ -9,6 +9,7 @@ from ...core.utils import (
     save, mn, seed_all, W, H, write_scalars, write_field, PALETTES, BG_DEFAULT,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ── hsv -> rgb (vectorized, all in [0,1]) ──
@@ -58,7 +59,7 @@ def _palette_rgb(pal_name: str, n: int, rng: np.random.Generator) -> np.ndarray:
     "points": {"description": "trajectories integrated (density resolution)", "min": 200_000, "max": 8_000_000, "default": 2_000_000},
     "color_by": {"description": "how to color points: density, speed (local velocity), or palette (random per point)", "default": "density"},
     "palette": {"description": "palette used when color_by=palette", "default": "vapor"},
-    "brightness": {"description": "overall brightness multiplier", "min": 0.2, "max": 3.0, "default": 1.2},
+    "brightness": {"spatial": True, "description": "overall brightness multiplier", "min": 0.2, "max": 3.0, "default": 1.2},
     "bg_style": {"description": "background (dark/light)", "default": "dark"},
     "anim_mode": {"description": "animation mode: none, mutate (params sweep), or rotate (rotate the plane)", "default": "none"},
     "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 3.0, "default": 1.0},
@@ -104,7 +105,7 @@ def method_strange_attractor_2d(out_dir, seed: int, params=None):
         points = int(params.get("points", 2_000_000))
         color_by = params.get("color_by", "density")
         pal_name = params.get("palette", "vapor")
-        brightness = float(params.get("brightness", 1.2))
+        brightness = sparam(params, "brightness", 1.2)
         bg_style = params.get("bg_style", "dark")
         anim_mode = params.get("anim_mode", "none")
         anim_speed = float(params.get("anim_speed", 1.0))

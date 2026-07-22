@@ -28,6 +28,7 @@ from PIL import Image, ImageFilter
 from ...core.registry import method
 from ...core.utils import save, mn, seed_all, W, H, write_field
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 def _load_image_seed(path: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -126,23 +127,23 @@ def _render_stripes_only(u: np.ndarray) -> Image.Image:
     timeout=180,
     outputs={"image": "IMAGE", "luminance": "SCALAR", "field": "FIELD"},
     params={
-        "alpha": {"description": "prey birth rate",
+        "alpha": {"spatial": True, "description": "prey birth rate",
                   "min": 0.1, "max": 3.0, "default": 1.0},
         "beta": {"description": "predation rate",
                  "min": 0.1, "max": 3.0, "default": 1.5},
-        "delta": {"description": "predator growth from prey",
+        "delta": {"spatial": True, "description": "predator growth from prey",
                   "min": 0.1, "max": 2.0, "default": 0.8},
-        "gamma": {"description": "predator death rate",
+        "gamma": {"spatial": True, "description": "predator death rate",
                   "min": 0.1, "max": 1.5, "default": 0.6},
-        "du": {"description": "prey diffusion (LOW for Turing)",
+        "du": {"spatial": True, "description": "prey diffusion (LOW for Turing)",
                "min": 0.005, "max": 0.1, "default": 0.02},
-        "dv": {"description": "predator diffusion (HIGH for Turing)",
+        "dv": {"spatial": True, "description": "predator diffusion (HIGH for Turing)",
                "min": 0.1, "max": 1.0, "default": 0.5},
         "dt": {"description": "timestep",
                "min": 0.01, "max": 1.0, "default": 0.3},
         "n_frames": {"description": "simulation frames",
                      "min": 50, "max": 600, "default": 400},
-        "noise_amp": {"description": "initial perturbation amplitude",
+        "noise_amp": {"spatial": True, "description": "initial perturbation amplitude",
                       "min": 0.001, "max": 0.1, "default": 0.02},
         "render_style": {"description": "render style",
                          "choices": ["composite", "prey"],
@@ -184,15 +185,15 @@ def method_lv_turing(out_dir: Path, seed: int, params=None):
     anim_mode = str(params.get("anim_mode", "none"))
     anim_speed = float(params.get("anim_speed", 1.0))
 
-    alpha = float(params.get("alpha", ALPHA))
+    alpha = sparam(params, "alpha", ALPHA)
     beta = float(params.get("beta", BETA))
-    delta = float(params.get("delta", DELTA))
-    gamma_lv = float(params.get("gamma", GAMMA_LV))
-    du = float(params.get("du", DU))
-    dv = float(params.get("dv", DV))
+    delta = sparam(params, "delta", DELTA)
+    gamma_lv = sparam(params, "gamma", GAMMA_LV)
+    du = sparam(params, "du", DU)
+    dv = sparam(params, "dv", DV)
     dt = float(params.get("dt", DT))
     n_frames = int(params.get("n_frames", 400))
-    noise_amp = float(params.get("noise_amp", 0.02))
+    noise_amp = sparam(params, "noise_amp", 0.02)
     render_style = str(params.get("render_style", "composite"))
 
     input_image = str(params.get("input_image", ""))

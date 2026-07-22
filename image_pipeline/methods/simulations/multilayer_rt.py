@@ -17,6 +17,7 @@ from PIL import Image, ImageDraw, ImageFilter
 from ...core.registry import method
 from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, wired_source_lum
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 DARK_BG = (5, 5, 20)
@@ -224,9 +225,9 @@ def _render_multilayer(rho: np.ndarray, palette: str, sharpness: float = 10.0) -
         "source": {"description": "initial density field source",
                     "choices": ["sine", "noise", "perlin", "shape", "image", "input_image"],
                     "default": "sine"},
-        "gravity": {"description": "buoyancy driving strength",
+        "gravity": {"spatial": True, "description": "buoyancy driving strength",
                      "min": 0.1, "max": 5.0, "default": 1.2},
-        "diffusion": {"description": "density diffusion rate",
+        "diffusion": {"spatial": True, "description": "density diffusion rate",
                       "min": 0.0, "max": 0.05, "default": 0.003},
         "perturb_amp": {"description": "interface perturbation amplitude",
                         "min": 2, "max": 40, "default": 5},
@@ -234,7 +235,7 @@ def _render_multilayer(rho: np.ndarray, palette: str, sharpness: float = 10.0) -
                         "min": 1, "max": 6, "default": 2},
         "noise_smooth": {"description": "noise smoothness (blur radius)",
                         "min": 1, "max": 30, "default": 8},
-        "freq_offset": {"description": "frequency offset between layers",
+        "freq_offset": {"spatial": True, "description": "frequency offset between layers",
                         "min": 0.0, "max": 4.0, "default": 1.5},
         "middle_density": {"description": "middle layer density (0-1)",
                           "min": 0.2, "max": 0.8, "default": 0.5},
@@ -268,12 +269,12 @@ def method_multilayer_rt(out_dir: Path, seed: int, params=None):
     anim_speed = float(params.get("anim_speed", 1.5))
 
     source = str(params.get("source", "sine"))
-    gravity = float(params.get("gravity", 1.2))
-    diffusion = float(params.get("diffusion", 0.003))
+    gravity = sparam(params, "gravity", 1.2)
+    diffusion = sparam(params, "diffusion", 0.003)
     perturb_amp = float(params.get("perturb_amp", 5.0))
     perturb_freq = float(params.get("perturb_freq", 2.0))
     noise_smooth = float(params.get("noise_smooth", 8.0))
-    freq_offset = float(params.get("freq_offset", 1.5))
+    freq_offset = sparam(params, "freq_offset", 1.5)
     middle_density = float(params.get("middle_density", 0.5))
     middle_height = float(params.get("middle_height", 0.25))
     sharpness = float(params.get("sharpness", 10.0))

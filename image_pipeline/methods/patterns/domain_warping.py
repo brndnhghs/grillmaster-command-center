@@ -8,6 +8,7 @@ from PIL import Image
 from ...core.registry import method
 from ...core.utils import save, norm, mn, seed_all, W, H, PALETTES, wired_source_lum
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ── Vectorized signed value noise (deterministic, seed-stable) ──
@@ -53,7 +54,7 @@ def _fbm(x: np.ndarray, y: np.ndarray, seed: int, octaves: int,
     return total / norm if norm > 0 else total
 
 
-@method(id='311', name='Domain Warping', category='patterns', tags=['procedural', 'fractal', 'noise', 'iq', 'domain-warp', 'animation'], params={'scale': {'description': 'base zoom of the noise field', 'min': 1.0, 'max': 12.0, 'default': 4.0}, 'octaves': {'description': 'FBM octaves (detail depth)', 'min': 1, 'max': 8, 'default': 5}, 'lacunarity': {'description': 'frequency multiplier per octave', 'min': 1.5, 'max': 3.0, 'default': 2.0}, 'gain': {'description': 'amplitude falloff per octave', 'min': 0.3, 'max': 0.8, 'default': 0.5}, 'warp_strength': {'description': 'how far the field is distorted by itself', 'min': 0.0, 'max': 8.0, 'default': 4.0}, 'warp_levels': {'description': 'domain-warp recursion depth (1 or 2, IQ classic = 2)', 'min': 1, 'max': 2, 'default': 2}, 'contrast': {'description': 'final tone contrast', 'min': 0.5, 'max': 3.0, 'default': 1.0}, 'colormode': {'description': 'color mapping (grayscale/rainbow/inferno/viridis/palette/fire/ice)', 'default': 'inferno'}, 'palette': {'description': 'palette name for palette mode', 'default': 'vapor'}, 'anim_mode': {'description': 'animation mode: none, warp_evolve, zoom_pan, warp_rotate', 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 3.0, 'default': 1.0}, 'time': {'description': 'animation phase [0, 2pi)', 'min': 0.0, 'max': 6.28, 'default': 0.0}, 'source': {'description': "wired upstream image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}}, inputs={'image_in': 'IMAGE'})
+@method(id='311', name='Domain Warping', category='patterns', tags=['procedural', 'fractal', 'noise', 'iq', 'domain-warp', 'animation'], params={'scale': {"spatial": True, 'description': 'base zoom of the noise field', 'min': 1.0, 'max': 12.0, 'default': 4.0}, 'octaves': {'description': 'FBM octaves (detail depth)', 'min': 1, 'max': 8, 'default': 5}, 'lacunarity': {'description': 'frequency multiplier per octave', 'min': 1.5, 'max': 3.0, 'default': 2.0}, 'gain': {'description': 'amplitude falloff per octave', 'min': 0.3, 'max': 0.8, 'default': 0.5}, 'warp_strength': {"spatial": True, 'description': 'how far the field is distorted by itself', 'min': 0.0, 'max': 8.0, 'default': 4.0}, 'warp_levels': {'description': 'domain-warp recursion depth (1 or 2, IQ classic = 2)', 'min': 1, 'max': 2, 'default': 2}, 'contrast': {"spatial": True, 'description': 'final tone contrast', 'min': 0.5, 'max': 3.0, 'default': 1.0}, 'colormode': {'description': 'color mapping (grayscale/rainbow/inferno/viridis/palette/fire/ice)', 'default': 'inferno'}, 'palette': {'description': 'palette name for palette mode', 'default': 'vapor'}, 'anim_mode': {'description': 'animation mode: none, warp_evolve, zoom_pan, warp_rotate', 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 3.0, 'default': 1.0}, 'time': {'description': 'animation phase [0, 2pi)', 'min': 0.0, 'max': 6.28, 'default': 0.0}, 'source': {'description': "wired upstream image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}}, inputs={'image_in': 'IMAGE'})
 def method_domain_warping(out_dir, seed: int, params=None):
     """Render Inigo Quilez's Domain Warping (iquilezles.org/articles/warp).
 
@@ -69,13 +70,13 @@ def method_domain_warping(out_dir, seed: int, params=None):
         seed_all(seed)
         rng = np.random.default_rng(seed)
 
-        scale = float(params.get("scale", 4.0))
+        scale = sparam(params, "scale", 4.0)
         octaves = int(params.get("octaves", 5))
         lacunarity = float(params.get("lacunarity", 2.0))
         gain = float(params.get("gain", 0.5))
-        warp_strength = float(params.get("warp_strength", 4.0))
+        warp_strength = sparam(params, "warp_strength", 4.0)
         warp_levels = int(params.get("warp_levels", 2))
-        contrast = float(params.get("contrast", 1.0))
+        contrast = sparam(params, "contrast", 1.0)
         cmode = params.get("colormode", "inferno")
         pal_name = params.get("palette", "vapor")
         anim_mode = params.get("anim_mode", "none")

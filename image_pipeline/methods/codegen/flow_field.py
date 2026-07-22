@@ -14,6 +14,7 @@ from PIL import Image
 from ...core.registry import method
 from ...core.utils import save, mn, W, H
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ─── Flow field helpers ───
@@ -67,7 +68,7 @@ def _next_angle_from_field(x, y, field, cx, cy):
              "speed": {"description": "particle speed (px/frame)", "min": 0.5, "max": 8.0, "default": 2.0},
              "trail_length": {"description": "trail length in steps", "min": 5, "max": 200, "default": 40},
              "n_waves": {"description": "flow field complexity", "min": 2, "max": 20, "default": 8},
-             "freq": {"description": "flow field frequency", "min": 0.005, "max": 0.1, "default": 0.025},
+             "freq": {"spatial": True, "description": "flow field frequency", "min": 0.005, "max": 0.1, "default": 0.025},
              "color_mode": {"description": "color mode",
                             "choices": ["mono", "gradient", "rainbow", "heat", "velocity"],
                             "default": "gradient"},
@@ -97,7 +98,7 @@ def method_16_flow_field(out_dir: Path, seed: int, params=None):
     speed = float(params.get("speed", 2.0))
     trail_length = int(params.get("trail_length", 40))
     n_waves = int(params.get("n_waves", 8))
-    freq = float(params.get("freq", 0.025))
+    freq = sparam(params, "freq", 0.025)
     color_mode = params.get("color_mode", "gradient")
     color_hue = float(params.get("color_hue", 200))
     line_width = int(params.get("line_width", 1))

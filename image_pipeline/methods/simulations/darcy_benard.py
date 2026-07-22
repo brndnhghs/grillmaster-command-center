@@ -22,6 +22,7 @@ from PIL import Image
 from ...core.registry import method
 from ...core.utils import save, mn, seed_all, W, H
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 def _render(f):
@@ -44,9 +45,9 @@ def _render(f):
             "choices": ["evolve", "rolls", "plumes", "chimney", "obstacle"],
             "default": "evolve",
         },
-        "r": {"min": -0.5, "max": 4.0, "default": 1.5},
-        "q0": {"min": 0.04, "max": 0.3, "default": 0.12},
-        "alpha": {"min": 0.0, "max": 5.0, "default": 1.0},
+        "r": {"spatial": True, "min": -0.5, "max": 4.0, "default": 1.5},
+        "q0": {"spatial": True, "min": 0.04, "max": 0.3, "default": 0.12},
+        "alpha": {"spatial": True, "min": 0.0, "max": 5.0, "default": 1.0},
         "n_frames": {"min": 100, "max": 1200, "default": 360},
         "dt": {"min": 0.02, "max": 0.5, "default": 0.08},
         "grid_div": {"choices": [1, 2, 3, 4, 6], "default": 1},
@@ -57,9 +58,9 @@ def db(out_dir, seed, params=None):
     if params is None:
         params = {}
     am = str(params.get("anim_mode", "evolve"))
-    r = float(params.get("r", 1.5))
-    q0 = float(params.get("q0", 0.12))
-    alpha = float(params.get("alpha", 1.0))
+    r = sparam(params, "r", 1.5)
+    q0 = sparam(params, "q0", 0.12)
+    alpha = sparam(params, "alpha", 1.0)
     nf = int(params.get("n_frames", 360))
     dt = float(params.get("dt", 0.08))
     gd = int(params.get("grid_div", 1))
@@ -70,23 +71,23 @@ def db(out_dir, seed, params=None):
 
     # Mode defaults
     if am == "rolls":
-        r = float(params.get("r", 1.0))
-        q0 = float(params.get("q0", 0.10))
-        alpha = float(params.get("alpha", 0.5))
+        r = sparam(params, "r", 1.0)
+        q0 = sparam(params, "q0", 0.10)
+        alpha = sparam(params, "alpha", 0.5)
     elif am == "plumes":
-        r = float(params.get("r", 2.0))
-        q0 = float(params.get("q0", 0.14))
-        alpha = float(params.get("alpha", 1.5))
+        r = sparam(params, "r", 2.0)
+        q0 = sparam(params, "q0", 0.14)
+        alpha = sparam(params, "alpha", 1.5)
         nf = int(params.get("n_frames", 480))
         noise_amp = float(params.get("noise", 0.005))
     elif am == "chimney":
-        r = float(params.get("r", 2.5))
-        q0 = float(params.get("q0", 0.12))
-        alpha = float(params.get("alpha", 2.0))
+        r = sparam(params, "r", 2.5)
+        q0 = sparam(params, "q0", 0.12)
+        alpha = sparam(params, "alpha", 2.0)
         nf = int(params.get("n_frames", 480))
         noise_amp = float(params.get("noise", 0.006))
     elif am == "obstacle":
-        r = float(params.get("r", 1.8))
+        r = sparam(params, "r", 1.8)
         nf = int(params.get("n_frames", 600))
 
     sh, sw = H // gd, W // gd

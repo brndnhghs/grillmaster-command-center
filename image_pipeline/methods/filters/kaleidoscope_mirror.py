@@ -37,6 +37,7 @@ from ...core.utils import (
     save, mn, seed_all, W, H, PALETTES, load_input, write_scalars,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ── Deterministic vectorized value noise (seeded integer hash) ──
@@ -163,8 +164,8 @@ def _make_source(source: str, rng: np.random.Generator, pal_name: str,
         "source": {"description": "procedural source when no image is wired (perlin/gradient/checkerboard/noise/lights)",
                    "default": "perlin"},
         "segments": {"description": "number of mirror wedges (dihedral symmetry order)", "min": 3, "max": 24, "default": 8},
-        "center_x": {"description": "symmetry center X (0-1)", "min": 0.0, "max": 1.0, "default": 0.5},
-        "center_y": {"description": "symmetry center Y (0-1)", "min": 0.0, "max": 1.0, "default": 0.5},
+        "center_x": {"spatial": True, "description": "symmetry center X (0-1)", "min": 0.0, "max": 1.0, "default": 0.5},
+        "center_y": {"spatial": True, "description": "symmetry center Y (0-1)", "min": 0.0, "max": 1.0, "default": 0.5},
         "rotation": {"description": "pattern rotation in degrees", "min": 0, "max": 360, "default": 0},
         "r_scale": {"description": "radial zoom of the source into the wedges", "min": 0.3, "max": 3.0, "default": 1.0},
         "mirror": {"description": "mirror-fold adjacent wedges (dihedral) vs rotate-only (cyclic)", "min": 0, "max": 1, "default": 1},
@@ -197,8 +198,8 @@ def method_kaleidoscope(out_dir: Path, seed: int, params=None):
         source = str(params.get("source", "perlin"))
         segments = int(params.get("segments", 8))
         segments = max(3, min(24, segments))
-        cx = float(params.get("center_x", 0.5))
-        cy = float(params.get("center_y", 0.5))
+        cx = sparam(params, "center_x", 0.5)
+        cy = sparam(params, "center_y", 0.5)
         rotation = float(params.get("rotation", 0.0))
         r_scale = float(params.get("r_scale", 1.0))
         mirror = int(params.get("mirror", 1)) > 0

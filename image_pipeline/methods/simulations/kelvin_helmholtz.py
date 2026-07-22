@@ -18,6 +18,7 @@ from PIL import Image, ImageDraw, ImageFilter
 from ...core.registry import method
 from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, write_field, wired_source_lum
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 DARK_BG = (5, 5, 20)
@@ -285,13 +286,13 @@ def _build_initial_field(
         "source": {"description": "interface perturbation source",
                     "choices": ["sine", "noise", "perlin", "shape", "image", "input_image"],
                     "default": "sine"},
-        "u_shear": {"description": "velocity shear across interface",
+        "u_shear": {"spatial": True, "description": "velocity shear across interface",
                      "min": 0.5, "max": 8.0, "default": 3.0},
-        "shear_width": {"description": "interface shear layer width (cells)",
+        "shear_width": {"spatial": True, "description": "interface shear layer width (cells)",
                         "min": 1, "max": 30, "default": 8},
-        "viscosity": {"description": "vorticity diffusion (damps small eddies)",
+        "viscosity": {"spatial": True, "description": "vorticity diffusion (damps small eddies)",
                       "min": 0.0, "max": 0.05, "default": 0.002},
-        "diffusion": {"description": "density diffusion",
+        "diffusion": {"spatial": True, "description": "density diffusion",
                       "min": 0.0, "max": 0.05, "default": 0.002},
         "perturb_amp": {"description": "initial interface amplitude",
                         "min": 1, "max": 40, "default": 6},
@@ -329,10 +330,10 @@ def method_kelvin_helmholtz(out_dir: Path, seed: int, params=None):
     anim_speed = float(params.get("anim_speed", 1.5))
 
     source = str(params.get("source", "sine"))
-    u_shear = float(params.get("u_shear", 3.0))
-    shear_width = float(params.get("shear_width", 8))
-    viscosity = float(params.get("viscosity", 0.002))
-    diffusion = float(params.get("diffusion", 0.002))
+    u_shear = sparam(params, "u_shear", 3.0)
+    shear_width = sparam(params, "shear_width", 8)
+    viscosity = sparam(params, "viscosity", 0.002)
+    diffusion = sparam(params, "diffusion", 0.002)
     perturb_amp = float(params.get("perturb_amp", 6.0))
     perturb_freq = float(params.get("perturb_freq", 3.0))
     noise_smooth = float(params.get("noise_smooth", 8.0))

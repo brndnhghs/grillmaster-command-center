@@ -11,6 +11,7 @@ from ...core.utils import (
     write_scalars, write_field, write_mask,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 2D Signed Distance Field (SDF) Scene — analytic SDF composition + shading.
@@ -101,12 +102,12 @@ def _sdf_render(w, h, seed, params):
     anim_mode = str(params.get("anim_mode", "none"))
     anim_speed = float(params.get("anim_speed", 1.0))
     anim_time = float(params.get("time", 0.0))
-    scale = float(params.get("scale", 1.6))
+    scale = sparam(params, "scale", 1.6)
     blend = float(params.get("blend", 0.18))
     repetition = float(params.get("repetition", 0.0))
-    glow = float(params.get("glow", 0.8))
+    glow = sparam(params, "glow", 0.8)
     bands = float(params.get("bands", 12.0))
-    band_mix = float(params.get("band_mix", 0.5))
+    band_mix = sparam(params, "band_mix", 0.5)
     pattern = str(params.get("pattern", "combo"))
     color_mode = str(params.get("color_mode", "amber"))
 
@@ -175,12 +176,12 @@ def _sdf_render(w, h, seed, params):
     params={
         "pattern": {"description": "scene composition (combo blends all 3 shapes; blobs=circle+box; ring_box=ring+box)",
                     "choices": ["combo", "blobs", "ring_box"], "default": "combo"},
-        "scale": {"description": "scene zoom / world scale", "min": 0.5, "max": 4.0, "default": 1.6},
+        "scale": {"spatial": True, "description": "scene zoom / world scale", "min": 0.5, "max": 4.0, "default": 1.6},
         "blend": {"description": "smooth-min blend softness (higher = gooier merge)", "min": 0.01, "max": 0.6, "default": 0.18},
         "repetition": {"description": "domain-repetition cell size (0 = off, tiling on)", "min": 0.0, "max": 1.5, "default": 0.0},
-        "glow": {"description": "outside halo strength", "min": 0.0, "max": 2.0, "default": 0.8},
+        "glow": {"spatial": True, "description": "outside halo strength", "min": 0.0, "max": 2.0, "default": 0.8},
         "bands": {"description": "distance isoline count (contour bands)", "min": 0.0, "max": 40.0, "default": 12.0},
-        "band_mix": {"description": "contour-band modulation amount", "min": 0.0, "max": 1.0, "default": 0.5},
+        "band_mix": {"spatial": True, "description": "contour-band modulation amount", "min": 0.0, "max": 1.0, "default": 0.5},
         "color_mode": {"description": "cosmetic ink/paper palette", "choices": ["amber", "ice", "mono"], "default": "amber"},
         "anim_mode": {"description": "animation mode: none (static), rotate, drift, pulse",
                       "choices": ["none", "rotate", "drift", "pulse"], "default": "none"},

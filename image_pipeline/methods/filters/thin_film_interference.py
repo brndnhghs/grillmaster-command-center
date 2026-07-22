@@ -17,6 +17,7 @@ from ...core.utils import (
     write_field,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ── Thin-film interference (soap-bubble / oil-slick iridescence) ──────────────
@@ -178,8 +179,8 @@ def _thin_film_rgb(thickness01, cosT, ior, d0_nm, range_nm, brightness):
         "thickness": {"description": "base film thickness (nm); the dominant colour is set by d·n", "min": 100.0, "max": 1200.0, "default": 380.0},
         "thickness_range": {"description": "thickness variation across the surface (nm) — drives the colour bands", "min": 0.0, "max": 900.0, "default": 420.0},
         "ior": {"description": "film refractive index (soap ~1.33, oil ~1.45, dye ~1.8)", "min": 1.05, "max": 2.5, "default": 1.33},
-        "drainage": {"description": "vertical thickness gradient (film thins toward the top, like draining)", "min": 0.0, "max": 1.0, "default": 0.35},
-        "view_angle": {"description": "surface tilt (rad) — edge colour shift from oblique viewing", "min": 0.0, "max": 1.2, "default": 0.5},
+        "drainage": {"spatial": True, "description": "vertical thickness gradient (film thins toward the top, like draining)", "min": 0.0, "max": 1.0, "default": 0.35},
+        "view_angle": {"spatial": True, "description": "surface tilt (rad) — edge colour shift from oblique viewing", "min": 0.0, "max": 1.2, "default": 0.5},
         "brightness": {"description": "overall reflected intensity scale", "min": 0.2, "max": 1.5, "default": 0.9},
         "source": {
             "description": "thickness-map source (procedural fbm bands, or a wired grayscale image)",
@@ -224,8 +225,8 @@ def method_thin_film(out_dir: Path, seed: int, params=None):
         thickness = float(params.get("thickness", 380.0))
         thickness_range = float(params.get("thickness_range", 420.0))
         ior = float(params.get("ior", 1.33))
-        drainage = float(params.get("drainage", 0.35))
-        view_angle = float(params.get("view_angle", 0.5))
+        drainage = sparam(params, "drainage", 0.35)
+        view_angle = sparam(params, "view_angle", 0.5)
         brightness = float(params.get("brightness", 0.9))
         anim_mode = params.get("anim_mode", "none")
         anim_speed = float(params.get("anim_speed", 1.0))

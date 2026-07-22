@@ -11,6 +11,7 @@ from ...core.utils import (
     write_scalars, write_field, write_particles,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -120,7 +121,7 @@ def _closure_theta(R: int, r: int, mode: str) -> float:
               "min": 3, "max": 60, "default": 35},
         "r": {"description": "rolling (small) circle radius — must be < R for inside rolls",
               "min": 1, "max": 60, "default": 13},
-        "d": {"description": "pen distance from the small circle's centre (loop size)",
+        "d": {"spatial": True, "description": "pen distance from the small circle's centre (loop size)",
               "min": 1, "max": 60, "default": 25},
         "mode": {"description": "rolling inside (hypotrochoid) or outside (epitrochoid)",
                  "choices": ["hypotrochoid", "epitrochoid"], "default": "hypotrochoid"},
@@ -155,7 +156,7 @@ def method_spirograph(out_dir, seed: int, params=None):
         R = int(params.get("R", 35))
         r = max(1, int(params.get("r", 13)))
         R = max(r + 1, R) if params.get("mode", "hypotrochoid") == "hypotrochoid" else max(2, R)
-        d0 = float(params.get("d", 25))
+        d0 = sparam(params, "d", 25)
         mode = params.get("mode", "hypotrochoid")
         line_width = float(params.get("line_width", 1.6))
         hue_shift = float(params.get("hue_shift", 0.0))

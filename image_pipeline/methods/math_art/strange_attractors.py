@@ -11,6 +11,7 @@ from ...core.utils import (
     write_scalars, write_field, PALETTES, wired_source_lum,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 try:
     import cv2
@@ -221,7 +222,7 @@ def _hsv_to_rgb(h, s, v):
                         "spectral", "monochrome"],
             "default": "plasma",
         },
-        "contrast": {
+        "contrast": {"spatial": True, 
             "description": "log-density contrast boost",
             "min": 0.5, "max": 3.0, "default": 1.5,
         },
@@ -281,7 +282,7 @@ def method_strange_attractors(out_dir: Path, seed: int, params=None):
         attractor_name = str(params.get("attractor", "clifford"))
         n_iter = float(params.get("n_iterations", 8.0))
         color_mode = str(params.get("color_mode", "plasma"))
-        contrast = float(params.get("contrast", 1.5))
+        contrast = sparam(params, "contrast", 1.5)
         bloom = float(params.get("bloom", 2.0))
 
         # ── Seed wiring ──

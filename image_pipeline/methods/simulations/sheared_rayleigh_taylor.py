@@ -16,6 +16,7 @@ from PIL import Image, ImageDraw, ImageFilter
 from ...core.registry import method
 from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, wired_source_lum
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 DARK_BG = (5, 5, 20)
@@ -230,11 +231,11 @@ def _render_density(rho: np.ndarray, palette: str, gamma: float = 1.0) -> Image.
         "source": {"description": "initial density field source",
                     "choices": ["sine", "noise", "perlin", "shape", "image", "input_image"],
                     "default": "sine"},
-        "gravity": {"description": "buoyancy driving strength",
+        "gravity": {"spatial": True, "description": "buoyancy driving strength",
                      "min": 0.1, "max": 5.0, "default": 1.0},
         "shear": {"description": "horizontal shear velocity at top (pixels/frame)",
                   "min": 0.0, "max": 8.0, "default": 2.0},
-        "diffusion": {"description": "density diffusion rate",
+        "diffusion": {"spatial": True, "description": "density diffusion rate",
                       "min": 0.0, "max": 0.05, "default": 0.003},
         "perturb_amp": {"description": "initial interface amplitude",
                         "min": 1, "max": 40, "default": 5},
@@ -271,9 +272,9 @@ def method_sheared_rt(out_dir: Path, seed: int, params=None):
     anim_speed = float(params.get("anim_speed", 1.5))
 
     source = str(params.get("source", "sine"))
-    gravity = float(params.get("gravity", 1.0))
+    gravity = sparam(params, "gravity", 1.0)
     shear = float(params.get("shear", 2.0))
-    diffusion = float(params.get("diffusion", 0.003))
+    diffusion = sparam(params, "diffusion", 0.003)
     perturb_amp = float(params.get("perturb_amp", 5.0))
     perturb_freq = float(params.get("perturb_freq", 3.0))
     noise_smooth = float(params.get("noise_smooth", 8.0))

@@ -96,6 +96,16 @@ def _make_node_def(meta: registry.MethodMeta) -> NodeDef:
             continue  # already explicitly declared
         if not isinstance(spec, dict):
             continue
+        if spec.get("spatial"):
+            # Opt-in per-pixel param: gets a FIELD port REGARDLESS of min/max.
+            # min/max was never a statement about wireability — it is a slider
+            # hint — but it was the de-facto gate, which locked out ~3128 of
+            # 3170 numeric params (2026-07-22 audit). `spatial: True` is the
+            # explicit opt-in that replaces that accident, without granting
+            # every bounded param a port the UI would drown in.
+            inputs[pname] = "field"
+            param_ports.add(pname)
+            continue
         if 'min' in spec or 'max' in spec:
             continue  # has slider constraints — internal control, not wireable
         default = spec.get("default")
@@ -877,12 +887,21 @@ class GraphExecutor:
                             _dv = float(_lv)
                         else:
                             continue
+                    _dspec = (meta.params or {}).get(_edge.dst_port) or {}
                     if isinstance(_dv, np.ndarray):
+                        if _dspec.get("spatial") and _dv.ndim >= 2:
+                            # Params declaring spatial:True take the map itself.
+                            # Collapsing here was why wiring a bitmap into
+                            # Gray-Scott's feed rate delivered one averaged
+                            # number instead of a per-pixel field.
+                            sim_params[_edge.dst_port] = np.asarray(_dv, dtype=np.float32)
+                            sim_params[f"_field_{_edge.dst_port}"] = sim_params[_edge.dst_port]
+                            continue
                         _dv = float(np.mean(_dv))
                     if not isinstance(_dv, (int, float)):
                         continue
                     _inject_typed(sim_params, _edge.dst_port, float(_dv), "scalar",
-                                  node.params, (meta.params or {}).get(_edge.dst_port))
+                                  node.params, _dspec or None)
                 # Cache key now reflects driver/keyframe-modulated params.
                 params_hash = _node_params_hash(node.method_id, sim_params)
 

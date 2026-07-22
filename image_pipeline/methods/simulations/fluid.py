@@ -43,6 +43,7 @@ from ...core.utils import (
     wired_source_lum,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 try:
     _RESAMPLE = Image.Resampling.BILINEAR
@@ -239,7 +240,7 @@ def _inject_blob(dye: np.ndarray, rng, h: int, w: int, amount: float, r: float,
             "description": "dye diffusion (higher = blurrier dye)",
             "min": 0.0, "max": 1.0, "default": 0.0,
         },
-        "force_scale": {
+        "force_scale": {"spatial": True, 
             "description": "forcing amplitude",
             "min": 0.0, "max": 5.0, "default": 1.5,
         },
@@ -280,7 +281,7 @@ def method_fluid(out_dir: Path, seed: int, params=None):
     dt = float(params.get("dt", 0.15))
     visc = float(params.get("viscosity", 0.1))
     diff = float(params.get("diffusion", 0.0))
-    force_scale = float(params.get("force_scale", 1.5))
+    force_scale = sparam(params, "force_scale", 1.5)
     noise_scale = float(params.get("noise_scale", 4.0))
     dye_diss = float(params.get("dye_dissipation", 0.997))
     vel_diss = float(params.get("velocity_dissipation", 0.999))

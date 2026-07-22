@@ -9,6 +9,7 @@ from PIL import Image
 from ...core.registry import method
 from ...core.utils import save, norm, mn, seed_all, W, H, PALETTES, load_input
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 try:
     import cv2
@@ -33,7 +34,7 @@ except ImportError:
         "line_width": {"description": "line thickness in px", "min": 0.5, "max": 5.0, "default": 1.5},
         "layers": {"description": "number of crosshatch layers (1-4)", "min": 1, "max": 4, "default": 3},
         "angle": {"description": "base hatch orientation in degrees", "min": 0, "max": 180, "default": 45},
-        "contrast": {"description": "luminance gamma (higher = more ink in midtones)", "min": 0.3, "max": 3.0, "default": 1.0},
+        "contrast": {"spatial": True, "description": "luminance gamma (higher = more ink in midtones)", "min": 0.3, "max": 3.0, "default": 1.0},
         "source_blur": {"description": "pre-smooth sigma before hatching", "min": 0.0, "max": 30.0, "default": 6.0},
         "noise_amp": {"description": "noise amplitude for generated sources", "min": 0.1, "max": 1.0, "default": 0.35},
         "blur_sigma": {"description": "gaussian blur sigma for noise source", "min": 5, "max": 80, "default": 30},
@@ -87,7 +88,7 @@ def method_hatching(out_dir: Path, seed: int, params=None):
     line_width = float(params.get("line_width", 1.5))
     n_layers = int(params.get("layers", 3))
     angle = float(params.get("angle", 45))
-    contrast = float(params.get("contrast", 1.0))
+    contrast = sparam(params, "contrast", 1.0)
     source_blur = float(params.get("source_blur", 6.0))
     noise_amp = float(params.get("noise_amp", 0.35))
     blur_sigma = float(params.get("blur_sigma", 30))

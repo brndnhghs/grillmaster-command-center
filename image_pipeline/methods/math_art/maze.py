@@ -9,6 +9,7 @@ from PIL import Image, ImageDraw, ImageFont
 from ...core.registry import method
 from ...core.utils import save, norm, mn, seed_all, get_font, BG_DEFAULT, W, H, write_field, wired_source_lum
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 try:
     import cv2
@@ -25,14 +26,14 @@ except ImportError:
              "style": {"description": "render style", "choices": ["standard", "gradient", "heatmap", "color_regions", "solvetrace", "markers", "corridor_radius"], "default": "standard"},
              "palette": {"description": "PALETTES name for walls", "default": ""},
              "bg_palette": {"description": "PALETTES name for paths/bg (or blank for auto)", "default": ""},
-             "wall_thickness": {"description": "wall thickness fraction (0-1)", "min": 0.1, "max": 1.0, "default": 0.5, "step": 0.05},
+             "wall_thickness": {"spatial": True, "description": "wall thickness fraction (0-1)", "min": 0.1, "max": 1.0, "default": 0.5, "step": 0.05},
              "braid": {"description": "braid probability (0=none, 1=max)", "min": 0.0, "max": 1.0, "default": 0.0, "step": 0.05},
-             "loops": {"description": "extra loop wall removals per cell", "min": 0, "max": 5, "default": 0},
+             "loops": {"spatial": True, "description": "extra loop wall removals per cell", "min": 0, "max": 5, "default": 0},
              "multi_seed": {"description": "number of starting seeds (0=auto)", "min": 0, "max": 20, "default": 1},
              "show_solution": {"description": "highlight solution path", "choices": ["no", "yes"], "default": "no"},
              "entrance_marks": {"description": "draw entrance/exit markers", "choices": ["no", "yes"], "default": "no"},
              "growing_bias": {"description": "growing_tree bias: 0=random, 1=newest, -1=oldest", "min": -1.0, "max": 1.0, "default": 0.0, "step": 0.1},
-             "color_saturation": {"description": "color intensity", "min": 0.3, "max": 1.5, "default": 0.9, "step": 0.1},
+             "color_saturation": {"spatial": True, "description": "color intensity", "min": 0.3, "max": 1.5, "default": 0.9, "step": 0.1},
              "rings": {"description": "polar/circular ring count (0=auto)", "min": 0, "max": 60, "default": 0},"anim_mode": {"description": "animation mode", "choices": ["none", "color_cycle"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0},
              }, inputs={'image_in': 'IMAGE'})
@@ -95,14 +96,14 @@ def method_maze(out_dir: Path, seed: int, params=None):
     style = params.get("style", "standard")
     pal_name = params.get("palette", "")
     bg_pal_name = params.get("bg_palette", "")
-    wall_thick = float(params.get("wall_thickness", 0.5))
+    wall_thick = sparam(params, "wall_thickness", 0.5)
     braid_p = float(params.get("braid", 0.0))
-    loop_n = int(params.get("loops", 0))
+    loop_n = sparam(params, "loops", 0)
     n_seeds = int(params.get("multi_seed", 1))
     show_sol = params.get("show_solution", "no")
     ent_marks = params.get("entrance_marks", "no")
     grow_bias = float(params.get("growing_bias", 0.0))
-    color_sat = float(params.get("color_saturation", 0.9))
+    color_sat = sparam(params, "color_saturation", 0.9)
     rings_c = int(params.get("rings", 0))
     pal = PALETTES.get(pal_name, [])
     bg_pal = PALETTES.get(bg_pal_name, [])

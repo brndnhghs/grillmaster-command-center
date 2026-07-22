@@ -7,9 +7,10 @@ from PIL import Image
 from ...core.registry import method
 from ...core.utils import save, norm, mn, seed_all, write_field, write_scalars, W, H, wired_source_lum
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
-@method(id='402', name='Kaleidoscopic IFS (Pattern)', category='patterns', tags=['fractal', 'escape-time', 'kaleidoscopic', 'animation', 'color_intrinsic', 'gpu-twin'], params={'iterations': {'description': 'number of fold iterations', 'min': 4, 'max': 24, 'default': 14}, 'scale': {'description': 'fold scale (negative = classic KIFS detail)', 'min': -3.0, 'max': 1.0, 'default': -2.0}, 'fold_angle': {'description': 'rotation between folds (radians)', 'min': 0.0, 'max': 6.2832, 'default': 1.0}, 'offset_x': {'description': 'fold offset x', 'min': -3.0, 'max': 3.0, 'default': 1.0}, 'offset_y': {'description': 'fold offset y', 'min': -3.0, 'max': 3.0, 'default': 1.0}, 'symmetry': {'description': 'kaleidoscopic symmetry order (2..8)', 'min': 2, 'max': 8, 'default': 6}, 'escape_radius': {'description': 'orbit-escape radius', 'min': 2.0, 'max': 40.0, 'default': 12.0}, 'colormode': {'description': 'color mode (orbit / bands / neon)', 'default': 'orbit'}, 'color_shift': {'description': 'palette color offset', 'min': 0.0, 'max': 1.0, 'default': 0.5}, 'anim_mode': {'description': 'animation mode (none/rotate/spin/pulse/zoom)', 'choices': ['none', 'rotate', 'spin', 'pulse', 'zoom'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 3.0, 'default': 1.0}, 'source': {'description': "wired upstream image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}}, inputs={'image_in': 'IMAGE'})
+@method(id='402', name='Kaleidoscopic IFS (Pattern)', category='patterns', tags=['fractal', 'escape-time', 'kaleidoscopic', 'animation', 'color_intrinsic', 'gpu-twin'], params={'iterations': {'description': 'number of fold iterations', 'min': 4, 'max': 24, 'default': 14}, 'scale': {'description': 'fold scale (negative = classic KIFS detail)', 'min': -3.0, 'max': 1.0, 'default': -2.0}, 'fold_angle': {'description': 'rotation between folds (radians)', 'min': 0.0, 'max': 6.2832, 'default': 1.0}, 'offset_x': {"spatial": True, 'description': 'fold offset x', 'min': -3.0, 'max': 3.0, 'default': 1.0}, 'offset_y': {"spatial": True, 'description': 'fold offset y', 'min': -3.0, 'max': 3.0, 'default': 1.0}, 'symmetry': {'description': 'kaleidoscopic symmetry order (2..8)', 'min': 2, 'max': 8, 'default': 6}, 'escape_radius': {'description': 'orbit-escape radius', 'min': 2.0, 'max': 40.0, 'default': 12.0}, 'colormode': {'description': 'color mode (orbit / bands / neon)', 'default': 'orbit'}, 'color_shift': {"spatial": True, 'description': 'palette color offset', 'min': 0.0, 'max': 1.0, 'default': 0.5}, 'anim_mode': {'description': 'animation mode (none/rotate/spin/pulse/zoom)', 'choices': ['none', 'rotate', 'spin', 'pulse', 'zoom'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 3.0, 'default': 1.0}, 'source': {'description': "wired upstream image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}}, inputs={'image_in': 'IMAGE'})
 def method_kaleidoscopic_ifs(out_dir, seed: int, params=None):
     """Kaleidoscopic IFS fractal (iteration-fold escape-time).
 
@@ -34,12 +35,12 @@ def method_kaleidoscopic_ifs(out_dir, seed: int, params=None):
         iters = int(params.get("iterations", 14))
         scale = float(params.get("scale", -2.0))
         fold_angle = float(params.get("fold_angle", 1.0))
-        ox = float(params.get("offset_x", 1.0))
-        oy = float(params.get("offset_y", 1.0))
+        ox = sparam(params, "offset_x", 1.0)
+        oy = sparam(params, "offset_y", 1.0)
         sym = max(2, min(8, int(round(float(params.get("symmetry", 6))))))
         escape_r = float(params.get("escape_radius", 12.0))
         colormode = params.get("colormode", "orbit")
-        color_shift = float(params.get("color_shift", 0.5))
+        color_shift = sparam(params, "color_shift", 0.5)
         anim_mode = params.get("anim_mode", "none")
         anim_speed = float(params.get("anim_speed", 1.0))
 

@@ -14,32 +14,33 @@ from PIL import Image
 from ...core.registry import method
 from ...core.utils import save, mn, seed_all, W, H
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 @method(
     inputs={},id="168", name="PM Anisotropic RD", category="simulations",
         tags=["cgl", "takeover", "bias-ramp"], timeout=600,
         params={
-            "b": {"min": 0.0, "max": 3.0, "default": 1.0},
-            "c": {"min": 0.0, "max": 3.0, "default": 1.0},
+            "b": {"spatial": True, "min": 0.0, "max": 3.0, "default": 1.0},
+            "c": {"spatial": True, "min": 0.0, "max": 3.0, "default": 1.0},
             "bias": {"min": -10.0, "max": 10.0, "default": 0.0,
                      "description": "Ramped bias: >0 = white conquers, <0 = black conquers"},
             "K": {"min": 0.01, "max": 0.5, "default": 0.05},
-            "alpha": {"min": 0.05, "max": 1.0, "default": 0.3},
-            "noise": {"min": 0.0, "max": 0.3, "default": 0.02},
+            "alpha": {"spatial": True, "min": 0.05, "max": 1.0, "default": 0.3},
+            "noise": {"spatial": True, "min": 0.0, "max": 0.3, "default": 0.02},
             "n_frames": {"min": 100, "max": 1500, "default": 360},
             "grid_div": {"choices": [1, 2, 3, 4], "default": 1},
             "dt": {"min": 0.01, "max": 0.3, "default": 0.05},
         })
 def pm_rd(out_dir, seed, params=None):
     if params is None: params = {}
-    b = float(params.get("b", 1.0))
-    c = float(params.get("c", 1.0))
+    b = sparam(params, "b", 1.0)
+    c = sparam(params, "c", 1.0)
     bias = float(params.get("bias", 0.0))
     K = float(params.get("K", 0.05))
-    alpha = float(params.get("alpha", 0.30))
+    alpha = sparam(params, "alpha", 0.30)
     nf = int(params.get("n_frames", 360))
     gd = int(params.get("grid_div", 1))
-    noise_amp = float(params.get("noise", 0.02))
+    noise_amp = sparam(params, "noise", 0.02)
     dt = float(params.get("dt", 0.05))
     seed_all(seed); rng = np.random.default_rng(seed)
     sh, sw = H // gd, W // gd; fh, fw = H, W

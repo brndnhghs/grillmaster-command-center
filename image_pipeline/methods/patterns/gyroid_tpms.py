@@ -10,6 +10,7 @@ from ...core.utils import (
     write_field, write_mask, write_scalars,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 def _tpms_field(surface: str, x: np.ndarray, y: np.ndarray, z: float) -> np.ndarray:
@@ -41,11 +42,11 @@ def _tpms_field(surface: str, x: np.ndarray, y: np.ndarray, z: float) -> np.ndar
     tags=['procedural', 'tpms', 'gyroid', 'minimal-surface', 'implicit', 'sdf', 'animation'],
     params={
         'surface': {'description': 'minimal surface (gyroid/schwarz_p/diamond/neovius/iwp)', 'default': 'gyroid'},
-        'freq': {'description': 'spatial frequency (number of cells across the canvas)', 'min': 1.0, 'max': 16.0, 'default': 5.0},
-        'level': {'description': 'iso-level of the surface (shifts the shell inward/outward)', 'min': -1.5, 'max': 1.5, 'default': 0.0},
+        'freq': {"spatial": True, 'description': 'spatial frequency (number of cells across the canvas)', 'min': 1.0, 'max': 16.0, 'default': 5.0},
+        'level': {"spatial": True, 'description': 'iso-level of the surface (shifts the shell inward/outward)', 'min': -1.5, 'max': 1.5, 'default': 0.0},
         'thickness': {'description': 'shell half-thickness of the surface band', 'min': 0.02, 'max': 0.8, 'default': 0.22},
         'warp': {'description': 'domain-warp strength (organic distortion of the lattice)', 'min': 0.0, 'max': 1.5, 'default': 0.0},
-        'contrast': {'description': 'final tone contrast', 'min': 0.5, 'max': 3.0, 'default': 1.2},
+        'contrast': {"spatial": True, 'description': 'final tone contrast', 'min': 0.5, 'max': 3.0, 'default': 1.2},
         'colormode': {'description': 'color mapping (grayscale/rainbow/inferno/viridis/palette/fire/ice)', 'default': 'inferno'},
         'palette': {'description': 'palette name for palette mode', 'default': 'vapor'},
         'shell': {'description': 'render mode: field (smooth signed field) or shell (surface band)', 'choices': ['field', 'shell'], 'default': 'shell'},
@@ -78,11 +79,11 @@ def method_gyroid_tpms(out_dir, seed: int, params=None):
         _ = np.random.default_rng(seed)
 
         surface = params.get("surface", "gyroid")
-        freq = float(params.get("freq", 5.0))
-        level = float(params.get("level", 0.0))
+        freq = sparam(params, "freq", 5.0)
+        level = sparam(params, "level", 0.0)
         thickness = float(params.get("thickness", 0.22))
         warp = float(params.get("warp", 0.0))
-        contrast = float(params.get("contrast", 1.2))
+        contrast = sparam(params, "contrast", 1.2)
         cmode = params.get("colormode", "inferno")
         pal_name = params.get("palette", "vapor")
         shell_mode = params.get("shell", "shell")

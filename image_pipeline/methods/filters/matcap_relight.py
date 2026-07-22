@@ -18,6 +18,7 @@ from ...core.utils import (
     write_scalars,
 )
 from ...core.animation import capture_frame
+from image_pipeline.core.spatial import sparam
 
 
 def _value_noise_2d(shape, rng, scale=8):
@@ -72,7 +73,7 @@ def _hsv2rgb(h, s, v):
         "light_dir": {"description": "key light azimuth (radians)", "min": 0.0, "max": 6.2832, "default": 0.6},
         "relief": {"description": "surface relief / depth-from-luminance strength", "min": 0.0, "max": 4.0, "default": 1.0},
         "strength": {"description": "shading mix toward matcap (0=flat gray, 1=full matcap)", "min": 0.0, "max": 1.0, "default": 1.0},
-        "spec_pow": {"description": "specular exponent", "min": 2.0, "max": 128.0, "default": 24.0},
+        "spec_pow": {"spatial": True, "description": "specular exponent", "min": 2.0, "max": 128.0, "default": 24.0},
         "albedo_r": {"description": "base albedo red", "min": 0.0, "max": 1.0, "default": 0.85},
         "albedo_g": {"description": "base albedo green", "min": 0.0, "max": 1.0, "default": 0.55},
         "albedo_b": {"description": "base albedo blue", "min": 0.0, "max": 1.0, "default": 0.35},
@@ -114,7 +115,7 @@ def method_matcap_relight(out_dir: Path, seed: int, params=None):
     light_dir = float(params.get("light_dir", 0.6))
     relief = float(params.get("relief", 1.0))
     strength = float(params.get("strength", 1.0))
-    spec_pow = float(params.get("spec_pow", 24.0))
+    spec_pow = sparam(params, "spec_pow", 24.0)
     alb = np.array(
         [
             float(params.get("albedo_r", 0.85)),
