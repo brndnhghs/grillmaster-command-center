@@ -1139,6 +1139,17 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
                           "weight": "weight", "exposure": "exposure",
                           "intensity": "intensity", "sun_radius": "sun_radius",
                           "sun_intensity": "sun_intensity"}},
+    # 430 Rolling Shutter -> typed-uniform filter twin rolling_shutter_gpu
+    # (live-preview path; CPU numpy node 430 stays authoritative for export).
+    # REAL numeric params skew/wobble/wobble_freq map BY NAME (contract #5/#6).
+    # `direction` (choice, hardcoded horizontal in twin), `source`/`palette`/
+    # `noise_amp`/`blur_sigma` (non-local/global, not per-pixel)/`anim_mode`/
+    # `anim_speed`/`time` left unmapped. Wobble phase driven by u_time so the
+    # preview animates (liveness); CPU export honours anim_mode. Filter twin
+    # renders black with no input_image (pitfall #10c) — verified with a
+    # synthetic input.
+    "430": {"shader": "rolling_shutter_gpu", "type": "filter", "typed": True,
+            "param_map": {"skew": "skew", "wobble": "wobble", "wobble_freq": "wobble_freq"}},
     # 529 R2 Dither -> typed-uniform filter twin r2_dither_gpu (live-preview
     # path; CPU numpy node 529 stays authoritative for export). REAL numeric
     # params levels/contrast/gamma map BY NAME (contract #5/#6). `mode`/
