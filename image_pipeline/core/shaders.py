@@ -3867,7 +3867,141 @@ vec3 inferno(float t){ t = clamp(t, 0.0, 1.0);
 }
 """
 
-_register("worley_gpu", "Worley/cellular F1 noise (client-GPU twin of node 04)", "procedural", _INFERNO + """
+# ── P0.5 typed-uniform procedural twins: Flow Noise / Spot Noise / Mathematical Marbling ──
+# Client-GPU live-preview mirrors of CPU nodes 535 / 534 / 953.
+# Every numeric CPU param is bound to a named u_<name> uniform (typed-uniform
+# contract). Choice/string params (colormode/palette/source/anim_mode/flow) and the
+# CPU-only variable counts (n_spots/n_drops/n_tines) are dropped + justified in
+# GPU_PREVIEW_DROP_ALLOW. CPU numpy fns stay authoritative; the GPU twins are
+# approximate-by-design live previews (fixed 64-spot / 32-drop / 3-tine loops).
+_register("flow_noise_gpu", "Flow Noise — rotating-gradient Perlin (client-GPU twin of node 535)", "procedural", _INFERNO + """
+vec3 flow_color(float v){ return inferno(clamp(v,0.0,1.0)); }
+void main() {
+    vec2 uv = v_uv;
+    float t = u_time * u_anim_speed;
+    float sc = u_scale * (1.0 + 0.35 * sin(t));
+    vec2 p = uv * sc;
+    if (u_advect > 0.0) {
+        vec2 w = vec2(fbm(p*0.4+3.1), fbm(p*0.4+9.7)) - 0.5;
+        p += w * u_advect * 6.0 * (0.5 + 0.5*sin(t*0.7));
+    }
+    float ang = t * (0.6 + u_spin_var);
+    vec2 warp = rot(ang) * vec2(fbm(p*0.5), fbm(p*0.5+21.0));
+    float v = 0.0; float amp = 0.5; float norm = 0.0; float ss = 1.0;
+    for (int o = 0; o < 6; o++) {
+        if (float(o) >= u_octaves) break;
+        vec2 q = (p + warp*(1.0+u_spin_var*2.0)) * ss;
+        v += amp * fbm(q);
+        norm += amp; amp *= 0.5; ss *= 2.0;
+    }
+    v = (norm > 0.0) ? v/norm : 0.0;
+    v = 0.5 + 0.5 * v * u_contrast;
+    v = clamp(v, 0.0, 1.0);
+    f_color = vec4(flow_color(v), 1.0);
+}
+""",
+    uniforms={
+        "scale": {"glsl": "float", "min": 12.0, "max": 260.0, "default": 90.0, "description": "feature size in pixels (lattice spacing)"},
+        "octaves": {"glsl": "float", "min": 1.0, "max": 6.0, "default": 4.0, "description": "fractal octaves (turbulent detail)"},
+        "spin_var": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.6, "description": "0 = uniform global spin, 1 = per-cell chaotic spin"},
+        "advect": {"glsl": "float", "min": 0.0, "max": 3.0, "default": 1.2, "description": "pseudo-advection strength (domain transport)"},
+        "contrast": {"glsl": "float", "min": 0.4, "max": 2.5, "default": 1.15, "description": "final tone contrast"},
+        "anim_speed": {"glsl": "float", "min": 0.1, "max": 3.0, "default": 1.0, "description": "animation speed multiplier"},
+    }
+    )
+
+_register("spot_noise_gpu", "Spot Noise — flow-oriented anisotropic spots (client-GPU twin of node 534)", "procedural", _INFERNO + """
+void main() {
+    vec2 uv = v_uv;
+    vec2 res = u_resolution;
+    float t = u_time * u_anim_speed;
+    float contrast = u_contrast;
+    float spot = u_spot_size;
+    float stretch = u_stretch;
+    float field = 0.0;
+    for (int i = 0; i < 64; i++) {
+        float fi = float(i);
+        vec2 hc = vec2(hash21(vec2(fi, 1.0)), hash21(vec2(fi, 7.0)));
+        vec2 c = hc * res;
+        vec2 rel = (c / res) - 0.5;
+        float theta = atan(rel.y, rel.x) + 1.5707963;
+        c += vec2(cos(theta), sin(theta)) * (t * 22.0);
+        c = mod(c, res);
+        theta += t * 0.4;
+        float ct = cos(theta), st = sin(theta);
+        float sa = spot * stretch;
+        float sb = spot / sqrt(max(stretch, 1e-3));
+        vec2 d = (uv * res) - c;
+        float uu = ct*d.x + st*d.y;
+        float vv = -st*d.x + ct*d.y;
+        float g = exp(-(uu*uu/(2.0*sa*sa) + vv*vv/(2.0*sb*sb)));
+        float amp = (hash21(vec2(fi, 13.0)) - 0.5) * 2.0;
+        amp *= (0.5 + 0.5*sin(t*0.7));
+        field += amp * g;
+    }
+    float val = 0.5 + field / (0.6 * 4.0);
+    val = clamp(0.5 + (val - 0.5) * contrast, 0.0, 1.0);
+    f_color = vec4(inferno(val), 1.0);
+}
+""",
+    uniforms={
+        "spot_size": {"glsl": "float", "min": 3.0, "max": 40.0, "default": 14.0, "description": "base spot radius in px (before stretch)"},
+        "stretch": {"glsl": "float", "min": 1.0, "max": 12.0, "default": 5.0, "description": "anisotropy: elongation along the flow direction"},
+        "contrast": {"glsl": "float", "min": 0.5, "max": 3.0, "default": 1.4, "description": "final tone contrast"},
+        "anim_speed": {"glsl": "float", "min": 0.1, "max": 3.0, "default": 1.0, "description": "animation speed multiplier"},
+    }
+    )
+
+_register("marbling_gpu", "Mathematical Marbling — closed-form fluid advection (client-GPU twin of node 953)", "procedural", _INFERNO + """
+void main() {
+    vec2 uv = v_uv;
+    vec2 res = u_resolution;
+    float t = u_time * u_anim_speed;
+    float minwh = min(res.x, res.y);
+    float base_r = u_drop_radius * minwh;
+    float tstr = u_tine_strength * minwh;
+    float tc = max(1e-3, u_tine_sharpness * minwh);
+    vec3 bg = vec3(0.96);
+    vec2 q = uv * res;
+    for (int k = 0; k < 3; k++) {
+        float fk = float(k);
+        float ang = 6.2831853 * fk / 3.0 + 0.3;
+        vec2 that = vec2(cos(ang), sin(ang));
+        vec2 nhat = vec2(-that.y, that.x);
+        float sweep = sin(t*0.6 + fk*1.3) * 0.5 + 0.5;
+        vec2 p0 = vec2(sweep * res.x, (0.5 + 0.3*cos(fk)) * res.y);
+        vec2 rel = q - p0;
+        float along = dot(rel, that);
+        float dd = abs(along);
+        float decay = exp(-dd / tc);
+        float disp = tstr * decay;
+        q -= disp * nhat;
+    }
+    vec3 outc = bg;
+    for (int i = 31; i >= 0; i--) {
+        float fi = float(i);
+        vec2 hc = vec2(hash21(vec2(fi + u_seed, 2.0)), hash21(vec2(fi + u_seed, 8.0)));
+        vec2 ctr = (0.08 + 0.84*hc) * res;
+        float rr = base_r * (0.6 + 0.8*hash21(vec2(fi + u_seed, 17.0)));
+        vec2 d = q - ctr;
+        if (dot(d,d) <= rr*rr) {
+            float hh = hash21(vec2(fi + u_seed, 23.0));
+            outc = 0.5 + 0.5*vec3(sin(hh*6.2831853), sin(hh*6.2831853+2.0943951), sin(hh*6.2831853+4.1887902));
+        }
+    }
+    f_color = vec4(clamp(outc, 0.0, 1.0), 1.0);
+}
+""",
+    uniforms={
+        "drop_radius": {"glsl": "float", "min": 0.01, "max": 0.3, "default": 0.09, "description": "base drop radius (fraction of min(W,H))"},
+        "tine_strength": {"glsl": "float", "min": 0.0, "max": 0.6, "default": 0.22, "description": "tine displacement magnitude"},
+        "tine_sharpness": {"glsl": "float", "min": 0.02, "max": 0.5, "default": 0.14, "description": "tine sharpness c (smaller = sharper)"},
+        "anim_speed": {"glsl": "float", "min": 0.1, "max": 5.0, "default": 1.0, "description": "animation speed multiplier"},
+        "seed": {"glsl": "float", "min": 0.0, "max": 99999.0, "default": 42.0, "description": "random seed for drop placement"},
+    }
+    )
+
+_register("worley_gpu", "Worley/Cellular F1 noise (client-GPU twin of node 04)", "procedural", _INFERNO + """
 vec2 h22(vec2 p){ p = fract(p*vec2(123.34,456.21)); p += dot(p,p+45.32); return fract(vec2(p.x*p.y, p.x+p.y)); }
 void main() {
     // u_params.x = jitter (0..1), u_params.y = cell density scale

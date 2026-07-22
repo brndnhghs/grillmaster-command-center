@@ -508,8 +508,22 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
             "param_map": {"separation": "separation", "depth_scale": "depth_scale",
                           "tile_size": "tile_size"}},
     "512": {"shader": "siren_gpu", "type": "procedural", "typed": True,
-            "param_map": {"omega0": "omega0", "omega": "omega",
+             "param_map": {"omega0": "omega0", "omega": "omega",
                           "weight_scale": "weight_scale", "coord_scale": "coord_scale"}},
+    # P0.5 typed-uniform procedural twins (535/534/953). Every numeric CPU
+    # param maps to a named u_<name> uniform; choice/string params and the
+    # CPU-only variable counts (n_spots/n_drops/n_tines) are dropped +
+    # justified in GPU_PREVIEW_DROP_ALLOW. CPU fns stay authoritative.
+    "535": {"shader": "flow_noise_gpu", "type": "procedural", "typed": True,
+             "param_map": {"scale": "scale", "octaves": "octaves", "spin_var": "spin_var",
+                          "advect": "advect", "contrast": "contrast", "anim_speed": "anim_speed"}},
+    "534": {"shader": "spot_noise_gpu", "type": "procedural", "typed": True,
+             "param_map": {"spot_size": "spot_size", "stretch": "stretch",
+                          "contrast": "contrast", "anim_speed": "anim_speed"}},
+    "953": {"shader": "marbling_gpu", "type": "procedural", "typed": True,
+             "param_map": {"drop_radius": "drop_radius", "tine_strength": "tine_strength",
+                          "tine_sharpness": "tine_sharpness", "anim_speed": "anim_speed",
+                          "seed": "seed"}},
     # 487 Galaxy Generator, 441 Marching Squares Contours, 108 4D Hypercube —
     # each is a per-pixel closed-form generator with no close existing twin.
     "487": {"shader": "galaxy_gpu", "type": "procedural", "typed": True,
@@ -1207,6 +1221,33 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
 GPU_PREVIEW_DROP_ALLOW: dict[str, dict[str, str]] = {
     "02": {"mod_strength": "param not wired to GPU twin; CPU export authoritative for this param"},
     "03": {"amplitude": "param not wired to GPU twin; CPU export authoritative for this param", "freq_variation": "param not wired to GPU twin; CPU export authoritative for this param", "grids": "param not wired to GPU twin; CPU export authoritative for this param", "thickness": "param not wired to GPU twin; CPU export authoritative for this param", "wobble": "param not wired to GPU twin; CPU export authoritative for this param"},
+    # 535 Flow Noise: colormode/palette/source/anim_mode are choice/string
+    # params (no GLSL equivalent); time is the system clock.
+    # 534 Spot Noise: n_spots is a CPU-only spot count -> fixed 64-spot
+    # hash loop for the live preview (CPU uses variable 100-4000). flow/colormode/
+    # palette/anim_mode/source are choice/string params.
+    # 953 Marbling: n_drops/n_tines are CPU-only counts -> fixed 32-drop /
+    # 3-tine hash loops for the live preview (CPU uses variable 1-60 / 1-12).
+    # 535 Flow Noise: colormode/palette/source/anim_mode are choice/string
+    # params (no GLSL equivalent); time is the system clock.
+    "535": {"colormode": "choice/string color mapping (no GLSL equivalent); GPU twin inlines inferno",
+            "palette": "choice/string palette name (no GLSL equivalent); GPU twin inlines inferno",
+            "source": "choice/string source selector (no GLSL equivalent); GPU twin uses procedural noise",
+            "anim_mode": "choice/string animation-mode selector (no GLSL equivalent); GPU twin animates continuously from u_time"},
+    # 534 Spot Noise: n_spots is a CPU-only spot count -> fixed 64-spot
+    # hash loop for the live preview (CPU uses variable 100-4000). flow/colormode/
+    # palette/anim_mode/source are choice/string params (no GLSL equivalent); the
+    # GPU twin hardcodes a circular flow field + inferno colormap.
+    "534": {"n_spots": "fixed 64-spot hash loop for live preview (CPU uses variable 100-4000)",
+            "flow": "choice/string flow-field selector (circular/sine/saddle/curl/radial); GPU twin hardcodes a circular flow field for live preview",
+            "colormode": "choice/string color mapping (no GLSL equivalent); GPU twin inlines inferno",
+            "palette": "choice/string palette name (no GLSL equivalent); GPU twin inlines inferno",
+            "anim_mode": "choice/string animation-mode selector (no GLSL equivalent); GPU twin animates continuously from u_time",
+            "source": "choice/string source selector (no GLSL equivalent); GPU twin uses procedural noise"},
+    "953": {"n_drops": "fixed 32-drop inverse for live preview (CPU uses variable 1-60)",
+             "n_tines": "fixed 3-tine strokes for live preview (CPU uses variable 1-12)",
+             "source": "choice/string source selector (no GLSL equivalent); GPU twin uses procedural noise",
+             "anim_mode": "choice/string animation-mode selector (no GLSL equivalent); GPU twin animates continuously from u_time"},
     "487": {"star_count": "param not wired to GPU twin; CPU export authoritative for this param (Galaxy Generator samples this many stars on the CPU; the closed-form GLSL twin renders a continuous density field at canvas resolution)"},
     "108": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param (export frame count, timeline-driven)"},
     "995": {"palette": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin inlines the cosmic palette; CPU node honours the exact palette choice)", "mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin animates continuously from u_time — a drift+breathe superposition)", "anim_mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin animates continuously from u_time)", "time": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin drives phase from u_time)"},
