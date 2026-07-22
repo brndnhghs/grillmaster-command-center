@@ -1417,20 +1417,17 @@ GPU_PREVIEW_DROP_ALLOW: dict[str, dict[str, str]] = {
     # named u_<name> uniform. Choice params (coloring/anim_mode) and the legacy
     # time slot are dropped (GPU_PREVIEW_DROP_ALLOW); the preview is live via
     # the orbit-dispatch + u_time. CPU numpy fn stays authoritative export.
-    "353": {"shader": "ifs_fractal_gpu", "type": "procedural", "typed": True,
-            "param_map": {"preset": "preset", "points": "points",
-                          "hue_shift": "hue_shift", "anim_speed": "anim_speed"}},
+    "353": {},
     # ── Node 416: Symmetric Icon attractor ──────────────────────────────────────
     # Typed-uniform closed-form GPU twin (symmetric_icon_gpu in core/shaders.py).
     # Every numeric CPU param (symmetry/a0..a4/palette_shift/anim_speed/
     # seed_strength) is bound to a named u_<name> uniform. Choice params
     # (colormode/source/anim_mode) and the legacy time slot are dropped; preview
     # is live via orbit dispatch + u_time. CPU numpy fn stays authoritative.
-    "416": {"shader": "symmetric_icon_gpu", "type": "procedural", "typed": True,
-            "param_map": {"symmetry": "symmetry", "a0": "a0", "a1": "a1",
-                          "a2": "a2", "a3": "a3", "a4": "a4",
-                          "palette_shift": "palette_shift", "anim_speed": "anim_speed",
-                          "seed_strength": "seed_strength"}},
+    "416": {
+        "iterations": "param not wired to GPU twin; CPU export authoritative for this param",
+        "orbits": "param not wired to GPU twin; CPU export authoritative for this param",
+    },
 }
 
 def is_param_justified_drop(mid: str, param: str) -> bool:
