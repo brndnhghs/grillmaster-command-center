@@ -1117,6 +1117,28 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
                            "drainage": "drainage", "view_angle": "view_angle",
                            "brightness": "brightness", "anim_speed": "anim_speed",
                            "anim_mode": "anim_mode"}},
+    # 357 Side Window Filter -> typed-uniform filter twin side_window_gpu
+    # (live-preview path; CPU numpy node 357 stays authoritative for export).
+    # REAL numeric params radius/blend map BY NAME (contract #5/#6). `source` is
+    # a choice param (pitfall #14) left unmapped -> preview uses the wired input
+    # image (or perlin source). Single-pass box-mean approximation of the
+    # edge-preserving side-window selection; CPU keeps the exact integral-image
+    # version. `anim_mode`/`anim_speed`/`time` are animation/clock params.
+    "357": {"shader": "side_window_gpu", "type": "filter", "typed": True,
+            "param_map": {"radius": "radius", "blend": "blend"}},
+    # 446 God Rays -> typed-uniform filter twin god_rays_gpu (live-preview path;
+    # CPU numpy node 446 stays authoritative for export). REAL numeric params
+    # light_x/light_y/density/decay/weight/exposure/intensity/sun_radius/
+    # sun_intensity map BY NAME (contract #5/#6). `source` (choice), `tint`
+    # (hue scalar, hardcoded white sun to avoid vec3 risk), `num_samples`
+    # (hardcoded 64 in GLSL — constant loop bound), `anim_mode`/`anim_speed`/
+    # `time` are left unmapped. Y-flip (1.0 - u_light_y) matches CPU y-down.
+    "446": {"shader": "god_rays_gpu", "type": "filter", "typed": True,
+            "param_map": {"light_x": "light_x", "light_y": "light_y",
+                          "density": "density", "decay": "decay",
+                          "weight": "weight", "exposure": "exposure",
+                          "intensity": "intensity", "sun_radius": "sun_radius",
+                          "sun_intensity": "sun_intensity"}},
     # === P0 shims: CPU pattern/math-art nodes -> existing typed GPU twins (cron run) ===
     # Faithful matches: node param names align with shader uniforms so the live
     # preview reflects the sliders; unmapped params stay CPU-authoritative.

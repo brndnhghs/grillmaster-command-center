@@ -170,7 +170,7 @@ def test_gpu_shader_node_map_resolves():
     #             Occlusion (hbao_gpu), closing the one remaining P0.6 geometric
     #             filter gap.
     # 316 -> 319: +3 closed-form typed-uniform procedural twins (535/534/953).
-    assert len(GPU_SHADER_NODE_MAP) == 319, len(GPU_SHADER_NODE_MAP)
+    assert len(GPU_SHADER_NODE_MAP) == 321, len(GPU_SHADER_NODE_MAP)
     for mid, entry in GPU_SHADER_NODE_MAP.items():
         if entry.get("type") == "sim":
             # P1 ping-pong sim: seed/step/display must all resolve to shaders.

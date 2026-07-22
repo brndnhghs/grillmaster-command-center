@@ -1497,6 +1497,64 @@ _register("shader_posterize_gpu", "GPU posterization / color reduction", "filter
     "n_colors": {"glsl": "float", "min": 2.0, "max": 16.0, "default": 9.0, "description": "color levels"},
 })
 
+# ── P0 filter twins: Side Window (357) + God Rays (446) ──────────────────────
+# Additive: the server's CPU numpy nodes stay the authoritative export (two-tier
+# precision). These bodies only drive the browser live preview. They reuse the
+# prologue helpers injected by _filter_typed (uv/orig/step/u_texture/
+# u_resolution/u_time) so every new twin is covered automatically by
+# test_webgl2_transform_is_valid + the gl330 legacy-equivalence parametrized
+# tests. IMPORTANT (pitfall #15b): never declare a local named `step` — the
+# wrapper injects `vec2 step = 1.0 / u_resolution;` into main().
+
+_register("side_window_gpu", "Side Window Filter (client-GPU twin of node 357)", "filter", _filter_typed('''
+    int R = int(clamp(u_radius, 1.0, 24.0));
+    vec4 acc = vec4(0.0);
+    float n = 0.0;
+    for (int x = -24; x <= 24; x++) {
+        if (abs(float(x)) > float(R)) continue;
+        for (int y = -24; y <= 24; y++) {
+            if (abs(float(y)) > float(R)) continue;
+            acc += texture(u_texture, uv + vec2(float(x), float(y)) * step);
+            n += 1.0;
+        }
+    }
+    vec4 blurred = acc / max(n, 1.0);
+    f_color = mix(orig, blurred, clamp(u_blend, 0.0, 1.0));
+'''), uniforms={
+    "radius": {"glsl": "float", "min": 1.0, "max": 40.0, "default": 6.0, "description": "side-window half-size in pixels"},
+    "blend": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 1.0, "description": "mix original (0) vs smoothed (1)"},
+})
+
+_register("god_rays_gpu", "God Rays (client-GPU twin of node 446)", "filter", _filter_typed('''
+    vec2 light = vec2(u_light_x, 1.0 - u_light_y);
+    vec2 delta = (uv - light) / 64.0 * u_density;
+    vec2 pos = uv;
+    float illum = 1.0;
+    vec3 rays = vec3(0.0);
+    float wsum = 0.0;                       // total weight for normalisation
+    for (int i = 0; i < 64; i++) {
+        pos -= delta;
+        rays += texture(u_texture, pos).rgb * illum;
+        wsum += illum;
+        illum *= u_decay;
+    }
+    rays /= max(wsum, 1e-3);                // weighted average in [0,1]
+    rays *= u_weight * u_exposure;          // gain controls
+    float sr = max(u_sun_radius, 1.0) / max(u_resolution.x, u_resolution.y);
+    float sun = exp(-dot(uv - light, uv - light) / (2.0 * sr * sr)) * u_sun_intensity;
+    f_color = vec4(orig.rgb + rays * u_intensity + vec3(sun), 1.0);
+'''), uniforms={
+    "light_x": {"glsl": "float", "min": -0.5, "max": 1.5, "default": 0.30, "description": "light X position (normalised)"},
+    "light_y": {"glsl": "float", "min": -0.5, "max": 1.5, "default": 0.28, "description": "light Y position (normalised, y-down)"},
+    "density": {"glsl": "float", "min": 0.1, "max": 1.5, "default": 0.92, "description": "ray length / distortion"},
+    "decay": {"glsl": "float", "min": 0.80, "max": 0.99, "default": 0.95, "description": "per-sample illumination decay"},
+    "weight": {"glsl": "float", "min": 0.1, "max": 1.0, "default": 0.5, "description": "per-sample contribution weight"},
+    "exposure": {"glsl": "float", "min": 0.1, "max": 1.5, "default": 0.6, "description": "final ray exposure"},
+    "intensity": {"glsl": "float", "min": 0.0, "max": 3.0, "default": 1.0, "description": "overall additive strength"},
+    "sun_radius": {"glsl": "float", "min": 0.0, "max": 120.0, "default": 36.0, "description": "injected sun disc radius (px)"},
+    "sun_intensity": {"glsl": "float", "min": 0.0, "max": 3.0, "default": 1.6, "description": "injected sun brightness"},
+})
+
 # ── P0.5 LUT / color client-GPU twins (client-GPU live preview of nodes
 # 10/11/39/77) ───────────────────────────────────────────────────────────────
 # Additive: the server's CPU numpy nodes stay the authoritative export (two-tier
