@@ -9,6 +9,12 @@ __pycache__/
 # wiring drivers onto inert controls). Ship it so fresh clones start with a
 # populated blacklist instead of empty. Genomes/ratings/cost models stay ignored.
 !**/data/driver-dead-params.json
+# Spatial-param records: the A/B/C/D ledger, the probe report, and the
+# attempt log the migration loop reads to stay monotonic. Tracked for the same
+# reason as the blacklist above — they are curated state a fresh clone needs,
+# and regenerating the attempt log means re-running every failed migration.
+!**/data/spatial/
+!**/data/spatial/*
 noise_output/
 _grid_params/
 *.bak

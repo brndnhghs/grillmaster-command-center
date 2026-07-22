@@ -37,7 +37,7 @@ The plumbing is verified. Fix the *method*.
 The automated pass already tried this param and wrote down how it failed:
 
 ```bash
-python -c "import json;d=json.load(open('tools/spatial_failures.json'));print(d.get('{{METHOD_ID}}|{{PARAM}}','(not attempted)'))"
+python -c "import json;d=json.load(open('data/spatial/spatial_failures.json'));print(d.get('{{METHOD_ID}}|{{PARAM}}','(not attempted)'))"
 ```
 
 That verdict tells you which of §3's failure modes you are in. `(not attempted)`
@@ -47,7 +47,7 @@ normal for all three targets in the last section.
 Also pull the static classification and its reason:
 
 ```bash
-grep '^[A-D],{{METHOD_ID}},' tools/param_ledger.csv | grep ',{{PARAM}},'
+grep '^[A-D],{{METHOD_ID}},' data/spatial/param_ledger.csv | grep ',{{PARAM}},'
 ```
 
 Both of these are **evidence, not verdicts**. The classifier is a static guess
@@ -130,9 +130,38 @@ Add `from image_pipeline.core.spatial import sparam, is_field` if absent, and
 required — the flag is what grants the FIELD port.
 
 ### E. Unprobeable in isolation (`NOT_PROBED`)
-The node needs a wired input image, an external binary, or a GPU context, so it
-cannot render standalone. Do not mark it `spatial: True`: the gate would fail on
-it forever. Go to §5.
+The node needs an external binary or a GPU context, so it cannot render
+standalone. Do not mark it `spatial: True`: the gate would fail on it forever.
+Go to §5.
+
+**A missing input image is no longer this case.** The probe wires a concentric-
+gradient source into any node declaring `image_in`, and probes filters both with
+and without it, taking whichever responds. Before that, ASCII Art #01 rendered a
+solid error frame with nothing upstream, so every param read as MEAN_ONLY no
+matter what the code did — a constant output cannot demonstrate anything. If you
+hit a node whose output has one unique value, check that before blaming the param:
+
+```python
+img = _render(mid, {}); print(img.std(), len(np.unique(img)))
+```
+
+### F. The param is inert at the node's defaults (false `MEAN_ONLY`)
+The param is wired correctly but mathematically cancels under default settings,
+so every field renders identically. #11 Gradient's `cy` multiplies
+`sin(direction)`, which is 0 at the default `direction=0` — a horizontal linear
+gradient genuinely has no Y centre. Correct physics, not a broken param.
+
+Confirm by rendering it yourself under a setting that should expose it (for `cy`:
+`gradient_type=radial` gave Δ=0.079 where `linear` gave exactly 0). If it
+responds there, declare the configuration that makes it observable:
+
+```python
+"cy": {"spatial": True, "probe_with": {"gradient_type": "radial"}, ...}
+```
+
+The probe merges `probe_with` into every render. Use it only for genuine
+inertness you have demonstrated — it is not a way to hunt for a setting where a
+broken param happens to wiggle.
 
 ### Bonus: `ORIENTED?`
 Responded to the ramp, but horizontal and vertical ramps produced identical
@@ -194,7 +223,7 @@ To reclassify, record it so nothing retries it blindly:
 ```bash
 python -c "
 import json,pathlib
-p=pathlib.Path('tools/spatial_failures.json'); d=json.loads(p.read_text())
+p=pathlib.Path('data/spatial/spatial_failures.json'); d=json.loads(p.read_text())
 d['{{METHOD_ID}}|{{PARAM}}']='STRUCTURAL_BY_HAND'
 p.write_text(json.dumps(dict(sorted(d.items())),indent=2))"
 ```
@@ -233,10 +262,10 @@ and useful answer. Leave the node exactly as you found it.
 ## Known outstanding targets
 
 Three nodes read `_field_*`, advertise support, and honour none of it — the 12
-remaining `MEAN_ONLY` in `tools/field_response_report.json`. They are the
+remaining `MEAN_ONLY` in `data/spatial/field_response_report.json`. They are the
 highest-value hand-fixes because they actively mislead.
 
-**None of them appear in `tools/spatial_failures.json`.** The automated pass only
+**None of them appear in `data/spatial/spatial_failures.json`.** The automated pass only
 attempts class A, and most of their params are not class A — so §1 will report
 `(not attempted)`. That is expected here, not a sign you picked a bad target.
 Their real ledger state:
@@ -250,14 +279,23 @@ Their real ledger state:
 Read those classes as a warning, not a verdict — each is a *static* guess the
 probe already contradicts:
 
-- **`11` is the best first target.** Class C "never used arithmetically" is
-  literally true of `cx_field` and describes the bug: the field is read and
-  discarded. Wiring it into the existing `effective_x` / `effective_y` math is
-  small. The classifier cannot distinguish "unused because structural" from
-  "unused because someone forgot".
-- **`01` is class B only because its params cross a helper boundary.** The
-  per-pixel array already reaches `_render_ascii()`; the collapse is the
-  `np.median` inside it. Fix the helper, per §3A's note on shared helpers.
+- **`11` — DONE (2026-07-22).** `cx`, `cy`, `direction` all probe SPATIAL. Four
+  distinct modes in one node: dead `_field_*` reads (A), `math.cos/sin` refusing
+  arrays so the whole helper moved to `np.*` (C-restructure), `center_orbit` /
+  `direction_morph` assigning over the wired map (B), and `cy` inert at the
+  default linear/direction=0 (F). Also exposed a real gap in the port generator:
+  an input declared in `inputs=` that shares a param name was never added to
+  `param_ports`, so the UI did not know the port was param-backed. Fixed in
+  `_make_node_def`. Expect a node to need more than one mode.
+- **`01` — DONE (2026-07-22), but not the way this table predicted.**
+  `dither_strength` is SPATIAL (Δuniform=0.00829). `font_size` and `char_spacing`
+  went to §5: they set the glyph grid geometry (`step_x`/`step_y`, then the
+  cols/rows the render loop walks), so they need one number, and the
+  `np.median(fs_arr)` was the node *pretending* otherwise. The dead
+  `fs_arr`/`sp_arr` plumbing is deleted rather than left advertising a
+  capability — reclassifying means removing the claim, not just the flag.
+  The real blocker was mode E: with nothing wired the node returned a solid
+  error frame, so nothing could ever probe SPATIAL. Fixed in the probe.
 - **`45` is class A but will likely end at §5.** Static analysis sees arithmetic
   and stops; it cannot see the values being formatted into `dot` arguments. This
   is the clearest case in the repo of class A being a candidate, never a promise.

@@ -91,6 +91,12 @@ def _make_node_def(meta: registry.MethodMeta) -> NodeDef:
     # and don't have min/max constraints (internal sliders, not wireable)
     param_ports: set[str] = set()
     declared_inputs = set(meta.inputs or {})
+    # An explicitly-declared input that shares a param's name IS a param port —
+    # the UI needs that link to keep the slider and the port bound together.
+    # Only the auto-generated ports were registered here before, so a node
+    # declaring inputs={"cx": "FIELD"} alongside a "cx" param got a port the UI
+    # did not know was param-backed.
+    param_ports |= declared_inputs & set(meta.params or {})
     for pname, spec in (meta.params or {}).items():
         if pname in declared_inputs:
             continue  # already explicitly declared

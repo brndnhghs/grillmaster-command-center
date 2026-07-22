@@ -14,6 +14,7 @@ from PIL import Image
 from ...core.registry import method
 from ...core.utils import seed_all, W, H
 from ...core.animation import capture_frame
+from ...core.spatial import sparam, is_field
 
 _ERROR_IMG = np.zeros((H, W, 3), dtype=np.float32)
 
@@ -23,9 +24,12 @@ _ERROR_IMG = np.zeros((H, W, 3), dtype=np.float32)
     name="Gradient",
     category="codegen",
     tags=["gradient", "fast", "animation"],
-    inputs={"cx": "SCALAR",
-            "cy": "SCALAR",
-            "direction": "SCALAR",
+    # cx/cy/direction take a FIELD so the gradient's centre and angle can vary
+    # per pixel. A SCALAR wire still drives them: the executor broadcasts a
+    # scalar to a uniform _field_ alongside the plain value, so both work.
+    inputs={"cx": "FIELD",
+            "cy": "FIELD",
+            "direction": "FIELD",
             "anim_speed": "SCALAR"},
     outputs={"image": "IMAGE", "luminance": "SCALAR"},
     params={
@@ -40,15 +44,22 @@ _ERROR_IMG = np.zeros((H, W, 3), dtype=np.float32)
             "default": "solid",
         },
         "cx": {
-            "description": "gradient center X (0-1, can be driven by SCALAR)",
+            "spatial": True,
+            "description": "gradient center X (0-1, per-pixel when a FIELD is wired)",
             "min": 0.0, "max": 1.0, "default": 0.5,
         },
         "cy": {
-            "description": "gradient center Y (0-1, can be driven by SCALAR)",
+            "spatial": True,
+            # At the default linear/direction=0, cy multiplies sin(0)=0 and is
+            # genuinely inert — a horizontal gradient has no Y centre. Probe it
+            # on a type that actually uses it.
+            "probe_with": {"gradient_type": "radial"},
+            "description": "gradient center Y (0-1, per-pixel when a FIELD is wired)",
             "min": 0.0, "max": 1.0, "default": 0.5,
         },
         "direction": {
-            "description": "gradient direction in degrees (0-360, can be driven by SCALAR)",
+            "spatial": True,
+            "description": "gradient direction in degrees (0-360, per-pixel when a FIELD is wired)",
             "min": 0.0, "max": 360.0, "default": 0.0,
         },
         "color1": {
@@ -89,9 +100,9 @@ def method_gradient(out_dir: Path, seed: int, params=None):
     style = params.get("style", "solid")
     anim_mode = params.get("anim_mode", "none")
     anim_speed = float(params.get("anim_speed", 0.25))
-    cx = float(params.get("cx", 0.5))
-    cy = float(params.get("cy", 0.5))
-    direction = float(params.get("direction", 0.0))
+    cx = sparam(params, "cx", 0.5)
+    cy = sparam(params, "cy", 0.5)
+    direction = sparam(params, "direction", 0.0)
 
     # ── Parse color params ──
     def _parse_color(s: str) -> np.ndarray:
@@ -103,10 +114,10 @@ def method_gradient(out_dir: Path, seed: int, params=None):
     color1 = _parse_color(color1_str)
     color2 = _parse_color(color2_str)
 
-    # ── Wire-driven params (SCALAR wires also inject uniform _field_ arrays) ──
-    cx_field = params.get("_field_cx")
-    cy_field = params.get("_field_cy")
-    direction_field = params.get("_field_direction")
+    # cx/cy/direction are read through sparam() above — they are already the
+    # wired (H,W) map when one is connected. The previous code read the
+    # _field_* arrays into locals here and never used them, so a wired field
+    # changed nothing.
 
     # ── Upstream image ──
     # Gradient is a pure generator — no image_in input
@@ -123,13 +134,18 @@ def method_gradient(out_dir: Path, seed: int, params=None):
     type_morph_b = gradient_type
     morph_fade = 0.0
 
+    # A wired FIELD outranks an animation preset: center_orbit / direction_morph
+    # would otherwise assign over the map and silently discard it.
     if anim_mode == "center_orbit":
         orbit_angle = t * 0.5 * anim_speed
-        effective_x = 0.5 + 0.35 * math.cos(orbit_angle)
-        effective_y = 0.5 + 0.35 * math.sin(orbit_angle)
+        if not is_field(effective_x):
+            effective_x = 0.5 + 0.35 * math.cos(orbit_angle)
+        if not is_field(effective_y):
+            effective_y = 0.5 + 0.35 * math.sin(orbit_angle)
 
     elif anim_mode == "direction_morph":
-        effective_direction = (t * 0.3 * anim_speed * 180.0 / math.pi) % 360.0
+        if not is_field(effective_direction):
+            effective_direction = (t * 0.3 * anim_speed * 180.0 / math.pi) % 360.0
 
     elif anim_mode == "color_sweep":
         hue_shift = t * 1.5 * anim_speed
@@ -168,10 +184,14 @@ def method_gradient(out_dir: Path, seed: int, params=None):
     xv, yv = np.meshgrid(xs, ys)
 
     # ── Gradient value ──
-    def _gradient_val(gtype: str, ex: float, ey: float) -> np.ndarray:
-        dir_rad = math.radians(effective_direction)
-        dir_x = math.cos(dir_rad)
-        dir_y = math.sin(dir_rad)
+    def _gradient_val(gtype: str, ex, ey) -> np.ndarray:
+        # np.* rather than math.*: ex/ey/effective_direction may each be an
+        # (H,W) map, and math.cos raises on an array. Every expression below is
+        # already elementwise against the xv/yv meshgrids, so scalars and maps
+        # broadcast through the same code path.
+        dir_rad = np.radians(effective_direction)
+        dir_x = np.cos(dir_rad)
+        dir_y = np.sin(dir_rad)
         if gtype == "linear":
             v = (xv - ex) * dir_x + (yv - ey) * dir_y
             v = (v + 1.0) * 0.5

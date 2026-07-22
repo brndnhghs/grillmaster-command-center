@@ -15,6 +15,7 @@ from ...core.registry import method
 from ...core.utils import seed_all, get_font, W, H, mn
 from ...core.animation import capture_frame
 from ...core.utils import ordered_dither
+from ...core.spatial import sparam, is_field, as_scalar
 from scipy.ndimage import map_coordinates
 
 BUILTIN_CHARSETS = {
@@ -42,7 +43,9 @@ _ERROR_IMG = np.zeros((H, W, 3), dtype=np.float32)
 @method(id="01", name="ASCII Art", category="codegen", tags=["text", "fast", "animation", "expanded"],
          inputs={"image_in": "IMAGE",
                  "font_size": "SCALAR",
-                 "dither_strength": "SCALAR",
+                 # FIELD: per-pixel dither/effect strength. font_size and
+                 # char_spacing stay SCALAR — they set the glyph grid geometry.
+                 "dither_strength": "FIELD",
                  "char_spacing": "SCALAR",
                  "anim_speed": "SCALAR"},
          outputs={"image": "IMAGE", "luminance": "FIELD"},
@@ -55,7 +58,14 @@ _ERROR_IMG = np.zeros((H, W, 3), dtype=np.float32)
              "color": {"description": "preserve source image colors on each char", "default": False},
              "output_format": {"description": "output format", "choices": ["png", "html", "svg", "ansi"], "default": "png"},
              "effect": {"description": "visual effect", "choices": ["none", "dither", "edge_emphasis", "glow", "color_bleed", "drift", "scroll", "char_morph", "wave"], "default": "none"},
-             "dither_strength": {"description": "dither/effect strength (can be driven by SCALAR)", "min": 0.0, "max": 1.0, "default": 0.5},
+             "dither_strength": {
+                 "spatial": True,
+                 # Inert at the default effect="none": nothing reads it until an
+                 # effect is selected. Probe on drift, which folds it into
+                 # elementwise numpy over the whole grid.
+                 "probe_with": {"effect": "drift"},
+                 "description": "dither/effect strength (per-pixel when a FIELD is wired)",
+                 "min": 0.0, "max": 1.0, "default": 0.5},
              "anim_mode": {"description": "animation mode", "choices": ["none", "charset_morph", "font_pulse", "dither_strength_sweep", "char_spacing_pulse"], "default": "none"},
              "anim_speed": {"description": "animation speed multiplier", "min": 0.0, "max": 2.0, "default": 0.25},
          })
@@ -95,26 +105,20 @@ def method_ascii(out_dir: Path, seed: int, params=None):
     use_color = bool(use_color)
     output_format = params.get("output_format", "png")
     effect = params.get("effect", "none")
-    dither_strength = float(params.get("dither_strength", 0.5))
+    # dither_strength is the one genuinely per-pixel control here: the dither,
+    # color_bleed, drift and wave effects all fold it into elementwise numpy
+    # over the (H,W) grayscale, so an (H,W) map broadcasts through unchanged.
+    dither_strength = sparam(params, "dither_strength", 0.5)
 
-    # FIELD-driven params: if a FIELD port is wired, use it as per-pixel array
-    font_size_field = params.get("_field_font_size")
-    dither_strength_field = params.get("_field_dither_strength")
-    char_spacing_field = params.get("_field_char_spacing")
-    anim_speed_field = params.get("_field_anim_speed")
-
-    # Resolve font_size: FIELD override → scalar default
-    if font_size_field is not None:
-        font_size = int(np.clip(np.mean(font_size_field) * 14 + 6, 6, 20))
-    else:
-        font_size = int(params.get("font_size", 10))
-    font_size = max(6, min(20, font_size))
-
-    # Resolve anim_speed: FIELD override → scalar default
-    if anim_speed_field is not None:
-        anim_speed = float(np.mean(anim_speed_field))
-    else:
-        anim_speed = float(params.get("anim_speed", 0.25))
+    # font_size / char_spacing are STRUCTURAL, not spatial: they set the glyph
+    # grid geometry (step_x/step_y, then the cols/rows the render loop walks),
+    # so they need one number. The previous code took a _field_ array for both,
+    # built per-pixel arrays, threaded them into _render_ascii — and collapsed
+    # them with np.median, which made a wired field a no-op. Reading the scalar
+    # directly is the honest version of the same behaviour. Per-cell glyph sizing
+    # is a real feature, but it is variable-rate layout, not a broadcast.
+    font_size = max(6, min(20, int(params.get("font_size", 10))))
+    anim_speed = float(params.get("anim_speed", 0.25))
 
     # ── Effective effect for morph modes ──
     effective_effect = effect
@@ -154,24 +158,9 @@ def method_ascii(out_dir: Path, seed: int, params=None):
     gray = img_src.convert("L")
     gray_arr = np.array(gray, dtype=np.float32) / 255.0
 
-    # ── Effects (with FIELD overrides) ──
-    if font_size_field is not None:
-        # Per-pixel font size: map field [0,1] → font_size range
-        font_size_min = 6
-        font_size_max = 20
-        font_size_arr = font_size_min + font_size_field * (font_size_max - font_size_min)
-    else:
-        font_size_arr = None
-
-    if dither_strength_field is not None:
-        dither_strength_arr = dither_strength_field
-    else:
-        dither_strength_arr = None
-
-    if char_spacing_field is not None:
-        char_spacing_arr = 0.3 + char_spacing_field * 1.7
-    else:
-        char_spacing_arr = None
+    # ── Effects ──
+    # dither_strength is already the wired (H,W) map when one is connected.
+    dither_strength_arr = dither_strength if is_field(dither_strength) else None
 
     if effective_effect == "none" and anim_mode == "dither_strength_sweep":
         contrast = 0.5 + dither_strength
@@ -190,7 +179,8 @@ def method_ascii(out_dir: Path, seed: int, params=None):
             n_levels_arr = np.clip(2 + 6 * dither_strength_arr, 2, 8).astype(int)
             gray_arr = ordered_dither(gray_arr, levels=n_levels_arr)
         else:
-            n_levels = int(2 + 6 * dither_strength + 2 * math.sin(time_param * 2 * anim_speed))
+            n_levels = int(2 + 6 * as_scalar(dither_strength)
+                           + 2 * math.sin(time_param * 2 * anim_speed))
             gray_arr = ordered_dither(gray_arr, levels=max(2, n_levels))
     elif effective_effect == "color_bleed":
         rnd = np.random.RandomState(seed + 42)
@@ -208,7 +198,11 @@ def method_ascii(out_dir: Path, seed: int, params=None):
         coords = np.stack([yy, (xx - shift) % W], axis=0)
         gray_arr = map_coordinates(gray_arr, coords, order=1, mode="wrap")
     elif effective_effect == "char_morph":
-        blur_r = int(1 + dither_strength * 4 + math.sin(time_param * 1.5 * anim_speed) * 2)
+        # A Gaussian blur radius is one number for the whole image — this effect
+        # genuinely cannot be per-pixel, so it takes the field's mean. The other
+        # dither_strength effects (dither/color_bleed/drift/wave) stay per-pixel.
+        blur_r = int(1 + as_scalar(dither_strength) * 4
+                     + math.sin(time_param * 1.5 * anim_speed) * 2)
         gray = Image.fromarray((gray_arr * 255).astype(np.uint8), "L")
         gray = gray.filter(ImageFilter.GaussianBlur(radius=max(1, blur_r)))
         gray_arr = np.array(gray, dtype=np.float32) / 255.0
@@ -232,17 +226,14 @@ def method_ascii(out_dir: Path, seed: int, params=None):
     step_y = fh
     cols = max(1, W // step_x)
     rows = max(1, H // step_y)
-    def _render_ascii(gray_src, charset, fs, invert_flag, use_color_flag, img_src_ref, spacing,
-                      fs_arr=None, sp_arr=None):
+    def _render_ascii(gray_src, charset, fs, invert_flag, use_color_flag, img_src_ref, spacing):
         """Render ASCII from grayscale source. Returns PIL Image.
-        fs_arr: per-pixel font size array (H,W) or None
-        sp_arr: per-pixel char spacing array (H,W) or None
+
+        fs/spacing are scalars by contract — they define the glyph grid the loop
+        below walks. The former fs_arr/sp_arr per-pixel parameters were accepted
+        and then immediately median-collapsed, so they never varied anything.
         """
-        if fs_arr is not None:
-            # Per-pixel font size: use a single representative value for layout
-            _fs = int(np.median(fs_arr))
-        else:
-            _fs = fs
+        _fs = fs
         f = get_font(_fs)
         try:
             fw2 = f.getbbox("A")[2]
@@ -251,10 +242,7 @@ def method_ascii(out_dir: Path, seed: int, params=None):
             fw2, fh2 = f.getsize("A")
         fw2 = max(fw2, 4)
         fh2 = max(fh2, 4)
-        if sp_arr is not None:
-            _sp = float(np.median(sp_arr))
-        else:
-            _sp = spacing
+        _sp = spacing
         sx2 = int(fw2 * _sp)
         sy2 = fh2
         c2 = max(1, W // sx2)
@@ -296,14 +284,11 @@ def method_ascii(out_dir: Path, seed: int, params=None):
     # ── Cross-fade rendering ──
     if anim_mode == "charset_morph" and morph_fade > 0.0:
         charset_b = BUILTIN_CHARSETS.get(_morph_charset_b, BUILTIN_CHARSETS["default"])
-        img_a = _render_ascii(gray_arr, CHARS, font_size, invert, use_color, img_src, char_spacing,
-                              fs_arr=font_size_arr, sp_arr=char_spacing_arr)
-        img_b = _render_ascii(gray_arr, charset_b, font_size, invert, use_color, img_src, char_spacing,
-                              fs_arr=font_size_arr, sp_arr=char_spacing_arr)
+        img_a = _render_ascii(gray_arr, CHARS, font_size, invert, use_color, img_src, char_spacing)
+        img_b = _render_ascii(gray_arr, charset_b, font_size, invert, use_color, img_src, char_spacing)
         out_img = Image.blend(img_a, img_b, morph_fade)
     else:
-        out_img = _render_ascii(gray_arr, CHARS, font_size, invert, use_color, img_src, char_spacing,
-                                fs_arr=font_size_arr, sp_arr=char_spacing_arr)
+        out_img = _render_ascii(gray_arr, CHARS, font_size, invert, use_color, img_src, char_spacing)
 
     # ── Output ──
     out_arr = np.array(out_img).astype(np.float32) / 255.0

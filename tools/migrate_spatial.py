@@ -37,7 +37,10 @@ from collections import defaultdict
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-LEDGER = REPO / "tools" / "param_ledger.csv"
+# Records live in data/spatial/ (git-tracked via a .gitignore negation) rather
+# than tools/, so generated state sits with the other curated data artifacts.
+RECORDS = REPO / "data" / "spatial"
+LEDGER = RECORDS / "param_ledger.csv"
 IMPORT_LINE = "from image_pipeline.core.spatial import sparam"
 
 # `X = float(params.get("name", default))`  /  int(...)  /  bare params.get(...)
@@ -78,7 +81,7 @@ def ensure_import(src: str) -> str:
     return "\n".join(lines)
 
 
-FAILURES = REPO / "tools" / "spatial_failures.json"
+FAILURES = RECORDS / "spatial_failures.json"
 
 
 def load_failures() -> dict[str, str]:
@@ -96,6 +99,7 @@ def load_failures() -> dict[str, str]:
 
 
 def save_failures(known: dict[str, str]) -> None:
+    FAILURES.parent.mkdir(parents=True, exist_ok=True)
     FAILURES.write_text(json.dumps(dict(sorted(known.items())), indent=2))
 
 

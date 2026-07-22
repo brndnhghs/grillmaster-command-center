@@ -88,7 +88,7 @@ Make the mean-collapse type-aware: pass the array through for `spatial` params, 
 
 ### Phase 1 — classifier — STATUS: **done** (`tools/classify_params.py`)
 
-Ledger at `tools/param_ledger.csv` — all 4,680 params, all 527 methods:
+Ledger at `data/spatial/param_ledger.csv` — all 4,680 params, all 527 methods:
 
 | class | count | share |
 |---|---|---|
@@ -128,7 +128,7 @@ Apply → probe → keep-or-revert, in batches so the ~4 s method-tree import is
 | NOT_PROBED | 105 | node unprobeable in isolation |
 | ORIENTED? | 3 | responded, but H and V ramps identical — suspicious, left alone |
 
-Every non-KEPT param is restored byte-for-byte; a failed attempt costs nothing. Outcomes are recorded in `tools/spatial_failures.json` so each batch advances to new params instead of re-attempting the same head of the ledger — without that memory the loop is not monotonic and simply repeats itself (observed, then fixed).
+Every non-KEPT param is restored byte-for-byte; a failed attempt costs nothing. Outcomes are recorded in `data/spatial/spatial_failures.json` so each batch advances to new params instead of re-attempting the same head of the ledger — without that memory the loop is not monotonic and simply repeats itself (observed, then fixed).
 
 **Gray-Scott #155 is the reference case**, and it needed one hand-fix the codemod cannot do: `anim_mode` defaults to the named regime `"spots"`, whose preset F/k assignment overwrote the wired field. A wired FIELD now outranks the preset. All four of its params (`feed`, `kill`, `diff_u`, `diff_v`) probe SPATIAL.
 
@@ -151,4 +151,4 @@ Independent of everything above; can run in parallel. New `text` / `code` / `ass
 
 ## Provenance
 
-Numbers from `registry.get_all()` + `_make_node_def` over the live registry, 2026-07-22. Probe results: `tools/field_response_report.json`, regenerate with `python tools/audit_field_response.py --scan`.
+Numbers from `registry.get_all()` + `_make_node_def` over the live registry, 2026-07-22. Probe results: `data/spatial/field_response_report.json`, regenerate with `python tools/audit_field_response.py --scan`.

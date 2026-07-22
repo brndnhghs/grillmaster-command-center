@@ -60,7 +60,7 @@ if str(REPO) not in sys.path:
 
 import image_pipeline.methods  # noqa: F401,E402 — registers every method
 from image_pipeline.core import registry  # noqa: E402
-from image_pipeline.core.graph import GraphExecutor, GraphNode  # noqa: E402
+from image_pipeline.core.graph import GraphExecutor, GraphNode, GraphEdge  # noqa: E402
 from image_pipeline.core.utils import set_canvas  # noqa: E402
 
 W, H = 96, 72
@@ -84,12 +84,35 @@ def _ramp_v() -> np.ndarray:
     return np.tile(np.linspace(0.0, 1.0, H, dtype=np.float32)[:, None], (1, W))
 
 
-def _render(mid: str, params: dict, frame: int = 0, frames: int = 1) -> np.ndarray:
+# Source node wired upstream of filters that need an image. It must be a real
+# graph edge, not an injected param: with no upstream edge the executor forces
+# run_params["_input_image"] = None, so a filter probed alone renders a constant
+# (ASCII Art #01 returns a solid error frame) and no param can appear spatial.
+# Concentric gradient = strong ring structure that survives the block-averaging
+# and quantisation several filters apply.
+SOURCE_ID = "11"
+SOURCE_PARAMS = {"gradient_type": "concentric", "style": "solid"}
+
+
+def _needs_image(mid: str) -> bool:
+    meta = registry.get_all().get(mid)
+    return bool(meta and "image_in" in (meta.inputs or {}))
+
+
+def _render(mid: str, params: dict, frame: int = 0, frames: int = 1,
+            with_source: bool = True) -> np.ndarray:
     node = GraphNode(id="n0", method_id=mid, params=dict(params))
+    nodes = [node.__dict__]
+    edges: list[dict] = []
+    if with_source and _needs_image(mid) and mid != SOURCE_ID:
+        nodes.insert(0, GraphNode(id="src", method_id=SOURCE_ID,
+                                  params=dict(SOURCE_PARAMS)).__dict__)
+        edges.append(GraphEdge(src_node="src", src_port="image",
+                               dst_node="n0", dst_port="image_in").__dict__)
     with tempfile.TemporaryDirectory() as tmp:
         ex = GraphExecutor(out_dir=Path(tmp), fps=24, in_memory=True)
         flat, terminal, errors = ex.execute(
-            nodes=[node.__dict__], edges=[], seed=SEED, frame=frame, frames=frames,
+            nodes=nodes, edges=edges, seed=SEED, frame=frame, frames=frames,
         )
         if errors:
             raise RuntimeError(f"node errors: {errors}")
@@ -106,30 +129,69 @@ def _render(mid: str, params: dict, frame: int = 0, frames: int = 1) -> np.ndarr
 _STAGES = ((0, 1), (4, 5))
 
 
-def _probe_at(mid: str, param: str, frame: int, frames: int) -> tuple[float, float]:
+def _probe_with(mid: str, param: str) -> dict:
+    """Extra params needed to make this param observable.
+
+    Some params are mathematically inert at their node's defaults — #11
+    Gradient's ``cy`` multiplies ``sin(direction)``, which is 0 at the default
+    direction=0, so a linear gradient genuinely ignores its Y centre. That is
+    correct physics, not a broken param, but it renders identically for every
+    field and would report a false MEAN_ONLY.
+
+    A param declares the configuration that exposes it:
+
+        "cy": {"spatial": True, "probe_with": {"gradient_type": "radial"}, ...}
+    """
+    meta = registry.get_all().get(mid)
+    spec = (meta.params or {}).get(param) if meta else None
+    hint = spec.get("probe_with") if isinstance(spec, dict) else None
+    return dict(hint) if isinstance(hint, dict) else {}
+
+
+def _probe_at(mid: str, param: str, frame: int, frames: int,
+              with_source: bool) -> tuple[float, float]:
     key = f"_field_{param}"
-    base = _render(mid, {key: _uniform()}, frame, frames)
+    extra = _probe_with(mid, param)
+
+    def r(field):
+        return _render(mid, {**extra, key: field}, frame, frames, with_source)
+
+    base = r(_uniform())
     # Determinism guard: if the node is nondeterministic at fixed seed the
     # comparison below is meaningless, so say so rather than report noise.
-    base2 = _render(mid, {key: _uniform()}, frame, frames)
-    if float(np.abs(base - base2).max()) > EPS:
+    if float(np.abs(base - r(_uniform())).max()) > EPS:
         return (-1.0, -1.0)   # sentinel: nondeterministic
-    hor = _render(mid, {key: _ramp_h()}, frame, frames)
-    ver = _render(mid, {key: _ramp_v()}, frame, frames)
+    hor, ver = r(_ramp_h()), r(_ramp_v())
     return (float(np.abs(hor - base).mean()), float(np.abs(hor - ver).mean()))
+
+
+def _source_modes(mid: str) -> tuple[bool, ...]:
+    """Which upstream configurations to try, in order.
+
+    Filters that accept an image often have two code paths — a procedural
+    fallback when nothing is wired, and the wired-image path. A param can be
+    per-pixel in one and inert in the other, so try both before calling it
+    MEAN_ONLY: the question is whether it responds in a real configuration, not
+    in one arbitrarily chosen configuration.
+    """
+    return (True, False) if _needs_image(mid) and mid != SOURCE_ID else (False,)
 
 
 def probe_param(mid: str, param: str) -> dict:
     """Render uniform / H-ramp / V-ramp and classify the response."""
     d_uniform = d_orient = 0.0
+    frame = 0
     try:
-        for frame, frames in _STAGES:
-            d_uniform, d_orient = _probe_at(mid, param, frame, frames)
-            if d_uniform < 0:
-                return {"method_id": mid, "param": param, "verdict": "NONDETERMINISTIC",
-                        "d_uniform": 0.0, "d_orient": 0.0, "frame": frame}
+        for with_source in _source_modes(mid):
+            for frame, frames in _STAGES:
+                d_uniform, d_orient = _probe_at(mid, param, frame, frames, with_source)
+                if d_uniform < 0:
+                    return {"method_id": mid, "param": param, "verdict": "NONDETERMINISTIC",
+                            "d_uniform": 0.0, "d_orient": 0.0, "frame": frame}
+                if d_uniform > EPS:
+                    break   # responded — no need for the slower evolved stage
             if d_uniform > EPS:
-                break   # responded — no need for the slower evolved stage
+                break
     except Exception as e:  # noqa: BLE001 — every failure is a reportable verdict
         return {"method_id": mid, "param": param, "verdict": "ERROR",
                 "error": f"{type(e).__name__}: {e}", "d_uniform": 0.0, "d_orient": 0.0}
