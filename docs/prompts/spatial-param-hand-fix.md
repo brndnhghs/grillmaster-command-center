@@ -296,6 +296,12 @@ probe already contradicts:
   capability — reclassifying means removing the claim, not just the flag.
   The real blocker was mode E: with nothing wired the node returned a solid
   error frame, so nothing could ever probe SPATIAL. Fixed in the probe.
-- **`45` is class A but will likely end at §5.** Static analysis sees arithmetic
-  and stops; it cannot see the values being formatted into `dot` arguments. This
-  is the clearest case in the repo of class A being a candidate, never a promise.
+- **`45` — DONE (2026-07-22), via §5.** Class A, and still impossible: every one
+  of its four params becomes a Graphviz DOT attribute or a loop bound
+  (`range(use_n_nodes)`, `fontsize={use_font_size}`, `len={use_edge_len}`). The
+  four FIELD ports were changed to SCALAR and the `np.mean` blocks deleted, so
+  the node stops advertising per-pixel support. The clearest case in the repo of
+  class A being a candidate, never a promise — and of §5 meaning *remove the
+  claim*, not merely skip the work.
+
+All three legacy liars are now resolved; the scan is 131/131 SPATIAL.

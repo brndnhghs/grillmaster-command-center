@@ -181,8 +181,10 @@ def probe_param(mid: str, param: str) -> dict:
     """Render uniform / H-ramp / V-ramp and classify the response."""
     d_uniform = d_orient = 0.0
     frame = 0
+    modes = _source_modes(mid)
+    with_source = modes[0]
     try:
-        for with_source in _source_modes(mid):
+        for with_source in modes:
             for frame, frames in _STAGES:
                 d_uniform, d_orient = _probe_at(mid, param, frame, frames, with_source)
                 if d_uniform < 0:
@@ -196,6 +198,14 @@ def probe_param(mid: str, param: str) -> dict:
         return {"method_id": mid, "param": param, "verdict": "ERROR",
                 "error": f"{type(e).__name__}: {e}", "d_uniform": 0.0, "d_orient": 0.0}
 
+    # Which configuration it responded in is a finding, not an implementation
+    # detail. A param that works standalone but is inert once an image is wired
+    # passes the gate on a technicality: wiring an image flips `source` to
+    # "input_image" (the executor does this automatically), and the procedural
+    # field the param modulates is gone on that path. Surfacing it keeps the
+    # gate from quietly certifying half a capability.
+    standalone_only = bool(len(modes) > 1 and not with_source and d_uniform > EPS)
+
     if d_uniform <= EPS:
         verdict = "MEAN_ONLY"
     elif d_orient <= EPS:
@@ -203,7 +213,8 @@ def probe_param(mid: str, param: str) -> dict:
     else:
         verdict = "SPATIAL"
     return {"method_id": mid, "param": param, "verdict": verdict,
-            "d_uniform": d_uniform, "d_orient": d_orient, "frame": frame}
+            "d_uniform": d_uniform, "d_orient": d_orient, "frame": frame,
+            "standalone_only": standalone_only}
 
 
 # ── Discovery ────────────────────────────────────────────────────────
@@ -285,6 +296,8 @@ def main() -> int:
             mark = {"SPATIAL": "✓", "MEAN_ONLY": "·", "ORIENTED?": "?",
                     "ERROR": "!", "NONDETERMINISTIC": "~"}.get(r["verdict"], " ")
             extra = f"  Δuniform={r['d_uniform']:.5f} Δorient={r['d_orient']:.5f}"
+            if r.get("standalone_only"):
+                extra += "  [standalone only — inert when image_in is wired]"
             if r["verdict"] == "ERROR":
                 extra = "  " + r.get("error", "")[:70]
             print(f"  {mark} {param:<24} {r['verdict']:<16}{extra}")

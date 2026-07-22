@@ -10,13 +10,28 @@ Today none of that is expressible. This plan says why, and what to do about it.
 
 | | |
 |---|---|
-| params marked `spatial: True` | **117** across **56** methods |
-| exposing a FIELD port | 117 / 117 |
-| probe verdict SPATIAL | **117 / 117** |
-| gate | `image_pipeline/tests/test_spatial_params.py` — 237 passing |
+| params marked `spatial: True` | **131** across **64** methods |
+| exposing a FIELD port | 131 / 131 |
+| probe verdict SPATIAL | **131 / 131** |
+| gate | `image_pipeline/tests/test_spatial_params.py` — 265 passing |
 | regressions | none (suite identical to baseline: same 6 pre-existing failures / 2 errors) |
 
-Remaining 12 `MEAN_ONLY` are the pre-existing legacy `_field_` readers below (#01, #11, #45), untouched by the migration and still advertising support they lack.
+**No param in the library now claims spatial support it does not have.** The
+three legacy liars are resolved: #11 Gradient migrated (3/3), #01 ASCII Art
+partly migrated (`dither_strength`) with its two structural params
+de-advertised, #45 Graphviz reclassified structural and its four FIELD ports
+removed. The `__test__` node's dead `_field_anim_speed` read is gone too.
+
+### Known caveat — four params pass in standalone mode only
+
+`343.contrast`, `424.brightness`, `425.freq`, `1004.drainage` respond to a field
+when the node renders procedurally, and are inert once `image_in` is wired:
+wiring an image makes the executor flip `source` to `"input_image"`
+(`graph.py`, the `src_spec` branch), and the procedural field these params
+modulate is gone on that path. The probe tries both configurations and reports
+`standalone_only` for them, so the gate certifies what is actually true rather
+than passing them silently. Whether the wired path *should* honour them is a
+per-node design question, not a plumbing bug — left open deliberately.
 
 ## Findings (measured 2026-07-22, not estimated)
 

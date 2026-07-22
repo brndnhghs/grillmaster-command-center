@@ -105,11 +105,9 @@ def method_test_node(out_dir: Path, seed: int, params=None):
 
     t = float(params.get("time", 0.0))
     anim_mode = params.get("anim_mode", "none")
-    anim_speed_field = params.get("_field_anim_speed")
-    if anim_speed_field is not None:
-        anim_speed = float(np.mean(anim_speed_field))
-    else:
-        anim_speed = float(params.get("anim_speed", 0.5))
+    # anim_speed is a rate, not a per-pixel quantity: the _field_ read here only
+    # ever took the mean, so it advertised per-pixel support that never existed.
+    anim_speed = float(params.get("anim_speed", 0.5))
 
     # ── Read wired inputs ──────────────────────────────────────────
     report = {"inputs": {}, "outputs": {}}

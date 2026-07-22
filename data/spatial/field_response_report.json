@@ -6,6 +6,7 @@
     "d_uniform": 0.008288133889436722,
     "d_orient": 0.016055434942245483,
     "frame": 0,
+    "standalone_only": false,
     "name": "ASCII Art"
   },
   {
@@ -15,6 +16,7 @@
     "d_uniform": 0.10355928540229797,
     "d_orient": 0.11727508157491684,
     "frame": 0,
+    "standalone_only": false,
     "name": "CMYK Halftone"
   },
   {
@@ -24,6 +26,7 @@
     "d_uniform": 0.00035166056477464736,
     "d_orient": 0.00043999901390634477,
     "frame": 0,
+    "standalone_only": false,
     "name": "CRT Emulation"
   },
   {
@@ -33,6 +36,7 @@
     "d_uniform": 0.0010424230713397264,
     "d_orient": 0.0012599097099155188,
     "frame": 0,
+    "standalone_only": false,
     "name": "Cahn-Hilliard Phase Separation"
   },
   {
@@ -42,6 +46,7 @@
     "d_uniform": 0.03485006466507912,
     "d_orient": 0.04670251905918121,
     "frame": 0,
+    "standalone_only": false,
     "name": "Cahn-Hilliard Phase Separation"
   },
   {
@@ -51,6 +56,7 @@
     "d_uniform": 0.023299694061279297,
     "d_orient": 0.03178996220231056,
     "frame": 0,
+    "standalone_only": false,
     "name": "Cel Shading"
   },
   {
@@ -60,6 +66,7 @@
     "d_uniform": 0.00020147027680650353,
     "d_orient": 0.0002255716681247577,
     "frame": 0,
+    "standalone_only": false,
     "name": "Cel Shading"
   },
   {
@@ -69,6 +76,7 @@
     "d_uniform": 9.393195068696514e-05,
     "d_orient": 0.00020899149239994586,
     "frame": 0,
+    "standalone_only": false,
     "name": "Coherence-Enhancing Diffusion"
   },
   {
@@ -78,6 +86,7 @@
     "d_uniform": 0.08755389600992203,
     "d_orient": 0.1168544664978981,
     "frame": 0,
+    "standalone_only": false,
     "name": "Coupled Map Lattice"
   },
   {
@@ -87,6 +96,7 @@
     "d_uniform": 0.010085330344736576,
     "d_orient": 0.013372593559324741,
     "frame": 0,
+    "standalone_only": false,
     "name": "Coupled Map Lattice"
   },
   {
@@ -96,6 +106,7 @@
     "d_uniform": 0.006220497656613588,
     "d_orient": 0.008303264155983925,
     "frame": 0,
+    "standalone_only": false,
     "name": "Coupled Map Lattice"
   },
   {
@@ -105,6 +116,7 @@
     "d_uniform": 0.11340752243995667,
     "d_orient": 0.15873028337955475,
     "frame": 0,
+    "standalone_only": false,
     "name": "Curl-Noise Flow Field"
   },
   {
@@ -114,6 +126,7 @@
     "d_uniform": 0.11127810180187225,
     "d_orient": 0.11997746676206589,
     "frame": 0,
+    "standalone_only": false,
     "name": "Curl-Noise Warp"
   },
   {
@@ -123,6 +136,7 @@
     "d_uniform": 0.0014342773938551545,
     "d_orient": 0.0019290123600512743,
     "frame": 0,
+    "standalone_only": false,
     "name": "Darcy-B\u00e9nard Porous Convection"
   },
   {
@@ -132,6 +146,7 @@
     "d_uniform": 0.006000363267958164,
     "d_orient": 0.006042347755283117,
     "frame": 0,
+    "standalone_only": false,
     "name": "Darcy-B\u00e9nard Porous Convection"
   },
   {
@@ -141,6 +156,7 @@
     "d_uniform": 0.002797067631036043,
     "d_orient": 0.003897172398865223,
     "frame": 0,
+    "standalone_only": false,
     "name": "Darcy-B\u00e9nard Porous Convection"
   },
   {
@@ -150,6 +166,7 @@
     "d_uniform": 0.014769554138183594,
     "d_orient": 0.019972318783402443,
     "frame": 0,
+    "standalone_only": false,
     "name": "Domain Warping"
   },
   {
@@ -159,6 +176,7 @@
     "d_uniform": 0.05484004691243172,
     "d_orient": 0.05741935223340988,
     "frame": 0,
+    "standalone_only": false,
     "name": "Domain Warping"
   },
   {
@@ -168,6 +186,7 @@
     "d_uniform": 0.014252403751015663,
     "d_orient": 0.017319263890385628,
     "frame": 0,
+    "standalone_only": false,
     "name": "Domain Warping"
   },
   {
@@ -177,6 +196,7 @@
     "d_uniform": 0.0031441012397408485,
     "d_orient": 0.0025856331922113895,
     "frame": 0,
+    "standalone_only": false,
     "name": "Edge Halftone"
   },
   {
@@ -186,6 +206,7 @@
     "d_uniform": 0.06752978265285492,
     "d_orient": 0.09367772936820984,
     "frame": 0,
+    "standalone_only": false,
     "name": "Fake HDR"
   },
   {
@@ -195,6 +216,7 @@
     "d_uniform": 0.05819766968488693,
     "d_orient": 0.07557009905576706,
     "frame": 0,
+    "standalone_only": false,
     "name": "Fake HDR"
   },
   {
@@ -204,6 +226,7 @@
     "d_uniform": 0.06086067482829094,
     "d_orient": 0.0778542086482048,
     "frame": 0,
+    "standalone_only": false,
     "name": "Fake HDR"
   },
   {
@@ -213,6 +236,7 @@
     "d_uniform": 0.0014274690765887499,
     "d_orient": 0.0016839142190292478,
     "frame": 0,
+    "standalone_only": false,
     "name": "FitzHugh-Nagumo Excitable Media"
   },
   {
@@ -222,6 +246,7 @@
     "d_uniform": 0.00764059042558074,
     "d_orient": 0.009682507254183292,
     "frame": 4,
+    "standalone_only": false,
     "name": "FitzHugh-Nagumo Excitable Media"
   },
   {
@@ -231,6 +256,7 @@
     "d_uniform": 0.008458150550723076,
     "d_orient": 0.010477940551936626,
     "frame": 4,
+    "standalone_only": false,
     "name": "FitzHugh-Nagumo Excitable Media"
   },
   {
@@ -240,6 +266,7 @@
     "d_uniform": 0.003747390117496252,
     "d_orient": 0.005724627524614334,
     "frame": 4,
+    "standalone_only": false,
     "name": "FitzHugh-Nagumo Excitable Media"
   },
   {
@@ -249,6 +276,7 @@
     "d_uniform": 0.18021003901958466,
     "d_orient": 0.18779633939266205,
     "frame": 0,
+    "standalone_only": false,
     "name": "Flow Field (Codegen)"
   },
   {
@@ -258,6 +286,7 @@
     "d_uniform": 0.014718292281031609,
     "d_orient": 0.01678740605711937,
     "frame": 0,
+    "standalone_only": false,
     "name": "Flow Noise"
   },
   {
@@ -267,6 +296,7 @@
     "d_uniform": 0.006239788141101599,
     "d_orient": 0.012228802777826786,
     "frame": 0,
+    "standalone_only": false,
     "name": "God Rays (Compositing)"
   },
   {
@@ -276,6 +306,7 @@
     "d_uniform": 0.0589473694562912,
     "d_orient": 0.07872910052537918,
     "frame": 0,
+    "standalone_only": false,
     "name": "Gradient"
   },
   {
@@ -285,6 +316,7 @@
     "d_uniform": 0.07876995950937271,
     "d_orient": 0.11715777963399887,
     "frame": 0,
+    "standalone_only": false,
     "name": "Gradient"
   },
   {
@@ -294,43 +326,8 @@
     "d_uniform": 0.00025725128944031894,
     "d_orient": 0.0003885765327140689,
     "frame": 0,
+    "standalone_only": false,
     "name": "Gradient"
-  },
-  {
-    "method_id": "45",
-    "param": "edge_density",
-    "verdict": "MEAN_ONLY",
-    "d_uniform": 0.0,
-    "d_orient": 0.0,
-    "frame": 4,
-    "name": "Graphviz"
-  },
-  {
-    "method_id": "45",
-    "param": "edge_len",
-    "verdict": "MEAN_ONLY",
-    "d_uniform": 0.0,
-    "d_orient": 0.0,
-    "frame": 4,
-    "name": "Graphviz"
-  },
-  {
-    "method_id": "45",
-    "param": "node_count",
-    "verdict": "MEAN_ONLY",
-    "d_uniform": 0.0,
-    "d_orient": 0.0,
-    "frame": 4,
-    "name": "Graphviz"
-  },
-  {
-    "method_id": "45",
-    "param": "node_font_size",
-    "verdict": "MEAN_ONLY",
-    "d_uniform": 0.0,
-    "d_orient": 0.0,
-    "frame": 4,
-    "name": "Graphviz"
   },
   {
     "method_id": "155",
@@ -339,6 +336,7 @@
     "d_uniform": 0.00033247092505916953,
     "d_orient": 0.0005611156229861081,
     "frame": 4,
+    "standalone_only": false,
     "name": "Gray-Scott Reaction-Diffusion"
   },
   {
@@ -348,6 +346,7 @@
     "d_uniform": 0.0032072667963802814,
     "d_orient": 0.0047652279026806355,
     "frame": 0,
+    "standalone_only": false,
     "name": "Gray-Scott Reaction-Diffusion"
   },
   {
@@ -357,6 +356,7 @@
     "d_uniform": 0.021296296268701553,
     "d_orient": 0.0357145257294178,
     "frame": 0,
+    "standalone_only": false,
     "name": "Gray-Scott Reaction-Diffusion"
   },
   {
@@ -366,6 +366,7 @@
     "d_uniform": 0.02044753171503544,
     "d_orient": 0.034280817955732346,
     "frame": 0,
+    "standalone_only": false,
     "name": "Gray-Scott Reaction-Diffusion"
   },
   {
@@ -375,6 +376,7 @@
     "d_uniform": 0.08919376879930496,
     "d_orient": 0.12273427844047546,
     "frame": 0,
+    "standalone_only": false,
     "name": "Gyroid TPMS"
   },
   {
@@ -384,6 +386,7 @@
     "d_uniform": 0.11925618350505829,
     "d_orient": 0.2119337022304535,
     "frame": 0,
+    "standalone_only": false,
     "name": "Gyroid TPMS"
   },
   {
@@ -393,6 +396,7 @@
     "d_uniform": 0.10361690074205399,
     "d_orient": 0.12422773241996765,
     "frame": 0,
+    "standalone_only": false,
     "name": "Gyroid TPMS"
   },
   {
@@ -402,6 +406,7 @@
     "d_uniform": 0.011154464446008205,
     "d_orient": 0.012253089807927608,
     "frame": 0,
+    "standalone_only": true,
     "name": "Hex Distance Field"
   },
   {
@@ -411,6 +416,7 @@
     "d_uniform": 0.11674395948648453,
     "d_orient": 0.14229154586791992,
     "frame": 0,
+    "standalone_only": false,
     "name": "Horizon Ambient Occlusion"
   },
   {
@@ -420,6 +426,7 @@
     "d_uniform": 0.030913546681404114,
     "d_orient": 0.043942976742982864,
     "frame": 0,
+    "standalone_only": false,
     "name": "Horizon Ambient Occlusion"
   },
   {
@@ -429,6 +436,7 @@
     "d_uniform": 0.1191721186041832,
     "d_orient": 0.11792253702878952,
     "frame": 0,
+    "standalone_only": true,
     "name": "Horizon Ambient Occlusion"
   },
   {
@@ -438,6 +446,7 @@
     "d_uniform": 0.04174064099788666,
     "d_orient": 0.05921487882733345,
     "frame": 0,
+    "standalone_only": false,
     "name": "Horizon Ambient Occlusion"
   },
   {
@@ -447,6 +456,7 @@
     "d_uniform": 0.003134286031126976,
     "d_orient": 0.0032000839710235596,
     "frame": 0,
+    "standalone_only": false,
     "name": "Horizon Ambient Occlusion"
   },
   {
@@ -456,6 +466,7 @@
     "d_uniform": 0.0748308077454567,
     "d_orient": 0.06993477046489716,
     "frame": 0,
+    "standalone_only": false,
     "name": "Kaleidoscope Mirror"
   },
   {
@@ -465,6 +476,7 @@
     "d_uniform": 0.06590145081281662,
     "d_orient": 0.060723986476659775,
     "frame": 0,
+    "standalone_only": false,
     "name": "Kaleidoscope Mirror"
   },
   {
@@ -474,6 +486,7 @@
     "d_uniform": 0.23931767046451569,
     "d_orient": 0.30348965525627136,
     "frame": 0,
+    "standalone_only": false,
     "name": "Kaleidoscopic IFS (Pattern)"
   },
   {
@@ -483,6 +496,7 @@
     "d_uniform": 0.007070548832416534,
     "d_orient": 0.009381858631968498,
     "frame": 0,
+    "standalone_only": false,
     "name": "Kaleidoscopic IFS (Pattern)"
   },
   {
@@ -492,6 +506,7 @@
     "d_uniform": 0.019809389486908913,
     "d_orient": 0.02745010145008564,
     "frame": 0,
+    "standalone_only": false,
     "name": "Kaleidoscopic IFS (Pattern)"
   },
   {
@@ -501,6 +516,7 @@
     "d_uniform": 0.03967524692416191,
     "d_orient": 0.045975930988788605,
     "frame": 0,
+    "standalone_only": false,
     "name": "Kelvin-Helmholtz Instability"
   },
   {
@@ -510,6 +526,7 @@
     "d_uniform": 0.26851946115493774,
     "d_orient": 0.2781876027584076,
     "frame": 0,
+    "standalone_only": false,
     "name": "Kelvin-Helmholtz Instability"
   },
   {
@@ -519,6 +536,7 @@
     "d_uniform": 0.0027238791808485985,
     "d_orient": 0.0028634488116949797,
     "frame": 4,
+    "standalone_only": false,
     "name": "Kelvin-Helmholtz Instability"
   },
   {
@@ -528,6 +546,7 @@
     "d_uniform": 0.2902686893939972,
     "d_orient": 0.1468644142150879,
     "frame": 0,
+    "standalone_only": false,
     "name": "Kelvin-Helmholtz Instability"
   },
   {
@@ -537,6 +556,7 @@
     "d_uniform": 0.0016230179462581873,
     "d_orient": 0.0018388025928288698,
     "frame": 0,
+    "standalone_only": false,
     "name": "Kuramoto Coupled-Oscillator Phase Field"
   },
   {
@@ -546,6 +566,7 @@
     "d_uniform": 0.13468515872955322,
     "d_orient": 0.16921277344226837,
     "frame": 0,
+    "standalone_only": false,
     "name": "LV Anisotropic Diffusion"
   },
   {
@@ -555,6 +576,7 @@
     "d_uniform": 0.04473965987563133,
     "d_orient": 0.0453459732234478,
     "frame": 0,
+    "standalone_only": false,
     "name": "LV Anisotropic Diffusion"
   },
   {
@@ -564,6 +586,7 @@
     "d_uniform": 0.02820689044892788,
     "d_orient": 0.039432037621736526,
     "frame": 0,
+    "standalone_only": false,
     "name": "LV Anisotropic Diffusion"
   },
   {
@@ -573,6 +596,7 @@
     "d_uniform": 0.04548005759716034,
     "d_orient": 0.049355294555425644,
     "frame": 0,
+    "standalone_only": false,
     "name": "LV Anisotropic Diffusion"
   },
   {
@@ -582,6 +606,7 @@
     "d_uniform": 0.04316335171461105,
     "d_orient": 0.06547408550977707,
     "frame": 0,
+    "standalone_only": false,
     "name": "LV Anisotropic Diffusion"
   },
   {
@@ -591,6 +616,7 @@
     "d_uniform": 0.517879843711853,
     "d_orient": 0.23945020139217377,
     "frame": 0,
+    "standalone_only": false,
     "name": "LV Turing Regime"
   },
   {
@@ -600,6 +626,7 @@
     "d_uniform": 0.418960303068161,
     "d_orient": 0.03883366659283638,
     "frame": 0,
+    "standalone_only": false,
     "name": "LV Turing Regime"
   },
   {
@@ -609,6 +636,7 @@
     "d_uniform": 0.6843914985656738,
     "d_orient": 0.009450837038457394,
     "frame": 0,
+    "standalone_only": false,
     "name": "LV Turing Regime"
   },
   {
@@ -618,6 +646,7 @@
     "d_uniform": 0.7053243517875671,
     "d_orient": 0.08586015552282333,
     "frame": 0,
+    "standalone_only": false,
     "name": "LV Turing Regime"
   },
   {
@@ -627,6 +656,7 @@
     "d_uniform": 0.26642176508903503,
     "d_orient": 0.1477886438369751,
     "frame": 0,
+    "standalone_only": false,
     "name": "LV Turing Regime"
   },
   {
@@ -636,6 +666,7 @@
     "d_uniform": 0.18849077820777893,
     "d_orient": 0.18846583366394043,
     "frame": 0,
+    "standalone_only": false,
     "name": "LV Turing Regime"
   },
   {
@@ -645,6 +676,7 @@
     "d_uniform": 0.0382988378405571,
     "d_orient": 0.07125942409038544,
     "frame": 0,
+    "standalone_only": false,
     "name": "Larger Than Life Cellular Automaton"
   },
   {
@@ -654,6 +686,7 @@
     "d_uniform": 0.01625817082822323,
     "d_orient": 0.030701933428645134,
     "frame": 4,
+    "standalone_only": false,
     "name": "Lenia"
   },
   {
@@ -663,6 +696,7 @@
     "d_uniform": 0.09301220625638962,
     "d_orient": 0.17305760085582733,
     "frame": 0,
+    "standalone_only": false,
     "name": "Lens Flare"
   },
   {
@@ -672,6 +706,7 @@
     "d_uniform": 0.0918629840016365,
     "d_orient": 0.14190450310707092,
     "frame": 0,
+    "standalone_only": false,
     "name": "Lens Flare"
   },
   {
@@ -681,6 +716,7 @@
     "d_uniform": 0.12739476561546326,
     "d_orient": 0.166644886136055,
     "frame": 0,
+    "standalone_only": true,
     "name": "Line Integral Convolution (Procedural)"
   },
   {
@@ -690,6 +726,7 @@
     "d_uniform": 0.0039413063786923885,
     "d_orient": 0.005524092819541693,
     "frame": 0,
+    "standalone_only": false,
     "name": "Line Integral Convolution (Procedural)"
   },
   {
@@ -699,6 +736,7 @@
     "d_uniform": 0.011146342381834984,
     "d_orient": 0.015569060109555721,
     "frame": 0,
+    "standalone_only": false,
     "name": "Line Integral Convolution (Procedural)"
   },
   {
@@ -708,6 +746,7 @@
     "d_uniform": 0.09141967445611954,
     "d_orient": 0.14938423037528992,
     "frame": 0,
+    "standalone_only": false,
     "name": "Lotka-Volterra RD"
   },
   {
@@ -717,6 +756,7 @@
     "d_uniform": 0.019233953207731247,
     "d_orient": 0.024111518636345863,
     "frame": 0,
+    "standalone_only": false,
     "name": "Lotka-Volterra RD"
   },
   {
@@ -726,6 +766,7 @@
     "d_uniform": 0.00031128962291404605,
     "d_orient": 0.0003735097125172615,
     "frame": 0,
+    "standalone_only": false,
     "name": "Lotka-Volterra RD"
   },
   {
@@ -735,6 +776,7 @@
     "d_uniform": 0.0004124681872781366,
     "d_orient": 0.4935445785522461,
     "frame": 0,
+    "standalone_only": false,
     "name": "Lotka-Volterra RD"
   },
   {
@@ -744,6 +786,7 @@
     "d_uniform": 0.12085091322660446,
     "d_orient": 0.1483924835920334,
     "frame": 0,
+    "standalone_only": false,
     "name": "Lotka-Volterra RD"
   },
   {
@@ -753,6 +796,7 @@
     "d_uniform": 0.05277946963906288,
     "d_orient": 0.06727999448776245,
     "frame": 0,
+    "standalone_only": false,
     "name": "MatCap Relight"
   },
   {
@@ -762,6 +806,7 @@
     "d_uniform": 0.24131794273853302,
     "d_orient": 0.2696591019630432,
     "frame": 0,
+    "standalone_only": false,
     "name": "Mathematical Marbling"
   },
   {
@@ -771,6 +816,7 @@
     "d_uniform": 0.19562460482120514,
     "d_orient": 0.23187220096588135,
     "frame": 0,
+    "standalone_only": false,
     "name": "Moir\u00e9"
   },
   {
@@ -780,6 +826,7 @@
     "d_uniform": 0.299855500459671,
     "d_orient": 0.30536627769470215,
     "frame": 0,
+    "standalone_only": false,
     "name": "Moir\u00e9"
   },
   {
@@ -789,6 +836,7 @@
     "d_uniform": 0.083234041929245,
     "d_orient": 0.12197825312614441,
     "frame": 0,
+    "standalone_only": false,
     "name": "Moir\u00e9 Patterns"
   },
   {
@@ -798,6 +846,7 @@
     "d_uniform": 0.0345306433737278,
     "d_orient": 0.05127787962555885,
     "frame": 0,
+    "standalone_only": false,
     "name": "Multi-Layer RT"
   },
   {
@@ -807,6 +856,7 @@
     "d_uniform": 0.008937379345297813,
     "d_orient": 0.01572277583181858,
     "frame": 0,
+    "standalone_only": false,
     "name": "Multi-Layer RT"
   },
   {
@@ -816,6 +866,7 @@
     "d_uniform": 0.036372095346450806,
     "d_orient": 0.032001178711652756,
     "frame": 0,
+    "standalone_only": false,
     "name": "Multi-Layer RT"
   },
   {
@@ -825,6 +876,7 @@
     "d_uniform": 0.18109190464019775,
     "d_orient": 0.18109716475009918,
     "frame": 0,
+    "standalone_only": false,
     "name": "Noise"
   },
   {
@@ -834,6 +886,7 @@
     "d_uniform": 0.1410142183303833,
     "d_orient": 0.1468188464641571,
     "frame": 0,
+    "standalone_only": false,
     "name": "Nonlinear Schr\u00f6dinger Equation"
   },
   {
@@ -843,6 +896,7 @@
     "d_uniform": 0.08349881321191788,
     "d_orient": 0.2206655889749527,
     "frame": 0,
+    "standalone_only": false,
     "name": "Nonlinear Schr\u00f6dinger Equation"
   },
   {
@@ -852,6 +906,7 @@
     "d_uniform": 4.311910015530884e-05,
     "d_orient": 5.7303026551380754e-05,
     "frame": 0,
+    "standalone_only": false,
     "name": "PM Anisotropic RD"
   },
   {
@@ -861,6 +916,7 @@
     "d_uniform": 1.531863017589785e-05,
     "d_orient": 2.666576074261684e-05,
     "frame": 4,
+    "standalone_only": false,
     "name": "PM Anisotropic RD"
   },
   {
@@ -870,6 +926,7 @@
     "d_uniform": 0.0004930328577756882,
     "d_orient": 0.0004181418044026941,
     "frame": 4,
+    "standalone_only": false,
     "name": "PM Anisotropic RD"
   },
   {
@@ -879,6 +936,7 @@
     "d_uniform": 0.005480667110532522,
     "d_orient": 0.0071481275372207165,
     "frame": 0,
+    "standalone_only": false,
     "name": "PM Anisotropic RD"
   },
   {
@@ -888,6 +946,7 @@
     "d_uniform": 0.007541303057223558,
     "d_orient": 0.009496414102613926,
     "frame": 0,
+    "standalone_only": false,
     "name": "Phase Separation + Darcy Advection"
   },
   {
@@ -897,6 +956,7 @@
     "d_uniform": 0.0018597948364913464,
     "d_orient": 0.002437931252643466,
     "frame": 0,
+    "standalone_only": false,
     "name": "Phase Separation + Darcy Advection"
   },
   {
@@ -906,6 +966,7 @@
     "d_uniform": 0.12189767509698868,
     "d_orient": 0.12148353457450867,
     "frame": 0,
+    "standalone_only": false,
     "name": "Quasicrystal"
   },
   {
@@ -915,6 +976,7 @@
     "d_uniform": 0.05063657462596893,
     "d_orient": 0.06539351493120193,
     "frame": 0,
+    "standalone_only": false,
     "name": "R2 Dither"
   },
   {
@@ -924,6 +986,7 @@
     "d_uniform": 0.013825533911585808,
     "d_orient": 0.027118699625134468,
     "frame": 0,
+    "standalone_only": false,
     "name": "Rayleigh-Taylor Instability"
   },
   {
@@ -933,6 +996,7 @@
     "d_uniform": 0.014338993467390537,
     "d_orient": 0.011667688377201557,
     "frame": 0,
+    "standalone_only": false,
     "name": "Rayleigh-Taylor Instability"
   },
   {
@@ -942,6 +1006,7 @@
     "d_uniform": 0.035094596445560455,
     "d_orient": 0.024334680289030075,
     "frame": 0,
+    "standalone_only": false,
     "name": "Refractive Caustics"
   },
   {
@@ -951,6 +1016,7 @@
     "d_uniform": 0.08610676229000092,
     "d_orient": 0.08797526359558105,
     "frame": 0,
+    "standalone_only": false,
     "name": "Refractive Caustics"
   },
   {
@@ -960,6 +1026,7 @@
     "d_uniform": 0.006018094252794981,
     "d_orient": 0.008788161911070347,
     "frame": 0,
+    "standalone_only": false,
     "name": "SDF Scene"
   },
   {
@@ -969,6 +1036,7 @@
     "d_uniform": 0.005594050977379084,
     "d_orient": 0.009071774780750275,
     "frame": 0,
+    "standalone_only": false,
     "name": "SDF Scene"
   },
   {
@@ -978,6 +1046,7 @@
     "d_uniform": 0.16342677175998688,
     "d_orient": 0.19568566977977753,
     "frame": 0,
+    "standalone_only": false,
     "name": "SDF Scene"
   },
   {
@@ -987,6 +1056,7 @@
     "d_uniform": 0.00764379370957613,
     "d_orient": 0.010192997753620148,
     "frame": 0,
+    "standalone_only": false,
     "name": "Screen-Space Fluid"
   },
   {
@@ -996,6 +1066,7 @@
     "d_uniform": 0.020178601145744324,
     "d_orient": 0.013171182945370674,
     "frame": 0,
+    "standalone_only": false,
     "name": "Shallow Water Waves"
   },
   {
@@ -1005,6 +1076,7 @@
     "d_uniform": 0.01917438395321369,
     "d_orient": 0.03300010785460472,
     "frame": 0,
+    "standalone_only": false,
     "name": "Sheared Rayleigh-Taylor"
   },
   {
@@ -1014,6 +1086,7 @@
     "d_uniform": 0.006579256150871515,
     "d_orient": 0.009216707199811935,
     "frame": 0,
+    "standalone_only": false,
     "name": "Sheared Rayleigh-Taylor"
   },
   {
@@ -1023,6 +1096,7 @@
     "d_uniform": 0.03533651679754257,
     "d_orient": 0.046614740043878555,
     "frame": 0,
+    "standalone_only": false,
     "name": "Slit Scan"
   },
   {
@@ -1032,6 +1106,7 @@
     "d_uniform": 0.020504513755440712,
     "d_orient": 0.027592957019805908,
     "frame": 0,
+    "standalone_only": false,
     "name": "Slit Scan"
   },
   {
@@ -1041,6 +1116,7 @@
     "d_uniform": 0.01755746454000473,
     "d_orient": 0.02405461110174656,
     "frame": 0,
+    "standalone_only": false,
     "name": "Slit Scan"
   },
   {
@@ -1050,6 +1126,7 @@
     "d_uniform": 0.019021302461624146,
     "d_orient": 0.024909501895308495,
     "frame": 0,
+    "standalone_only": false,
     "name": "Spot Noise"
   },
   {
@@ -1059,6 +1136,7 @@
     "d_uniform": 0.00016434428107459098,
     "d_orient": 0.00021464988822117448,
     "frame": 0,
+    "standalone_only": false,
     "name": "Stable Fluids (Navier-Stokes)"
   },
   {
@@ -1068,6 +1146,7 @@
     "d_uniform": 0.014967940747737885,
     "d_orient": 0.020096125081181526,
     "frame": 0,
+    "standalone_only": false,
     "name": "Strange Attractor 2D"
   },
   {
@@ -1077,6 +1156,7 @@
     "d_uniform": 16.771364212036133,
     "d_orient": 25.07074737548828,
     "frame": 0,
+    "standalone_only": false,
     "name": "Strange Attractors (Chaos Density)"
   },
   {
@@ -1086,6 +1166,7 @@
     "d_uniform": 0.004103122744709253,
     "d_orient": 0.004580269567668438,
     "frame": 0,
+    "standalone_only": false,
     "name": "Swift-Hohenberg (Convection)"
   },
   {
@@ -1095,6 +1176,7 @@
     "d_uniform": 0.0017355437157675624,
     "d_orient": 0.002431123051792383,
     "frame": 0,
+    "standalone_only": false,
     "name": "Swift-Hohenberg (Convection)"
   },
   {
@@ -1104,6 +1186,7 @@
     "d_uniform": 0.06663870066404343,
     "d_orient": 0.07975300401449203,
     "frame": 0,
+    "standalone_only": false,
     "name": "Swirl Displacement"
   },
   {
@@ -1113,16 +1196,8 @@
     "d_uniform": 0.1535310447216034,
     "d_orient": 0.15548959374427795,
     "frame": 0,
+    "standalone_only": false,
     "name": "Swirl Displacement"
-  },
-  {
-    "method_id": "__test__",
-    "param": "anim_speed",
-    "verdict": "MEAN_ONLY",
-    "d_uniform": 0.0,
-    "d_orient": 0.0,
-    "frame": 4,
-    "name": "Test Node"
   },
   {
     "method_id": "1004",
@@ -1131,6 +1206,7 @@
     "d_uniform": 0.2097991704940796,
     "d_orient": 0.2270043045282364,
     "frame": 0,
+    "standalone_only": true,
     "name": "Thin Film Interference"
   },
   {
@@ -1140,6 +1216,7 @@
     "d_uniform": 0.020497683435678482,
     "d_orient": 0.024757741019129753,
     "frame": 0,
+    "standalone_only": false,
     "name": "Thin Film Interference"
   },
   {
@@ -1149,6 +1226,7 @@
     "d_uniform": 0.013456788845360279,
     "d_orient": 0.023086417466402054,
     "frame": 0,
+    "standalone_only": false,
     "name": "Tonal Hatching"
   },
   {
@@ -1158,6 +1236,7 @@
     "d_uniform": 0.011273827403783798,
     "d_orient": 0.018346060067415237,
     "frame": 0,
+    "standalone_only": false,
     "name": "VHS Tape"
   },
   {
@@ -1167,6 +1246,7 @@
     "d_uniform": 0.0490451380610466,
     "d_orient": 0.06756366044282913,
     "frame": 0,
+    "standalone_only": false,
     "name": "Void-and-Cluster Dither"
   },
   {
@@ -1176,6 +1256,7 @@
     "d_uniform": 0.018444513902068138,
     "d_orient": 0.02761153317987919,
     "frame": 0,
+    "standalone_only": false,
     "name": "Voronoise"
   },
   {
@@ -1185,6 +1266,7 @@
     "d_uniform": 0.004450982436537743,
     "d_orient": 0.0066568003967404366,
     "frame": 0,
+    "standalone_only": false,
     "name": "Voronoise"
   },
   {
@@ -1194,6 +1276,7 @@
     "d_uniform": 0.08125802874565125,
     "d_orient": 0.10958186537027359,
     "frame": 0,
+    "standalone_only": false,
     "name": "Water Caustics"
   },
   {
@@ -1203,6 +1286,7 @@
     "d_uniform": 0.002798192435875535,
     "d_orient": 0.003827387932687998,
     "frame": 0,
+    "standalone_only": false,
     "name": "XDoG Stylize"
   },
   {
@@ -1212,6 +1296,7 @@
     "d_uniform": 0.03495049104094505,
     "d_orient": 0.06308894604444504,
     "frame": 0,
+    "standalone_only": false,
     "name": "XDoG Stylize"
   },
   {
@@ -1221,6 +1306,7 @@
     "d_uniform": 0.043489743024110794,
     "d_orient": 0.0674741119146347,
     "frame": 0,
+    "standalone_only": false,
     "name": "XDoG Stylize"
   }
 ]

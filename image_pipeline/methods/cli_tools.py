@@ -463,24 +463,30 @@ def method_img2txt(out_dir: Path, seed: int, params=None):
 
 
 @method(id="45", name="Graphviz", category="cli_tools", tags=["graph", "expanded"],
+        # SCALAR, not FIELD: every one of these becomes a Graphviz DOT attribute
+        # or a loop bound — `range(use_n_nodes)`, `fontsize={use_font_size}`,
+        # `len={use_edge_len}` — so they are irreducibly one number per render.
+        # They were declared FIELD and then np.mean()'d on arrival, which made a
+        # wired field a silent no-op. A SCALAR driver (LFO sweeping node_count)
+        # still works and is the meaningful way to animate them.
         inputs={"image_in": "IMAGE",
                 "anim_speed": "SCALAR",
-                "edge_density": "FIELD",
-                "node_count": "FIELD",
-                "edge_len": "FIELD",
-                "node_font_size": "FIELD"},
+                "edge_density": "SCALAR",
+                "node_count": "SCALAR",
+                "edge_len": "SCALAR",
+                "node_font_size": "SCALAR"},
         outputs={"image": "IMAGE", "luminance": "FIELD"},
         params={
-            "node_count": {"description": "number of graph nodes (can be driven by FIELD)", "min": 10, "max": 200, "default": 40},
-            "edge_density": {"description": "number of random edges (node_count × multiplier, can be driven by FIELD)", "min": 1, "max": 10, "default": 2},
+            "node_count": {"description": "number of graph nodes (structural — SCALAR only)", "min": 10, "max": 200, "default": 40},
+            "edge_density": {"description": "number of random edges (node_count × multiplier; structural — SCALAR only)", "min": 1, "max": 10, "default": 2},
             "layout": {"description": "Graphviz layout engine (neato/dot/fdp/sfdp/twopi/circo)", "default": "neato"},
             "bg_color": {"description": "graph background hex color", "default": "#0a0a12"},
             "node_fill": {"description": "default node fill hex color", "default": "#2a2a32"},
             "node_font_color": {"description": "node label font hex color", "default": "#8a7a6a"},
             "node_border": {"description": "node border hex color", "default": "#4a4a5a"},
-            "node_font_size": {"description": "node label font size (can be driven by FIELD)", "min": 4, "max": 24, "default": 8},
+            "node_font_size": {"description": "node label font size (structural — SCALAR only)", "min": 4, "max": 24, "default": 8},
             "edge_color": {"description": "edge line hex color", "default": "#4a3a2a"},
-            "edge_len": {"description": "edge length factor (can be driven by FIELD)", "min": 0.5, "max": 10.0, "default": 1.5},
+            "edge_len": {"description": "edge length factor (structural — SCALAR only)", "min": 0.5, "max": 10.0, "default": 1.5},
             "dpi": {"description": "output DPI", "min": 36, "max": 300, "default": 72},
             "anim_mode": {"description": "animation mode", "choices": ["none", "edge_morph", "color_cycle",
                 "layout_cycle", "node_drift", "font_pulse", "bg_cycle", "edge_len_morph"], "default": "none"},
@@ -512,18 +518,10 @@ def method_graphviz(out_dir: Path, seed: int, params=None):
     else:
         anim_speed = float(params.get("anim_speed", 1.0))
 
-    edge_density_field = params.get("_field_edge_density")
-    node_count_field = params.get("_field_node_count")
-    edge_len_field = params.get("_field_edge_len")
-    font_size_field = params.get("_field_node_font_size")
-
+    # These four are structural (see the inputs= note above): a SCALAR wire
+    # lands straight in params, so no _field_ handling is needed or meaningful.
     n_nodes = int(params.get("node_count", 40))
-    if node_count_field is not None:
-        n_nodes = int(np.clip(np.mean(node_count_field) * 190 + 10, 10, 200))
-
     base_edge_density = int(params.get("edge_density", 2))
-    if edge_density_field is not None:
-        base_edge_density = int(np.clip(np.mean(edge_density_field) * 9 + 1, 1, 10))
 
     layout = params.get("layout", "neato")
     bg_color = params.get("bg_color", "#0a0a12")
@@ -531,13 +529,8 @@ def method_graphviz(out_dir: Path, seed: int, params=None):
     node_font_color = params.get("node_font_color", "#8a7a6a")
     node_border = params.get("node_border", "#4a4a5a")
     base_font_size = int(params.get("node_font_size", 8))
-    if font_size_field is not None:
-        base_font_size = int(np.clip(np.mean(font_size_field) * 20 + 4, 4, 24))
-
     edge_color = params.get("edge_color", "#4a3a2a")
     base_edge_len = float(params.get("edge_len", 1.5))
-    if edge_len_field is not None:
-        base_edge_len = float(np.clip(np.mean(edge_len_field) * 9.5 + 0.5, 0.5, 10.0))
 
     dpi = int(params.get("dpi", 72))
 
