@@ -241,6 +241,92 @@ def cmd_list(args) -> int:
     return 0
 
 
+def trace_internal_shapes(mid: str, canvas: tuple[int, int]) -> list[dict]:
+    """Record the shape of every ndarray returned by the node's own helpers.
+
+    A contract audit can only see the FINAL payload, so a brief built from it
+    describes the symptom and points a fixer at the emit site. That is how the
+    first Node Doctor run on 437 went wrong: the output was (1,192,3), so it
+    "fixed" the return statement with a reshape, when the width axis had
+    actually been lost 140 lines earlier in _build_background.
+
+    Tracing return values inside the node's own module localises the fault to
+    the first helper that produced a wrong-shaped array. That is the sentence a
+    fixer actually needs.
+
+    Only functions defined in the node's module file are traced, so this stays
+    cheap and does not drown in numpy/PIL internals.
+    """
+    import sys as _sys
+    import inspect as _inspect
+
+    meta = registry.get_meta(mid)
+    try:
+        module_file = _inspect.getsourcefile(meta.fn)
+    except Exception:
+        return []
+    if not module_file:
+        return []
+
+    W_canvas, H_canvas = canvas
+    seen: list[dict] = []
+
+    def _tracer(frame, event, arg):
+        if event == "call":
+            # Only descend into this node's own module.
+            return _tracer if frame.f_code.co_filename == module_file else None
+        if event == "return" and frame.f_code.co_filename == module_file:
+            vals = arg if isinstance(arg, tuple) else (arg,)
+            for i, v in enumerate(vals):
+                if not isinstance(v, np.ndarray) or v.ndim < 2:
+                    continue
+                h, w = v.shape[0], v.shape[1]
+                # A 2-D+ array coming out of a helper is almost always
+                # canvas-shaped. Flag the ones that are not.
+                bad = not (h == H_canvas and w == W_canvas)
+                seen.append({
+                    "fn": frame.f_code.co_name,
+                    "slot": i if isinstance(arg, tuple) else None,
+                    "shape": tuple(v.shape),
+                    "dtype": str(v.dtype),
+                    "suspect": bad,
+                })
+        return _tracer
+
+    nodes = [{"id": "n", "method_id": mid, "params": _defaults(mid),
+              "render": True}]
+    set_canvas(*canvas)
+    ex = GraphExecutor(Path(tempfile.mkdtemp(prefix="ni_trace_")),
+                       in_memory=True, audit_to_disk=False)
+    _sys.settrace(_tracer)
+    try:
+        ex.execute(nodes=nodes, edges=[], seed=7, frame=1, frames=8)
+    except Exception:
+        pass
+    finally:
+        _sys.settrace(None)
+    return seen
+
+
+def cmd_trace(args) -> int:
+    canvas = (args.width, args.height)
+    recs = trace_internal_shapes(args.method, canvas)
+    if not recs:
+        print("no internal ndarray returns traced (single-function node?)")
+        return 0
+    print(f"=== internal array shapes for {args.method} "
+          f"at {canvas[0]}x{canvas[1]} (expect H={canvas[1]}, W={canvas[0]}) ===")
+    for r in recs:
+        mark = "  <-- SUSPECT" if r["suspect"] else ""
+        slot = f"[{r['slot']}]" if r["slot"] is not None else ""
+        print(f"  {r['fn']}{slot:<4} -> {str(r['shape']):<20} {r['dtype']:<9}{mark}")
+    first = next((r for r in recs if r["suspect"]), None)
+    if first:
+        print(f"\nFIRST WRONG SHAPE: {first['fn']} returned {first['shape']} "
+              f"— fix there, not at the emit site.")
+    return 0
+
+
 def cmd_diagnose(args) -> int:
     """Turn "this node feels wrong" into a specific, actionable list.
 
@@ -412,8 +498,18 @@ def main() -> int:
     ls = sub.add_parser("list", help="list captured issues and whether they still reproduce")
     ls.set_defaults(func=cmd_list)
 
+    tr = sub.add_parser("trace", help="shapes of arrays inside the node's own helpers")
+    tr.add_argument("--method", required=True)
+    tr.add_argument("--width", type=int, default=256)
+    tr.add_argument("--height", type=int, default=192)
+    tr.set_defaults(func=cmd_trace)
+
     dg = sub.add_parser("diagnose", help="why does this node feel wrong?")
     dg.add_argument("--method", required=True)
+    dg.add_argument("--trace", action="store_true",
+                    help="also trace internal array shapes (localises shape bugs)")
+    dg.add_argument("--width", type=int, default=256)
+    dg.add_argument("--height", type=int, default=192)
     dg.add_argument("--brief", action="store_true",
                     help="also emit a Node Doctor brief to paste into the panel")
     dg.set_defaults(func=cmd_diagnose)
