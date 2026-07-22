@@ -5,6 +5,24 @@
 
 ---
 
+## 2026-07-21
+
+- **Removed** the shootout evolutionary generator and the tuning subsystem in
+  full: `image_pipeline/shootout/` (31 files), `image_pipeline/tuning/`
+  (8 files), `ui/shootout.html`, `ui/tune.html`,
+  `scripts/shootout_health_probe.py`, and 43 associated test files. Excised the
+  `/shootout`, `/tune`, `/api/shootout/*`, and `/api/tune/*` route blocks from
+  `image_pipeline/server.py` (3,214 → 2,630 lines) and dropped the Shootout nav
+  button from `ui/index.html`.
+- **Preserved** `image_pipeline/tests/test_driver_e2e_fast.py`, which guards the
+  GraphExecutor SCALAR→param edge wiring in `core/graph.py` — core behavior that
+  outlives the generator. Its one shootout coupling (`DEFAULT_CONFIG.temporal_var_min`)
+  is now an inlined `3e-3` literal.
+- **Known gap:** the two cheap default-suite tests that covered the SCALAR→param
+  path (`test_shootout_driver_generators_vary`, `test_shootout_driver_modulation`)
+  went with the package. `test_driver_e2e_fast.py` is now the only end-to-end
+  guard on that path and is marked `slow`, so it does not run under
+  `-m "not slow"`. A cheap replacement is worth adding.
 ## 2026-07-22
 
 - **Added** `tools/audit_node_contract.py` — runs every registered method

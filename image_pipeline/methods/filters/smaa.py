@@ -31,7 +31,7 @@ from ...core.animation import capture_frame
 #
 # CPU path is the authoritative export. The search is O(W*H*search_steps) with
 # tiny inner work, so at 768x512 with search_steps<=16 it stays well under the
-# shootout's 150 s budget. Distinct from other denoise/AA nodes:
+# 150 s budget. Distinct from other denoise/AA nodes:
 #   • fxaa_gpu: GLSL-only live-preview twin, no CPU AA post-FX.
 #   • non_local_means / bilateral_grid / guided_filter: smoothing, not edge-aware
 #     antialiasing of jaggies; they blur across edges, SMAA preserves them.

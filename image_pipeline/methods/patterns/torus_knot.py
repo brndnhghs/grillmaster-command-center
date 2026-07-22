@@ -26,8 +26,8 @@ GPU twin a natural follow-up (the 3D-sidecar RMF tube is the next step).
 
 Cheap on purpose: a single vectorised sample of N points (default 6000) plus a
 9-tap scatter and a small blur. Well under the pipeline's 150 s timeout, so the
-node never becomes a shootout timeout casualty — and its continuous motion under
-`rotate` / `morph` reliably clears the shootout liveness cull (unlike
+node never becomes a timeout casualty — and its continuous motion under
+`rotate` / `morph` reliably clears the liveness cull (unlike
 contrast-only patterns).
 
 Lines stay thin (1–3 px) and never thicken with stretch, per the pipeline's

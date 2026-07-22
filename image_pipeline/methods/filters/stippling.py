@@ -18,7 +18,7 @@ Why this node belongs in the pipeline
     wired image (or its own procedural subject) into a distinctive pen-and-ink
     rendering — a stylization/compositing primitive the graph lacked.
   - It is fast and deterministic (seed-driven): a few seconds even at 512x512,
-    so it does NOT risk the shootout's 150s render-timeout cull that kills
+    so it does NOT risk the 150s render-timeout cull that kills
     164 of the logged genomes.
   - The toned weight (density) map is exposed as a FIELD — a structural signal
     a downstream genome can drive a parameter from.

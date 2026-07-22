@@ -3,7 +3,7 @@
 The generic driver/keyframe injection in GraphExecutor runs *after* the
 Arch-A ``continue`` into the sim-cook branch, so a CHOP driver feeding an
 Arch-A terminal was silently dropped: the sim cooked from ``node.params``
-defaults and the clip was culled as static by the shootout liveness gate.
+defaults and the clip was culled as static by the liveness gate.
 That is the dominant dead-genome signal (drivers __lfo__/__counter__/...
 appear in ~1000 dead genomes).
 

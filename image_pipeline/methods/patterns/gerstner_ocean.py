@@ -23,7 +23,7 @@ frames, no scatter/gather.
 
 Why this node: it is a cheap, timeout-immune, ALWAYS-animated generator. Every
 `swell`/`wind`/`gust` frame advances the wave phases so the surface is in
-perpetual high-contrast motion — exactly the high-liveness form the shootout
+perpetual high-contrast motion — exactly the high-liveness form the pipeline
 rewards (the temporal_var liveness cull kills contrast-only static patterns; a
 propagating wave field passes it trivially). A full 768x512 render costs well
 under a second, so it is never a render-timeout casualty (the dominant death

@@ -192,7 +192,7 @@ def method_fast_guided_filter(out_dir, seed: int, params=None):
     This is an approximation of the full guided filter (slightly softer at
     edges) that is 4–256× cheaper, which is exactly what makes guided filtering
     usable for real-time joint upsampling and per-frame video smoothing. It is
-    the variant the project's shootout needs for its >150s-render cull: an
+    the variant this project needs given its >150s-render cull: an
     edge-preserving smoother that stays well under the time budget.
 
     Self-guided (I = p = input), colour per-channel. Same three output modes as

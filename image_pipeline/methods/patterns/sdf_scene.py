@@ -28,7 +28,7 @@ from ...core.animation import capture_frame
 #
 # The render is a pure closed-form f(uv, t): no iteration, no state, so it
 # is cheap (vectorised numpy over the whole canvas in <100ms) and sits far
-# inside the shootout's 150s render cull. Outputs the RGBA drawing, the raw
+# inside the 150s render cull. Outputs the RGBA drawing, the raw
 # SDF FIELD (normalised), an inside/outside MASK, and SCALAR stats.
 # ─────────────────────────────────────────────────────────────────────────────
 

@@ -45,8 +45,6 @@
 | `image_pipeline/core/` | Engine (executor, registry, utils) |
 | `image_pipeline/methods/` | Node library (180+ methods) |
 | `image_pipeline/server.py` | FastAPI server + API endpoints |
-| `image_pipeline/shootout/` | Evolutionary method generator |
-| `image_pipeline/tuning/` | Parameter tuning |
 | `ui/index.html` | Single-page editor frontend |
 | `chord_bot/` | Music chord node system |
 | `dashboard/` | Unified control panel |

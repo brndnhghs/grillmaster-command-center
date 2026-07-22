@@ -1,8 +1,0 @@
-{
-  "sim_backbone": 3.0,
-  "pattern_blend": 1.5,
-  "masked_composite": 1.2,
-  "field_modulate": 1.2,
-  "post_fx": 2.0,
-  "feedback_loop": 0.5
-}

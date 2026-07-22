@@ -1,6 +1,6 @@
 """Regression: CHOP driver nodes must advance every rendered frame.
 
-Route 8 (2026-07-13): the shootout liveness gate culled ~66% of genomes,
+Route 8 (2026-07-13): the liveness gate culled ~66% of genomes,
 dominated by ``static``/``flat`` deaths. Root cause: ``__lfo__``,
 ``__noise1d__`` and ``__strobe__`` derived their phase from
 ``params.get("time", 0.0)`` / ``params.get("frame", 0)``, but the
@@ -81,7 +81,7 @@ def test_lfo_rate_is_hertz_not_per_clip():
     *per clip*. Any rate < 0.5 then completed < half a cycle over the clip, so
     square/saw/triangle waveforms collapsed to a DC (constant) output and every
     LFO-driven graph rendered a frozen clip (the dominant 'static'/'flat'
-    shootout death). With true Hz, a low-rate LFO must sweep across the clip.
+    death). With true Hz, a low-rate LFO must sweep across the clip.
 
     Assert a square LFO at rate=0.27 sweeps both states over a 96-frame/24fps
     clip (4 s -> ~1.1 cycles), not sit at one value.

@@ -126,7 +126,7 @@ def _grow(attractors, origin, segment, influence, kill, max_nodes,
 # per frame (48-96×). The space-colonization growth (`_grow`) is fully
 # deterministic in (seed, attractor field, growth params) — it produces a
 # byte-identical tree every frame — yet it was the single largest render-timeout
-# burner in the shootout corpus (~238s/clip) precisely because it re-grew the
+# burner in the corpus (~238s/clip) precisely because it re-grew the
 # tree from scratch on every frame. The per-frame work that actually varies is
 # only the sway/reveal transform + render. Memoizing the grown structure across
 # frames cuts the dominant O(steps·nodes·attractors) cost to once per clip,

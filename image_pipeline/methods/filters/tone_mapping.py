@@ -191,7 +191,7 @@ def method_tone_mapping(out_dir, seed: int, params=None):
     fractals) to get a properly displayed result.
 
     Closed-form per-pixel, fully vectorized (O(W*H)) — never hits the
-    render-timeout cull, so it is safe for cheap-alive shootout graphs.
+    render-timeout cull, so it is safe for cheap-alive graphs.
     """
     try:
         if params is None:

@@ -22,7 +22,7 @@ hallmark of the technique and the reason it has become a generative-art staple
 since ~2020.
 
 Why this node: it is a high-liveness, render-CHEAP generator in the same family
-that survives the shootout liveness cull. The O(N^2) pairwise pass at N<=2500
+that survives the liveness cull. The O(N^2) pairwise pass at N<=2500
 runs well under the pipeline's 150 s timeout (a single still converges in a few
 seconds), so it never becomes a timeout casualty — and its never-repeating,
 structure-forming motion reliably passes the liveness filter that killed ~65%

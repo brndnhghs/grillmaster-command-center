@@ -669,7 +669,7 @@ void main() {
 
 # Typed-uniform twin of CPU node 528 (Voronoise). Closed-form f(uv,t): the
 # Voronoi feature points orbit with u_time so the live preview is genuinely
-# animated (survives the shootout contrast-only static liveness cull). Every
+# animated (survives the contrast-only static liveness cull). Every
 # numeric node param is exposed as a named uniform; colormode/palette/anim_mode
 # are choice strings (pitfall #14) left unmapped -> preview uses the inferno
 # default (node 528's default colormode). CPU numpy node 528 stays authoritative
@@ -11657,7 +11657,7 @@ void main() {
 # normal, Finch 2004) as a shaded height field with Blinn-Phong sun glitter.
 # Mirrors the CPU node 963 (patterns/gerstner_ocean.py) which explicitly flags
 # "a clean GPU twin is a natural follow-up". Genuinely time-varying (wave phases
-# advance with u_time) so it survives the shootout contrast-only static cull.
+# advance with u_time) so it survives the contrast-only static cull.
 # CPU numpy node stays authoritative for export (two-tier precision).
 _register("gerstner_ocean_gpu",
           "Gerstner Ocean -- analytic trochoidal wave height field with sun "
@@ -11745,7 +11745,7 @@ void main() {
 # Schwarz 1890 P/D, Neovius, Schoen I-WP) evaluated on a swept slice plane.
 # Mirrors CPU node 964 (patterns/gyroid_tpms.py); the third coordinate z is
 # animated with u_time so the 2D cross-section morphs continuously as the plane
-# sweeps through the 3D volume -> genuinely time-varying, survives the shootout
+# sweeps through the 3D volume -> genuinely time-varying, survives the
 # contrast-only static liveness cull. CPU numpy node 964 stays authoritative
 # for export (two-tier precision). Inferno colormap for the default view.
 _register("gyroid_tpms_gpu",
@@ -11816,7 +11816,7 @@ void main() {
 # feeds it through a periodic profile — reproducing the crisp fingerprint/
 # wood-grain stripes of phasor noise. Closed-form f(uv,t): the global phase
 # advances with u_time so the live preview genuinely animates (survives the
-# shootout contrast-only static-liveness cull). CPU numpy node 1006 stays
+# contrast-only static-liveness cull). CPU numpy node 1006 stays
 # authoritative for export (two-tier precision).
 _register("phasor_noise_gpu",
           "Phasor Noise -- sparse-convolution complex-phasor field with a "

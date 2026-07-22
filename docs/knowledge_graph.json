@@ -13,7 +13,7 @@
       "loc": 19499,
       "submodules": [
         "server.py", "pipeline.py", "nd_runner.py",
-        "core/", "methods/", "shootout/", "tuning/", "tests/", "3d/", "config/"
+        "core/", "methods/", "tests/", "3d/", "config/"
       ]
     },
     "core": {
@@ -74,28 +74,11 @@
                           "custom_shader.py", "gpu_shaders.py", "io_nodes.py",
                           "ml_models.py", "p5_sketches.py", "simulations_cellular.py"]
     },
-    "shootout": {
-      "path": "image_pipeline/shootout/",
-      "type": "package",
-      "loc": 5979,
-      "description": "Evolutionary generator — LLM-driven method authoring via Hermes agent",
-      "files": ["generator.py", "evolve.py", "evaluator.py", "advisor.py",
-                "store.py", "session.py", "progress.py", "repair.py",
-                "cost_model.py", "utilization.py", "timeout_blame.py",
-                "describe.py", "features.py", "motifs.py", "motifs.json",
-                "contribution.py", "taste.py", "config.py", "cli.py"]
-    },
-    "tuning": {
-      "path": "image_pipeline/tuning/",
-      "type": "package",
-      "loc": 998,
-      "description": "Method parameter tuning — catalog, builder, session, prompt, store, hermes"
-    },
     "tests": {
       "path": "image_pipeline/tests/",
       "type": "package",
       "loc": 9621,
-      "description": "Test suite — ~40 test files covering registration, live regression, GPU, shootout, simulations"
+      "description": "Test suite — ~40 test files covering registration, live regression, GPU, simulations"
     },
     "chord_bot": {
       "path": "chord_bot/",
@@ -117,7 +100,7 @@
       "type": "directory",
       "loc": 13631,
       "description": "Frontend assets — single-page editor, 3D viewer, vendor libs",
-      "files": ["index.html (9697 lines)", "shootout.html", "tune.html",
+      "files": ["index.html (9697 lines)",
                 "js/client3d.js", "js/editor3d.js",
                 "vendor/three.module.js", "vendor/p5.min.js", "vendor/fflate.module.js"]
     },

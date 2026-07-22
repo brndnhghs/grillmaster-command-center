@@ -171,7 +171,7 @@ def method_jump_flood_voronoi(out_dir: Path, seed: int, params=None):
       1. Place seeds (random scatter, regular grid, or bright pixels of a wired
          image mask).
       2. Run the vectorised JFA on a capped (<=512px) grid — exact, O(N log N),
-         comfortably sub-second, far under the shootout's 150s render cull.
+         comfortably sub-second, far under the 150s render cull.
       3. Each pixel now owns its nearest seed; the per-pixel distance is the
          exact Euclidean distance transform.
       4. Render as coloured Voronoi cells, a distance field, crisp cell borders,

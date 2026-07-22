@@ -27,10 +27,10 @@ The system consists of two independent apps sharing one method registry, plus su
 │  └──────────┘  └──────────────┘  └──────────────────────┘   │
 │       │                                                     │
 │       ▼                                                     │
-│  ┌──────────┐  ┌──────────────┐  ┌──────────────────────┐   │
-│  │  ui/     │  │  shootout/   │  │  tuning/  nd_runner/  │   │
-│  │index.html│  │  (5979 LOC)  │  │  (998 + 79 LOC)      │   │
-│  └──────────┘  └──────────────┘  └──────────────────────┘   │
+│  ┌──────────┐  ┌──────────────────────┐                     │
+│  │  ui/     │  │  nd_runner/          │                     │
+│  │index.html│  │  (79 LOC)            │                     │
+│  └──────────┘  └──────────────────────┘                     │
 │                                                              │
 │  Mounts: /chordbot (separate FastAPI app on port 7861)       │
 │          /output, /ui, /assets (static files)                │
@@ -274,7 +274,7 @@ flat_outputs[node_id] = {
 
 | Integration | Purpose | Status |
 |-------------|---------|--------|
-| Hermes Agent | Node Doctor, Node Tester, Shootout generator | Optional (LLM backend) |
+| Hermes Agent | Node Doctor, Node Tester | Optional (LLM backend) |
 | Blender | 3D rendering sidecar | Optional method |
 | ModernGL | GPU shader execution (method #82) | Optional, not in requirements.txt |
 | ffmpeg | MP4 encoding (animation.py) | Required for video output |
@@ -295,7 +295,6 @@ image_pipeline/tests/
   ├── test_method_id_uniqueness.py  — No duplicate IDs
   ├── test_live_regression.py       — Live loop invariants (4 tests)
   ├── test_incremental_recook.py    — Phase 6 incremental cook
-  ├── test_shootout*.py             — 9 test files for shootout
   ├── test_gpu*.py                  — 4 test files for GPU
   ├── test_fidelity.py              — Output fidelity
   ├── test_driver_*.py              — Animation driver tests

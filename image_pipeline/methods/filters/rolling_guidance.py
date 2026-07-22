@@ -123,7 +123,7 @@ def rolling_guidance(img: np.ndarray, scale: float, R: int,
     sigma_s = float(max(1, R))
     # Convergence early-stop: once the structure stops changing between rolls we
     # have peeled all reachable detail for the current scale, so further passes
-    # are wasted work. This keeps the per-frame cost low (the 150s shootout cull)
+    # are wasted work. This keeps the per-frame cost low (the 150s cull)
     # without changing the output for content that converges early.
     prev = None
     for j in range(iterations):

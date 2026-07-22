@@ -64,7 +64,7 @@ def method_counter(out_dir: Path, seed: int, params=None):
     # does NOT inject an integer `frame` for CHOP generators. Derive the live
     # frame from the Timeline so the counter advances on every rendered frame
     # instead of staying pinned at frame 0 (which froze driver-driven graphs
-    # and culled them as static in the shootout liveness gate).
+    # and culled them as static in the liveness gate).
     if frame == 0:
         _tl = params.get("_timeline")
         if _tl is not None:
@@ -239,7 +239,7 @@ def method_lfo(out_dir: Path, seed: int, params=None):
     # FRAME (angular frequency omega). The legacy `phase = t*rate` (with
     # t = frame/total*2pi) made `rate` span cycles-per-CLIP, so any rate < 0.5
     # completed < half a cycle over the clip and square/saw/triangle collapsed
-    # to DC (constant) output — the dominant cause of "static"/"flat" shootout
+    # to DC (constant) output — the dominant cause of "static"/"flat" render
     # deaths for LFO-driven graphs. True Hz makes low-rate LFOs actually sweep.
     _omega = 2.0 * math.pi * rate / max(1.0, fps)
     phase = (frame * _omega + phase_offset * 2 * math.pi) % (2 * math.pi)
@@ -258,7 +258,7 @@ def method_lfo(out_dir: Path, seed: int, params=None):
         # continuous waveforms above, where omega = 2*pi*rate/fps) so the
         # `rate` control is LIVE. Previously this branch hardcoded
         # `frame // 6`, which made `rate` have NO effect whatsoever — a silent
-        # dead param that inflated the shootout dead-clip rate for
+        # dead param that inflated the dead-clip rate for
         # random-LFO-driven graphs (the #1 dead-genome method is __lfo__).
         # We lay `n_steps` evenly across the clip and advance the random seed
         # once per step, so a higher rate yields more, faster random flips.

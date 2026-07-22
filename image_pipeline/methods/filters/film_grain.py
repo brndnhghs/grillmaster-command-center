@@ -37,7 +37,7 @@ from ...core.animation import capture_frame
 # changing `time` alone yields Δ≈0).
 #
 # CPU path is the authoritative export. O(N) — one noise field plus a handful of
-# array ops — so it stays comfortably under the shootout's 150 s render budget
+# array ops — so it stays comfortably under the 150 s render budget
 # even at 768×512. Distinct from the other post_fx noise nodes:
 #   • blue_noise_dither (patterns): ordered/blue-noise *halftone* thresholding.
 #   • gabor_noise (patterns): structured oriented texture, not photographic grain.

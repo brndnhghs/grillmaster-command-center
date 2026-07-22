@@ -1,6 +1,6 @@
 """Regression: the LFO `rate` control must actually modulate every waveform.
 
-Route 8 (2026-07-19) follow-up. The shootout dead-genome histogram is dominated
+Route 8 (2026-07-19) follow-up. the dead-genome histogram is dominated
 by __lfo__ (the #1 dead method). An earlier run fixed the LFO rate semantics for
 the continuous waveforms (sine/triangle/saw/square/noise) but the `random`
 waveform still hardcoded `frame // 6`, making `rate` a SILENT DEAD PARAM: the
@@ -12,8 +12,9 @@ and were culled as dead.
 This test LOCKS IN rate-liveness for the `random` waveform (and guards the
 continuous ones): two different `rate` settings must produce different frame
 series. If a future refactor re-introduces a hardcoded step cadence, this fails
-loudly — the existing `test_shootout_driver_generators_vary.py` only checks the
-generator *advances at a fixed rate* and would NOT catch a rate-dead param.
+loudly. Note this is now the only guard on rate-liveness: the former
+`test_shootout_driver_generators_vary.py` checked only that the generator
+*advances at a fixed rate* and would not have caught a rate-dead param anyway.
 
 Run: pytest image_pipeline/tests/test_lfo_rate_responsive.py
 """
@@ -57,7 +58,7 @@ def test_lfo_random_rate_is_not_dead():
     """The exact regression: random LFO must respond to `rate`."""
     assert _rate_responsive("random"), (
         "LFO `random` waveform ignores `rate` — rate is a dead param "
-        "(was hardcoded frame//6). This inflates the shootout dead-clip rate."
+        "(was hardcoded frame//6). This inflates the dead-clip rate."
     )
 
 

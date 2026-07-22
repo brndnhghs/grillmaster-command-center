@@ -248,9 +248,9 @@ def method_clahe(out_dir: Path, seed: int, params=None):
             # shifted cosine so the animation reaches the pixels regardless of
             # source contrast (verified: 0.02→1.0 changed-frac on procedural/
             # rainbow/palette). This is the Route-8 dead-param fix — the mode
-            # was correct math but produced a shootout-culled static clip.
-            # NOTE the higher sweep frequency (1.6 vs the old 0.4): the shootout
-            # / dead-param audit only sample a ~2-radian phase window over the
+            # was correct math but produced a culled static clip.
+            # NOTE the higher sweep frequency (1.6 vs the old 0.4): the
+            # dead-param audit only samples a ~2-radian phase window over the
             # first frames, so a slow 0.4 sweep barely moved within it and read
             # as static. 1.6 completes a visible swing inside that window.
             strength = 0.5 + 0.5 * math.cos(_t * 1.6)

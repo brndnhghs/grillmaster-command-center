@@ -14,7 +14,7 @@ the fixed state to the generation dictated by the animation clock `t`
 (time-reveal), so a static frame is still meaningful and the live path
 plays the whole emergent history. The birth/survival/death thresholds are
 SCALAR-wireable so a wired driver (LFO, noise, ramp) can morph the organism
-live — closing the driver→pixel loop that the shootout diagnostics showed
+live — closing the driver→pixel loop that the diagnostics showed
 was the dominant dead-node hotspot.
 """
 from __future__ import annotations

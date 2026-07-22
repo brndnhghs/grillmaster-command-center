@@ -78,7 +78,7 @@ def method_galaxy_generator(out_dir: Path, seed: int, params=None):
     The star field is deterministic from ``seed`` every frame (Architecture B
     re-call); only the time transform changes, so ``none`` is a static baseline.
     Cost is O(stars + pixels) — ~40k stars render in well under 1 s/frame,
-    safely below the shootout 150 s cull.
+    safely below the 150 s render cull.
     """
     try:
         if params is None:

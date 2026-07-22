@@ -299,10 +299,9 @@ def test_shim_uniforms_drive_output(mid, sname, is_sim):
 # Every GPU shader node must advertise is_time_varying iff its GLSL body
 # actually reads u_time. Previously all GPU nodes defaulted to True, so
 # static procedural nodes (Sierpinski, Mandelbrot, gradient, ASCII, solid
-# color, checker) were mislabelled "animated" — which made the shootout
-# generator preferentially pick them as animated terminals (weight 3.0),
-# then cull the resulting static clips, and made the executor needlessly
-# re-cook them every frame.
+# color, checker) were mislabelled "animated" — which made graph builders
+# preferentially pick them as animated terminals, then cull the resulting
+# static clips, and made the executor needlessly re-cook them every frame.
 
 def _gpu_shader_nodes():
     import image_pipeline.methods  # noqa: F401

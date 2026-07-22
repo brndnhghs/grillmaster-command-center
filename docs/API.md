@@ -23,8 +23,6 @@ When `GRILLMASTER_API_TOKEN` env var is set:
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/` | Serve editor UI (`ui/index.html`) |
-| `GET` | `/shootout` | Serve shootout dashboard |
-| `GET` | `/tune` | Serve tuning dashboard |
 | `GET` | `/health` | Health check → `{"ok": true}` |
 
 ### Port Types & Methods

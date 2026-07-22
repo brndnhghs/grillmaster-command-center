@@ -2,13 +2,13 @@
 
 Proves that CHOP driver nodes (Counter/Ramp/Beats/Envelope/Counter) advance
 every frame and that a driver's SCALAR output actually modulates a target
-node's rendered pixels (temporal variance above the shootout liveness floor).
+node's rendered pixels (temporal variance above the liveness floor).
 
 Background: the GraphExecutor injects a per-frame ``_timeline`` (with
 ``global_frame``) into every node but does NOT inject an integer ``frame`` for
 CHOP generators. The frame-based drivers previously read ``frame=0`` forever
 and produced a constant output, which froze every driver-driven graph and got
-it culled as static by the shootout liveness gate. They now derive the live
+it culled as static by the liveness gate. They now derive the live
 frame from ``_timeline.global_frame``.
 
 Marked ``slow`` (imports the full method registry and renders frames); it is
@@ -52,7 +52,7 @@ def test_frame_based_drivers_advance_per_frame():
 def test_driver_modulation_reaches_pixels():
     """An LFO/Counter SCALAR wire must modulate a target's rendered clip.
 
-    Reproduces the shootout liveness check: render a driver -> target graph
+    Reproduces the liveness check: render a driver -> target graph
     over frames and assert the clip's temporal variance clears the floor.
     The target keeps ALL its default params so the driven param stays present
     in node.params (the executor only injects a SCALAR wire when

@@ -30,7 +30,7 @@ from ...core.animation import capture_frame
 # whole pattern is computed in one shot — no simulation state to carry between
 # frames, so this is an Architecture-B (per-frame re-call) method whose `time`
 # parameter spins, scales, or morphs the rosette. It is deliberately cheap
-# (no PDE, no neighbour loops) so it is a healthy shootout seed: it renders in
+# (no PDE, no neighbour loops) so it is a healthy seed: it renders in
 # well under the 150 s cull threshold that kills ~24 % of genomes.
 #
 # Reference: B. Dixon, "Mathographics" (1987); the curves are the textbook

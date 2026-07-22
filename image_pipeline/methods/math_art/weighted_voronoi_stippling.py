@@ -209,7 +209,7 @@ def method_weighted_voronoi_stippling(out_dir: Path, seed: int, params=None):
 
     The relaxation is vectorised (one cKDTree query + four np.bincount calls
     per iteration, O(N + K)), so even ~2400 points on a 384² grid relax in well
-    under a second — far inside the shootout's 150s render cull, and the
+    under a second — far inside the 150s render cull, and the
     CPU path stays authoritative.
 
     Outputs: IMAGE (the stipple drawing, RGBA), FIELD (the source density map),

@@ -20,7 +20,7 @@ Core idea:
     the incompressible streamlines that curl-noise produces.
 
 Two animation strategies are provided (both give genuine, robust temporal
-variance so the node survives the shootout's contrast-only liveness cull):
+variance so the node survives the contrast-only liveness cull):
     flow_phase — Animated LIC (ALIC): the convolution kernel is modulated by a
                  travelling phase cos(2π·f·t − i·k) so the bright band flows
                  *along* the streamlines (classic shimmering-energy look).
@@ -319,7 +319,7 @@ def method_line_integral_convolution(out_dir: Path, seed: int, params=None):
 
         # Animation clock; the flow field evolves with the clock in every
         # active mode so the streamlines genuinely reorganize (strong, smooth
-        # temporal variance — directly counters the shootout's contrast-only
+        # temporal variance — directly counters the contrast-only
         # liveness cull). flow_phase additionally advects the texture.
         if anim_mode == "none":
             _t = 0.0

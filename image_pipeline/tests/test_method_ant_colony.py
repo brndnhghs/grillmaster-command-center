@@ -44,7 +44,7 @@ def capture(monkeypatch):
 def _run(mode: str, t: float = 0.0, seed: int = 42) -> tuple[np.ndarray, list[np.ndarray]]:
     # Pin the canvas: the method reads the global W/H from core.utils at call
     # time, and other tests in the suite mutate it via set_canvas() (e.g.
-    # test_shootout_driver_modulation sets 160x160). Without this pin the probe
+    # test_driver_modulation sets 160x160). Without this pin the probe
     # is order-dependent — a small canvas collapses the time delta below 0.05.
     set_canvas(512, 512)
     fn = get_meta("974").fn

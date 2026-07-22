@@ -33,17 +33,6 @@ image_pipeline/tests/          (~40 files, 9,621 lines)
 │   ├── test_gpu_node_typed_ports.py  — Typed ports
 │   └── test_gpu_twin_invariant.py    — Twin rendering invariants
 │
-├── Shootout tests (9 files)
-│   ├── test_shootout.py              — Main generator tests
-│   ├── test_shootout_cost_gate.py    — Cost model gate
-│   ├── test_shootout_hard_wall.py    — Hard wall clock
-│   ├── test_shootout_driver_modulation.py
-│   ├── test_shootout_liveness_rescue.py
-│   ├── test_shootout_structural_mutation.py
-│   ├── test_shootout_structural_motion_rescue.py
-│   ├── test_shootout_terminal_variance_guard.py
-│   └── test_shootout_tv_born_animated.py
-│
 ├── Animation & keyframes
 │   ├── test_driver_animation_reaches_pixels.py
 │   ├── test_driver_e2e_fast.py
@@ -64,8 +53,7 @@ image_pipeline/tests/          (~40 files, 9,621 lines)
 ├── Utilities
 │   ├── test_typed_uniforms.py
 │   ├── test_marching_squares.py
-│   ├── test_utils_dyndim.py
-│   └── test_tuning.py
+│   └── test_utils_dyndim.py
 │
 ├── Profiles
 │   ├── gpu_parity.py
@@ -130,7 +118,6 @@ hooks:
 | P0 | Method ID uniqueness | Silent data corruption |
 | P1 | Incremental recook | Optimization with correctness risk |
 | P1 | GPU parity | Hardware-specific rendering |
-| P1 | Shootout mutations | Generated code correctness |
 | P2 | Animation drivers | Per-frame state correctness |
 | P2 | Render health | Visual output validation |
 | P3 | 3D + ML nodes | Optional dependencies |

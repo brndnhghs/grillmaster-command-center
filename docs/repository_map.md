@@ -20,7 +20,6 @@ Grillmaster Command Center is a **node-based generative image & video editor**. 
 | Core pipeline | ~19,500 lines |
 | Methods (all categories) | ~89,000 lines |
 | Tests | ~9,600 lines |
-| Shootout subsystem | ~5,979 lines |
 | Frontend (HTML/JS) | ~11,631 lines |
 | Chord Bot | ~6,869 lines |
 | Instruments (tools) | ~1,763 lines |
@@ -138,29 +137,11 @@ grillmaster-command-center/
 │   │   ├── ml_models.py           #   ML model wrappers (SD 1.5, etc.)
 │   │   ├── p5_sketches.py         #   p5.js sketch runner (226 lines)
 │   │   └── simulations_cellular.py #   Method #58 — duplicate CA variant (367 lines)
-│   ├── shootout/                  #   ★ EVOLUTIONARY GENERATOR — LLM-driven method authoring
-│   │   ├── __init__.py, cli.py, config.py, advisor.py
-│   │   ├── generator.py, evolve.py, evaluator.py
-│   │   ├── store.py, session.py, progress.py, repair.py
-│   │   ├── cost_model.py, utilization.py, timeout_blame.py
-│   │   ├── describe.py, features.py, motifs.py, motifs.json
-│   │   ├── contribution.py, taste.py
-│   ├── tuning/                    #   Method parameter tuning
-│   │   ├── __init__.py, catalog.py, builder.py, session.py
-│   │   ├── learn.py, prompt.py, store.py, hermes.py
 │   ├── tests/                     #   ★ TEST SUITE
 │   │   ├── test_method_registration.py   # Core registration integrity
 │   │   ├── test_method_id_uniqueness.py  # No duplicate IDs
 │   │   ├── test_live_regression.py       # Live mode non-regression (critical)
 │   │   ├── test_incremental_recook.py    # Phase 6 incremental cook tests
-│   │   ├── test_shootout.py              # Shootout generator tests
-│   │   ├── test_shootout_cost_gate.py, test_shootout_hard_wall.py
-│   │   ├── test_shootout_structural_mutation.py
-│   │   ├── test_shootout_structural_motion_rescue.py
-│   │   ├── test_shootout_liveness_rescue.py
-│   │   ├── test_shootout_terminal_variance_guard.py
-│   │   ├── test_shootout_tv_born_animated.py
-│   │   ├── test_shootout_driver_modulation.py
 │   │   ├── test_gpu_shaders.py, test_gpu_parity.py, test_gpu_coverage_audit.py
 │   │   ├── test_gpu_node_typed_ports.py, test_gpu_twin_invariant.py
 │   │   ├── test_typed_uniforms.py
@@ -173,7 +154,6 @@ grillmaster-command-center/
 │   │   ├── test_ml_nodes_e2e.py, test_3d_sidecar_render.py
 │   │   ├── test_blender_render_node.py, test_client3d.py
 │   │   ├── test_marching_squares.py, test_utils_dyndim.py
-│   │   ├── test_tuning.py
 │   │   ├── gpu_parity.py, profile_live.py
 │   ├── config/
 │   │   └── groups.yaml            # Method grouping for UI
@@ -209,8 +189,6 @@ grillmaster-command-center/
 ├── ui/                            # Shared frontend assets
 │   ├── __init__.py
 │   ├── index.html                 # ★ Main editor SPA (9,697 lines, single file)
-│   ├── shootout.html              # Shootout dashboard
-│   ├── tune.html                  # Tuning dashboard
 │   ├── js/
 │   │   ├── client3d.js            # 3D viewer client
 │   │   └── editor3d.js            # 3D scene editor
@@ -342,7 +320,7 @@ grillmaster-command-center/
 
 | Test area | Location | Marker | Purpose |
 |-----------|----------|--------|---------|
-| Core tests | `image_pipeline/tests/` | ~40 files | Registration, live regression, GPU, shootout, simulations, transports |
+| Core tests | `image_pipeline/tests/` | ~40 files | Registration, live regression, GPU, simulations, transports |
 | Slow tests | same | `-m slow` | Long-running render/perf guards — excluded from default run |
 | Chord Bot tests | `chord_bot/tests/` | 6 files | Node execution, harmony correctness |
 | Pre-commit gate | `tools/audit_methods.py` | CI | Method contract enforcement |
@@ -363,10 +341,6 @@ image_pipeline/server.py ◄───────┘
        │
        └── chord_bot/        (mounted at /chordbot, separate app)
              └── chord_bot/ui/  (separate but similar frontend)
-
-image_pipeline/shootout/  ←── calls Hermes agent to generate new methods
-       │
-       └── image_pipeline/core/registry.py  (registers generated methods)
 
 dashboard/
        └── spawns: image_pipeline.server + chord_bot.server

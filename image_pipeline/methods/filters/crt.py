@@ -18,7 +18,7 @@ the three signatures that make CRT imagery read as "analog":
 
 The effect is genuinely *structured* (strong scanline + phosphor spatial
 frequency) and, in any animated mode, *strongly temporal* (the scanlines scroll,
-the roll band sweeps, the warp breathes) — so it survives the shootout liveness
+the roll band sweeps, the warp breathes) — so it survives the liveness
 cull (static/flat) and is cheap O(W·H) (three ``cv2.remap`` calls + vectorised
 pixel math), so it never hits the 150 s render-budget timeout.
 

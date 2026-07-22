@@ -23,7 +23,7 @@ signatures that make tape footage read as "analog":
 The effect is genuinely *structured* (chroma fringe + scanline jitter are
 strong spatial features) and, in any animated mode, *strongly temporal*
 (jitter evolves, the sync bar rolls, the skew breathes) -- so it survives
-the shootout liveness cull and is cheap O(W*H) (a couple of vectorised
+the liveness cull and is cheap O(W*H) (a couple of vectorised
 remaps + separable blurs), never hitting the 150 s render-budget timeout.
 
 Source: this is the authoritative CPU render/export path. When an upstream

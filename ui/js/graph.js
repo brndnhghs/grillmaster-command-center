@@ -4816,7 +4816,7 @@ async function gRestoreGraph() {
 }
 
 // ── Deep link: /?load=<saved-name> loads a library graph on boot ──
-// (used by the Shootout page's "Open in editor"). Chained after
+// (used by the page's "Open in editor"). Chained after
 // gRestoreGraph so the localStorage restore can't re-render on top.
 async function gDeepLinkLoad() {
   const name = new URLSearchParams(location.search).get('load');
