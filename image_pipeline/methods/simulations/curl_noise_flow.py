@@ -18,7 +18,7 @@ Core idea (2D):
 Because ψ itself evolves with the animation clock t, the velocity field churns
 over time and a dye advected along it (semi-Lagrangian streamline backtrace)
 produces smooth, organic, genuinely time-varying visuals — directly countering
-the shootout's dominant failure mode where driver/modulation nodes inject
+the dominant failure mode where driver/modulation nodes inject
 temporal variation that never reaches the rendered pixels.
 
 Three render views:
@@ -299,7 +299,7 @@ def method_curl_noise_flow(out_dir: Path, seed: int, params=None):
             img = np.stack(chans, axis=-1).astype(np.float32)
             # Overlay the (time-evolving) flow-speed field as brightness. A
             # coherent dye advection keeps mean luminance ~constant, which the
-            # shootout's temporal_var liveness metric would wrongly cull as
+            # temporal_var liveness metric would wrongly cull as
             # "static" — the flow overlay makes motion robustly visible and
             # reads like foam on fast-moving fluid.
             if flow_mix > 0.0:

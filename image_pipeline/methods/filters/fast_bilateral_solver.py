@@ -19,7 +19,7 @@ from ...core.animation import capture_frame
 # edge-aware image processing", SIGGRAPH 2007) — the same O(N) splat/blur/slice
 # machinery FBS relies on — which is an edge-aware smoother in its own right and
 # a fast stand-in for the much heavier WLS / RTV dense-solve nodes in this
-# package (which dominate the >150s render-timeout culls in the shootout logs).
+# package (which dominate the >150s render-timeout culls in the logs).
 #
 # Grid spacing makes both controls live:
 #   sigma_s -> spatial cell size    (larger = coarser grid = wider smoothing)
@@ -190,7 +190,7 @@ def method_fast_bilateral_solver(out_dir: Path, seed: int, params=None):
         sigma_r -> range cell size      (larger = more edge merging = smoother)
 
     A fast, energy-free stand-in for the heavy WLS / RTV dense-solve smoothers in
-    this package (which drive the >150s render-timeout culls in the shootout
+    this package (which drive the >150s render-timeout culls in the render
     logs). A wired upstream image always overrides source generation (Rule #12).
     """
     try:
@@ -216,7 +216,7 @@ def method_fast_bilateral_solver(out_dir: Path, seed: int, params=None):
         # the output visibly restructures every frame even on low-contrast
         # sources where the primary swept param alone barely moves pixels
         # (mirrors the node 436 CLAHE clip_sweep dead-param fix). Freq raised to
-        # 1.6 so a full swing lands inside the shootout/audit sample window.
+        # 1.6 so a full swing lands inside the audit sample window.
         _t = anim_time * anim_speed
         _breathe = 0.5 + 0.5 * math.sin(_t * 1.6)
         if anim_mode == "sigma_sweep":

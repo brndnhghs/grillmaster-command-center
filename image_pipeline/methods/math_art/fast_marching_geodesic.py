@@ -163,7 +163,7 @@ def method_fast_marching(out_dir: Path, seed: int, params=None):
          (impassable walls in input_image-channel or a thresholded noise blob).
       3. Run the binary-heap FMM on a capped (Hp x Wp) grid (<=~240px) — exact,
          O(N log N), and comfortably sub-second, so it stays far under the
-         shootout's 150s render cull.
+         150s render cull.
       4. Upscale the geodesic field to full canvas and render as a heat field,
          banded isolines, or as a thin stroke overlay on a neutral background.
       5. Emit a MASK = normalized geodesic field (0 at seeds -> 1 at far edge).

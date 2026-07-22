@@ -22,12 +22,12 @@ Depending on K and the spatial structure of Ω, the field organizes into:
   * **turbulent**     — strong random Ω → roiling, never-settling phase soup
   * **synchronized**  — weak Ω variation → the whole canvas locks to one phase
 
-Why this node exists (shootout / dead-bucket context): it is *cheap*
+Why this node exists (dead-bucket context): it is *cheap*
 (O(H·W) fully-vectorised Euler, renders in < 1 s, never hits the 150 s
 render-timeout cull) and *perpetually morphing* (the spiral/chimera fronts
 sweep frame to frame with strong, spatially-varying temporal variance, so it
 survives the contrast-only liveness cull). It directly dilutes the two
-dominant shootout death causes (timeout-culled heavy sims + contrast-static
+dominant death causes (timeout-culled heavy sims + contrast-static
 false-culls).
 
 Render views:
@@ -160,7 +160,7 @@ def method_kuramoto(out_dir: Path, seed: int, params=None):
 
     Architecture A — internal Euler simulation; spiral/chimera/turbulent regimes
     evolve perpetually (morphing wavefronts), so the node is alive under the
-    shootout liveness gate. `none` renders a single static frame.
+    liveness gate. `none` renders a single static frame.
 
     See module docstring for the full model + why this node was added.
     """

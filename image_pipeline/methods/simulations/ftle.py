@@ -34,7 +34,7 @@ Animation:
     In every active mode the potential is shifted by the clock (field_t), so
     the velocity field — and therefore the LCS ridges — sweep and reorganize
     frame to frame. This is genuine structural motion (strong, spatially
-    varying temporal variance), so the node survives the shootout's
+    varying temporal variance), so the node survives the
     contrast-only liveness cull (temporal_var / flow_var are real, not a
     brightness breathing).
 

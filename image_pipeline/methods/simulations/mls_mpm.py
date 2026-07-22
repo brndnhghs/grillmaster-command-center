@@ -35,7 +35,7 @@ and a large plastic threshold for fluid.
 Architecture A — single-call internal simulation with capture_frame().
 The simulation runs on a coarse grid (n_grid) for speed and is rendered
 at canvas resolution (W × H).  Cheap enough to stay well under the 150 s
-shootout timeout cull; frame-to-frame temporal variance is strong
+timeout cull; frame-to-frame temporal variance is strong
 (particles fall, splash, and deform), so it clears the liveness gate.
 
 References:

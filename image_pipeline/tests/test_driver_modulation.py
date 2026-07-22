@@ -1,11 +1,11 @@
 """Route 8 #1 regression lock — a CHOP driver's per-frame SCALAR output MUST
 reach the target node's param (modulation reaches pixels, indirectly).
 
-This is the #1 shootout failure mode: when a driver (LFO / Counter / Ramp /
+This is the #1 driver failure mode: when a driver (LFO / Counter / Ramp /
 Noise1D / Envelope / Strobe) is wired to a target node param, the clip must
 actually vary frame-to-frame. If the driver sample is dropped or pinned, the
 clip reads as static and is culled by the liveness gate — historically the
-dominant contributor to the shootout dead-clip rate.
+dominant contributor to the dead-clip rate.
 
 The slow e2e (``test_e2e_one_tiny_generation``) covers the full render path.
 This test locks the *unit-level* mechanism without rendering a clip, so it runs

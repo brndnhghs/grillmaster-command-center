@@ -30,12 +30,12 @@ spiral waves are generated experimentally, via a rotating electrode). This is
 physically honest and keeps the field alive across the whole sequence instead
 of relaxing to a dead uniform state.
 
-Why this node exists (shootout / dead-bucket context): it is *cheap*
+Why this node exists (dead-bucket context): it is *cheap*
 (O(H·W) explicit Euler with a 5-point Laplacian, renders in < 1 s, never
 hits the 150 s render-timeout cull) and *perpetually morphing* (the pacemaker
 keeps re-igniting wavefronts, so the spiral meander sweeps frame to frame with
 strong, spatially-varying temporal variance). It directly dilutes the two
-dominant shootout death causes (timeout-culled heavy sims + contrast-static
+dominant death causes (timeout-culled heavy sims + contrast-static
 false-culls), exactly the directive from the 2026-07 candidate manifests that
 drove nodes #994–#1003.
 
@@ -175,7 +175,7 @@ def method_selkov(out_dir: Path, seed: int, params=None):
     the medium every `pace_period` frames so wavefronts keep sweeping the
     canvas (spirals for a rotating pacemaker, concentric rings for a central
     one). The medium is therefore alive across the *whole* sequence, not just a
-    transient, so it survives the shootout contrast-only liveness gate.
+    transient, so it survives the contrast-only liveness gate.
     `static` renders a single uniform frame (rest state, no ignition).
     """
     if params is None:

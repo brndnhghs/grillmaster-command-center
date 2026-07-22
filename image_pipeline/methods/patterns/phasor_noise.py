@@ -26,8 +26,8 @@ wood-grain the technique is known for, with local control of both periodicity
 Each frame is a pure closed-form function of pixel coordinate + animation clock
 (Architecture B): there is no simulation state and no strobing.  Animating the
 global phase φ is essentially free (one add before the profile), so the node is
-cheap to render AND genuinely time-varying — it dodges both the shootout's
-150s-timeout cull and its static-liveness cull.
+cheap to render AND genuinely time-varying — it dodges both the
+150s-timeout cull and the static-liveness cull.
 
 Animation modes (Architecture B — per-frame re-call with `time`):
     none   — static full draw: frame Δ ≈ 0 (static baseline).

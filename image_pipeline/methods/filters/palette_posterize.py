@@ -41,7 +41,7 @@ def method_palette_posterize(out_dir: Path, seed: int, params=None):
 
     Median-cut (Heckbert, "Color Image Quantization for Frame Buffer Display",
     SIGGRAPH 1982) + CIELAB (CIE 1976, CIE Pub. 15.2) give a posterized but
-    perceptually balanced look that survives the shootout's liveness cull far
+    perceptually balanced look that survives the liveness cull far
     better than uniform RGB stepping.
 
     The CPU path is the authoritative export. A GLSL twin (``dither_palette_gpu``)

@@ -19,10 +19,10 @@ with the animation clock and the attractor continuously deforms; orbit/rotate th
 whole figure; breathe the exposure. Because the maps are cheap (a few transcen-
 dentals per point) and the histogram is built with a single `np.bincount`, a
 multi-million-point render costs well under the pipeline's 150 s timeout budget
-— deliberately chosen so the node never becomes a shootout timeout casualty.
+— deliberately chosen so the node never becomes a timeout casualty.
 
 High temporal variance (the point cloud reshapes every frame under `morph` /
-`orbit`) also means the node reliably passes the shootout liveness cull, unlike
+`orbit`) also means the node reliably passes the liveness cull, unlike
 contrast-only or static patterns.
 
 CPU path authoritative. Closed-form, no carried simulation state, so a clean

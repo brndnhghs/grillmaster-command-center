@@ -126,7 +126,7 @@ def method_r2_dither(out_dir, seed: int, params=None):
     ``--recolor`` / ``palette`` only re-tints the output.
 
     Closed-form per-pixel, vectorized (O(W*H)) — never hits the render-timeout
-    cull, so it is safe for cheap-alive shootout graphs.
+    cull, so it is safe for cheap-alive graphs.
     """
     try:
         if params is None:

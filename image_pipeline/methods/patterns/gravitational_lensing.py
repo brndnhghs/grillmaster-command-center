@@ -12,7 +12,7 @@ starfield + nebula at the mapped source position β(θ) and brightening by
 the magnification μ = 1/|1 − (θ_E²/|θ|²)²| reproduces the distorted
 background and the bright ring of a real gravitational lens.
 
-Why this node (shootout fit): it is a screen warp — O(H·W) per frame,
+Why this node (cost/liveness fit): it is a screen warp — O(H·W) per frame,
 no PDE, no grid solve — so it develops in well under the pipeline's 150 s
 timeout and its morphing field (animated lens mass / source drift / swirl)
 gives perpetual, non-repeating motion that reliably passes the liveness cull

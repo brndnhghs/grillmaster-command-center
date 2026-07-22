@@ -13,7 +13,7 @@ StamFluidforGames.pdf):
       on Stam's scheme).
 
 Why this node: it is a high-liveness, render-CHEAP generator in the same family
-that survives the shootout liveness cull. The 128×128 solver advances ~3 steps
+that survives the liveness cull. The 128×128 solver advances ~3 steps
 per frame in well under the pipeline's 150 s timeout (a single still develops in
 < 1 s), so it never becomes a timeout casualty — and its turbulent, never-
 repeating motion reliably passes the liveness filter that killed ~65% of logged

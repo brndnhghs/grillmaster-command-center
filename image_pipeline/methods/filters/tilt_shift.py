@@ -14,7 +14,7 @@ Two focus geometries are supported:
 
 The mask, blur radius, and band position are all live controls, and the
 animation modes (drift / breathe) sweep them over time, so the node is a
-good cheap, always-moving shootout recombination seed. A wired upstream
+good cheap, always-moving recombination seed. A wired upstream
 IMAGE overrides the procedural source.
 
 Reference: the "tilt-shift miniature" effect is a standard computational-

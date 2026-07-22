@@ -5,7 +5,6 @@ FastAPI web server (3,015 lines) serving the node-graph editor frontend, the gen
 
 ## Responsibilities
 - Serve the single-page editor UI (`ui/index.html`)
-- Serve shootout dashboard (`ui/shootout.html`) and tuning dashboard (`ui/tune.html`)
 - Generate single images and animations via `/api/generate`
 - Execute node graphs via `/api/graph/run` and `/api/graph/render-sequence`
 - Continuous live preview loop (`POST /api/graph/live`, MJPEG stream, WebSocket)
@@ -83,8 +82,6 @@ FastAPI web server (3,015 lines) serving the node-graph editor frontend, the gen
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/` | Serve editor UI |
-| GET | `/shootout` | Serve shootout dashboard |
-| GET | `/tune` | Serve tuning dashboard |
 | GET | `/health` | Health check |
 
 ### Generation

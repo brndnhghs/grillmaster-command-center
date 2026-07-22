@@ -15,7 +15,7 @@ from ...core.animation import capture_frame
 
 # Cap the internal processing resolution so the fully-vectorised mean-shift
 # (which allocates a (H,W,Kh,Kw,3) sliding-window buffer) stays well under the
-# shootout's 150 s render-cull budget even at the largest spatial radius.
+# 150 s render-cull budget even at the largest spatial radius.
 _MAX_SIDE = 220
 
 
@@ -33,7 +33,7 @@ def method_mean_shift(out_dir: Path, seed: int, params=None):
     The CPU path is the authoritative export. It is implemented as a fully
     vectorised uniform-kernel mean shift over a sliding-window view of the
     padded image; the processed resolution is capped (see ``_MAX_SIDE``) so the
-    node stays fast enough to survive the shootout's 150 s render-cull.
+    node stays fast enough to survive the 150 s render-cull.
 
     Params:
         source:        generated source type (perlin/gradient/rainbow/input_image)

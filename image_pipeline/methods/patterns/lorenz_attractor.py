@@ -17,7 +17,7 @@ yaw, shading by depth (near = bright, far = dim) and by speed (local |v|) so the
 flow direction reads clearly.
 
 Why this node: it is the 3D-ODE sibling of 957 and belongs to the same
-cheap-dynamic-generator family that survives the shootout liveness cull. The
+cheap-dynamic-generator family that survives the liveness cull. The
 RK4 integration of a few hundred thousand points costs well under the pipeline's
 150 s timeout (a single 512-point render is typically < 2 s), so it never
 becomes a timeout casualty — and its high temporal variance (the path reshapes

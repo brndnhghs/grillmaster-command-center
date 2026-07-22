@@ -6,6 +6,41 @@
 
 ---
 
+## Subsystem removal — 2026-07-21
+
+### Context
+The shootout evolutionary generator had accumulated a large surface (31 modules,
+~6,000 LOC, 43 test files, 19 API routes) against a thin return: a corpus with a
+45% dead rate, 19 human ratings, and duplicated diagnostics — a code review of
+the final commit found a newly-added `diagnose_corpus.py` that re-implemented the
+`shootout_health_probe.py` added one commit earlier, disagreeing with it on the
+numbers it reported. The decision was to remove the subsystem rather than keep
+paying to maintain it.
+
+### Decision
+Remove shootout **and** tuning together. Tuning was not independently viable: it
+imported `shootout.repair.repair_graph`/`validate_graph` and
+`shootout.generator.GenePool`/`build_gene_pool`, so keeping it would have meant
+extracting ~1,000 lines of shared infrastructure into a neutral home. Since
+tuning was reachable only by direct URL (no nav entry) and made zero
+`/api/shootout/*` calls, removing both was the cleaner cut.
+
+### Done
+Deleted both packages, both dashboards, the health-probe script, and 43 test
+files; excised the route blocks from `server.py` (3,214 → 2,630 lines); scrubbed
+current-state docs. Verified: `server.py` imports cleanly, all remaining Python
+compiles, and zero references to either package survive in code.
+
+### Resulting state
+`image_pipeline/` is now engine + methods + server, with no LLM-driven authoring
+path. One coverage gap was created deliberately and is recorded in CHANGELOG and
+in the `test_driver_e2e_fast.py` module docstring: the cheap default-suite
+coverage of the GraphExecutor SCALAR→param wiring is gone, leaving only a
+`slow`-marked end-to-end test. That path is core executor behavior and still
+deserves a fast guard.
+
+---
+
 ## Iteration 1 — 2026-07-14
 
 ### Context

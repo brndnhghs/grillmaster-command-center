@@ -15,7 +15,7 @@ Why it belongs in the pipeline:
     (HBAO #425) or applies a planar *warp* (kaleidoscope / conformal_warp /
     droste). This one *hides* geometry inside a flat texture.
   • It produces dense, high-frequency, structurally-coherent imagery that
-    directly defeats the shootout's contrast-only "static" cull when animated
+    directly defeats the contrast-only "static" cull when animated
     (the hidden shape moves frame-to-frame), without relying on a driver node
     to inject the variation.
 

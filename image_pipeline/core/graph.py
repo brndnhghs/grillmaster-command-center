@@ -475,7 +475,7 @@ class GraphExecutor:
         self.last_frame_stats: dict = {}
         # Optional live-telemetry / skip hooks (default off — the render and
         # live pipelines don't set them, so behaviour is unchanged). The
-        # shootout render pool installs these to report the node cooking right
+        # render pool installs these to report the node cooking right
         # now and to let a skip button / watchdog abort a wedged sim.
         #   cancel_event  : threading.Event — polled by the Arch-A sim loop
         #                   (via animation.capture_frame) and between nodes.
@@ -766,7 +766,7 @@ class GraphExecutor:
                 )
                 import threading as _thr
                 _captured = []
-                # Honour an externally-installed skip event (shootout render
+                # Honour an externally-installed skip event (render
                 # pool / skip button) so a wedged sim can actually be aborted;
                 # otherwise a fresh local event that nothing ever sets.
                 _cancel_evt = self.cancel_event if self.cancel_event is not None else _thr.Event()

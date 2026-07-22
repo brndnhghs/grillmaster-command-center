@@ -1,25 +1,27 @@
 """Fast end-to-end regression: CHOP driver SCALAR output must reach pixels.
 
-Route 8 (2026-07-13): the shootout liveness gate culled ~66% of genomes,
-dominated by ``static``/``flat`` deaths whose graphs wired a driver
-(``__lfo__``/``__counter__``/``__noise1d__``/``__ramp__``/``__strobe__``/
-``__envelope__``) into a target node's numeric param. The driver fn-level
-advance is already locked by ``test_chop_drivers_advance.py``, BUT that only
-proves the node produces a varying SCALAR — it does NOT prove the
-GraphExecutor actually *injects* that SCALAR into the target's param every
-frame. The driver→pixel wiring lives in ``core/graph.py`` (the edge
-transport + ``run_params[dst_port] = value`` path), and a regression there
-would freeze every driver-driven clip without tripping the fn-level test.
+A driver (``__lfo__``/``__counter__``/``__noise1d__``/``__ramp__``/
+``__strobe__``/``__envelope__``) wired into a target node's numeric param must
+actually modulate pixels. The driver fn-level advance is already locked by
+``test_chop_drivers_advance.py``, BUT that only proves the node produces a
+varying SCALAR — it does NOT prove the GraphExecutor actually *injects* that
+SCALAR into the target's param every frame. The driver→pixel wiring lives in
+``core/graph.py`` (the edge transport + ``run_params[dst_port] = value``
+path), and a regression there would freeze every driver-driven clip without
+tripping the fn-level test.
 
 This test closes that gap with a FULL executor render of a tiny driver→target
-graph and asserts the terminal clip's temporal variance clears the shootout
-liveness floor. It is marked ``slow``: its chosen target (node 952, Blue-Noise
-Dither) is a genuinely expensive generator (~25 s per 8-frame batch), so the
-full test costs ~50 s. That made the DEFAULT ``-m "not slow"`` suite stall for
-a minute, looking hung. The SCALAR→param executor wiring it validates is still
-covered in the default suite by ``test_shootout_driver_generators_vary`` (~1 s)
-and ``test_shootout_driver_modulation`` (~2 s), which render cheaper targets —
-so this heavier check runs only under the ``slow`` marker.
+graph and asserts the terminal clip's temporal variance clears the motion
+floor. It is marked ``slow``: its chosen target (node 952, Blue-Noise Dither)
+is a genuinely expensive generator (~25 s per 8-frame batch), so the full test
+costs ~50 s, which made the DEFAULT ``-m "not slow"`` suite look hung.
+
+COVERAGE GAP (2026-07-21): the two cheap default-suite tests that used to
+cover this same wiring — ``test_shootout_driver_generators_vary`` (~1 s) and
+``test_shootout_driver_modulation`` (~2 s) — were deleted with the
+evolutionary generator. This is now the ONLY end-to-end guard on the
+SCALAR→param path, and it does not run under ``-m "not slow"``. A cheap
+replacement targeting a fast filter node is worth adding.
 
 If this test ever fails, a refactor broke the SCALAR→param edge wiring and
 driver-driven animation would silently die again.
@@ -36,7 +38,6 @@ import image_pipeline.methods  # noqa: F401  (registers @method nodes)
 from image_pipeline.core.registry import get_meta
 from image_pipeline.core.graph import GraphExecutor
 from image_pipeline.core.utils import set_canvas
-from image_pipeline.shootout.config import DEFAULT_CONFIG
 
 
 # Cheap target: node 952 (Blue-Noise Dither) exposes ``matrix_size`` (float
@@ -45,7 +46,11 @@ from image_pipeline.shootout.config import DEFAULT_CONFIG
 TARGET_MID = "952"
 TARGET_PARAM = "matrix_size"
 
-FLOOR = DEFAULT_CONFIG.temporal_var_min
+# Per-pixel temporal variance below this reads as a static clip. Inlined when
+# the evolutionary generator that used to own this threshold was removed; the
+# value is the executor-level motion floor this test asserts against, not a
+# tunable.
+FLOOR = 3e-3
 
 
 @pytest.mark.slow

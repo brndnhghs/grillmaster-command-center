@@ -17,9 +17,9 @@ Why this node exists in the pipeline:
   - It outputs a FIELD (per-pixel flow magnitude) and an IMAGE (the
     canonical Middlebury HSV flow visualization: hue = motion angle,
     value = motion magnitude). The magnitude field is a *structural
-    liveness* signal — exactly the kind of motion the shootout's
-    frame-mean `temporal_var_min` metric can miss (it culls contrast-only
-    animation as "static"). A genome driving a parameter from this flow
+    liveness* signal — exactly the kind of motion a frame-mean
+    `temporal_var_min` metric can miss (it culls contrast-only
+    animation as "static"). A graph driving a parameter from this flow
     field carries genuine structural motion.
   - It is self-contained: it generates a moving textured scene (two frames
     offset in time) and recovers the motion, so it doubles as a liveness

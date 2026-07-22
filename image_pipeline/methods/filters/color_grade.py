@@ -25,7 +25,7 @@ channel) for downstream use.
 
 Animation modes modulate the grading parameters over the `time` clock so the
 grade itself can breathe / cycle — a cheap, always-moving seed that fights the
-shootout "static/flat" dead-rate.
+"static/flat" dead-rate.
 """
 
 from __future__ import annotations

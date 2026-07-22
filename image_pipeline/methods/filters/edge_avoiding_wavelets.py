@@ -31,7 +31,7 @@ from ...core.animation import capture_frame
 # detail enhancement (local-contrast / tone-mapping flavor), and abstraction
 # (keep only the coarsest level + a thin edge skeleton). It is O(N) (a handful
 # of separable Gaussian passes over a small pyramid) so it NEVER threatens the
-# shootout's 150 s render-cost cull — a deliberate "cheap generator" choice that
+# 150 s render-cost cull — a deliberate "cheap generator" choice that
 # keeps contributing after the heavy-sim timeout culls (164 clips > 150 s).
 #
 # Relationship to existing edge-aware filters in this repo:

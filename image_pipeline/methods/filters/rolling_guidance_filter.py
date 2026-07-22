@@ -210,7 +210,7 @@ def method_rolling_guidance(out_dir, seed: int, params=None):
 
     Per-roll smoothing uses the He/Sun guided filter (a fast O(N) bilateral
     surrogate) so the whole pipeline stays well inside the render budget even at
-    N=6 — directly serving the shootout's >150s-cull pressure. Self-guided
+    N=6 — directly serving the >150s-cull pressure. Self-guided
     (guidance = target) so it is a pure structure extractor.
 
     Output modes (re-purpose the structure layer like node 969):

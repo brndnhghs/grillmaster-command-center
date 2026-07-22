@@ -154,7 +154,7 @@ def method_void_cluster(out_dir, seed: int, params=None):
     distribution. The matrix is generated once (deterministic, seed-independent)
     and tiled across the canvas.
 
-    Two helper signals are written for inspection / shootout fitness:
+    Two helper signals are written for inspection / fitness:
       * ``blue_noise_ratio`` — high-frequency vs low-frequency energy of the
         threshold-map DFT (blue noise ⇒ ≫ 1).
       * the threshold ``field`` itself (write_field).
@@ -166,7 +166,7 @@ def method_void_cluster(out_dir, seed: int, params=None):
 
     Closed-form per-pixel dither (O(W*H)) after a one-time O(N²·log N) matrix
     build — never hits the render-timeout cull, so it is safe for cheap-alive
-    shootout graphs.
+    graphs.
     """
     try:
         if params is None:

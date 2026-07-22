@@ -334,8 +334,8 @@ _TYPED_SHADER_NODES = [
     # Distinct from node 402 kifs_gpu (wedge + scale only): adds the sphere
     # fold (minR/maxR radius clamp) that opens the characteristic holes, plus
     # a per-iteration rotation. All 5 controls are wireable SCALAR ports so
-    # LFO/counter nodes can drive the live kaleidoscope animation (shootout:
-    # contrast-only static culls are avoided by the genuine u_time motion).
+    # LFO/counter nodes can drive the live kaleidoscope animation, and
+    # contrast-only static culls are avoided by the genuine u_time motion.
     ("330", "kifs_spherefold_gpu", "GPU KIFS Fractal"),
     # Node 331: Mandelbulb — 3D escape-time fractal (White & Nylander 2009),
     # sphere-traced via the Hart et al. 1989 distance estimator. The canonical
@@ -354,7 +354,7 @@ _TYPED_SHADER_NODES = [
     # Node 335: Domain Warping (Inigo Quilez, 2015) — fbm(fbm(p + fbm(p)))
     # two-level noise feed-forward gives marbled organic flow distinct from
     # single fbm (node 225); animated by scrolling the inner warp with u_time
-    # so shootout contrast-only static culls are avoided. (ID 335: 332-334 are
+    # so contrast-only static culls are avoided. (ID 335: 332-334 are
     # taken by CPU nodes — GPU-typed nodes must use free IDs above 301. Distinct
     # shader name domain_warp_palette_gpu vs node 311's domain_warp_gpu: the
     # 311 twin keeps the IQ-inferno look; this node adds a 4-colour palette.)
@@ -369,20 +369,20 @@ _TYPED_SHADER_NODES = [
     # Node 352: Gerstner Ocean — analytic trochoidal-wave height field with
     # Blinn-Phong sun glitter (typed GPU twin of CPU node 963). Closed-form
     # f(uv,t): wave phases advance with u_time so the live preview is genuinely
-    # animated (survives the shootout contrast-only static liveness cull). CPU
+    # animated (survives the contrast-only static liveness cull). CPU
     # numpy node 963 stays authoritative for export (two-tier precision).
     # 352 is the free ID above 301.
     ("352", "gerstner_ocean_gpu", "GPU Gerstner Ocean"),
     # Node 360: Gyroid TPMS — closed-form triply-periodic minimal-surface shell
     # on a swept slice plane (typed GPU twin of CPU node 964). Genuinely
     # time-varying: the slice-plane z advances with u_time so the 2D cross
-    # section morphs continuously (survives the shootout contrast-only static
+    # section morphs continuously (survives the contrast-only static
     # cull). CPU numpy node 964 stays authoritative for export.
     # 360 is the free ID above 301.
     ("360", "gyroid_tpms_gpu", "GPU Gyroid TPMS"),
     # Node 361: Phasor Noise — sparse-convolution complex-phasor field (typed GPU
     # twin of CPU node 1006). Closed-form f(uv,t): the global phase advances with
-    # u_time so the live preview is genuinely animated (survives the shootout
+    # u_time so the live preview is genuinely animated (survives the
     # contrast-only static liveness cull). CPU numpy node 1006 stays authoritative
     # for export. 361 is the free ID above 360.
     ("361", "phasor_noise_gpu", "GPU Phasor Noise"),

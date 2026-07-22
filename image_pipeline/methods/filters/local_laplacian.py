@@ -31,7 +31,7 @@ coherent edge-aware edits at every scale at once.
 
 CPU path is authoritative. We also emit the FIELD = local-detail residual
 (high-frequency content) for downstream use. Animation modes make the grade
-breathe so the node is never a dead/static clip in the shootout.
+breathe so the node is never a dead/static clip.
 
 Source: Paris et al. 2011, "Local Laplacian Filters".
 """
