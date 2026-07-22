@@ -45,6 +45,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
+from collections import Counter
 
 REPO = Path(__file__).resolve().parent.parent
 if str(REPO) not in sys.path:
@@ -239,6 +240,117 @@ def cmd_list(args) -> int:
     return 0
 
 
+def cmd_diagnose(args) -> int:
+    """Turn "this node feels wrong" into a specific, actionable list.
+
+    Three signals, because "dumbly constructed" has three distinct shapes and
+    the fix differs for each:
+
+      contract   the node emits something other than what it declares — a
+                 downstream consumer is already receiving the wrong thing.
+      dead       a param is exposed but does not reach the pixels. The slider
+                 is a lie. (tools/audit_dead_params.py measures this properly
+                 by rendering; here we only flag params never read in the body,
+                 which is the cheap static half of the same question.)
+      buried     the interesting values are hardcoded in the body instead of
+                 exposed as params. This is the "not exposing the real
+                 interesting parameters" complaint, and it is the most common.
+
+    The buried-constant count is a TRIAGE RANKING, not a defect count: loop
+    bounds, colour constants and math literals inflate it. Use it to decide
+    which node to open, then read the listed literals and judge.
+    """
+    import ast
+    import inspect
+
+    mid = args.method
+    meta = registry.get_meta(mid)
+    if meta is None:
+        print(f"unknown method id {mid!r}", file=sys.stderr)
+        return 2
+
+    print(f"=== {mid}  {meta.name}  [{meta.category}] ===\n")
+
+    # ── contract ──
+    try:
+        sys.path.insert(0, str(REPO / "tools"))
+        from audit_node_contract import audit_method  # type: ignore
+        findings = audit_method(mid, meta)
+    except Exception as exc:
+        findings = []
+        print(f"contract check unavailable: {exc}")
+    errs = [f for f in findings if f["severity"] == "ERROR"]
+    print(f"CONTRACT   {len(errs)} error(s), {len(findings)-len(errs)} other")
+    for f in findings[:6]:
+        print(f"   [{f['severity']:5}] {f['kind']:24} {f['detail'][:70]}")
+
+    # ── params: declared vs actually read ──
+    try:
+        src = inspect.getsource(meta.fn)
+        tree = ast.parse(src.lstrip())
+    except Exception:
+        print("\n(could not parse source — skipping param/constant analysis)")
+        return 0
+
+    read_names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
+    read_strs = {n.value for n in ast.walk(tree)
+                 if isinstance(n, ast.Constant) and isinstance(n.value, str)}
+    declared = list((meta.params or {}).keys())
+    never_read = [p for p in declared
+                  if p not in read_names and p not in read_strs]
+    print(f"\nPARAMS     {len(declared)} declared, {len(never_read)} never "
+          f"referenced in the body")
+    for p in never_read:
+        print(f"   dead?  {p}")
+    if never_read:
+        print("   -> confirm by rendering:  python tools/audit_dead_params.py "
+              f"--ids {mid}")
+
+    # ── buried constants ──
+    lits: list[float] = [
+        n.value for n in ast.walk(tree)
+        if isinstance(n, ast.Constant) and isinstance(n.value, (int, float))
+        and not isinstance(n.value, bool)
+        and n.value not in (0, 1, -1, 2, 3, 255, 0.0, 1.0, 0.5)
+    ]
+    ratio = len(lits) / max(len(declared), 1)
+    common = Counter(lits).most_common(8)
+    print(f"\nBURIED     {len(lits)} hardcoded constants vs {len(declared)} "
+          f"params ({ratio:.1f}x)")
+    if common:
+        print(f"   most repeated: {[c[0] for c in common]}")
+    if ratio >= 5:
+        print("   -> strong candidate: the interesting values are in the body, "
+              "not on the node")
+
+    # ── Node Doctor brief ──
+    if args.brief:
+        print("\n" + "=" * 68)
+        print("NODE DOCTOR BRIEF (paste into the Node Doctor panel)")
+        print("=" * 68)
+        print(f"Node {mid} ({meta.name}) needs its parameter surface reworked.")
+        print(f"It currently exposes {len(declared)} params: {declared}")
+        if errs:
+            print("\nContract errors to fix first:")
+            for f in errs:
+                print(f"  - {f['kind']}: {f['detail']}")
+        if never_read:
+            print(f"\nThese params are never referenced in the body and may be "
+                  f"dead — either wire them into the render math or remove "
+                  f"them: {never_read}")
+        if ratio >= 5:
+            print(f"\nThe body hardcodes {len(lits)} numeric constants, "
+                  f"{ratio:.0f}x the number of exposed params. The most "
+                  f"repeated are {[c[0] for c in common[:6]]}. Promote the ones "
+                  f"that change the LOOK of the output into params with "
+                  f"sensible min/max, keep incidental constants inline.")
+        print("\nConstraints: keep the method id and signature; declare every "
+              "new param in the @method decorator with min/max; anything the "
+              "user should be able to animate must be a float/int param. Do "
+              "not change what the node fundamentally does.")
+    return 0
+
+
 def cmd_promote(args) -> int:
     rec = _load(args.id)
     r = rec["repro"]
@@ -298,6 +410,12 @@ def main() -> int:
 
     ls = sub.add_parser("list", help="list captured issues and whether they still reproduce")
     ls.set_defaults(func=cmd_list)
+
+    dg = sub.add_parser("diagnose", help="why does this node feel wrong?")
+    dg.add_argument("--method", required=True)
+    dg.add_argument("--brief", action="store_true",
+                    help="also emit a Node Doctor brief to paste into the panel")
+    dg.set_defaults(func=cmd_diagnose)
 
     p = sub.add_parser("promote", help="emit a pytest regression test")
     p.add_argument("--id", required=True)

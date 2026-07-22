@@ -26,9 +26,9 @@ whether the animation actually reaches the pixels (changed_frac + temporal_var,
 using the SAME formulas as the liveness gate / test_driver_wired_reaches_pixels).
 
 Usage:
-    python3 image_pipeline/shootout/audit_dead_params.py            # all time-varying
-    python3 image_pipeline/shootout/audit_dead_params.py --ids 141,137,97
-    python3 image_pipeline/shootout/audit_dead_params.py --limit 20
+    python3 tools/audit_dead_params.py            # all time-varying
+    python3 tools/audit_dead_params.py --ids 141,137,97
+    python3 tools/audit_dead_params.py --limit 20
 
 Output: a ranked report written to
     image_pipeline/shootout/data/dead-param-audit.md
@@ -49,9 +49,10 @@ from pathlib import Path
 
 import numpy as np
 
-# Self-bootstrap: this script lives under image_pipeline/shootout/, but the
-# package import needs the REPO root on sys.path. (parents[2] from here.)
-_ROOT = Path(__file__).resolve().parents[2]
+# Self-bootstrap: this script lives under tools/, so the package import needs
+# the REPO root on sys.path. (parents[1] from here — it was parents[2] while
+# the script lived under image_pipeline/shootout/.)
+_ROOT = Path(__file__).resolve().parents[1]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
@@ -64,7 +65,11 @@ from image_pipeline.core.graph import (  # proven in-process render path
     get_all_node_defs,
 )
 
-REPORT_PATH = Path(__file__).resolve().parent / "data" / "dead-param-audit.md"
+# Reports land in the repo-level data/ dir (gitignored), not tools/data/ —
+# the script moved out of image_pipeline/shootout/ into tools/, and its old
+# sibling data/ directory went with the package.
+REPORT_PATH = _ROOT / "data" / "node-quality" / "dead-param-audit.md"
+REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 # Liveness floor -- mirrors test_driver_wired_reaches_pixels / the gate rescue
 # thresholds. A genuinely animating node clears these easily; a dead-param
