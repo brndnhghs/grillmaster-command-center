@@ -46,6 +46,25 @@ const EDITABLE = {
 
 let E = null; // editor state, null when closed
 
+// Resolve a CSS custom property to a colour three.js can consume. The GL side
+// has no access to the cascade, so every themed scene colour goes through here
+// and is re-read whenever the theme changes.
+function themeColor(token, fallback) {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(token).trim();
+  return v || fallback;
+}
+
+// Re-tint the live scene in place — cheaper and less disruptive than tearing
+// the viewport down and rebuilding it just because a colour moved.
+window.addEventListener('gm-theme-change', () => {
+  if (!E) return;
+  E.scene.background = new THREE.Color(themeColor('--viewport-bg', '#0d111c'));
+  if (E.grid) {
+    const c = new THREE.Color(themeColor('--viewport-grid', '#2e3950'));
+    E.grid.material.color.set(c);
+  }
+});
+
 // ── Geometry / material builders (mirror client3d semantics) ────────────────
 function paramGeometry(shape, size, detail) {
   const s = size, d = detail;
@@ -242,14 +261,17 @@ function writeBack(node, obj) {
 // ── Toolbar overlay ─────────────────────────────────────────────────────────
 function makeToolbar(container) {
   const bar = document.createElement('div');
+  // Themed via CSS custom properties so the viewport chrome follows the
+  // active theme instead of staying frozen at one hardcoded blue.
   bar.style.cssText = 'position:absolute;top:10px;left:10px;z-index:6;display:flex;gap:6px;'
-    + 'background:rgba(18,22,32,.82);padding:6px 8px;border-radius:10px;backdrop-filter:blur(4px);'
-    + 'font-size:12px;align-items:center;';
+    + 'background:color-mix(in srgb, var(--bg1) 82%, transparent);'
+    + 'padding:6px 8px;border-radius:var(--radius-l);backdrop-filter:blur(4px);'
+    + 'border:1px solid var(--border);font-size:12px;align-items:center;';
   const mkBtn = (label, title, onClick) => {
     const b = document.createElement('button');
     b.textContent = label; b.title = title;
-    b.style.cssText = 'padding:4px 10px;background:#232a3a;border:1px solid #37415a;'
-      + 'border-radius:6px;color:#cfd8ec;cursor:pointer;font-size:12px;font-weight:600;';
+    b.style.cssText = 'padding:4px 10px;background:var(--bg3);border:1px solid var(--border-strong);'
+      + 'border-radius:var(--radius-m);color:var(--muted);cursor:pointer;font-size:12px;font-weight:600;';
     b.addEventListener('click', onClick);
     bar.appendChild(b);
     return b;
@@ -262,7 +284,7 @@ function makeToolbar(container) {
   mkBtn('Frame', 'Frame selection (F)', () => frameSelection());
   const hint = document.createElement('span');
   hint.textContent = 'click: select · drag: orbit · ⇧drag: pan · wheel: zoom';
-  hint.style.cssText = 'color:#8fa3c8;margin-left:6px;';
+  hint.style.cssText = 'color:var(--muted2);margin-left:6px;';
   bar.appendChild(hint);
   container.appendChild(bar);
   return { bar, modes };
@@ -271,8 +293,9 @@ function makeToolbar(container) {
 function highlightMode(mode) {
   if (!E) return;
   for (const [m, btn] of Object.entries(E.toolbar.modes)) {
-    btn.style.background = m === mode ? '#3b5bd9' : '#232a3a';
-    btn.style.color = m === mode ? '#fff' : '#cfd8ec';
+    btn.style.background = m === mode ? 'var(--accent)' : 'var(--bg3)';
+    btn.style.color = m === mode ? 'var(--bg0)' : 'var(--muted)';
+    btn.style.borderColor = m === mode ? 'var(--accent)' : 'var(--border-strong)';
   }
 }
 
@@ -298,13 +321,18 @@ export async function open(opts) {
   renderer.setSize(w, h, false);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color('#0d111c');
+  scene.background = new THREE.Color(themeColor('--viewport-bg', '#0d111c'));
   scene.add(new THREE.AmbientLight(0xffffff, 0.45));
   const key = new THREE.DirectionalLight(0xffffff, 1.2);
   key.position.set(5, 8, 6);
   scene.add(key);
 
-  const grid = new THREE.GridHelper(20, 40, 0x2e3950, 0x222a3e);
+  // GL colours can't reference CSS vars, so they are sampled from the computed
+  // tokens here and re-sampled on gm-theme-change (see the listener below).
+  const gridC = themeColor('--viewport-grid', '#2e3950');
+  const grid = new THREE.GridHelper(20, 40, gridC, gridC);
+  grid.material.opacity = 0.8;
+  grid.material.transparent = true;
   scene.add(grid);
   const axes = new THREE.AxesHelper(1.2);
   scene.add(axes);
@@ -337,7 +365,7 @@ export async function open(opts) {
   const raycaster = new THREE.Raycaster();
 
   E = {
-    opts, container, canvas, renderer, scene, camera, orbit, gizmo, raycaster,
+    opts, container, canvas, renderer, scene, camera, orbit, gizmo, raycaster, grid,
     objects: new Map(),   // nodeId -> {obj, entryKey}
     nodeById: new Map(),
     selected: null, dragging: false, raf: 0,

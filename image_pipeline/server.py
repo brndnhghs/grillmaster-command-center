@@ -365,11 +365,27 @@ def require_token(request: Request):
         raise HTTPException(401, "Missing or invalid X-Api-Token header")
 
 
+class _RevalidatingStatic(StaticFiles):
+    """Serve UI assets with revalidation forced.
+
+    The editor's JS/CSS are edited in place while the server keeps running, and
+    a browser memory-cache hit silently serves the previous copy — which turns a
+    saved fix into a phantom bug that survives a reload. ``no-cache`` still
+    permits a 304 via the ETag, so this costs a conditional request per file,
+    not a re-download.
+    """
+
+    def file_response(self, *args, **kwargs) -> Response:
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+
 app = FastAPI(title="Image Pipeline", lifespan=lifespan)
 app.mount("/output", StaticFiles(directory=str(OUTPUT_ROOT)), name="output")
 # Static UI assets (vendored three.js, client-side executor modules). Additive —
 # purely for serving front-end files; does not touch the render/export pipeline.
-app.mount("/ui", StaticFiles(directory=str(UI_DIR)), name="ui")
+app.mount("/ui", _RevalidatingStatic(directory=str(UI_DIR)), name="ui")
 # User-uploaded model/texture assets (USD, GLTF, images) — see /api/assets/upload.
 ASSETS_DIR = OUTPUT_ROOT / "assets"
 ASSETS_DIR.mkdir(parents=True, exist_ok=True)

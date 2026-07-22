@@ -44,6 +44,15 @@
     --tag-fg: #9aa4b2;
     --grid-dot: #32363d;
     --focus-ring: 0 0 0 2px rgba(100,116,139,0.38);
+    /* workspace surfaces — the graph canvas and the 3D stage were hardcoded
+       before; they are tokens now so a theme owns the whole workspace. */
+    --node-bg:      #16181c;
+    --node-head:    #1c1f24;
+    --node-border:  #2a2d33;
+    --wire:         #4b5563;
+    --viewport-bg:  #0d111c;
+    --viewport-grid:#2e3950;
+    --glow:         transparent;   /* themes that want bloom opt in */
     /* system (theme-independent) */
     --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'Menlo', 'Consolas', monospace;
     --radius-s: 4px;
@@ -52,6 +61,67 @@
     --shadow-1: 0 1px 2px rgba(0,0,0,0.45);
     --shadow-2: 0 4px 16px rgba(0,0,0,0.45);
     --shadow-3: 0 12px 36px rgba(0,0,0,0.6);
+  }
+
+  /* ── Theme: Ember — charcoal + flame. The bold default: hotter accent,
+     deeper surfaces, accent glow on live/active state. ── */
+  html[data-theme="ember"] {
+    --bg0:    #0c0a09;
+    --bg1:    #131010;
+    --bg2:    #1b1715;
+    --bg3:    #262019;
+    --border: #33291f;
+    --border-strong: #55402c;
+    --accent:  #f97316;
+    --accent2: #fbbf24;
+    --success: #4ade80;
+    --warn:    #fbbf24;
+    --err:     #fb7185;
+    --live:    #f43f5e;
+    --text:   #f5efe8;
+    --muted:  #a1938a;
+    --muted2: #6b5d54;
+    --tag-bg: #2a2018;
+    --tag-fg: #fbbf24;
+    --grid-dot: #3d2f22;
+    --focus-ring: 0 0 0 2px rgba(249,115,22,0.42);
+    --node-bg:      #17130f;
+    --node-head:    #221a13;
+    --node-border:  #3a2c1f;
+    --wire:         #7c5c3e;
+    --viewport-bg:  #0f0c0a;
+    --viewport-grid:#6b5230;
+    --glow:         rgba(249,115,22,0.30);
+  }
+
+  /* ── Theme: Flux — cold high-contrast cyan/violet, maximum separation ── */
+  html[data-theme="flux"] {
+    --bg0:    #06080d;
+    --bg1:    #0b0f17;
+    --bg2:    #111725;
+    --bg3:    #1a2336;
+    --border: #23304a;
+    --border-strong: #3a4d73;
+    --accent:  #22d3ee;
+    --accent2: #a855f7;
+    --success: #2dd4bf;
+    --warn:    #facc15;
+    --err:     #fb7185;
+    --live:    #f43f5e;
+    --text:   #eaf4ff;
+    --muted:  #8ba0bd;
+    --muted2: #566887;
+    --tag-bg: #14203a;
+    --tag-fg: #67e8f9;
+    --grid-dot: #26354f;
+    --focus-ring: 0 0 0 2px rgba(34,211,238,0.40);
+    --node-bg:      #0d1420;
+    --node-head:    #141d2e;
+    --node-border:  #24334d;
+    --wire:         #3f6187;
+    --viewport-bg:  #06090f;
+    --viewport-grid:#38507a;
+    --glow:         rgba(34,211,238,0.28);
   }
 
   /* ── Theme: Graphite — warm near-black, ember accent ── */
@@ -404,8 +474,58 @@
   #graph-palette-btn:hover { background: var(--bg2); }
 
   /* Canvas */
+  /* ── Workspace: graph | splitter | 3D viewport ─────────── */
+  /* The graph flexes; the dock holds a width the user set. Collapsed by
+     default so the graph is unchanged until the viewport is asked for. */
+  #graph-workspace {
+    display: flex; flex: 1; min-height: 0; min-width: 0; overflow: hidden;
+  }
+  #graph-viewport-dock {
+    display: none; flex-direction: column; flex-shrink: 0;
+    width: var(--vpd-w, 420px); min-width: 220px;
+    background: var(--bg1); border: 1px solid var(--border);
+    border-radius: var(--radius-m); overflow: hidden;
+  }
+  #graph-workspace.vpd-open #graph-viewport-dock { display: flex; }
+
+  #vpd-header {
+    display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+    padding: 0 10px; height: 34px;
+    background: var(--bg2); border-bottom: 1px solid var(--border);
+  }
+  #vpd-title {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--text); flex-shrink: 0;
+  }
+  #vpd-hint {
+    font-size: 10px; color: var(--muted2); flex: 1;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #vpd-close {
+    border: none; background: none; color: var(--muted); cursor: pointer;
+    font-size: 13px; line-height: 1; padding: 2px 4px; flex-shrink: 0;
+  }
+  #vpd-close:hover { color: var(--text); }
+  /* Stage owns the GL canvas; position:relative anchors editor3d's toolbar. */
+  #vpd-stage { flex: 1; min-height: 0; position: relative; background: #0d111c; }
+
+  /* Splitter — only occupies space while the dock is open. */
+  #viewport-splitter { display: none; }
+  #graph-workspace.vpd-open #viewport-splitter {
+    display: block; flex-shrink: 0; width: 6px; cursor: col-resize;
+    background: transparent; position: relative;
+  }
+  #graph-workspace.vpd-open #viewport-splitter::after {
+    content: ''; position: absolute; inset: 0 2px;
+    background: var(--border); border-radius: 1px;
+    transition: background 0.12s;
+  }
+  #viewport-splitter:hover::after,
+  #viewport-splitter.dragging::after { background: var(--accent); }
+
   #graph-canvas-wrap {
     flex: 1; position: relative; overflow: hidden; background: var(--bg0); min-height: 0;
+    min-width: 0;
     border: 1px solid var(--border); border-radius: var(--radius-m);
     box-shadow: inset 0 0 0 1px rgba(0,0,0,0.25);
   }
@@ -473,19 +593,21 @@
 
   /* ── Nodes ────────────────────────────────────────────── */
   .gnode {
-    position: absolute; min-width: 160px; background: var(--bg2);
-    border: 1px solid var(--border-strong); border-radius: var(--radius-m); user-select: none;
+    position: absolute; min-width: 160px; background: var(--node-bg);
+    border: 1px solid var(--node-border); border-radius: var(--radius-m); user-select: none;
     box-shadow: var(--shadow-2); transition: border-color 0.1s, box-shadow 0.1s;
     touch-action: none;
   }
   .gnode:hover { border-color: var(--accent); }
+  /* Selection reads as lit, not just outlined — --glow is transparent on the
+     restrained themes, so this costs them nothing. */
   .gnode.selected {
     border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent), var(--shadow-2);
+    box-shadow: 0 0 0 1px var(--accent), 0 0 18px var(--glow), var(--shadow-2);
   }
   .gnode-header {
-    padding: 7px 10px 6px; border-bottom: 1px solid var(--border);
-    cursor: move; border-radius: calc(var(--radius-m) - 1px) calc(var(--radius-m) - 1px) 0 0; background: var(--bg3);
+    padding: 7px 10px 6px; border-bottom: 1px solid var(--node-border);
+    cursor: move; border-radius: calc(var(--radius-m) - 1px) calc(var(--radius-m) - 1px) 0 0; background: var(--node-head);
     display: flex; justify-content: space-between; align-items: center; gap: 4px;
   }
   .gnode-title {
@@ -604,11 +726,14 @@
   /* ── Edges ─────────────────────────────────────────────
      Stroke colour is set inline per edge from the server port-type
      registry (gRedrawEdges); these rules control weight + hover. */
+  /* Wires get their own token: at --accent they competed with every accented
+     control for attention, which is wrong for the most-repeated mark on screen. */
   .gedge {
-    fill: none; stroke: var(--accent); stroke-width: 2; opacity: 0.6;
+    fill: none; stroke: var(--wire); stroke-width: 2; opacity: 0.85;
     pointer-events: stroke; cursor: pointer;
-    transition: opacity 0.1s, stroke-width 0.1s;
+    transition: opacity 0.1s, stroke-width 0.1s, stroke 0.1s;
   }
+  .gedge:hover { stroke: var(--accent); }
   .gedge:hover { opacity: 1; stroke-width: 3.5; }
   .gedge.feedback { stroke-dasharray: 6 4; }
   .gedge-pending { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 4 3; pointer-events: none; }
@@ -622,7 +747,8 @@
   #graph-toolbar::-webkit-scrollbar { display: none; }
   /* Ghost-button family: every secondary toolbar control shares this look */
   #graph-clear-btn, #graph-clear-btn-desk, #graph-layout-btn, #graph-layout-btn-desk,
-  .g-autobtn, .g-savebtn, .g-loadbtn, #graph-help-btn {
+  .g-autobtn, .g-savebtn, .g-loadbtn, #graph-help-btn,
+  #graph-undo-btn, #graph-redo-btn {
     height: 30px; padding: 0 12px; display: inline-flex; align-items: center; gap: 5px;
     background: var(--bg2); color: var(--muted);
     border: 1px solid var(--border); border-radius: var(--radius-m);
@@ -630,8 +756,23 @@
     transition: background 0.12s, color 0.12s, border-color 0.12s;
   }
   #graph-clear-btn:hover, #graph-clear-btn-desk:hover, #graph-layout-btn:hover, #graph-layout-btn-desk:hover,
-  .g-autobtn:hover, .g-savebtn:hover, .g-loadbtn:hover, #graph-help-btn:hover {
+  .g-autobtn:hover, .g-savebtn:hover, .g-loadbtn:hover, #graph-help-btn:hover,
+  #graph-undo-btn:not(:disabled):hover, #graph-redo-btn:not(:disabled):hover {
     color: var(--text); background: var(--bg3); border-color: var(--border-strong);
+  }
+
+  /* Undo/redo: one segmented control, so the pair reads as a single history
+     affordance instead of two more loose ghost buttons in a busy toolbar. */
+  .gtb-group { display: inline-flex; flex-shrink: 0; }
+  .gtb-group > button { padding: 0 10px; font-size: 14px; line-height: 1; }
+  .gtb-group > button:first-child {
+    border-top-right-radius: 0; border-bottom-right-radius: 0;
+  }
+  .gtb-group > button:last-child {
+    border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px;
+  }
+  .gtb-group > button:disabled {
+    opacity: 0.38; cursor: default; color: var(--muted2);
   }
   #graph-run-btn, #graph-run-btn-desk {
     height: 30px; padding: 0 18px; background: var(--accent); color: #fff;
@@ -645,7 +786,14 @@
   #graph-frames { width: 60px; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-m); color: var(--text); padding: 5px 8px; font-size: 12px; }
   #graph-frame-count, #graph-frame-count-mobile { font-family: var(--font-mono); font-size: 11px; padding: 0 6px; color: var(--muted); }
   #graph-status { font-size: 12px; color: var(--muted); margin-left: 4px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #graph-status-desk { font-family: var(--font-mono); font-size: 11px; }
+  /* Same truncation contract as #graph-status: this is a separate element and
+     never inherited it, so a long status wrapped and stretched the toolbar
+     into a second row instead of ellipsing. min-width:0 lets it shrink. */
+  #graph-status-desk {
+    font-family: var(--font-mono); font-size: 11px; color: var(--muted);
+    flex: 1 1 auto; min-width: 0; max-width: 320px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   #graph-layout-btn.active, #graph-layout-btn-desk.active,
   .g-autobtn.active {
     background: rgba(52,211,153,0.1); color: var(--success); border-color: var(--success);
@@ -829,6 +977,9 @@
     background: var(--bg2); border: 1px solid var(--border);
     border-radius: var(--radius-m); padding: 12px; cursor: pointer;
     text-align: left; transition: border-color 0.12s, background 0.12s;
+    /* A <button> defaults to the UA's `buttontext`, which resolved to black on
+       these dark surfaces and made .theme-name all but invisible. */
+    color: var(--text); font: inherit;
   }
   .theme-card:hover { border-color: var(--border-strong); background: var(--bg3); }
   .theme-card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
@@ -840,6 +991,52 @@
   .theme-name { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
   .theme-card.active .theme-name::after { content: '✓'; color: var(--accent2); font-size: 12px; }
   .theme-desc { font-size: 11px; color: var(--muted); margin-top: 3px; line-height: 1.4; }
+
+  /* ── Token editor ─────────────────────────────────────── */
+  #theme-editor-wrap { margin-top: 14px; }
+  #theme-editor-wrap > summary {
+    cursor: pointer; font-size: 12px; font-weight: 600; color: var(--muted);
+    padding: 6px 0; list-style: none; user-select: none;
+  }
+  #theme-editor-wrap > summary::-webkit-details-marker { display: none; }
+  #theme-editor-wrap > summary::before { content: '▸ '; color: var(--muted2); }
+  #theme-editor-wrap[open] > summary::before { content: '▾ '; }
+  #theme-editor-wrap > summary:hover { color: var(--text); }
+
+  .tk-group { margin-top: 14px; }
+  .tk-group-label {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.09em;
+    text-transform: uppercase; color: var(--muted2); margin-bottom: 7px;
+  }
+  .tk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 6px 12px; }
+  .tk-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 8px; border-radius: var(--radius-s);
+    background: var(--bg2); border: 1px solid var(--border);
+  }
+  .tk-row:hover { border-color: var(--border-strong); }
+  .tk-label { font-size: 11px; color: var(--muted); flex: 1; min-width: 0;
+              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tk-hex, .tk-val {
+    font-family: var(--font-mono); font-size: 10px; color: var(--muted2);
+    flex-shrink: 0; min-width: 54px; text-align: right;
+  }
+  /* Strip the native chrome so the swatch reads as part of the row. */
+  .tk-color {
+    width: 26px; height: 20px; padding: 0; flex-shrink: 0; cursor: pointer;
+    border: 1px solid var(--border-strong); border-radius: var(--radius-s);
+    background: none; appearance: none; -webkit-appearance: none;
+  }
+  .tk-color::-webkit-color-swatch-wrapper { padding: 0; }
+  .tk-color::-webkit-color-swatch { border: none; border-radius: 2px; }
+  .tk-color::-moz-color-swatch { border: none; border-radius: 2px; }
+  .tk-range { flex: 1; min-width: 60px; accent-color: var(--accent); cursor: pointer; }
+
+  .tk-actions {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border);
+  }
+  #tk-dirty { font-size: 11px; color: var(--accent2); margin-left: auto; }
 
   #graph-output-strip {
     display: flex; gap: 8px; padding: 8px 14px; overflow-x: auto; overflow-y: hidden;
