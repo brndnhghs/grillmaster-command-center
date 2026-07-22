@@ -42,6 +42,26 @@
   the node produced, and `replay` diffs that against current code. `promote`
   emits a pytest regression test from a capture so a fixed bug cannot return
   silently.
+- **Fixed** `image_pipeline/tests/profile_live.py` to model the live loop. It
+  forced `dirty=True` on every node every frame — pre-Phase-6 invariant 1,
+  which DESIGN.md explicitly relaxed — while labelling the result "Approx live
+  FPS". The instrument the project steers performance work by was describing an
+  architecture the executor had already abandoned.
+- **Impact of the correction** on the reference graph (Noise → Glitch →
+  Transform, 768×512): live mode is **20.0 fps**, not the 1.9 fps the old
+  script reported — a **10.6× understatement**. Procedural Noise (#05) is not
+  the bottleneck it appeared to be at 89% of frame time; it is
+  `is_time_varying=False` with no upstream, so live mode skips it entirely
+  (2 of 3 nodes cooked per frame).
+- **Real live-mode breakdown** at 50.0 ms/frame, for anyone optimising toward
+  the 30 fps (33.3 ms) target: Glitch Art #17 18.7 ms (37%), Transform 14.3 ms
+  (29%), executor overhead 10.3 ms (21%), JPEG encode 6.7 ms (13%).
+- **Added** a `cold` mode that keeps the old forced-dirty behaviour as an
+  explicit worst-case/scrub upper bound, reported side by side with `live` so
+  the two can never be confused again.
+- **Added** `test_profiler_models_live_loop.py`, including the load-bearing
+  check that selective recook does not freeze the preview — a frame-rate win
+  from skipping is worthless if the terminal image stops changing.
 
 ---
 
