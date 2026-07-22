@@ -23,7 +23,14 @@
 
 import { createRequire } from 'module';
 import http from 'http';
-import * as THREE from '../../ui/vendor/three.module.js';
+// PINNED to r160, deliberately — do not "upgrade" this to match the browser.
+// three.js dropped WebGL 1 in r163: r185's WebGLRenderer hardcodes
+// getContext('webgl2') with no fallback, while the headless `gl` package only
+// ever exposes "WebGL 1.0 stack-gl". The browser runs r185 (see the import map
+// in ui/index.html); this process keeps its own r160 copy so the two runtimes
+// can move independently. Moving the sidecar forward means replacing headless
+// `gl` with a WebGL2-capable backend first.
+import * as THREE from './vendor/three.r160.module.mjs';
 
 const require = createRequire(import.meta.url);
 const makeContext = require('gl');

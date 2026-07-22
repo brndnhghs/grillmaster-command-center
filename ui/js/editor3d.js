@@ -21,9 +21,9 @@
  *      selectNode(nodeId), frameSelection().
  */
 
-import * as THREE from '/ui/vendor/three.module.js';
-import { OrbitControls } from '/ui/vendor/OrbitControls.js';
-import { TransformControls } from '/ui/vendor/TransformControls.js';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { loadUsdModel } from '/ui/js/client3d.js';
 
 const DEG = Math.PI / 180;
@@ -91,7 +91,7 @@ function wiredSource(edges, nodesById, dstId, port) {
 // Lazy GLTFLoader (same vendored addon client3d uses).
 let _gltfP = null;
 function gltfLoader() {
-  if (!_gltfP) _gltfP = import('/ui/vendor/GLTFLoader.js').then(m => m.GLTFLoader);
+  if (!_gltfP) _gltfP = import('three/addons/loaders/GLTFLoader.js').then(m => m.GLTFLoader);
   return _gltfP;
 }
 
@@ -360,12 +360,16 @@ export async function open(opts) {
     const obj = E.objects.get(E.selected)?.obj;
     if (node && obj) writeBack(node, obj);     // live while dragging
   });
-  scene.add(gizmo);
+  // r185: TransformControls extends Controls, not Object3D — it is no longer
+  // addable itself. Its visual root comes from getHelper(), and that helper is
+  // what has to be removed on teardown.
+  const gizmoHelper = gizmo.getHelper();
+  scene.add(gizmoHelper);
 
   const raycaster = new THREE.Raycaster();
 
   E = {
-    opts, container, canvas, renderer, scene, camera, orbit, gizmo, raycaster, grid,
+    opts, container, canvas, renderer, scene, camera, orbit, gizmo, gizmoHelper, raycaster, grid,
     objects: new Map(),   // nodeId -> {obj, entryKey}
     nodeById: new Map(),
     selected: null, dragging: false, raf: 0,
@@ -528,6 +532,7 @@ export function close() {
   cancelAnimationFrame(E.raf);
   E.ro && E.ro.disconnect();
   E.gizmo.detach();
+  if (E.gizmoHelper) E.scene.remove(E.gizmoHelper);
   E.gizmo.dispose && E.gizmo.dispose();
   E.orbit.dispose();
   for (const rec of E.objects.values()) E.scene.remove(rec.obj);

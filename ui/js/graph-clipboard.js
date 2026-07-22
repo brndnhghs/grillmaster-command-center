@@ -57,6 +57,10 @@
 
   // Insert a fragment, remapping ids. Returns the new node ids.
   function insert(frag, dx, dy) {
+    // gDeleteNode now prunes the multi-select set, so an all-stale selection
+    // shouldn't reach here — but an empty fragment must still be a no-op
+    // rather than an exception, since every caller ends by selecting made[0].
+    if (!frag.nodes.length) return [];
     const remap = new Map();
     const made = [];
 

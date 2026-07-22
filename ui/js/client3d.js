@@ -29,7 +29,7 @@
  * GLSL ES 3.00). Only the injected prologue differs.
  */
 
-import * as THREE from '/ui/vendor/three.module.js';
+import * as THREE from 'three';
 
 export const CLIENT_NODE_IDS = ['__scene3d__', '__p5sketch__'];
 
@@ -84,7 +84,7 @@ function _producesImage(mid) {
 let _gltfLoaderPromise = null;
 function loadGltfLoader() {
   if (_gltfLoaderPromise) return _gltfLoaderPromise;
-  _gltfLoaderPromise = import('/ui/vendor/GLTFLoader.js')
+  _gltfLoaderPromise = import('three/addons/loaders/GLTFLoader.js')
     .then(m => m.GLTFLoader)
     .catch(e => { _gltfLoaderPromise = null; throw e; });
   return _gltfLoaderPromise;
@@ -97,8 +97,8 @@ let _usdLoaderPromise = null;
 function loadUsdModules() {
   if (_usdLoaderPromise) return _usdLoaderPromise;
   _usdLoaderPromise = Promise.all([
-    import('/ui/vendor/USDZLoader.js'),
-    import('/ui/vendor/fflate.module.js'),
+    import('three/addons/loaders/USDZLoader.js'),
+    import('three/addons/libs/fflate.module.js'),
   ]).then(([m, fflate]) => ({ USDZLoader: m.USDZLoader, fflate }))
     .catch(e => { _usdLoaderPromise = null; throw e; });
   return _usdLoaderPromise;

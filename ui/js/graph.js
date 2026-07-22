@@ -1973,8 +1973,21 @@ function gDeleteNode(id) {
     gSelectedNode = null; gShowNodeParams(null);
     if (isMobile()) gParamsSheetClose();
   }
+  // Drop it from the multi-select set too. Leaving a deleted id in there hands
+  // every consumer of the selection (duplicate, copy, group) an id with no
+  // node behind it — gGroupSelectedNodes silently under-groups, and the
+  // clipboard's paste path resolves an empty fragment.
+  gSelectedNodes.delete(id);
   gUpdateConnectedPorts();
   gRedrawEdges(); gSave(); gPhysicsKick();
+}
+
+// Keep the edge-id counter ahead of every edge already in the document.
+// Shared by gLoad() and the history module's restore so the 'e<n>' id format
+// is only understood in one place — a stale parse here silently yields 0 and
+// makes the next wire reuse an existing edge id.
+function gRecomputeEdgeCounter() {
+  gEdgeCounter = Math.max(0, ...gEdges.map(e => parseInt(e.id?.slice(1)) || 0));
 }
 
 function gRedrawEdges() {
@@ -2874,6 +2887,12 @@ async function gToggleEditor3D() {
     return;
   }
   const ED = await import('/ui/js/editor3d.js');
+  // Stop the browser-GPU live loop, not the server one. client3d.js owns its
+  // own WebGLRenderer and RAF loop over the same 3D nodes the editor is about
+  // to render, so running both means two GL contexts competing every frame.
+  // The server live stream only blits JPEG frames, costs no GL context, and is
+  // exactly what the dock exists to sit beside — so it keeps running.
+  _gStopClientLive();
   // Show the dock before open() so the stage has real dimensions to size the
   // renderer against — measuring a display:none container yields 0×0.
   gWorkspace.classList.add('vpd-open');
@@ -4832,7 +4851,7 @@ function gLoad() {
     gEdges = (s.edges || []).map(e =>
       e.dst_port === 'image' ? { ...e, dst_port: 'image_in' } : e
     );
-    gEdgeCounter = Math.max(0, ...gEdges.map(e => parseInt(e.id?.slice(1)) || 0));
+    gRecomputeEdgeCounter();
     gPanX = s.panX || 0; gPanY = s.panY || 0;
     gCanvasScale = s.scale || 1.0;
     _gApplyCanvasSize(s.canvasW, s.canvasH);

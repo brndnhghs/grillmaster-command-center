@@ -18,6 +18,21 @@ try {
 } catch (e) {}
 </script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Ccircle%20cx='4'%20cy='8'%20r='2.6'%20fill='%234a9eff'/%3E%3Ccircle%20cx='12'%20cy='8'%20r='2.6'%20fill='%236c8ef5'/%3E%3Crect%20x='5'%20y='7.25'%20width='6'%20height='1.5'%20fill='%236c8ef5'/%3E%3C/svg%3E">
+<!-- three.js resolution. Vendored r185 is served from /ui/vendor; the addons
+     ship importing bare 'three', so an import map is what lets them be copied
+     verbatim from node_modules instead of hand-rewritten on every upgrade.
+     three.module.js pulls ./three.core.js relatively, so both must be present.
+     No "three/webgpu" or "three/tsl" entry: this build has no WebGPU path (see
+     the sidecar note in image_pipeline/3d/threejs-sidecar.mjs). Adding one is
+     `cp node_modules/three/build/three.{webgpu,tsl}.js ui/vendor/` plus a key. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "/ui/vendor/three.module.js",
+    "three/addons/": "/ui/vendor/addons/"
+  }
+}
+</script>
 <link rel="stylesheet" href="/ui/css/editor.css">
 </head>
 <body>
