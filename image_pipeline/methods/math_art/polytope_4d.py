@@ -21,7 +21,6 @@ from PIL import Image, ImageDraw
 from ...core.registry import method
 from ...core.utils import save, mn, seed_all, W, H, wired_source_lum
 from ...core.animation import capture_frame
-from image_pipeline.core.spatial import sparam
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -210,8 +209,8 @@ def _hsv(h, s=0.85, v=0.9):
 @method(id="108", name="4D Hypercube", category="math_art",
         tags=["4d", "tesseract", "hypercube", "geometry", "rotation"],
         params={
-    "speed_xw": {"spatial": True, "description": "XW rotation speed", "min": 0.1, "max": 3.0, "default": 0.5},
-    "speed_yw": {"spatial": True, "description": "YW rotation speed", "min": 0.1, "max": 3.0, "default": 0.3},
+    "speed_xw": {"description": "XW rotation speed", "min": 0.1, "max": 3.0, "default": 0.5},
+    "speed_yw": {"description": "YW rotation speed", "min": 0.1, "max": 3.0, "default": 0.3},
     "proj_radius": {"description": "projection radius", "min": 2.0, "max": 6.0, "default": 3.5},
     "line_width": {"description": "edge width (px)", "min": 1, "max": 4, "default": 3},
     "inner_hue": {"description": "inner cube hue", "min": 0.0, "max": 1.0, "default": 0.55},
@@ -237,8 +236,8 @@ def method_4d_hypercube(out_dir: Path, seed: int, params=None):
     t = float(params.get("time", 0.0))
     seed_all(seed)
 
-    sp_xw = sparam(params, "speed_xw", 0.5)
-    sp_yw = sparam(params, "speed_yw", 0.3)
+    sp_xw = float(params.get("speed_xw", 0.5))
+    sp_yw = float(params.get("speed_yw", 0.3))
     proj_r = float(params.get("proj_radius", 3.5))
     lw = int(params.get("line_width", 2))
     inner_h = float(params.get("inner_hue", 0.55))

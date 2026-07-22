@@ -9,7 +9,6 @@ from PIL import Image, ImageDraw, ImageFont
 from ...core.registry import method
 from ...core.utils import save, norm, mn, seed_all, get_font, BG_DEFAULT, W, H, write_field
 from ...core.animation import capture_frame
-from image_pipeline.core.spatial import sparam
 
 try:
     import cv2
@@ -21,19 +20,19 @@ except ImportError:
     inputs={},id="62", name="Chaotic Map", category="math_art", tags=["chaos","slow", "expanded"],
         outputs={"image": "IMAGE", "field": "FIELD"},
          params={"map_type":{"description":"map type","choices":["henon","logistic","tinkerbell","gingerbreadman","ikeda","lorenz","standard_map","bakers_map","arnold_cat","duffing","rossler"],"default":"henon"},
-                 "a":{"spatial": True, "description":"a","min":-3.0,"max":3.0,"default":1.4},"b":{"spatial": True, "description":"b","min":-3.0,"max":3.0,"default":0.3},
-                 "c":{"spatial": True, "description":"c","min":-3.0,"max":3.0,"default":2.0},"d":{"spatial": True, "description":"d","min":-3.0,"max":3.0,"default":0.5},
+                 "a":{"description":"a","min":-3.0,"max":3.0,"default":1.4},"b":{"description":"b","min":-3.0,"max":3.0,"default":0.3},
+                 "c":{"description":"c","min":-3.0,"max":3.0,"default":2.0},"d":{"description":"d","min":-3.0,"max":3.0,"default":0.5},
                  "n":{"description":"iterations","min":100000,"max":1000000,"default":500000},"density_inc":{"description":"density inc","min":0.0001,"max":0.01,"default":0.002},
                  "style":{"description":"style","choices":["density","trace","bifurcation","poincare","phase_portrait","orbit_trail"],"default":"density"},
                  "palette":{"description":"PALETTES","default":""},
                  "color_mode": {"description": "coloring", "choices": ["density", "iteration", "gradient", "velocity", "divergence"], "default": "density"},
                  "bg_style":{"description":"bg","choices":["dark","glow","gradient","paper"],"default":"dark"},
-                 "poincare_mod":{"spatial": True, "description":"poincare mod","min":2,"max":50,"default":10},
+                 "poincare_mod":{"description":"poincare mod","min":2,"max":50,"default":10},
                  "bifurcation_param":{"description":"bif param","choices":["a","b","c","d"],"default":"a"},
                  "bifurcation_min":{"description":"bif min","min":-3.0,"max":0.0,"default":1.0},"bifurcation_max":{"description":"bif max","min":0.0,"max":3.0,"default":1.8},
                  "trace_length":{"description":"trace len","min":10,"max":500,"default":100},
-                 "lorenz_sigma":{"spatial": True, "description":"sigma","min":1,"max":20,"default":10},"lorenz_rho":{"spatial": True, "description":"rho","min":1,"max":50,"default":28},
-                 "lorenz_beta":{"spatial": True, "description":"beta","min":0.5,"max":5.0,"default":2.667},
+                 "lorenz_sigma":{"description":"sigma","min":1,"max":20,"default":10},"lorenz_rho":{"description":"rho","min":1,"max":50,"default":28},
+                 "lorenz_beta":{"description":"beta","min":0.5,"max":5.0,"default":2.667},
                  "lorenz_projection":{"description":"projection","choices":["xy","xz","yz","rotating"],"default":"xy"},"anim_mode":{"description":"animation mode","choices":["none","param_sweep","projection_rotate"],"default":"none"},
                  "anim_speed": {"description": "animation speed multiplier", "min": 0.1, "max": 5.0, "default": 1.0}})
 def method_chaotic_map(out_dir: Path, seed: int, params=None):
@@ -92,79 +91,79 @@ def method_chaotic_map(out_dir: Path, seed: int, params=None):
 
         # ── Per-map defaults ──
         if mt == "henon":
-            a = sparam(params, "a", 1.4)
-            b = sparam(params, "b", 0.3)
-            c = sparam(params, "c", 2.0)
-            d = sparam(params, "d", 0.5)
+            a = float(params.get("a", 1.4))
+            b = float(params.get("b", 0.3))
+            c = float(params.get("c", 2.0))
+            d = float(params.get("d", 0.5))
         elif mt == "logistic":
-            a = sparam(params, "a", 3.8)
-            b = sparam(params, "b", 0.3)
-            c = sparam(params, "c", 2.0)
-            d = sparam(params, "d", 0.5)
+            a = float(params.get("a", 3.8))
+            b = float(params.get("b", 0.3))
+            c = float(params.get("c", 2.0))
+            d = float(params.get("d", 0.5))
         elif mt == "tinkerbell":
-            a = sparam(params, "a", 0.9)
-            b = sparam(params, "b", -0.6013)
-            c = sparam(params, "c", 2.0)
-            d = sparam(params, "d", 0.5)
+            a = float(params.get("a", 0.9))
+            b = float(params.get("b", -0.6013))
+            c = float(params.get("c", 2.0))
+            d = float(params.get("d", 0.5))
         elif mt == "gingerbreadman":
-            a = sparam(params, "a", 1.4)
-            b = sparam(params, "b", 0.3)
-            c = sparam(params, "c", 2.0)
-            d = sparam(params, "d", 0.5)
+            a = float(params.get("a", 1.4))
+            b = float(params.get("b", 0.3))
+            c = float(params.get("c", 2.0))
+            d = float(params.get("d", 0.5))
         elif mt == "ikeda":
-            a = sparam(params, "a", 1.4)
-            b = sparam(params, "b", 0.3)
-            c = sparam(params, "c", 0.9)
-            d = sparam(params, "d", 0.5)
+            a = float(params.get("a", 1.4))
+            b = float(params.get("b", 0.3))
+            c = float(params.get("c", 0.9))
+            d = float(params.get("d", 0.5))
         elif mt == "lorenz":
-            a = sparam(params, "a", 1.4)
-            b = sparam(params, "b", 0.3)
-            c = sparam(params, "c", 2.0)
-            d = sparam(params, "d", 0.5)
+            a = float(params.get("a", 1.4))
+            b = float(params.get("b", 0.3))
+            c = float(params.get("c", 2.0))
+            d = float(params.get("d", 0.5))
         elif mt == "standard_map":
-            a = sparam(params, "a", 1.0)
-            b = sparam(params, "b", 0.3)
-            c = sparam(params, "c", 2.0)
-            d = sparam(params, "d", 0.5)
+            a = float(params.get("a", 1.0))
+            b = float(params.get("b", 0.3))
+            c = float(params.get("c", 2.0))
+            d = float(params.get("d", 0.5))
         elif mt == "bakers_map":
-            a = sparam(params, "a", 0.5)
-            b = sparam(params, "b", 0.5)
-            c = sparam(params, "c", 2.0)
-            d = sparam(params, "d", 0.5)
+            a = float(params.get("a", 0.5))
+            b = float(params.get("b", 0.5))
+            c = float(params.get("c", 2.0))
+            d = float(params.get("d", 0.5))
         elif mt == "arnold_cat":
-            a = sparam(params, "a", 1.4)
-            b = sparam(params, "b", 0.3)
-            c = sparam(params, "c", 2.0)
-            d = sparam(params, "d", 0.5)
+            a = float(params.get("a", 1.4))
+            b = float(params.get("b", 0.3))
+            c = float(params.get("c", 2.0))
+            d = float(params.get("d", 0.5))
         elif mt == "duffing":
-            a = sparam(params, "a", 0.2)
-            b = sparam(params, "b", 0.3)
-            c = sparam(params, "c", 2.0)
-            d = sparam(params, "d", 0.5)
+            a = float(params.get("a", 0.2))
+            b = float(params.get("b", 0.3))
+            c = float(params.get("c", 2.0))
+            d = float(params.get("d", 0.5))
         elif mt == "rossler":
-            a = sparam(params, "a", 0.2)
-            b = sparam(params, "b", 0.2)
-            c = sparam(params, "c", 5.7)
-            d = sparam(params, "d", 0.5)
+            a = float(params.get("a", 0.2))
+            b = float(params.get("b", 0.2))
+            c = float(params.get("c", 5.7))
+            d = float(params.get("d", 0.5))
         else:
-            a = sparam(params, "a", 1.4)
-            b = sparam(params, "b", 0.3)
-            c = sparam(params, "c", 2.0)
-            d = sparam(params, "d", 0.5)
+            a = float(params.get("a", 1.4))
+            b = float(params.get("b", 0.3))
+            c = float(params.get("c", 2.0))
+            d = float(params.get("d", 0.5))
         n = int(params.get("n", 500000))
         di = float(params.get("density_inc", 0.002))
         style = params.get("style", "density")
         pal_name = params.get("palette", "")
         cm = params.get("color_mode", "density")
         bg = params.get("bg_style", "dark")
-        poinc = sparam(params, "poincare_mod", 10)
+        poinc = int(params.get("poincare_mod", 10))
         bifp = params.get("bifurcation_param", "a")
         bifmin = float(params.get("bifurcation_min", 1.0))
         bifmax = float(params.get("bifurcation_max", 1.8))
         trace_len = int(params.get("trace_length", 100))
-        ls = sparam(params, "lorenz_sigma", 10)
-        lr = sparam(params, "lorenz_rho", 28)
-        lb = sparam(params, "lorenz_beta", 2.667)
+        ls = float(params.get("lorenz_sigma", 10))
+        lr = float(params.get("lorenz_rho", 28))
+        lb = float(params.get("lorenz_beta", 2.667))
         lproj = params.get("lorenz_projection", "xy")
         pal = PALETTES.get(pal_name, [])
 

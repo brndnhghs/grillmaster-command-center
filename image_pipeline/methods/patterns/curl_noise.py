@@ -90,7 +90,7 @@ def _hsv2rgb(h: np.ndarray, s: np.ndarray, v: np.ndarray) -> np.ndarray:
         inputs={},
         outputs={"image": "IMAGE", "luminance": "FIELD"},
         params={
-    "scale": {"spatial": True, "description": "zoom of the noise potential field", "min": 1.0, "max": 12.0, "default": 5.0},
+    "scale": {"description": "zoom of the noise potential field", "min": 1.0, "max": 12.0, "default": 5.0},
     "octaves": {"description": "fbm octaves for the potential field", "min": 1, "max": 6, "default": 4},
     "render_style": {"description": "visualization: hue (angle→color) or strands (integral curves)", "default": "hue"},
     "colormode": {"description": "hue colormap (spectral/hsv/inferno/grayscale)", "default": "spectral"},
@@ -131,7 +131,7 @@ def method_curl_noise(out_dir, seed: int, params=None):
         seed_all(seed)
         rng = np.random.default_rng(seed)
 
-        scale = sparam(params, "scale", 5.0)
+        scale = float(params.get("scale", 5.0))
         octaves = int(params.get("octaves", 4))
         render_style = params.get("render_style", "hue")
         cmode = params.get("colormode", "spectral")

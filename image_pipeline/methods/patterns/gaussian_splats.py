@@ -11,7 +11,6 @@ from ...core.utils import (
     save, mn, seed_all, W, H, PALETTES, quantize_to_palette,
 )
 from ...core.animation import capture_frame
-from image_pipeline.core.spatial import sparam
 
 
 @method(
@@ -19,16 +18,16 @@ from image_pipeline.core.spatial import sparam
     tags=["cg", "2023", "splatting", "fast", "animated", "3d"],
     params={
         "n_splats": {"description": "number of 2D Gaussians (splats) in the field", "min": 10, "max": 800, "default": 220},
-        "cam_dist": {"spatial": True, "description": "camera distance (perspective zoom)", "min": 1.8, "max": 6.0, "default": 3.2},
-        "cam_x": {"spatial": True, "description": "camera pan X (-1..1)", "min": -1.0, "max": 1.0, "default": 0.0},
-        "cam_y": {"spatial": True, "description": "camera pan Y (-1..1)", "min": -1.0, "max": 1.0, "default": 0.0},
+        "cam_dist": {"description": "camera distance (perspective zoom)", "min": 1.8, "max": 6.0, "default": 3.2},
+        "cam_x": {"description": "camera pan X (-1..1)", "min": -1.0, "max": 1.0, "default": 0.0},
+        "cam_y": {"description": "camera pan Y (-1..1)", "min": -1.0, "max": 1.0, "default": 0.0},
         "yaw": {"description": "camera yaw in degrees (orbit around vertical)", "min": -180.0, "max": 180.0, "default": 25.0},
         "tilt": {"description": "camera tilt in degrees (orbit around horizontal)", "min": -80.0, "max": 80.0, "default": 18.0},
         "spin": {"description": "scene spin about view axis in degrees", "min": -180.0, "max": 180.0, "default": 0.0},
-        "splat_size": {"spatial": True, "description": "base gaussian std-dev in pixels", "min": 3.0, "max": 40.0, "default": 14.0},
-        "anisotropy": {"spatial": True, "description": "ellipse aspect ratio (major/minor axis)", "min": 1.0, "max": 4.0, "default": 1.9},
+        "splat_size": {"description": "base gaussian std-dev in pixels", "min": 3.0, "max": 40.0, "default": 14.0},
+        "anisotropy": {"description": "ellipse aspect ratio (major/minor axis)", "min": 1.0, "max": 4.0, "default": 1.9},
         "depth_spread": {"description": "z-depth extent of the cloud", "min": 0.2, "max": 3.0, "default": 1.4},
-        "opacity": {"spatial": True, "description": "per-splat peak opacity", "min": 0.15, "max": 0.95, "default": 0.62},
+        "opacity": {"description": "per-splat peak opacity", "min": 0.15, "max": 0.95, "default": 0.62},
         "shading": {"description": "splat color model",
                     "default": "iridescent",
                     "choices": ["flat", "depth", "normal", "spherical", "iridescent"]},
@@ -58,16 +57,16 @@ def method_gaussian_splats(out_dir: Path, seed: int, params=None):
     _t = t * anim_speed
 
     n_splats = int(params.get("n_splats", 220))
-    cam_dist = sparam(params, "cam_dist", 3.2)
-    cam_x = sparam(params, "cam_x", 0.0)
-    cam_y = sparam(params, "cam_y", 0.0)
+    cam_dist = float(params.get("cam_dist", 3.2))
+    cam_x = float(params.get("cam_x", 0.0))
+    cam_y = float(params.get("cam_y", 0.0))
     yaw = float(params.get("yaw", 25.0))
     tilt = float(params.get("tilt", 18.0))
     spin = float(params.get("spin", 0.0))
-    splat_size = sparam(params, "splat_size", 14.0)
-    anisotropy = sparam(params, "anisotropy", 1.9)
+    splat_size = float(params.get("splat_size", 14.0))
+    anisotropy = float(params.get("anisotropy", 1.9))
     depth_spread = float(params.get("depth_spread", 1.4))
-    opacity = sparam(params, "opacity", 0.62)
+    opacity = float(params.get("opacity", 0.62))
     shading = params.get("shading", "iridescent")
     bg = params.get("bg", "dark")
     pal = params.get("palette", "viridis")

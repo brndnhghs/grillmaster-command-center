@@ -9,7 +9,6 @@ from PIL import Image, ImageDraw
 from ...core.registry import method
 from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES, write_field, write_particles, wired_source_lum
 from ...core.animation import capture_frame
-from image_pipeline.core.spatial import sparam
 
 # ── Optional libraries ──
 try:
@@ -363,7 +362,7 @@ def _render_trail(density, age_arr):
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-@method(id='71', name='Chaos Game', category='fractals', tags=['ifs', 'fast', 'expanded'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'field': 'FIELD', 'particles': 'PARTICLES'}, params={'source': {'description': "seed the primary density field from the wired image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}, 'seed_strength': {"spatial": True, 'description': 'blend weight between the procedural density and the wired luminance field', 'min': 0.0, 'max': 1.0, 'default': 0.6}, 'particles': {"spatial": True, 'description': 'chaos game points', 'min': 50000, 'max': 500000, 'default': 100000}, 'preset': {'description': 'chaos game preset', 'choices': list(IFS_PRESETS.keys()), 'default': 'sierpinski_triangle'}, 'ratio': {"spatial": True, 'description': 'distance ratio toward chosen vertex', 'min': 0.1, 'max': 0.9, 'default': 0.5}, 'weighted_vertices': {'description': 'use weighted vertex selection (0=uniform, 1=fully weighted)', 'min': 0.0, 'max': 1.0, 'default': 0.0}, 'color_mode': {'description': 'coloring method', 'choices': ['classic', 'palette', 'position_gradient', 'vertex_blend', 'age'], 'default': 'classic'}, 'palette': {'description': 'PALETTES name for palette/vertex_blend color modes', 'default': 'vapor'}, 'render_style': {'description': 'rendering style', 'choices': ['density', 'trail', 'scatter', 'connected', 'glow', 'stippled'], 'default': 'density'}, 'anim_mode': {'description': 'animation mode', 'choices': ['none', 'growth', 'vertex_cycle', 'color_cycle', 'param_morph'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.0, 'max': 5.0, 'default': 1.0}})
+@method(id='71', name='Chaos Game', category='fractals', tags=['ifs', 'fast', 'expanded'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'field': 'FIELD', 'particles': 'PARTICLES'}, params={'source': {'description': "seed the primary density field from the wired image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}, 'seed_strength': {'description': 'blend weight between the procedural density and the wired luminance field', 'min': 0.0, 'max': 1.0, 'default': 0.6}, 'particles': {'description': 'chaos game points', 'min': 50000, 'max': 500000, 'default': 100000}, 'preset': {'description': 'chaos game preset', 'choices': list(IFS_PRESETS.keys()), 'default': 'sierpinski_triangle'}, 'ratio': {'description': 'distance ratio toward chosen vertex', 'min': 0.1, 'max': 0.9, 'default': 0.5}, 'weighted_vertices': {'description': 'use weighted vertex selection (0=uniform, 1=fully weighted)', 'min': 0.0, 'max': 1.0, 'default': 0.0}, 'color_mode': {'description': 'coloring method', 'choices': ['classic', 'palette', 'position_gradient', 'vertex_blend', 'age'], 'default': 'classic'}, 'palette': {'description': 'PALETTES name for palette/vertex_blend color modes', 'default': 'vapor'}, 'render_style': {'description': 'rendering style', 'choices': ['density', 'trail', 'scatter', 'connected', 'glow', 'stippled'], 'default': 'density'}, 'anim_mode': {'description': 'animation mode', 'choices': ['none', 'growth', 'vertex_cycle', 'color_cycle', 'param_morph'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.0, 'max': 5.0, 'default': 1.0}})
 def method_chaos_game(out_dir: Path, seed: int, params=None):
     """Chaos Game — IFS-based fractal renderer with multiple presets, color modes, and animation.
 
@@ -392,9 +391,9 @@ def method_chaos_game(out_dir: Path, seed: int, params=None):
     rng = random.Random(seed)
     from ...core.utils import PALETTES, quantize_to_palette
 
-    n_particles = sparam(params, "particles", 100000)
+    n_particles = int(params.get("particles", 100000))
     preset_name = params.get("preset", "sierpinski_triangle")
-    ratio = sparam(params, "ratio", 0.5)
+    ratio = float(params.get("ratio", 0.5))
     weighted = float(params.get("weighted_vertices", 0.0))
     color_mode = params.get("color_mode", "classic")
     palette_name = params.get("palette", "vapor")
@@ -556,7 +555,7 @@ def method_chaos_game(out_dir: Path, seed: int, params=None):
     if str(params.get("source", "none")) == "input_image":
         lum = wired_source_lum(params, W, H)
         if lum is not None:
-            sst = sparam(params, "seed_strength", 0.6)
+            sst = float(params.get("seed_strength", 0.6))
             dmax = density.max()
             density = (1.0 - sst) * density + sst * (lum * dmax if dmax > 0 else lum)
 

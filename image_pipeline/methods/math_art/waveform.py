@@ -9,7 +9,6 @@ from PIL import Image, ImageDraw, ImageFont
 from ...core.registry import method
 from ...core.utils import save, norm, mn, seed_all, get_font, BG_DEFAULT, W, H, wired_source_lum
 from ...core.animation import capture_frame
-from image_pipeline.core.spatial import sparam
 
 try:
     import cv2
@@ -17,7 +16,7 @@ try:
 except ImportError:
     _has_cv2 = False
 
-@method(id='65', name='Waveform', category='math_art', tags=['waveform', 'audio', 'expanded', 'animation'], params={'wave_type': {'description': 'waveform type: sine, sawtooth, square, triangle, pulse, am_modulated, fm_modulated, noise_floor, lissajous, harmonic_series, interference, phase_space, wavetable, granular', 'default': 'sine'}, 'freq1': {"spatial": True, 'description': 'base frequency', 'min': 1, 'max': 50, 'default': 5}, 'freq2': {"spatial": True, 'description': 'secondary frequency', 'min': 1, 'max': 50, 'default': 3}, 'freq3': {"spatial": True, 'description': 'tertiary frequency', 'min': 1, 'max': 50, 'default': 7}, 'noise_level': {'description': 'noise level (0-1)', 'min': 0.0, 'max': 1.0, 'default': 0.05}, 'amplitude_ratio': {"spatial": True, 'description': 'amplitude ratio (0-1)', 'min': 0.0, 'max': 1.0, 'default': 0.8}, 'layout': {'description': 'layout: single, multi_track, stereo_pair, circular, equalizer, waterfall', 'default': 'single'}, 'style': {'description': 'render style: line, gradient_fill, oscilloscope, neon_tube, heat_wave, particle_trace, filled_wave', 'default': 'line'}, 'palette': {'description': 'PALETTES name for palette quantization', 'default': ''}, 'bg_style': {'description': 'background: dark, light, grid, gradient, scanline', 'default': 'dark'}, 'num_tracks': {'description': 'number of tracks (multi_track layout)', 'min': 1, 'max': 20, 'default': 4}, 'pulse_width': {'description': 'pulse width for pulse wave (0-1)', 'min': 0.0, 'max': 1.0, 'default': 0.5}, 'mod_freq': {"spatial": True, 'description': 'modulation frequency', 'min': 1, 'max': 20, 'default': 2}, 'mod_depth': {"spatial": True, 'description': 'modulation depth (0-1)', 'min': 0.0, 'max': 1.0, 'default': 0.5}, 'decay_rate': {'description': 'decay rate (0-1)', 'min': 0.0, 'max': 1.0, 'default': 0.9}, 'line_width': {'description': 'line width in pixels', 'min': 1, 'max': 10, 'default': 2}, 'fill_alpha': {"spatial": True, 'description': 'fill alpha (0-1)', 'min': 0.0, 'max': 1.0, 'default': 0.3}, 'num_bars': {'description': 'number of bars (equalizer layout)', 'min': 5, 'max': 200, 'default': 50}, 'anim_mode': {'description': 'animation mode', 'choices': ['none', 'freq_sweep', 'phase_drift', 'modulation_cycle', 'layout_morph'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 3.0, 'default': 1.0}, 'source': {'description': 'wired upstream image as a domain-warp / seed source', 'choices': ['none', 'input_image'], 'default': 'none'}}, inputs={'image_in': 'IMAGE'})
+@method(id='65', name='Waveform', category='math_art', tags=['waveform', 'audio', 'expanded', 'animation'], params={'wave_type': {'description': 'waveform type: sine, sawtooth, square, triangle, pulse, am_modulated, fm_modulated, noise_floor, lissajous, harmonic_series, interference, phase_space, wavetable, granular', 'default': 'sine'}, 'freq1': {'description': 'base frequency', 'min': 1, 'max': 50, 'default': 5}, 'freq2': {'description': 'secondary frequency', 'min': 1, 'max': 50, 'default': 3}, 'freq3': {'description': 'tertiary frequency', 'min': 1, 'max': 50, 'default': 7}, 'noise_level': {'description': 'noise level (0-1)', 'min': 0.0, 'max': 1.0, 'default': 0.05}, 'amplitude_ratio': {'description': 'amplitude ratio (0-1)', 'min': 0.0, 'max': 1.0, 'default': 0.8}, 'layout': {'description': 'layout: single, multi_track, stereo_pair, circular, equalizer, waterfall', 'default': 'single'}, 'style': {'description': 'render style: line, gradient_fill, oscilloscope, neon_tube, heat_wave, particle_trace, filled_wave', 'default': 'line'}, 'palette': {'description': 'PALETTES name for palette quantization', 'default': ''}, 'bg_style': {'description': 'background: dark, light, grid, gradient, scanline', 'default': 'dark'}, 'num_tracks': {'description': 'number of tracks (multi_track layout)', 'min': 1, 'max': 20, 'default': 4}, 'pulse_width': {'description': 'pulse width for pulse wave (0-1)', 'min': 0.0, 'max': 1.0, 'default': 0.5}, 'mod_freq': {'description': 'modulation frequency', 'min': 1, 'max': 20, 'default': 2}, 'mod_depth': {'description': 'modulation depth (0-1)', 'min': 0.0, 'max': 1.0, 'default': 0.5}, 'decay_rate': {'description': 'decay rate (0-1)', 'min': 0.0, 'max': 1.0, 'default': 0.9}, 'line_width': {'description': 'line width in pixels', 'min': 1, 'max': 10, 'default': 2}, 'fill_alpha': {'description': 'fill alpha (0-1)', 'min': 0.0, 'max': 1.0, 'default': 0.3}, 'num_bars': {'description': 'number of bars (equalizer layout)', 'min': 5, 'max': 200, 'default': 50}, 'anim_mode': {'description': 'animation mode', 'choices': ['none', 'freq_sweep', 'phase_drift', 'modulation_cycle', 'layout_morph'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 3.0, 'default': 1.0}, 'source': {'description': 'wired upstream image as a domain-warp / seed source', 'choices': ['none', 'input_image'], 'default': 'none'}}, inputs={'image_in': 'IMAGE'})
 def method_waveform(out_dir: Path, seed: int, params=None):
     """Generate waveform visualizations with various wave types, layouts, and render styles.
 
@@ -64,22 +63,22 @@ def method_waveform(out_dir: Path, seed: int, params=None):
     np_rng = np.random.default_rng(seed)
 
     wt = str(params.get("wave_type", "sine"))
-    f1 = sparam(params, "freq1", 5)
-    f2 = sparam(params, "freq2", 3)
-    f3 = sparam(params, "freq3", 7)
+    f1 = float(params.get("freq1", 5))
+    f2 = float(params.get("freq2", 3))
+    f3 = float(params.get("freq3", 7))
     nl = float(params.get("noise_level", 0.05))
-    ar = sparam(params, "amplitude_ratio", 0.8)
+    ar = float(params.get("amplitude_ratio", 0.8))
     layout = str(params.get("layout", "single"))
     style = str(params.get("style", "line"))
     pal_name = str(params.get("palette", ""))
     bg_style = str(params.get("bg_style", "dark"))
     nt = int(params.get("num_tracks", 4))
     pw = float(params.get("pulse_width", 0.5))
-    mf = sparam(params, "mod_freq", 2)
-    md = sparam(params, "mod_depth", 0.5)
+    mf = float(params.get("mod_freq", 2))
+    md = float(params.get("mod_depth", 0.5))
     decay = float(params.get("decay_rate", 0.9))
     lw = int(params.get("line_width", 2))
-    fa = sparam(params, "fill_alpha", 0.3)
+    fa = float(params.get("fill_alpha", 0.3))
     nb = int(params.get("num_bars", 50))
     anim_mode = str(params.get("anim_mode", "none"))
     anim_speed = float(params.get("anim_speed", 1.0))

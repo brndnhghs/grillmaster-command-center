@@ -9,7 +9,6 @@ from PIL import Image, ImageDraw, ImageFont
 from ...core.registry import method
 from ...core.utils import save, norm, mn, seed_all, get_font, BG_DEFAULT, W, H, write_field, load_input, wired_source_lum
 from ...core.animation import capture_frame
-from image_pipeline.core.spatial import sparam
 
 try:
     import cv2
@@ -17,7 +16,7 @@ try:
 except ImportError:
     _has_cv2 = False
 
-@method(id='43', name='Density Heatmap', category='math_art', new_image_contract=True, tags=['density', 'fast', 'expanded'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'field': 'FIELD'}, params={'points': {'description': 'point count', 'min': 1000, 'max': 20000, 'default': 5000}, 'sigma': {'description': 'blur sigma', 'min': 5, 'max': 100, 'default': 30}, 'source': {'description': 'point source', 'choices': ['gaussian_cluster', 'grid_jitter', 'multi_cluster', 'spiral_path', 'edge_weighted', 'input_image'], 'default': 'gaussian_cluster'}, 'n_clusters': {'description': 'cluster count', 'min': 2, 'max': 10, 'default': 4}, 'style': {'description': 'render style', 'choices': ['colormap', 'contour_overlay', 'scatter_overlay', 'glow_kernel', 'isosurface', 'shaded_3d', 'ridge_lines', 'stippled', 'multi_layer', 'edge_map'], 'default': 'colormap'}, 'cmap': {'description': 'colormap', 'default': 'inferno'}, 'palette': {'description': 'PALETTES', 'default': ''}, 'dual_cmap': {'description': 'dual cmap', 'default': 'viridis'}, 'contour_levels': {'description': 'contour levels', 'min': 3, 'max': 20, 'default': 8}, 'scatter_alpha': {'description': 'scatter alpha', 'min': 0.0, 'max': 1.0, 'default': 0.3}, 'kernel_type': {'description': 'kernel', 'choices': ['gaussian', 'exponential', 'epanechnikov', 'sigmoid', 'cosine'], 'default': 'gaussian'}, 'light_angle': {"spatial": True, 'description': 'light angle', 'min': 0, 'max': 360, 'default': 45}, 'light_alt': {"spatial": True, 'description': 'light alt', 'min': 0, 'max': 90, 'default': 30}, 'ridge_spacing': {'description': 'ridge spacing', 'min': 5, 'max': 50, 'default': 20}, 'colormap_shift': {'description': 'cmap shift', 'min': 0.0, 'max': 1.0, 'default': 0.0}, 'adaptive_sigma': {'description': 'adaptive sigma', 'choices': ['no', 'yes'], 'default': 'no'}, 'point_speed': {"spatial": True, 'description': 'point drift speed', 'min': 0.0, 'max': 5.0, 'default': 0.0}, 'anim_mode': {'description': 'animation mode', 'choices': ['none', 'spiral_drift', 'point_drift'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 5.0, 'default': 1.0}})
+@method(id='43', name='Density Heatmap', category='math_art', new_image_contract=True, tags=['density', 'fast', 'expanded'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'field': 'FIELD'}, params={'points': {'description': 'point count', 'min': 1000, 'max': 20000, 'default': 5000}, 'sigma': {'description': 'blur sigma', 'min': 5, 'max': 100, 'default': 30}, 'source': {'description': 'point source', 'choices': ['gaussian_cluster', 'grid_jitter', 'multi_cluster', 'spiral_path', 'edge_weighted', 'input_image'], 'default': 'gaussian_cluster'}, 'n_clusters': {'description': 'cluster count', 'min': 2, 'max': 10, 'default': 4}, 'style': {'description': 'render style', 'choices': ['colormap', 'contour_overlay', 'scatter_overlay', 'glow_kernel', 'isosurface', 'shaded_3d', 'ridge_lines', 'stippled', 'multi_layer', 'edge_map'], 'default': 'colormap'}, 'cmap': {'description': 'colormap', 'default': 'inferno'}, 'palette': {'description': 'PALETTES', 'default': ''}, 'dual_cmap': {'description': 'dual cmap', 'default': 'viridis'}, 'contour_levels': {'description': 'contour levels', 'min': 3, 'max': 20, 'default': 8}, 'scatter_alpha': {'description': 'scatter alpha', 'min': 0.0, 'max': 1.0, 'default': 0.3}, 'kernel_type': {'description': 'kernel', 'choices': ['gaussian', 'exponential', 'epanechnikov', 'sigmoid', 'cosine'], 'default': 'gaussian'}, 'light_angle': {'description': 'light angle', 'min': 0, 'max': 360, 'default': 45}, 'light_alt': {'description': 'light alt', 'min': 0, 'max': 90, 'default': 30}, 'ridge_spacing': {'description': 'ridge spacing', 'min': 5, 'max': 50, 'default': 20}, 'colormap_shift': {'description': 'cmap shift', 'min': 0.0, 'max': 1.0, 'default': 0.0}, 'adaptive_sigma': {'description': 'adaptive sigma', 'choices': ['no', 'yes'], 'default': 'no'}, 'point_speed': {'description': 'point drift speed', 'min': 0.0, 'max': 5.0, 'default': 0.0}, 'anim_mode': {'description': 'animation mode', 'choices': ['none', 'spiral_drift', 'point_drift'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 5.0, 'default': 1.0}})
 def method_density_heatmap(out_dir: Path, seed: int, params=None):
     """Generate a density heatmap from scattered points.
 
@@ -76,12 +75,12 @@ def method_density_heatmap(out_dir: Path, seed: int, params=None):
     contour_levels = int(params.get("contour_levels", 8))
     scatter_alpha = float(params.get("scatter_alpha", 0.3))
     kernel_type = params.get("kernel_type", "gaussian")
-    light_angle = sparam(params, "light_angle", 45)
-    light_alt = sparam(params, "light_alt", 30)
+    light_angle = float(params.get("light_angle", 45))
+    light_alt = float(params.get("light_alt", 30))
     ridge_spacing = int(params.get("ridge_spacing", 20))
     colormap_shift = float(params.get("colormap_shift", 0.0))
     adaptive_sigma = params.get("adaptive_sigma", "no")
-    point_speed = sparam(params, "point_speed", 0.0)
+    point_speed = float(params.get("point_speed", 0.0))
 
     # ── Animation ──
     t = anim_time * anim_speed

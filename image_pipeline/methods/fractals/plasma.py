@@ -9,7 +9,6 @@ from PIL import Image, ImageDraw
 from ...core.registry import method
 from ...core.utils import save, norm, mn, seed_all, BG_DEFAULT, W, H, PALETTES, wired_source_lum
 from ...core.animation import capture_frame
-from image_pipeline.core.spatial import sparam
 
 # ── Optional libraries ──
 try:
@@ -30,7 +29,7 @@ def _render_flame_preview(density, colors, h, w):
         result = np.random.rand(h, w, 3).astype(np.float32) * 0.08 + 0.02
     return result
 
-@method(id='31', name='Plasma Fractal', category='fractals', tags=['diamond-square', 'landscape', 'animation', 'expanded'], inputs={'image_in': 'IMAGE'}, params={'source': {'description': "seed the heightmap field from the wired image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}, 'seed_strength': {"spatial": True, 'description': 'blend weight between the procedural heightmap and the wired luminance field', 'min': 0.0, 'max': 1.0, 'default': 0.6}, 'size': {'description': 'plasma grid size (power of 2)', 'min': 64, 'max': 1024, 'default': 512}, 'roughness': {'description': 'initial roughness amplitude', 'min': 0.05, 'max': 2.0, 'default': 0.5}, 'roughness_decay': {'description': 'roughness multiplier per step', 'min': 0.1, 'max': 0.9, 'default': 0.5}, 'octaves': {'description': 'fBm octaves for detail layering (1-6)', 'min': 1, 'max': 6, 'default': 3}, 'terrain': {'description': 'terrain mode: height, island, craters, fault, thermal', 'default': 'height'}, 'color_mode': {'description': 'coloring: height, slope, shaded, contour', 'default': 'height'}, 'palette': {'description': 'PALETTES name for terrain coloring', 'default': 'cool'}, 'water_level': {'description': 'water fill height (0=none, 1=full)', 'min': 0.0, 'max': 1.0, 'default': 0.0}, 'light_angle': {"spatial": True, 'description': 'sunlight angle in degrees for shaded mode', 'min': 0, 'max': 360, 'default': 45}, 'erosion': {'description': 'thermal erosion intensity (0=none)', 'min': 0, 'max': 1, 'default': 0}})
+@method(id='31', name='Plasma Fractal', category='fractals', tags=['diamond-square', 'landscape', 'animation', 'expanded'], inputs={'image_in': 'IMAGE'}, params={'source': {'description': "seed the heightmap field from the wired image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}, 'seed_strength': {'description': 'blend weight between the procedural heightmap and the wired luminance field', 'min': 0.0, 'max': 1.0, 'default': 0.6}, 'size': {'description': 'plasma grid size (power of 2)', 'min': 64, 'max': 1024, 'default': 512}, 'roughness': {'description': 'initial roughness amplitude', 'min': 0.05, 'max': 2.0, 'default': 0.5}, 'roughness_decay': {'description': 'roughness multiplier per step', 'min': 0.1, 'max': 0.9, 'default': 0.5}, 'octaves': {'description': 'fBm octaves for detail layering (1-6)', 'min': 1, 'max': 6, 'default': 3}, 'terrain': {'description': 'terrain mode: height, island, craters, fault, thermal', 'default': 'height'}, 'color_mode': {'description': 'coloring: height, slope, shaded, contour', 'default': 'height'}, 'palette': {'description': 'PALETTES name for terrain coloring', 'default': 'cool'}, 'water_level': {'description': 'water fill height (0=none, 1=full)', 'min': 0.0, 'max': 1.0, 'default': 0.0}, 'light_angle': {'description': 'sunlight angle in degrees for shaded mode', 'min': 0, 'max': 360, 'default': 45}, 'erosion': {'description': 'thermal erosion intensity (0=none)', 'min': 0, 'max': 1, 'default': 0}})
 def method_plasma(out_dir: Path, seed: int, params=None):
     """Generate a terrain heightmap using diamond-square plasma fractal.
 
@@ -75,7 +74,7 @@ def method_plasma(out_dir: Path, seed: int, params=None):
     color_mode = params.get("color_mode", "height")
     palette_name = params.get("palette", "cool")
     water_level = max(0.0, min(1.0, float(params.get("water_level", 0.0))))
-    light_angle = sparam(params, "light_angle", 45)
+    light_angle = float(params.get("light_angle", 45))
     base_erosion = max(0.0, min(1.0, float(params.get("erosion", 0.0))))
 
     pal = PALETTES.get(palette_name, [(80, 60, 40)])
@@ -210,7 +209,7 @@ def method_plasma(out_dir: Path, seed: int, params=None):
         lum = wired_source_lum(params, W, H)
         if lum is not None:
             lum_small = cv2.resize(lum, (height.shape[1], height.shape[0]), interpolation=cv2.INTER_LINEAR)
-            sst = sparam(params, "seed_strength", 0.6)
+            sst = float(params.get("seed_strength", 0.6))
             height = (1.0 - sst) * height + sst * lum_small
 
     # --- Terrain modifications ---

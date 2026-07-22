@@ -177,7 +177,7 @@ def _colorize(val, cmode, pal_name):
         inputs={'image_in': 'IMAGE'},
         outputs={'image': 'IMAGE', 'field': 'FIELD'},
         params={
-            'scale': {"spatial": True, 'description': 'feature size in pixels (lattice spacing)', 'min': 12.0, 'max': 260.0, 'default': 90.0},
+            'scale': {'description': 'feature size in pixels (lattice spacing)', 'min': 12.0, 'max': 260.0, 'default': 90.0},
             'octaves': {'description': 'fractal octaves (turbulent detail)', 'min': 1.0, 'max': 6.0, 'default': 4.0},
             'spin_var': {'description': '0 = uniform global spin, 1 = per-cell chaotic spin', 'min': 0.0, 'max': 1.0, 'default': 0.6},
             'advect': {'description': 'pseudo-advection strength (domain transport)', 'min': 0.0, 'max': 3.0, 'default': 1.2},
@@ -197,7 +197,7 @@ def method_flow_noise(out_dir, seed: int, params=None):
         t = float(params.get("time", 0.0))
         seed_all(seed)
 
-        scale = sparam(params, "scale", 90.0)
+        scale = float(params.get("scale", 90.0))
         octaves = int(round(float(params.get("octaves", 4.0))))
         spin_var = float(params.get("spin_var", 0.6))
         advect = float(params.get("advect", 1.2))

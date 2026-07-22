@@ -10,7 +10,6 @@ from ...core.utils import (
     write_field, write_scalars, write_mask, wired_source_lum, wired_source_lum, wired_source_lum,
 )
 from ...core.animation import capture_frame
-from image_pipeline.core.spatial import sparam
 
 
 # ── Vectorised KIFS folds (operate on complex ndarrays) ──────────────────────
@@ -38,7 +37,7 @@ def _rot_fold(z: np.ndarray, n: int, extra_rot: float = 0.0) -> np.ndarray:
 
 # ═══════════════════════════════════════════════════════════════════════════
 
-@method(id='351', name='Kaleidoscopic IFS', category='fractals', tags=['kifs', 'fractal', 'kaleidoscope', 'symmetric', 'escape-time', 'expanded', 'animation'], inputs={'image_in': 'IMAGE'}, params={'source': {'description': "domain-warp the initial complex coordinate plane from the wired image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}, 'warp_strength': {'description': 'domain-warp strength applied to the per-pixel initial complex coordinate', 'min': 0.0, 'max': 2.0, 'default': 0.6}, 'system': {'description': 'KIFS fold set (box / kaleidoscopic / inversion)', 'choices': ['box', 'kaleidoscopic', 'inversion'], 'default': 'kaleidoscopic'}, 'iterations': {'description': 'escape-time iteration count', 'min': 4, 'max': 40, 'default': 18}, 'scale': {"spatial": True, 'description': 'KIFS scale / expansion factor', 'min': 1.5, 'max': 3.5, 'default': 2.5}, 'box_size': {'description': 'box-fold half-width', 'min': 0.1, 'max': 2.0, 'default': 1.0}, 'folds': {'description': 'rotational wedge fold count (kaleidoscope symmetry)', 'min': 2, 'max': 12, 'default': 6}, 'fold_rot': {'description': 'wedge rotation offset (radians)', 'min': 0.0, 'max': 6.2832, 'default': 0.4}, 'c_real': {'description': 'IFS constant real part', 'min': -2.0, 'max': 2.0, 'default': -1.1}, 'c_imag': {'description': 'IFS constant imaginary part', 'min': -2.0, 'max': 2.0, 'default': 0.5}, 'escape_radius': {'description': 'divergence threshold', 'min': 2.0, 'max': 30.0, 'default': 4.0}, 'center_x': {"spatial": True, 'description': 'view center x', 'min': -2.0, 'max': 2.0, 'default': 0.0}, 'center_y': {"spatial": True, 'description': 'view center y', 'min': -2.0, 'max': 2.0, 'default': 0.0}, 'zoom': {"spatial": True, 'description': 'view zoom (>1 zooms in)', 'min': 0.3, 'max': 4.0, 'default': 1.0}, 'color_mode': {'description': 'coloring (escape_time / palette / angle / orbit_trap)', 'choices': ['escape_time', 'palette', 'angle', 'orbit_trap'], 'default': 'escape_time'}, 'palette_name': {'description': 'palette name (palette/escape modes)', 'default': 'vapor'}, 'anim_mode': {'description': 'animation mode (none/spin/pulse_scale/morph/color_cycle)', 'choices': ['none', 'spin', 'pulse_scale', 'morph', 'color_cycle'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 5.0, 'default': 1.0}})
+@method(id='351', name='Kaleidoscopic IFS', category='fractals', tags=['kifs', 'fractal', 'kaleidoscope', 'symmetric', 'escape-time', 'expanded', 'animation'], inputs={'image_in': 'IMAGE'}, params={'source': {'description': "domain-warp the initial complex coordinate plane from the wired image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}, 'warp_strength': {'description': 'domain-warp strength applied to the per-pixel initial complex coordinate', 'min': 0.0, 'max': 2.0, 'default': 0.6}, 'system': {'description': 'KIFS fold set (box / kaleidoscopic / inversion)', 'choices': ['box', 'kaleidoscopic', 'inversion'], 'default': 'kaleidoscopic'}, 'iterations': {'description': 'escape-time iteration count', 'min': 4, 'max': 40, 'default': 18}, 'scale': {'description': 'KIFS scale / expansion factor', 'min': 1.5, 'max': 3.5, 'default': 2.5}, 'box_size': {'description': 'box-fold half-width', 'min': 0.1, 'max': 2.0, 'default': 1.0}, 'folds': {'description': 'rotational wedge fold count (kaleidoscope symmetry)', 'min': 2, 'max': 12, 'default': 6}, 'fold_rot': {'description': 'wedge rotation offset (radians)', 'min': 0.0, 'max': 6.2832, 'default': 0.4}, 'c_real': {'description': 'IFS constant real part', 'min': -2.0, 'max': 2.0, 'default': -1.1}, 'c_imag': {'description': 'IFS constant imaginary part', 'min': -2.0, 'max': 2.0, 'default': 0.5}, 'escape_radius': {'description': 'divergence threshold', 'min': 2.0, 'max': 30.0, 'default': 4.0}, 'center_x': {'description': 'view center x', 'min': -2.0, 'max': 2.0, 'default': 0.0}, 'center_y': {'description': 'view center y', 'min': -2.0, 'max': 2.0, 'default': 0.0}, 'zoom': {'description': 'view zoom (>1 zooms in)', 'min': 0.3, 'max': 4.0, 'default': 1.0}, 'color_mode': {'description': 'coloring (escape_time / palette / angle / orbit_trap)', 'choices': ['escape_time', 'palette', 'angle', 'orbit_trap'], 'default': 'escape_time'}, 'palette_name': {'description': 'palette name (palette/escape modes)', 'default': 'vapor'}, 'anim_mode': {'description': 'animation mode (none/spin/pulse_scale/morph/color_cycle)', 'choices': ['none', 'spin', 'pulse_scale', 'morph', 'color_cycle'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 5.0, 'default': 1.0}})
 def method_kaleidoscopic_ifs(out_dir: Path, seed: int, params=None):
     """2D Kaleidoscopic IFS (KIFS) escape-time fractal.
 
@@ -86,7 +85,7 @@ def method_kaleidoscopic_ifs(out_dir: Path, seed: int, params=None):
     system = str(params.get("system", "kaleidoscopic"))
     iterations = int(params.get("iterations", 18))
     iterations = max(4, min(40, iterations))
-    scale = sparam(params, "scale", 2.5)
+    scale = float(params.get("scale", 2.5))
     box_size = float(params.get("box_size", 1.0))
     folds = int(params.get("folds", 6))
     folds = max(2, min(12, folds))
@@ -94,9 +93,9 @@ def method_kaleidoscopic_ifs(out_dir: Path, seed: int, params=None):
     c_real = float(params.get("c_real", -1.1))
     c_imag = float(params.get("c_imag", 0.5))
     escape_radius = float(params.get("escape_radius", 10.0))
-    center_x = sparam(params, "center_x", 0.0)
-    center_y = sparam(params, "center_y", 0.0)
-    zoom = sparam(params, "zoom", 1.0)
+    center_x = float(params.get("center_x", 0.0))
+    center_y = float(params.get("center_y", 0.0))
+    zoom = float(params.get("zoom", 1.0))
     color_mode = str(params.get("color_mode", "escape_time"))
     pal_name = str(params.get("palette_name", "vapor"))
     anim_mode = str(params.get("anim_mode", "none"))

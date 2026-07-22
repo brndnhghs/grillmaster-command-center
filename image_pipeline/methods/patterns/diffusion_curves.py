@@ -43,7 +43,6 @@ from ...core.registry import method
 from ...core.utils import (save, mn, seed_all, W, H, PALETTES, wired_source_lum,
                            write_scalars, write_field)
 from ...core.animation import capture_frame
-from image_pipeline.core.spatial import sparam
 
 PI = math.pi
 
@@ -186,7 +185,7 @@ def _upsample(coarse, W, H):
         params={
             'n_curves': {'description': 'number of diffusion curves', 'min': 2, 'max': 40, 'default': 14},
             'grid': {'description': 'coarse solve resolution (higher=sharper, slower)', 'min': 48, 'max': 256, 'default': 160},
-            'spread': {"spatial": True, 'description': 'curve control-point spread (curvature)', 'min': 0.0, 'max': 1.0, 'default': 0.45},
+            'spread': {'description': 'curve control-point spread (curvature)', 'min': 0.0, 'max': 1.0, 'default': 0.45},
             'saturation': {'description': 'per-side color saturation', 'min': 0.0, 'max': 1.0, 'default': 0.85},
             'value': {'description': 'per-side color brightness', 'min': 0.2, 'max': 1.0, 'default': 0.95},
             'palette': {'description': 'palette name (or "hsv" for full-spectrum)', 'default': 'hsv'},
@@ -206,7 +205,7 @@ def method_diffusion_curves(out_dir, seed: int, params=None):
 
         n_curves = int(round(float(params.get("n_curves", 14))))
         grid = int(round(float(params.get("grid", 160))))
-        spread = sparam(params, "spread", 0.45)
+        spread = float(params.get("spread", 0.45))
         sat = float(params.get("saturation", 0.85))
         val = float(params.get("value", 0.95))
         pal_name = params.get("palette", "hsv")

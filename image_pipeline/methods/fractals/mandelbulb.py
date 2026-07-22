@@ -12,7 +12,6 @@ from ...core.utils import (
     wired_source_lum, wired_source_lum, wired_source_lum,
 )
 from ...core.animation import capture_frame
-from image_pipeline.core.spatial import sparam
 
 
 # ── Mandelbulb — 3D fractal raymarched in NumPy ──
@@ -169,7 +168,7 @@ def _render(RW: int, RH: int, az: float, el: float, cam_dist: float,
     return shade, hit, col, bg, base_t
 
 
-@method(id='470', name='Mandelbulb 3D Fractal', category='fractals', new_image_contract=True, tags=['mandelbulb', '3d-fractal', 'raymarch', 'distance-estimator', 'animation', 'quilez'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'mask': 'MASK', 'field': 'FIELD'}, params={'source': {'description': "domain-warp the per-ray sample point from the wired image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}, 'warp_strength': {"spatial": True, 'description': 'domain-warp strength for the 3D sample points', 'min': 0.0, 'max': 2.0, 'default': 0.6}, 'power': {"spatial": True, 'description': 'bulb exponent (8 = classic; other powers morph the surface)', 'min': 2.0, 'max': 12.0, 'default': 8.0}, 'iterations': {'description': 'distance-estimator fold iterations (higher = sharper surface)', 'min': 2, 'max': 16, 'default': 6}, 'steps': {'description': 'raymarch steps (higher = fewer surface holes)', 'min': 16, 'max': 128, 'default': 56}, 'cam_dist': {'description': 'camera distance from the bulb', 'min': 1.6, 'max': 4.0, 'default': 2.7}, 'elevation': {"spatial": True, 'description': 'camera elevation angle (radians)', 'min': -1.3, 'max': 1.3, 'default': 0.35}, 'detail': {'description': 'internal render scale (caps per-frame cost)', 'min': 0.25, 'max': 1.0, 'default': 0.55}, 'colormode': {'description': 'colour map (rainbow/inferno/fire/ice/grayscale)', 'default': 'inferno'}, 'palette_shift': {'description': 'cosine palette hue offset', 'min': 0.0, 'max': 1.0, 'default': 0.5}, 'time': {'description': 'animation phase [0, 2pi)', 'min': 0.0, 'max': 6.28, 'default': 0.0}, 'anim_mode': {'description': 'animation mode (none/spin/morph)', 'choices': ['none', 'spin', 'morph'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 3.0, 'default': 1.0}})
+@method(id='470', name='Mandelbulb 3D Fractal', category='fractals', new_image_contract=True, tags=['mandelbulb', '3d-fractal', 'raymarch', 'distance-estimator', 'animation', 'quilez'], inputs={'image_in': 'IMAGE'}, outputs={'image': 'IMAGE', 'mask': 'MASK', 'field': 'FIELD'}, params={'source': {'description': "domain-warp the per-ray sample point from the wired image's luminance", 'choices': ['none', 'input_image'], 'default': 'none'}, 'warp_strength': {'description': 'domain-warp strength for the 3D sample points', 'min': 0.0, 'max': 2.0, 'default': 0.6}, 'power': {'description': 'bulb exponent (8 = classic; other powers morph the surface)', 'min': 2.0, 'max': 12.0, 'default': 8.0}, 'iterations': {'description': 'distance-estimator fold iterations (higher = sharper surface)', 'min': 2, 'max': 16, 'default': 6}, 'steps': {'description': 'raymarch steps (higher = fewer surface holes)', 'min': 16, 'max': 128, 'default': 56}, 'cam_dist': {'description': 'camera distance from the bulb', 'min': 1.6, 'max': 4.0, 'default': 2.7}, 'elevation': {'description': 'camera elevation angle (radians)', 'min': -1.3, 'max': 1.3, 'default': 0.35}, 'detail': {'description': 'internal render scale (caps per-frame cost)', 'min': 0.25, 'max': 1.0, 'default': 0.55}, 'colormode': {'description': 'colour map (rainbow/inferno/fire/ice/grayscale)', 'default': 'inferno'}, 'palette_shift': {'description': 'cosine palette hue offset', 'min': 0.0, 'max': 1.0, 'default': 0.5}, 'time': {'description': 'animation phase [0, 2pi)', 'min': 0.0, 'max': 6.28, 'default': 0.0}, 'anim_mode': {'description': 'animation mode (none/spin/morph)', 'choices': ['none', 'spin', 'morph'], 'default': 'none'}, 'anim_speed': {'description': 'animation speed multiplier', 'min': 0.1, 'max': 3.0, 'default': 1.0}})
 def method_mandelbulb(out_dir: Path, seed: int, params=None):
     """Mandelbulb — 3D fractal raymarched with a distance estimator.
 
@@ -210,11 +209,11 @@ def method_mandelbulb(out_dir: Path, seed: int, params=None):
         anim_speed = float(params.get("anim_speed", 1.0))
         seed_all(seed)
 
-        power = sparam(params, "power", 8.0)
+        power = float(params.get("power", 8.0))
         iterations = int(max(2, min(16, float(params.get("iterations", 6)))))
         steps = int(max(16, min(128, float(params.get("steps", 56)))))
         cam_dist = float(params.get("cam_dist", 2.7))
-        elevation0 = sparam(params, "elevation", 0.35)
+        elevation0 = float(params.get("elevation", 0.35))
         detail = max(0.25, min(1.0, float(params.get("detail", 0.55))))
         colormode = str(params.get("colormode", "inferno"))
         palette_shift = max(0.0, min(1.0, float(params.get("palette_shift", 0.5))))
@@ -251,7 +250,7 @@ def method_mandelbulb(out_dir: Path, seed: int, params=None):
         if str(params.get("source", "none")) == "input_image":
             lum = wired_source_lum(params, RW, RH)
             if lum is not None:
-                wst = sparam(params, "warp_strength", 0.6)
+                wst = float(params.get("warp_strength", 0.6))
                 bulb_warp = np.stack([(lum - 0.5) * wst,
                                       (lum - 0.5) * wst,
                                       (lum - 0.5) * wst], axis=-1).astype(np.float64)
