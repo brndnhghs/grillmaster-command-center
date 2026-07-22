@@ -8,9 +8,30 @@
 
 | Env Var | Purpose | Default |
 |---------|---------|---------|
-| `HERMES_AGENT_DIR` | Hermes agent install for Node Doctor | `~/.hermes/hermes-agent` |
-| `HERMES_PYTHON` | Override interpreter for Hermes runner | Auto-detected |
+| `HERMES_AGENT_DIR` | Hermes agent install for Node Doctor | Auto-detected (see below) |
+| `HERMES_PYTHON` | Override interpreter for Hermes runner | Auto-detected (see below) |
 | `GRILLMASTER_API_TOKEN` | API token for mutating endpoints | Empty (no auth) |
+
+### Hermes auto-detection
+
+Hermes is the sole LLM backend (Node Doctor, Node Tester fixes), so the server
+resolves it at startup and logs which interpreter it found. Setting either
+variable always overrides detection.
+
+Search order for the checkout, first match wins:
+
+1. `$HERMES_AGENT_DIR`
+2. `~/.hermes/hermes-agent`
+3. `%LOCALAPPDATA%/hermes/hermes-agent` (Windows installer default)
+4. `~/AppData/Local/hermes/hermes-agent`
+5. `~/hermes/hermes-agent`
+
+A candidate only matches if it actually contains a venv interpreter. Both venv
+layouts are probed — `venv/Scripts/python.exe` (Windows) and `venv/bin/python`
+(POSIX) — so the same configuration works on either platform.
+
+If nothing is found the startup log says so and names `~/.hermes/hermes-agent`,
+which is the path to point `HERMES_AGENT_DIR` at.
 
 ## Requirements
 

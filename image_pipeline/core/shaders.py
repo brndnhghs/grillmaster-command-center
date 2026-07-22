@@ -1497,6 +1497,197 @@ _register("shader_posterize_gpu", "GPU posterization / color reduction", "filter
     "n_colors": {"glsl": "float", "min": 2.0, "max": 16.0, "default": 9.0, "description": "color levels"},
 })
 
+# ── P0 filter twins: Side Window (357) + God Rays (446) ──────────────────────
+# Additive: the server's CPU numpy nodes stay the authoritative export (two-tier
+# precision). These bodies only drive the browser live preview. They reuse the
+# prologue helpers injected by _filter_typed (uv/orig/step/u_texture/
+# u_resolution/u_time) so every new twin is covered automatically by
+# test_webgl2_transform_is_valid + the gl330 legacy-equivalence parametrized
+# tests. IMPORTANT (pitfall #15b): never declare a local named `step` — the
+# wrapper injects `vec2 step = 1.0 / u_resolution;` into main().
+
+_register("side_window_gpu", "Side Window Filter (client-GPU twin of node 357)", "filter", _filter_typed('''
+    int R = int(clamp(u_radius, 1.0, 24.0));
+    vec4 acc = vec4(0.0);
+    float n = 0.0;
+    for (int x = -24; x <= 24; x++) {
+        if (abs(float(x)) > float(R)) continue;
+        for (int y = -24; y <= 24; y++) {
+            if (abs(float(y)) > float(R)) continue;
+            acc += texture(u_texture, uv + vec2(float(x), float(y)) * step);
+            n += 1.0;
+        }
+    }
+    vec4 blurred = acc / max(n, 1.0);
+    f_color = mix(orig, blurred, clamp(u_blend, 0.0, 1.0));
+'''), uniforms={
+    "radius": {"glsl": "float", "min": 1.0, "max": 40.0, "default": 6.0, "description": "side-window half-size in pixels"},
+    "blend": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 1.0, "description": "mix original (0) vs smoothed (1)"},
+})
+
+_register("god_rays_gpu", "God Rays (client-GPU twin of node 446)", "filter", _filter_typed('''
+    vec2 light = vec2(u_light_x, 1.0 - u_light_y);
+    vec2 delta = (uv - light) / 64.0 * u_density;
+    vec2 pos = uv;
+    float illum = 1.0;
+    vec3 rays = vec3(0.0);
+    float wsum = 0.0;                       // total weight for normalisation
+    for (int i = 0; i < 64; i++) {
+        pos -= delta;
+        rays += texture(u_texture, pos).rgb * illum;
+        wsum += illum;
+        illum *= u_decay;
+    }
+    rays /= max(wsum, 1e-3);                // weighted average in [0,1]
+    rays *= u_weight * u_exposure;          // gain controls
+    float sr = max(u_sun_radius, 1.0) / max(u_resolution.x, u_resolution.y);
+    float sun = exp(-dot(uv - light, uv - light) / (2.0 * sr * sr)) * u_sun_intensity;
+    f_color = vec4(orig.rgb + rays * u_intensity + vec3(sun), 1.0);
+'''), uniforms={
+    "light_x": {"glsl": "float", "min": -0.5, "max": 1.5, "default": 0.30, "description": "light X position (normalised)"},
+    "light_y": {"glsl": "float", "min": -0.5, "max": 1.5, "default": 0.28, "description": "light Y position (normalised, y-down)"},
+    "density": {"glsl": "float", "min": 0.1, "max": 1.5, "default": 0.92, "description": "ray length / distortion"},
+    "decay": {"glsl": "float", "min": 0.80, "max": 0.99, "default": 0.95, "description": "per-sample illumination decay"},
+    "weight": {"glsl": "float", "min": 0.1, "max": 1.0, "default": 0.5, "description": "per-sample contribution weight"},
+    "exposure": {"glsl": "float", "min": 0.1, "max": 1.5, "default": 0.6, "description": "final ray exposure"},
+    "intensity": {"glsl": "float", "min": 0.0, "max": 3.0, "default": 1.0, "description": "overall additive strength"},
+    "sun_radius": {"glsl": "float", "min": 0.0, "max": 120.0, "default": 36.0, "description": "injected sun disc radius (px)"},
+    "sun_intensity": {"glsl": "float", "min": 0.0, "max": 3.0, "default": 1.6, "description": "injected sun brightness"},
+})
+
+# ── 430 Rolling Shutter (scan-line shear + jello bow) ──
+# Live-preview GPU twin for per-pixel CPU filter node 430 (Rolling Shutter).
+# CPU numpy node 430 stays authoritative for export (two-tier precision).
+# Faithful closed-form horizontal-scan warp: each row is shifted in X by
+# skew*tau and bowed in Y by wobble*sin(2π*freq*tau+phase)*(x/W-0.5) — BOTH
+# axes (CPU _warp, lines 189-197). GLSL uv.y=0 is bottom; CPU scans top->bottom
+# so tau = 1.0 - uv.y. `direction` (choice) is hardcoded horizontal in the twin;
+# `source`/`palette`/`noise_amp`/`blur_sigma` (non-local/global) and
+# `anim_mode`/`anim_speed`/`time` are left unmapped. Wobble phase is driven by
+# u_time so the live preview animates (liveness); CPU export honours anim_mode.
+# Renders BLACK with no input_image (pitfall #10c) — verified with a synthetic
+# input. Does NOT redeclare `step` (pitfall #15b).
+_register("rolling_shutter_gpu", "Rolling Shutter (client-GPU twin of node 430)", "filter", _filter_typed('''
+    float tA = u_time;
+    float tau = 1.0 - uv.y;                                  // top row tau=0, bottom tau=1
+    float dx = (u_skew + 0.2 * sin(tA)) * tau;               // base shear + time breathing (0 at t=0)
+    float wave = sin(6.2831853 * u_wobble_freq * tau + tA);
+    float dy = u_wobble * wave * (uv.x - 0.5);               // jello bow in Y
+    f_color = texture(u_texture, clamp(uv + vec2(dx, dy), 0.0, 1.0));
+'''), uniforms={
+    "skew":        {"glsl": "float", "min": -1.0, "max": 1.0,  "default": 0.3,  "description": "scan-line shear amount (fraction of width)"},
+    "wobble":      {"glsl": "float", "min": 0.0,  "max": 0.6,  "default": 0.15, "description": "jello bend amplitude"},
+    "wobble_freq": {"glsl": "float", "min": 0.5,  "max": 10.0, "default": 3.0,  "description": "jello bend spatial frequency"},
+})
+
+# ── P0.4 typed-uniform filter twins (gap nodes 529 / 923 / 462) ──
+# Live-preview GPU twins for per-pixel CPU filter nodes whose core math is a
+# faithful closed-form f(uv). CPU node stays authoritative for export (two-tier
+# precision); these bodies only drive the browser live preview. Each maps the
+# node's REAL numeric params onto named u_<var> uniforms (contract #5/#6) via
+# CLIENT_GPU_SHIMS. Choice/string params (mode/palette/source/matcap/scene/
+# bg_mode/anim_mode) are intentionally left unmapped — the twin hardcodes a
+# sensible default and the CPU export honours the exact choice. `step` is the
+# prologue-reserved vec2 (pitfall #15b); neighbour offsets use `step.x/step.y`.
+# These are filter twins (wired IMAGE in -> shaded IMAGE out), so they render
+# BLACK with no input_image (pitfall #10c) — verified with a synthetic input.
+
+# ── 529 R2 Dither (low-discrepancy ordered dither) ──
+_register("r2_dither_gpu", "R2 Dither (client-GPU twin of node 529)", "filter", _filter_typed('''
+    float lum = dot(orig.rgb, vec3(0.299, 0.587, 0.114));
+    lum = clamp(0.5 + (lum - 0.5) * u_contrast, 0.0, 1.0);
+    lum = clamp(pow(lum, 1.0 / u_gamma), 0.0, 1.0);
+    // R2 low-discrepancy threshold map (Martin Roberts 2018), screen-space
+    float gx = (uv.x * u_resolution.x + 0.5) * 0.6180339887;
+    float gy = (uv.y * u_resolution.y + 0.5) * 0.5537133391;
+    float thr = fract(gx + gy);
+    float levels = max(2.0, floor(u_levels + 0.5));
+    vec3 outc;
+    if (levels <= 2.0) {
+        float v = lum > thr ? 1.0 : 0.0;
+        outc = vec3(v);
+    } else {
+        float stepf = 1.0 / (levels - 1.0);
+        float bucket = floor(lum / stepf);
+        float frac = (lum - bucket * stepf) / stepf;
+        float v = (bucket + (frac > thr ? 1.0 : 0.0)) * stepf;
+        outc = vec3(clamp(v, 0.0, 1.0));
+    }
+    f_color = vec4(outc, 1.0);
+'''), uniforms={
+    "levels": {"glsl": "float", "min": 2.0, "max": 8.0, "default": 2.0, "description": "output quantization levels (2=binary)"},
+    "contrast": {"glsl": "float", "min": 0.5, "max": 3.0, "default": 1.0, "description": "source contrast boost"},
+    "gamma": {"glsl": "float", "min": 0.3, "max": 2.5, "default": 1.0, "description": "source gamma"},
+})
+
+# ── 923 MatCap Relight (2.5D normal-from-luminance shading) ──
+_register("matcap_relight_gpu", "MatCap Relight (client-GPU twin of node 923)", "filter", _filter_typed('''
+    float l0 = dot(orig.rgb, vec3(0.299, 0.587, 0.114));
+    float lx = dot(texture(u_texture, uv + vec2(step.x, 0.0)).rgb, vec3(0.299, 0.587, 0.114));
+    float ly = dot(texture(u_texture, uv + vec2(0.0, step.y)).rgb, vec3(0.299, 0.587, 0.114));
+    vec3 n = normalize(vec3(-(lx - l0) * u_relief,
+                            -(ly - l0) * u_relief, 1.0));
+    vec3 L = normalize(vec3(cos(u_light_dir), sin(u_light_dir), 0.7));
+    vec3 V = vec3(0.0, 0.0, 1.0);
+    vec3 halfv = normalize(L + V);
+    float ndl = clamp(dot(n, L), 0.0, 1.0);
+    float ndh = clamp(dot(n, halfv), 0.0, 1.0);
+    float spec = pow(ndh, u_spec_pow);
+    float fres = pow(clamp(1.0 - n.z, 0.0, 1.0), 3.0);
+    vec3 base = vec3(0.85, 0.55, 0.35);
+    vec3 outc = base * (0.25 + 0.75 * ndl)
+              + 0.12 * fres * vec3(1.0, 0.9, 0.8)
+              + spec * vec3(1.0);
+    outc = outc * u_strength + (1.0 - u_strength) * 0.5;
+    f_color = vec4(clamp(outc, 0.0, 1.0), 1.0);
+'''), uniforms={
+    "light_dir": {"glsl": "float", "min": 0.0, "max": 6.2832, "default": 0.6, "description": "key light azimuth (rad)"},
+    "relief": {"glsl": "float", "min": 0.0, "max": 4.0, "default": 1.0, "description": "surface relief / depth gain"},
+    "strength": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 1.0, "description": "mix toward matcap (0=flat, 1=full)"},
+    "spec_pow": {"glsl": "float", "min": 2.0, "max": 128.0, "default": 24.0, "description": "specular exponent"},
+})
+
+# ── 462 Cel Shading (banded Lambert + Fresnel rim + outline) ──
+_register("cel_shading_gpu", "Cel Shading (client-GPU twin of node 462)", "filter", _filter_typed('''
+    float l0 = dot(orig.rgb, vec3(0.299, 0.587, 0.114));
+    float lx = dot(texture(u_texture, uv + vec2(step.x, 0.0)).rgb, vec3(0.299, 0.587, 0.114));
+    float ly = dot(texture(u_texture, uv + vec2(0.0, step.y)).rgb, vec3(0.299, 0.587, 0.114));
+    float relief = 40.0;
+    float gx = (lx - l0) * relief;
+    float gy = (ly - l0) * relief;
+    vec3 N = normalize(vec3(-gx, -gy, 1.0));
+    float az = radians(u_light_azimuth);
+    float el = radians(u_light_elevation);
+    vec3 L = normalize(vec3(cos(el) * cos(az), cos(el) * sin(az), sin(el)));
+    float ndl = clamp(dot(N, L), 0.0, 1.0);
+    vec3 V = vec3(0.0, 0.0, 1.0);
+    vec3 halfv = normalize(L + V);
+    float ndh = clamp(dot(N, halfv), 0.0, 1.0);
+    float spec_disc = (ndh > u_spec_threshold ? 1.0 : 0.0) * u_specular;   // hard toon-specular disc
+    float bands = max(2.0, floor(u_bands + 0.5));
+    float lit = clamp(floor(ndl * bands) / max(1.0, bands - 1.0), 0.0, 1.0);
+    float ambient = 0.18;
+    vec3 albedo = 0.5 + 0.5 * cos(6.2831853 * (u_base_hue + vec3(0.0, 0.33, 0.67)));
+    float shade = ambient + (1.0 - ambient) * lit;
+    vec3 outc = albedo * shade + spec_disc;
+    float rimf = pow(clamp(1.0 - N.z, 0.0, 1.0), 2.0);
+    vec3 rim_col = 0.5 + 0.5 * cos(6.2831853 * ((u_base_hue + 0.5) + vec3(0.0, 0.33, 0.67)));
+    outc += rimf * u_rim * rim_col;
+    float edge = sqrt(gx * gx + gy * gy);
+    float omask = edge > u_outline ? 1.0 : 0.0;
+    outc *= (1.0 - 0.75 * omask);
+    f_color = vec4(clamp(outc, 0.0, 1.0), 1.0);
+'''), uniforms={
+    "light_azimuth": {"glsl": "float", "min": 0.0, "max": 360.0, "default": 135.0, "description": "light azimuth (deg)"},
+    "light_elevation": {"glsl": "float", "min": 5.0, "max": 85.0, "default": 45.0, "description": "light elevation (deg)"},
+    "bands": {"glsl": "float", "min": 2.0, "max": 8.0, "default": 4.0, "description": "toon light levels"},
+    "specular": {"glsl": "float", "min": 0.0, "max": 2.0, "default": 0.7, "description": "toon specular disc intensity"},
+    "spec_threshold": {"glsl": "float", "min": 0.30, "max": 0.95, "default": 0.75, "description": "specular disc half-vector threshold (higher=smaller disc)"},
+    "rim": {"glsl": "float", "min": 0.0, "max": 2.0, "default": 0.6, "description": "Fresnel rim strength"},
+    "outline": {"glsl": "float", "min": 0.0, "max": 3.0, "default": 0.22, "description": "outline slope threshold"},
+    "base_hue": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.58, "description": "albedo base hue"},
+})
+
 # ── P0.5 LUT / color client-GPU twins (client-GPU live preview of nodes
 # 10/11/39/77) ───────────────────────────────────────────────────────────────
 # Additive: the server's CPU numpy nodes stay the authoritative export (two-tier
