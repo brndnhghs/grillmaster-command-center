@@ -465,6 +465,13 @@ class GraphExecutor:
         # Simulation state cache: keyed by (node_id, seed) → list of ndarray frames
         self._sim_cache: dict[tuple[str, int], list] = {}
         self._sim_params_hash: dict[str, int] = {}
+        # Parallel sidecar cache for Arch-A sims: keyed by (node_id, seed) →
+        # {"field": ndarray, "particles": ndarray, "mask": ndarray}. The
+        # bare-ndarray _sim_cache can't carry sidecars (it would break the
+        # frame-looping at the cache-hit path), so sidecars live here and are
+        # read back when serving a cached Arch-A frame. Fixes
+        # field_defaulted_to_image (node-quality workstream #15).
+        self._sim_sidecars: dict[tuple[str, int], dict] = {}
         # node_ids of the graph currently in execute() — never evicted mid-clip.
         self._active_node_ids: set[str] = set()
         # Legacy edge-transport files: node_id → (source_arrays, path).
@@ -518,6 +525,7 @@ class GraphExecutor:
                 continue
             total -= _sim_entry_bytes(self._sim_cache.pop(key))
             self._sim_params_hash.pop(key[0], None)
+            self._sim_sidecars.pop(key, None)
 
     def _store_sim(self, node_id: str, seed: int, frames: list,
                      protect: set[str] | None = None) -> None:
@@ -761,13 +769,18 @@ class GraphExecutor:
                         else:
                             arr = entry
                             extra = {}
+                        # On cache hit, _store_sim only cached bare ndarrays,
+                        # so `extra` is empty. Recover the sidecars written during
+                        # the original cook from the parallel cache (node-quality
+                        # #15: field_defaulted_to_image).
+                        _sim_sc = self._sim_sidecars.get((node_id, seed), {})
                         flat_outputs[node_id] = {
                             "image": arr,
                             "luminance": np.mean(arr, axis=-1) if arr is not None else 0.0,
-                            "field": extra.get("field", arr),
-                            "particles": extra.get("particles"),
-                            "mask": extra.get("mask"),
-                            **{k: v for k, v in extra.items()
+                            "field": extra.get("field", _sim_sc.get("field", arr)),
+                            "particles": extra.get("particles", _sim_sc.get("particles")),
+                            "mask": extra.get("mask", _sim_sc.get("mask")),
+                            **{k: v for k, v in {**extra, **_sim_sc}.items()
                                if k not in ("field", "particles", "mask")},
                         }
                         ran[node_id] = True
@@ -913,14 +926,28 @@ class GraphExecutor:
                     self._store_sim(node_id, seed, sim_frames, self._active_node_ids)
                     self._sim_params_hash[node_id] = params_hash
 
+                    # Collect sidecars (field/particles/mask) the method wrote
+                    # during the sim cook — the Arch-A path otherwise serves the
+                    # RGB image on every typed port (node-quality #15:
+                    # field_defaulted_to_image). Cache them in the parallel dict
+                    # so cache-hit frames stay correct. In live/audit mode the
+                    # sidecar sink isn't installed during the Arch-A cook, so
+                    # write_field falls through to disk; read from there.
+                    _sim_sc = {}
+                    for _key in ("field", "particles", "mask"):
+                        _sp = node_dir_sim / f"{_key}.npy"
+                        if _sp.exists():
+                            _sim_sc[_key] = np.load(str(_sp))
+                    self._sim_sidecars[(node_id, seed)] = _sim_sc
+
                     # Loop the cooked frames (matches the cache-hit path above).
                     arr = sim_frames[frame % len(sim_frames)]
                     flat_outputs[node_id] = {
                         "image": arr,
                         "luminance": np.mean(arr, axis=-1),
-                        "field": arr,
-                        "particles": None,
-                        "mask": None,
+                        "field": _sim_sc.get("field", arr),
+                        "particles": _sim_sc.get("particles"),
+                        "mask": _sim_sc.get("mask"),
                     }
                     ran[node_id] = True
                     continue
@@ -1560,6 +1587,7 @@ class GraphExecutor:
             n = len(self._sim_cache)
             self._sim_cache.clear()
             self._sim_params_hash.clear()
+            self._sim_sidecars.clear()
             return n
 
         old_map = {n["id"]: n for n in old_nodes}
@@ -1570,6 +1598,7 @@ class GraphExecutor:
             if nid not in new_map:
                 if self._sim_cache.pop((nid, seed), None) is not None:
                     invalidated += 1
+                self._sim_sidecars.pop((nid, seed), None)
                 self._sim_params_hash.pop(nid, None)
 
         for nid, node in new_map.items():
@@ -1578,6 +1607,7 @@ class GraphExecutor:
             if old_hash is not None and old_hash != new_hash:
                 if self._sim_cache.pop((nid, seed), None) is not None:
                     invalidated += 1
+                self._sim_sidecars.pop((nid, seed), None)
                 self._sim_params_hash.pop(nid, None)
 
         return invalidated

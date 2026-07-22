@@ -26,6 +26,7 @@ def test_under_budget_sim_stored_in_full():
     ex = GraphExecutor.__new__(GraphExecutor)
     ex._sim_cache = {}
     ex._sim_params_hash = {}
+    ex._sim_sidecars = {}
     # tiny cap so any non-trivial sim is "over budget"
     ex.SIM_CACHE_NODE_MAX_BYTES = 10_000_000
 
@@ -40,6 +41,7 @@ def test_oversized_sim_is_stride_subsampled_to_fit():
     ex = GraphExecutor.__new__(GraphExecutor)
     ex._sim_cache = {}
     ex._sim_params_hash = {}
+    ex._sim_sidecars = {}
     # cap = ~2 frames worth → even-spread sample preserves BOTH endpoints
     frame_bytes = _sim_entry_bytes(_mk_frames(1, wh=8))
     ex.SIM_CACHE_NODE_MAX_BYTES = int(frame_bytes * 2)  # 2 frames
@@ -59,6 +61,7 @@ def test_subsample_is_deterministic_and_covers_span():
     ex = GraphExecutor.__new__(GraphExecutor)
     ex._sim_cache = {}
     ex._sim_params_hash = {}
+    ex._sim_sidecars = {}
     frame_bytes = _sim_entry_bytes(_mk_frames(1, wh=8))
     ex.SIM_CACHE_NODE_MAX_BYTES = int(frame_bytes * 2)  # ~2 frames worth
 
@@ -75,6 +78,7 @@ def test_empty_frames_noop():
     ex = GraphExecutor.__new__(GraphExecutor)
     ex._sim_cache = {}
     ex._sim_params_hash = {}
+    ex._sim_sidecars = {}
     ex.SIM_CACHE_NODE_MAX_BYTES = 1_400_000_000
     ex._store_sim("empty", 1, [], protect=set())
     assert ("empty", 1) not in ex._sim_cache
@@ -85,6 +89,7 @@ def test_store_sim_runs_global_eviction_afterwards():
     ex = GraphExecutor.__new__(GraphExecutor)
     ex._sim_cache = {}
     ex._sim_params_hash = {}
+    ex._sim_sidecars = {}
     ex.SIM_CACHE_MAX_BYTES = 2_000  # very small global cap
     ex.SIM_CACHE_NODE_MAX_BYTES = 1_400_000_000  # node cap high (no subsample)
 

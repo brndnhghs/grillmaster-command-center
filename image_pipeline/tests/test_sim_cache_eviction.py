@@ -42,6 +42,7 @@ def test_evicts_oldest_non_protected_until_under_budget():
     ex = GraphExecutor.__new__(GraphExecutor)  # bypass __init__ (no disk needed)
     ex._sim_cache = {}
     ex._sim_params_hash = {}
+    ex._sim_sidecars = {}
     # 4×192 KB (old_*) + 768 KB (cur_0) ≈ 1.5 MB. A 500 KB cap forces the
     # non-protected old_* entries out while the protected cur_0 stays.
     ex.SIM_CACHE_MAX_BYTES = 500_000
@@ -69,6 +70,7 @@ def test_protected_entries_never_evicted_even_when_over_budget():
     ex = GraphExecutor.__new__(GraphExecutor)
     ex._sim_cache = {}
     ex._sim_params_hash = {}
+    ex._sim_sidecars = {}
     ex.SIM_CACHE_MAX_BYTES = 100  # impossibly small cap
 
     big = _make_frames(256, 256, 1)  # far exceeds the 100-byte cap
@@ -90,6 +92,7 @@ def test_eviction_drops_oldest_first_among_unprotected():
     ex = GraphExecutor.__new__(GraphExecutor)
     ex._sim_cache = {}
     ex._sim_params_hash = {}
+    ex._sim_sidecars = {}
     ex.SIM_CACHE_MAX_BYTES = 400_000  # ~2 of the 192 KB entries
 
     frame = _make_frames(64, 256, 1)
@@ -110,6 +113,7 @@ def test_params_hash_cleared_on_eviction():
     ex = GraphExecutor.__new__(GraphExecutor)
     ex._sim_cache = {}
     ex._sim_params_hash = {"a": 12345, "b": 67890}
+    ex._sim_sidecars = {}
     ex.SIM_CACHE_MAX_BYTES = 100
 
     frame = _make_frames(64, 256, 1)
