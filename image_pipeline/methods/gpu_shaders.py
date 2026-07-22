@@ -1139,6 +1139,32 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
                           "weight": "weight", "exposure": "exposure",
                           "intensity": "intensity", "sun_radius": "sun_radius",
                           "sun_intensity": "sun_intensity"}},
+    # 529 R2 Dither -> typed-uniform filter twin r2_dither_gpu (live-preview
+    # path; CPU numpy node 529 stays authoritative for export). REAL numeric
+    # params levels/contrast/gamma map BY NAME (contract #5/#6). `mode`/
+    # `palette`/`source`/`anim_mode` are choice/string params left unmapped ->
+    # the twin hardcodes the static `r2` mode on a wired input; CPU export
+    # honours the exact choice. Filter twin renders black with no input_image
+    # (pitfall #10c) — verified with a synthetic input.
+    "529": {"shader": "r2_dither_gpu", "type": "filter", "typed": True,
+            "param_map": {"levels": "levels", "contrast": "contrast", "gamma": "gamma"}},
+    # 923 MatCap Relight -> typed-uniform filter twin matcap_relight_gpu
+    # (live-preview path; CPU numpy node 923 stays authoritative). REAL numeric
+    # params light_dir/relief/strength/spec_pow map BY NAME. `source`/`matcap`/
+    # `albedo_r/g/b`/`anim_mode` left unmapped (twin hardcodes a pearl-ish
+    # studio matcap on the wired-input luminance; CPU export honours choices).
+    "923": {"shader": "matcap_relight_gpu", "type": "filter", "typed": True,
+            "param_map": {"light_dir": "light_dir", "relief": "relief",
+                          "strength": "strength", "spec_pow": "spec_pow"}},
+    # 462 Cel Shading -> typed-uniform filter twin cel_shading_gpu (live-preview
+    # path; CPU numpy node 462 stays authoritative). REAL numeric params
+    # light_azimuth/light_elevation/bands/specular/rim/outline/base_hue map BY
+    # NAME. `source`/`bg_mode`/`anim_mode` left unmapped (twin shades the wired
+    # input as a height field; CPU export honours the generated-scene choices).
+    "462": {"shader": "cel_shading_gpu", "type": "filter", "typed": True,
+            "param_map": {"light_azimuth": "light_azimuth", "light_elevation": "light_elevation",
+                          "bands": "bands", "specular": "specular", "spec_threshold": "spec_threshold",
+                          "rim": "rim", "outline": "outline", "base_hue": "base_hue"}},
     # === P0 shims: CPU pattern/math-art nodes -> existing typed GPU twins (cron run) ===
     # Faithful matches: node param names align with shader uniforms so the live
     # preview reflects the sliders; unmapped params stay CPU-authoritative.

@@ -1555,6 +1555,114 @@ _register("god_rays_gpu", "God Rays (client-GPU twin of node 446)", "filter", _f
     "sun_intensity": {"glsl": "float", "min": 0.0, "max": 3.0, "default": 1.6, "description": "injected sun brightness"},
 })
 
+# ── P0.4 typed-uniform filter twins (gap nodes 529 / 923 / 462) ──
+# Live-preview GPU twins for per-pixel CPU filter nodes whose core math is a
+# faithful closed-form f(uv). CPU node stays authoritative for export (two-tier
+# precision); these bodies only drive the browser live preview. Each maps the
+# node's REAL numeric params onto named u_<var> uniforms (contract #5/#6) via
+# CLIENT_GPU_SHIMS. Choice/string params (mode/palette/source/matcap/scene/
+# bg_mode/anim_mode) are intentionally left unmapped — the twin hardcodes a
+# sensible default and the CPU export honours the exact choice. `step` is the
+# prologue-reserved vec2 (pitfall #15b); neighbour offsets use `step.x/step.y`.
+# These are filter twins (wired IMAGE in -> shaded IMAGE out), so they render
+# BLACK with no input_image (pitfall #10c) — verified with a synthetic input.
+
+# ── 529 R2 Dither (low-discrepancy ordered dither) ──
+_register("r2_dither_gpu", "R2 Dither (client-GPU twin of node 529)", "filter", _filter_typed('''
+    float lum = dot(orig.rgb, vec3(0.299, 0.587, 0.114));
+    lum = clamp(0.5 + (lum - 0.5) * u_contrast, 0.0, 1.0);
+    lum = clamp(pow(lum, 1.0 / u_gamma), 0.0, 1.0);
+    // R2 low-discrepancy threshold map (Martin Roberts 2018), screen-space
+    float gx = (uv.x * u_resolution.x + 0.5) * 0.6180339887;
+    float gy = (uv.y * u_resolution.y + 0.5) * 0.5537133391;
+    float thr = fract(gx + gy);
+    float levels = max(2.0, floor(u_levels + 0.5));
+    vec3 outc;
+    if (levels <= 2.0) {
+        float v = lum > thr ? 1.0 : 0.0;
+        outc = vec3(v);
+    } else {
+        float stepf = 1.0 / (levels - 1.0);
+        float bucket = floor(lum / stepf);
+        float frac = (lum - bucket * stepf) / stepf;
+        float v = (bucket + (frac > thr ? 1.0 : 0.0)) * stepf;
+        outc = vec3(clamp(v, 0.0, 1.0));
+    }
+    f_color = vec4(outc, 1.0);
+'''), uniforms={
+    "levels": {"glsl": "float", "min": 2.0, "max": 8.0, "default": 2.0, "description": "output quantization levels (2=binary)"},
+    "contrast": {"glsl": "float", "min": 0.5, "max": 3.0, "default": 1.0, "description": "source contrast boost"},
+    "gamma": {"glsl": "float", "min": 0.3, "max": 2.5, "default": 1.0, "description": "source gamma"},
+})
+
+# ── 923 MatCap Relight (2.5D normal-from-luminance shading) ──
+_register("matcap_relight_gpu", "MatCap Relight (client-GPU twin of node 923)", "filter", _filter_typed('''
+    float l0 = dot(orig.rgb, vec3(0.299, 0.587, 0.114));
+    float lx = dot(texture(u_texture, uv + vec2(step.x, 0.0)).rgb, vec3(0.299, 0.587, 0.114));
+    float ly = dot(texture(u_texture, uv + vec2(0.0, step.y)).rgb, vec3(0.299, 0.587, 0.114));
+    vec3 n = normalize(vec3(-(lx - l0) * u_relief,
+                            -(ly - l0) * u_relief, 1.0));
+    vec3 L = normalize(vec3(cos(u_light_dir), sin(u_light_dir), 0.7));
+    vec3 V = vec3(0.0, 0.0, 1.0);
+    vec3 halfv = normalize(L + V);
+    float ndl = clamp(dot(n, L), 0.0, 1.0);
+    float ndh = clamp(dot(n, halfv), 0.0, 1.0);
+    float spec = pow(ndh, u_spec_pow);
+    float fres = pow(clamp(1.0 - n.z, 0.0, 1.0), 3.0);
+    vec3 base = vec3(0.85, 0.55, 0.35);
+    vec3 outc = base * (0.25 + 0.75 * ndl)
+              + 0.12 * fres * vec3(1.0, 0.9, 0.8)
+              + spec * vec3(1.0);
+    outc = outc * u_strength + (1.0 - u_strength) * 0.5;
+    f_color = vec4(clamp(outc, 0.0, 1.0), 1.0);
+'''), uniforms={
+    "light_dir": {"glsl": "float", "min": 0.0, "max": 6.2832, "default": 0.6, "description": "key light azimuth (rad)"},
+    "relief": {"glsl": "float", "min": 0.0, "max": 4.0, "default": 1.0, "description": "surface relief / depth gain"},
+    "strength": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 1.0, "description": "mix toward matcap (0=flat, 1=full)"},
+    "spec_pow": {"glsl": "float", "min": 2.0, "max": 128.0, "default": 24.0, "description": "specular exponent"},
+})
+
+# ── 462 Cel Shading (banded Lambert + Fresnel rim + outline) ──
+_register("cel_shading_gpu", "Cel Shading (client-GPU twin of node 462)", "filter", _filter_typed('''
+    float l0 = dot(orig.rgb, vec3(0.299, 0.587, 0.114));
+    float lx = dot(texture(u_texture, uv + vec2(step.x, 0.0)).rgb, vec3(0.299, 0.587, 0.114));
+    float ly = dot(texture(u_texture, uv + vec2(0.0, step.y)).rgb, vec3(0.299, 0.587, 0.114));
+    float relief = 40.0;
+    float gx = (lx - l0) * relief;
+    float gy = (ly - l0) * relief;
+    vec3 N = normalize(vec3(-gx, -gy, 1.0));
+    float az = radians(u_light_azimuth);
+    float el = radians(u_light_elevation);
+    vec3 L = normalize(vec3(cos(el) * cos(az), cos(el) * sin(az), sin(el)));
+    float ndl = clamp(dot(N, L), 0.0, 1.0);
+    vec3 V = vec3(0.0, 0.0, 1.0);
+    vec3 halfv = normalize(L + V);
+    float ndh = clamp(dot(N, halfv), 0.0, 1.0);
+    float spec_disc = (ndh > u_spec_threshold ? 1.0 : 0.0) * u_specular;   // hard toon-specular disc
+    float bands = max(2.0, floor(u_bands + 0.5));
+    float lit = clamp(floor(ndl * bands) / max(1.0, bands - 1.0), 0.0, 1.0);
+    float ambient = 0.18;
+    vec3 albedo = 0.5 + 0.5 * cos(6.2831853 * (u_base_hue + vec3(0.0, 0.33, 0.67)));
+    float shade = ambient + (1.0 - ambient) * lit;
+    vec3 outc = albedo * shade + spec_disc;
+    float rimf = pow(clamp(1.0 - N.z, 0.0, 1.0), 2.0);
+    vec3 rim_col = 0.5 + 0.5 * cos(6.2831853 * ((u_base_hue + 0.5) + vec3(0.0, 0.33, 0.67)));
+    outc += rimf * u_rim * rim_col;
+    float edge = sqrt(gx * gx + gy * gy);
+    float omask = edge > u_outline ? 1.0 : 0.0;
+    outc *= (1.0 - 0.75 * omask);
+    f_color = vec4(clamp(outc, 0.0, 1.0), 1.0);
+'''), uniforms={
+    "light_azimuth": {"glsl": "float", "min": 0.0, "max": 360.0, "default": 135.0, "description": "light azimuth (deg)"},
+    "light_elevation": {"glsl": "float", "min": 5.0, "max": 85.0, "default": 45.0, "description": "light elevation (deg)"},
+    "bands": {"glsl": "float", "min": 2.0, "max": 8.0, "default": 4.0, "description": "toon light levels"},
+    "specular": {"glsl": "float", "min": 0.0, "max": 2.0, "default": 0.7, "description": "toon specular disc intensity"},
+    "spec_threshold": {"glsl": "float", "min": 0.30, "max": 0.95, "default": 0.75, "description": "specular disc half-vector threshold (higher=smaller disc)"},
+    "rim": {"glsl": "float", "min": 0.0, "max": 2.0, "default": 0.6, "description": "Fresnel rim strength"},
+    "outline": {"glsl": "float", "min": 0.0, "max": 3.0, "default": 0.22, "description": "outline slope threshold"},
+    "base_hue": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.58, "description": "albedo base hue"},
+})
+
 # ── P0.5 LUT / color client-GPU twins (client-GPU live preview of nodes
 # 10/11/39/77) ───────────────────────────────────────────────────────────────
 # Additive: the server's CPU numpy nodes stay the authoritative export (two-tier
