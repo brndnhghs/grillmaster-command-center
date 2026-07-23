@@ -125,21 +125,21 @@ try {
   <div id="graph-canvas-col">
     <button id="graph-sidebar-toggle-float" title="Show palette">☰</button>
 
-    <!-- Mobile-only top bar -->
+    <!-- Mobile-only top bar (ordering mirrors the desktop toolbar groups) -->
     <div id="graph-mobile-topbar">
       <button id="graph-palette-btn">☰</button>
       <button id="graph-run-btn">▶ Run</button>
+      <button id="graph-live-btn" class="g-autobtn" title="Live MJPEG preview">📺 Live</button>
+      <button id="graph-auto-btn" class="g-autobtn" title="Auto-generate on param change">⏺ Auto</button>
       <button id="graph-clear-btn">Clear</button>
+      <button id="graph-save-btn" class="g-savebtn">💾</button>
+      <button id="graph-load-btn" class="g-loadbtn">📂</button>
+      <button id="graph-edit3d-btn" class="g-autobtn" title="3D viewport editor">🧊 3D Edit</button>
+      <button id="graph-overlay-btn" class="g-autobtn" title="Visual FX overlay (decorative)">✨ FX</button>
+      <button id="graph-layout-btn">⊛</button>
       <div id="graph-frames-wrap">
         <span id="graph-frame-count-mobile">48 frames</span>
       </div>
-      <button id="graph-layout-btn">⊛</button>
-      <button id="graph-save-btn" class="g-savebtn">💾</button>
-      <button id="graph-load-btn" class="g-loadbtn">📂</button>
-      <button id="graph-auto-btn" class="g-autobtn" title="Auto-generate on param change">⏺ Auto</button>
-<button id="graph-live-btn" class="g-autobtn" title="Live MJPEG preview">📺 Live</button>
-      <button id="graph-edit3d-btn" class="g-autobtn" title="3D viewport editor">🧊 3D Edit</button>
-      <button id="graph-overlay-btn" class="g-autobtn" title="Visual FX overlay (decorative)">✨ FX</button>
       <button id="graph-settings-btn-mob" class="g-autobtn" title="Settings">⚙</button>
       <select id="graph-canvas-preset-mob" title="Canvas size" style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:2px 6px;font-size:12px;cursor:pointer;flex-shrink:0">
         <option value="768x512">768×512</option>
@@ -175,6 +175,7 @@ try {
           </div>
           <div class="glg-row"><i class="glg-stream"></i> memory stream &nbsp;·&nbsp; <i class="glg-packets"></i> disk packets</div>
           <div class="glg-row">◠ sweep = cooking &nbsp;·&nbsp; <i class="glg-frost"></i> cached &nbsp;·&nbsp; <b style="color:#f43f5e">◉</b> error</div>
+          <div class="glg-row">node meter: cook ms &nbsp;·&nbsp; bar = share of frame &nbsp;·&nbsp; glow = hottest</div>
           <div class="glg-row glg-sub">speed = throughput &nbsp;·&nbsp; dot size = bytes &nbsp;·&nbsp; tempo = fps</div>
         </div>
       </div>
@@ -196,35 +197,55 @@ try {
 
     </div><!-- end #graph-workspace -->
 
-    <!-- Desktop toolbar (hidden on mobile) -->
+    <!-- Desktop toolbar (hidden on mobile).
+         Buttons are grouped left→right by intent: transport · history · file ·
+         view toggles · canvas, with utilities (help/settings) pinned right. -->
     <div id="graph-toolbar">
-      <button id="graph-run-btn-desk">▶ Run Graph</button>
-      <button id="graph-clear-btn-desk">Clear</button>
-      <div class="gtb-group" id="graph-history-group">
-        <button id="graph-undo-btn" disabled title="Undo — ⌘Z">↶</button>
-        <button id="graph-redo-btn" disabled title="Redo — ⇧⌘Z">↷</button>
+      <div id="gtb-scroll">
+        <div class="gtb-set">
+          <button id="graph-run-btn-desk">▶ Run Graph</button>
+          <button id="graph-live-btn-desk" class="g-autobtn" title="Live MJPEG preview">📺 Live</button>
+          <button id="graph-auto-btn-desk" class="g-autobtn" title="Auto-generate on param change">⏺ Auto</button>
+        </div>
+        <span class="gtb-sep"></span>
+        <div class="gtb-set">
+          <div class="gtb-group" id="graph-history-group">
+            <button id="graph-undo-btn" disabled title="Undo — ⌘Z">↶</button>
+            <button id="graph-redo-btn" disabled title="Redo — ⇧⌘Z">↷</button>
+          </div>
+          <button id="graph-clear-btn-desk">Clear</button>
+        </div>
+        <span class="gtb-sep"></span>
+        <div class="gtb-set">
+          <button id="graph-save-btn-desk" class="g-savebtn">💾 Save</button>
+          <button id="graph-load-btn-desk" class="g-loadbtn">📂 Load</button>
+        </div>
+        <span class="gtb-sep"></span>
+        <div class="gtb-set">
+          <button id="graph-edit3d-btn-desk" class="g-autobtn" title="3D viewport editor">🧊 3D</button>
+          <button id="graph-overlay-btn-desk" class="g-autobtn" title="Visual FX overlay (decorative)">✨ FX</button>
+          <button id="graph-test-btn-desk" class="g-autobtn" title="Test all nodes">🧪 Test</button>
+        </div>
+        <span class="gtb-sep"></span>
+        <div class="gtb-set">
+          <button id="graph-layout-btn-desk" title="Auto-layout the graph">⊛ Layout</button>
+          <select id="graph-canvas-preset" title="Canvas size">
+            <option value="768x512">768×512</option>
+            <option value="512x512">512×512</option>
+            <option value="1024x576">1024×576</option>
+            <option value="1280x720">1280×720</option>
+            <option value="1920x1080">1920×1080</option>
+          </select>
+          <div id="graph-frames-wrap-desk">
+            <span id="graph-frame-count">48 frames</span>
+          </div>
+        </div>
+        <span id="graph-status-desk"></span>
       </div>
-      <div id="graph-frames-wrap-desk">
-        <span id="graph-frame-count">48 frames</span>
+      <div class="gtb-set gtb-utils">
+        <button id="graph-help-btn" title="Keyboard shortcuts (?)">?</button>
+        <button id="graph-settings-btn" class="g-autobtn" title="Settings">⚙</button>
       </div>
-      <button id="graph-layout-btn-desk">⊛ Auto-layout</button>
-      <button id="graph-save-btn-desk" class="g-savebtn">💾 Save</button>
-      <button id="graph-load-btn-desk" class="g-loadbtn">📂 Load</button>
-      <button id="graph-help-btn" title="Keyboard shortcuts (?)">?</button>
-      <button id="graph-settings-btn" class="g-autobtn" title="Settings">⚙</button>
-      <button id="graph-auto-btn-desk" class="g-autobtn" title="Auto-generate on param change">⏺ Auto</button>
-      <button id="graph-test-btn-desk" class="g-autobtn" title="Test all nodes">🧪 Test</button>
-<button id="graph-live-btn-desk" class="g-autobtn" title="Live MJPEG preview">📺 Live</button>
-      <button id="graph-edit3d-btn-desk" class="g-autobtn" title="3D viewport editor">🧊 3D Edit</button>
-      <button id="graph-overlay-btn-desk" class="g-autobtn" title="Visual FX overlay (decorative)">✨ FX</button>
-      <select id="graph-canvas-preset" title="Canvas size" style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:2px 6px;font-size:12px;cursor:pointer">
-        <option value="768x512">768×512</option>
-        <option value="512x512">512×512</option>
-        <option value="1024x576">1024×576</option>
-        <option value="1280x720">1280×720</option>
-        <option value="1920x1080">1920×1080</option>
-      </select>
-      <span id="graph-status-desk"></span>
     </div>
 
     <!-- ── Timeline ruler with lanes ──────────────────────── -->
@@ -309,6 +330,17 @@ try {
     <img id="graph-preview-latest" style="display:none">
     <span id="graph-preview-label">Output</span>
     <button id="graph-preview-toggle">▲ expand</button>
+  </div>
+  <!-- Desktop preview header: always-visible viewer actions (pop-out / PiP /
+       fullscreen live here now, instead of a hover-only floating toolbar) -->
+  <div id="preview-header">
+    <span id="pvh-title">Preview</span>
+    <span id="pvh-live-pill">live</span>
+    <span class="pvh-spacer"></span>
+    <button id="pvh-fullscreen" title="View fullscreen">⛶<span class="pvh-lbl">Fullscreen</span></button>
+    <button id="pvh-pip" title="Picture-in-Picture" style="display:none">▣<span class="pvh-lbl">PiP</span></button>
+    <button id="pvh-popout" title="Pop out into its own window">⧉<span class="pvh-lbl">Pop out</span></button>
+    <button id="pvh-collapse" title="Collapse preview">▾</button>
   </div>
   <div id="graph-main-preview">
     <!-- Live metadata readout: updated by WS messages (Phase 4 frame cursor) -->
@@ -408,6 +440,7 @@ try {
 <div id="graph-img-fullscreen">
   <img id="graph-fs-img" src="" alt="">
   <video id="graph-fs-video" autoplay loop muted playsinline style="display:none;max-width:95vw;max-height:92vh;border-radius:8px;"></video>
+  <canvas id="graph-fs-canvas" style="display:none;max-width:95vw;max-height:92vh;border-radius:8px;"></canvas>
 </div>
 
 <!-- Backdrop for overlay panels -->

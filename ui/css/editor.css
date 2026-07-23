@@ -53,6 +53,12 @@
     --viewport-bg:  #0d111c;
     --viewport-grid:#2e3950;
     --glow:         transparent;   /* themes that want bloom opt in */
+    /* live-metric heat ramp — node meters/glow. Defaults chain to the
+       semantic tokens so every theme gets a coherent ramp for free;
+       themes may still override each stop individually. */
+    --heat-cool: var(--success);
+    --heat-warm: var(--warn);
+    --heat-hot:  var(--err);
     /* system (theme-independent) */
     --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'Menlo', 'Consolas', monospace;
     --radius-s: 4px;
@@ -640,6 +646,47 @@
   .gnode-group .gnode-header { background: rgba(167,139,250,0.12); border-bottom-color: var(--accent2); border-radius: 12px 12px 0 0; }
   .gnode-group-icon { color: var(--accent2); margin-right: 3px; font-size: 13px; }
   .gnode.selected-multi { box-shadow: 0 0 0 2px var(--accent2) !important; }
+  /* Category icon — glyph chosen from the node's registry category.
+     When present it replaces the anonymous colour chip. */
+  .gnode-cat-ico { font-size: 11px; flex-shrink: 0; line-height: 1; }
+  .gnode.has-cat-ico .gnode-title::before { display: none; }
+
+  /* ── Live per-node metrics (fed by WS node_timings) ──────
+     Meter strip: icon + cook ms + share-of-frame bar. Heat classes colour
+     the bar/text by the node's share of total frame time. */
+  .gnode-meter {
+    display: flex; align-items: center; gap: 6px; padding: 4px 9px 5px;
+    border-top: 1px dashed var(--node-border);
+    font-family: var(--font-mono); font-size: 9.5px; color: var(--muted);
+    user-select: none; pointer-events: none;
+  }
+  .gnm-ico { font-size: 10px; flex-shrink: 0; line-height: 1; }
+  .gnm-ms  {
+    min-width: 40px; text-align: right; font-variant-numeric: tabular-nums;
+    color: var(--heat-c, var(--muted)); transition: color 0.3s;
+  }
+  .gnm-bar {
+    flex: 1; min-width: 28px; height: 4px; border-radius: 2px;
+    background: var(--bg3); overflow: hidden;
+  }
+  .gnm-bar > i {
+    display: block; height: 100%; width: 0%; border-radius: 2px;
+    background: var(--heat-c, var(--accent));
+    transition: width 0.18s ease, background 0.3s;
+  }
+  .gnode.heat-cool { --heat-c: var(--heat-cool); }
+  .gnode.heat-warm { --heat-c: var(--heat-warm); }
+  .gnode.heat-hot  { --heat-c: var(--heat-hot); }
+  /* Cached this frame: frosted + dimmed meter */
+  .gnode.gnode-cached .gnode-meter { opacity: 0.55; }
+  .gnode.gnode-cached .gnm-ms { color: var(--accent2); }
+  /* Hottest node in the frame: breathing heat glow. (render-target/selected
+     box-shadows are declared !important, so they still win when combined.) */
+  .gnode.gnode-hottest { animation: gnode-hot-pulse 1.15s ease-in-out infinite; }
+  @keyframes gnode-hot-pulse {
+    0%, 100% { box-shadow: 0 0 0 1px var(--heat-c, var(--err)), 0 0 6px 0 var(--heat-c, var(--err)), var(--shadow-2); }
+    50%      { box-shadow: 0 0 0 1px var(--heat-c, var(--err)), 0 0 18px 2px var(--heat-c, var(--err)), var(--shadow-2); }
+  }
   /* ── Group expand modal ───────────────────────────────── */
   #group-expand-modal {
     display: none; position: fixed; inset: 0;
@@ -736,15 +783,43 @@
   .gedge:hover { stroke: var(--accent); }
   .gedge:hover { opacity: 1; stroke-width: 3.5; }
   .gedge.feedback { stroke-dasharray: 6 4; }
+  /* Live data-flow march: dashes travel while frames are cooking; the tempo
+     (--flow-dur, set by JS) tracks the measured fps. Feedback wires flow
+     backwards — that is the direction the data actually travels. */
+  #graph-svg.flowing .gedge {
+    stroke-dasharray: 7 5;
+    animation: gedge-flow var(--flow-dur, 0.9s) linear infinite;
+  }
+  #graph-svg.flowing .gedge.feedback { animation-direction: reverse; }
+  @keyframes gedge-flow { to { stroke-dashoffset: -12; } }
+  @media (prefers-reduced-motion: reduce) {
+    #graph-svg.flowing .gedge { animation: none; }
+    .gnode.gnode-hottest { animation: none; box-shadow: 0 0 0 1px var(--heat-c, var(--err)), var(--shadow-2); }
+  }
   .gedge-pending { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 4 3; pointer-events: none; }
 
   /* ── Bottom toolbar ───────────────────────────────────── */
   #graph-toolbar {
     padding: 8px 14px; border-top: 1px solid var(--border); display: flex;
-    gap: 8px; align-items: center; background: var(--bg1); flex-shrink: 0;
-    overflow-x: auto;
+    gap: 10px; align-items: center; background: var(--bg1); flex-shrink: 0;
   }
-  #graph-toolbar::-webkit-scrollbar { display: none; }
+  /* Toolbar intent groups: tight inside a set, breathing room + a hairline
+     divider between sets. The sets live in a scrollable strip so the
+     utilities stay pinned (and visible) at the right edge at any width. */
+  #gtb-scroll {
+    display: flex; align-items: center; gap: 10px;
+    flex: 1; min-width: 0; overflow-x: auto;
+  }
+  #gtb-scroll::-webkit-scrollbar { display: none; }
+  .gtb-set { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .gtb-sep { width: 1px; height: 20px; background: var(--border-strong); flex-shrink: 0; opacity: 0.7; }
+  .gtb-utils { margin-left: auto; }
+  #graph-canvas-preset {
+    height: 30px; background: var(--bg2); color: var(--muted);
+    border: 1px solid var(--border); border-radius: var(--radius-m);
+    padding: 0 6px; font-size: 12px; cursor: pointer;
+  }
+  #graph-canvas-preset:hover { color: var(--text); border-color: var(--border-strong); }
   /* Ghost-button family: every secondary toolbar control shares this look */
   #graph-clear-btn, #graph-clear-btn-desk, #graph-layout-btn, #graph-layout-btn-desk,
   .g-autobtn, .g-savebtn, .g-loadbtn, #graph-help-btn,
@@ -879,28 +954,63 @@
     object-fit: contain; display: block; cursor: pointer;
   }
 
-  /* Hover chrome over the preview (pop-out / PiP) — JS keeps it mounted */
-  #preview-toolbar {
-    position: absolute; top: 8px; right: 10px; display: flex; gap: 6px; z-index: 6;
-    opacity: 0; transition: opacity 0.15s;
+  /* ── Preview header (desktop) — viewer actions live here, always visible ── */
+  #preview-header {
+    display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+    height: 34px; padding: 0 8px 0 12px;
+    background: var(--bg1); border-bottom: 1px solid var(--border);
   }
-  #graph-main-preview:hover #preview-toolbar { opacity: 1; }
-  @media (pointer: coarse) { #preview-toolbar { opacity: 0.75; } }
-  #preview-toolbar button {
-    width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
-    background: rgba(11,13,18,0.82); color: var(--muted); font-size: 14px;
-    border: 1px solid var(--border-strong); border-radius: var(--radius-s); cursor: pointer;
-    transition: color 0.12s, border-color 0.12s;
+  #pvh-title {
+    font-size: 11px; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.07em;
   }
-  #preview-toolbar button:hover { color: var(--text); border-color: var(--accent); }
+  #pvh-live-pill {
+    display: none; align-items: center; gap: 5px;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--live); background: color-mix(in srgb, var(--live) 12%, transparent);
+    border: 1px solid var(--live); border-radius: 999px; padding: 1px 8px;
+  }
+  #pvh-live-pill.on { display: inline-flex; }
+  #pvh-live-pill::before {
+    content: ''; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--live); animation: live-pulse 1.2s ease-in-out infinite;
+  }
+  .pvh-spacer { flex: 1; }
+  #preview-header button {
+    height: 24px; display: inline-flex; align-items: center; gap: 5px;
+    background: var(--bg2); color: var(--muted); padding: 0 9px;
+    border: 1px solid var(--border); border-radius: var(--radius-s);
+    font-size: 12px; cursor: pointer;
+    transition: color 0.12s, border-color 0.12s, background 0.12s;
+  }
+  #preview-header button:hover { color: var(--text); background: var(--bg3); border-color: var(--accent); }
+  #preview-header button .pvh-lbl { font-size: 11px; font-weight: 600; }
+  #pvh-collapse { padding: 0 7px; }
+  /* Collapsed to header-only: the chevron flips, everything below hides */
+  #graph-preview-panel.pv-min #graph-main-preview,
+  #graph-preview-panel.pv-min #preview-resize-handle,
+  #graph-preview-panel.pv-min #graph-output-strip { display: none !important; }
+  #graph-preview-panel.pv-min #pvh-collapse { transform: rotate(180deg); }
 
-  /* Drag handle under the preview — resizes it (persisted) */
+  /* Drag handle under the preview — resizes it (persisted). A visible grip
+     pill makes the affordance obvious instead of a 5px invisible strip. */
   #preview-resize-handle {
-    display: none; height: 5px; flex-shrink: 0; cursor: ns-resize;
-    background: transparent; transition: background 0.12s; touch-action: none;
+    display: none; height: 10px; flex-shrink: 0; cursor: ns-resize;
+    position: relative; background: var(--bg1);
+    border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    transition: background 0.12s; touch-action: none;
+  }
+  #preview-resize-handle::before {
+    content: ''; position: absolute; left: 50%; top: 50%;
+    width: 44px; height: 4px; border-radius: 999px;
+    transform: translate(-50%, -50%);
+    background: var(--border-strong); transition: background 0.12s, width 0.12s;
   }
   #graph-main-preview.active + #preview-resize-handle { display: block; }
-  #preview-resize-handle:hover, #preview-resize-handle.dragging { background: var(--accent); }
+  #preview-resize-handle:hover, #preview-resize-handle.dragging { background: var(--bg2); }
+  #preview-resize-handle:hover::before, #preview-resize-handle.dragging::before {
+    background: var(--accent); width: 64px;
+  }
 
   /* ── Keyboard cheat-sheet overlay ─────────────────────── */
   #help-overlay {
@@ -1231,6 +1341,7 @@
   }
   #graph-img-fullscreen.visible { display: flex; }
   #graph-img-fullscreen img { max-width: 95vw; max-height: 92vh; border-radius: 8px; }
+  #graph-img-fullscreen canvas { max-width: 95vw; max-height: 92vh; border-radius: 8px; object-fit: contain; }
 
   /* ── Backdrop for overlay panels ──────────────────────── */
   #graph-backdrop {
@@ -1315,6 +1426,12 @@
     #graph-preview-panel.pv-visible.pv-collapsed { display: flex; height: 44px; }
     #graph-preview-panel.pv-visible.pv-expanded  { display: flex; height: 280px; }
     #graph-preview-handle { display: flex; }
+    /* Mobile keeps the tap handle; the desktop header would double up.
+       pv-min is a desktop-only state — its collapse button lives in that
+       header, so honouring it here would strand the preview hidden. */
+    #preview-header { display: none; }
+    #graph-preview-panel.pv-min #graph-main-preview.active { display: flex !important; }
+    #graph-preview-panel.pv-min #graph-output-strip { display: flex !important; }
 
     /* Strip: horizontal scroll on mobile */
     #graph-output-strip {
