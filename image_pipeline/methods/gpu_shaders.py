@@ -615,6 +615,17 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     "489": {"shader": "film_grain_gpu", "type": "filter", "typed": True,
             "param_map": {"intensity": "intensity", "adapt": "adapt",
                           "grain_size": "grain_size"}},
+    # 500 Spirograph, 531 Flowing Truchet — closed-form f(uv,t) math_art twins.
+    # Typed-uniform contract: every numeric CPU param is bound by name to a
+    # u_<name> uniform/SCALAR port. `mode`/`colormode`/`palette`/`bg`/`anim_mode`
+    # are choice/string params (no GLSL equivalent) and are dropped
+    # (GPU_PREVIEW_DROP_ALLOW); the twins animate continuously from u_time.
+    "500": {"shader": "spirograph_typed", "type": "procedural", "typed": True,
+            "param_map": {"R": "R", "r": "r", "d": "d",
+                          "line_width": "line_width", "hue_shift": "hue_shift"}},
+    "531": {"shader": "flowing_truchet_typed", "type": "procedural", "typed": True,
+            "param_map": {"scale": "scale", "line_width": "line_width",
+                          "warp": "warp"}},
     "04": {"shader": "worley_gpu", "type": "procedural",
            "param_map": {"jitter": "p1", "fractal_gain": "p2"}},
     "02": {"shader": "quasicrystal_gpu", "type": "procedural",

@@ -8498,6 +8498,111 @@ _register("circle_packing_typed", "Circle packing: grid of disks with hashed rad
     "bg":     {"glsl": "color", "default": "#04060d", "description": "background"},
 })
 
+# ── Typed math_art: Spirograph (node 500) + Flowing Truchet (node 531) ──
+# Both are closed-form f(uv,t) Architecture-B generators (no inter-frame
+# state), so they are P0 (not P1). CPU fns stay authoritative for export;
+# these are additive typed-uniform live-preview twins. Colormodes that are
+# not closed-form (palette/inferno/viridis for 531; the full colormap set for
+# 500) are dropped (GPU_PREVIEW_DROP_ALLOW) — the twins render a sensible
+# default (IQ rainbow / inferno) and animate continuously from u_time.
+_register("spirograph_typed", "Spirograph rosette (hypotrochoid/epitrochoid) — typed twin of node 500",
+          "procedural", '''void main() {
+    vec2 uv = v_uv - 0.5;
+    uv.x *= u_resolution.x / u_resolution.y;
+    float R = max(u_R, u_r + 1.0);
+    float r = max(u_r, 1.0);
+    float d = u_d;
+    bool epi = false;  // hypotrochoid default; mode switch is CPU-authoritative (GPU_PREVIEW_DROP_ALLOW)
+    float span = (epi ? (R + r) : (R - r)) + d + 1e-6;
+    float k = (epi ? (R + r) : (R - r)) / r;
+    // Generous closure range; bounded sample loop keeps it a per-pixel SDF.
+    float theta_max = 6.2831853 * 24.0;
+    const int STEPS = 1200;
+    float dmin = 1e9;
+    float bestHue = 0.0;
+    for (int i = 0; i < STEPS; i++) {
+        float th = (float(i) / float(STEPS)) * theta_max;
+        vec2 p;
+        if (epi) {
+            p = vec2((R + r) * cos(th) - d * cos(k * th),
+                     (R + r) * sin(th) - d * sin(k * th));
+        } else {
+            p = vec2((R - r) * cos(th) + d * cos(k * th),
+                     (R - r) * sin(th) - d * sin(k * th));
+        }
+        // Continuous animation from u_time: rotate + breathe (no cusps).
+        float ang = u_time;
+        float ca = cos(ang), sa = sin(ang);
+        p = vec2(ca * p.x - sa * p.y, sa * p.x + ca * p.y);
+        float s = 0.4 + 0.6 * (0.5 + 0.5 * sin(u_time * 0.5));
+        p *= s;
+        vec2 cuv = p * (0.46 / span);
+        float dd = distance(uv, cuv);
+        if (dd < dmin) { dmin = dd; bestHue = atan(p.y, p.x); }
+    }
+    // Stroke width bridges the sample spacing so the rosette reads solid.
+    float spacing_uv = 0.46 * theta_max / float(STEPS);
+    float lw = max(max(u_line_width, 0.5) * 0.004, spacing_uv * 0.6);
+    float line = smoothstep(lw, lw * 0.4, dmin);
+    // IQ cosine palette (rainbow) with hue rotation.
+    float hue = fract(u_hue_shift + bestHue / 6.2831853 + 0.5);
+    vec3 col = clamp(abs(mod(hue * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+    vec3 bg = vec3(0.5);  // BG_DEFAULT neutral grey
+    f_color = vec4(mix(bg, col, line), 1.0);
+}
+''', uniforms={
+    "R":         {"glsl": "float", "min": 3.0, "max": 60.0, "default": 35.0,
+                   "description": "fixed (big) circle radius"},
+    "r":         {"glsl": "float", "min": 1.0, "max": 60.0, "default": 13.0,
+                   "description": "rolling (small) circle radius"},
+    "d":         {"glsl": "float", "min": 1.0, "max": 60.0, "default": 25.0,
+                   "description": "pen offset from small-circle centre"},
+    "line_width": {"glsl": "float", "min": 0.5, "max": 4.0, "default": 1.6,
+                   "description": "stroke thickness"},
+    "hue_shift":  {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.0,
+                   "description": "hue rotation of the colour ramp"},
+})
+
+_register("flowing_truchet_typed", "Flowing Truchet labyrinth (domain-warped flow field) — typed twin of node 531",
+          "procedural", _INFERNO_GPU + '''void main() {
+    vec2 uv = v_uv;
+    float cells = max(u_scale, 1.0);
+    vec2 g = uv * cells;
+    vec2 id = floor(g);
+    vec2 f = fract(g) - 0.5;
+    // Domain-warped flow field (port of CPU _flow_angle). Fixed phase keeps
+    // neighbouring tiles coherent into rivulet-like channels.
+    vec2 fc = (id + 0.5) / cells * 6.2831853;
+    float s1 = 0.5, s2 = 0.3;
+    float wx = fc.x + u_warp * sin(fc.y * 1.7 + u_time * 0.5 + s1);
+    float wy = fc.y + u_warp * cos(fc.x * 1.3 - u_time * 0.4 + s2);
+    float a = sin(wx * 2.0 + u_time * 0.6) + cos(wy * 2.3 - u_time * 0.3);
+    a += 0.5 * sin((wx + wy) * 3.1 + u_time * 0.8 + s1);
+    bool bit = mod(a, 6.2831853) < 3.14159265;
+    // Truchet arc SDF: two opposite-corner quarter arcs per cell.
+    float rr = 0.5;
+    float d1, d2;
+    if (bit) {
+        d1 = abs(distance(f, vec2(-0.5, -0.5)) - rr);
+        d2 = abs(distance(f, vec2( 0.5,  0.5)) - rr);
+    } else {
+        d1 = abs(distance(f, vec2( 0.5, -0.5)) - rr);
+        d2 = abs(distance(f, vec2(-0.5,  0.5)) - rr);
+    }
+    float d = min(d1, d2);
+    float lw = max(u_line_width, 1.0) * 0.01;
+    float line = smoothstep(lw, lw * 0.4, d);
+    f_color = vec4(inferno(clamp(line, 0.0, 1.0)), 1.0);
+}
+''', uniforms={
+    "scale":      {"glsl": "float", "min": 4.0, "max": 80.0, "default": 28.0,
+                   "description": "tiles across the shorter canvas axis"},
+    "line_width": {"glsl": "float", "min": 1.0, "max": 14.0, "default": 4.0,
+                   "description": "arc stroke thickness (px)"},
+    "warp":       {"glsl": "float", "min": 0.0, "max": 1.5, "default": 0.6,
+                   "description": "domain-warp strength (0=stripes, 1=rivulets)"},
+})
+
 _register("fourier_circles_typed", "Fourier epicycles: traced harmonic curve (typed, node 274)",
           "procedural", '''void main() {
     vec2 p = (v_uv - 0.5);
