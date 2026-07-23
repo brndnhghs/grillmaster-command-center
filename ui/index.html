@@ -41,6 +41,10 @@ try {
   <button class="tab-btn" data-tab="methods" style="display:none">Methods</button>
   <button class="tab-btn active" data-tab="graph">Node Graph</button>
   <button class="tab-btn" data-tab="diag">⚡ Diagnostics</button>
+  <!-- Server restart. Lives in the tab bar rather than floating at the
+       bottom-right: that corner belongs to the preview header's actions, and
+       a fixed button there sat on top of them and ate their clicks. -->
+  <button id="server-restart-btn" title="Restart server (picks up code changes)">⟳</button>
 </div>
 
 <!-- ── Methods tab (existing UI) ──────────────────────────── -->
@@ -630,8 +634,7 @@ try {
 <!-- ── Node Tester ──────────────────────────────────────────────── -->
 <script src="/ui/js/node-tester.js"></script>
 
-<!-- ── Server restart button ────────────────────────────────────────── -->
-<button id="server-restart-btn" title="Restart server (picks up code changes)">⟳</button>
+<!-- Restart button markup lives in #tab-bar — see the note there. -->
 <script src="/ui/js/server-restart.js"></script>
 
 <script src="/ui/js/diagnostics.js"></script>
