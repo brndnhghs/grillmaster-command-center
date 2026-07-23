@@ -328,6 +328,31 @@ function tlClearPreview() {
 }
 
 const _tlFrameCache = new Map();
+// Fetches currently on the wire, keyed like the cache. A frame already in
+// flight is awaited rather than requested a second time: the read-ahead below
+// only lands in the cache once it *resolves*, so at playback speed the playhead
+// routinely reaches frame N+1 while its read-ahead is still open, and the old
+// code then issued a duplicate request for it — doubling load exactly when
+// playback was already behind (measured 40 requests in a second that needed 24).
+const _tlInflight = new Map(); // key → Promise<Blob|null>
+// Bumped on every load. Responses arrive out of order, so one that comes back
+// against a stale token belongs to a frame the playhead has already passed and
+// must not be painted over a newer one. Pausing deliberately does *not* bump it:
+// the frame being loaded when the user hits pause is the one they want to see.
+let _tlFrameSeq = 0;
+
+// Resolves to a Blob, or null if the frame is missing.
+function _tlFetchFrame(seqName, fileFrame) {
+  const key = `${seqName}:${fileFrame}`;
+  const pending = _tlInflight.get(key);
+  if (pending) return pending;
+  const p = fetch(`/api/sequences/${encodeURIComponent(seqName)}/${fileFrame}`)
+    .then(r => (r.ok ? r.blob() : null))
+    .catch(() => null)
+    .finally(() => { if (_tlInflight.get(key) === p) _tlInflight.delete(key); });
+  _tlInflight.set(key, p);
+  return p;
+}
 
 function _tlDisplayBlob(blob) {
   // Don't clobber the live canvas
@@ -355,35 +380,31 @@ function tlLoadFrame(timelineFrame) {
   const fileFrame = localFrame + (srcOffset || 0);
   const cacheKey = `${seqName}:${fileFrame}`;
 
+  const token = ++_tlFrameSeq;
+
   // Check cache first
   const cached = _tlFrameCache.get(cacheKey);
   if (cached) {
     _tlDisplayBlob(cached);
     _tlFrameCache.delete(cacheKey);
   } else {
-    fetch(`/api/sequences/${encodeURIComponent(seqName)}/${fileFrame}`)
-      .then(r => {
-        if (!r.ok) throw new Error('Frame not found');
-        return r.blob();
-      })
-      .then(blob => { _tlDisplayBlob(blob); })
-      .catch(() => {
-        if (!gLivePreviewImg) {
-          gMainPreview.innerHTML = '<div style="padding:20px;color:var(--muted);font-size:12px;text-align:center;">No frame rendered yet</div>';
-          gMainPreview.classList.add('active');
-          gPreviewShow();
-        }
-      });
+    _tlFetchFrame(seqName, fileFrame).then(blob => {
+      if (token !== _tlFrameSeq) return;  // the playhead has already moved on
+      if (blob) { _tlDisplayBlob(blob); return; }
+      if (!gLivePreviewImg) {
+        gMainPreview.innerHTML = '<div style="padding:20px;color:var(--muted);font-size:12px;text-align:center;">No frame rendered yet</div>';
+        gMainPreview.classList.add('active');
+        gPreviewShow();
+      }
+    });
   }
 
   // Pre-fetch next frame
   const nextFileFrame = fileFrame + 1;
   const nextKey = `${seqName}:${nextFileFrame}`;
   if (!_tlFrameCache.has(nextKey)) {
-    fetch(`/api/sequences/${encodeURIComponent(seqName)}/${nextFileFrame}`)
-      .then(r => r.ok ? r.blob() : null)
-      .then(blob => { if (blob) _tlFrameCache.set(nextKey, blob); })
-      .catch(() => {});
+    _tlFetchFrame(seqName, nextFileFrame)
+      .then(blob => { if (blob) _tlFrameCache.set(nextKey, blob); });
   }
 
   // Clean old cache entries (keep max 5)
@@ -3984,7 +4005,11 @@ const tlNext          = document.getElementById('tl-next');
 
 let tlSeqAbort  = null;
 let tlPlaying   = false;
-let tlPlayTimer = null;
+// Playback is driven off a wall-clock origin, not a per-tick accumulator — see
+// _tlPlayTick for why. `_tlPlayClock` is null whenever playback is stopped.
+let tlPlayRaf    = null;
+let _tlPlayClock = null;  // { at, frame, fps } — wall-clock origin of playback
+let _tlPlayShown = null;  // last frame this loop put on screen
 
 // ── Timeline ruler rendering ─────────────────────────────────────
 function renderTimelineRuler() {
@@ -4767,12 +4792,10 @@ document.getElementById('tl-frame')?.addEventListener('input', updatePlayhead);
 
 // ── Frame navigation ────────────────────────────────────────────
 function tlStopPlay() {
-  if (tlPlaying) {
-    tlPlaying = false;
-    tlPlay.textContent = '▶';
-    clearInterval(tlPlayTimer);
-    tlPlayTimer = null;
-  }
+  if (!tlPlaying) return;
+  tlPlaying = false;
+  tlPlay.textContent = '▶';
+  _tlHaltPlayback();
 }
 tlPrev.addEventListener('click', () => {
   tlStopPlay();
@@ -4885,27 +4908,68 @@ tlNext.addEventListener('click', () => {
   document.addEventListener('touchend', onEnd);
 })();
 
-let _tlFrameAbort = null;
-tlPlay.addEventListener('click', () => {
-  tlPlaying = !tlPlaying;
-  tlPlay.textContent = tlPlaying ? '⏸' : '▶';
-  if (tlPlaying) {
-    const fps   = Math.max(1, parseInt(tlFps.value) || 24);
-    const delay = Math.round(1000 / fps);
-    tlPlayTimer = setInterval(() => {
-      const end  = parseInt(tlEnd.value)   || 24;
-      const st   = parseInt(tlStart.value) || 0;
-      const cur  = parseInt(tlFrame.value) || 0;
-      const next = cur >= end ? st : cur + 1;
-      tlFrame.value = next;
-      updatePlayhead();
-      tlLoadFrame(next);
-    }, delay);
-  } else {
-    clearInterval(tlPlayTimer);
-    tlPlayTimer = null;
-    if (_tlFrameAbort) { _tlFrameAbort.abort(); _tlFrameAbort = null; }
+// ── Playback clock ───────────────────────────────────────────────
+// The frame position is derived from elapsed wall time rather than accumulated
+// one tick at a time. The old loop was setInterval(Math.round(1000/fps)) with
+// `next = cur + 1`, which drifted two ways and recovered from neither:
+//
+//   - The delay is rounded to whole milliseconds. At 24fps that is 42ms against
+//     a true 41.667ms, so playback ran 0.8% slow — a measured 8.05ms of lag per
+//     second of playing, growing without bound (283ms after 30s, ~2.4s after
+//     five minutes). At 60fps the rounding is 17ms vs 16.667ms, three times
+//     worse. Deriving the frame from `performance.now()` has no remainder to
+//     lose, so the only error left is a sub-frame quantisation that never
+//     accumulates.
+//   - A tick that fired late still advanced exactly one frame, so any stall
+//     (GC, a slow decode, a busy main thread) permanently stretched playback
+//     instead of being caught up. Frames are now skipped to stay on the clock.
+//
+// requestAnimationFrame rather than a timer: it cannot outrun the display, and
+// a backgrounded tab pauses cleanly instead of crawling — Chrome clamps
+// setInterval to 1Hz when hidden, which made playback advance 28 frames in 26
+// seconds and then resume that far behind.
+function _tlPlayFrom(frame) {
+  _tlPlayClock = { at: performance.now(), frame, fps: Math.max(1, parseFloat(tlFps.value) || 24) };
+  _tlPlayShown = frame;
+}
+
+function _tlHaltPlayback() {
+  if (tlPlayRaf) { cancelAnimationFrame(tlPlayRaf); tlPlayRaf = null; }
+  _tlPlayClock = null;
+  _tlPlayShown = null;
+}
+
+function _tlPlayTick() {
+  if (!tlPlaying || !_tlPlayClock) { tlPlayRaf = null; return; }
+  const st   = parseInt(tlStart.value) || 0;
+  const end  = parseInt(tlEnd.value)   || 24;
+  const span = Math.max(1, end - st + 1);
+  const fps  = Math.max(1, parseFloat(tlFps.value) || 24);
+
+  // Scrubbing or an fps change mid-playback re-bases the clock on the new
+  // position instead of yanking the playhead back to where the old one points.
+  const shown = parseInt(tlFrame.value);
+  if (fps !== _tlPlayClock.fps || (!isNaN(shown) && shown !== _tlPlayShown)) {
+    _tlPlayFrom(isNaN(shown) ? st : shown);
   }
+
+  const advanced = Math.floor((performance.now() - _tlPlayClock.at) * fps / 1000);
+  const next = st + ((((_tlPlayClock.frame - st + advanced) % span) + span) % span);
+  if (next !== _tlPlayShown) {
+    _tlPlayShown = next;
+    tlFrame.value = next;
+    updatePlayhead();
+    tlLoadFrame(next);
+  }
+  tlPlayRaf = requestAnimationFrame(_tlPlayTick);
+}
+
+tlPlay.addEventListener('click', () => {
+  if (tlPlaying) { tlStopPlay(); return; }
+  tlPlaying = true;
+  tlPlay.textContent = '⏸';
+  _tlPlayFrom(parseInt(tlFrame.value) || 0);
+  tlPlayRaf = requestAnimationFrame(_tlPlayTick);
 });
 
 // ── Frame scrubbing: preview rendered sequence frames ───────────
