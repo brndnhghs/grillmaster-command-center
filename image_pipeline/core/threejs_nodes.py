@@ -217,8 +217,10 @@ THREEJS_3D_NODE_DEFS: dict[str, dict] = {
                     '.usda/.usd; binary .usdc crate files are not supported). '
                     'Upload via the node panel or reference a URL.',
         params={
+            # `upload` drives the node panel's file picker (see gRenderParams);
+            # without it the only way in is pasting a URL.
             "url":        {"description": "model URL (.usdz/.usda/.usd — upload via node panel)",
-                "default": ""},
+                "default": "", "upload": ".usdz,.usda,.usd"},
             **MODEL_PLACEMENT_PARAMS,
             "scale":      {"description": "uniform scale", "min": 0.05, "max": 5, "default": 1},
             "spin_speed": {"description": "auto Y-spin (rad/s)", "min": 0, "max": 4, "default": 0.6},

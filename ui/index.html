@@ -162,6 +162,10 @@ try {
 
     <!-- Canvas -->
     <div id="graph-canvas-wrap">
+      <!-- Output backdrop: replaces the dot grid with a live mirror of the
+           preview. Purely decorative (pointer-events:none) and painted under
+           the nodes layer, so wiring / dragging / menus are untouched. -->
+      <div id="gbd-pane"><canvas id="gbd-canvas"></canvas></div>
       <div id="graph-nodes"></div>
       <svg id="graph-svg"><g id="graph-edges"></g><path id="pending-edge" class="gedge-pending" style="display:none"/></svg>
       <!-- #4c-safe: purely decorative FX overlay (pointer-events:none, never owns interaction) -->
@@ -275,6 +279,12 @@ try {
         <label>Start</label><input id="tl-start" type="number" value="1" min="0" style="width:48px">
         <label>End</label><input id="tl-end" type="number" value="24" min="1" style="width:48px">
         <label>FPS</label><input id="tl-fps" type="number" value="24" min="1" max="60" style="width:40px">
+        <!-- Live cook-rate limiter: paces node cooking in live mode to the FPS
+             above instead of running flat out at the 30fps display cap. -->
+        <label id="tl-fps-limit-wrap" class="tl-toggle"
+               title="Limit live cooking to the FPS above — stops a heavy graph cooking frames nobody sees">
+          <input id="tl-fps-limit" type="checkbox"><span>⏱ limit</span>
+        </label>
       </div>
       <div id="tl-name-group" class="tl-group">
         <label>Name</label><input id="tl-name" type="text" placeholder="my-sequence" style="width:110px">
@@ -344,6 +354,7 @@ try {
     <button id="pvh-fullscreen" title="View fullscreen">⛶<span class="pvh-lbl">Fullscreen</span></button>
     <button id="pvh-pip" title="Picture-in-Picture" style="display:none">▣<span class="pvh-lbl">PiP</span></button>
     <button id="pvh-popout" title="Pop out into its own window">⧉<span class="pvh-lbl">Pop out</span></button>
+    <button id="pvh-backdrop" title="Use the output as the node-graph background">▦<span class="pvh-lbl">Backdrop</span></button>
     <button id="pvh-collapse" title="Collapse preview">▾</button>
   </div>
   <div id="graph-main-preview">

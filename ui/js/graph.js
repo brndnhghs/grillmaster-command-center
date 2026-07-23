@@ -484,43 +484,12 @@ async function gLoadPortTypes() {
 
 // ── Load method palette ────────────────────────────────────────
 // ── Client-side (browser-GPU) node defs ─────────────────────────────────────
-// These render in the browser via three.js (see ui/js/client3d.js). They are
-// injected into gNodeDefs client-side only; the server render/export path is
-// never involved for them. `clientExec:true` marks a node as client-rendered.
+// Only nodes the server does not publish at all live here. The 3D family
+// (__geometry__ … __scene_render__, __gltf__, __usd__) is defined once, in
+// image_pipeline/core/threejs_nodes.py, and arrives via /api/node-defs — a
+// second copy here would shadow the server's richer params (postfx, tone_map,
+// env_preset) depending on which fetch resolved last.
 const GCLIENT_NODE_DEFS = {
-  '__scene3d__': {
-    method_id: '__scene3d__',
-    name: '3D Scene',
-    category: 'client_3d',
-    clientExec: true,
-    tags: ['3d', 'client', 'webgl', 'fast'],
-    inputs: {},
-    outputs: { image: 'image', luminance: 'field' },
-    param_ports: [],
-    description: 'Real-time three.js 3D scene rendered on the browser GPU.',
-    version: 1, deprecated: false, start_frame: 0, end_frame: 0, prebake: 0,
-    params: {
-      geometry:    { description: 'mesh geometry', choices: ['box','sphere','torus','torusknot','cone','cylinder','icosahedron'], default: 'torusknot' },
-      cam_x:       { description: 'camera X', min: -8, max: 8, default: 0 },
-      cam_y:       { description: 'camera Y', min: -8, max: 8, default: 0 },
-      cam_z:       { description: 'camera Z (dolly)', min: 0.5, max: 12, default: 3 },
-      fov:         { description: 'field of view', min: 15, max: 110, default: 50 },
-      obj_rx:      { description: 'object rotate X (deg)', min: -180, max: 180, default: 0 },
-      obj_ry:      { description: 'object rotate Y (deg)', min: -180, max: 180, default: 0 },
-      obj_rz:      { description: 'object rotate Z (deg)', min: -180, max: 180, default: 0 },
-      spin_speed:  { description: 'auto Y-spin (rad/s)', min: 0, max: 4, default: 0.6 },
-      scale:       { description: 'object scale', min: 0.1, max: 3, default: 1 },
-      mat_color:   { description: 'material color', default: '#4a9eff' },
-      metalness:   { description: 'metalness', min: 0, max: 1, default: 0.4 },
-      roughness:   { description: 'roughness', min: 0, max: 1, default: 0.35 },
-      light_x:     { description: 'light X', min: -10, max: 10, default: 3 },
-      light_y:     { description: 'light Y', min: -10, max: 10, default: 4 },
-      light_z:     { description: 'light Z', min: -10, max: 10, default: 5 },
-      light_color: { description: 'light color', default: '#ffffff' },
-      ambient:     { description: 'ambient light', min: 0, max: 1, default: 0.35 },
-      bg_color:    { description: 'background color', default: '#101014' },
-    },
-  },
   '__p5sketch__': {
     method_id: '__p5sketch__',
     name: 'p5 Sketch',
@@ -572,131 +541,6 @@ function draw(p, g) {
       time_scale: { description: 'animation speed → g.time', min: 0, max: 5, default: 1 },
     },
   },
-
-  // ── Composable 3D node family (#3) — each renders in the client spine ──────
-  '__geometry__': {
-    method_id: '__geometry__', name: '3D Geometry', category: 'client_3d', clientExec: true,
-    tags: ['3d', 'client'], inputs: {}, outputs: { geometry: 'geometry' }, param_ports: [],
-    description: 'Emits a geometry for a Mesh node.', version: 1, deprecated: false,
-    start_frame: 0, end_frame: 0, prebake: 0,
-    params: {
-      shape:  { description: 'geometry', choices: ['box','sphere','torus','torusknot','cone','cylinder','icosahedron','dodecahedron','plane'], default: 'torusknot' },
-      size:   { description: 'overall size', min: 0.1, max: 3, default: 1 },
-      detail: { description: 'tessellation detail', min: 0, max: 1, default: 0.5 },
-    },
-  },
-  '__material__': {
-    method_id: '__material__', name: '3D Material', category: 'client_3d', clientExec: true,
-    tags: ['3d', 'client', 'pbr'], inputs: {}, outputs: { material: 'material' }, param_ports: [],
-    description: 'PBR material for a Mesh node.', version: 1, deprecated: false,
-    start_frame: 0, end_frame: 0, prebake: 0,
-    params: {
-      color:              { description: 'base color', default: '#4a9eff' },
-      metalness:          { description: 'metalness', min: 0, max: 1, default: 0.4 },
-      roughness:          { description: 'roughness', min: 0, max: 1, default: 0.35 },
-      emissive:           { description: 'emissive color', default: '#000000' },
-      emissive_intensity: { description: 'emissive intensity', min: 0, max: 4, default: 1 },
-      flat_shading:       { description: 'flat shading (0/1)', min: 0, max: 1, default: 0 },
-    },
-  },
-  '__mesh3d__': {
-    method_id: '__mesh3d__', name: '3D Mesh', category: 'client_3d', clientExec: true,
-    tags: ['3d', 'client'], inputs: { geometry: 'geometry', material: 'material' },
-    outputs: { object: 'object3d' }, param_ports: [],
-    description: 'Geometry + Material → transformable object (keyframeable).',
-    version: 1, deprecated: false, start_frame: 0, end_frame: 0, prebake: 0,
-    params: {
-      pos_x: { description: 'position X', min: -5, max: 5, default: 0 },
-      pos_y: { description: 'position Y', min: -5, max: 5, default: 0 },
-      pos_z: { description: 'position Z', min: -5, max: 5, default: 0 },
-      rot_x: { description: 'rotation X (deg)', min: -180, max: 180, default: 0 },
-      rot_y: { description: 'rotation Y (deg)', min: -180, max: 180, default: 0 },
-      rot_z: { description: 'rotation Z (deg)', min: -180, max: 180, default: 0 },
-      spin_speed: { description: 'auto Y-spin (rad/s)', min: 0, max: 4, default: 0.6 },
-      scale: { description: 'uniform scale', min: 0.1, max: 3, default: 1 },
-    },
-  },
-  '__group3d__': {
-    method_id: '__group3d__', name: '3D Group', category: 'client_3d', clientExec: true,
-    tags: ['3d', 'client'], inputs: { object_a: 'object3d', object_b: 'object3d' },
-    outputs: { object: 'object3d' }, param_ports: [],
-    description: 'Combine two objects into one (auto-inserted when 2 objects meet a Scene).',
-    version: 1, deprecated: false, start_frame: 0, end_frame: 0, prebake: 0, params: {},
-  },
-  '__light3d__': {
-    method_id: '__light3d__', name: '3D Light', category: 'client_3d', clientExec: true,
-    tags: ['3d', 'client'], inputs: {}, outputs: { light: 'light' }, param_ports: [],
-    description: 'Light for a Scene Render node.', version: 1, deprecated: false,
-    start_frame: 0, end_frame: 0, prebake: 0,
-    params: {
-      type:      { description: 'light type', choices: ['point','directional','spot'], default: 'point' },
-      pos_x:     { description: 'position X', min: -10, max: 10, default: 3 },
-      pos_y:     { description: 'position Y', min: -10, max: 10, default: 4 },
-      pos_z:     { description: 'position Z', min: -10, max: 10, default: 5 },
-      color:     { description: 'light color', default: '#ffffff' },
-      intensity: { description: 'intensity', min: 0, max: 500, default: 60 },
-    },
-  },
-  '__camera3d__': {
-    method_id: '__camera3d__', name: '3D Camera', category: 'client_3d', clientExec: true,
-    tags: ['3d', 'client'], inputs: {}, outputs: { camera: 'camera' }, param_ports: [],
-    description: 'Camera for a Scene Render node.', version: 1, deprecated: false,
-    start_frame: 0, end_frame: 0, prebake: 0,
-    params: {
-      pos_x:  { description: 'camera X', min: -12, max: 12, default: 0 },
-      pos_y:  { description: 'camera Y', min: -12, max: 12, default: 0 },
-      pos_z:  { description: 'camera Z (dolly)', min: 0.5, max: 16, default: 4 },
-      look_x: { description: 'look-at X', min: -5, max: 5, default: 0 },
-      look_y: { description: 'look-at Y', min: -5, max: 5, default: 0 },
-      look_z: { description: 'look-at Z', min: -5, max: 5, default: 0 },
-      fov:    { description: 'field of view', min: 15, max: 110, default: 50 },
-    },
-  },
-  '__scene_render__': {
-    method_id: '__scene_render__', name: '3D Scene Render', category: 'client_3d', clientExec: true,
-    tags: ['3d', 'client', 'render'], inputs: { object: 'object3d', light: 'light', camera: 'camera' },
-    outputs: { image: 'image', luminance: 'field' }, param_ports: [],
-    description: 'Assemble object(s) + light + camera → rendered image.',
-    version: 1, deprecated: false, start_frame: 0, end_frame: 0, prebake: 0,
-    params: {
-      bg_color: { description: 'background color', default: '#0a0e18' },
-      ambient:  { description: 'ambient light', min: 0, max: 1, default: 0.35 },
-    },
-  },
-  '__gltf__': {
-    method_id: '__gltf__', name: '3D Model (GLTF)', category: 'client_3d', clientExec: true,
-    tags: ['3d', 'client', 'gltf'], inputs: {}, outputs: { object: 'object3d' }, param_ports: [],
-    description: 'Load a .gltf/.glb model as an object (lazy GLTFLoader).',
-    version: 1, deprecated: false, start_frame: 0, end_frame: 0, prebake: 0,
-    params: {
-      url:        { description: 'model URL (.gltf/.glb)', default: 'https://raw.githubusercontent.com/mrdoob/three.js/r160/examples/models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf' },
-      pos_x:      { description: 'position X', min: -5, max: 5, default: 0 },
-      pos_y:      { description: 'position Y', min: -5, max: 5, default: 0 },
-      pos_z:      { description: 'position Z', min: -5, max: 5, default: 0 },
-      rot_x:      { description: 'rotation X (deg)', min: -180, max: 180, default: 0 },
-      rot_y:      { description: 'rotation Y (deg)', min: -180, max: 180, default: 0 },
-      rot_z:      { description: 'rotation Z (deg)', min: -180, max: 180, default: 0 },
-      scale:      { description: 'uniform scale', min: 0.05, max: 5, default: 1 },
-      spin_speed: { description: 'auto Y-spin (rad/s)', min: 0, max: 4, default: 0.6 },
-    },
-  },
-  '__usd__': {
-    method_id: '__usd__', name: '3D Model (USD)', category: 'client_3d', clientExec: true,
-    tags: ['3d', 'client', 'usd'], inputs: {}, outputs: { object: 'object3d' }, param_ports: [],
-    description: 'Universal Scene Description model (.usdz or ASCII .usda/.usd; binary .usdc not supported). Upload a file or reference a URL.',
-    version: 1, deprecated: false, start_frame: 0, end_frame: 0, prebake: 0,
-    params: {
-      url:        { description: 'model URL (.usdz/.usda/.usd)', default: '', upload: '.usdz,.usda,.usd' },
-      pos_x:      { description: 'position X', min: -5, max: 5, default: 0 },
-      pos_y:      { description: 'position Y', min: -5, max: 5, default: 0 },
-      pos_z:      { description: 'position Z', min: -5, max: 5, default: 0 },
-      rot_x:      { description: 'rotation X (deg)', min: -180, max: 180, default: 0 },
-      rot_y:      { description: 'rotation Y (deg)', min: -180, max: 180, default: 0 },
-      rot_z:      { description: 'rotation Z (deg)', min: -180, max: 180, default: 0 },
-      scale:      { description: 'uniform scale', min: 0.05, max: 5, default: 1 },
-      spin_speed: { description: 'auto Y-spin (rad/s)', min: 0, max: 4, default: 0.6 },
-    },
-  },
 };
 
 // Lazy-loaded ES module handle (ui/js/client3d.js). Only imported when a client
@@ -706,20 +550,120 @@ async function gClient3D() {
   if (!_gClient3D) _gClient3D = await import('/ui/js/client3d.js');
   return _gClient3D;
 }
-// True when the current graph contains any client-rendered node.
+// Node ids the browser spine executes itself — mirrors CLIENT_RENDER_IDS in
+// ui/js/client3d.js, minus the ids that also have a real server method
+// (__custom_shader__, __blender_render__), which must keep routing to the
+// server. Kept as a plain list so "is this graph client-rendered?" can be
+// answered before it is worth importing three.js at all.
+// The server's defs carry no clientExec flag of their own, so it is stamped on
+// at fetch time — see gFetchNodeDefs.
+const GCLIENT_EXEC_IDS = new Set([
+  '__scene3d__', '__p5sketch__',
+  '__geometry__', '__material__', '__mesh3d__', '__group3d__',
+  '__light3d__', '__camera3d__', '__scene_render__', '__gltf__', '__usd__',
+]);
+
+// True when the current graph contains any client-rendered node, anywhere —
+// including nodes parked off to the side that feed nothing. Use this only for
+// cosmetic questions ("might this graph want 3D affordances?"). It is the wrong
+// question for routing: see gGraphRunsOnClient.
 function gGraphHasClientNode() {
   return gNodes.some(n => gNodeDefs[n.method_id]?.clientExec);
 }
 
-async function gLoadMethodPalette() {
-  if (gPaletteLoaded) return;
+// ── Render routing: which engine owns this graph? ───────────────
+// The two engines are not interchangeable — the browser spine has no method for
+// most server nodes, and the server has none for the 3D family. So the choice
+// has to follow the node that actually produces the output, not whatever else
+// happens to be lying on the canvas.
+
+/**
+ * The node whose image is the graph's output. Mirrors _terminalId() in
+ * client3d.js and _find_terminal() in core/graph.py: an explicit render flag
+ * wins, otherwise the last sink (a node with no outgoing non-feedback edge).
+ */
+function gTerminalNode() {
+  const flagged = gNodes.filter(n => n.render);
+  if (flagged.length) return flagged[flagged.length - 1];
+  const hasOut = new Set(gEdges.filter(e => !e.feedback).map(e => e.src_node));
+  const sinks = gNodes.filter(n => !hasOut.has(n.id));
+  // A dangling Geometry/Light must not outrank a Scene Render for the terminal.
+  const imageSink = sinks.find(n => (gNodeDefs[n.method_id]?.outputs || {}).image);
+  return imageSink || sinks[sinks.length - 1] || gNodes[gNodes.length - 1] || null;
+}
+
+/**
+ * Ids of `nodeId` and everything upstream of it — the nodes that must actually
+ * run to produce its output. Feedback edges are followed too: they carry last
+ * frame's value, so their source still has to be cooked.
+ */
+function gAncestorIds(nodeId) {
+  const seen = new Set();
+  const stack = [nodeId];
+  while (stack.length) {
+    const id = stack.pop();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    for (const e of gEdges) if (e.dst_node === id) stack.push(e.src_node);
+  }
+  return seen;
+}
+
+/**
+ * True when the output actually depends on a client-rendered node.
+ *
+ * Deliberately narrower than gGraphHasClientNode: a 3D node dropped on the
+ * canvas but wired to nothing does not make an otherwise-ordinary graph a 3D
+ * graph, and routing it to the browser spine used to blank the render — the
+ * spine has no method for most server nodes and silently blits black for them.
+ */
+function gGraphRunsOnClient() {
+  const term = gTerminalNode();
+  if (!term) return false;
+  const live = gAncestorIds(term.id);
+  return gNodes.some(n => live.has(n.id) && gNodeDefs[n.method_id]?.clientExec);
+}
+
+/**
+ * Nodes + edges for a server run, with client-only nodes and their wiring
+ * stripped out.
+ *
+ * The server has no method for the 3D family and aborts the entire job with
+ * "Unknown method" the moment one is scheduled — and it prunes only by topo
+ * position, not by ancestry, so a 3D node parked off to the side still gets
+ * cooked. On this path such a node can never be an ancestor of the terminal
+ * (gGraphRunsOnClient would have routed us to the browser instead), so
+ * dropping it cannot change the output.
+ */
+function gServerGraphPayload(frame) {
+  const drop = new Set(gNodes.filter(n => gNodeDefs[n.method_id]?.clientExec).map(n => n.id));
+  return {
+    nodes: gNodes.filter(n => !drop.has(n.id)).map(n => gSerializeNodeForApi(n, frame)),
+    edges: gEdges.filter(e => !drop.has(e.src_node) && !drop.has(e.dst_node))
+      .map(e => ({ src_node:e.src_node, src_port:e.src_port, dst_node:e.dst_node, dst_port:e.dst_port, feedback:e.feedback })),
+  };
+}
+
+/**
+ * The one way node defs enter the app. Every caller must go through this:
+ * a bare `/api/node-defs` fetch yields defs with no clientExec flag, and a
+ * 3D graph built on those routes to the server render path, which has no
+ * method for `__geometry__` and fails with "Unknown method".
+ */
+async function gFetchNodeDefs() {
+  const defs = await fetch('/api/node-defs').then(r => r.json());
+  Object.assign(defs, GCLIENT_NODE_DEFS);  // client-only nodes the server never publishes
+  for (const mid of GCLIENT_EXEC_IDS) if (defs[mid]) defs[mid].clientExec = true;
+  return defs;
+}
+
+async function gLoadMethodPalette({ force = false } = {}) {
+  // `force` is for the hot-reload push: without it the gPaletteLoaded guard
+  // makes a node-defs-updated event a no-op and edited methods never appear.
+  if (gPaletteLoaded && !force) return;
   gPaletteLoaded = true;
   try {
-    const res = await fetch('/api/node-defs');
-    gNodeDefs = await res.json();
-    // Inject client-only node defs (rendered in-browser via three.js; the
-    // server never sees these — 3D graphs run entirely client-side).
-    Object.assign(gNodeDefs, GCLIENT_NODE_DEFS);
+    gNodeDefs = await gFetchNodeDefs();
     gRenderPalette();
   } catch(e) {
     document.getElementById('graph-method-list').innerHTML =
@@ -2838,7 +2782,7 @@ async function gClientRunOnce() {
 async function gDoRun() {
   if (!gNodes.length) { gSetStatus('No nodes.'); return; }
   // Client-rendered graphs (3D nodes) never hit the server render path.
-  if (gGraphHasClientNode()) {
+  if (gGraphRunsOnClient()) {
     try { await gClientRunOnce(); } catch(e) { gSetStatus('Client render error: '+e.message); console.error(e); }
     return;
   }
@@ -2858,8 +2802,7 @@ async function gDoRun() {
   const tlEndVal   = parseInt(document.getElementById('tl-end').value)   || 24;
   const totalFrames = Math.max(1, tlEndVal - tlStartVal + 1);
   const body = {
-    nodes: gNodes.map(n => gSerializeNodeForApi(n, tlStartVal)),
-    edges: gEdges.map(e=>({src_node:e.src_node,src_port:e.src_port,dst_node:e.dst_node,dst_port:e.dst_port,feedback:e.feedback})),
+    ...gServerGraphPayload(tlStartVal),
     seed: 42, frames: totalFrames,
     frame: tlStartVal,
     width: gCanvasW, height: gCanvasH,
@@ -3173,20 +3116,70 @@ async function _gPollLiveStats() {
     if (!r.ok) return;
     const d = await r.json();
     if (d.running) {
-      const msg = `Live  ·  frame ${d.frame}  ·  ${d.cook_ms}ms  ·  ${d.fps} fps`;
+      const msg = `Live  ·  frame ${d.frame}  ·  ${d.cook_ms}ms  ·  ${d.fps} fps`
+        + (d.fps_limit ? `  ·  limited ${d.target_fps}` : '');
       gSetStatus(msg);
     }
   } catch {}
 }
 
+// ── Live cook-rate limiter ─────────────────────────────────────
+// Off, live cooks flat out (server: capped at 30fps; client GPU: every rAF).
+// On, both pace their cooking to the timeline FPS field — a heavy graph stops
+// burning the machine on frames nobody sees, and the preview runs at the
+// tempo the sequence will export at.
+const gFpsLimitEl   = document.getElementById('tl-fps-limit');
+const gFpsLimitWrap = document.getElementById('tl-fps-limit-wrap');
+function gLiveRate() {
+  const fps = Math.max(1, parseInt(document.getElementById('tl-fps')?.value) || 24);
+  return { fps, fps_limit: !!gFpsLimitEl?.checked };
+}
+
 function gLiveGraphBody(stop) {
+  const { fps, fps_limit } = gLiveRate();
   return {
-    nodes: gNodes.map(n => gSerializeNodeForApi(n)),
-    edges: gEdges.map(e=>({src_node:e.src_node,src_port:e.src_port,dst_node:e.dst_node,dst_port:e.dst_port,feedback:e.feedback})),
+    ...gServerGraphPayload(),
     seed: 42, frames: stop ? 0 : 1,
     width: gCanvasW, height: gCanvasH,
+    fps, fps_limit,
   };
 }
+
+// Push a rate change into whichever live path is running. Server-side this is
+// a hot-swap (the loop keeps its executor and sim caches); client-side it just
+// retunes the rAF loop. Off-air, there is nothing to do — the next start reads
+// the field itself.
+function gApplyLiveRate() {
+  if (gFpsLimitWrap) gFpsLimitWrap.classList.toggle('on', !!gFpsLimitEl?.checked);
+  if (!gLiveMode) return;
+  if (_gClientLiveActive) { gClientApplyLiveRate(); return; }
+  gLiveHotSwap();
+}
+
+function gClientApplyLiveRate() {
+  if (!_gClient3D?.setLiveRate) return;
+  const { fps, fps_limit } = gLiveRate();
+  _gClient3D.setLiveRate({ fps, cookFps: fps_limit ? fps : 0 });
+}
+
+gFpsLimitEl?.addEventListener('change', () => {
+  try { localStorage.setItem('live-fps-limit', gFpsLimitEl.checked ? '1' : ''); } catch {}
+  gApplyLiveRate();
+  gSetStatus(gFpsLimitEl.checked
+    ? `Live cook limited to ${gLiveRate().fps} fps`
+    : 'Live cook limiter off');
+});
+// 'change' (not 'input'): committing the field, not every keystroke, retunes
+// the running loop — an in-flight POST per typed digit is pure waste.
+document.getElementById('tl-fps')?.addEventListener('change', () => {
+  if (gFpsLimitEl?.checked) gApplyLiveRate();
+});
+try {
+  if (localStorage.getItem('live-fps-limit') === '1' && gFpsLimitEl) {
+    gFpsLimitEl.checked = true;
+    gFpsLimitWrap?.classList.add('on');
+  }
+} catch {}
 
 // Push an edited graph into the already-running live loop. Transport
 // (WS/MJPEG, canvas, preview chrome) is left completely alone — the server
@@ -3249,8 +3242,10 @@ function _gOpenLiveWs() {
       } catch (_) {}
     }
 
-    // Update status bar
-    gSetStatus(`Live · frame ${msg.frame} · ${msg.cook_ms}ms · ${msg.fps} fps`);
+    // Update status bar. `fps` is cook throughput; when the limiter is on the
+    // delivered rate is target_fps, so show both rather than a misleading one.
+    gSetStatus(`Live · frame ${msg.frame} · ${msg.cook_ms}ms · ${msg.fps} fps`
+      + (msg.fps_limit ? ` · limited ${msg.target_fps}` : ''));
 
     // Update live metadata readout overlay
     _gUpdateLiveMeta(msg);
@@ -3328,12 +3323,17 @@ async function _gStartClientLive() {
   const C = await gClient3D();
   const start = parseInt(document.getElementById('tl-start').value) || 0;
   const end   = parseInt(document.getElementById('tl-end').value)   || 24;
-  const fps   = parseInt(document.getElementById('tl-fps')?.value)  || 24;
+  const rate  = gLiveRate();
+  const fps   = rate.fps;
   const { nodes, edges } = _gClientGraphPayload();
   const canvas = await C.startLive({
     nodes, edges, start, end, fps, width: gCanvasW, height: gCanvasH,
+    cookFps: rate.fps_limit ? fps : 0,
     onStats: ({ frame, fps }) => {
-      gSetStatus(`Live (client GPU) · frame ${frame} · ${fps} fps`);
+      // Re-read the rate per stat tick — the limiter retunes mid-live.
+      const lim = gLiveRate();
+      gSetStatus(`Live (client GPU) · frame ${frame} · ${fps} fps`
+        + (lim.fps_limit ? ` · limited ${lim.fps}` : ''));
       const fEl = document.getElementById('lmr-frame'); if (fEl) fEl.textContent = `frame ${frame}`;
       const pEl = document.getElementById('lmr-fps');   if (pEl) pEl.textContent = `${fps} fps`;
       gClientSurfaceErrors();
@@ -3434,7 +3434,7 @@ async function _gSetLiveImpl(on) {
       console.warn('[live] client render failed', e);
       _gStopClientLive();
       // Graphs with client-only nodes cannot fall back to the server.
-      if (gGraphHasClientNode()) {
+      if (gGraphRunsOnClient()) {
         gSetStatus('Client live error: ' + e.message);
         _gSetLiveState(false);
         return;
@@ -3660,6 +3660,19 @@ function gPopOutViewer() {
   gRange.appendChild(mkLabel('Start')); const inStart = mkNum(tlStart.value, 48); gRange.appendChild(inStart);
   gRange.appendChild(mkLabel('End'));   const inEnd   = mkNum(tlEnd.value, 48);   gRange.appendChild(inEnd);
   gRange.appendChild(mkLabel('FPS'));   const inFps   = mkNum(tlFps.value, 40);   gRange.appendChild(inFps);
+  // Live cook-rate limiter, mirrored from the main timeline bar. The pop-out
+  // has no stylesheet, so pull the accent off the opener instead of baking in
+  // a colour that ignores the active theme.
+  const _accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#e8833a';
+  const chkLimit = d.createElement('input');
+  chkLimit.type = 'checkbox';
+  chkLimit.checked = !!gFpsLimitEl?.checked;
+  chkLimit.style.cssText = `accent-color:${_accent};width:12px;height:12px;margin:0 0 0 6px;cursor:pointer`;
+  const labLimit = mkLabel('⏱ limit');
+  labLimit.title = 'Limit live cooking to the FPS above';
+  labLimit.style.cursor = 'pointer';
+  labLimit.addEventListener('click', () => { chkLimit.checked = !chkLimit.checked; fire(chkLimit, 'change'); });
+  gRange.append(chkLimit, labLimit);
 
   // Name
   const gName = mkGroup();
@@ -3758,6 +3771,11 @@ function gPopOutViewer() {
   const proxyNum = (input, target) => input.addEventListener('input', () => { target.value = input.value; fire(target, 'input'); fire(target, 'change'); });
   inFrame.addEventListener('input', () => { tlFrame.value = inFrame.value; fire(tlFrame, 'input'); });
   proxyNum(inStart, tlStart); proxyNum(inEnd, tlEnd); proxyNum(inFps, tlFps);
+  chkLimit.addEventListener('change', () => {
+    if (!gFpsLimitEl) return;
+    gFpsLimitEl.checked = chkLimit.checked;
+    fire(gFpsLimitEl, 'change');
+  });
   inName.addEventListener('input', () => { tlName.value = inName.value; fire(tlName, 'input'); });
   btnPrev.addEventListener('click', () => tlPrev.click());
   btnPlay.addEventListener('click', () => tlPlay.click());
@@ -3782,6 +3800,7 @@ function gPopOutViewer() {
     if (d.activeElement !== inStart) inStart.value = tlStart.value;
     if (d.activeElement !== inEnd)   inEnd.value = tlEnd.value;
     if (d.activeElement !== inFps)   inFps.value = tlFps.value;
+    if (gFpsLimitEl) chkLimit.checked = gFpsLimitEl.checked;
     if (d.activeElement !== inName)  inName.value = tlName.value;
     btnPlay.textContent = tlPlay.textContent;
     btnLive.style.background = gLiveMode ? '#2b6' : '#26262c';
@@ -3794,6 +3813,31 @@ function gPopOutViewer() {
 
   _gStartMirror(canvas, () => w.closed, w);
 }
+
+// ── Output backdrop ──────────────────────────────────────────────
+// Swaps the node-graph's dot grid for a fitted mirror of the preview. It reuses
+// the same mirror machinery as fullscreen and the pop-out, so it follows the
+// preview through every source swap (live canvas / clip / rendered frame).
+const gBdBtn    = document.getElementById('pvh-backdrop');
+const gBdCanvas = document.getElementById('gbd-canvas');
+
+function gSetBackdrop(on, quiet = false) {
+  gCanvasWrap.classList.toggle('bd-on', on);
+  gBdBtn.classList.toggle('on', on);
+  gBdBtn.title = on ? 'Back to the grid background' : 'Use the output as the node-graph background';
+  if (on) {
+    // The loop re-resolves the source every tick, so a preview that only
+    // appears later is picked up on its own — fine to enable on an empty one.
+    _gStartMirror(gBdCanvas, () => !gCanvasWrap.classList.contains('bd-on'));
+    if (!quiet && !_gPreviewSource()) gShowToast('No output yet — the backdrop fills in on the next render');
+  } else {
+    _gStopMirror(gBdCanvas);
+  }
+  try { localStorage.setItem('graph-output-backdrop', on ? '1' : ''); } catch {}
+}
+gBdBtn.addEventListener('click', () => gSetBackdrop(!gCanvasWrap.classList.contains('bd-on')));
+// Restored quietly — on a cold load there is never a source to mirror yet.
+try { if (localStorage.getItem('graph-output-backdrop') === '1') gSetBackdrop(true, true); } catch {}
 
 document.getElementById('pvh-popout').addEventListener('click', gPopOutViewer);
 document.getElementById('pvh-fullscreen').addEventListener('click', gOpenFullscreen);
@@ -3908,7 +3952,7 @@ function gDoAutoGen() {
   // under feature #1) hot-swaps on param edits — instant, no server round-trip.
   if (_gClientLiveActive) { gClientLiveRefresh(); return; }
   // Client-only graphs (3D/p5): one-shot browser render in auto mode.
-  if (gGraphHasClientNode()) {
+  if (gGraphRunsOnClient()) {
     if (gAutoGen && gNodes.length) {
       clearTimeout(_autoGenTimer);
       _autoGenTimer = setTimeout(() => { gClientRunOnce().catch(e => console.error(e)); }, 80);
@@ -3933,8 +3977,7 @@ function gDoAutoGen() {
   _autoGenTimer = setTimeout(() => {
     gAutoGenAbort = new AbortController();
     const body = {
-      nodes: gNodes.map(n => gSerializeNodeForApi(n)),
-      edges: gEdges.map(e=>({src_node:e.src_node,src_port:e.src_port,dst_node:e.dst_node,dst_port:e.dst_port,feedback:e.feedback})),
+      ...gServerGraphPayload(),
       seed: 42, frames: 1,
       width: gCanvasW, height: gCanvasH,
     };
@@ -5077,7 +5120,7 @@ async function tlDoRenderSequence() {
   const total = end - start + 1;
 
   // 3D / client-rendered graphs export entirely in the browser.
-  if (gGraphHasClientNode()) { await tlDoClientExport(start, end, fps, name, total); return; }
+  if (gGraphRunsOnClient()) { await tlDoClientExport(start, end, fps, name, total); return; }
 
   tlRenderBtn.disabled        = true;
   tlProgressDiv.style.display = 'flex';
@@ -5086,9 +5129,13 @@ async function tlDoRenderSequence() {
 
   tlSeqAbort = new AbortController();
 
+  // Same client-only strip as gServerGraphPayload — this path carries its own
+  // node shape (animParams) so it cannot share the helper, only its rule.
+  const tlDrop = new Set(gNodes.filter(n => gNodeDefs[n.method_id]?.clientExec).map(n => n.id));
+
   const body = {
     graph: {
-      nodes: gNodes.map(n => ({
+      nodes: gNodes.filter(n => !tlDrop.has(n.id)).map(n => ({
         id: n.id, method_id: n.method_id, params: n.params,
         animParams: n.animParams || {},
         x: n.x, y: n.y, render: !!n.render, dirty: n.dirty !== false,
@@ -5097,7 +5144,7 @@ async function tlDoRenderSequence() {
         paramKeyframes: n.paramKeyframes || {},
         prebake: n.prebake || 0,
       })),
-      edges: gEdges.map(e => ({
+      edges: gEdges.filter(e => !tlDrop.has(e.src_node) && !tlDrop.has(e.dst_node)).map(e => ({
         src_node: e.src_node, src_port: e.src_port,
         dst_node: e.dst_node, dst_port: e.dst_port, feedback: e.feedback,
       })),
@@ -5283,7 +5330,7 @@ function gLoad() {
 async function gRestoreGraph() {
   if (!gNodes.length && !gEdges.length) return;
   if (!Object.keys(gNodeDefs).length) {
-    gNodeDefs = await fetch('/api/node-defs').then(r=>r.json());
+    gNodeDefs = await gFetchNodeDefs();
     gRenderPalette(); gPaletteLoaded=true;
   }
   gApplyPan();
@@ -5381,7 +5428,7 @@ async function gLoadGraph(data) {
 
   // Ensure node defs are ready
   if (!Object.keys(gNodeDefs).length) {
-    gNodeDefs = await fetch('/api/node-defs').then(r => r.json());
+    gNodeDefs = await gFetchNodeDefs();
     gRenderPalette(); gPaletteLoaded = true;
   }
 
@@ -5727,7 +5774,7 @@ function gConnectEvents() {
     const es = new EventSource('/api/events');
     es.addEventListener('node-defs-updated', async () => {
         console.log('[hot-reload] node defs updated, refreshing...');
-        await gLoadMethodPalette();
+        await gLoadMethodPalette({ force: true });
         if (typeof gLoadPortTypes === 'function') await gLoadPortTypes();
         gShowToast('Methods updated');
         // Notify Node Doctor apply flow that hot-reload completed

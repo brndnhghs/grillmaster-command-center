@@ -171,7 +171,11 @@ def _broadcast_ws_frame(jpeg_bytes: bytes, ws_meta: dict | None = None):
        "node_timings": {id→ms}, "node_names": {id→name},
        "node_errors": {id→str},
        "canvas_w": int, "canvas_h": int,
+       "fps_limit": bool, "target_fps": float,
        "img": "<base64-jpeg>"}
+
+    Note `fps` is cook throughput (1/cook_ms), not the delivered rate — when
+    fps_limit is on, frames arrive at target_fps.
 
     Falls back to binary JPEG if ws_meta is None (should not happen in normal use).
     """
@@ -196,6 +200,8 @@ def _broadcast_ws_frame(jpeg_bytes: bytes, ws_meta: dict | None = None):
             "edge_transport": ws_meta.get("edge_transport", {}),
             "canvas_w":     ws_meta.get("canvas_w", 0),
             "canvas_h":     ws_meta.get("canvas_h", 0),
+            "fps_limit":    ws_meta.get("fps_limit", False),
+            "target_fps":   ws_meta.get("target_fps", 0.0),
             "img":          base64.b64encode(jpeg_bytes).decode("ascii"),
         }
         payload_text  = json.dumps(msg, separators=(",", ":"))
@@ -1297,6 +1303,8 @@ class GraphRequest(BaseModel):
     width: int = 768
     height: int = 512
     graph_id: str | None = None  # optional shared-doc id; if set, live loop reads this doc each frame
+    fps: float = 24.0        # timeline FPS — the live cook-rate limiter's target
+    fps_limit: bool = False  # when True the live loop paces its cooks to `fps`
 
 
 @app.post("/api/graph/{gid}/execute")
@@ -1556,7 +1564,15 @@ _live_stats: dict = {
     # graph topology
     "active_nodes": 0, "active_edges": 0,
     "canvas_w": 0, "canvas_h": 0,
+    # cook-rate limiter
+    "fps_limit": False, "target_fps": 0.0,
 }
+
+# Live cook-rate limiter. Deliberately NOT captured by the loop closure: the
+# loop re-reads it every frame, so retuning the rate is a hot-swap (a running
+# render keeps its executor and sim caches) instead of a thread restart.
+LIVE_DISPLAY_FPS_CAP = 30.0
+_live_rate: dict = {"limit": False, "fps": 24.0}
 
 # Persistent executor — survives hot-swaps so Arch-A sim caches are kept
 _live_executor = None          # GraphExecutor | None
@@ -1699,6 +1715,17 @@ def live_graph_sim(req: GraphRequest):
         seed = req.seed
         width, height = req.width, req.height
 
+        # ── Cook-rate limiter ─────────────────────────────────────────
+        # Off: cook as fast as the graph allows, capped at the display rate.
+        # On: cook one frame per 1/fps second so a heavy graph stops burning
+        # the machine on frames nobody sees, and live runs at the tempo it
+        # will export at. Written here (not into the loop closure) so this is
+        # a hot-swap — the running loop picks it up on its next frame.
+        _live_rate["limit"] = bool(req.fps_limit)
+        _live_rate["fps"] = max(0.1, float(req.fps or 24.0))
+        _live_stats["fps_limit"]  = _live_rate["limit"]
+        _live_stats["target_fps"] = _live_rate["fps"] if _live_rate["limit"] else 0.0
+
         # ── Hot-swap vs restart ───────────────────────────────────────
         # gid, canvas and seed are captured by the loop closure (and decide
         # executor identity), so changing one needs a new thread. Everything
@@ -1777,7 +1804,6 @@ def live_graph_sim(req: GraphRequest):
             # Params snapshot for per-node change detection (excludes volatile keys)
             _last_params: dict[str, dict] = {}
             LIVE_TOTAL_FRAMES = 300
-            _frame_interval = 1.0 / 30.0
             print(f"[live-sim] starting loop gen={my_gen}, {len(nodes)} nodes, "
                   f"{len(edges)} edges, {_inv_msg}")
             while not cancel.is_set():
@@ -1919,11 +1945,18 @@ def live_graph_sim(req: GraphRequest):
                         print("[live-sim] 10 consecutive failures — stopping loop")
                         break
                     time.sleep(0.5)
-                # Throttle to ~30fps so the browser can display each frame
+                # Pace the next cook: the timeline FPS when the limiter is on,
+                # otherwise ~30fps so the browser can display each frame. Read
+                # per frame, so a limiter/FPS change retunes this loop in place.
+                _target_fps = (_live_rate["fps"] if _live_rate["limit"]
+                               else LIVE_DISPLAY_FPS_CAP)
+                _frame_interval = 1.0 / max(0.1, _target_fps)
                 _elapsed = time.monotonic() - _tick_start
                 _sleep = _frame_interval - _elapsed
                 if _sleep > 0:
-                    time.sleep(_sleep)
+                    # Wake early on cancel so a stop is not stuck behind a long
+                    # limiter interval (1 fps ⇒ a whole second of dead sleep).
+                    cancel.wait(_sleep)
 
         _live_sim_cancel = cancel
         # Named so a stacked loop is visible in threading.enumerate() / a
