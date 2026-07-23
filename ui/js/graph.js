@@ -180,6 +180,7 @@ const gBackdrop     = document.getElementById('graph-backdrop');
 const gFsOverlay    = document.getElementById('graph-img-fullscreen');
 const gFsImg        = document.getElementById('graph-fs-img');
 const gFsVideo      = document.getElementById('graph-fs-video');
+const gFsCanvas     = document.getElementById('graph-fs-canvas');
 const gMainPreview  = document.getElementById('graph-main-preview');
 const gGraphSidebar = document.getElementById('graph-sidebar');
 
@@ -335,11 +336,7 @@ function _tlDisplayBlob(blob) {
   if (!gLivePreviewImg) {
     gMainPreview.innerHTML = '';
     gLivePreviewImg = document.createElement('img');
-    gLivePreviewImg.addEventListener('click', () => {
-      gFsVideo.style.display = 'none';
-      gFsImg.src = gLivePreviewImg.src; gFsImg.style.display = '';
-      gFsOverlay.classList.add('visible');
-    });
+    gLivePreviewImg.addEventListener('click', () => gOpenFullscreen());
     gMainPreview.appendChild(gLivePreviewImg);
     gMainPreview.classList.add('active');
     gPreviewShow();
@@ -455,6 +452,7 @@ gPreviewToggle.addEventListener('click', e => e.stopPropagation());
 gFsOverlay.addEventListener('click', () => {
   gFsOverlay.classList.remove('visible');
   gFsVideo.pause(); gFsVideo.src = '';
+  _gStopMirror(gFsCanvas);            // stop any live canvas mirror loop
 });
 
 // ── Load port types ────────────────────────────────────────────
@@ -1355,6 +1353,12 @@ function gCategoryColor(cat) {
   return _gCatColors[cat];
 }
 
+// Category → header glyph (falls back to the plain colour chip when unknown)
+const _gCatIcons = {
+  gpu_shaders: '⚡', client_3d: '🧊', p5_sketches: '🎨', ml_models: '🧠',
+  simulations: '🌀', cli_tools: '⌨️', io: '📁', channels: '🎛️',
+};
+
 function gRenderNode(node) {
   const def = gNodeDefs[node.method_id];
   if (!def) return;
@@ -1371,7 +1375,10 @@ function gRenderNode(node) {
 
   const header = document.createElement('div');
   header.className = 'gnode-header';
+  const catIco = _gCatIcons[def.category];
+  if (catIco) el.classList.add('has-cat-ico');   // icon replaces the colour chip
   header.innerHTML = `<button class="gnode-delete" title="Delete">✕</button>
+    ${catIco ? `<span class="gnode-cat-ico" title="${escHtml(def.category)}">${catIco}</span>` : ''}
     <span class="gnode-title">${escHtml(def.name)}</span>
     <button class="gnode-render${node.render ? ' active' : ''}" title="Set as render target">◎</button>`;
   el.appendChild(header);
@@ -2770,9 +2777,7 @@ function gMountClientCanvas(canvas) {
   });
   canvas.onclick = () => {
     if (moved) { moved = false; return; } // a drag, not a click — don't fullscreen
-    gFsImg.src = canvas.toDataURL('image/png');
-    gFsImg.style.display = '';
-    document.getElementById('graph-fs-overlay').style.display = 'flex';
+    gOpenFullscreen();
   };
   canvas.style.cursor = gGraphHas3DScene() ? 'grab' : '';
 
@@ -2989,14 +2994,16 @@ let _gLiveWsFallback = false; // true once WS failed → using MJPEG
 let _gLiveStatTimer = null;   // poll timer (fallback only)
 
 // ── Live frame metadata readout ────────────────────────────────
-const _lmrFrame = document.getElementById('lmr-frame');
-const _lmrMs    = document.getElementById('lmr-ms');
-const _lmrFps   = document.getElementById('lmr-fps');
-const _lmrErr   = document.getElementById('lmr-err');
-const _lmrBars  = document.getElementById('lmr-bars');
-
+// Looked up per frame, not cached: gSetLive rebuilds the preview's innerHTML,
+// which recreates #live-meta-readout — cached references would go stale and
+// the readout would sit at "frame –" forever.
 function _gUpdateLiveMeta(msg) {
   if (!msg) return;
+  const _lmrFrame = document.getElementById('lmr-frame');
+  const _lmrMs    = document.getElementById('lmr-ms');
+  const _lmrFps   = document.getElementById('lmr-fps');
+  const _lmrErr   = document.getElementById('lmr-err');
+  const _lmrBars  = document.getElementById('lmr-bars');
   if (_lmrFrame) _lmrFrame.textContent = 'frame ' + msg.frame;
   if (_lmrMs)    _lmrMs.textContent    = msg.cook_ms + 'ms';
   if (_lmrFps)   _lmrFps.textContent   = msg.fps + ' fps';
@@ -3048,12 +3055,94 @@ function _gUpdateLiveMeta(msg) {
       _lmrBars.appendChild(bar);
     });
   }
+  // Per-node meters + heat glow on the graph canvas, edge-flow march
+  gApplyNodeMetrics(msg);
   // Feed into Diagnostics tab — diagRender is exposed globally from the IIFE
   if (typeof window.diagRender === 'function') {
     const paused = typeof window.diagIsPaused === 'function' ? window.diagIsPaused() : false;
     if (!paused) window.diagRender({...msg, running: true, sim_cache_entries: 0});
   }
 }
+
+// ── Live node metrics on the canvas ────────────────────────────
+// Each WS frame carries node_timings {id→ms}. Every node gets a meter strip
+// (icon · cook ms · share-of-frame bar) coloured by its share of the frame,
+// the hottest node breathes, cached/reused nodes frost over, and the wires
+// march at a tempo derived from the measured fps.
+const _gGraphSvg = document.getElementById('graph-svg');
+// graph.py records a tiny "reuse cost" for cache-skipped nodes so node_timings
+// stays complete — below this threshold the node didn't actually cook.
+const _G_REUSE_MS = 0.08;
+let _gMetricsLastApply = 0, _gMetricsLastFrame = 0;
+
+function gApplyNodeMetrics(msg) {
+  if (!msg.node_timings || !gNodes.length) return;
+  _gMetricsLastFrame = performance.now();
+  // Edge-flow tempo tracks fps (faster frames → faster march), clamped sane
+  _gGraphSvg.classList.add('flowing');
+  if (msg.fps > 0) {
+    const dur = Math.min(2, Math.max(0.25, 18 / msg.fps));
+    _gGraphSvg.style.setProperty('--flow-dur', dur.toFixed(2) + 's');
+  }
+  // Throttle the DOM writes — WS frames can arrive at 30+ fps
+  if (_gMetricsLastFrame - _gMetricsLastApply < 120) return;
+  _gMetricsLastApply = _gMetricsLastFrame;
+
+  const t = msg.node_timings, errs = msg.node_errors || {};
+  let total = 0, hotId = null, hotMs = -1;
+  for (const [nid, ms] of Object.entries(t)) {
+    total += ms;
+    if (ms > hotMs) { hotMs = ms; hotId = nid; }
+  }
+  total = total || 1;
+
+  for (const n of gNodes) {
+    const el = document.getElementById('gnode-' + n.id);
+    if (!el) continue;
+    let meter = el.querySelector('.gnode-meter');
+    if (!meter) {
+      meter = document.createElement('div');
+      meter.className = 'gnode-meter';
+      meter.innerHTML = '<span class="gnm-ico"></span><span class="gnm-ms">–</span><div class="gnm-bar"><i></i></div>';
+      el.appendChild(meter);
+    }
+    const ms     = t[n.id];
+    const cooked = ms !== undefined && ms > _G_REUSE_MS;
+    const cached = ms !== undefined && !cooked;
+    const share  = cooked ? ms / total : 0;
+    const err    = errs[n.id];
+    el.classList.toggle('gnode-cached', cached && !err);
+    el.classList.toggle('heat-cool', cooked && share < 0.18);
+    el.classList.toggle('heat-warm', cooked && share >= 0.18 && share < 0.45);
+    el.classList.toggle('heat-hot',  cooked && share >= 0.45);
+    el.classList.toggle('gnode-hottest', cooked && n.id === hotId && hotMs >= 1);
+    const def = gNodeDefs[n.method_id] || {};
+    const isGpu = def.category === 'gpu_shaders'
+      || ((msg.node_names || {})[n.id] || def.name || '').toLowerCase().startsWith('gpu');
+    const ico = meter.querySelector('.gnm-ico');
+    ico.textContent = err ? '⚠' : cached ? '❄' : isGpu ? '⚡' : '⏱';
+    ico.title = err ? err.split('\n')[0]
+      : cached ? 'cached — result reused this frame'
+      : (isGpu ? 'GPU cook time' : 'cook time');
+    meter.querySelector('.gnm-ms').textContent =
+      ms === undefined ? '–' : cached ? 'cached'
+      : ms >= 10 ? Math.round(ms) + 'ms' : ms.toFixed(1) + 'ms';
+    meter.querySelector('.gnm-bar > i').style.width =
+      cooked ? Math.max(3, Math.round(share * 100)) + '%' : '0%';
+  }
+}
+
+// Stop the motion (edge march + hottest pulse) when frames stop arriving —
+// covers live stop, WS drop, and render completion in one place. The last
+// measured meter values stay visible on the nodes.
+function gClearLiveMotion() {
+  _gGraphSvg.classList.remove('flowing');
+  gNodesEl.querySelectorAll('.gnode-hottest').forEach(el => el.classList.remove('gnode-hottest'));
+}
+setInterval(() => {
+  if (_gGraphSvg.classList.contains('flowing')
+      && performance.now() - _gMetricsLastFrame > 2000) gClearLiveMotion();
+}, 1000);
 
 // ── MJPEG status poll (fallback path only) ─────────────────────
 async function _gPollLiveStats() {
@@ -3076,6 +3165,29 @@ function gLiveGraphBody(stop) {
     seed: 42, frames: stop ? 0 : 1,
     width: gCanvasW, height: gCanvasH,
   };
+}
+
+// Push an edited graph into the already-running live loop. Transport
+// (WS/MJPEG, canvas, preview chrome) is left completely alone — the server
+// loop re-reads the graph every frame, so this is just a doc update. Only
+// one swap is ever in flight: a newer edit aborts the older POST.
+let _gLiveSwapAbort = null;
+async function gLiveHotSwap() {
+  if (!gLiveMode) return;
+  if (_gClientLiveActive) { gClientLiveRefresh(); return; }
+  if (_gLiveSwapAbort) _gLiveSwapAbort.abort();
+  const ac = _gLiveSwapAbort = new AbortController();
+  try {
+    await fetch('/api/graph/live', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(gLiveGraphBody(false)),
+      signal: ac.signal,
+    });
+  } catch (e) {
+    if (e.name !== 'AbortError') gSetStatus('Live swap: ' + e.message);
+  } finally {
+    if (_gLiveSwapAbort === ac) _gLiveSwapAbort = null;
+  }
 }
 
 // ── WebSocket live: open connection, draw frames, pass metadata ──
@@ -3125,6 +3237,10 @@ function _gOpenLiveWs() {
 
   ws.onerror = () => {};
   ws.onclose = () => {
+    // Only clear shared state if this is still the current socket — a
+    // superseded socket closing late must not orphan the live one's
+    // references (that left _gTeardownLive unable to close it).
+    if (_gLiveWs !== ws) return;
     clearInterval(_gLiveWsPingTimer); _gLiveWsPingTimer = null;
     _gLiveWs = null;
     // Fall back to MJPEG if live mode is still on
@@ -3135,7 +3251,9 @@ function _gOpenLiveWs() {
     }
   };
 
-  // Keepalive ping every 15 s
+  // Keepalive ping every 15 s. Clear any previous timer first so a restart
+  // can't leave an orphan interval pinging a dead socket forever.
+  if (_gLiveWsPingTimer) clearInterval(_gLiveWsPingTimer);
   _gLiveWsPingTimer = setInterval(() => {
     if (ws.readyState === WebSocket.OPEN) ws.send('ping');
   }, 15000);
@@ -3264,9 +3382,22 @@ function _gSetLiveState(on) {
   gLiveMode = on;
   gLiveBtn.classList.toggle('active', on);
   gLiveBtnDesk.classList.toggle('active', on);
+  document.getElementById('pvh-live-pill')?.classList.toggle('on', on);
+  if (!on) gClearLiveMotion();
 }
 
-async function gSetLive(on) {
+// Toggling live is async (renderability probe + a POST), so two overlapping
+// calls could both run the start path and open two transports. Serialize
+// them: each toggle waits for the previous one to settle.
+let _gLiveToggleChain = Promise.resolve();
+function gSetLive(on) {
+  _gLiveToggleChain = _gLiveToggleChain
+    .catch(() => {})
+    .then(() => _gSetLiveImpl(on));
+  return _gLiveToggleChain;
+}
+
+async function _gSetLiveImpl(on) {
   // Live preview runs on the browser GPU when the whole graph is client-
   // renderable (feature #1): 3D/p5/custom-shader nodes AND the existing GPU
   // shader nodes (via the shader parity layer). Otherwise the server /api/
@@ -3322,6 +3453,10 @@ async function gSetLive(on) {
   _gSetPreviewMode(on ? 'server' : '—');
 
   if (on) {
+    // Close whatever transport is already attached before building a new
+    // one. Starting while live (re-toggle, restart after an error) used to
+    // leak the old socket, its ping timer and the MJPEG stream.
+    _gTeardownLive();
     gMainPreview.innerHTML = '';
     gLivePreviewImg = null;
     gLiveCanvas = null; gLiveImg = null;
@@ -3331,11 +3466,7 @@ async function gSetLive(on) {
       // Primary path: canvas + WebSocket
       gLiveCanvas = document.createElement('canvas');
       gLiveCanvas.id = 'live-ws-canvas';
-      gLiveCanvas.onclick = () => {
-        gFsImg.src = gLiveCanvas.toDataURL('image/jpeg', 0.92);
-        gFsImg.style.display = '';
-        document.getElementById('graph-fs-overlay').style.display = 'flex';
-      };
+      gLiveCanvas.onclick = () => gOpenFullscreen();
       gMainPreview.appendChild(gLiveCanvas);
       gMainPreview.classList.add('active', 'ws-live');
       gPreviewShow();
@@ -3373,71 +3504,292 @@ function gToggleLive() {
 gLiveBtn.addEventListener('click', gToggleLive);
 gLiveBtnDesk.addEventListener('click', gToggleLive);
 
-// ── Preview chrome: pop-out viewer + Picture-in-Picture ───────
-// The preview's innerHTML is rebuilt by several flows, so the toolbar is
-// re-mounted by a MutationObserver instead of patching every rebuild site.
-const gPreviewToolbar = document.createElement('div');
-gPreviewToolbar.id = 'preview-toolbar';
-gPreviewToolbar.innerHTML =
-  '<button id="preview-pip-btn" title="Picture-in-Picture" style="display:none">▣</button>' +
-  '<button id="preview-popout-btn" title="Pop out viewer">⧉</button>';
+// ── Preview chrome: header actions (pop-out / PiP / fullscreen) ───────
+// The buttons live in the always-visible #preview-header, so they survive the
+// preview's innerHTML rebuilds; the MutationObserver only keeps the PiP
+// button's visibility in sync with whether a <video> is currently mounted.
+const gPvhPip = document.getElementById('pvh-pip');
 
 function gSyncPreviewChrome() {
-  const hasContent = !!gMainPreview.querySelector('img, video');
-  if (hasContent && !gPreviewToolbar.isConnected) gMainPreview.appendChild(gPreviewToolbar);
-  const pip = gPreviewToolbar.querySelector('#preview-pip-btn');
   const hasVideo = !!gMainPreview.querySelector('video');
-  pip.style.display = (hasVideo && document.pictureInPictureEnabled) ? '' : 'none';
+  gPvhPip.style.display = (hasVideo && document.pictureInPictureEnabled) ? '' : 'none';
 }
 new MutationObserver(gSyncPreviewChrome).observe(gMainPreview, { childList: true });
 
-function _gImgSrcForPopout(img) {
-  // blob: URLs get revoked as the timeline scrubs — snapshot to a data URL
-  if (!img.src.startsWith('blob:')) return img.src;
-  try {
-    const c = document.createElement('canvas');
-    c.width = img.naturalWidth || img.width;
-    c.height = img.naturalHeight || img.height;
-    c.getContext('2d').drawImage(img, 0, 0);
-    return c.toDataURL('image/png');
-  } catch { return img.src; }
+// ── Live preview mirroring ───────────────────────────────────────
+// The main preview swaps between a <canvas> (live: WS or client-GPU), a
+// <video> (encoded clip) and an <img> (single rendered frame). To show the
+// *moving* feed in a second surface (fullscreen overlay, pop-out window) we
+// copy whatever element is currently mounted into a target <canvas> every
+// animation frame, re-resolving the source each tick so mode switches follow
+// automatically. This is why the old pop-out froze on one frame — it snapshotted
+// once (or pointed a second <img> at a stream the client-GPU path never feeds).
+function _gPreviewSource() {
+  return gMainPreview.querySelector('canvas')
+      || gMainPreview.querySelector('video')
+      || gMainPreview.querySelector('img');
 }
+function _gSrcDims(el) {
+  if (el.tagName === 'VIDEO') return [el.videoWidth, el.videoHeight];
+  if (el.tagName === 'IMG')   return [el.naturalWidth, el.naturalHeight];
+  return [el.width, el.height]; // canvas
+}
+const _gMirrors = new Map(); // target canvas → { raf, win }
+// `rafWin` is the window whose requestAnimationFrame drives the loop. For a
+// pop-out it must be the child window — the parent tab is backgrounded while the
+// user watches the pop-out, and background-tab rAF is throttled to ~1fps.
+function _gStartMirror(target, stopWhen, rafWin) {
+  _gStopMirror(target);
+  const win = rafWin || window;
+  const ctx = target.getContext('2d');
+  const rec = { raf: 0, win };
+  _gMirrors.set(target, rec);
+  const tick = () => {
+    if (!_gMirrors.has(target)) return;
+    if (stopWhen && stopWhen()) { _gStopMirror(target); return; }
+    const src = _gPreviewSource();
+    if (src) {
+      const [sw, sh] = _gSrcDims(src);
+      if (sw && sh) {
+        if (target.width !== sw || target.height !== sh) { target.width = sw; target.height = sh; }
+        try { ctx.drawImage(src, 0, 0, sw, sh); } catch (_) {}
+      }
+    }
+    rec.raf = win.requestAnimationFrame(tick);
+  };
+  rec.raf = win.requestAnimationFrame(tick);
+}
+function _gStopMirror(target) {
+  const rec = _gMirrors.get(target);
+  if (rec) { try { rec.win.cancelAnimationFrame(rec.raf); } catch (_) {} _gMirrors.delete(target); }
+}
+
+// Fullscreen from the header button — same overlay the click-on-frame path uses.
+// A live/animated canvas is mirrored continuously; a video or a static frame is
+// shown directly.
+function gOpenFullscreen() {
+  const src = _gPreviewSource();
+  if (!src) { gShowToast('Nothing to view yet', true); return; }
+  gFsVideo.style.display = 'none';
+  gFsImg.style.display = 'none';
+  gFsCanvas.style.display = 'none';
+  _gStopMirror(gFsCanvas);
+  if (src.tagName === 'CANVAS') {
+    gFsCanvas.style.display = '';
+    _gStartMirror(gFsCanvas, () => !gFsOverlay.classList.contains('visible'));
+  } else if (src.tagName === 'VIDEO' && (src.currentSrc || src.src)) {
+    gFsVideo.src = src.currentSrc || src.src;
+    gFsVideo.style.display = '';
+  } else if (src.tagName === 'IMG' && src.src) {
+    gFsImg.src = src.src;
+    gFsImg.style.display = '';
+  } else {
+    gShowToast('Nothing to view yet', true); return;
+  }
+  gFsOverlay.classList.add('visible');
+}
+
+// ── Pop-out player ───────────────────────────────────────────────
+// A second-window player that mirrors the live feed and re-hosts the full
+// timeline control set. Controls proxy straight to the main-window elements
+// (same origin, so the child document is built + wired from this realm), so
+// every existing behaviour — scrubbing, play, render-sequence, live toggle,
+// canvas size — is reused rather than reimplemented.
+const _GPOPOUT_PRESETS = ['768x512', '512x512', '1024x576', '1280x720', '1920x1080'];
+let _gPopoutWin = null;
 
 function gPopOutViewer() {
-  const vid = gMainPreview.querySelector('video');
-  const img = gMainPreview.querySelector('img');
-  let body = null, title = 'Viewer';
-  if (gLiveMode) {
-    body = `<img src="${location.origin}/api/live/stream">`;
-    title = 'Live';
-  } else if (vid && (vid.currentSrc || vid.src)) {
-    body = `<video src="${vid.currentSrc || vid.src}" controls autoplay loop></video>`;
-    title = 'Video';
-  } else if (img && img.src) {
-    body = `<img src="${_gImgSrcForPopout(img)}">`;
-    title = 'Frame';
-  }
-  if (!body) { gShowToast('Nothing to pop out yet', true); return; }
-  const w = window.open('', '_blank', 'width=860,height=580');
+  if (_gPopoutWin && !_gPopoutWin.closed) { _gPopoutWin.focus(); return; }
+  const w = window.open('', 'grillmaster-player', 'width=900,height=680');
   if (!w) { gShowToast('Pop-up blocked by the browser', true); return; }
-  w.document.write(
-    `<!DOCTYPE html><html><head><title>Grillmaster — ${title}</title><style>` +
-    'html,body{margin:0;height:100%;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden}' +
-    'img,video{max-width:100vw;max-height:100vh;object-fit:contain}' +
-    '</style></head><body>' + body + '</body></html>');
-  w.document.close();
+  _gPopoutWin = w;
+  const d = w.document;
+  d.title = 'Grillmaster — Player';
+  d.body.style.cssText = 'margin:0;height:100vh;display:flex;flex-direction:column;background:#0b0b0d;color:#e8e8ea;font:13px/1.4 system-ui,sans-serif;overflow:hidden';
+
+  // Stage: mirrored canvas
+  const stage = d.createElement('div');
+  stage.style.cssText = 'flex:1;min-height:0;display:flex;align-items:center;justify-content:center;background:#000;overflow:hidden';
+  const canvas = d.createElement('canvas');
+  canvas.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain';
+  stage.appendChild(canvas);
+  d.body.appendChild(stage);
+
+  // Control bar
+  const bar = d.createElement('div');
+  bar.style.cssText = 'flex:none;display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;padding:8px 12px;background:#151518;border-top:1px solid #2a2a30';
+  d.body.appendChild(bar);
+
+  const mkGroup = () => { const g = d.createElement('div'); g.style.cssText = 'display:flex;gap:5px;align-items:center'; bar.appendChild(g); return g; };
+  const mkLabel = (t) => { const l = d.createElement('label'); l.textContent = t; l.style.cssText = 'color:#9a9aa2;font-size:11px'; return l; };
+  const mkBtn = (t, title) => { const b = d.createElement('button'); b.textContent = t; if (title) b.title = title; b.style.cssText = 'background:#26262c;color:#e8e8ea;border:1px solid #34343c;border-radius:6px;padding:4px 9px;font-size:13px;cursor:pointer'; return b; };
+  const mkNum = (val, wdt) => { const i = d.createElement('input'); i.type = 'number'; i.value = val; i.style.cssText = `width:${wdt}px;background:#0f0f12;color:#e8e8ea;border:1px solid #34343c;border-radius:5px;padding:3px 5px;font-size:12px`; return i; };
+
+  // Frame + transport
+  const gFrame = mkGroup();
+  gFrame.appendChild(mkLabel('Frame'));
+  const inFrame = mkNum(tlFrame.value, 54); gFrame.appendChild(inFrame);
+  const btnPrev = mkBtn('◀', 'Previous frame');
+  const btnPlay = mkBtn(tlPlay.textContent, 'Play / Pause');
+  const btnNext = mkBtn('▶▶', 'Next frame');
+  gFrame.append(btnPrev, btnPlay, btnNext);
+
+  // Start / End / FPS
+  const gRange = mkGroup();
+  gRange.appendChild(mkLabel('Start')); const inStart = mkNum(tlStart.value, 48); gRange.appendChild(inStart);
+  gRange.appendChild(mkLabel('End'));   const inEnd   = mkNum(tlEnd.value, 48);   gRange.appendChild(inEnd);
+  gRange.appendChild(mkLabel('FPS'));   const inFps   = mkNum(tlFps.value, 40);   gRange.appendChild(inFps);
+
+  // Name
+  const gName = mkGroup();
+  gName.appendChild(mkLabel('Name'));
+  const inName = d.createElement('input'); inName.type = 'text'; inName.placeholder = 'my-sequence'; inName.value = tlName.value;
+  inName.style.cssText = 'width:110px;background:#0f0f12;color:#e8e8ea;border:1px solid #34343c;border-radius:5px;padding:3px 6px;font-size:12px';
+  gName.appendChild(inName);
+
+  // Render sequence + live
+  const gActions = mkGroup();
+  const btnRender = mkBtn('🎬 Render Sequence', 'Render the frame range'); gActions.appendChild(btnRender);
+  const btnLive = mkBtn('📺 Live', 'Toggle live preview'); gActions.appendChild(btnLive);
+
+  // Resolution (presets + Custom)
+  const gRes = mkGroup();
+  gRes.appendChild(mkLabel('Size'));
+  const selRes = d.createElement('select');
+  selRes.style.cssText = 'background:#0f0f12;color:#e8e8ea;border:1px solid #34343c;border-radius:5px;padding:3px 5px;font-size:12px;cursor:pointer';
+  for (const p of _GPOPOUT_PRESETS) { const o = d.createElement('option'); o.value = p; o.textContent = p.replace('x', '×'); selRes.appendChild(o); }
+  const optCustom = d.createElement('option'); optCustom.value = 'custom'; optCustom.textContent = 'Custom…'; selRes.appendChild(optCustom);
+  gRes.appendChild(selRes);
+  const inW = mkNum(gCanvasW, 56); const inH = mkNum(gCanvasH, 56);
+  const times = mkLabel('×');
+  const wrapCustom = d.createElement('span'); wrapCustom.style.cssText = 'display:none;gap:4px;align-items:center'; wrapCustom.append(inW, times, inH);
+  gRes.appendChild(wrapCustom);
+  const syncResUI = () => {
+    const key = `${gCanvasW}x${gCanvasH}`;
+    if (_GPOPOUT_PRESETS.includes(key)) { selRes.value = key; wrapCustom.style.display = 'none'; }
+    else { selRes.value = 'custom'; wrapCustom.style.display = 'inline-flex'; inW.value = gCanvasW; inH.value = gCanvasH; }
+  };
+  syncResUI();
+
+  const btnFs = mkBtn('⛶', 'Fullscreen this window'); mkGroup().appendChild(btnFs);
+
+  // ── Scrub bar (bottom strip) ──
+  // Maps the Start…End range onto a draggable track; dragging writes the frame
+  // straight through to the main window's #tl-frame, so scrubbing here drives
+  // the same load-frame path as the main timeline.
+  const scrub = d.createElement('div');
+  scrub.style.cssText = 'flex:none;display:flex;align-items:center;gap:10px;padding:6px 12px 9px;background:#151518;border-top:1px solid #24242a';
+  const track = d.createElement('div');
+  track.style.cssText = 'position:relative;flex:1;height:16px;cursor:pointer;touch-action:none';
+  const rail = d.createElement('div');
+  rail.style.cssText = 'position:absolute;top:6px;left:0;right:0;height:4px;border-radius:2px;background:#2e2e36';
+  const fill = d.createElement('div');
+  fill.style.cssText = 'position:absolute;top:6px;left:0;width:0;height:4px;border-radius:2px;background:#e8833a';
+  const knob = d.createElement('div');
+  knob.style.cssText = 'position:absolute;top:1px;left:0;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.6);pointer-events:none';
+  track.append(rail, fill, knob);
+  const readout = d.createElement('span');
+  readout.style.cssText = 'flex:none;min-width:96px;text-align:right;color:#9a9aa2;font-size:11px;font-variant-numeric:tabular-nums';
+  scrub.append(track, readout);
+  d.body.appendChild(scrub);
+
+  const scrubRange = () => {
+    const s = parseInt(tlStart.value) || 0;
+    const e = parseInt(tlEnd.value) || 24;
+    return [s, Math.max(s, e)];
+  };
+  const paintScrub = () => {
+    const [s, e] = scrubRange();
+    const f = Math.min(e, Math.max(s, parseInt(tlFrame.value) || 0));
+    const pct = e > s ? ((f - s) / (e - s)) * 100 : 0;
+    fill.style.width = pct + '%';
+    knob.style.left = pct + '%';
+    readout.textContent = `${f} / ${e}`;
+  };
+  let scrubbing = false;
+  const scrubTo = (clientX) => {
+    const r = track.getBoundingClientRect();
+    if (!r.width) return;
+    const [s, e] = scrubRange();
+    const ratio = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+    const f = s + Math.round(ratio * (e - s));
+    if (String(f) !== tlFrame.value) { tlFrame.value = f; tlFrame.dispatchEvent(new Event('input', { bubbles: true })); }
+    paintScrub();
+  };
+  track.addEventListener('pointerdown', (ev) => {
+    scrubbing = true;
+    try { track.setPointerCapture(ev.pointerId); } catch (_) {}
+    scrubTo(ev.clientX);
+    ev.preventDefault();
+  });
+  track.addEventListener('pointermove', (ev) => { if (scrubbing) scrubTo(ev.clientX); });
+  const endScrub = (ev) => {
+    if (!scrubbing) return;
+    scrubbing = false;
+    try { track.releasePointerCapture(ev.pointerId); } catch (_) {}
+  };
+  track.addEventListener('pointerup', endScrub);
+  track.addEventListener('pointercancel', endScrub);
+  paintScrub();
+
+  // ── Wire controls to the main window ──
+  const fire = (el, type) => el.dispatchEvent(new Event(type, { bubbles: true }));
+  const proxyNum = (input, target) => input.addEventListener('input', () => { target.value = input.value; fire(target, 'input'); fire(target, 'change'); });
+  inFrame.addEventListener('input', () => { tlFrame.value = inFrame.value; fire(tlFrame, 'input'); });
+  proxyNum(inStart, tlStart); proxyNum(inEnd, tlEnd); proxyNum(inFps, tlFps);
+  inName.addEventListener('input', () => { tlName.value = inName.value; fire(tlName, 'input'); });
+  btnPrev.addEventListener('click', () => tlPrev.click());
+  btnPlay.addEventListener('click', () => tlPlay.click());
+  btnNext.addEventListener('click', () => tlNext.click());
+  btnRender.addEventListener('click', () => tlRenderBtn.click());
+  btnLive.addEventListener('click', () => gToggleLive());
+  btnFs.addEventListener('click', () => { (canvas.requestFullscreen || canvas.webkitRequestFullscreen).call(canvas); });
+  const applyCustom = () => { const cw = parseInt(inW.value) || gCanvasW, ch = parseInt(inH.value) || gCanvasH; _gApplyCanvasSize(cw, ch); gSave(); };
+  selRes.addEventListener('change', () => {
+    if (selRes.value === 'custom') { wrapCustom.style.display = 'inline-flex'; inW.value = gCanvasW; inH.value = gCanvasH; return; }
+    wrapCustom.style.display = 'none';
+    const [cw, ch] = selRes.value.split('x').map(Number);
+    _gApplyCanvasSize(cw, ch); gSave();
+  });
+  inW.addEventListener('change', applyCustom);
+  inH.addEventListener('change', applyCustom);
+
+  // ── Reflect main-window state back into the pop-out ──
+  const sync = () => {
+    if (w.closed) { clearInterval(syncTimer); _gStopMirror(canvas); if (_gPopoutWin === w) _gPopoutWin = null; return; }
+    if (d.activeElement !== inFrame) inFrame.value = tlFrame.value;
+    if (d.activeElement !== inStart) inStart.value = tlStart.value;
+    if (d.activeElement !== inEnd)   inEnd.value = tlEnd.value;
+    if (d.activeElement !== inFps)   inFps.value = tlFps.value;
+    if (d.activeElement !== inName)  inName.value = tlName.value;
+    btnPlay.textContent = tlPlay.textContent;
+    btnLive.style.background = gLiveMode ? '#2b6' : '#26262c';
+    btnLive.style.color = gLiveMode ? '#04120a' : '#e8e8ea';
+    if (d.activeElement !== inW && d.activeElement !== inH) syncResUI();
+    if (!scrubbing) paintScrub();
+  };
+  const syncTimer = setInterval(sync, 150);
+  w.addEventListener('beforeunload', () => { clearInterval(syncTimer); _gStopMirror(canvas); if (_gPopoutWin === w) _gPopoutWin = null; });
+
+  _gStartMirror(canvas, () => w.closed, w);
 }
 
-gPreviewToolbar.addEventListener('click', e => {
-  const btn = e.target.closest('button');
-  if (!btn) return;
-  e.stopPropagation();  // don't trigger the preview's fullscreen click
-  if (btn.id === 'preview-popout-btn') gPopOutViewer();
-  if (btn.id === 'preview-pip-btn') {
-    const v = gMainPreview.querySelector('video');
-    if (v) v.requestPictureInPicture().catch(err => gShowToast('PiP: ' + err.message, true));
-  }
+document.getElementById('pvh-popout').addEventListener('click', gPopOutViewer);
+document.getElementById('pvh-fullscreen').addEventListener('click', gOpenFullscreen);
+gPvhPip.addEventListener('click', () => {
+  const v = gMainPreview.querySelector('video');
+  if (v) v.requestPictureInPicture().catch(err => gShowToast('PiP: ' + err.message, true));
 });
+
+// Collapse to header-only (persisted, desktop)
+const gPvhCollapse = document.getElementById('pvh-collapse');
+function gSetPreviewMin(min) {
+  gPreviewPanel.classList.toggle('pv-min', min);
+  gPvhCollapse.title = min ? 'Expand preview' : 'Collapse preview';
+  try { localStorage.setItem('preview-min', min ? '1' : ''); } catch {}
+}
+gPvhCollapse.addEventListener('click', () => gSetPreviewMin(!gPreviewPanel.classList.contains('pv-min')));
+try { if (localStorage.getItem('preview-min') === '1') gSetPreviewMin(true); } catch {}
 
 // ── Resizable preview height (persisted) ──────────────────────
 const gPvHandle = document.getElementById('preview-resize-handle');
@@ -3467,6 +3819,10 @@ const gPvHandle = document.getElementById('preview-resize-handle');
     dragging = false; gPvHandle.classList.remove('dragging');
     const h = parseInt(getComputedStyle(gMainPreview).height, 10);
     if (h) try { localStorage.setItem('preview-h', String(h)); } catch {}
+  });
+  gPvHandle.addEventListener('dblclick', () => {
+    document.documentElement.style.removeProperty('--pv-h');
+    try { localStorage.removeItem('preview-h'); } catch {}
   });
 })();
 
@@ -3517,9 +3873,10 @@ document.getElementById('settings-token-save').addEventListener('click', () => {
 
 document.getElementById('settings-reset-layout').addEventListener('click', () => {
   try {
-    ['preview-h', 'pane-widths', 'graph-preview-expanded'].forEach(k => localStorage.removeItem(k));
+    ['preview-h', 'pane-widths', 'graph-preview-expanded', 'preview-min'].forEach(k => localStorage.removeItem(k));
   } catch {}
   document.documentElement.style.removeProperty('--pv-h');
+  gPreviewPanel.classList.remove('pv-min');
   gShowToast('Panel sizes reset — reload to apply fully');
 });
 
@@ -3539,9 +3896,11 @@ function gDoAutoGen() {
   }
   if (gLiveMode) {
     // Param edits while live hot-swap the running loop instead of
-    // firing one-shot executes.
+    // firing one-shot executes. This must NOT go through gSetLive(true):
+    // that re-runs the whole start path (new WS, rebuilt preview) and used
+    // to stack a second server render per edit.
     clearTimeout(_autoGenTimer);
-    _autoGenTimer = setTimeout(() => { gSetLive(true); }, 150);
+    _autoGenTimer = setTimeout(gLiveHotSwap, 150);
     return;
   }
   if (!gAutoGen) return;

@@ -1566,6 +1566,16 @@ _live_last_gid:   str  = ""
 _live_last_seed:  int  = 0
 _live_last_canvas: tuple = (0, 0)
 
+# Serializes every use of the shared _live_executor. The loop holds it for the
+# duration of a frame's cook; hot-swap cache surgery takes it too, so neither an
+# orphaned loop nor a concurrent POST can ever cook on the executor at the same
+# time as the current loop (GraphExecutor is not thread-safe).
+_live_exec_lock = threading.RLock()
+# Bumped on every start/stop. A loop whose captured generation is stale exits at
+# the top of its next iteration and never pushes another frame — so an orphan
+# that outlived its join() cannot interleave its frames into the preview.
+_live_gen = 0
+
 # Shared render executor for /api/graph/{gid}/render — one executor, one
 # warm cache, serialized by the lock (the executor is not thread-safe).
 _render_exec_state: dict = {}
@@ -1635,26 +1645,33 @@ def _ensure_executor(
 def live_graph_sim(req: GraphRequest):
     """Start or stop a continuous graph simulation.
 
-    frames == 0 stops; anything else (re)starts. Only one live loop runs at
-    a time — starting while one is active stops the old loop first, so
-    re-POSTing with an edited graph hot-swaps it.
+    frames == 0 stops; anything else starts or hot-swaps.
+
+    Only one live loop ever renders. The loop re-reads the shared graph doc
+    every frame, so an edited graph is absorbed by the *running* loop — a
+    param tweak must never spawn a second render. A thread restart happens
+    only when the request changes something the loop captured at start time
+    (graph id, canvas, seed) or when no loop is running.
 
     The GraphExecutor is kept alive across hot-swaps. Arch-A simulation caches
     survive unchanged hot-swaps; only nodes with changed non-volatile params
     are invalidated.
     """
-    global _live_sim_cancel, _live_sim_thread
+    global _live_sim_cancel, _live_sim_thread, _live_gen
     global _live_executor, _live_last_nodes, _live_last_edges, _live_last_gid, _live_last_seed, _live_last_canvas
     with _live_sim_lock:
-        # Stop any existing loop (both for stop requests and restarts)
-        if _live_sim_thread is not None and _live_sim_thread.is_alive():
-            _live_sim_cancel.set()
-            _live_sim_thread.join(timeout=5.0)
-        _live_sim_thread = None
+        running = _live_sim_thread is not None and _live_sim_thread.is_alive()
+
         if req.frames == 0:
+            # Retire the generation first: a loop stuck mid-cook past the join
+            # timeout still exits on its next iteration and pushes nothing.
+            _live_gen += 1
+            if running:
+                _live_sim_cancel.set()
+                _live_sim_thread.join(timeout=5.0)
+            _live_sim_thread = None
             return {"status": "stopped"}
 
-        cancel = threading.Event()
         # Graph source of truth: the shared doc. The live loop reads it every
         # frame, so a clear (user or agent) stops the render. The client POSTs
         # the current graph in the request body on every start/swap (it does
@@ -1682,21 +1699,54 @@ def live_graph_sim(req: GraphRequest):
         seed = req.seed
         width, height = req.width, req.height
 
+        # ── Hot-swap vs restart ───────────────────────────────────────
+        # gid, canvas and seed are captured by the loop closure (and decide
+        # executor identity), so changing one needs a new thread. Everything
+        # else — params, wiring, node adds/removes — is re-read from the doc
+        # by the running loop, so the POST must not touch the thread at all.
+        # Restarting there was the bug: a slow frame outlived the 5s join and
+        # every further param edit stacked another live loop on the same
+        # executor, until the renders interleaved in the preview and wedged.
+        hot_swap = (
+            running
+            and _live_executor is not None
+            and gid == _live_last_gid
+            and (width, height) == _live_last_canvas
+            and seed == _live_last_seed
+        )
+
+        if not hot_swap:
+            # Retire the old loop before touching the executor, so a full
+            # flush can't land between two of its frames.
+            _live_gen += 1
+            if running:
+                _live_sim_cancel.set()
+                _live_sim_thread.join(timeout=5.0)
+                if _live_sim_thread.is_alive():
+                    # Stuck mid-cook. Safe to proceed: the stale generation
+                    # stops it from pushing another frame, and _live_exec_lock
+                    # keeps the new loop from cooking until it lets go.
+                    print("[live-sim] previous loop still finishing its frame "
+                          "— retired by generation, not restarted")
+            _live_sim_thread = None
+
         # ── Persistent executor: reuse or create ──────────────────────
-        _live_executor, _live_last_nodes, _live_last_edges, \
-            _live_last_gid, _live_last_seed, _live_last_canvas = \
-            _ensure_executor(
-                _live_executor, _live_last_nodes, _live_last_edges,
-                _live_last_gid, _live_last_seed, _live_last_canvas,
-                gid, seed, (width, height),
-                nodes, edges,
-                session_dir=OUTPUT_ROOT / "_live_sim",
-                copy_nodes=True,
-                stats=_live_stats,
-                # Live mode is memory-only transport — nothing reads the
-                # _live_sim dir, so skip every per-node PNG/sidecar write.
-                audit_to_disk=False,
-            )
+        # Held across the cache surgery so invalidation can't race a cook.
+        with _live_exec_lock:
+            _live_executor, _live_last_nodes, _live_last_edges, \
+                _live_last_gid, _live_last_seed, _live_last_canvas = \
+                _ensure_executor(
+                    _live_executor, _live_last_nodes, _live_last_edges,
+                    _live_last_gid, _live_last_seed, _live_last_canvas,
+                    gid, seed, (width, height),
+                    nodes, edges,
+                    session_dir=OUTPUT_ROOT / "_live_sim",
+                    copy_nodes=True,
+                    stats=_live_stats,
+                    # Live mode is memory-only transport — nothing reads the
+                    # _live_sim dir, so skip every per-node PNG/sidecar write.
+                    audit_to_disk=False,
+                )
         executor = _live_executor
         reason = _live_stats.get("cache_flush_reason", "unknown")
         inv = _live_stats.get("last_invalidated", 0)
@@ -1706,6 +1756,15 @@ def live_graph_sim(req: GraphRequest):
             _inv_msg = "seed changed — full flush"
         else:
             _inv_msg = f"selective invalidation: {inv} entries cleared"
+
+        if hot_swap:
+            # The running loop picks the new doc up on its next frame.
+            print(f"[live-sim] hot-swap into running loop, {_inv_msg}")
+            return {"status": "running", "hot_swap": True}
+
+        # ── Restart: the old loop is already retired above ────────────
+        cancel = threading.Event()
+        my_gen = _live_gen
 
         def _live_loop():
             from image_pipeline.core.utils import set_canvas as _set_canvas
@@ -1719,8 +1778,14 @@ def live_graph_sim(req: GraphRequest):
             _last_params: dict[str, dict] = {}
             LIVE_TOTAL_FRAMES = 300
             _frame_interval = 1.0 / 30.0
-            print(f"[live-sim] starting loop, {len(nodes)} nodes, {len(edges)} edges, {_inv_msg}")
+            print(f"[live-sim] starting loop gen={my_gen}, {len(nodes)} nodes, "
+                  f"{len(edges)} edges, {_inv_msg}")
             while not cancel.is_set():
+                # A newer loop (or a stop) has taken over — leave without
+                # cooking or pushing, so two loops never render at once.
+                if _live_gen != my_gen:
+                    print(f"[live-sim] gen {my_gen} superseded — exiting")
+                    break
                 # ── Read the shared graph doc every frame (single source of
                 # truth). A clear (user or agent) empties it → stop the render.
                 with _graph_store_lock:
@@ -1784,9 +1849,16 @@ def live_graph_sim(req: GraphRequest):
                     for n in work_nodes:
                         n["dirty"] = n["id"] in dirty_set
 
-                    flat_outputs, terminal_id, node_errors = executor.execute(
-                        work_nodes, work_edges, seed, frame=frame % LIVE_TOTAL_FRAMES, frames=LIVE_TOTAL_FRAMES
-                    )
+                    # The executor is shared with hot-swap invalidation and
+                    # with any loop still winding down — one cook at a time.
+                    with _live_exec_lock:
+                        flat_outputs, terminal_id, node_errors = executor.execute(
+                            work_nodes, work_edges, seed, frame=frame % LIVE_TOTAL_FRAMES, frames=LIVE_TOTAL_FRAMES
+                        )
+                    # Blocking on that lock can take a whole frame; re-check
+                    # before publishing anything.
+                    if _live_gen != my_gen or cancel.is_set():
+                        break
                     for nid, err in node_errors.items():
                         print(f"[live-sim] node {nid} error:\n{err}")
                     # Use the per-frame doc snapshot, not the (stale) request
@@ -1854,7 +1926,10 @@ def live_graph_sim(req: GraphRequest):
                     time.sleep(_sleep)
 
         _live_sim_cancel = cancel
-        _live_sim_thread = threading.Thread(target=_live_loop, daemon=True)
+        # Named so a stacked loop is visible in threading.enumerate() / a
+        # stack dump instead of hiding behind "Thread-37".
+        _live_sim_thread = threading.Thread(
+            target=_live_loop, name=f"live-sim-{my_gen}", daemon=True)
         _live_sim_thread.start()
         return {"status": "running"}
 
@@ -1862,7 +1937,12 @@ def live_graph_sim(req: GraphRequest):
 @app.get("/api/graph/live/status")
 def live_graph_status():
     running = _live_sim_thread is not None and _live_sim_thread.is_alive()
-    return {"running": running, **_live_stats}
+    # `loops` is the stacked-render canary: it must be 0 or 1. Anything higher
+    # means a retired loop is still winding down (or, if it stays high, that
+    # something restarted the loop instead of hot-swapping it).
+    loops = sum(1 for t in threading.enumerate()
+                if t.name.startswith("live-sim") and t.is_alive())
+    return {"running": running, "loops": loops, "gen": _live_gen, **_live_stats}
 
 
 def _run_graph_job(job_id, nodes, edges, seed, frames, start_frame, out_dir, width=768, height=512):

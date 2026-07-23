@@ -21,6 +21,20 @@
       "runtimeArgs": ["-m", "image_pipeline.server", "--port", "7871"],
       "port": 7871,
       "autoPort": false
+    },
+    {
+      "name": "image-pipeline-verify-2",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": ["-m", "image_pipeline.server", "--port", "7872"],
+      "port": 7872,
+      "autoPort": false
+    },
+    {
+      "name": "image-pipeline-verify-3",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": ["-m", "image_pipeline.server", "--port", "7873"],
+      "port": 7873,
+      "autoPort": false
     }
   ]
 }
