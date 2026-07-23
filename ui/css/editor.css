@@ -549,6 +549,26 @@
     background-image: radial-gradient(circle, var(--grid-dot) 1px, transparent 1px);
     background-size: 24px 24px;
   }
+  /* ── Output backdrop ──────────────────────────────────────
+     When on, the dot grid gives way to a live mirror of the preview. It sits
+     first in the tree with z-index 0, so nodes and wires (positioned, z-index
+     auto) still paint above it, and its own scrim keeps them legible over a
+     bright frame. `contain`, not `cover`: the whole output frame stays visible
+     and uncropped, letterboxed against the pane's base colour. */
+  #graph-canvas-wrap.bd-on { background-image: none; }
+  #gbd-pane {
+    position: absolute; inset: 0; z-index: 0; display: none; pointer-events: none;
+    background: var(--bg0);
+  }
+  #graph-canvas-wrap.bd-on #gbd-pane { display: block; }
+  #gbd-pane canvas {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: contain; display: block;
+  }
+  #gbd-pane::after {
+    content: ''; position: absolute; inset: 0;
+    background: radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0.28) 0%, rgba(0,0,0,0.55) 100%);
+  }
   /* Decorative FX overlay — always transparent to pointer events so drag /
      wiring / context-menus / keyframe-lanes on the DOM graph below are untouched. */
   #graph-overlay {
@@ -990,6 +1010,11 @@
   }
   #preview-header button:hover { color: var(--text); background: var(--bg3); border-color: var(--accent); }
   #preview-header button .pvh-lbl { font-size: 11px; font-weight: 600; }
+  /* Toggles read as lit while engaged, not merely pressed */
+  #preview-header button.on {
+    color: var(--accent); border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+  }
   #pvh-collapse { padding: 0 7px; }
   /* Collapsed to header-only: the chevron flips, everything below hides */
   #graph-preview-panel.pv-min #graph-main-preview,
@@ -1707,6 +1732,23 @@
     border-bottom: 1px solid var(--border); color: var(--muted); font-size: 11px;
   }
   .tl-group { display: flex; align-items: center; gap: 4px; }
+  /* Inline check-toggle for the timeline bar (live cook-rate limiter). Reads
+     as a pill so it does not look like another numeric field. */
+  .tl-toggle {
+    display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+    padding: 2px 7px 2px 5px; margin-left: 2px; user-select: none;
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 999px; color: var(--muted) !important; font-size: 11px;
+    line-height: 1.5; white-space: nowrap; transition: color .12s, border-color .12s, background .12s;
+  }
+  .tl-toggle:hover { color: var(--text) !important; border-color: var(--border-strong); }
+  .tl-toggle input[type=checkbox] {
+    accent-color: var(--accent); width: 12px; height: 12px; margin: 0; cursor: pointer;
+  }
+  .tl-toggle.on {
+    color: var(--accent2) !important; border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+  }
   #tl-progress { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 120px; }
   #tl-progress-bar-wrap { flex: 1; height: 4px; background: #333; border-radius: 2px; min-width: 60px; }
   #tl-progress-bar { height: 4px; background: var(--accent); border-radius: 2px; width: 0%; transition: width 0.2s; }

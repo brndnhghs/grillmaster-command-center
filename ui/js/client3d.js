@@ -333,6 +333,13 @@ class ClientExecutor {
     this._p5 = new Map();
     // Per-node error strings (p5 compile/runtime, GLSL, …) surfaced to the UI.
     this._nodeErrors = {};
+    // Nodes this spine has no implementation for, rebuilt every execute() —
+    // membership is a property of the current graph plus whatever the shader
+    // bundle has taught us so far, so it must not persist like _nodeErrors.
+    // The bundle arrives asynchronously: a GPU twin looks unsupported on the
+    // first frame and supported on the next, and a sticky entry would leave a
+    // permanent error on a node that renders perfectly well.
+    this._unsupported = new Map();
     // Reused scratch for reading a spine RT back into a 2D canvas (filter input).
     this._p5InputCanvas = null; this._p5InputCtx = null;
     this._p5ReadBuf = null; this._p5InputImg = null;
@@ -1172,6 +1179,7 @@ void main(){ f_color = texture(u_texture, vec2(v_uv.x, 1.0 - v_uv.y)).bgra; }`,
    */
   execute(nodes, edges, frame, time) {
     if (!nodes.length) return null;
+    this._unsupported.clear();
     const order = this._topoSort(nodes, edges);
     // node id -> typed output: {kind:'image', rt} | {kind:'geometry'|'material'|
     // 'light'|'camera'|'object3d'|'scene', value, ...}
@@ -1229,8 +1237,16 @@ void main(){ f_color = texture(u_texture, vec2(v_uv.x, 1.0 - v_uv.y)).bgra; }`,
         if (entry && entry.type === 'sim') this.renderGpuSim(node, params, time, frame, rt);
         else this.renderGpuShader(node, params, time, imgTex(node, ['image_in', 'image']), rt);
       } else {
-        const t = imgTex(node, ['image_in', 'image']) || this._blackTex;
-        this._blitMat.uniforms.u_texture.value = t;
+        // No browser implementation for this node — pass the upstream frame
+        // through so a server-only filter degrades to "unfiltered" rather than
+        // killing the preview. Record it either way: with no input to pass
+        // through the result is a black frame, and a silently black canvas is
+        // indistinguishable from a broken renderer.
+        const t = imgTex(node, ['image_in', 'image']);
+        this._unsupported.set(node.id, t
+          ? 'no browser implementation — passing the input frame through unfiltered; render on the server for the real result'
+          : 'no browser implementation and nothing wired to its image input — renders black here; this node only runs on the server');
+        this._blitMat.uniforms.u_texture.value = t || this._blackTex;
         this._quadMesh.material = this._blitMat;
         this.renderer.setRenderTarget(rt);
         this.renderer.clear();
@@ -1296,7 +1312,7 @@ void main(){ f_color = texture(u_texture, vec2(v_uv.x, 1.0 - v_uv.y)).bgra; }`,
 // ─────────────────────────────────────────────────────────────────────────────
 let _executor = null;
 let _rafId = null;
-let _live = null; // { nodes, edges, start, end, fps, onStats }
+let _live = null; // { nodes, edges, start, end, fps, cookFps, onStats }
 
 function _ensureExecutor(width, height) {
   if (!_executor) _executor = new ClientExecutor(width, height);
@@ -1316,20 +1332,34 @@ export async function renderFrame(nodes, edges, frame, width, height, timeSecond
 /**
  * Start the client-side live loop. Advances frame start..end at `fps`, looping,
  * driving u_time from wall clock. `onStats({frame, fps})` fires ~4x/sec.
+ * `cookFps > 0` limits how often the graph is actually executed (the frame
+ * index still tracks wall clock, so playback stays real-time — it just stops
+ * re-cooking the same frame on every display refresh).
  * Returns the executor canvas (caller mounts it).
  */
-export async function startLive({ nodes, edges, start, end, fps, width, height, onStats }) {
+export async function startLive({ nodes, edges, start, end, fps, cookFps, width, height, onStats }) {
   stopLive();
   await prepare(nodes);
   const ex = _ensureExecutor(width, height);
-  _live = { nodes, edges, start, end, fps: fps || 24, onStats };
+  _live = { nodes, edges, start, end, fps: fps || 24, cookFps: cookFps || 0, onStats };
 
   const t0 = performance.now();
-  let frames = 0, lastStat = t0, statFrames = 0;
+  let frames = 0, lastStat = t0, statFrames = 0, lastCook = -Infinity;
 
   const tick = () => {
     if (!_live) return;
     const now = performance.now();
+    // ── Cook-rate limiter ──
+    // rAF still runs at display rate; we simply skip the executes that fall
+    // inside the interval. The 4ms slack keeps a 30fps target from landing
+    // just past a 60Hz vsync and collapsing to 20fps.
+    if (_live.cookFps > 0) {
+      const interval = 1000 / _live.cookFps;
+      if (now - lastCook < interval - 4) { _rafId = requestAnimationFrame(tick); return; }
+      // Hold the cadence on a fixed grid, but resync after a long stall
+      // (tab backgrounded, a slow cook) instead of chasing a backlog.
+      lastCook = (now - lastCook > interval * 2) ? now : lastCook + interval;
+    }
     const elapsed = (now - t0) / 1000;
     const span = Math.max(1, _live.end - _live.start);
     const frame = _live.start + Math.floor(elapsed * _live.fps) % (span + 1);
@@ -1345,6 +1375,17 @@ export async function startLive({ nodes, edges, start, end, fps, width, height, 
   };
   _rafId = requestAnimationFrame(tick);
   return ex.canvas;
+}
+
+/**
+ * Retune the running live loop's rates without restarting it.
+ * `fps` = playback rate (frame index vs wall clock); `cookFps` = execute rate
+ * (0 or omitted = cook every rAF).
+ */
+export function setLiveRate({ fps, cookFps } = {}) {
+  if (!_live) return;
+  if (fps) _live.fps = fps;
+  _live.cookFps = cookFps || 0;
 }
 
 /** Update the graph the live loop renders (params/edges changed) without restart. */
@@ -1403,7 +1444,12 @@ export function disposeAll() {
 export function lastError() { return _executor ? _executor.lastCompileError : null; }
 
 /** Per-node error strings (p5 compile/runtime, etc.), keyed by node id. */
-export function getNodeErrors() { return _executor ? { ..._executor._nodeErrors } : {}; }
+// Unsupported-node notices first, so a real error (GLSL log, p5 trace) on the
+// same node always wins the slot.
+export function getNodeErrors() {
+  if (!_executor) return {};
+  return { ...Object.fromEntries(_executor._unsupported), ..._executor._nodeErrors };
+}
 
 // ── Orbit viewport controls (#4a) ───────────────────────────────────────────
 export function orbitActive() { return !!(_executor && _executor._orbit.enabled); }
