@@ -3167,6 +3167,29 @@ function gLiveGraphBody(stop) {
   };
 }
 
+// Push an edited graph into the already-running live loop. Transport
+// (WS/MJPEG, canvas, preview chrome) is left completely alone — the server
+// loop re-reads the graph every frame, so this is just a doc update. Only
+// one swap is ever in flight: a newer edit aborts the older POST.
+let _gLiveSwapAbort = null;
+async function gLiveHotSwap() {
+  if (!gLiveMode) return;
+  if (_gClientLiveActive) { gClientLiveRefresh(); return; }
+  if (_gLiveSwapAbort) _gLiveSwapAbort.abort();
+  const ac = _gLiveSwapAbort = new AbortController();
+  try {
+    await fetch('/api/graph/live', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(gLiveGraphBody(false)),
+      signal: ac.signal,
+    });
+  } catch (e) {
+    if (e.name !== 'AbortError') gSetStatus('Live swap: ' + e.message);
+  } finally {
+    if (_gLiveSwapAbort === ac) _gLiveSwapAbort = null;
+  }
+}
+
 // ── WebSocket live: open connection, draw frames, pass metadata ──
 function _gOpenLiveWs() {
   _gLiveWsFallback = false;
@@ -3214,6 +3237,10 @@ function _gOpenLiveWs() {
 
   ws.onerror = () => {};
   ws.onclose = () => {
+    // Only clear shared state if this is still the current socket — a
+    // superseded socket closing late must not orphan the live one's
+    // references (that left _gTeardownLive unable to close it).
+    if (_gLiveWs !== ws) return;
     clearInterval(_gLiveWsPingTimer); _gLiveWsPingTimer = null;
     _gLiveWs = null;
     // Fall back to MJPEG if live mode is still on
@@ -3224,7 +3251,9 @@ function _gOpenLiveWs() {
     }
   };
 
-  // Keepalive ping every 15 s
+  // Keepalive ping every 15 s. Clear any previous timer first so a restart
+  // can't leave an orphan interval pinging a dead socket forever.
+  if (_gLiveWsPingTimer) clearInterval(_gLiveWsPingTimer);
   _gLiveWsPingTimer = setInterval(() => {
     if (ws.readyState === WebSocket.OPEN) ws.send('ping');
   }, 15000);
@@ -3357,7 +3386,18 @@ function _gSetLiveState(on) {
   if (!on) gClearLiveMotion();
 }
 
-async function gSetLive(on) {
+// Toggling live is async (renderability probe + a POST), so two overlapping
+// calls could both run the start path and open two transports. Serialize
+// them: each toggle waits for the previous one to settle.
+let _gLiveToggleChain = Promise.resolve();
+function gSetLive(on) {
+  _gLiveToggleChain = _gLiveToggleChain
+    .catch(() => {})
+    .then(() => _gSetLiveImpl(on));
+  return _gLiveToggleChain;
+}
+
+async function _gSetLiveImpl(on) {
   // Live preview runs on the browser GPU when the whole graph is client-
   // renderable (feature #1): 3D/p5/custom-shader nodes AND the existing GPU
   // shader nodes (via the shader parity layer). Otherwise the server /api/
@@ -3413,6 +3453,10 @@ async function gSetLive(on) {
   _gSetPreviewMode(on ? 'server' : '—');
 
   if (on) {
+    // Close whatever transport is already attached before building a new
+    // one. Starting while live (re-toggle, restart after an error) used to
+    // leak the old socket, its ping timer and the MJPEG stream.
+    _gTeardownLive();
     gMainPreview.innerHTML = '';
     gLivePreviewImg = null;
     gLiveCanvas = null; gLiveImg = null;
@@ -3852,9 +3896,11 @@ function gDoAutoGen() {
   }
   if (gLiveMode) {
     // Param edits while live hot-swap the running loop instead of
-    // firing one-shot executes.
+    // firing one-shot executes. This must NOT go through gSetLive(true):
+    // that re-runs the whole start path (new WS, rebuilt preview) and used
+    // to stack a second server render per edit.
     clearTimeout(_autoGenTimer);
-    _autoGenTimer = setTimeout(() => { gSetLive(true); }, 150);
+    _autoGenTimer = setTimeout(gLiveHotSwap, 150);
     return;
   }
   if (!gAutoGen) return;
