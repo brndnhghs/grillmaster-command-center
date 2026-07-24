@@ -2843,58 +2843,84 @@ window._gEditor3DSelecting = false;
 // over the output preview, so a 3D scene and a rendered frame can be on screen
 // at once and live mode no longer has to be stopped to look at the scene.
 // (gWorkspace / gVpdStage are declared with the other DOM refs above.)
+// Tear the dock back down. Takes an optional module handle so it can also
+// clean up a half-built editor from a failed open, where window._gEditor3D was
+// never assigned.
+function gCloseEditor3D(ED, status) {
+  const btns = [document.getElementById('graph-edit3d-btn'),
+                document.getElementById('graph-edit3d-btn-desk')].filter(Boolean);
+  const mod = ED || window._gEditor3D;
+  try { mod?.close(); } catch (e) { console.warn('[editor3d] close failed:', e); }
+  window._gEditor3D = null;
+  btns.forEach(b => b.classList.remove('active'));
+  gWorkspace.classList.remove('vpd-open');
+  localStorage.setItem('vpd-open', '0');
+  if (status) gSetStatus(status);
+}
+
 async function gToggleEditor3D() {
   const btns = [document.getElementById('graph-edit3d-btn'),
                 document.getElementById('graph-edit3d-btn-desk')].filter(Boolean);
-  if (window._gEditor3D && window._gEditor3D.isOpen()) {
-    window._gEditor3D.close();
-    window._gEditor3D = null;
-    btns.forEach(b => b.classList.remove('active'));
-    gWorkspace.classList.remove('vpd-open');
-    localStorage.setItem('vpd-open', '0');
-    gSetStatus('3D viewport closed');
+  // Close on anything that looks open — including a dock left visible by an
+  // open that failed halfway. Keying this off _gEditor3D alone meant a failed
+  // open made ✕ re-enter the open path, so the empty pane could never be
+  // dismissed and every reload retried the same failure.
+  if ((window._gEditor3D && window._gEditor3D.isOpen())
+      || gWorkspace.classList.contains('vpd-open')) {
+    gCloseEditor3D(null, '3D viewport closed');
     return;
   }
-  const ED = await import('/ui/js/editor3d.js');
-  // Stop the browser-GPU live loop, not the server one. client3d.js owns its
-  // own WebGLRenderer and RAF loop over the same 3D nodes the editor is about
-  // to render, so running both means two GL contexts competing every frame.
-  // The server live stream only blits JPEG frames, costs no GL context, and is
-  // exactly what the dock exists to sit beside — so it keeps running.
-  _gStopClientLive();
-  // Show the dock before open() so the stage has real dimensions to size the
-  // renderer against — measuring a display:none container yields 0×0.
-  gWorkspace.classList.add('vpd-open');
-  localStorage.setItem('vpd-open', '1');
-  await ED.open({
-    container: gVpdStage,
-    getGraph: () => ({ nodes: gNodes, edges: gEdges }),
-    onParamChange: (nodeId, patch) => {
-      window._gEditor3DWriting = true;
-      try {
-        for (const [k, v] of Object.entries(patch)) gUpdateNodeParam(nodeId, k, v);
-        gClientLiveRefresh();
-      } finally {
-        window._gEditor3DWriting = false;
-      }
-      // Refresh the param panel so sliders track the gizmo — debounced,
-      // because objectChange fires per mousemove during a drag.
-      clearTimeout(window._gEditor3DPanelT);
-      window._gEditor3DPanelT = setTimeout(() => {
-        if (gSelectedNode === nodeId) {
-          const node = gNodes.find(n => n.id === nodeId);
-          if (node) gShowNodeParams(node);
+  let ED = null;
+  try {
+    ED = await import('/ui/js/editor3d.js');
+    // Stop the browser-GPU live loop, not the server one. client3d.js owns its
+    // own WebGLRenderer and RAF loop over the same 3D nodes the editor is about
+    // to render, so running both means two GL contexts competing every frame.
+    // The server live stream only blits JPEG frames, costs no GL context, and is
+    // exactly what the dock exists to sit beside — so it keeps running.
+    _gStopClientLive();
+    // Show the dock before open() so the stage has real dimensions to size the
+    // renderer against — measuring a display:none container yields 0×0.
+    gWorkspace.classList.add('vpd-open');
+    await ED.open({
+      container: gVpdStage,
+      getGraph: () => ({ nodes: gNodes, edges: gEdges }),
+      onParamChange: (nodeId, patch) => {
+        window._gEditor3DWriting = true;
+        try {
+          for (const [k, v] of Object.entries(patch)) gUpdateNodeParam(nodeId, k, v);
+          gClientLiveRefresh();
+        } finally {
+          window._gEditor3DWriting = false;
         }
-      }, 150);
-    },
-    onSelectNode: (nodeId) => {
-      window._gEditor3DSelecting = true;
-      try { gSelectNode(nodeId); } finally { window._gEditor3DSelecting = false; }
-    },
-  });
-  window._gEditor3D = ED;
-  btns.forEach(b => b.classList.add('active'));
-  gSetStatus('3D viewport — click to select · W/E/R gizmo modes · F frame');
+        // Refresh the param panel so sliders track the gizmo — debounced,
+        // because objectChange fires per mousemove during a drag.
+        clearTimeout(window._gEditor3DPanelT);
+        window._gEditor3DPanelT = setTimeout(() => {
+          if (gSelectedNode === nodeId) {
+            const node = gNodes.find(n => n.id === nodeId);
+            if (node) gShowNodeParams(node);
+          }
+        }, 150);
+      },
+      onSelectNode: (nodeId) => {
+        window._gEditor3DSelecting = true;
+        try { gSelectNode(nodeId); } finally { window._gEditor3DSelecting = false; }
+      },
+    });
+    window._gEditor3D = ED;
+    btns.forEach(b => b.classList.add('active'));
+    // Persisted only once the viewport is actually up, so a failed open can't
+    // arm the restore below into retrying it on every future page load.
+    localStorage.setItem('vpd-open', '1');
+    gSetStatus('3D viewport — click to select · W/E/R gizmo modes · F frame');
+  } catch (e) {
+    // The listener is async, so without this the throw is a silent unhandled
+    // rejection and the user just sees an empty dock: "3D didn't open".
+    console.error('[editor3d] open failed:', e);
+    gCloseEditor3D(ED, '3D viewport failed to open: ' + (e && e.message || e));
+    gShowToast('3D viewport failed to open: ' + (e && e.message || e), true);
+  }
 }
 document.getElementById('graph-edit3d-btn')?.addEventListener('click', gToggleEditor3D);
 document.getElementById('graph-edit3d-btn-desk')?.addEventListener('click', gToggleEditor3D);
@@ -2942,8 +2968,16 @@ document.getElementById('vpd-close')?.addEventListener('click', gToggleEditor3D)
 
 // Restore the dock across reloads — a workspace pane the user opened should
 // still be there next session, the way the palette and preview sizes are.
+// The dock must not already be marked open here, or gToggleEditor3D would read
+// the restore as a close. It never is on a fresh document — the class is only
+// ever set at runtime — but assert it rather than depend on it from a distance.
 if (localStorage.getItem('vpd-open') === '1') {
-  window.addEventListener('load', () => { gToggleEditor3D(); });
+  const restore = () => { gWorkspace.classList.remove('vpd-open'); gToggleEditor3D(); };
+  // `load` has already fired if this module was imported late (dynamic import,
+  // slow chunk), and a listener added afterwards never runs — the dock would
+  // silently fail to come back.
+  if (document.readyState === 'complete') restore();
+  else window.addEventListener('load', restore);
 }
 
 // ── Live mode (WebSocket primary / MJPEG fallback) ─────────────

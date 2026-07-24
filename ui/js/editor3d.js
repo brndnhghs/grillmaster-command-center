@@ -527,16 +527,45 @@ export function frameSelection() {
   E.orbit.update();
 }
 
+// Textures only ever arrive on a material, from a GLTF/USD load, and that
+// material is the sole owner — entries are built per-open, so nothing outside
+// this editor shares them.
+function disposeMaterial(m) {
+  for (const v of Object.values(m)) if (v && v.isTexture) v.dispose();
+  m.dispose();
+}
+
+// renderer.dispose() only tears down the renderer's own state; the geometries,
+// materials and textures the scene put on the GPU are not reachable from it.
+// Every one of them is built in open()/entryFor(), so this editor owns them all.
+function disposeSubtree(root) {
+  root.traverse(o => {
+    o.geometry?.dispose();
+    const m = o.material;
+    if (Array.isArray(m)) m.forEach(disposeMaterial);
+    else if (m) disposeMaterial(m);
+    if (o.isLight) o.dispose?.();
+  });
+}
+
 export function close() {
   if (!E) return;
   cancelAnimationFrame(E.raf);
   E.ro && E.ro.disconnect();
   E.gizmo.detach();
+  // Detach the gizmo's visual root before the sweep below — TransformControls
+  // owns its helper's geometry and frees it in its own dispose().
   if (E.gizmoHelper) E.scene.remove(E.gizmoHelper);
   E.gizmo.dispose && E.gizmo.dispose();
   E.orbit.dispose();
-  for (const rec of E.objects.values()) E.scene.remove(rec.obj);
+  for (const rec of E.objects.values()) { E.scene.remove(rec.obj); disposeSubtree(rec.obj); }
+  disposeSubtree(E.scene);   // grid, axes and the editor's own lights
   E.renderer.dispose();
+  // dispose() leaves the GL context itself alive until GC. Browsers cap live
+  // contexts (~16 in Chrome) and evict the OLDEST once the cap is hit — so
+  // opening the viewport enough times could silently kill client3d.js's render
+  // context instead of failing here. Hand this one back explicitly.
+  E.renderer.forceContextLoss?.();
   E.toolbar.bar.remove();
   E.canvas.remove();
   E = null;
