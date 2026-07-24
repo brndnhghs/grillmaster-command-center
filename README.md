@@ -62,3 +62,7 @@ AGENT_GUIDE.md the method-file contract for anyone (human or agent) adding nodes
 Read `AGENT_GUIDE.md` before touching any method file — it is the contract. The short version: get an ID from `tools/next_id.py`, declare every output you write, produce an image on every code path, seed everything stochastic, and keep it legible. `tools/audit_methods.py --fail-on-violations` (pre-commit) enforces the contract.
 
 Current state of the codebase, known gaps, and the remediation roadmap: `CODE_AUDIT_2026-07-02.md` and `docs/plans/2026-07-02-audit-remediation-plan.md`.
+
+## Documentation wiki
+
+A generated reference wiki lives in [`docs/wiki/`](docs/wiki/README.md) — per-module deep-dives, system architecture with Mermaid diagrams, an HTTP API index, and a getting-started guide. It is a static snapshot produced by the `code-wiki` skill; regenerate it against a new commit to refresh.
