@@ -1099,6 +1099,123 @@ def get_node_defs():
     return out
 
 
+# ── Agent node authoring (runtime, over HTTP) ─────────────────────────
+# An LLM authors a brand-new GPU node into THIS server's live registry — no
+# file edit, no restart. Same functions the MCP sidecar uses
+# (tools/mcp_authoring_server.py), but mounted here they target the running
+# graph: on success we fire the same `node-defs-updated` SSE event the
+# hot-reloader uses, so the authored node pops into the open editor's palette.
+from image_pipeline.agent_authoring import (
+    register_node_type as _author_register,
+    unregister_node_type as _author_unregister,
+    render_node as _author_render,
+    plan_wire as _author_plan_wire,
+    validate_connection as _author_validate_connection,
+)
+
+
+class AuthorNodeRequest(BaseModel):
+    name: str
+    type: str = "procedural"
+    description: str = ""
+    glsl: str = ""                 # GPU types (procedural/filter/feedback)
+    uniforms: dict | None = None   # GPU typed-uniform manifest
+    expr: str = ""                 # expression type: safe math body
+    vars: dict | None = None       # expression type: per-free-var defaults/min/max
+
+
+class RenderNodeRequest(BaseModel):
+    node_id: str
+    params: dict | None = None
+
+
+class PortTypeRequest(BaseModel):
+    name: str
+    color: str
+    description: str
+    accepts_from: list[str] | None = None
+
+
+@app.post("/api/nodes/author", dependencies=[Depends(require_token)])
+async def author_node(req: AuthorNodeRequest):
+    """Compile + register an agent-authored GPU node. Returns the node id +
+    derived ports/params, or {"ok": false, "compile_error": ...} to iterate on."""
+    result = _author_register(req.model_dump())
+    if result.get("ok"):
+        await _broadcast_sse("node-defs-updated")
+    return result
+
+
+@app.post("/api/nodes/render")
+def render_authored_node(req: RenderNodeRequest):
+    """Cook a single authored node once (proves it executes)."""
+    return _author_render(req.node_id, params=req.params)
+
+
+@app.delete("/api/nodes/{node_id}", dependencies=[Depends(require_token)])
+async def unregister_authored_node(node_id: str):
+    """Drop an agent-authored node and free its shader slot."""
+    result = _author_unregister(node_id)
+    if result.get("ok"):
+        await _broadcast_sse("node-defs-updated")
+    return result
+
+
+@app.post("/api/port-types", dependencies=[Depends(require_token)])
+async def author_port_type(req: PortTypeRequest):
+    """Declare a new semantic port type at runtime (a new routable data type)."""
+    from image_pipeline.core.port_types import register_port_type
+    register_port_type(req.name.upper(), req.color, req.description, req.accepts_from or [])
+    await _broadcast_sse("node-defs-updated")
+    return {"ok": True, "name": req.name.upper()}
+
+
+class WireRequest(BaseModel):
+    add_nodes: list[dict] = []    # [{ref, method_id, params, x, y, render}]
+    connect: list[dict] = []      # [{src, src_port, dst, dst_port, feedback}]
+    by: str | None = None
+
+
+@app.post("/api/graph/validate-edge")
+def validate_edge(payload: dict):
+    """Type-check one edge against the live node-defs without touching the graph.
+    payload: {src_method_id, src_port, dst_method_id, dst_port}."""
+    return _author_validate_connection(
+        payload.get("src_method_id", ""), payload.get("src_port", ""),
+        payload.get("dst_method_id", ""), payload.get("dst_port", ""))
+
+
+@app.post("/api/graph/{gid}/wire", dependencies=[Depends(require_token)])
+async def wire_graph(gid: str, req: WireRequest):
+    """Atomically add authored nodes and CONNECT them in the live graph, with
+    port/type validation up front. All-or-nothing: on any error nothing is
+    applied and the errors come back for the agent to fix. On success the nodes
+    + edges land in the shared doc and a graph:patch event repaints the editor.
+
+    Local `ref` aliases in add_nodes let the agent add + wire in one call
+    without knowing generated node ids (connect by ref or by existing node id).
+    """
+    with _graph_store_lock:
+        doc = _load_graph_doc(gid)
+        plan = _author_plan_wire(doc, req.add_nodes, req.connect)
+        if not plan["ok"]:
+            return plan  # {ok:False, errors:[...]} — nothing mutated
+        doc["nodes"].extend(plan["nodes"])
+        doc["edges"].extend(plan["edges"])
+        by = req.by or "agent"
+        _touch_graph_meta(doc, by)
+        _persist_graph_doc(doc)
+    _broadcast_graph_event("graph:patch", {
+        "gid": gid,
+        "ops": [{"op": "add_node", "node": n} for n in plan["nodes"]]
+               + [{"op": "add_edge", "edge": e} for e in plan["edges"]],
+        "by": by, "doc": doc,
+    })
+    return {"ok": True, "id": gid, "ref_ids": plan["ref_ids"],
+            "node_ids": [n["id"] for n in plan["nodes"]],
+            "edges": plan["edges"]}
+
+
 @app.get("/api/shader-sources")
 def get_shader_sources():
     """Read-only: WebGL2 fragment sources for every GPU shader, from the SAME
