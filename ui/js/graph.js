@@ -299,6 +299,11 @@ function gGraphDoneSwap(type, relPath, seqName) {
       }
     }
     const clip = tlAddClip(seqName, seqName, start, end, null, allPkf);
+    // Frames are served `immutable`, so re-running into an existing sequence
+    // name would otherwise paint the *previous* run's frames out of the HTTP
+    // cache. Stamp the run and cache-bust on it.
+    clip.ver = Date.now();
+    tlSaveClips();
     tlSelectClip(clip.id);
     // Load frame 0
     tlLoadFrame(parseInt(tlStart.value) || 0);
@@ -318,7 +323,7 @@ function tlClipAtFrame(timelineFrame) {
   const usableLen = Math.max(1, srcLen - trimIn);
   const raw = timelineFrame - clip.startFrame;
   const localFrame = trimIn + (((raw % usableLen) + usableLen) % usableLen);
-  return { seqName: clip.seqName, localFrame, srcOffset: clip.srcOffset || 0 };
+  return { seqName: clip.seqName, localFrame, srcOffset: clip.srcOffset || 0, ver: clip.ver || 0 };
 }
 
 function tlClearPreview() {
@@ -341,12 +346,15 @@ const _tlInflight = new Map(); // key → Promise<Blob|null>
 // the frame being loaded when the user hits pause is the one they want to see.
 let _tlFrameSeq = 0;
 
-// Resolves to a Blob, or null if the frame is missing.
-function _tlFetchFrame(seqName, fileFrame) {
-  const key = `${seqName}:${fileFrame}`;
+// Resolves to a Blob, or null if the frame is missing. `ver` is the clip's
+// render stamp — it only cache-busts, the server ignores it. Clips saved
+// before versioning carry none and fetch the bare URL, exactly as before.
+function _tlFetchFrame(seqName, fileFrame, ver) {
+  const key = `${seqName}:${fileFrame}:${ver || ''}`;
   const pending = _tlInflight.get(key);
   if (pending) return pending;
-  const p = fetch(`/api/sequences/${encodeURIComponent(seqName)}/${fileFrame}`)
+  const p = fetch(`/api/sequences/${encodeURIComponent(seqName)}/${fileFrame}`
+                  + (ver ? `?v=${encodeURIComponent(ver)}` : ''))
     .then(r => (r.ok ? r.blob() : null))
     .catch(() => null)
     .finally(() => { if (_tlInflight.get(key) === p) _tlInflight.delete(key); });
@@ -376,9 +384,9 @@ function _tlDisplayBlob(blob) {
 function tlLoadFrame(timelineFrame) {
   const hit = tlClipAtFrame(timelineFrame);
   if (!hit) { tlClearPreview(); return; }
-  const { seqName, localFrame, srcOffset } = hit;
+  const { seqName, localFrame, srcOffset, ver } = hit;
   const fileFrame = localFrame + (srcOffset || 0);
-  const cacheKey = `${seqName}:${fileFrame}`;
+  const cacheKey = `${seqName}:${fileFrame}:${ver || ''}`;
 
   const token = ++_tlFrameSeq;
 
@@ -388,7 +396,7 @@ function tlLoadFrame(timelineFrame) {
     _tlDisplayBlob(cached);
     _tlFrameCache.delete(cacheKey);
   } else {
-    _tlFetchFrame(seqName, fileFrame).then(blob => {
+    _tlFetchFrame(seqName, fileFrame, ver).then(blob => {
       if (token !== _tlFrameSeq) return;  // the playhead has already moved on
       if (blob) { _tlDisplayBlob(blob); return; }
       if (!gLivePreviewImg) {
@@ -401,9 +409,9 @@ function tlLoadFrame(timelineFrame) {
 
   // Pre-fetch next frame
   const nextFileFrame = fileFrame + 1;
-  const nextKey = `${seqName}:${nextFileFrame}`;
+  const nextKey = `${seqName}:${nextFileFrame}:${ver || ''}`;
   if (!_tlFrameCache.has(nextKey)) {
-    _tlFetchFrame(seqName, nextFileFrame)
+    _tlFetchFrame(seqName, nextFileFrame, ver)
       .then(blob => { if (blob) _tlFrameCache.set(nextKey, blob); });
   }
 
@@ -2778,12 +2786,89 @@ async function gClientRunOnce() {
   if (err) console.warn('[client3d] error:', err);
 }
 
+// POST one browser-rendered PNG into the server's sequence store, so the
+// timeline can fetch it back through the same /api/sequences/<name>/<frame>
+// route the server engine's frames come from.
+async function gUploadSequenceFrame(seqName, frame, blob, reset, signal) {
+  const data = await new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload  = () => res(String(fr.result).split(',', 2)[1]);
+    fr.onerror = () => rej(fr.error || new Error('frame encode failed'));
+    fr.readAsDataURL(blob);
+  });
+  const r = await fetch(`/api/sequences/${encodeURIComponent(seqName)}/frames`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ frame, data, reset }), signal,
+  });
+  if (!r.ok) throw new Error(`frame ${frame} upload failed (HTTP ${r.status})`);
+}
+
+let gClientRunAbort = null;
+
+// Full-range client render: cook every timeline frame on the browser GPU, push
+// each one to the sequence store, then hand off to the same done-swap the
+// server path uses. Run means the same thing on both engines — a rendered
+// range and a clip on the timeline — where it used to mean "one frame, no
+// clip" whenever a 3D node owned the graph.
+async function gClientRunSequence() {
+  const C     = await gClient3D();
+  const start = parseInt(tlStart.value) || 0;
+  const end   = parseInt(tlEnd.value)   || 24;
+  const fps   = parseInt(tlFps.value)   || 24;
+  const total = Math.max(1, end - start + 1);
+  // Same sanitising the server applies to its sequence dirs, so the name the
+  // clip stores is the name the frames actually live under.
+  const seqName = (tlName.value.trim() || 'client-render').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const { nodes, edges } = _gClientGraphPayload();
+
+  if (gClientRunAbort) gClientRunAbort.abort();
+  gClientRunAbort = new AbortController();
+  const signal = gClientRunAbort.signal;
+
+  gSetRunDisabled(true);
+  tlProgressDiv.style.display = 'flex';
+  tlProgressBar.style.width   = '0%';
+  tlProgressLabel.textContent = `0 / ${total}`;
+  gSetStatus(`Client render · 0 / ${total}`);
+
+  let uploaded = 0;
+  try {
+    await C.renderSequence({
+      nodes, edges, start, end, fps, width: gCanvasW, height: gCanvasH,
+      shouldCancel: () => signal.aborted,
+      onStart: canvas => gMountClientCanvas(canvas),
+      onFrame: async (frame, blob, done) => {
+        await gUploadSequenceFrame(seqName, frame, blob, frame === start, signal);
+        uploaded = done;
+        tlProgressBar.style.width   = `${Math.round(done / total * 100)}%`;
+        tlProgressLabel.textContent = `${done} / ${total}`;
+        gSetStatus(`Client render · ${done} / ${total}`);
+      },
+    });
+    gClientSurfaceErrors();
+    const nodeErrs = C.getNodeErrors ? C.getNodeErrors() : {};
+    const err = C.lastError() || Object.values(nodeErrs)[0];
+    if (err) console.warn('[client3d] error:', err);
+    gNodes.forEach(n => { n.dirty = false; });
+    gSetStatus(err
+      ? 'Client render · error (see node panel)'
+      : `Done — ${uploaded} frame(s), client GPU`);
+    // A clip only makes sense once frames exist to scrub; a cancelled run
+    // that wrote nothing leaves the timeline alone.
+    if (uploaded) gGraphDoneSwap('sequence', null, seqName);
+  } finally {
+    gSetRunDisabled(false);
+    tlProgressDiv.style.display = 'none';
+    if (gClientRunAbort && gClientRunAbort.signal === signal) gClientRunAbort = null;
+  }
+}
+
 // ── Run ────────────────────────────────────────────────────────
 async function gDoRun() {
   if (!gNodes.length) { gSetStatus('No nodes.'); return; }
   // Client-rendered graphs (3D nodes) never hit the server render path.
   if (gGraphRunsOnClient()) {
-    try { await gClientRunOnce(); } catch(e) { gSetStatus('Client render error: '+e.message); console.error(e); }
+    try { await gClientRunSequence(); } catch(e) { gSetStatus('Client render error: '+e.message); console.error(e); }
     return;
   }
   // Clear any previous node error states

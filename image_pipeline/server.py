@@ -2364,6 +2364,46 @@ def get_sequence_frame(name: str, frame: int):
     )
 
 
+class SeqFrameUpload(BaseModel):
+    frame: int
+    data: str            # base64 PNG, with or without a data: URL prefix
+    reset: bool = False  # first frame of a run — clear the directory first
+
+
+@app.post("/api/sequences/{name}/frames")
+def put_sequence_frame(name: str, req: SeqFrameUpload):
+    """Store one browser-rendered frame in a sequence directory.
+
+    Client-rendered graphs (3D / p5) cook on the browser GPU, so the server
+    never sees their pixels. Without somewhere to put them a client run can
+    only ever show one live canvas — there is no sequence for the timeline to
+    scrub, and so no clip. This is the client engine's equivalent of the
+    per-frame PNG write in the server run job.
+
+    `reset` wipes the directory first so a shorter re-render cannot leave the
+    tail of a previous longer run trailing off the end of the new clip.
+    """
+    name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+    seq_dir = SEQUENCES_DIR / name
+    if req.reset and seq_dir.exists():
+        shutil.rmtree(str(seq_dir))
+    seq_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        blob = base64.b64decode(req.data.split(",", 1)[-1])
+    except Exception as exc:
+        raise HTTPException(400, f"Bad base64 frame data: {exc}")
+
+    png_path = seq_dir / f"frame_{req.frame:04d}.png"
+    png_path.write_bytes(blob)
+    # get_sequence_frame serves a cached JPEG sibling whenever one exists; a
+    # stale one from a previous run would shadow the frame just written.
+    jpg_path = png_path.with_suffix(".jpg")
+    if jpg_path.exists():
+        jpg_path.unlink()
+    return {"ok": True, "frame": req.frame}
+
+
 @app.delete("/api/sequences/{name}")
 def delete_sequence(name: str):
     name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
