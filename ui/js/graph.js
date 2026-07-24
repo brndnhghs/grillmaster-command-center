@@ -109,6 +109,9 @@ const gCtxMenu      = document.getElementById('graph-ctx-menu');
 const gWireTooltip  = document.getElementById('wire-tooltip');
 const gNodeTooltip  = document.getElementById('node-tooltip');
 let   gLastGraphJobId = null;
+// Open "this node is broken" reports from docs/reports/broken-nodes.json,
+// keyed by method_id (the flag is about the node type, not one instance).
+let   gBrokenNodeReports = [];
 
 // ── Node error modal ─────────────────────────────────────
 const nemModal   = document.getElementById('node-error-modal');
@@ -139,6 +142,8 @@ gNodesEl.addEventListener('mouseover', e => {
   let text = null;
   if (nodeEl.classList.contains('node-error') && nodeEl.dataset.errorMsg) {
     text = nodeEl.dataset.errorMsg.split('\n').slice(0, 3).join('\n');
+  } else if (nodeEl.dataset.brokenNote) {
+    text = nodeEl.dataset.brokenNote;
   } else {
     const nodeId = nodeEl.id.replace('gnode-', '');
     const node = gNodes.find(n => n.id === nodeId);
@@ -362,6 +367,123 @@ function _tlFetchFrame(seqName, fileFrame, ver) {
   return p;
 }
 
+// ── Streaming-playback diagnostics ───────────────────────────────
+// A live readout of what the timeline preview is actually doing during
+// playback, so a hitch can be attributed instead of guessed at. Off by default
+// (zero cost); toggled from the transport bar or window.tlPlaybackDiag().
+//
+//   fps      painted frames/s vs the target — the headline "is it smooth" number
+//   jitter   worst gap between painted frames (ms); a spike is a visible stutter
+//   drops    frames the playback clock skipped over to stay on wall time
+//   buffer   frames resident in the read-ahead cache (of _TL_CACHE_MAX)
+//   fetch    cache hit-rate, plus avg/worst network fetch latency for misses
+//   miss     frames the server had no render for (fetch 404) — not a perf issue
+const _tlDiag = {
+  enabled: false,
+  events: [],   // { t, kind:'hit'|'miss'|'missing'|'drop', fetchMs?, n? }
+  paints: [],   // performance.now() of each painted frame
+  el: null,
+  raf: null,
+};
+const _TL_DIAG_WINDOW = 1000;  // stats computed over a trailing 1s
+
+function _tlDiagTrim(now) {
+  const cut = now - _TL_DIAG_WINDOW;
+  while (_tlDiag.events.length && _tlDiag.events[0].t < cut) _tlDiag.events.shift();
+  while (_tlDiag.paints.length && _tlDiag.paints[0]  < cut) _tlDiag.paints.shift();
+}
+function _tlDiagRec(ev)  { if (_tlDiag.enabled) { const t = performance.now(); _tlDiag.events.push({ t, ...ev }); _tlDiagTrim(t); } }
+function _tlDiagPaint()  { if (_tlDiag.enabled) { const t = performance.now(); _tlDiag.paints.push(t); _tlDiagTrim(t); } }
+
+function _tlDiagCompute() {
+  const now = performance.now();
+  _tlDiagTrim(now);
+  const target = Math.max(1, parseFloat(tlFps?.value) || 24);
+  const paints = _tlDiag.paints;
+  const fps = paints.length;  // window is exactly 1s
+  let jitter = 0;
+  for (let i = 1; i < paints.length; i++) jitter = Math.max(jitter, paints[i] - paints[i - 1]);
+  let hit = 0, miss = 0, missing = 0, drops = 0, fetchSum = 0, fetchWorst = 0, fetchN = 0;
+  for (const e of _tlDiag.events) {
+    if (e.kind === 'hit') hit++;
+    else if (e.kind === 'drop') drops += (e.n || 1);
+    else if (e.kind === 'missing') missing++;
+    else if (e.kind === 'miss') { miss++; fetchSum += e.fetchMs; fetchWorst = Math.max(fetchWorst, e.fetchMs); fetchN++; }
+  }
+  const served = hit + miss;
+  return {
+    target, fps, jitter,
+    drops, buffer: _tlFrameCache.size, inflight: _tlInflight.size,
+    hitRate: served ? hit / served : 1,
+    fetchAvg: fetchN ? fetchSum / fetchN : 0, fetchWorst, missing,
+    budget: 1000 / target,
+  };
+}
+
+function _tlDiagRender() {
+  if (!_tlDiag.enabled) { _tlDiag.raf = null; return; }
+  _tlDiagEnsureEl();  // survive preview rebuilds that detach the overlay mid-play
+  const el = _tlDiag.el;
+  if (el) {
+    const d = _tlDiagCompute();
+    const bad  = 'color:var(--err)', warn = 'color:var(--warn)', ok = 'color:var(--success)';
+    const fpsCol   = d.fps >= d.target - 1 ? ok : d.fps >= d.target * 0.75 ? warn : bad;
+    const jitCol   = d.jitter <= d.budget * 1.5 ? ok : d.jitter <= d.budget * 3 ? warn : bad;
+    const dropCol  = d.drops === 0 ? ok : d.drops <= 2 ? warn : bad;
+    const hitCol   = d.hitRate >= 0.9 ? ok : d.hitRate >= 0.5 ? warn : bad;
+    const row = (label, val, style = '') =>
+      `<div style="display:flex;justify-content:space-between;gap:12px">
+         <span style="color:var(--muted)">${label}</span><span style="${style}">${val}</span></div>`;
+    el.innerHTML =
+      row('fps', `<b style="${fpsCol}">${d.fps}</b> / ${d.target}`) +
+      row('jitter', `${d.jitter.toFixed(0)}ms`, jitCol) +
+      row('drops/s', d.drops, dropCol) +
+      row('buffer', `${d.buffer}/${_TL_CACHE_MAX}` + (d.inflight ? ` (+${d.inflight})` : '')) +
+      row('cache hit', `${Math.round(d.hitRate * 100)}%`, hitCol) +
+      row('fetch', d.fetchAvg ? `${d.fetchAvg.toFixed(0)}/${d.fetchWorst.toFixed(0)}ms` : '—') +
+      (d.missing ? row('no render', d.missing, warn) : '');
+  }
+  _tlDiag.raf = requestAnimationFrame(() => setTimeout(_tlDiagRender, 180));
+}
+
+function _tlDiagEnsureEl() {
+  if (!gMainPreview) return;
+  // The preview pane rebuilds itself with gMainPreview.innerHTML = '...' (new
+  // frame, tlClearPreview), which detaches our overlay. A stale reference to
+  // that detached node makes the toggle look dead — re-create when orphaned.
+  if (_tlDiag.el && !_tlDiag.el.isConnected) _tlDiag.el = null;
+  if (_tlDiag.el) return;
+  const el = document.createElement('div');
+  el.className = 'tl-diag-readout';
+  el.style.cssText =
+    'position:absolute;top:8px;left:8px;z-index:20;padding:8px 10px;min-width:150px;' +
+    'font:11px/1.5 var(--font-mono,monospace);color:var(--text);background:var(--bg2);' +
+    'border:1px solid var(--border);border-radius:var(--radius-s,6px);box-shadow:var(--shadow-2);' +
+    'pointer-events:none;opacity:.94';
+  el.innerHTML = '<div style="color:var(--muted)">playback…</div>';
+  // gMainPreview holds the <img>; make it the positioning context.
+  if (getComputedStyle(gMainPreview).position === 'static') gMainPreview.style.position = 'relative';
+  gMainPreview.appendChild(el);
+  _tlDiag.el = el;
+}
+
+function tlPlaybackDiag(on) {
+  _tlDiag.enabled = on === undefined ? !_tlDiag.enabled : !!on;
+  const btn = document.getElementById('tl-diag-btn');
+  if (btn) btn.classList.toggle('active', _tlDiag.enabled);
+  if (_tlDiag.enabled) {
+    _tlDiagEnsureEl();
+    if (_tlDiag.el) _tlDiag.el.style.display = '';
+    if (!_tlDiag.raf) _tlDiagRender();
+  } else {
+    if (_tlDiag.raf) { cancelAnimationFrame(_tlDiag.raf); _tlDiag.raf = null; }
+    if (_tlDiag.el) _tlDiag.el.style.display = 'none';
+    _tlDiag.events.length = 0; _tlDiag.paints.length = 0;
+  }
+  return _tlDiag.enabled;
+}
+window.tlPlaybackDiag = tlPlaybackDiag;
+
 function _tlDisplayBlob(blob) {
   // Don't clobber the live canvas
   if (gLiveMode) return;
@@ -379,26 +501,51 @@ function _tlDisplayBlob(blob) {
   gLivePreviewImg.src = url;
   gLivePreviewImg.style.display = '';
   gLivePreviewImg.style.opacity = '1';
+  // Timestamp the *painted* frame, not just the src assignment: decode() resolves
+  // once the new bitmap is ready to show, so the interval between these marks is
+  // the true on-screen frame cadence — a hitch is a gap here, wherever it came
+  // from (slow fetch, main-thread decode, GC). See _tlDiag.
+  if (_tlDiag.enabled) {
+    if (gLivePreviewImg.decode) gLivePreviewImg.decode().then(_tlDiagPaint, _tlDiagPaint);
+    else _tlDiagPaint();
+  }
 }
+
+// Read-ahead window. At 24-60fps a frame is on screen for 16-42ms, less than a
+// fetch+decode round-trip, so a single frame of look-ahead was never a buffer:
+// one slow fetch — or the frame-skipping the playback clock does to stay on wall
+// time — desynced it, and from then on every frame was a cache miss that stalled
+// on full fetch latency. A deeper window keeps frames ahead of the playhead
+// resident even across a skip; in-flight dedup stops it re-requesting.
+const _TL_PREFETCH  = 6;
+const _TL_CACHE_MAX = 12;
 
 function tlLoadFrame(timelineFrame) {
   const hit = tlClipAtFrame(timelineFrame);
   if (!hit) { tlClearPreview(); return; }
   const { seqName, localFrame, srcOffset, ver } = hit;
   const fileFrame = localFrame + (srcOffset || 0);
-  const cacheKey = `${seqName}:${fileFrame}:${ver || ''}`;
+  const keyOf = f => `${seqName}:${f}:${ver || ''}`;
+  const cacheKey = keyOf(fileFrame);
 
   const token = ++_tlFrameSeq;
 
-  // Check cache first
+  // Check cache first. Keep the hit in the cache — a short back-scrub or a skip
+  // that re-lands on it should still hit; eviction below drops it once the
+  // playhead has moved past.
   const cached = _tlFrameCache.get(cacheKey);
   if (cached) {
+    _tlDiagRec({ kind: 'hit', fetchMs: 0 });
     _tlDisplayBlob(cached);
-    _tlFrameCache.delete(cacheKey);
   } else {
+    const _t0 = performance.now();
     _tlFetchFrame(seqName, fileFrame, ver).then(blob => {
       if (token !== _tlFrameSeq) return;  // the playhead has already moved on
-      if (blob) { _tlDisplayBlob(blob); return; }
+      if (blob) {
+        _tlDiagRec({ kind: 'miss', fetchMs: performance.now() - _t0 });
+        _tlFrameCache.set(cacheKey, blob); _tlDisplayBlob(blob); return;
+      }
+      _tlDiagRec({ kind: 'missing', fetchMs: performance.now() - _t0 });
       if (!gLivePreviewImg) {
         gMainPreview.innerHTML = '<div style="padding:20px;color:var(--muted);font-size:12px;text-align:center;">No frame rendered yet</div>';
         gMainPreview.classList.add('active');
@@ -407,16 +554,19 @@ function tlLoadFrame(timelineFrame) {
     });
   }
 
-  // Pre-fetch next frame
-  const nextFileFrame = fileFrame + 1;
-  const nextKey = `${seqName}:${nextFileFrame}:${ver || ''}`;
-  if (!_tlFrameCache.has(nextKey)) {
-    _tlFetchFrame(seqName, nextFileFrame, ver)
-      .then(blob => { if (blob) _tlFrameCache.set(nextKey, blob); });
+  // Pre-fetch the next several frames so the buffer survives a slow fetch or a
+  // skipped frame instead of collapsing back to synchronous per-frame fetches.
+  for (let i = 1; i <= _TL_PREFETCH; i++) {
+    const k = keyOf(fileFrame + i);
+    if (_tlFrameCache.has(k)) continue;
+    _tlFetchFrame(seqName, fileFrame + i, ver)
+      .then(blob => { if (blob) _tlFrameCache.set(k, blob); });
   }
 
-  // Clean old cache entries (keep max 5)
-  while (_tlFrameCache.size > 5) {
+  // Evict the frames furthest behind the playhead first — insertion order tracks
+  // forward playback, so the oldest key is the one longest past — keeping the
+  // read-ahead window resident.
+  while (_tlFrameCache.size > _TL_CACHE_MAX) {
     const firstKey = _tlFrameCache.keys().next().value;
     _tlFrameCache.delete(firstKey);
   }
@@ -1345,6 +1495,7 @@ function gRenderNode(node) {
 
   if (node.render) el.classList.add('render-target');
   if (def.deprecated) el.classList.add('gnode-deprecated');
+  gApplyBrokenFlag(el, node.method_id);
 
   const header = document.createElement('div');
   header.className = 'gnode-header';
@@ -2548,7 +2699,9 @@ function gShowEdgeCtx(eid, x, y) {
   document.getElementById('ctx-feedback').style.display = '';
   const edge = gEdges.find(e => e.id===eid);
   document.getElementById('ctx-feedback').textContent = edge?.feedback ? 'Remove feedback' : 'Mark as feedback';
-  gCtxMenu.style.cssText = `left:${x}px;top:${y}px;display:`;
+  // Must be an explicit value: #graph-ctx-menu is `display:none` in the
+  // stylesheet, so clearing the inline style re-hides the menu.
+  gCtxMenu.style.cssText = `left:${x}px;top:${y}px;display:block`;
 }
 document.getElementById('ctx-feedback').addEventListener('click', () => {
   const e = gEdges.find(e => e.id===gSelectedEdge);
@@ -2571,7 +2724,17 @@ gNodesEl.addEventListener('contextmenu', e => {
   document.getElementById('ctx-feedback').style.display = 'none';
   document.getElementById('ctx-group-sel').style.display = hasMultiSel ? '' : 'none';
   document.getElementById('ctx-ungroup').style.display = isGroup ? '' : 'none';
-  gCtxMenu.style.left=e.clientX+'px'; gCtxMenu.style.top=e.clientY+'px'; gCtxMenu.style.display='';
+  // Group nodes have no method_id, so there is no source file to flag.
+  const flagItem = document.getElementById('ctx-flag-broken');
+  flagItem.style.display = isGroup ? 'none' : '';
+  flagItem.textContent = gBrokenFor(node?.method_id).length
+    ? '🚩 Broken — edit report…'
+    : '🚩 Flag as broken…';
+  gCtxMenu.style.left=e.clientX+'px'; gCtxMenu.style.top=e.clientY+'px'; gCtxMenu.style.display='block';
+});
+document.getElementById('ctx-flag-broken').addEventListener('click', () => {
+  gCtxMenu.style.display = 'none';
+  if (gSelectedNode) gOpenBrokenFlagModal(gSelectedNode);
 });
 document.getElementById('ctx-group-sel').addEventListener('click', () => { gCtxMenu.style.display='none'; gGroupSelectedNodes(); });
 document.getElementById('ctx-ungroup').addEventListener('click', () => { gCtxMenu.style.display='none'; if (gSelectedNode) gUngroup(gSelectedNode); });
@@ -5118,6 +5281,12 @@ function _tlPlayTick() {
   const advanced = Math.floor((performance.now() - _tlPlayClock.at) * fps / 1000);
   const next = st + ((((_tlPlayClock.frame - st + advanced) % span) + span) % span);
   if (next !== _tlPlayShown) {
+    // Frames the wall-clock advanced over but we never displayed (playback
+    // skipping to stay on time) are dropped frames — the visible stutter.
+    if (_tlDiag.enabled && _tlPlayShown !== null) {
+      const gap = (((next - _tlPlayShown) % span) + span) % span;
+      if (gap > 1) _tlDiagRec({ kind: 'drop', n: gap - 1 });
+    }
     _tlPlayShown = next;
     tlFrame.value = next;
     updatePlayhead();
@@ -5133,6 +5302,8 @@ tlPlay.addEventListener('click', () => {
   _tlPlayFrom(parseInt(tlFrame.value) || 0);
   tlPlayRaf = requestAnimationFrame(_tlPlayTick);
 });
+
+document.getElementById('tl-diag-btn')?.addEventListener('click', () => tlPlaybackDiag());
 
 // ── Frame scrubbing: preview rendered sequence frames ───────────
 tlFrame.addEventListener('input', () => {
@@ -5899,12 +6070,394 @@ function gConnectEvents() {
         // Notify Node Doctor apply flow that hot-reload completed
         window.dispatchEvent(new CustomEvent('nd-hot-reload'));
     });
+    // Another tab (or an agent hitting the API) changed the broken-node ledger.
+    es.addEventListener('broken-nodes-updated', () => { gLoadBrokenNodes(); });
     es.onerror = () => {
         es.close();
         setTimeout(gConnectEvents, 3000);
     };
 }
 gConnectEvents();
+
+// ── Broken-node flags ──────────────────────────────────────────────
+// Right-click a node → "Flag as broken…" → jot down what misbehaves. The
+// report goes to docs/reports/broken-nodes.json, which agents read to spot
+// problems that span many nodes (a shared helper, a whole category) rather
+// than treating each complaint as its own one-off bug.
+//
+// Flags are keyed by method_id, not by graph-node id: the thing that's broken
+// is the node *type* and its source file. Every instance of that type in every
+// graph shows the flag.
+function gBrokenFor(method_id) {
+  if (!method_id) return [];
+  return gBrokenNodeReports.filter(r => r.method_id === method_id && r.status === 'open');
+}
+
+function gApplyBrokenFlag(el, method_id) {
+  const reports = gBrokenFor(method_id);
+  el.classList.toggle('gnode-broken', reports.length > 0);
+  if (reports.length) el.dataset.brokenNote = reports.map(r => '🚩 ' + r.note).join('\n');
+  else delete el.dataset.brokenNote;
+}
+
+function gRefreshBrokenFlags() {
+  for (const node of gNodes) {
+    if (!node.method_id) continue;
+    const el = document.getElementById('gnode-' + node.id);
+    if (el) gApplyBrokenFlag(el, node.method_id);
+  }
+}
+
+// Loads the whole ledger, resolved entries included — the review panel needs
+// the history; gBrokenFor() filters to open for the on-canvas flags.
+async function gLoadBrokenNodes() {
+  try {
+    const r = await fetch('/api/broken-nodes');
+    const d = await r.json();
+    gBrokenNodeReports = Array.isArray(d.reports) ? d.reports : [];
+  } catch {
+    gBrokenNodeReports = [];
+  }
+  gRefreshBrokenFlags();
+  gRenderBrokenPanel();
+  if (bfmModal.classList.contains('open') && bfmNodeId) gRenderBrokenExisting();
+}
+
+const bfmModal    = document.getElementById('broken-flag-modal');
+const bfmName     = document.getElementById('bfm-node-name');
+const bfmExisting = document.getElementById('bfm-existing');
+const bfmNote     = document.getElementById('bfm-note');
+const bfmSaveBtn  = document.getElementById('bfm-save-btn');
+let   bfmNodeId   = null;
+
+function gCloseBrokenFlagModal() {
+  bfmModal.classList.remove('open');
+  bfmNodeId = null;
+}
+
+function gRenderBrokenExisting() {
+  const node = gNodes.find(n => n.id === bfmNodeId);
+  const reports = gBrokenFor(node?.method_id);
+  bfmExisting.innerHTML = '';
+  for (const rep of reports) {
+    const row = document.createElement('div');
+    row.className = 'bfm-report';
+    const note = document.createElement('div');
+    note.className = 'bfm-report-note';
+    note.textContent = rep.note;
+    const date = document.createElement('span');
+    date.className = 'bfm-report-date';
+    date.textContent = (rep.flagged_at || '').slice(0, 10);
+    const del = document.createElement('button');
+    del.className = 'bfm-report-del';
+    del.title = 'Clear this report';
+    del.textContent = '✕';
+    del.addEventListener('click', async () => {
+      del.disabled = true;
+      try {
+        const r = await fetch('/api/broken-nodes/' + encodeURIComponent(rep.id), { method: 'DELETE' });
+        if (!r.ok) throw new Error(`Server error ${r.status}`);
+        await gLoadBrokenNodes();
+        gShowToast('Report cleared');
+      } catch (err) {
+        gShowToast('Could not clear report: ' + err.message, true);
+        del.disabled = false;
+      }
+    });
+    row.append(note, date, del);
+    bfmExisting.appendChild(row);
+  }
+}
+
+function gOpenBrokenFlagModal(nodeId) {
+  const node = gNodes.find(n => n.id === nodeId);
+  if (!node || !node.method_id) return;
+  const def = gNodeDefs[node.method_id];
+  bfmNodeId = nodeId;
+  bfmName.textContent = `${def ? def.name : node.method_id} · ${node.method_id}`;
+  bfmNote.value = '';
+  gRenderBrokenExisting();
+  bfmModal.classList.add('open');
+  bfmNote.focus();
+}
+
+bfmSaveBtn.addEventListener('click', async () => {
+  const node = gNodes.find(n => n.id === bfmNodeId);
+  const note = bfmNote.value.trim();
+  if (!node) return gCloseBrokenFlagModal();
+  if (!note) { gShowToast('Write a note describing what is broken', true); return; }
+
+  bfmSaveBtn.disabled = true;
+  try {
+    const r = await fetch('/api/broken-nodes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      // Params travel with the report so an agent can reproduce the exact
+      // configuration that misbehaved instead of guessing at defaults.
+      body: JSON.stringify({
+        method_id: node.method_id,
+        note,
+        node_id: node.id,
+        params: node.params || {},
+      }),
+    });
+    if (!r.ok) throw new Error(`Server error ${r.status}`);
+    await gLoadBrokenNodes();
+    gShowToast('Flagged as broken');
+    gCloseBrokenFlagModal();
+  } catch (err) {
+    gShowToast('Could not save flag: ' + err.message, true);
+  }
+  bfmSaveBtn.disabled = false;
+});
+
+document.getElementById('bfm-cancel-btn').addEventListener('click', gCloseBrokenFlagModal);
+bfmModal.addEventListener('click', e => { if (e.target === bfmModal) gCloseBrokenFlagModal(); });
+bfmNote.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); bfmSaveBtn.click(); }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && bfmModal.classList.contains('open')) gCloseBrokenFlagModal();
+});
+
+// ── Broken-nodes review panel ──────────────────────────────────────
+// The whole ledger in one place, grouped by node type and sorted by report
+// count. One report is a bug; a node with six, or a category with a dozen,
+// is a pattern — which is the thing you cannot see from the canvas.
+const bnPanel     = document.getElementById('bn-panel');
+const bnSummary   = document.getElementById('bn-summary');
+const bnPatterns  = document.getElementById('bn-patterns');
+const bnResults   = document.getElementById('bn-results');
+const bnShowResolved = document.getElementById('bn-show-resolved');
+const bnCountBadge   = document.getElementById('gbb-count');
+
+function gBrokenGroups() {
+  const groups = new Map();   // method_id → {meta, reports}
+  for (const rep of gBrokenNodeReports) {
+    let g = groups.get(rep.method_id);
+    if (!g) { g = { method_id: rep.method_id, meta: rep, reports: [] }; groups.set(rep.method_id, g); }
+    g.reports.push(rep);
+  }
+  for (const g of groups.values()) {
+    g.reports.sort((a, b) => (b.flagged_at || '').localeCompare(a.flagged_at || ''));
+    g.open = g.reports.filter(r => r.status === 'open').length;
+  }
+  // Most-complained-about first; ties broken by total report count.
+  return [...groups.values()].sort((a, b) => b.open - a.open || b.reports.length - a.reports.length);
+}
+
+async function gBrokenPatch(id, body) {
+  const r = await fetch('/api/broken-nodes/' + encodeURIComponent(id), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`Server error ${r.status}`);
+  await gLoadBrokenNodes();
+}
+
+async function gBrokenDelete(id) {
+  const r = await fetch('/api/broken-nodes/' + encodeURIComponent(id), { method: 'DELETE' });
+  if (!r.ok) throw new Error(`Server error ${r.status}`);
+  await gLoadBrokenNodes();
+}
+
+// Centre the canvas on the first instance of a method and select it.
+function gFocusMethodInGraph(method_id) {
+  const node = gNodes.find(n => n.method_id === method_id);
+  if (!node) return false;
+  const el = document.getElementById('gnode-' + node.id);
+  const wrap = gCanvasWrap.getBoundingClientRect();
+  gPanX = wrap.width  / 2 - (node.x + (el ? el.offsetWidth  / 2 : 90)) * gCanvasScale;
+  gPanY = wrap.height / 2 - (node.y + (el ? el.offsetHeight / 2 : 60)) * gCanvasScale;
+  gApplyPan();
+  gRedrawEdges();
+  gSelectNode(node.id);
+  return true;
+}
+
+function gRenderBrokenPanel() {
+  const showResolved = bnShowResolved.checked;
+  const groups = gBrokenGroups().filter(g => showResolved || g.open > 0);
+  const totalOpen = gBrokenNodeReports.filter(r => r.status === 'open').length;
+
+  // Toolbar badge tracks open reports even while the panel is closed.
+  bnCountBadge.textContent = totalOpen || '';
+  bnCountBadge.classList.toggle('on', totalOpen > 0);
+
+  const openNodeCount = new Set(
+    gBrokenNodeReports.filter(r => r.status === 'open').map(r => r.method_id)
+  ).size;
+  bnSummary.textContent = totalOpen
+    ? `${totalOpen} open report${totalOpen === 1 ? '' : 's'} across ${openNodeCount} node${openNodeCount === 1 ? '' : 's'}`
+    : 'nothing flagged';
+
+  // Category breakdown — where the damage clusters.
+  bnPatterns.innerHTML = '';
+  const byCat = {};
+  for (const r of gBrokenNodeReports) {
+    if (r.status !== 'open') continue;
+    const cat = r.category || 'uncategorised';
+    byCat[cat] = (byCat[cat] || 0) + 1;
+  }
+  for (const [cat, n] of Object.entries(byCat).sort((a, b) => b[1] - a[1])) {
+    const chip = document.createElement('span');
+    chip.className = 'bn-chip' + (n >= 3 ? ' hot' : '');
+    chip.innerHTML = `${escHtml(cat)} <b>${n}</b>`;
+    if (n >= 3) chip.title = `${n} open reports in ${cat} — likely a shared cause, not ${n} separate bugs`;
+    bnPatterns.appendChild(chip);
+  }
+
+  bnResults.innerHTML = '';
+  if (!groups.length) {
+    const empty = document.createElement('div');
+    empty.id = 'bn-empty';
+    empty.textContent = showResolved
+      ? 'No reports yet. Right-click a node → 🚩 Flag as broken… to file one.'
+      : 'No open reports. Tick “show resolved” to see the history.';
+    bnResults.appendChild(empty);
+    return;
+  }
+
+  for (const g of groups) {
+    const inGraph = gNodes.some(n => n.method_id === g.method_id);
+    const row = document.createElement('div');
+    row.className = 'bn-method-row' + (g.open === 0 ? ' bn-all-resolved' : '');
+    const resolvedN = g.reports.length - g.open;
+    row.innerHTML = `
+      <span class="bn-mid">${escHtml(g.method_id)}</span>
+      <span class="bn-name">${escHtml(g.meta.method_name || g.method_id)}</span>
+      <span class="bn-src" title="${escHtml(g.meta.source_path || '')}">${escHtml(g.meta.source_path || '')}</span>
+      ${inGraph ? '<span class="bn-ingraph" title="Click to centre on this node in the graph">◎ in graph</span>' : ''}
+      <span class="bn-count">${g.open} open${resolvedN ? ` · ${resolvedN} resolved` : ''}</span>`;
+
+    const detail = document.createElement('div');
+    detail.className = 'bn-detail';
+    for (const rep of g.reports) {
+      if (!showResolved && rep.status !== 'open') continue;
+      const card = document.createElement('div');
+      card.className = 'bn-report' + (rep.status === 'resolved' ? ' bn-resolved' : '');
+
+      const note = document.createElement('div');
+      note.className = 'bn-report-note';
+      note.textContent = rep.note;
+
+      const meta = document.createElement('div');
+      meta.className = 'bn-report-meta';
+      const when = document.createElement('span');
+      when.textContent = (rep.flagged_at || '').slice(0, 16).replace('T', ' ');
+      meta.appendChild(when);
+      if (rep.reported_by && rep.reported_by !== 'ui') {
+        const who = document.createElement('span');
+        who.textContent = `by ${rep.reported_by}`;
+        meta.appendChild(who);
+      }
+      const paramKeys = Object.keys(rep.params || {});
+      if (paramKeys.length) {
+        const p = document.createElement('span');
+        p.className = 'bn-params';
+        p.textContent = paramKeys.map(k => `${k}=${JSON.stringify(rep.params[k])}`).join(' ');
+        p.title = JSON.stringify(rep.params, null, 2);
+        meta.appendChild(p);
+      }
+
+      const actions = document.createElement('div');
+      actions.className = 'bn-report-actions';
+      const toggle = document.createElement('button');
+      toggle.className = 'bn-act';
+      toggle.textContent = rep.status === 'open' ? '✓ Resolve' : '↺ Reopen';
+      toggle.addEventListener('click', async ev => {
+        ev.stopPropagation();
+        toggle.disabled = true;
+        try {
+          await gBrokenPatch(rep.id, { status: rep.status === 'open' ? 'resolved' : 'open' });
+          gShowToast(rep.status === 'open' ? 'Marked resolved' : 'Reopened');
+        } catch (err) { gShowToast(err.message, true); toggle.disabled = false; }
+      });
+      const del = document.createElement('button');
+      del.className = 'bn-act bn-act-del';
+      del.textContent = '✕ Delete';
+      del.addEventListener('click', async ev => {
+        ev.stopPropagation();
+        del.disabled = true;
+        try { await gBrokenDelete(rep.id); gShowToast('Report deleted'); }
+        catch (err) { gShowToast(err.message, true); del.disabled = false; }
+      });
+      actions.append(toggle, del);
+      meta.appendChild(actions);
+
+      card.append(note, meta);
+      detail.appendChild(card);
+    }
+
+    row.addEventListener('click', e => {
+      if (e.target.closest('.bn-ingraph')) {
+        if (gFocusMethodInGraph(g.method_id)) gShowToast(`Centred on ${g.meta.method_name || g.method_id}`);
+        return;
+      }
+      detail.classList.toggle('bn-open');
+    });
+    bnResults.append(row, detail);
+  }
+}
+
+function gBrokenPanelToggle() {
+  const opening = !bnPanel.classList.contains('bn-open');
+  bnPanel.classList.toggle('bn-open', opening);
+  if (opening) gLoadBrokenNodes();
+}
+
+document.getElementById('graph-broken-btn-desk').addEventListener('click', gBrokenPanelToggle);
+document.getElementById('bn-close-btn').addEventListener('click', () => bnPanel.classList.remove('bn-open'));
+bnShowResolved.addEventListener('change', gRenderBrokenPanel);
+
+// A markdown digest to paste at an agent — same facts as the JSON, ordered so
+// the cross-cutting pattern reads first.
+function gBrokenDigest() {
+  const groups = gBrokenGroups().filter(g => g.open > 0);
+  if (!groups.length) return '';
+
+  const byCat = {};
+  for (const r of gBrokenNodeReports) {
+    if (r.status === 'open') byCat[r.category || 'uncategorised'] = (byCat[r.category || 'uncategorised'] || 0) + 1;
+  }
+  const lines = [
+    '# Broken-node reports (open)',
+    '',
+    'Source of truth: docs/reports/broken-nodes.json',
+    `By category: ${Object.entries(byCat).sort((a, b) => b[1] - a[1]).map(([c, n]) => `${c} (${n})`).join(', ')}`,
+    '',
+  ];
+  for (const g of groups) {
+    lines.push(`## ${g.meta.method_name || g.method_id} — id ${g.method_id} (${g.open} open)`);
+    lines.push(`\`${g.meta.source_path || 'source path unknown'}\``);
+    for (const rep of g.reports.filter(r => r.status === 'open')) {
+      lines.push(`- ${rep.note}`);
+      const keys = Object.keys(rep.params || {});
+      if (keys.length) lines.push(`  - params: ${keys.map(k => `${k}=${JSON.stringify(rep.params[k])}`).join(', ')}`);
+    }
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+
+document.getElementById('bn-copy-btn').addEventListener('click', async () => {
+  const text = gBrokenDigest();
+  if (!text) { gShowToast('Nothing to copy — no open reports', true); return; }
+  const groups = gBrokenGroups().filter(g => g.open > 0);
+  try {
+    await navigator.clipboard.writeText(text);
+    gShowToast(`Copied ${groups.length} node${groups.length === 1 ? '' : 's'} to clipboard`);
+  } catch {
+    // Clipboard API needs a secure context; fall back so remote/http still works.
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); ta.remove();
+    gShowToast('Copied digest to clipboard');
+  }
+});
+
+gLoadBrokenNodes();
 
 // ── Per-parameter flyout menu (dropdown) ───────────────────────────
 // Right-click (or click the ⋮ button) a parameter row to open a small

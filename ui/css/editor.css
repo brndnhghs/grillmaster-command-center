@@ -552,8 +552,9 @@
   /* ── Output backdrop ──────────────────────────────────────
      When on, the dot grid gives way to a live mirror of the preview. It sits
      first in the tree with z-index 0, so nodes and wires (positioned, z-index
-     auto) still paint above it, and its own scrim keeps them legible over a
-     bright frame. `contain`, not `cover`: the whole output frame stays visible
+     auto) still paint above it. The backdrop shows at full brightness — no
+     scrim — so nodes over a bright frame lean on their own bg/shadow for
+     legibility. `contain`, not `cover`: the whole output frame stays visible
      and uncropped, letterboxed against the pane's base colour. */
   #graph-canvas-wrap.bd-on { background-image: none; }
   #gbd-pane {
@@ -564,10 +565,6 @@
   #gbd-pane canvas {
     position: absolute; inset: 0; width: 100%; height: 100%;
     object-fit: contain; display: block;
-  }
-  #gbd-pane::after {
-    content: ''; position: absolute; inset: 0;
-    background: radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0.28) 0%, rgba(0,0,0,0.55) 100%);
   }
   /* Decorative FX overlay — always transparent to pointer events so drag /
      wiring / context-menus / keyframe-lanes on the DOM graph below are untouched. */
@@ -616,12 +613,6 @@
   #graph-legend .glg-packets { width: 22px; height: 8px; display: inline-block;
     background-image: linear-gradient(90deg, #cfd6e0 40%, transparent 40%); background-size: 11px 8px; border-radius: 1px; }
   @media (max-width: 760px) { #graph-legend { width: 190px; font-size: 9.5px; left: 8px; bottom: 8px; } }
-  /* Static vignette — paints once, sits under the nodes layer */
-  #graph-canvas-wrap::before {
-    content: ''; position: absolute; inset: 0; pointer-events: none;
-    background: radial-gradient(ellipse at 50% 40%, transparent 55%, rgba(0,0,0,0.32) 100%);
-  }
-
   /* ── Nodes ────────────────────────────────────────────── */
   .gnode {
     position: absolute; min-width: 160px; background: var(--node-bg);
@@ -665,6 +656,11 @@
   .gnode-deprecated .gnode-title::after { content: ' ⚠ dep'; color: #f59e0b; font-size: 9px; font-weight: 400; }
   .node-error { border: 2px solid #e53935 !important; box-shadow: 0 0 8px rgba(229,57,53,0.4); }
   .node-error .gnode-header::after { content: ' ⚠'; color: #e53935; font-size: 12px; }
+  /* User-flagged "this node is broken" — a standing complaint, distinct from
+     .node-error (a runtime failure from the last execution). Warn, not error:
+     the node still cooks, it just misbehaves. */
+  .gnode-broken { border-color: var(--warn) !important; box-shadow: 0 0 0 1px var(--warn), var(--shadow-2); }
+  .gnode-broken .gnode-title::after { content: ' 🚩'; font-size: 10px; }
   /* ── Group nodes ──────────────────────────────────────── */
   .gnode.gnode-group { border-color: var(--accent2); border-radius: 12px; min-width: 140px; }
   .gnode.gnode-group:hover, .gnode.gnode-group.selected { border-color: var(--accent2); box-shadow: 0 0 0 2px rgba(167,139,250,0.35); }
@@ -736,6 +732,46 @@
   .gm-btn.muted   { background: var(--bg3); color: var(--muted); }
   .gm-btn:hover.primary { opacity: 0.88; }
   .gm-btn:hover.muted   { background: var(--bg2); }
+  /* ── Broken-node flag modal ───────────────────────── */
+  #broken-flag-modal {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.75); z-index: 1000;
+    align-items: center; justify-content: center;
+  }
+  #broken-flag-modal.open { display: flex; }
+  #bfm-box {
+    background: var(--bg1); border: 1px solid var(--warn);
+    border-radius: 12px; padding: 20px 24px;
+    width: min(90vw, 560px); max-height: 80vh;
+    overflow-y: auto; display: flex; flex-direction: column; gap: 12px;
+  }
+  #bfm-title { font-size: 15px; font-weight: 700; color: var(--warn); }
+  #bfm-node-name { font-size: 12px; color: var(--muted); }
+  #bfm-existing { display: flex; flex-direction: column; gap: 6px; }
+  #bfm-existing:empty { display: none; }
+  .bfm-report {
+    display: flex; align-items: flex-start; gap: 8px;
+    background: var(--bg2); border: 1px solid var(--border);
+    border-left: 2px solid var(--warn); border-radius: var(--radius-s);
+    padding: 8px 10px; font-size: 12px; color: var(--text); line-height: 1.5;
+  }
+  .bfm-report-note { flex: 1; white-space: pre-wrap; word-break: break-word; }
+  .bfm-report-date { color: var(--muted2); font-size: 10px; white-space: nowrap; }
+  .bfm-report-del {
+    border: none; background: none; color: var(--muted); cursor: pointer;
+    font-size: 13px; line-height: 1; padding: 0 2px;
+  }
+  .bfm-report-del:hover { color: var(--err); }
+  #bfm-note {
+    background: var(--bg0); border: 1px solid var(--border); border-radius: var(--radius-m);
+    padding: 10px 12px; color: var(--text); font-family: inherit; font-size: 13px;
+    line-height: 1.5; resize: vertical; min-height: 72px;
+  }
+  #bfm-note:focus { outline: none; border-color: var(--warn); box-shadow: var(--focus-ring); }
+  #bfm-hint { font-size: 11px; color: var(--muted2); }
+  #bfm-hint code { font-family: var(--font-mono); color: var(--muted); }
+  #bfm-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
   /* ── Node error modal ─────────────────────────────── */
   #node-error-modal {
     display: none; position: fixed; inset: 0;
@@ -1622,6 +1658,101 @@
   }
   #nt-footer .gm-btn { font-size: 11px; padding: 5px 12px; }
 
+  /* ── Broken-nodes review panel ────────────────────────────
+     Same bottom-panel shell as the Node Tester, in warn colours. Grouped by
+     method_id and sorted most-complained-about first, so a node with six
+     reports outranks six nodes with one — that ordering IS the diagnosis. */
+  #bn-panel {
+    display: none; flex-direction: column; background: var(--bg0);
+    border-top: 2px solid var(--warn); flex-shrink: 0;
+    max-height: 340px; overflow: hidden;
+  }
+  #bn-panel.bn-open { display: flex; }
+  #bn-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 12px; background: var(--bg2);
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
+    font-size: 11px; font-weight: 700; color: var(--warn);
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  #bn-summary { font-size: 10px; color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; flex: 1; }
+  #bn-show-resolved-wrap {
+    display: flex; align-items: center; gap: 4px; cursor: pointer;
+    font-size: 10px; color: var(--muted); font-weight: 400;
+    text-transform: none; letter-spacing: 0;
+  }
+  #bn-close-btn { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 2px 4px; }
+  #bn-close-btn:hover { color: var(--text); }
+  #bn-body { flex: 1; overflow-y: auto; padding: 8px 12px; min-height: 0; }
+  #bn-results { display: flex; flex-direction: column; gap: 3px; }
+  #bn-empty { color: var(--muted); font-size: 12px; padding: 12px 0; }
+
+  /* Cross-cutting summary — which categories and files are accumulating
+     reports, the signal a single row can never show. */
+  #bn-patterns { display: flex; flex-wrap: wrap; gap: 5px; padding-bottom: 8px; }
+  #bn-patterns:empty { display: none; }
+  .bn-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 999px; padding: 3px 9px; font-size: 10px; color: var(--muted);
+  }
+  .bn-chip b { color: var(--text); font-weight: 600; }
+  .bn-chip.hot { border-color: var(--warn); color: var(--warn); }
+  .bn-chip.hot b { color: var(--warn); }
+
+  .bn-method-row {
+    display: flex; align-items: center; gap: 8px; padding: 5px 8px;
+    border-radius: 5px; font-size: 11px; cursor: pointer;
+    border-left: 2px solid var(--warn); transition: background 0.1s;
+  }
+  .bn-method-row:hover { background: var(--bg2); }
+  .bn-method-row.bn-all-resolved { border-left-color: var(--success); opacity: 0.62; }
+  .bn-method-row .bn-mid { color: var(--muted); font-size: 10px; min-width: 28px; }
+  .bn-method-row .bn-name { flex-shrink: 0; color: var(--text); font-weight: 600; }
+  .bn-method-row .bn-src {
+    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    direction: rtl; text-align: left;
+    font-family: var(--font-mono); font-size: 10px; color: var(--muted2);
+  }
+  .bn-method-row .bn-count { font-size: 10px; color: var(--warn); white-space: nowrap; }
+  .bn-method-row .bn-ingraph { font-size: 10px; color: var(--accent2); white-space: nowrap; }
+  .bn-detail { display: none; padding: 4px 8px 8px 20px; }
+  .bn-detail.bn-open { display: flex; flex-direction: column; gap: 5px; }
+  .bn-report {
+    background: var(--bg1); border: 1px solid var(--border);
+    border-left: 2px solid var(--warn); border-radius: var(--radius-s);
+    padding: 7px 9px; font-size: 11px; line-height: 1.5; color: var(--text);
+  }
+  .bn-report.bn-resolved { border-left-color: var(--success); opacity: 0.6; }
+  .bn-report-note { white-space: pre-wrap; word-break: break-word; }
+  .bn-report-meta {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin-top: 5px; font-size: 10px; color: var(--muted2);
+  }
+  .bn-report-meta .bn-params {
+    font-family: var(--font-mono); overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; max-width: 46ch;
+  }
+  .bn-report-actions { display: flex; gap: 4px; margin-left: auto; }
+  .bn-act {
+    border: 1px solid var(--border); background: var(--bg2); color: var(--muted);
+    border-radius: var(--radius-s); padding: 2px 7px; font-size: 10px; cursor: pointer;
+  }
+  .bn-act:hover { color: var(--text); border-color: var(--border-strong); }
+  .bn-act.bn-act-del:hover { color: var(--err); border-color: var(--err); }
+  #bn-footer {
+    display: flex; gap: 8px; align-items: center; padding: 6px 12px;
+    border-top: 1px solid var(--border); background: var(--bg1); flex-shrink: 0;
+  }
+  #bn-footer .gm-btn { font-size: 11px; padding: 5px 12px; }
+  #bn-path-hint { font-size: 10px; color: var(--muted2); }
+  #bn-path-hint code { font-family: var(--font-mono); }
+  #gbb-count {
+    display: none; margin-left: 5px; padding: 0 5px; border-radius: 999px;
+    background: var(--warn); color: var(--bg0); font-size: 9px; font-weight: 700;
+  }
+  #gbb-count.on { display: inline-block; }
+
   /* ── Timeline panel ───────────────────────────────────────── */
   #timeline-panel {
     display: flex; align-items: center; gap: 10px;
@@ -1773,6 +1904,7 @@
     padding: 2px 7px; border-radius: 3px; cursor: pointer; font-size: 11px;
   }
   #timeline-panel button:not(#tl-render-seq):not(#tl-cancel):hover { background: #3a3a3a; }
+  #tl-diag-btn.active { background: var(--bg3); color: var(--accent); border-color: var(--accent); }
 
   #tl-encode-area {
     display: none; align-items: center; gap: 6px; flex-shrink: 0;

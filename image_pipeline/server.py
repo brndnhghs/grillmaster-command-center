@@ -2069,12 +2069,18 @@ def _run_graph_job(job_id, nodes, edges, seed, frames, start_frame, out_dir, wid
                 q.put(("graph_frame", payload))
 
                 # ── Save individual frame to sequence directory ──
+                # This is the render path that populates a scrubbable/playable
+                # timeline clip (gGraphDoneSwap fires off its seq_name), so the
+                # playback JPEG must be written here too — otherwise the first
+                # playthrough stalls a second or two in, decoding cold PNGs
+                # inside get_sequence_frame.
                 from PIL import Image as _PILS
                 import numpy as np
                 png_path = seq_dir / f"frame_{frame:04d}.png"
                 _PILS.fromarray(
                     (arr.clip(0, 1) * 255).astype(np.uint8)
                 ).save(str(png_path))
+                _write_seq_jpeg(png_path, arr)
 
         # Assemble output file
         if not terminal_frames:
@@ -2102,6 +2108,7 @@ def _run_graph_job(job_id, nodes, edges, seed, frames, start_frame, out_dir, wid
             arr_u8 = (arr.clip(0, 1) * 255).astype(np.uint8) if arr.dtype != np.uint8 else arr
             png_path = seq_dir / "frame_0000.png"
             Image.fromarray(arr_u8).save(str(png_path))
+            _write_seq_jpeg(png_path, arr_u8)
             rel_path = png_path.relative_to(OUTPUT_ROOT).as_posix()
             job["output_path"] = str(png_path)
             job["type"] = "image"
@@ -2274,6 +2281,10 @@ async def render_sequence(req: SequenceRequest):
                     _PILS.fromarray(
                         (arr.clip(0, 1) * 255).astype(np.uint8)
                     ).save(str(png_path))
+                    # Encode the timeline-playback JPEG now, from the array we
+                    # already hold, so scrubbing/playback never pays a cold
+                    # PNG→JPEG conversion inside the GET handler.
+                    _write_seq_jpeg(png_path, arr)
                     frame_path = str(png_path)
 
                 payload = json.dumps({"frame": frame, "total": total_frames, "path": frame_path})
@@ -2342,6 +2353,27 @@ def get_sequence_video(name: str, ext: str):
     return FileResponse(str(video_path), media_type=media_type, filename=f"{name}.{ext}")
 
 
+def _write_seq_jpeg(png_path, arr=None) -> None:
+    """Write the JPEG sibling served by get_sequence_frame next to a saved PNG.
+
+    Timeline playback fetches these JPEGs one per frame; generating them lazily
+    inside the GET handler meant the first playthrough paid a full PNG-decode +
+    JPEG-encode on every frame the playhead had not yet visited, which stalled
+    playback a second or two in (once it ran past the warmed head of the clip).
+    Encoding at save time keeps the GET a pure file send. `arr` skips re-decoding
+    the PNG when the caller already holds the pixels. Best-effort: a failure here
+    just falls back to the lazy path in get_sequence_frame.
+    """
+    jpg_path = png_path.with_suffix(".jpg")
+    try:
+        if arr is None:
+            from PIL import Image as _PILImg
+            arr = _PILImg.open(str(png_path))
+        jpg_path.write_bytes(_encode_jpeg(arr, quality=85))
+    except Exception:
+        pass
+
+
 @app.get("/api/sequences/{name}/{frame}")
 def get_sequence_frame(name: str, frame: int):
     name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
@@ -2349,12 +2381,11 @@ def get_sequence_frame(name: str, frame: int):
     if not png_path.exists():
         from fastapi import HTTPException
         raise HTTPException(404, f"Frame {frame} not found in sequence '{name}'")
-    # Serve as JPEG for faster transfer — PNGs are 5-10x larger
+    # Serve as JPEG for faster transfer — PNGs are 5-10x larger. Renders write
+    # this sibling at save time; the lazy branch only covers legacy sequences.
     jpg_path = png_path.with_suffix(".jpg")
     if not jpg_path.exists():
-        from PIL import Image
-        img = Image.open(str(png_path)).convert("RGB")
-        img.save(str(jpg_path), format="JPEG", quality=85)
+        _write_seq_jpeg(png_path)
     return FileResponse(
         str(jpg_path),
         media_type="image/jpeg",
@@ -2396,11 +2427,11 @@ def put_sequence_frame(name: str, req: SeqFrameUpload):
 
     png_path = seq_dir / f"frame_{req.frame:04d}.png"
     png_path.write_bytes(blob)
-    # get_sequence_frame serves a cached JPEG sibling whenever one exists; a
-    # stale one from a previous run would shadow the frame just written.
-    jpg_path = png_path.with_suffix(".jpg")
-    if jpg_path.exists():
-        jpg_path.unlink()
+    # get_sequence_frame serves a cached JPEG sibling whenever one exists.
+    # Re-encode it now (a stale one from a previous run would otherwise shadow
+    # the frame just written) so timeline playback of this fresh clip never
+    # stalls on a lazy conversion.
+    _write_seq_jpeg(png_path)
     return {"ok": True, "frame": req.frame}
 
 
@@ -2843,6 +2874,147 @@ def tn_get_report(node_id: str):
     if not report_path.exists():
         return {"report": None}
     return {"report": json.loads(report_path.read_text())}
+
+
+# ── Broken-node ledger ───────────────────────────────────────────────────
+# A user flags a node in the editor ("this is broken, here's what's wrong")
+# and the report lands in a single tracked JSON file. Agents read that file to
+# spot patterns no single report shows — e.g. every flagged node in
+# methods/simulations/ complaining that `seed` does nothing points at a shared
+# helper, not at ten separate nodes.
+#
+# It lives under docs/reports/ (tracked) rather than output/ (gitignored and
+# routinely wiped) because the accumulated history IS the diagnostic value.
+
+BROKEN_NODES_PATH = _repo_root / "docs" / "reports" / "broken-nodes.json"
+_broken_lock = threading.Lock()
+
+
+def _load_broken_ledger() -> dict:
+    """Read the ledger, tolerating a missing or corrupt file."""
+    if not BROKEN_NODES_PATH.exists():
+        return {"version": 1, "updated_at": None, "reports": []}
+    try:
+        doc = json.loads(BROKEN_NODES_PATH.read_text())
+    except Exception:
+        return {"version": 1, "updated_at": None, "reports": []}
+    if not isinstance(doc, dict) or not isinstance(doc.get("reports"), list):
+        return {"version": 1, "updated_at": None, "reports": []}
+    doc.setdefault("version", 1)
+    doc.setdefault("updated_at", None)
+    return doc
+
+
+def _save_broken_ledger(doc: dict) -> None:
+    doc["updated_at"] = datetime.now(timezone.utc).isoformat()
+    BROKEN_NODES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = BROKEN_NODES_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n")
+    tmp.replace(BROKEN_NODES_PATH)
+
+
+def _method_context(method_id: str) -> dict:
+    """Registry facts an agent needs to act on a report without the UI."""
+    meta = registry.get_meta(method_id)
+    if not meta:
+        return {"method_name": "", "category": "", "source_path": ""}
+    path = _get_method_path(method_id)
+    try:
+        rel = str(path.relative_to(_repo_root)) if path else ""
+    except ValueError:
+        rel = str(path) if path else ""
+    return {
+        "method_name": meta.name,
+        "category": meta.category,
+        "source_path": rel,
+    }
+
+
+@app.get("/api/broken-nodes")
+def broken_nodes_list(status: str | None = None):
+    """All flagged nodes. `?status=open` filters to unresolved reports."""
+    doc = _load_broken_ledger()
+    reports = doc["reports"]
+    if status:
+        reports = [r for r in reports if r.get("status") == status]
+    return {"reports": reports, "updated_at": doc.get("updated_at")}
+
+
+@app.post("/api/broken-nodes")
+async def broken_nodes_add(payload: dict):
+    """Flag a node as broken.
+
+    Payload: {method_id, note, node_id?, params?, graph_name?, reported_by?}
+    """
+    method_id = str(payload.get("method_id", "")).strip()
+    note = str(payload.get("note", "")).strip()
+    if not method_id:
+        raise HTTPException(400, "method_id is required")
+    if not note:
+        raise HTTPException(400, "note is required — say what is broken")
+
+    report = {
+        "id": "brk-" + uuid.uuid4().hex[:10],
+        "method_id": method_id,
+        **_method_context(method_id),
+        "note": note[:4000],
+        "status": "open",
+        "flagged_at": datetime.now(timezone.utc).isoformat(),
+        "resolved_at": None,
+        # Reproduction context — the exact node instance and params in play
+        # when the user hit the problem.
+        "node_id": payload.get("node_id") or "",
+        "graph_name": payload.get("graph_name") or "",
+        "params": payload.get("params") if isinstance(payload.get("params"), dict) else {},
+        "reported_by": payload.get("reported_by") or "ui",
+    }
+
+    with _broken_lock:
+        doc = _load_broken_ledger()
+        doc["reports"].append(report)
+        _save_broken_ledger(doc)
+
+    await _broadcast_sse("broken-nodes-updated")
+    return {"ok": True, "report": report}
+
+
+@app.patch("/api/broken-nodes/{report_id}")
+async def broken_nodes_update(report_id: str, payload: dict):
+    """Edit a report's note or flip its status ("open" / "resolved")."""
+    with _broken_lock:
+        doc = _load_broken_ledger()
+        report = next((r for r in doc["reports"] if r.get("id") == report_id), None)
+        if report is None:
+            raise HTTPException(404, f"No broken-node report '{report_id}'")
+        if "note" in payload:
+            report["note"] = str(payload["note"]).strip()[:4000]
+        if "status" in payload:
+            status = str(payload["status"])
+            if status not in ("open", "resolved"):
+                raise HTTPException(400, "status must be 'open' or 'resolved'")
+            report["status"] = status
+            report["resolved_at"] = (
+                datetime.now(timezone.utc).isoformat() if status == "resolved" else None
+            )
+        _save_broken_ledger(doc)
+
+    await _broadcast_sse("broken-nodes-updated")
+    return {"ok": True, "report": report}
+
+
+@app.delete("/api/broken-nodes/{report_id}")
+async def broken_nodes_delete(report_id: str):
+    """Drop a report entirely (the editor's "clear flag" action)."""
+    with _broken_lock:
+        doc = _load_broken_ledger()
+        before = len(doc["reports"])
+        doc["reports"] = [r for r in doc["reports"] if r.get("id") != report_id]
+        if len(doc["reports"]) == before:
+            raise HTTPException(404, f"No broken-node report '{report_id}'")
+        _save_broken_ledger(doc)
+
+    await _broadcast_sse("broken-nodes-updated")
+    return {"ok": True}
 
 
 # ── Entry point ───────────────────────────────────────────────────────
