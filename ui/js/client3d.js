@@ -1401,6 +1401,36 @@ export function stopLive() {
 export function isLive() { return !!_live; }
 
 /**
+ * Deterministically render frames start..end, handing each one to
+ * `onFrame(frame, pngBlob, done, total)` as a PNG blob. Awaits onFrame, so a
+ * caller that ships frames somewhere (the timeline sequence store) applies
+ * natural backpressure instead of queueing the whole range in memory.
+ *
+ * Distinct from exportWebM: that one is for producing a video file, this one
+ * is the client engine's equivalent of the server's per-frame render loop.
+ * `onStart(canvas)` fires once before the first cook so the caller can mount
+ * the canvas and let the user watch the range render.
+ */
+export async function renderSequence({ nodes, edges, start, end, fps, width, height,
+                                       onStart, onFrame, shouldCancel }) {
+  stopLive();
+  await prepare(nodes);
+  const ex = _ensureExecutor(width, height);
+  const total = end - start + 1;
+  if (onStart) onStart(ex.canvas);
+  for (let i = 0; i < total; i++) {
+    if (shouldCancel && shouldCancel()) break;
+    const frame = start + i;
+    ex.execute(nodes, edges, frame, frame / (fps || 24));
+    // preserveDrawingBuffer is on, but read back before yielding anyway —
+    // the executor's own state is what makes the next frame deterministic.
+    const blob = await ex.readbackPNG();
+    if (onFrame) await onFrame(frame, blob, i + 1, total);
+  }
+  return ex.canvas;
+}
+
+/**
  * Client-side export: deterministically render frames start..end and capture the
  * canvas to a WebM via MediaRecorder (frame-accurate via requestFrame). Resolves
  * to a Blob. `onProgress(i, total)` fires per frame. This does NOT touch the
