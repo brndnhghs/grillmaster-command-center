@@ -338,6 +338,45 @@ Every design decision in this repo serves mutual legibility between human and ag
 
 ---
 
+## Broken-node reports — read these before you diagnose
+
+`docs/reports/broken-nodes.json` is the ledger of nodes a human has flagged as broken from
+the editor (right-click a node → **🚩 Flag as broken…**). Each entry records:
+
+```json
+{
+  "id": "brk-a1b2c3d4e5",
+  "method_id": "134",
+  "method_name": "Nonlocal Aggregation (Chemotaxis)",
+  "category": "simulations",
+  "source_path": "image_pipeline/methods/simulations/chemotaxis.py",
+  "note": "anim_mode=evolve stalls after ~40 frames — image stops changing",
+  "status": "open",
+  "flagged_at": "2026-07-24T06:01:11+00:00",
+  "resolved_at": null,
+  "node_id": "n1abc", "graph_name": "", "params": { "...": "the exact params in play" },
+  "reported_by": "ui"
+}
+```
+
+Humans review the same ledger in the editor via the **🚩 Broken** toolbar button, which groups
+reports by node and shows the category breakdown. The **📋 Copy digest for agent** button there
+produces a markdown summary of every open report — if a user pastes one at you, the underlying
+JSON is still the source of truth and has the params and timestamps the digest omits.
+
+**Read the whole file, not just the entry you were sent after.** A single report reads like a
+one-off bug; ten reports read like a diagnosis. If every flagged node in `simulations/`
+complains that a param has no effect, the fault is in a shared helper or the driver-wiring
+path, not in ten separate method files — fix it once, at the level where it actually lives.
+
+`source_path` and `params` are there so you can reproduce without the UI. When you fix
+something, `PATCH /api/broken-nodes/{id}` with `{"status": "resolved"}` rather than deleting
+the entry — the history is what makes the next pattern visible. Agents may also file reports
+themselves (`POST /api/broken-nodes` with `reported_by` set) when they find a node broken but
+out of scope for the task at hand.
+
+---
+
 ## Pre-flight checklist
 
 Before marking any task done:

@@ -233,6 +233,7 @@ try {
           <button id="graph-edit3d-btn-desk" class="g-autobtn" title="3D viewport editor">🧊 3D</button>
           <button id="graph-overlay-btn-desk" class="g-autobtn" title="Visual FX overlay (decorative)">✨ FX</button>
           <button id="graph-test-btn-desk" class="g-autobtn" title="Test all nodes">🧪 Test</button>
+          <button id="graph-broken-btn-desk" class="g-autobtn" title="Review nodes flagged as broken">🚩 Broken<span id="gbb-count"></span></button>
         </div>
         <span class="gtb-sep"></span>
         <div class="gtb-set">
@@ -452,6 +453,24 @@ try {
   </div>
 </div>
 
+<!-- ── Broken-nodes review panel ─────────────────────── -->
+<div id="bn-panel">
+  <div id="bn-header">
+    <span>🚩 Broken Nodes</span>
+    <span id="bn-summary"></span>
+    <label id="bn-show-resolved-wrap"><input type="checkbox" id="bn-show-resolved"> show resolved</label>
+    <button id="bn-close-btn" title="Close">✕</button>
+  </div>
+  <div id="bn-body">
+    <div id="bn-patterns"></div>
+    <div id="bn-results"></div>
+  </div>
+  <div id="bn-footer">
+    <button id="bn-copy-btn" class="gm-btn muted">📋 Copy digest for agent</button>
+    <span id="bn-path-hint"><code>docs/reports/broken-nodes.json</code></span>
+  </div>
+</div>
+
 <!-- Fullscreen image/video overlay -->
 <div id="graph-img-fullscreen">
   <img id="graph-fs-img" src="" alt="">
@@ -474,6 +493,7 @@ try {
   <div class="ctx-item danger" id="ctx-del-node">Delete node</div>
   <div class="ctx-item" id="ctx-group-sel" style="display:none">⊞ Group selection</div>
   <div class="ctx-item" id="ctx-ungroup" style="display:none">⊟ Ungroup</div>
+  <div class="ctx-item" id="ctx-flag-broken" style="display:none">🚩 Flag as broken…</div>
 </div>
 
 <!-- Param flyout menu (dropdown) -->
@@ -495,6 +515,22 @@ try {
       <button class="gm-btn primary" id="gm-save-preset-btn">Save as preset</button>
       <button class="gm-btn danger" id="gm-ungroup-btn">Ungroup</button>
       <button class="gm-btn muted" id="gm-close-btn">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Broken-node flag modal ────────────────────────── -->
+<div id="broken-flag-modal">
+  <div id="bfm-box">
+    <div id="bfm-title">🚩 Flag node as broken</div>
+    <div id="bfm-node-name"></div>
+    <div id="bfm-existing"></div>
+    <textarea id="bfm-note" rows="4"
+      placeholder="What's broken? e.g. “seed param has no effect above 0.5 — output is identical for every seed”"></textarea>
+    <div id="bfm-hint">Saved to <code>docs/reports/broken-nodes.json</code> for agents to review.</div>
+    <div id="bfm-actions">
+      <button class="gm-btn muted" id="bfm-cancel-btn">Cancel</button>
+      <button class="gm-btn primary" id="bfm-save-btn">Flag as broken</button>
     </div>
   </div>
 </div>

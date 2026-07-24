@@ -116,6 +116,20 @@ When `GRILLMASTER_API_TOKEN` env var is set:
 | `POST` | `/api/node-tester/run` | Run all method tests |
 | `POST` | `/api/node-tester/batch-fix` | Batch-apply fixes to failing methods |
 
+### Broken-Node Ledger
+
+User-filed "this node misbehaves" reports, persisted to `docs/reports/broken-nodes.json`.
+Read the whole ledger before diagnosing a single node — the point of the file is that
+patterns across reports (a shared helper, a whole category) are visible where one report
+is not. Each report carries `source_path` and the `params` in play when it was filed.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/broken-nodes` | List reports; `?status=open` filters to unresolved |
+| `POST` | `/api/broken-nodes` | File a report — `{method_id, note, node_id?, params?, graph_name?, reported_by?}` |
+| `PATCH` | `/api/broken-nodes/{report_id}` | Edit `note`, or set `status` to `open` / `resolved` |
+| `DELETE` | `/api/broken-nodes/{report_id}` | Drop a report entirely |
+
 ### Saved Graphs
 
 | Method | Path | Description |
@@ -155,6 +169,7 @@ When `GRILLMASTER_API_TOKEN` env var is set:
 | `done` | Generation job | `{"output_path": "...", "type": "image"}` |
 | `error` | Generation job | `{"message": "..."}` |
 | `node-defs-updated` | Hot-reload | `{}` |
+| `broken-nodes-updated` | Broken-node ledger changed | `{}` |
 | `graph` | Graph document mutation | JSON payload |
 
 ## WebSocket Message Format (Live)
