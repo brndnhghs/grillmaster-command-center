@@ -17,8 +17,7 @@
     display:flex;align-items:center;gap:14px;background:linear-gradient(90deg,#10131c,#161a26)}
   header h1{font-size:18px;margin:0;letter-spacing:.5px}
   header .sub{color:var(--muted);font-size:12px}
-  .wrap{display:grid;grid-template-columns:320px 1fr;gap:16px;padding:16px}
-  @media(max-width:860px){.wrap{grid-template-columns:1fr}}
+  .wrap{max-width:720px;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:14px}
   .col{display:flex;flex-direction:column;gap:14px}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
   .card h2{margin:0 0 12px;font-size:13px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}
@@ -39,10 +38,6 @@
   button.danger{background:transparent;border-color:var(--red);color:var(--red)}
   button:disabled{opacity:.4;cursor:not-allowed}
   .row{display:flex;gap:8px;flex-wrap:wrap}
-  .tabs{display:flex;gap:6px;margin-bottom:10px}
-  .tab{padding:7px 14px;border-radius:8px 8px 0 0;border:1px solid var(--line);border-bottom:none;cursor:pointer;color:var(--muted)}
-  .tab.active{background:var(--panel2);color:var(--ink)}
-  iframe{width:100%;height:78vh;border:1px solid var(--line);border-radius:10px;background:#000}
   .log{font:12px/1.5 ui-monospace,Menlo,monospace;color:var(--muted);
     max-height:160px;overflow:auto;white-space:pre-wrap;background:#0a0c12;border-radius:8px;padding:10px}
   .gstack{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -54,49 +49,30 @@
 <header>
   <div>
     <h1>🔥 Grillmaster Command Center</h1>
-    <div class="sub">Launch &amp; monitor the Image Pipeline and Chord Bot from one panel</div>
+    <div class="sub">Launch, monitor &amp; stop the Grillmaster services</div>
   </div>
   <div class="gstack" style="margin-left:auto">
     <span class="pill" id="dash-pill">dashboard :7870</span>
-    <button class="primary" id="launch-all">▶ Launch Both</button>
+    <button class="primary" id="launch-all">▶ Launch All</button>
   </div>
 </header>
 
 <div class="wrap">
-  <!-- LEFT: services -->
-  <div class="col">
-    <div class="card">
-      <h2>Services</h2>
-      <div id="svc-list"></div>
-    </div>
-    <div class="card">
-      <h2>Status Log</h2>
-      <div class="log" id="log">dashboard ready.
-</div>
-    </div>
+  <div class="card">
+    <h2>Services</h2>
+    <div id="svc-list"></div>
   </div>
-
-  <!-- RIGHT: UI switcher -->
-  <div class="col">
-    <div class="card" style="padding-bottom:10px">
-      <div class="tabs" id="tabs">
-        <div class="tab active" data-target="pipeline">Image Pipeline</div>
-        <div class="tab" data-target="chord">Chord Bot</div>
-        <div class="tab" data-target="none">— none —</div>
-      </div>
-      <div class="row" style="margin-bottom:8px">
-        <span class="pill" id="cur-url">no service loaded</span>
-        <a id="open-new" href="#" target="_blank" style="display:none">↗ open in new tab</a>
-      </div>
-      <iframe id="frame" src="about:blank" title="service UI"></iframe>
-    </div>
+  <div class="card">
+    <h2>Status Log</h2>
+    <div class="log" id="log">dashboard ready.
+</div>
   </div>
 </div>
 
 <script>
 const SVC = {
-  pipeline: {name:"Image Pipeline", port:7860, desc:"Generative simulation / shader node graph"},
-  chord:    {name:"Chord Bot",      port:7861, desc:"Harmonic node graph (planing, Neapolitan, …)"}
+  pipeline: {name:"Image Pipeline", port:7860, desc:"Generative simulation / shader node graph", open:true},
+  "3d":     {name:"three.js Sidecar", port:7862, desc:"Headless WebGL renderer for 3D nodes (Node.js)", open:false}
 };
 
 const $ = (s)=>document.querySelector(s);
@@ -123,7 +99,7 @@ function render(){
       <div class="btns">
         <button class="primary" data-launch="${key}">▶ Launch</button>
         <button class="danger" data-stop="${key}">■ Stop</button>
-        <a class="open-link" data-open="${key}" href="#" target="_blank"><button>↗ Open</button></a>
+        ${cfg.open ? `<a class="open-link" data-open="${key}" href="#" target="_blank"><button>↗ Open</button></a>` : ""}
       </div>`;
     list.appendChild(card);
   }
@@ -160,22 +136,10 @@ async function launchOne(k){
     const d = await (await fetch("/api/launch/"+k,{method:"POST"})).json();
     log("  "+SVC[k].name+": "+(d[k] ?? JSON.stringify(d)));
   }catch(e){ log("  launch failed: "+e.message); }
-  loadFrame(k);
 }
 async function stopOne(k){
   log("stopping "+SVC[k].name+"…");
   try{ await fetch("/api/stop/"+k,{method:"POST"}); }catch(e){ log("  stop failed: "+e.message); }
-  if(currentTab===k) $("#frame").src="about:blank";
-}
-
-let currentTab="pipeline";
-function loadFrame(k){
-  currentTab=k;
-  if(k==="none"){ $("#frame").src="about:blank"; $("#cur-url").textContent="no service loaded"; $("#open-new").style.display="none"; return; }
-  const url=svcUrl(k);
-  $("#frame").src=url;
-  $("#cur-url").textContent=url;
-  $("#open-new").href=url; $("#open-new").style.display="inline";
 }
 
 // Open-link rows in the service list: point at the (possibly public) backend URL.
@@ -185,21 +149,13 @@ function wireOpenLinks(){
   });
 }
 
-// tab switching
-$("#tabs").querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
-  $("#tabs").querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
-  t.classList.add("active");
-  loadFrame(t.dataset.target);
-});
-
 $("#launch-all").onclick=launchAll;
 
 render();
 wireOpenLinks();
-loadFrame("pipeline");
 status();
 setInterval(status, 2000);
-log("tip: click 'Launch Both', wait for dots to turn green, then switch tabs above.");
+log("tip: click 'Launch All', wait for dots to turn green, then ↗ Open the pipeline.");
 </script>
 </body>
 </html>

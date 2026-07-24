@@ -7,7 +7,6 @@
 ## Base URL
 
 - Image Pipeline: `http://localhost:7860`
-- Chord Bot: `http://localhost:7861`
 - Dashboard: `http://localhost:7870`
 
 ## Authentication

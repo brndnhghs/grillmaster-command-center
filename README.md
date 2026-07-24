@@ -17,16 +17,15 @@ uv venv .venv && uv pip install -r requirements.txt --python .venv/bin/python
 bash scripts/dashboard.sh              # http://localhost:7870  → "Launch Both"
 bash scripts/dashboard.sh --autostart  # also boots both services on startup
 
-# Option B — run each service independently
+# Option B — run the pipeline server directly
 .venv/bin/python -m image_pipeline.server            # http://localhost:7860
-.venv/bin/python -m chord_bot.server                 # http://localhost:7861
 ```
 
 **Command Center Dashboard (port 7870)** — a single control panel that launches,
-monitors, and stops the two services, and embeds both UIs behind a tab switcher
-(Image Pipeline / Chord Bot). Status dots poll each service's `/health` every 2s
-and show PID + HTTP status. The dashboard does not itself render either app; it
-spawns each as a child process (repo `.venv`) and reports live state.
+monitors, and stops the services, and embeds their UIs behind a tab switcher.
+Status dots poll each service's `/health` every 2s and show PID + HTTP status.
+The dashboard does not itself render the app; it spawns each service as a child
+process (repo `.venv`) and reports live state.
 
 The editor is a single-page app served at `/`. Build a graph (Tab or right-click opens the node picker), wire typed ports, hit **Run** for a frame or a sequence, or **📺 Live** for the continuous loop.
 
@@ -37,6 +36,8 @@ The editor is a single-page app served at `/`. Build a graph (Tab or right-click
 | `HERMES_AGENT_DIR` | Hermes agent install for Node Doctor (default `~/.hermes/hermes-agent`) |
 | `HERMES_PYTHON` | Override the exact interpreter for the Hermes runner |
 | `GRILLMASTER_API_TOKEN` | When set, mutating endpoints require the `X-Api-Token` header — set this whenever you tunnel the server (`--tunnel`). Put the token in the UI's `localStorage['api-token']`. |
+| `THREEJS_SIDECAR_URL` | Where the headless three.js renderer listens (default `http://127.0.0.1:7862`). The server spawns it on first 3D render if nothing is there. |
+| `THREEJS_SIDECAR_EXTERNAL` | Set to `1` when something else owns the sidecar process — the server will proxy to it but never spawn it. |
 
 ## Repository layout
 
@@ -47,11 +48,9 @@ image_pipeline/
   server.py    FastAPI app: node defs, graph execution, SSE + MJPEG streaming,
                Node Doctor, node tester, sequences
 ui/index.html  the entire editor frontend (single file)
-chord_bot/     an independent chord-progression node system (music domain),
-               mounted at /chordbot
-dashboard/     unified control panel (port 7870) — launches & monitors both
+dashboard/     unified control panel (port 7870) — launches & monitors the
                services; dashboard/ui/index.html is the frontend
-scripts/       grillmaster-launcher.sh, chord-bot-launcher.sh, dashboard.sh
+scripts/       grillmaster-launcher.sh, dashboard.sh
 tools/         audit_methods.py (contract enforcement, pre-commit), next_id.py
 DESIGN.md      authoritative architecture document — read this first
 AGENT_GUIDE.md the method-file contract for anyone (human or agent) adding nodes
@@ -62,3 +61,7 @@ AGENT_GUIDE.md the method-file contract for anyone (human or agent) adding nodes
 Read `AGENT_GUIDE.md` before touching any method file — it is the contract. The short version: get an ID from `tools/next_id.py`, declare every output you write, produce an image on every code path, seed everything stochastic, and keep it legible. `tools/audit_methods.py --fail-on-violations` (pre-commit) enforces the contract.
 
 Current state of the codebase, known gaps, and the remediation roadmap: `CODE_AUDIT_2026-07-02.md` and `docs/plans/2026-07-02-audit-remediation-plan.md`.
+
+## Documentation wiki
+
+A generated reference wiki lives in [`docs/wiki/`](docs/wiki/README.md) — per-module deep-dives, system architecture with Mermaid diagrams, an HTTP API index, and a getting-started guide. It is a static snapshot produced by the `code-wiki` skill; regenerate it against a new commit to refresh.

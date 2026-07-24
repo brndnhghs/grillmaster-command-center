@@ -53,7 +53,7 @@ Design system: refined dark palette + spacing/radius/shadow/focus tokens in `:ro
 ## Deferred (needs owner decision or larger design)
 
 - Converging the three animation systems on `paramKeyframes` (audit #16) — medium refactor, separate branch recommended.
-- chord_bot: shared node-graph kernel vs. independent app (audit #24).
+- ~~chord_bot: shared node-graph kernel vs. independent app (audit #24).~~ **Resolved 2026-07-24** — neither: chord_bot was phased out of the program entirely. The `/chordbot` mount, dashboard service, launcher scripts, and docs are gone; the package was moved out of the repo to `_quarantine/chord-bot/`.
 - Replacing `_DynDim` global monkeypatches with explicit canvas params (audit #17) — large, gradual.
 - Persistent per-session executor with sim-cache reuse (audit #6 full form) — after Phase 2's conservative step proves out.
 - Backfilling method `description=` across the library (audit #20) — good batch job for the Node Doctor once Phase 3 lands.

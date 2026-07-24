@@ -28,7 +28,6 @@ FastAPI web server (3,015 lines) serving the node-graph editor frontend, the gen
 
 ## Ports
 - Default: 7860 (image pipeline)
-- three.js sidecar: 7862 (spawned on first 3D render)
 - Dashboard: 7870 (separate process)
 
 ## Key Modules Referenced

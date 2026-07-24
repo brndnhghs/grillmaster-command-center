@@ -1,6 +1,7 @@
 """FastAPI server for the image-generation pipeline GUI."""
 from __future__ import annotations
 import asyncio
+import atexit
 import base64
 import glob
 import importlib
@@ -12,6 +13,7 @@ import os
 import queue
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -396,15 +398,6 @@ app.mount("/ui", _RevalidatingStatic(directory=str(UI_DIR)), name="ui")
 ASSETS_DIR = OUTPUT_ROOT / "assets"
 ASSETS_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
-
-# ── Chord Bot sub-application (served at /chordbot/) ─────────────────
-# Guarded import: chord_bot is an independent sibling app. A failure there
-# (missing deps, import error) must not take down the image server boot path.
-try:
-    from chord_bot.server import app as _chord_app  # noqa: E402
-    app.mount("/chordbot", _chord_app)
-except Exception as _chord_err:  # noqa: BLE001 — keep the image editor alive
-    print(f"[warn] chord_bot not mounted at /chordbot: {_chord_err}")
 
 # ── Thread-safe stdout/stderr proxy ──────────────────────────────────
 # Each job thread installs its own writer via the proxy instead of replacing
@@ -1338,6 +1331,91 @@ _CLIENT_3D_IDS = frozenset(_THREEJS_3D_NODE_DEFS.keys())
 _THREEJS_SIDECAR_URL = os.environ.get(
     'THREEJS_SIDECAR_URL', 'http://127.0.0.1:7862'
 )
+_THREEJS_SIDECAR_SCRIPT = Path(__file__).resolve().parent / "3d" / "threejs-sidecar.mjs"
+# Set THREEJS_SIDECAR_EXTERNAL=1 when something else owns the sidecar process
+# (a supervisor, a debugger, a remote host via THREEJS_SIDECAR_URL).
+_THREEJS_SIDECAR_EXTERNAL = os.environ.get('THREEJS_SIDECAR_EXTERNAL', '') == '1'
+_threejs_proc: subprocess.Popen | None = None
+_threejs_lock = threading.Lock()
+
+
+def _threejs_healthy(timeout: float = 1.0) -> bool:
+    import httpx
+    try:
+        return httpx.get(f"{_THREEJS_SIDECAR_URL}/health", timeout=timeout).status_code == 200
+    except Exception:  # noqa: BLE001 — any transport failure means "not up"
+        return False
+
+
+def _ensure_threejs_sidecar(boot_timeout: float = 20.0) -> None:
+    """Make sure the headless three.js renderer is listening, spawning it if not.
+
+    The 3D render path depends on this Node process, so the server that depends
+    on it owns its lifecycle. Idempotent and safe under concurrent renders: an
+    already-running sidecar (started by hand or by a supervisor) answers /health
+    and is adopted rather than duplicated.
+    """
+    global _threejs_proc
+    if _THREEJS_SIDECAR_EXTERNAL or _threejs_healthy():
+        return
+    with _threejs_lock:
+        # Another thread may have booted it while we waited for the lock.
+        if _threejs_healthy():
+            return
+        if _threejs_proc is not None and _threejs_proc.poll() is None:
+            pass  # spawned but not yet answering — fall through to the wait loop
+        else:
+            if not _THREEJS_SIDECAR_SCRIPT.exists():
+                raise HTTPException(500, f"3D sidecar script missing: {_THREEJS_SIDECAR_SCRIPT}")
+            port = (_THREEJS_SIDECAR_URL.rsplit(":", 1)[-1] or "7862").strip("/")
+            env = {**os.environ, "THREEJS_PORT": port}
+            log_dir = _repo_root / "data" / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                _threejs_proc = subprocess.Popen(
+                    ["node", str(_THREEJS_SIDECAR_SCRIPT)],
+                    cwd=str(_THREEJS_SIDECAR_SCRIPT.parent),
+                    env=env,
+                    stdout=(log_dir / "3d.log").open("a"),
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
+            except FileNotFoundError:
+                raise HTTPException(
+                    500, "3D sidecar needs Node.js on PATH (`node` not found)"
+                )
+            print(f"[3d] spawned three.js sidecar on :{port} (pid {_threejs_proc.pid})")
+        deadline = time.time() + boot_timeout
+        while time.time() < deadline:
+            if _threejs_healthy():
+                return
+            if _threejs_proc.poll() is not None:
+                raise HTTPException(
+                    502,
+                    f"3D sidecar exited during boot (code {_threejs_proc.returncode}) "
+                    f"— see data/logs/3d.log",
+                )
+            time.sleep(0.25)
+        raise HTTPException(502, f"3D sidecar did not answer /health within {boot_timeout:.0f}s")
+
+
+def _stop_threejs_sidecar() -> None:
+    """Terminate a sidecar we spawned. Adopted/external ones are left alone."""
+    global _threejs_proc
+    proc, _threejs_proc = _threejs_proc, None
+    if proc is None or proc.poll() is not None:
+        return
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        proc.wait(timeout=5)
+    except Exception:  # noqa: BLE001 — best-effort shutdown
+        try:
+            proc.kill()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+atexit.register(_stop_threejs_sidecar)
 
 
 @app.get("/api/graph/{gid}/render")
@@ -1362,10 +1440,11 @@ def render_graph_bytes(gid: str = "active", frame: int = 0, fmt: str = "png",
     if not nodes:
         raise HTTPException(400, "Graph is empty")
 
-    # Proxy 3D graphs to Node.js sidecar
+    # Proxy 3D graphs to Node.js sidecar, booting it on first use.
     has_3d = any(n.get("method_id") in _CLIENT_3D_IDS for n in nodes)
     if has_3d:
         import httpx
+        _ensure_threejs_sidecar()
         try:
             resp = httpx.post(
                 f"{_THREEJS_SIDECAR_URL}/render",

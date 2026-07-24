@@ -12,7 +12,7 @@ Grillmaster Command Center is a **node-based generative image & video editor** b
 2. **TouchDesigner's live instinct** — Continuous cook loop streaming frames via MJPEG
 3. **LLM-infused evolution** — Hermes agent for code repair and method generation
 
-The system consists of two independent apps sharing one method registry, plus supporting services:
+The system is one app built around a single method registry, plus supporting services:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -32,21 +32,14 @@ The system consists of two independent apps sharing one method registry, plus su
 │  │index.html│  │  (79 LOC)            │                     │
 │  └──────────┘  └──────────────────────┘                     │
 │                                                              │
-│  Mounts: /chordbot (separate FastAPI app on port 7861)       │
-│          /output, /ui, /assets (static files)                │
-└─────────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────────┐
-│                  CHORD BOT (FastAPI)                         │
-│                  port 7861 · 6,869 lines                     │
-│  Independent music chord progression node system             │
+│  Mounts: /output, /ui, /assets (static files)                │
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
 │                  DASHBOARD (port 7870)                       │
-│  Unified control panel that launches & monitors both        │
-│  image_pipeline.server and chord_bot.server                 │
+│  Unified control panel that launches & monitors              │
+│  image_pipeline.server and the three.js sidecar (7862).      │
+│  Optional — the pipeline server boots the sidecar itself.    │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -304,7 +297,6 @@ image_pipeline/tests/
   └── ...
 
 tools/audit_methods.py              — Pre-commit contract enforcement
-chord_bot/tests/                    — 6 test files for Chord Bot
 ```
 
 ---

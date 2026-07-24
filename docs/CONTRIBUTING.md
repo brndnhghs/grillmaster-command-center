@@ -46,7 +46,6 @@
 | `image_pipeline/methods/` | Node library (180+ methods) |
 | `image_pipeline/server.py` | FastAPI server + API endpoints |
 | `ui/index.html` | Single-page editor frontend |
-| `chord_bot/` | Music chord node system |
 | `dashboard/` | Unified control panel |
 | `tools/` | Development utilities |
 | `scripts/` | Launchers and utilities |

@@ -60,7 +60,6 @@ which is the path to point `HERMES_AGENT_DIR` at.
 | `pytest.ini` | Test configuration (slow marker excluded by default) |
 | `.pre-commit-config.yaml` | Pre-commit hook (method audit) |
 | `image_pipeline/config/groups.yaml` | Method grouping for UI |
-| `chord_bot/pyproject.toml` | Chord Bot package config |
 
 ## Runtime Directories
 
