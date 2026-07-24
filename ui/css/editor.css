@@ -1773,6 +1773,7 @@
     padding: 2px 7px; border-radius: 3px; cursor: pointer; font-size: 11px;
   }
   #timeline-panel button:not(#tl-render-seq):not(#tl-cancel):hover { background: #3a3a3a; }
+  #tl-diag-btn.active { background: var(--bg3); color: var(--accent); border-color: var(--accent); }
 
   #tl-encode-area {
     display: none; align-items: center; gap: 6px; flex-shrink: 0;
