@@ -552,8 +552,9 @@
   /* ── Output backdrop ──────────────────────────────────────
      When on, the dot grid gives way to a live mirror of the preview. It sits
      first in the tree with z-index 0, so nodes and wires (positioned, z-index
-     auto) still paint above it, and its own scrim keeps them legible over a
-     bright frame. `contain`, not `cover`: the whole output frame stays visible
+     auto) still paint above it. The backdrop shows at full brightness — no
+     scrim — so nodes over a bright frame lean on their own bg/shadow for
+     legibility. `contain`, not `cover`: the whole output frame stays visible
      and uncropped, letterboxed against the pane's base colour. */
   #graph-canvas-wrap.bd-on { background-image: none; }
   #gbd-pane {
@@ -564,10 +565,6 @@
   #gbd-pane canvas {
     position: absolute; inset: 0; width: 100%; height: 100%;
     object-fit: contain; display: block;
-  }
-  #gbd-pane::after {
-    content: ''; position: absolute; inset: 0;
-    background: radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0.28) 0%, rgba(0,0,0,0.55) 100%);
   }
   /* Decorative FX overlay — always transparent to pointer events so drag /
      wiring / context-menus / keyframe-lanes on the DOM graph below are untouched. */
@@ -616,12 +613,6 @@
   #graph-legend .glg-packets { width: 22px; height: 8px; display: inline-block;
     background-image: linear-gradient(90deg, #cfd6e0 40%, transparent 40%); background-size: 11px 8px; border-radius: 1px; }
   @media (max-width: 760px) { #graph-legend { width: 190px; font-size: 9.5px; left: 8px; bottom: 8px; } }
-  /* Static vignette — paints once, sits under the nodes layer */
-  #graph-canvas-wrap::before {
-    content: ''; position: absolute; inset: 0; pointer-events: none;
-    background: radial-gradient(ellipse at 50% 40%, transparent 55%, rgba(0,0,0,0.32) 100%);
-  }
-
   /* ── Nodes ────────────────────────────────────────────── */
   .gnode {
     position: absolute; min-width: 160px; background: var(--node-bg);
@@ -1773,6 +1764,7 @@
     padding: 2px 7px; border-radius: 3px; cursor: pointer; font-size: 11px;
   }
   #timeline-panel button:not(#tl-render-seq):not(#tl-cancel):hover { background: #3a3a3a; }
+  #tl-diag-btn.active { background: var(--bg3); color: var(--accent); border-color: var(--accent); }
 
   #tl-encode-area {
     display: none; align-items: center; gap: 6px; flex-shrink: 0;

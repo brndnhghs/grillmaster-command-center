@@ -362,6 +362,123 @@ function _tlFetchFrame(seqName, fileFrame, ver) {
   return p;
 }
 
+// ── Streaming-playback diagnostics ───────────────────────────────
+// A live readout of what the timeline preview is actually doing during
+// playback, so a hitch can be attributed instead of guessed at. Off by default
+// (zero cost); toggled from the transport bar or window.tlPlaybackDiag().
+//
+//   fps      painted frames/s vs the target — the headline "is it smooth" number
+//   jitter   worst gap between painted frames (ms); a spike is a visible stutter
+//   drops    frames the playback clock skipped over to stay on wall time
+//   buffer   frames resident in the read-ahead cache (of _TL_CACHE_MAX)
+//   fetch    cache hit-rate, plus avg/worst network fetch latency for misses
+//   miss     frames the server had no render for (fetch 404) — not a perf issue
+const _tlDiag = {
+  enabled: false,
+  events: [],   // { t, kind:'hit'|'miss'|'missing'|'drop', fetchMs?, n? }
+  paints: [],   // performance.now() of each painted frame
+  el: null,
+  raf: null,
+};
+const _TL_DIAG_WINDOW = 1000;  // stats computed over a trailing 1s
+
+function _tlDiagTrim(now) {
+  const cut = now - _TL_DIAG_WINDOW;
+  while (_tlDiag.events.length && _tlDiag.events[0].t < cut) _tlDiag.events.shift();
+  while (_tlDiag.paints.length && _tlDiag.paints[0]  < cut) _tlDiag.paints.shift();
+}
+function _tlDiagRec(ev)  { if (_tlDiag.enabled) { const t = performance.now(); _tlDiag.events.push({ t, ...ev }); _tlDiagTrim(t); } }
+function _tlDiagPaint()  { if (_tlDiag.enabled) { const t = performance.now(); _tlDiag.paints.push(t); _tlDiagTrim(t); } }
+
+function _tlDiagCompute() {
+  const now = performance.now();
+  _tlDiagTrim(now);
+  const target = Math.max(1, parseFloat(tlFps?.value) || 24);
+  const paints = _tlDiag.paints;
+  const fps = paints.length;  // window is exactly 1s
+  let jitter = 0;
+  for (let i = 1; i < paints.length; i++) jitter = Math.max(jitter, paints[i] - paints[i - 1]);
+  let hit = 0, miss = 0, missing = 0, drops = 0, fetchSum = 0, fetchWorst = 0, fetchN = 0;
+  for (const e of _tlDiag.events) {
+    if (e.kind === 'hit') hit++;
+    else if (e.kind === 'drop') drops += (e.n || 1);
+    else if (e.kind === 'missing') missing++;
+    else if (e.kind === 'miss') { miss++; fetchSum += e.fetchMs; fetchWorst = Math.max(fetchWorst, e.fetchMs); fetchN++; }
+  }
+  const served = hit + miss;
+  return {
+    target, fps, jitter,
+    drops, buffer: _tlFrameCache.size, inflight: _tlInflight.size,
+    hitRate: served ? hit / served : 1,
+    fetchAvg: fetchN ? fetchSum / fetchN : 0, fetchWorst, missing,
+    budget: 1000 / target,
+  };
+}
+
+function _tlDiagRender() {
+  if (!_tlDiag.enabled) { _tlDiag.raf = null; return; }
+  _tlDiagEnsureEl();  // survive preview rebuilds that detach the overlay mid-play
+  const el = _tlDiag.el;
+  if (el) {
+    const d = _tlDiagCompute();
+    const bad  = 'color:var(--err)', warn = 'color:var(--warn)', ok = 'color:var(--success)';
+    const fpsCol   = d.fps >= d.target - 1 ? ok : d.fps >= d.target * 0.75 ? warn : bad;
+    const jitCol   = d.jitter <= d.budget * 1.5 ? ok : d.jitter <= d.budget * 3 ? warn : bad;
+    const dropCol  = d.drops === 0 ? ok : d.drops <= 2 ? warn : bad;
+    const hitCol   = d.hitRate >= 0.9 ? ok : d.hitRate >= 0.5 ? warn : bad;
+    const row = (label, val, style = '') =>
+      `<div style="display:flex;justify-content:space-between;gap:12px">
+         <span style="color:var(--muted)">${label}</span><span style="${style}">${val}</span></div>`;
+    el.innerHTML =
+      row('fps', `<b style="${fpsCol}">${d.fps}</b> / ${d.target}`) +
+      row('jitter', `${d.jitter.toFixed(0)}ms`, jitCol) +
+      row('drops/s', d.drops, dropCol) +
+      row('buffer', `${d.buffer}/${_TL_CACHE_MAX}` + (d.inflight ? ` (+${d.inflight})` : '')) +
+      row('cache hit', `${Math.round(d.hitRate * 100)}%`, hitCol) +
+      row('fetch', d.fetchAvg ? `${d.fetchAvg.toFixed(0)}/${d.fetchWorst.toFixed(0)}ms` : '—') +
+      (d.missing ? row('no render', d.missing, warn) : '');
+  }
+  _tlDiag.raf = requestAnimationFrame(() => setTimeout(_tlDiagRender, 180));
+}
+
+function _tlDiagEnsureEl() {
+  if (!gMainPreview) return;
+  // The preview pane rebuilds itself with gMainPreview.innerHTML = '...' (new
+  // frame, tlClearPreview), which detaches our overlay. A stale reference to
+  // that detached node makes the toggle look dead — re-create when orphaned.
+  if (_tlDiag.el && !_tlDiag.el.isConnected) _tlDiag.el = null;
+  if (_tlDiag.el) return;
+  const el = document.createElement('div');
+  el.className = 'tl-diag-readout';
+  el.style.cssText =
+    'position:absolute;top:8px;left:8px;z-index:20;padding:8px 10px;min-width:150px;' +
+    'font:11px/1.5 var(--font-mono,monospace);color:var(--text);background:var(--bg2);' +
+    'border:1px solid var(--border);border-radius:var(--radius-s,6px);box-shadow:var(--shadow-2);' +
+    'pointer-events:none;opacity:.94';
+  el.innerHTML = '<div style="color:var(--muted)">playback…</div>';
+  // gMainPreview holds the <img>; make it the positioning context.
+  if (getComputedStyle(gMainPreview).position === 'static') gMainPreview.style.position = 'relative';
+  gMainPreview.appendChild(el);
+  _tlDiag.el = el;
+}
+
+function tlPlaybackDiag(on) {
+  _tlDiag.enabled = on === undefined ? !_tlDiag.enabled : !!on;
+  const btn = document.getElementById('tl-diag-btn');
+  if (btn) btn.classList.toggle('active', _tlDiag.enabled);
+  if (_tlDiag.enabled) {
+    _tlDiagEnsureEl();
+    if (_tlDiag.el) _tlDiag.el.style.display = '';
+    if (!_tlDiag.raf) _tlDiagRender();
+  } else {
+    if (_tlDiag.raf) { cancelAnimationFrame(_tlDiag.raf); _tlDiag.raf = null; }
+    if (_tlDiag.el) _tlDiag.el.style.display = 'none';
+    _tlDiag.events.length = 0; _tlDiag.paints.length = 0;
+  }
+  return _tlDiag.enabled;
+}
+window.tlPlaybackDiag = tlPlaybackDiag;
+
 function _tlDisplayBlob(blob) {
   // Don't clobber the live canvas
   if (gLiveMode) return;
@@ -379,26 +496,51 @@ function _tlDisplayBlob(blob) {
   gLivePreviewImg.src = url;
   gLivePreviewImg.style.display = '';
   gLivePreviewImg.style.opacity = '1';
+  // Timestamp the *painted* frame, not just the src assignment: decode() resolves
+  // once the new bitmap is ready to show, so the interval between these marks is
+  // the true on-screen frame cadence — a hitch is a gap here, wherever it came
+  // from (slow fetch, main-thread decode, GC). See _tlDiag.
+  if (_tlDiag.enabled) {
+    if (gLivePreviewImg.decode) gLivePreviewImg.decode().then(_tlDiagPaint, _tlDiagPaint);
+    else _tlDiagPaint();
+  }
 }
+
+// Read-ahead window. At 24-60fps a frame is on screen for 16-42ms, less than a
+// fetch+decode round-trip, so a single frame of look-ahead was never a buffer:
+// one slow fetch — or the frame-skipping the playback clock does to stay on wall
+// time — desynced it, and from then on every frame was a cache miss that stalled
+// on full fetch latency. A deeper window keeps frames ahead of the playhead
+// resident even across a skip; in-flight dedup stops it re-requesting.
+const _TL_PREFETCH  = 6;
+const _TL_CACHE_MAX = 12;
 
 function tlLoadFrame(timelineFrame) {
   const hit = tlClipAtFrame(timelineFrame);
   if (!hit) { tlClearPreview(); return; }
   const { seqName, localFrame, srcOffset, ver } = hit;
   const fileFrame = localFrame + (srcOffset || 0);
-  const cacheKey = `${seqName}:${fileFrame}:${ver || ''}`;
+  const keyOf = f => `${seqName}:${f}:${ver || ''}`;
+  const cacheKey = keyOf(fileFrame);
 
   const token = ++_tlFrameSeq;
 
-  // Check cache first
+  // Check cache first. Keep the hit in the cache — a short back-scrub or a skip
+  // that re-lands on it should still hit; eviction below drops it once the
+  // playhead has moved past.
   const cached = _tlFrameCache.get(cacheKey);
   if (cached) {
+    _tlDiagRec({ kind: 'hit', fetchMs: 0 });
     _tlDisplayBlob(cached);
-    _tlFrameCache.delete(cacheKey);
   } else {
+    const _t0 = performance.now();
     _tlFetchFrame(seqName, fileFrame, ver).then(blob => {
       if (token !== _tlFrameSeq) return;  // the playhead has already moved on
-      if (blob) { _tlDisplayBlob(blob); return; }
+      if (blob) {
+        _tlDiagRec({ kind: 'miss', fetchMs: performance.now() - _t0 });
+        _tlFrameCache.set(cacheKey, blob); _tlDisplayBlob(blob); return;
+      }
+      _tlDiagRec({ kind: 'missing', fetchMs: performance.now() - _t0 });
       if (!gLivePreviewImg) {
         gMainPreview.innerHTML = '<div style="padding:20px;color:var(--muted);font-size:12px;text-align:center;">No frame rendered yet</div>';
         gMainPreview.classList.add('active');
@@ -407,16 +549,19 @@ function tlLoadFrame(timelineFrame) {
     });
   }
 
-  // Pre-fetch next frame
-  const nextFileFrame = fileFrame + 1;
-  const nextKey = `${seqName}:${nextFileFrame}:${ver || ''}`;
-  if (!_tlFrameCache.has(nextKey)) {
-    _tlFetchFrame(seqName, nextFileFrame, ver)
-      .then(blob => { if (blob) _tlFrameCache.set(nextKey, blob); });
+  // Pre-fetch the next several frames so the buffer survives a slow fetch or a
+  // skipped frame instead of collapsing back to synchronous per-frame fetches.
+  for (let i = 1; i <= _TL_PREFETCH; i++) {
+    const k = keyOf(fileFrame + i);
+    if (_tlFrameCache.has(k)) continue;
+    _tlFetchFrame(seqName, fileFrame + i, ver)
+      .then(blob => { if (blob) _tlFrameCache.set(k, blob); });
   }
 
-  // Clean old cache entries (keep max 5)
-  while (_tlFrameCache.size > 5) {
+  // Evict the frames furthest behind the playhead first — insertion order tracks
+  // forward playback, so the oldest key is the one longest past — keeping the
+  // read-ahead window resident.
+  while (_tlFrameCache.size > _TL_CACHE_MAX) {
     const firstKey = _tlFrameCache.keys().next().value;
     _tlFrameCache.delete(firstKey);
   }
@@ -5118,6 +5263,12 @@ function _tlPlayTick() {
   const advanced = Math.floor((performance.now() - _tlPlayClock.at) * fps / 1000);
   const next = st + ((((_tlPlayClock.frame - st + advanced) % span) + span) % span);
   if (next !== _tlPlayShown) {
+    // Frames the wall-clock advanced over but we never displayed (playback
+    // skipping to stay on time) are dropped frames — the visible stutter.
+    if (_tlDiag.enabled && _tlPlayShown !== null) {
+      const gap = (((next - _tlPlayShown) % span) + span) % span;
+      if (gap > 1) _tlDiagRec({ kind: 'drop', n: gap - 1 });
+    }
     _tlPlayShown = next;
     tlFrame.value = next;
     updatePlayhead();
@@ -5133,6 +5284,8 @@ tlPlay.addEventListener('click', () => {
   _tlPlayFrom(parseInt(tlFrame.value) || 0);
   tlPlayRaf = requestAnimationFrame(_tlPlayTick);
 });
+
+document.getElementById('tl-diag-btn')?.addEventListener('click', () => tlPlaybackDiag());
 
 // ── Frame scrubbing: preview rendered sequence frames ───────────
 tlFrame.addEventListener('input', () => {

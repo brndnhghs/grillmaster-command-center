@@ -2069,12 +2069,18 @@ def _run_graph_job(job_id, nodes, edges, seed, frames, start_frame, out_dir, wid
                 q.put(("graph_frame", payload))
 
                 # ── Save individual frame to sequence directory ──
+                # This is the render path that populates a scrubbable/playable
+                # timeline clip (gGraphDoneSwap fires off its seq_name), so the
+                # playback JPEG must be written here too — otherwise the first
+                # playthrough stalls a second or two in, decoding cold PNGs
+                # inside get_sequence_frame.
                 from PIL import Image as _PILS
                 import numpy as np
                 png_path = seq_dir / f"frame_{frame:04d}.png"
                 _PILS.fromarray(
                     (arr.clip(0, 1) * 255).astype(np.uint8)
                 ).save(str(png_path))
+                _write_seq_jpeg(png_path, arr)
 
         # Assemble output file
         if not terminal_frames:
@@ -2102,6 +2108,7 @@ def _run_graph_job(job_id, nodes, edges, seed, frames, start_frame, out_dir, wid
             arr_u8 = (arr.clip(0, 1) * 255).astype(np.uint8) if arr.dtype != np.uint8 else arr
             png_path = seq_dir / "frame_0000.png"
             Image.fromarray(arr_u8).save(str(png_path))
+            _write_seq_jpeg(png_path, arr_u8)
             rel_path = png_path.relative_to(OUTPUT_ROOT).as_posix()
             job["output_path"] = str(png_path)
             job["type"] = "image"
@@ -2274,6 +2281,10 @@ async def render_sequence(req: SequenceRequest):
                     _PILS.fromarray(
                         (arr.clip(0, 1) * 255).astype(np.uint8)
                     ).save(str(png_path))
+                    # Encode the timeline-playback JPEG now, from the array we
+                    # already hold, so scrubbing/playback never pays a cold
+                    # PNG→JPEG conversion inside the GET handler.
+                    _write_seq_jpeg(png_path, arr)
                     frame_path = str(png_path)
 
                 payload = json.dumps({"frame": frame, "total": total_frames, "path": frame_path})
@@ -2342,6 +2353,27 @@ def get_sequence_video(name: str, ext: str):
     return FileResponse(str(video_path), media_type=media_type, filename=f"{name}.{ext}")
 
 
+def _write_seq_jpeg(png_path, arr=None) -> None:
+    """Write the JPEG sibling served by get_sequence_frame next to a saved PNG.
+
+    Timeline playback fetches these JPEGs one per frame; generating them lazily
+    inside the GET handler meant the first playthrough paid a full PNG-decode +
+    JPEG-encode on every frame the playhead had not yet visited, which stalled
+    playback a second or two in (once it ran past the warmed head of the clip).
+    Encoding at save time keeps the GET a pure file send. `arr` skips re-decoding
+    the PNG when the caller already holds the pixels. Best-effort: a failure here
+    just falls back to the lazy path in get_sequence_frame.
+    """
+    jpg_path = png_path.with_suffix(".jpg")
+    try:
+        if arr is None:
+            from PIL import Image as _PILImg
+            arr = _PILImg.open(str(png_path))
+        jpg_path.write_bytes(_encode_jpeg(arr, quality=85))
+    except Exception:
+        pass
+
+
 @app.get("/api/sequences/{name}/{frame}")
 def get_sequence_frame(name: str, frame: int):
     name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
@@ -2349,12 +2381,11 @@ def get_sequence_frame(name: str, frame: int):
     if not png_path.exists():
         from fastapi import HTTPException
         raise HTTPException(404, f"Frame {frame} not found in sequence '{name}'")
-    # Serve as JPEG for faster transfer — PNGs are 5-10x larger
+    # Serve as JPEG for faster transfer — PNGs are 5-10x larger. Renders write
+    # this sibling at save time; the lazy branch only covers legacy sequences.
     jpg_path = png_path.with_suffix(".jpg")
     if not jpg_path.exists():
-        from PIL import Image
-        img = Image.open(str(png_path)).convert("RGB")
-        img.save(str(jpg_path), format="JPEG", quality=85)
+        _write_seq_jpeg(png_path)
     return FileResponse(
         str(jpg_path),
         media_type="image/jpeg",
@@ -2396,11 +2427,11 @@ def put_sequence_frame(name: str, req: SeqFrameUpload):
 
     png_path = seq_dir / f"frame_{req.frame:04d}.png"
     png_path.write_bytes(blob)
-    # get_sequence_frame serves a cached JPEG sibling whenever one exists; a
-    # stale one from a previous run would shadow the frame just written.
-    jpg_path = png_path.with_suffix(".jpg")
-    if jpg_path.exists():
-        jpg_path.unlink()
+    # get_sequence_frame serves a cached JPEG sibling whenever one exists.
+    # Re-encode it now (a stale one from a previous run would otherwise shadow
+    # the frame just written) so timeline playback of this fresh clip never
+    # stalls on a lazy conversion.
+    _write_seq_jpeg(png_path)
     return {"ok": True, "frame": req.frame}
 
 
