@@ -58,14 +58,6 @@ image_pipeline/tests/          (~40 files, 9,621 lines)
 ├── Profiles
 │   ├── gpu_parity.py
 │   └── profile_live.py
-
-chord_bot/tests/               (6 files)
-├── test_executor.py
-├── test_function.py
-├── test_neapolitan.py
-├── test_nodes.py
-├── test_planing.py
-└── test_secondary_dominant.py
 ```
 
 ## Running Tests

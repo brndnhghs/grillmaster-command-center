@@ -1,6 +1,6 @@
 # Grillmaster Command Center
 
-Grillmaster Command Center is a local-first generative art and music studio. The **Image Pipeline** turns parameterised node-graphs into images, animations, and videos; **Chord Bot** composes chord progressions as left-to-right node graphs and exports them as MIDI, text, or JSON. A small **Dashboard** process supervises both services and serves a unified control-panel UI.
+Grillmaster Command Center is a local-first generative art studio. The **Image Pipeline** turns parameterised node-graphs into images, animations, and videos. A small **Dashboard** process supervises the services and serves a unified control-panel UI.
 
 The system is designed to run entirely locally on a laptop: no cloud dependencies, no accounts, no build step for the front-end.
 
@@ -10,19 +10,17 @@ The system is designed to run entirely locally on a laptop: no cloud dependencie
 - **Node Graph** — a directed acyclic graph of method nodes wired together. The executor topologically sorts the graph and runs each node in order, passing image/field/mask data along edges.
 - **Architecture A vs B** — Architecture-A methods (simulations) cook an entire frame list internally and are cached by the executor. Architecture-B methods are stateless single-frame generators driven by a timeline or `time` parameter.
 - **Live Simulation** — the graph can run continuously, re-reading the shared graph document every frame so edits are absorbed by the running loop without restarting.
-- **Chord Bot Graph** — a separate node-graph engine where horizontal nodes advance a beat clock and vertical nodes augment harmonic state; execution is a single pass producing a `SequenceEntry` list.
 
 ## Entry Points
 
 - [`image_pipeline/pipeline.py`](https://github.com/brndnhghs/grillmaster-command-center/blob/3e085d44fccca63896b5f6543aaa54ab4216e4b3/image_pipeline/pipeline.py) — CLI batch runner (`python -m image_pipeline.pipeline --all`)
 - [`image_pipeline/server.py`](https://github.com/brndnhghs/grillmaster-command-center/blob/3e085d44fccca63896b5f6543aaa54ab4216e4b3/image_pipeline/server.py) — FastAPI server (default `:7860`) serving the node-graph UI and REST/SSE/WebSocket API
-- [`chord_bot/server.py`](https://github.com/brndnhghs/grillmaster-command-center/blob/3e085d44fccca63896b5f6543aaa54ab4216e4b3/chord_bot/server.py) — Chord Bot FastAPI server (default `:7861`)
-- [`dashboard/__init__.py`](https://github.com/brndnhghs/grillmaster-command-center/blob/3e085d44fccca63896b5f6543aaa54ab4216e4b3/dashboard/__init__.py) — Dashboard supervisor (default `:7870`) that spawns and monitors the two services
-- [`scripts/grillmaster-launcher.sh`](https://github.com/brndnhghs/grillmaster-command-center/blob/3e085d44fccca63896b5f6543aaa54ab4216e4b3/scripts/grillmaster-launcher.sh) — one-shot launcher for both services
+- [`dashboard/__init__.py`](https://github.com/brndnhghs/grillmaster-command-center/blob/3e085d44fccca63896b5f6543aaa54ab4216e4b3/dashboard/__init__.py) — Dashboard supervisor (default `:7870`) that spawns and monitors the services
+- [`scripts/grillmaster-launcher.sh`](https://github.com/brndnhghs/grillmaster-command-center/blob/3e085d44fccca63896b5f6543aaa54ab4216e4b3/scripts/grillmaster-launcher.sh) — one-shot launcher for the pipeline server
 
 ## High-Level Architecture
 
-The Image Pipeline and Chord Bot are independent FastAPI apps. The Dashboard is a third FastAPI app that spawns each as a child process and proxies their status. The browser UI (`ui/index.html`) talks directly to the Image Pipeline server over REST, Server-Sent Events, and WebSocket; Chord Bot has its own UI under `/chordbot`. A three.js sidecar on `:7862` serves the 3D viewport.
+The Image Pipeline is a FastAPI app. The Dashboard is a second FastAPI app that spawns it as a child process and proxies its status. The browser UI (`ui/index.html`) talks directly to the Image Pipeline server over REST, Server-Sent Events, and WebSocket. A three.js sidecar on `:7862` serves the 3D viewport.
 
 See [architecture.md](architecture.md).
 
@@ -49,7 +47,6 @@ See [architecture.md](architecture.md).
 | [`server`](modules/server.md) | FastAPI server: REST, SSE, WebSocket, job queue, live sim, Node Doctor |
 | [`methods-library`](modules/methods-library.md) | 373 generative methods across 8 categories + top-level files |
 | [`ui-editor`](modules/ui-editor.md) | Browser SPA: method browser, node-graph canvas, 3D viewport, diagnostics |
-| [`chord-bot`](modules/chord-bot.md) | Standalone chord-progression node graph + MIDI/text/JSON export |
 | [`dashboard`](modules/dashboard.md) | Process supervisor + unified control-panel UI |
 
 ## Getting Started

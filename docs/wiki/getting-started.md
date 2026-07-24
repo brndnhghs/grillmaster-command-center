@@ -2,9 +2,9 @@
 
 ## Prerequisites
 
-- **Python 3.12** — the repo ships a `.venv` built on 3.12.13. The Image Pipeline and Chord Bot both run under it.
+- **Python 3.12** — the repo ships a `.venv` built on 3.12.13. The Image Pipeline runs under it.
 - **Git** — to clone, and to track the source SHA.
-- **Node.js** — only for the 3D viewport sidecar (`image_pipeline/3d/threejs-sidecar.mjs`). The 2D pipeline needs no Node.
+- **Node.js** — only for the 3D viewport sidecar (`image_pipeline/3d/threejs-sidecar.mjs`), which the server spawns automatically when a graph uses 3D nodes. The 2D pipeline needs no Node.
 - **macOS / Linux** — paths and `lsof`/`killpg` usage assume a Unix-like shell.
 
 ## Installation
@@ -37,8 +37,6 @@ pip install -r requirements.txt
 
 **Optional extras** (commented out in `requirements.txt`; each is imported lazily inside the method that needs it, so the server runs without them — only that method fails until installed): `matplotlib` (colormaps), `scikit-image` (fractal resize), `pyfiglet` (ASCII art), `qrcode` (#09 QR Code), `moderngl` (#82 GPU Shaders), `torch` + `diffusers` (#21 Stable Diffusion 1.5, ~2 GB+).
 
-> **Chord Bot** has its own `chord_bot/pyproject.toml`, but it shares the same `.venv` — no separate install is required once `requirements.txt` is satisfied.
-
 ## First Run
 
 The simplest path is the Dashboard, which launches and monitors both services:
@@ -64,15 +62,13 @@ bash scripts/grillmaster-launcher.sh
 | Service | Port | Launched by |
 |----------|-------|-------------|
 | Image Pipeline (server) | `7860` | Dashboard / launcher |
-| Chord Bot (server) | `7861` | Dashboard / launcher |
-| 3D Sidecar (Node.js) | `7862` | Dashboard |
+| 3D Sidecar (Node.js) | `7862` | Image Pipeline (on demand) or Dashboard |
 | Dashboard (control panel) | `7870` | you |
 
 You can also run a single service directly:
 
 ```bash
 python -m image_pipeline.server --port 7860
-python -m chord_bot.server     --port 7861
 ```
 
 ## Common Workflows
@@ -90,13 +86,11 @@ Open the Dashboard → Image Pipeline → **Methods** tab. Search a method, twea
 ### Build & run a node graph
 Open the **Node Graph** tab. Drag methods from the palette onto the canvas, wire outputs→inputs, set canvas size, then **Run**. Use **Live** for a continuous simulation that absorbs edits without restarting.
 
-### Chord progression
-Open Chord Bot (`:7861`). Place horizontal nodes (Tonic, Function, Cadence…) left-to-right, add vertical augmenters, then export as MIDI, text chart, or JSON.
-
 ## Configuration
 
 - **`GRILLMASTER_API_TOKEN`** — when set, the server requires this token on protected endpoints (Node Doctor apply/undo, Node Tester batch-apply). The UI reads it from `localStorage['api-token']` and attaches it as `X-Api-Token` on every request. No-op when unset (local/dev).
-- **`THREEJS_SIDECAR_URL`** — default `http://127.0.0.1:7862`. The server proxies 3D-node graph renders to this Node.js sidecar. Override to point at a remote sidecar.
+- **`THREEJS_SIDECAR_URL`** — default `http://127.0.0.1:7862`. The server proxies 3D-node graph renders to this Node.js sidecar, spawning it on first use if nothing is listening. Override to point at a remote sidecar.
+- **`THREEJS_SIDECAR_EXTERNAL`** — set to `1` when something else owns the sidecar process (a supervisor, a debugger, a remote host). The server will then proxy to it but never spawn it.
 - **`data/logs/`** — service stdout/stderr are written here (e.g. `data/logs/pipeline.log`). Useful when a launch reports "failed".
 
 ## Where to Go Next
@@ -104,4 +98,3 @@ Open Chord Bot (`:7861`). Place horizontal nodes (Tonic, Function, Cadence…) l
 - Architecture: [architecture.md](architecture.md)
 - Module reference: [README.md#module-map](README.md#module-map)
 - HTTP API index: [api.md](api.md)
-- Chord Bot deep-dive: [modules/chord-bot.md](modules/chord-bot.md)

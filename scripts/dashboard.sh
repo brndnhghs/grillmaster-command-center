@@ -1,7 +1,7 @@
 #!/bin/bash
 # Grillmaster Command Center — Dashboard launcher.
 # Starts the unified control panel (port 7870). From there you can launch the
-# Image Pipeline (7860) and Chord Bot (7861) with one click.
+# Image Pipeline (7860) with one click.
 # Run with: bash scripts/dashboard.sh   (optionally: --autostart)
 set -euo pipefail
 
@@ -29,4 +29,4 @@ done
 
 echo ""
 echo "  Open:  http://127.0.0.1:$DASH_PORT"
-echo "  Then click 'Launch Both' to boot the Image Pipeline + Chord Bot."
+echo "  Then click 'Launch All' to boot the Image Pipeline."

@@ -1,6 +1,6 @@
 # API Reference (Index)
 
-The Grillmaster HTTP surface is split across two FastAPI servers. This page is a **functional index** — every endpoint is documented with its path and behaviour in [`modules/server.md`](modules/server.md) (Image Pipeline) and [`modules/chord-bot.md`](modules/chord-bot.md) (Chord Bot). Below are the groups and the canonical entry points.
+This page is a **functional index** — every endpoint is documented with its path and behaviour in [`modules/server.md`](modules/server.md). Below are the groups and the canonical entry points.
 
 ## Image Pipeline (`:7860`)
 
@@ -20,27 +20,12 @@ The Grillmaster HTTP surface is split across two FastAPI servers. This page is a
 
 `*` = protected by `GRILLMASTER_API_TOKEN` (see [getting-started.md](getting-started.md#configuration)).
 
-## Chord Bot (`:7861`)
-
-| Group | Representative endpoints | Purpose |
-|-------|--------------------------|---------|
-| **UI / health** | `GET /`, `GET /wiki`, `GET /health` | Serve SPA, in-app docs, health check |
-| **Schema** | `GET /api/node-defs`, `GET /api/port-types` | Node + port-type definitions |
-| **Execute / export** | `POST /api/graph/execute`, `POST /api/graph/export-midi`, `POST /api/export/text` | Run graph → sequence; export MIDI / text / JSON |
-| **Tunnel** | `GET /api/tunnel-url` | Public tunnel URL (when enabled) |
-
 ## Data Models (Image Pipeline)
 
 - **`GenerateRequest`** — `method_id`, `seed`, `params`, `animate`, `fps`, `duration`, `filter`, `demo`, `width`, `height`
 - **`GraphRequest`** — `nodes[]`, `edges[]`, `seed`, `frames`, `frame`, `width`, `height`, `fps_limit`, `graph_id`
 - **`NodeModel`** — `id`, `type`, `x`, `y`, `params`, `paramKeyframes`, `dirty`
 - **`EdgeModel`** — `src_node`, `dst_node`, `src_port`, `dst_port`
-
-## Data Models (Chord Bot)
-
-- **`GraphRequest`** — `nodes[]`, `edges[]`, `tempo` (20–400 BPM, default 120)
-- **`NodeModel`** — `id`, `type`, `x`, `y`, `params`, `paramKeyframes`, `dirty`
-- **`SequenceEntry`** (response) — `state` (HarmonicState), `start_beat`, `end_beat`, `node_id`
 
 ## Auth
 

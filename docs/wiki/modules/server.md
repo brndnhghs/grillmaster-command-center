@@ -22,14 +22,12 @@ FastAPI web server (3,015 lines) serving the node-graph editor frontend, the gen
 1. Import `image_pipeline.core.registry` → loads all methods
 2. Import `image_pipeline.methods` → auto-registers all methods via `@method` decorator
 3. Mount static files at `/output`, `/ui`, `/assets`
-4. Mount chord_bot app at `/chordbot/` (guarded import)
-5. Install `_ThreadDispatchWriter` for per-thread stdout/stderr proxy
-6. Start watchdog observer for method hot-reload
+4. Install `_ThreadDispatchWriter` for per-thread stdout/stderr proxy
+5. Start watchdog observer for method hot-reload
 7. Enter lifespan → accept requests
 
 ## Ports
 - Default: 7860 (image pipeline)
-- Chord Bot: 7861 (mounted at `/chordbot`)
 - Dashboard: 7870 (separate process)
 
 ## Key Modules Referenced

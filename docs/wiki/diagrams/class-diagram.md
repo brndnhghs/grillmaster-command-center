@@ -1,6 +1,6 @@
 # Class Diagram
 
-The Image Pipeline and Chord Bot share a decorator-registry + executor pattern. The classes below are the load-bearing types — every field shown was observed in the source reads (registry.py, graph.py, timeline.py, and the hand-written `chord-bot.md`).
+The Image Pipeline uses a decorator-registry + executor pattern. The classes below are the load-bearing types — every field shown was observed in the source reads (registry.py, graph.py, timeline.py).
 
 ```mermaid
 classDiagram
@@ -52,31 +52,12 @@ classDiagram
         +list keyframes
         +eval_at(frame) float
     }
-    class HarmonicState {
-        +str key
-        +str mode
-        +str chord
-        +list voices
-        +float tension
-        +float duration
-    }
-    class SequenceEntry {
-        +HarmonicState state
-        +float start_beat
-        +float end_beat
-        +str node_id
-    }
-    class ChordExecutor {
-        +execute(nodes, edges, tempo)
-    }
 
     MethodMeta <.. NodeDef : _make_node_def()
     GraphExecutor o-- GraphNode
     GraphExecutor o-- GraphEdge
     NodeDef <.. GraphNode : derived from
     Timeline *-- KeyframeTrack
-    ChordExecutor ..> HarmonicState
-    ChordExecutor ..> SequenceEntry
 ```
 
 ## Notes
@@ -85,5 +66,4 @@ classDiagram
 - **`GraphNode` carries the live graph state** — `params`, `keyframes`, `paramKeyframes`, and the `dirty` flag that drives live invalidation. The executor reads these, not the `NodeDef`.
 - **`GraphExecutor` is not thread-safe.** The server serializes every use behind a lock (`_live_exec_lock` / `_render_exec_lock`) and keeps one persistent executor across hot-swaps so Architecture-A sim caches survive.
 - **Architecture-A caching** lives inside `GraphExecutor` (`_sim_cache`, keyed by node-id + param hash + frame). `selective_invalidate()` returns the count of cache entries cleared.
-- **Chord Bot classes** (`HarmonicState`, `SequenceEntry`, `ChordExecutor`) are documented in [`../modules/chord-bot.md`](../modules/chord-bot.md) — their fields are quoted from that doc, not read directly from `chord_bot/` source in this pass.
 - **Port types** (`IMAGE`, `FIELD`, `MASK`, `SCALAR`, `TEXT`, `PARTICLES`) are a string-keyed registry in `port_types.py`, not a class — shown as edge labels in the architecture diagram rather than here.

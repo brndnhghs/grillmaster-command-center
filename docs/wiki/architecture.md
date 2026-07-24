@@ -1,6 +1,6 @@
 # Architecture
 
-Grillmaster Command Center is a local-first generative art and music studio. Two independent FastAPI servers — the Image Pipeline (`:7860`) and Chord Bot (`:7861`) — are supervised by a third Dashboard process (`:7870`) that spawns them as children and proxies their status. The browser UI (`ui/index.html`) talks directly to the Image Pipeline server over REST, Server-Sent Events, and WebSocket; Chord Bot has its own UI mounted under `/chordbot`. A Node.js three.js sidecar on `:7862` serves the 3D viewport.
+Grillmaster Command Center is a local-first generative art studio. The Image Pipeline FastAPI server (`:7860`) is supervised by a Dashboard process (`:7870`) that spawns it as a child and proxies its status. The browser UI (`ui/index.html`) talks directly to the Image Pipeline server over REST, Server-Sent Events, and WebSocket. A Node.js three.js sidecar on `:7862` serves the 3D viewport; the pipeline server boots it on demand the first time a graph contains 3D nodes.
 
 Data enters the Image Pipeline either as a single method invocation (CLI or UI "Generate") or as a node graph (UI "Node Graph" tab). In both paths the request reaches `server.py`, which looks up the method in the registry, builds a `GraphExecutor` from the graph topology, and runs a topological sort. Architecture-A simulation methods cook an entire frame list internally and are cached by the executor; Architecture-B methods are stateless single-frame generators driven by a timeline. Output is written to disk as PNG/JPEG and streamed back to the UI via SSE or MJPEG.
 
@@ -11,8 +11,7 @@ Data enters the Image Pipeline either as a single method invocation (CLI or UI "
 - **Method Registry** — `image_pipeline/core/registry.py`. Decorator-based auto-discovery; `MethodMeta` holds id, name, category, params, ports, and tags. See [`core-registry.md`](modules/core-registry.md).
 - **Method Library** — 373 generators across `image_pipeline/methods/` (8 categories + top-level files). Each file is self-contained and registers on import. See [`methods-library.md`](modules/methods-library.md).
 - **Post-Process / Annotator** — `image_pipeline/core/postprocess.py` (~56 OpenCV effects) and `core/annotator.py` (demo overlay). See [`core-postprocess.md`](modules/core-postprocess.md), [`core-annotator.md`](modules/core-annotator.md).
-- **Chord Bot** — Standalone FastAPI app in `chord_bot/server.py`. Left-to-right directed graph where horizontal nodes advance a beat clock and vertical nodes augment harmonic state. Single-pass execution produces a `SequenceEntry` list exportable as MIDI, text, or JSON. See [`chord-bot.md`](modules/chord-bot.md).
-- **Dashboard** — `dashboard/__init__.py`. Spawns Image Pipeline, Chord Bot, and the 3D sidecar as subprocesses; serves a unified SPA with an embedded iframe switcher. See [`dashboard.md`](modules/dashboard.md).
+- **Dashboard** — `dashboard/__init__.py`. Optional process supervisor: spawns the Image Pipeline and the 3D sidecar as subprocesses and reports their health. Not load-bearing — the pipeline server manages the sidecar itself. See [`dashboard.md`](modules/dashboard.md).
 - **UI Editor** — `ui/index.html` + `ui/js/`. Tabbed SPA: Methods tab, Node Graph tab (graph canvas + 3D viewport docked side-by-side), Diagnostics tab. Pure ES modules, vendored three.js r185, no build step. See [`ui-editor.md`](modules/ui-editor.md).
 
 ## System Diagram
@@ -22,7 +21,6 @@ flowchart TD
     User(["User / Browser"])
     Dashboard["Dashboard :7870"]
     Pipeline["Image Pipeline :7860"]
-    Chord["Chord Bot :7861"]
     Sidecar["3D Sidecar :7862"]
     GraphDoc[("Shared Graph Doc")]
     JobQueue[("Job Queue")]
@@ -31,17 +29,14 @@ flowchart TD
 
     User --> Dashboard
     Dashboard -->|spawn/monitor| Pipeline
-    Dashboard -->|spawn/monitor| Chord
     Dashboard -->|spawn/monitor| Sidecar
     User -.->|direct REST/SSE/WS| Pipeline
-    User -.->|direct REST| Chord
 
     Pipeline --> GraphDoc
     Pipeline --> JobQueue
     Pipeline --> Cache
     Pipeline --> Disk
     Pipeline -->|proxied iframe| Dashboard
-    Chord --> Disk
 ```
 
 ## Data Flow

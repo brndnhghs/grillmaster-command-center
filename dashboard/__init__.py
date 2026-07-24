@@ -1,15 +1,22 @@
 """Grillmaster Command Center — Dashboard backend.
 
-A single FastAPI app (port 7870) that launches, monitors, and stops the two
-Grillmaster services — the Image Pipeline (7860) and the Chord Bot (7861) —
-and presents a unified control panel + embedded UI switcher.
+A single FastAPI app (port 7870) that launches, monitors, and stops the
+Grillmaster services — the Image Pipeline (7860) and the three.js sidecar
+(7862) — and presents them as a process supervisor panel.
 
 Run:
     python -m dashboard            # launches servers on demand via the UI
-    python -m dashboard --autostart  # also boots both services at startup
+    python -m dashboard --autostart  # also boots the services at startup
 
-The dashboard does NOT itself render either app; it spawns each service as a
-child process (using the repo .venv) and proxies their status via /health.
+The dashboard does NOT render or proxy either service; it spawns each as a
+child process (using the repo .venv) and reports status via /health. Open a
+service in its own tab via the ↗ Open button.
+
+Nothing here is load-bearing: the pipeline server spawns the three.js sidecar
+itself on first 3D render (see image_pipeline.server._ensure_threejs_sidecar),
+and an already-healthy service is adopted rather than restarted, so the two
+supervisors coexist. This panel is a convenience for pre-warming and watching
+the services, not a dependency of either.
 """
 from __future__ import annotations
 
@@ -27,11 +34,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = REPO_ROOT / "data"
 UI_DIR = Path(__file__).resolve().parent / "ui"
 
-# Use the repo .venv (Py 3.12) which has both chord_bot and image_pipeline.
+# Use the repo .venv (Py 3.12), which has image_pipeline installed.
 VENV_PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
 
 PIPELINE_PORT = 7860
-CHORD_PORT = 7861
 DASHBOARD_PORT = 7870
 
 # ── Process registry ──────────────────────────────────────────────────────────
@@ -42,7 +48,6 @@ def _spawn(name: str, module: str, port: int) -> subprocess.Popen:
     """Spawn a service as a backgrounded subprocess using the repo venv."""
     env = dict(os.environ)
     env["PYTHONPATH"] = str(REPO_ROOT)
-    # chord_bot module lives under chord_bot/ (repo root on PYTHONPATH handles it)
     proc = subprocess.Popen(
         [str(VENV_PYTHON), "-m", module, "--port", str(port)],
         cwd=str(REPO_ROOT),
@@ -188,7 +193,6 @@ THREEJS_PORT = 7862
 
 SERVICES = {
     "pipeline": {"module": "image_pipeline.server", "port": PIPELINE_PORT},
-    "chord": {"module": "chord_bot.server", "port": CHORD_PORT},
     "3d": {"module": None, "port": THREEJS_PORT, "node": NODEJS},
 }
 
