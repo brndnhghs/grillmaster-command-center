@@ -49,7 +49,7 @@ def register_node_type(manifest: dict) -> dict:
 
     manifest = {
         "name":        "Curl Warp",                 # display name (required)
-        "type": "procedural"|"filter"|"feedback"|"expression",  # default procedural
+        "type": "procedural"|"filter"|"feedback"|"expression"|"particles",  # default procedural
         "glsl":        "void main(){ ... }",         # fragment body (GPU types)
         "description": "…",                          # optional
         "uniforms": {                                # optional typed params
@@ -97,6 +97,9 @@ def register_node_type(manifest: dict) -> dict:
     # Expression nodes are CPU math, not shaders — separate path entirely.
     if manifest.get("type") == "expression":
         return _register_expression_node(name, manifest)
+    # Particle nodes are transform-feedback GPU systems — their own path.
+    if manifest.get("type") == "particles":
+        return _register_particle_node(name, manifest)
 
     glsl = manifest.get("glsl") or ""
     if "void main" not in glsl:
@@ -287,6 +290,93 @@ def _register_expression_node(name: str, manifest: dict) -> dict:
     }
 
 
+# ── particle body kind (transform-feedback GPU) ───────────────────────
+# GL 4.1 on macOS has no compute shaders, so particles step via transform
+# feedback (core.particles). The agent authors a vertex-shader update body that
+# sets out_p = vec4(x,y,vx,vy) from `p`; the system handles double-buffering,
+# seeding, point rasterisation, and per-node persistent state.
+
+def _register_particle_node(name: str, manifest: dict) -> dict:
+    from .core import registry
+    from .core.registry import method as _method_dec
+    from .core.graph import clear_node_defs_cache
+    from .core import particles as _particles
+    from .core.shaders import _parse_color
+    from .core.utils import get_canvas
+    from .methods.gpu_shaders import _param_from_uniform
+
+    glsl = manifest.get("glsl") or ""
+    if "out_p" not in glsl:
+        return {"ok": False, "error":
+                "particle body must assign out_p = vec4(x, y, vx, vy) — the next "
+                "state; `p` is the current state, x/y in [0,1]"}
+    uniforms = manifest.get("uniforms") or {}
+    bad = [k for k in uniforms if k.startswith("u_")]
+    if bad:
+        return {"ok": False, "error": f"uniform keys must be bare names, not {bad}"}
+
+    # compile-test the transform-feedback + draw programs now (agent feedback).
+    try:
+        _particles.compile_particle_programs(glsl, uniforms)
+    except Exception as e:
+        return {"ok": False, "compile_error": str(e)}
+
+    node_id = next_agent_id()
+    params: dict = {
+        "count":      {"default": 20000, "min": 100, "max": 200000,
+                       "description": "particle count (realloc on change)"},
+        "point_size": {"default": 3.0, "min": 1, "max": 64,
+                       "description": "point sprite size (px)"},
+        "dt":         {"default": 1.0, "min": 0.0, "max": 4.0,
+                       "description": "simulation step scale"},
+        "color":      {"glsl": "color", "default": "#99ccff",
+                       "description": "particle colour"},
+        "emit_particles": {"choices": ["false", "true"], "default": "false",
+                       "description": "also output the (N,4) PARTICLES buffer "
+                                      "(adds a GPU→CPU readback)"},
+    }
+    for uname, spec in uniforms.items():
+        params[uname] = _param_from_uniform(spec)
+
+    inputs = {"point_size": "SCALAR", "dt": "SCALAR"}
+    for uname, spec in uniforms.items():
+        if spec.get("glsl", "float") in ("float", "int"):
+            inputs[uname] = "SCALAR"
+
+    @_method_dec(
+        id=node_id, name=name, category="particles",
+        new_image_contract=True, is_time_varying=True,
+        inputs=inputs, outputs={"image": "IMAGE", "particles": "PARTICLES"},
+        params=params, tags=["gpu", "particles", "transform-feedback"],
+        description=manifest.get("description", ""),
+    )
+    def _fn(out_dir, seed, params=None, _body=glsl, _uspec=uniforms):
+        params = params or {}
+        count = int(params.get("count", 20000) or 20000)
+        emit = str(params.get("emit_particles", "false")).lower() in ("true", "1", "yes")
+        cw, ch = get_canvas()
+        arr, parts = _particles.render_particles(
+            str(out_dir), _body, _uspec, params, count, cw, ch,
+            seed=int(seed), point_size=float(params.get("point_size", 3.0)),
+            color=_parse_color(params.get("color", "#99ccff")),
+            dt=float(params.get("dt", 1.0)), emit=emit)
+        out = {"image": arr}
+        if parts is not None:
+            out["particles"] = parts
+        return out
+
+    _fn.__name__ = f"particles_{node_id}"
+    clear_node_defs_cache()
+    meta = registry.get_meta(node_id)
+    return {
+        "ok": True, "id": node_id, "name": name, "type": "particles",
+        "ports": {"inputs": dict(meta.inputs or {}), "outputs": dict(meta.outputs)},
+        "params": dict(meta.params),
+        "hint": "GPU transform-feedback particles. Body sets out_p=vec4(x,y,vx,vy), "
+                "x/y in [0,1]; `p`=current state, id=gl_VertexID. Uniforms: "
+                "u_time, u_dt, u_count, u_resolution + your typed ones; helpers "
+                "hash11(f)/hash21(f). Reseeds when frame==0.",
+    }
 # ── graph wiring (validated) ──────────────────────────────────────────
 # The raw /api/graph/{gid}/patch appends edges with zero checking, so an agent
 # wiring blind produces type-mismatched edges that only fail at cook time. These

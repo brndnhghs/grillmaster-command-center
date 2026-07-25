@@ -96,6 +96,13 @@ def register_node_type(name: str, type: str = "procedural", glsl: str = "",
               param + (float/int) a wireable SCALAR port.
     On a GLSL error returns {ok:false, compile_error:...} — read it, fix, retry.
 
+    Particle kind ("particles", use `glsl` + `uniforms`) — a GPU
+    transform-feedback particle system (macOS GL 4.1 has no compute shaders).
+    `glsl` is a vertex-shader UPDATE body that sets `out_p = vec4(x,y,vx,vy)`
+    (next state) from `p` (current state; x/y in [0,1]); available: u_time,
+    u_dt, u_count, u_resolution + your typed uniforms, id=gl_VertexID, helpers
+    hash11(f)/hash21(f). Outputs IMAGE (additive soft points) + PARTICLES (N,4).
+    Node params: count/point_size/dt/color/emit_particles. Reseeds on frame 0.
     Expression kind (use `expr` + optional `vars`) — a SCALAR-output CPU math
     node (LFOs, envelopes) to modulate any wireable param:
       • expr: safe math over `t` (frame time) and your free variables, e.g.
