@@ -83,7 +83,7 @@ def _curl_flow(rng: np.random.Generator, hh: int, ww: int, t: float, scale: floa
 
 
 @method(
-    id="494",
+    id="417",
     name="Screen-Space Fluid",
     category="filters",
     tags=["fluid", "ssf", "screen-space", "simulation", "shading", "liquid", "animation", "expanded"],

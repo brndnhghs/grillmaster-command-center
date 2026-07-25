@@ -83,7 +83,7 @@ COLORMAPS = {
 # ══════════════════════════════════════════════════════════════════════
 
 @method(
-    id="1008",
+    id="502",
     name="Cahn-Hilliard Phase Separation",
     category="simulations",
     tags=["physics", "phase-separation", "cahn-hilliard", "spinodal",

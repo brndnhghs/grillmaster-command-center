@@ -152,7 +152,7 @@ def _synth_hazy(h: int, w: int, seed: int):
 
 
 @method(
-    id="478",
+    id="405",
     name="Dark Channel Dehaze",
     category="filters",
     tags=["dehaze", "haze-removal", "restoration", "dark-channel", "atmospheric",

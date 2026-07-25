@@ -11,7 +11,7 @@ from ...core.utils import save, mn, write_particles, W, H
 
 
 @method(
-    id="140",
+    id="131",
     name="Particle Merge",
     category="compositing",
     tags=["particles", "merge", "combine"],

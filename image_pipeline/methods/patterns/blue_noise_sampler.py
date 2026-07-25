@@ -87,7 +87,7 @@ def _build_tone(source: str, w: int, h: int, seed: int) -> np.ndarray:
 
 
 @method(
-    id="976",
+    id="480",
     name="Blue-Noise Sampler",
     category="patterns",
     new_image_contract=True,

@@ -64,7 +64,7 @@ def _voronoise(x: np.ndarray, y: np.ndarray, u: float, v: float, seed: int) -> n
 
 
 @method(
-    id='528', name='Voronoise', category='patterns',
+    id='441', name='Voronoise', category='patterns',
     tags=['procedural', 'noise', 'voronoi', 'iq', 'cellular', 'animation'],
     params={
         'scale': {"spatial": True, 'description': 'grid frequency / zoom of the field', 'min': 1.0, 'max': 24.0, 'default': 8.0},

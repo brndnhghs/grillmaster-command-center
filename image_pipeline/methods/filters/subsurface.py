@@ -126,7 +126,7 @@ def _source(kind: str, rng: np.random.Generator, noise_amp: float,
 
 
 @method(
-    id="438",
+    id="378",
     name="Subsurface Scatter (SSSS)",
     category="filters",
     tags=["sss", "subsurface", "glow", "real-time", "post-process",

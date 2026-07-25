@@ -377,8 +377,6 @@ def _register_particle_node(name: str, manifest: dict) -> dict:
                 "u_time, u_dt, u_count, u_resolution + your typed ones; helpers "
                 "hash11(f)/hash21(f). Reseeds when frame==0.",
     }
-
-
 # ── graph wiring (validated) ──────────────────────────────────────────
 # The raw /api/graph/{gid}/patch appends edges with zero checking, so an agent
 # wiring blind produces type-mismatched edges that only fail at cook time. These

@@ -17,7 +17,7 @@ from ...core.animation import capture_frame
 from image_pipeline.core.spatial import sparam
 
 @method(
-    inputs={},id="164", name="Moiré Patterns", category="simulations",
+    inputs={},id="154", name="Moiré Patterns", category="simulations",
         tags=["moire", "interference", "hypnotic", "procedural"], timeout=300,
         params={
             "mode": {"choices": ["radial", "linear", "spiral", "hex"], "default": "radial"},

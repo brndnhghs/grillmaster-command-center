@@ -115,7 +115,7 @@ def _guided_channel(I: np.ndarray, p: np.ndarray, r: int, eps: float,
     return mean_a * I + mean_b
 
 
-@method(id='488', name='Guided Filter', category='filters',
+@method(id='414', name='Guided Filter', category='filters',
         tags=['guided-filter', 'edge-preserving', 'smoothing', 'detail-enhancement',
               'hdr', 'joint-upsampling', 'he-2010', 'fast', 'expanded', 'animation'],
         params={

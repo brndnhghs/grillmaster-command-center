@@ -171,7 +171,7 @@ def _thin_film_rgb(thickness01, cosT, ior, d0_nm, range_nm, brightness):
 
 
 @method(
-    id="1004",
+    id="498",
     name="Thin Film Interference",
     category="filters",
     tags=["thin-film", "iridescence", "soap-bubble", "oil-slick", "spectral", "cgi", "animation", "color_intrinsic"],

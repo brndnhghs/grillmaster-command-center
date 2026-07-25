@@ -10,7 +10,7 @@ from ...core.utils import save, mn, write_field, W, H
 
 
 @method(
-    id="139",
+    id="130",
     name="Field Combine",
     category="compositing",
     tags=["field", "merge", "combine"],

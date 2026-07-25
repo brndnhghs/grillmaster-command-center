@@ -89,7 +89,7 @@ def _scatter_rays(buf: np.ndarray, light_x: float, light_y: float,
 
 
 @method(
-    id="446",
+    id="386",
     name="God Rays (Filter)",
     category="filters",
     new_image_contract=True,

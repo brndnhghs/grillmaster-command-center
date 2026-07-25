@@ -157,7 +157,7 @@ def _interpret(s: str, angle_deg: float, draw, heading0: float):
 
 
 @method(
-    id="461",
+    id="394",
     name="L-System (Plant)",
     category="patterns",
     tags=["generative", "lsystem", "lindenmayer", "fractal", "plant",

@@ -18,7 +18,7 @@ except ImportError:
     _has_cv2 = False
 
 @method(
-    id="59",
+    id="57",
     name="Data Bending",
     new_image_contract=True,
     category="filters",

@@ -102,7 +102,7 @@ def _build_source(source: str, seed: int, scale: float, W: int, H: int) -> np.nd
     return np.clip(g, 0.0, 1.0)
 
 
-@method(id="925", name="XDoG Stylize", category="patterns",
+@method(id="455", name="XDoG Stylize", category="patterns",
         tags=["npr", "line-drawing", "filter", "xdog", "stylization",
               "animation", "color_intrinsic:false"],
         outputs={"image": "IMAGE", "luminance": "SCALAR", "mask": "MASK"},

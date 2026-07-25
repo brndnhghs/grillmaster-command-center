@@ -155,7 +155,7 @@ def _gen_source(source: str, rng: np.random.Generator, w: int, h: int,
 
 
 @method(
-    id="924",
+    id="454",
     name="Fast Bilateral Solver",
     category="filters",
     new_image_contract=True,

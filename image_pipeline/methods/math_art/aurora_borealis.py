@@ -188,7 +188,7 @@ def _compute_aurora(
 
 
 @method(
-    id="523",
+    id="437",
     name="Aurora Borealis",
     category="math_art",
     tags=["sky", "aurora", "emission", "procedural", "night", "atmosphere"],

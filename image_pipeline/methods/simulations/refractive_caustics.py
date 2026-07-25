@@ -242,7 +242,7 @@ def _intensity_to_rgb(intensity: np.ndarray, palette_name: str) -> np.ndarray:
 
 @method(
     inputs={},
-    id="117",
+    id="108",
     name="Refractive Caustics",
     category="simulations",
     tags=["physics", "animation", "optics", "water", "simulation", "caustics"],

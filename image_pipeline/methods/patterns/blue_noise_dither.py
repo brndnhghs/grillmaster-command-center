@@ -212,7 +212,7 @@ def _procedural_source(kind: str, W: int, H: int, rng: np.random.Generator) -> n
 
 
 @method(
-    id="952",
+    id="461",
     name="Blue-Noise Dither",
     category="patterns",
     tags=["dither", "blue-noise", "void-and-cluster", "ordered", "halftone",

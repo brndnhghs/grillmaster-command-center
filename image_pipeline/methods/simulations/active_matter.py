@@ -44,7 +44,7 @@ from ...core.animation import capture_frame
 
 
 @method(
-    id="915",
+    id="451",
     name="Active Matter (MIPS)",
     category="simulations",
     new_image_contract=True,

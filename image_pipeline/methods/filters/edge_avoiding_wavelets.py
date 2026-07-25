@@ -159,7 +159,7 @@ def _eaw_reconstruct(lows: list, details: list, levels: int, gains: list) -> np.
 
 
 @method(
-    id="990",
+    id="485",
     name="Edge-Avoiding Wavelets",
     category="filters",
     new_image_contract=True,

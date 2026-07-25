@@ -206,7 +206,7 @@ def _hsv(h, s=0.85, v=0.9):
 #  Method
 # ══════════════════════════════════════════════════════════════════════
 
-@method(id="108", name="4D Hypercube", category="math_art",
+@method(id="100", name="4D Hypercube", category="math_art",
         tags=["4d", "tesseract", "hypercube", "geometry", "rotation"],
         params={
     "speed_xw": {"description": "XW rotation speed", "min": 0.1, "max": 3.0, "default": 0.5},

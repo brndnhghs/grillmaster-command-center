@@ -124,7 +124,7 @@ def _bridson(r_px, w, h, rng, seeds, shape="disc", lum=None):
 
 
 @method(
-    id="526",
+    id="439",
     name="Poisson Disk Sampling",
     category="patterns",
     new_image_contract=True,

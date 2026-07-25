@@ -116,7 +116,7 @@ REGIMES = {
 
 
 @method(
-    id="999",
+    id="494",
     name="Kuramoto Coupled-Oscillator Phase Field",
     category="simulations",
     tags=["physics", "synchronization", "kuramoto", "oscillator", "chimera",

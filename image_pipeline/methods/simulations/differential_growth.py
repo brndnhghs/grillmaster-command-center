@@ -82,7 +82,7 @@ def _render(pts, edges, w, h, bg=(8, 9, 18)):
 
 
 @method(
-    id="448",
+    id="388",
     name="Differential Growth",
     category="simulations",
     tags=["differential-growth", "organic", "membrane", "primordial",

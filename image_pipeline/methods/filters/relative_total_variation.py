@@ -179,7 +179,7 @@ def _decompose(img: np.ndarray, lam: float, k: int, sigma: float,
 
 
 @method(
-    id="451",
+    id="391",
     name="Relative Total Variation",
     category="filters",
     new_image_contract=True,

@@ -181,7 +181,7 @@ def _render_scroll(x: np.ndarray, y: np.ndarray, z: np.ndarray,
 
 @method(
     inputs={},
-    id="162",
+    id="152",
     name="Rössler Oscillator Array",
     category="simulations",
     tags=["spatiotemporal chaos", "chimera", "scroll waves",

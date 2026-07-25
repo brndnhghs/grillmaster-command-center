@@ -177,7 +177,7 @@ def _upsample(coarse, W, H):
     return top * (1 - wy) + bot * wy
 
 
-@method(id='536', name='Diffusion Curves', category='patterns',
+@method(id='449', name='Diffusion Curves', category='patterns',
         tags=['procedural', 'vector-art', 'diffusion-curves', 'laplace',
               'harmonic', 'gradient', 'orzan-2008', 'animation'],
         inputs={'image_in': 'IMAGE'},

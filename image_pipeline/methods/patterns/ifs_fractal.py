@@ -158,7 +158,7 @@ def _render(xs, ys, tone, kidx, coloring, hue_shift, n_maps):
 
 
 @method(
-    id="353",
+    id="340",
     name="IFS Fractal",
     category="patterns",
     new_image_contract=True,

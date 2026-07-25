@@ -34,7 +34,7 @@ def _render(f):
 
 @method(
     inputs={},
-    id="158",
+    id="148",
     name="Darcy-Bénard Porous Convection",
     category="simulations",
     tags=["fluid", "porous", "convection", "plumes"],

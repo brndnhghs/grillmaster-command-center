@@ -215,7 +215,7 @@ def _render_multilayer(rho: np.ndarray, palette: str, sharpness: float = 10.0) -
 
 
 @method(
-    id="111",
+    id="103",
     name="Multi-Layer RT",
     category="simulations",
     tags=["physics", "fluid", "instability", "cascade", "animation"],

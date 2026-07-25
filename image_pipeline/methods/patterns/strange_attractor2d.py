@@ -46,7 +46,7 @@ def _palette_rgb(pal_name: str, n: int, rng: np.random.Generator) -> np.ndarray:
     return arr[idx]
 
 
-@method(id="342", name="Strange Attractor 2D", category="patterns",
+@method(id="329", name="Strange Attractor 2D", category="patterns",
         tags=["chaos", "strange-attractor", "clifford", "de-jong", "generative", "animation"],
         inputs={},
         outputs={"image": "IMAGE", "luminance": "FIELD", "density": "FIELD"},

@@ -110,7 +110,7 @@ def _resize01(arr: np.ndarray, w: int, h: int) -> np.ndarray:
 
 
 @method(
-    id="146",
+    id="137",
     name="AC + PM Diffusion",
     category="simulations",
     tags=[

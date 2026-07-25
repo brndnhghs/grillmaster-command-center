@@ -139,7 +139,7 @@ def _render_bloom(src: np.ndarray, threshold: float, softness: float,
 
 
 @method(
-    id="408",
+    id="353",
     name="Bloom / Glow",
     category="filters",
     new_image_contract=True,

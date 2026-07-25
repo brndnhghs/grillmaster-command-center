@@ -162,7 +162,7 @@ def _parallax_occlusion(Hh_img, base_color, height, layers, height_scale, light_
 
 
 @method(
-    id="1002",
+    id="496",
     name="Parallax Occlusion",
     category="filters",
     tags=["relief", "parallax-occlusion", "height-field", "emboss", "pom", "shading", "animation"],

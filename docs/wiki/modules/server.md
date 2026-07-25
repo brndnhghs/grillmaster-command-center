@@ -24,7 +24,7 @@ FastAPI web server (3,015 lines) serving the node-graph editor frontend, the gen
 3. Mount static files at `/output`, `/ui`, `/assets`
 4. Install `_ThreadDispatchWriter` for per-thread stdout/stderr proxy
 5. Start watchdog observer for method hot-reload
-7. Enter lifespan → accept requests
+6. Enter lifespan → accept requests
 
 ## Ports
 - Default: 7860 (image pipeline)

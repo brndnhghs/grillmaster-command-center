@@ -103,7 +103,7 @@ def _sample_angle_at(px: np.ndarray, py: np.ndarray, kind: str, seed: int,
 
 
 @method(
-    id='534', name='Spot Noise', category='patterns',
+    id='447', name='Spot Noise', category='patterns',
     tags=['procedural', 'noise', 'flow', 'vanwijk', 'visualization', 'ibfv', 'animation'],
     params={
         'n_spots': {'description': 'number of spots summed into the field', 'min': 100, 'max': 4000, 'default': 1200},

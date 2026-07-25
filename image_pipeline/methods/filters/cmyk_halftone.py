@@ -103,7 +103,7 @@ def _procedural_source(Hh: int, Ww: int, seed: int) -> np.ndarray:
 
 
 @method(
-    id="399",
+    id="349",
     name="CMYK Halftone",
     new_image_contract=True,
     category="filters",

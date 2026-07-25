@@ -58,7 +58,7 @@ def _pattern_field(w: np.ndarray, kind: str, freq: float) -> np.ndarray:
     return _ss(0.40, 0.49, np.maximum(fx, fy))
 
 
-@method(id="503", name="Conformal Warp", category="patterns",
+@method(id="425", name="Conformal Warp", category="patterns",
         tags=["procedural", "conformal", "complex-analysis", "warp", "domain",
               "animation", "gpu-twin-candidate"],
         inputs={},

@@ -390,7 +390,7 @@ def _hsv2rgb(h, s, v):
 
 @method(
     inputs={},
-    id="153",
+    id="144",
     name="Spatial Prisoner's Dilemma",
     category="simulations",
     tags=["animation", "emergent", "game-theory", "expanded"],

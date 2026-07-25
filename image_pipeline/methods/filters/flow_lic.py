@@ -115,7 +115,7 @@ def _coherent_grain(rng: np.random.Generator, hh: int, ww: int) -> np.ndarray:
 
 
 @method(
-    id="992",
+    id="487",
     name="Flow LIC",
     category="filters",
     tags=["lic", "flow", "vector-field", "visualization", "curl-noise", "animation", "expanded"],

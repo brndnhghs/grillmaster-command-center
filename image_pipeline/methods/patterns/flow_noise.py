@@ -171,7 +171,7 @@ def _colorize(val, cmode, pal_name):
     return np.clip(rgb, 0.0, 1.0).astype(np.float32)
 
 
-@method(id='535', name='Flow Noise', category='patterns',
+@method(id='448', name='Flow Noise', category='patterns',
         tags=['procedural', 'noise', 'flow-noise', 'perlin', 'rotating-gradient',
               'turbulence', 'advection', 'animation'],
         inputs={'image_in': 'IMAGE'},

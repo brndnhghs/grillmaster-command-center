@@ -55,7 +55,7 @@ def _hsv2rgb(h, s, v):
 
 
 @method(
-    id="923",
+    id="453",
     name="MatCap Relight",
     category="filters",
     new_image_contract=True,

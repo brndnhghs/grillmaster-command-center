@@ -109,7 +109,7 @@ def _palette(n: int, seed: int) -> list[tuple[float, float, float]]:
 # ══════════════════════════════════════════════════════════════════════
 
 @method(
-    id="953",
+    id="462",
     name="Mathematical Marbling",
     category="patterns",
     tags=["marbling", "fluid", "advection", "stylization", "procedural", "pattern"],

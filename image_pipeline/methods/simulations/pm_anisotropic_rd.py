@@ -17,7 +17,7 @@ from ...core.animation import capture_frame
 from image_pipeline.core.spatial import sparam
 
 @method(
-    inputs={},id="168", name="PM Anisotropic RD", category="simulations",
+    inputs={},id="157", name="PM Anisotropic RD", category="simulations",
         tags=["cgl", "takeover", "bias-ramp"], timeout=600,
         params={
             "b": {"spatial": True, "min": 0.0, "max": 3.0, "default": 1.0},

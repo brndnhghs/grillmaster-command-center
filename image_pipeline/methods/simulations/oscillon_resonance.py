@@ -111,7 +111,7 @@ def _render_envelope(u: np.ndarray, buf: list[np.ndarray],
 # ═══════════════════════════════════════════════════════════════
 
 @method(
-    id="166",
+    id="155",
     name="Parametric Oscillator Lattice",
     category="simulations",
     tags=["animation", "waves", "parametric", "resonance",

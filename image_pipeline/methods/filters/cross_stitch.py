@@ -18,7 +18,7 @@ except ImportError:
     _has_cv2 = False
 
 @method(
-    id="63",
+    id="59",
     name="Cross Stitch",
     new_image_contract=True,
     category="filters",

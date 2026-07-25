@@ -227,7 +227,7 @@ def _draw_boundary(dr, shape, info, s, cx, cy, col):
 
 
 @method(
-    id="532",
+    id="445",
     name="Chaotic Billiards",
     category="simulations",
     tags=["billiards", "dynamical-systems", "chaos", "trajectory", "ergodic",

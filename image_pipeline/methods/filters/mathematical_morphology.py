@@ -112,7 +112,7 @@ def _morph(ch: np.ndarray, op: str, fp: np.ndarray) -> np.ndarray:
     return ch
 
 
-@method(id='485', name='Morphology', category='filters',
+@method(id='411', name='Morphology', category='filters',
         tags=['morphology', 'erosion', 'dilation', 'top-hat', 'gradient', 'image-processing', 'animation'],
         params={
             'source': {'description': "procedural source used when no image is wired in",

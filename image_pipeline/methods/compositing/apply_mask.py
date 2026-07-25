@@ -10,7 +10,7 @@ from ...core.utils import save, mn, write_mask, W, H
 
 
 @method(
-    id="141",
+    id="132",
     name="Apply Mask",
     category="compositing",
     tags=["mask", "composite", "opacity", "cutout"],

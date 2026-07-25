@@ -18,7 +18,7 @@ except ImportError:
     _has_cv2 = False
 
 @method(
-    id="41",
+    id="39",
     name="Oil Paint",
     category="filters",
     new_image_contract=True,

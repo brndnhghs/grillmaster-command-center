@@ -59,7 +59,7 @@ def _grain_field(rng: np.random.Generator, H: int, W: int, ksize: float) -> np.n
 
 
 @method(
-    id="489",
+    id="415",
     name="Film Grain",
     category="filters",
     new_image_contract=True,

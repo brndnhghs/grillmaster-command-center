@@ -163,7 +163,7 @@ def _simulate_sine_gordon(params: dict, seed: int):
 
 @method(
     inputs={},
-    id="499",
+    id="422",
     name="Sine-Gordon Equation",
     category="simulations",
     tags=["pde", "sine-gordon", "soliton", "kink", "breather", "animation"],

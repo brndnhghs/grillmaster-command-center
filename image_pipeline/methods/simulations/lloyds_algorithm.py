@@ -159,7 +159,7 @@ def _render_voronoi(
 
 @method(
     inputs={},
-    id="97",
+    id="89",
     name="Lloyd's Algorithm",
     category="simulations",
     tags=["animation", "geometry", "relaxation", "convergence"],

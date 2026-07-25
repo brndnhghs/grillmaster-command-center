@@ -134,7 +134,7 @@ def _prune(skel: np.ndarray, prune_len: int) -> np.ndarray:
 
 
 @method(
-    id="930",
+    id="456",
     name="Skeletonize",
     category="filters",
     new_image_contract=True,

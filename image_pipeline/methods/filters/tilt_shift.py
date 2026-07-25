@@ -119,7 +119,7 @@ def _render(src: np.ndarray, mode: str, center: float, width: float,
 # ══════════════════════════════════════════════════════════════════════════
 
 @method(
-    id="515",
+    id="432",
     name="Tilt-Shift",
     category="filters",
     new_image_contract=True,

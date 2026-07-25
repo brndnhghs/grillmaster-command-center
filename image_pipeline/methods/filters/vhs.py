@@ -142,7 +142,7 @@ def _gauss_h(ch: np.ndarray, sigma: float) -> np.ndarray:
 # ── Method ──
 
 @method(
-    id="527",
+    id="440",
     name="VHS Tape",
     category="filters",
     new_image_contract=True,

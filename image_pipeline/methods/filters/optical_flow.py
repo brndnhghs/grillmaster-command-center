@@ -151,7 +151,7 @@ def _hs_flow(I0: np.ndarray, I1: np.ndarray, alpha: float, iters: int):
 
 
 @method(
-    id="977",
+    id="481",
     name="Optical Flow (Horn-Schunck)",
     category="filters",
     tags=["optical-flow", "motion", "dense", "field", "liveness",

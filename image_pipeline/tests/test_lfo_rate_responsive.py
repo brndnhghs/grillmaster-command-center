@@ -24,7 +24,7 @@ import types
 from pathlib import Path
 
 import image_pipeline.methods  # noqa: F401 — registers nodes
-from image_pipeline.methods import channels as mod
+from image_pipeline.methods.channels import lfo as mod
 
 FRAMES = 48
 FPS = 24

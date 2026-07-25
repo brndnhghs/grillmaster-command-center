@@ -131,7 +131,7 @@ def _render_dual(u: np.ndarray, v: np.ndarray) -> Image.Image:
 
 @method(
     inputs={},
-    id="163",
+    id="153",
     name="Fractional Laplacian Reaction-Diffusion",
     category="simulations",
     tags=["reaction-diffusion", "fractional", "lévy flight",

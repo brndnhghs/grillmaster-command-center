@@ -12,7 +12,7 @@ from ...core.animation import capture_frame
 
 # --- 37 Collage ---
 
-@method(id="37", name="Collage", category="codegen",
+@method(id="35", name="Collage", category="codegen",
          tags=["composite", "tiles", "mosaic", "layout"],
          inputs={
              "image_1": "IMAGE",

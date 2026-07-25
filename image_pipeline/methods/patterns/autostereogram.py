@@ -157,7 +157,7 @@ def _render(depth: np.ndarray, tile: np.ndarray, max_sep: int, colorful: bool, s
 
 @method(
     inputs={},
-    id="954",
+    id="463",
     name="Autostereogram",
     category="patterns",
     tags=["generative", "pattern", "stereogram", "depth", "magic-eye", "animation",

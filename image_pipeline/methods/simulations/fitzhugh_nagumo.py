@@ -100,7 +100,7 @@ def _render_u(u: np.ndarray, v: np.ndarray, mode: str = "u") -> Image.Image:
 
 
 @method(
-    id="133",
+    id="124",
     name="FitzHugh-Nagumo Excitable Media",
     category="simulations",
     tags=["physics", "reaction-diffusion", "excitable", "waves", "spiral"],

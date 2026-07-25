@@ -86,7 +86,7 @@ def _hsl_to_rgb(h: float, s: float, l: float):
 
 
 @method(
-    id="433",
+    id="373",
     name="Low-Discrepancy Field",
     category="patterns",
     new_image_contract=True,

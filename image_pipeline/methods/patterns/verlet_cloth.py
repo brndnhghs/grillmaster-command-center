@@ -74,7 +74,7 @@ def _upsample_bilinear(field: np.ndarray, Hh: int, Ww: int) -> np.ndarray:
     return out[:, :, 0] if squeeze else out
 
 
-@method(id="344", name="Verlet Cloth", category="patterns",
+@method(id="331", name="Verlet Cloth", category="patterns",
         tags=["verlet", "cloth", "soft-body", "physics", "simulation", "animation"],
         inputs={},
         outputs={"image": "IMAGE", "height": "FIELD"},

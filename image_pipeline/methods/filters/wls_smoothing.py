@@ -115,7 +115,7 @@ def _wls_smooth(src: np.ndarray, lam: float, alpha: float, eps: float,
 
 
 @method(
-    id="349",
+    id="336",
     name="WLS Smooth",
     category="filters",
     new_image_contract=True,

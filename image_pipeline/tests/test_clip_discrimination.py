@@ -25,7 +25,8 @@ from unittest.mock import patch
 
 pytest.importorskip("clip")  # skip cleanly if CLIP is not installed
 
-from image_pipeline.methods.ml_models import method_clip_score, method_clip_palette
+from image_pipeline.methods.ml_models.clip_score import method_clip_score
+from image_pipeline.methods.ml_models.clip_palette import method_clip_palette
 
 
 def _checkerboard_png(path: Path, size: int = 256) -> None:

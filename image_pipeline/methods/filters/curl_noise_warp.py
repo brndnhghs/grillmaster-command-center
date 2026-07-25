@@ -92,7 +92,7 @@ def _build_source(source: str, w: int, h: int, seed: int) -> np.ndarray:
     return np.stack([n, n, n], axis=-1)
 
 
-@method(id="355", name="Curl-Noise Warp", category="filters",
+@method(id="342", name="Curl-Noise Warp", category="filters",
         tags=["filter", "warp", "curl-noise", "divergence-free", "flow-field", "fluid", "animation"],
         inputs={"image_in": "IMAGE"},
         outputs={"image": "IMAGE", "luminance": "FIELD"},

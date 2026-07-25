@@ -37,7 +37,7 @@ def _spectral(v: np.ndarray) -> np.ndarray:
     )
 
 
-@method(id="512", name="SIREN Field", category="patterns",
+@method(id="429", name="SIREN Field", category="patterns",
         new_image_contract=True,
         tags=["implicit-neural", "siren", "procedural", "texture",
               "animation", "gpu-twin-candidate"],

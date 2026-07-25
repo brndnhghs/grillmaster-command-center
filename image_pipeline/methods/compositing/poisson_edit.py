@@ -130,7 +130,7 @@ def _poisson_solve_channel(target: np.ndarray, source: np.ndarray,
 
 
 @method(
-    id="472",
+    id="402",
     name="Poisson Image Edit",
     category="compositing",
     tags=["poisson", "seamless", "cloning", "gradient-domain", "composite", "siggraph2003"],

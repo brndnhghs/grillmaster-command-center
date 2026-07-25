@@ -285,7 +285,7 @@ def _build_obstacles(N, n_obs, rng):
 # ─────────────────────────────────────────────────────────────────────────────
 
 @method(
-    id="517",
+    id="434",
     name="Stable Fluids (Stam 2D)",
     category="simulations",
     new_image_contract=True,

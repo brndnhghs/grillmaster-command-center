@@ -106,7 +106,7 @@ def _upscale(arr, target_h, target_w):
 
 @method(
     inputs={},
-    id="84",
+    id="79",
     name="Quantum Wave Interference",
     category="simulations",
     tags=["pde", "schrodinger", "quantum", "animation", "expanded"],

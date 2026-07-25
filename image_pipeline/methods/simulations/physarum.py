@@ -91,7 +91,7 @@ def _intensity_to_color(trail: np.ndarray, colormode: str, pal_name: str,
 
 
 @method(
-    id="530",
+    id="443",
     name="Physarum Transport Network",
     category="simulations",
     tags=["physarum", "slime-mold", "agents", "trail-map", "foraging", "animation"],

@@ -62,7 +62,7 @@ def _curve(R, r, d, loops, n_pts):
 
 
 @method(
-    id="1005",
+    id="499",
     name="Spirograph",
     category="patterns",
     tags=["spirograph", "hypotrochoid", "line-art", "generative",

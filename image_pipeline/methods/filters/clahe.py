@@ -166,7 +166,7 @@ def _apply_clahe(img: np.ndarray, tile: int, clip_frac: float,
 
 
 @method(
-    id="436",
+    id="376",
     name="CLAHE",
     category="filters",
     new_image_contract=True,

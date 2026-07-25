@@ -20,7 +20,7 @@ from ...core.animation import capture_frame
 
 
 @method(
-    id="77",
+    id="72",
     name="False Color IR",
     category="codegen",
     new_image_contract=True,

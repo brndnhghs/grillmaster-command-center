@@ -203,7 +203,7 @@ def _vac_mask(H: int, W: int, M: int, G_full: np.ndarray, G: np.ndarray, dy: np.
 
 
 @method(
-    id="435",
+    id="375",
     name="Blue-Noise Mask",
     category="patterns",
     new_image_contract=True,

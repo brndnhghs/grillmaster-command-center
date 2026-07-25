@@ -123,7 +123,7 @@ def _init_voronoi(gh: int, gw: int, ncells: int,
 
 @method(
     inputs={},
-    id="129",
+    id="120",
     name="Cellular Potts Model",
     category="simulations",
     tags=["animation", "bio-inspired", "tissue", "emergent", "expanded"],

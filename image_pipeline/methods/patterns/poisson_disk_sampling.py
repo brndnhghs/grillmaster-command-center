@@ -152,7 +152,7 @@ def _bridson(W: int, H: int, r: float, k: int, rng: np.random.Generator):
 
 
 @method(
-    id="972",
+    id="477",
     name="Poisson-Disk Sampling",
     category="patterns",
     new_image_contract=True,

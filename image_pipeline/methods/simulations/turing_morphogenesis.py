@@ -16,7 +16,7 @@ from ...core.registry import method
 from ...core.utils import save, mn, seed_all, W, H, wired_source_lum
 from ...core.animation import capture_frame
 
-@method(id="169", name="Turing Morphogenesis", category="simulations",
+@method(id="158", name="Turing Morphogenesis", category="simulations",
         tags=["turing", "morphogenesis", "growing-domain", "rd"], timeout=600,
         inputs={"image_in": "IMAGE"},
         params={

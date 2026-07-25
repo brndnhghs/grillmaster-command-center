@@ -136,7 +136,7 @@ def _build_scene(source: str, hh: int, ww: int, rng: np.random.Generator, seed: 
 
 
 @method(
-    id="462",
+    id="395",
     name="Cel Shading",
     category="filters",
     new_image_contract=True,

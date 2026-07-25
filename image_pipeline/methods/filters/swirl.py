@@ -19,7 +19,7 @@ except ImportError:
     _has_cv2 = False
 
 @method(
-    id="74",
+    id="70",
     name="Swirl Displacement",
     category="filters",
     new_image_contract=True,

@@ -159,7 +159,7 @@ def _make_sky(seed, star_frac, neb_int, neb_scale, pal):
 
 
 @method(
-    id="995",
+    id="490",
     name="Gravitational Lensing (Einstein Ring)",
     category="patterns",
     new_image_contract=True,

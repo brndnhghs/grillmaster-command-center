@@ -44,7 +44,7 @@ def _gblur(a: np.ndarray, sigma: float) -> np.ndarray:
 
 
 @method(
-    id="450",
+    id="390",
     name="Coherence Shock Filter",
     category="filters",
     new_image_contract=True,

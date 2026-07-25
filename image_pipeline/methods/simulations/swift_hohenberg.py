@@ -215,7 +215,7 @@ def _init_random(rng: np.random.Generator, k0: float,
 # ════════════════════════════════════════════════════════════
 
 @method(
-    id="996",
+    id="491",
     name="Swift-Hohenberg",
     category="simulations",
     tags=["simulation", "animation", "physics", "pde", "pattern-formation",

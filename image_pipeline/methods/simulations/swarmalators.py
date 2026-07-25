@@ -224,7 +224,7 @@ def _render(pos: np.ndarray, theta: np.ndarray, bicolor: bool = False) -> np.nda
 
 @method(
     inputs={},
-    id="102",
+    id="94",
     name="Swarmalators",
     category="simulations",
     tags=["slow", "animation", "expanded"],

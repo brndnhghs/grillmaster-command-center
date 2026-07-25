@@ -129,7 +129,7 @@ def _make_seeds(Hp, Wp, seed_mode, n_seeds, rng, wired):
 
 
 @method(
-    id="495", name="Jump Flood Voronoi", category="math_art",
+    id="418", name="Jump Flood Voronoi", category="math_art",
     new_image_contract=True,
     tags=["voronoi", "jump-flood", "distance-transform", "jfa", "procedural",
           "regions", "expanded", "animation"],

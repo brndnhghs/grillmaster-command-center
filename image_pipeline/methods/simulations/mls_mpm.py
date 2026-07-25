@@ -118,7 +118,7 @@ def wy_weight(fy):
 
 
 @method(
-    id="1007",
+    id="501",
     name="MLS-MPM",
     category="simulations",
     tags=["physics", "mpm", "material-point-method", "hybrid",

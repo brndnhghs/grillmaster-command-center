@@ -175,7 +175,7 @@ def _vac_mask_3d(S: int, T: int, M: int, G_full: np.ndarray, G: np.ndarray,
 
 
 @method(
-    id="481",
+    id="407",
     name="Spatiotemporal Blue Noise",
     category="patterns",
     new_image_contract=True,

@@ -53,7 +53,7 @@ def _dt_1d(line: list[float], w: list[float]) -> list[float]:
 
 
 @method(
-    id="991",
+    id="486",
     name="Domain Transform",
     category="filters",
     new_image_contract=True,

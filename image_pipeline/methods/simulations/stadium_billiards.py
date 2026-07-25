@@ -57,7 +57,7 @@ def _reflect_circle(x, y, vx, vy, cx, cy, R):
 
 
 @method(
-    inputs={},id="94", name="Stadium Billiards", category="simulations",
+    inputs={},id="86", name="Stadium Billiards", category="simulations",
         tags=["animation", "chaos", "billiards", "trajectories"],
         outputs={"image": "IMAGE", "field": "FIELD"},
         params={

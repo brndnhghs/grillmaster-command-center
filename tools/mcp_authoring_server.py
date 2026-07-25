@@ -103,7 +103,6 @@ def register_node_type(name: str, type: str = "procedural", glsl: str = "",
     u_dt, u_count, u_resolution + your typed uniforms, id=gl_VertexID, helpers
     hash11(f)/hash21(f). Outputs IMAGE (additive soft points) + PARTICLES (N,4).
     Node params: count/point_size/dt/color/emit_particles. Reseeds on frame 0.
-
     Expression kind (use `expr` + optional `vars`) — a SCALAR-output CPU math
     node (LFOs, envelopes) to modulate any wireable param:
       • expr: safe math over `t` (frame time) and your free variables, e.g.

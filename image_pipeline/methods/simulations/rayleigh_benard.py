@@ -27,7 +27,7 @@ def _render(f):
 
 @method(
     inputs={},
-    id="157",
+    id="147",
     name="Swift-Hohenberg (Convection)",
     category="simulations",
     tags=["pattern", "turing", "convection", "hexagons"],

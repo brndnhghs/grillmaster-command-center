@@ -43,7 +43,7 @@ def _render_sandpile_preview(grid, colors, size, h, w):
     result = cv2.resize(result.astype(np.float32) / 255.0, (w, h), interpolation=cv2.INTER_NEAREST)
     return result
 
-@method(id="55", name="Sandpile", category="simulations", tags=["cellular", "slow", "animation", "expanded"],
+@method(id="53", name="Sandpile", category="simulations", tags=["cellular", "slow", "animation", "expanded"],
         inputs={},
          outputs={"image": "IMAGE", "field": "FIELD", "particles": "PARTICLES"},
          params={

@@ -159,7 +159,7 @@ DEFAULT_REGIME = "spots"
 
 
 @method(
-    id="155",
+    id="146",
     name="Gray-Scott Reaction-Diffusion",
     category="simulations",
     tags=["physics", "reaction-diffusion", "turing", "patterns", "autocatalytic"],

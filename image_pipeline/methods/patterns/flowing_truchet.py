@@ -29,7 +29,7 @@ def _flow_angle(tx: float, ty: float, t: float, seed: int, warp: float) -> float
 
 
 @method(
-    id='531', name='Flowing Truchet', category='patterns',
+    id='444', name='Flowing Truchet', category='patterns',
     tags=['truchet', 'tiling', 'procedural', 'flow-field', 'labyrinth', 'animation', 'domain-warp'],
     params={
         'scale': {'description': 'tiles across the shorter canvas axis', 'min': 4.0, 'max': 80.0, 'default': 28.0},

@@ -20,7 +20,7 @@ from ...core.animation import capture_frame
 
 
 @method(
-    id="345",
+    id="332",
     name="Bilateral Grid",
     category="filters",
     new_image_contract=True,

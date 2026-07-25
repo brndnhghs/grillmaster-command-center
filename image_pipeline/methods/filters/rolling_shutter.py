@@ -13,7 +13,7 @@ from ...core.animation import capture_frame
 
 
 @method(
-    id="430",
+    id="370",
     name="Rolling Shutter",
     category="filters",
     new_image_contract=True,

@@ -144,7 +144,7 @@ def _render(A: np.ndarray) -> np.ndarray:
 # ════════════════════════════════════════════════════════════
 
 @method(
-    id="359",
+    id="346",
     name="Lenia",
     category="simulations",
     tags=["simulation", "animation", "continuous-ca", "artificial-life", "lenia"],

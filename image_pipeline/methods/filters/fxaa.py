@@ -104,7 +104,7 @@ def _fxaa_cpu(img: np.ndarray, edge_threshold: float) -> np.ndarray:
 
 
 @method(
-    id="350",
+    id="337",
     name="FXAA Anti-Aliasing",
     category="filters",
     new_image_contract=True,

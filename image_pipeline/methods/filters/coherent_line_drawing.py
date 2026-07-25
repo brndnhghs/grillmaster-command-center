@@ -124,7 +124,7 @@ def _fdog(L: np.ndarray, tx: np.ndarray, ty: np.ndarray,
 
 
 @method(
-    id="421",
+    id="363",
     name="Coherent Line Drawing",
     category="filters",
     new_image_contract=True,

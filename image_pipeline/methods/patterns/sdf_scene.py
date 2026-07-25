@@ -166,7 +166,7 @@ def _sdf_render(w, h, seed, params):
 
 
 @method(
-    id="950", name="SDF Scene", category="patterns",
+    id="459", name="SDF Scene", category="patterns",
     new_image_contract=True,
     tags=["sdf", "signed-distance", "procedural", "scene", "isoline",
           "glow", "shading", "npr", "animation", "expanded"],

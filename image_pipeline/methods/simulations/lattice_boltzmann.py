@@ -173,7 +173,7 @@ def _run_lbm(nx: int, ny: int, U: float, tau: float, obstacle_r: int,
 
 @method(
     inputs={},
-    id="440",
+    id="380",
     name="Lattice Boltzmann Fluid",
     category="simulations",
     tags=["fluid", "lbm", "navier-stokes", "vortex", "simulation", "emergence",

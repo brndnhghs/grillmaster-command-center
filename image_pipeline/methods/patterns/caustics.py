@@ -20,7 +20,7 @@ def _spectral(v: np.ndarray) -> np.ndarray:
     )
 
 
-@method(id="513", name="Caustics", category="patterns",
+@method(id="430", name="Caustics", category="patterns",
         new_image_contract=True,
         tags=["caustics", "water", "procedural", "refraction",
               "animation", "gpu-twin-candidate"],

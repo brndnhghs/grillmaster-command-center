@@ -226,7 +226,7 @@ def _simulate(nx, ny, scenario, u0, viscosity, n_steps, capture_every,
 
 
 @method(
-    id="1000",
+    id="495",
     name="Lattice Boltzmann Fluid (D2Q9)",
     category="simulations",
     new_image_contract=True,

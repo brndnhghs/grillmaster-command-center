@@ -151,7 +151,7 @@ def _render(state: np.ndarray, color_mode: str, hue_shift: float) -> np.ndarray:
 
 # ─── The Method (Architecture B — stateless, one call = one frame) ───────────
 
-@method(id="560", name="SmoothLife (Continuous Life)", category="simulations",
+@method(id="450", name="SmoothLife (Continuous Life)", category="simulations",
         tags=["smoothlife", "continuous", "cellular", "life", "animation", "organic"],
         inputs={
             "death": "SCALAR",

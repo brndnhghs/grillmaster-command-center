@@ -38,7 +38,7 @@ def _tpms_field(surface: str, x: np.ndarray, y: np.ndarray, z: float) -> np.ndar
 
 
 @method(
-    id='964', name='Gyroid TPMS', category='patterns',
+    id='469', name='Gyroid TPMS', category='patterns',
     tags=['procedural', 'tpms', 'gyroid', 'minimal-surface', 'implicit', 'sdf', 'animation'],
     params={
         'surface': {'description': 'minimal surface (gyroid/schwarz_p/diamond/neovius/iwp)', 'default': 'gyroid'},

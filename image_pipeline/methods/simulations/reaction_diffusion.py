@@ -43,7 +43,7 @@ def _render_sandpile_preview(grid, colors, size, h, w):
     result = cv2.resize(result.astype(np.float32) / 255.0, (w, h), interpolation=cv2.INTER_NEAREST)
     return result
 
-@method(id="32", name="Reaction Diffusion", category="simulations", new_image_contract=True, tags=["gray-scott", "organic", "animation", "expanded"],
+@method(id="30", name="Reaction Diffusion", category="simulations", new_image_contract=True, tags=["gray-scott", "organic", "animation", "expanded"],
          outputs={"image": "IMAGE", "luminance": "SCALAR", "field": "FIELD"},
          inputs={"image_in": "IMAGE"},
          params={

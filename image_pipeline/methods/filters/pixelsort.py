@@ -18,7 +18,7 @@ except ImportError:
     _has_cv2 = False
 
 @method(
-    id="40",
+    id="38",
     name="Pixel Sort",
     new_image_contract=True,
     category="filters",
