@@ -33,7 +33,7 @@ from image_pipeline.core.graph import (
     _score_param,
 )
 from image_pipeline.core.registry import get_meta
-from image_pipeline.methods.channels import method_lfo
+from image_pipeline.methods.channels.lfo import method_lfo
 
 # A real per-pixel filter node that exposes both continuous float params and
 # (optionally) discrete-choice int params.

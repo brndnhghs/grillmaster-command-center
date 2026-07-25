@@ -1,0 +1,158 @@
+"""
+ML model methods — Stable Diffusion 1.5 (diffusers) and ComfyUI.
+These require GPU or running services and may be slow/skip if unavailable.
+"""
+from __future__ import annotations
+import json
+import shutil
+import subprocess
+import time
+from pathlib import Path
+
+import numpy as np
+
+from ...core.animation import capture_frame
+from ...core.registry import method
+from ...core.utils import save, mn, seed_all, W, H, load_input
+
+
+@method(id="28", name="ComfyUI", category="ml_models", tags=["ml", "slow", "gpu", "expanded"], timeout=120,
+        params={
+            "comfy_dir": {"description": "ComfyUI base directory", "default": "~/Documents/ComfyUI"},
+            "download_timeout": {"description": "seconds to wait for model download", "min": 60, "max": 600, "default": 300},
+            "sampler_steps": {"description": "KSampler steps", "min": 1, "max": 150, "default": 30},
+            "sampler_cfg": {"description": "CFG scale", "min": 1.0, "max": 20.0, "default": 8.0},
+            "sampler_name": {"description": "sampler (euler, dpmpp_2m, etc.)", "default": "euler"},
+            "scheduler": {"description": "scheduler (normal, karras, etc.)", "default": "normal"},
+            "denoise": {"description": "denoise strength", "min": 0.0, "max": 1.0, "default": 1.0},
+            "width": {"description": "generated image width", "min": 64, "max": 2048, "default": 768},
+            "height": {"description": "generated image height", "min": 64, "max": 2048, "default": 512},
+            "batch_size": {"description": "batch size", "min": 1, "max": 8, "default": 1},
+            "prompt_positive": {"description": "positive prompt text", "default": "oil painting of a computer workstation with a command-line terminal on screen showing fractal patterns, dramatic chiaroscuro lighting, neon blue and amber tones, cyberpunk atmospheric aesthetic, hyperrealistic render, cinematic composition"},
+            "prompt_negative": {"description": "negative prompt text", "default": "text, watermark, signature, frame, border, cartoon, illustration, oversaturated, low quality, blurry, distorted, ugly, deformed, happy, peaceful, safe, warm, welcoming, bright daylight"},
+            "filename_prefix": {"description": "prefix for saved images", "default": "comfyui_v2"},
+            "ports": {"description": "port(s) to check, comma-separated", "default": "8000,8188"},
+            "api_timeout": {"description": "seconds to wait for API response", "min": 5, "max": 120, "default": 30},
+            "queue_timeout": {"description": "seconds to wait for queue status", "min": 1, "max": 30, "default": 5},
+            "poll_retries": {"description": "max queue poll attempts", "min": 1, "max": 120, "default": 30},
+            "poll_interval": {"description": "seconds between queue polls", "min": 0.5, "max": 30, "default": 2},
+        })
+def method_comfyui(out_dir: Path, seed: int, params=None):
+    """Generate an image using a running ComfyUI instance via its API.
+
+    Connects to a local ComfyUI server on the specified port(s), submits a
+    prompt workflow, and polls the queue until the image is generated. Falls
+    back to downloading the SD1.5 checkpoint if none is found.
+
+    Args:
+        out_dir: Output directory for the generated image.
+        seed: Random seed for deterministic output.
+        params: Dict with keys:
+            comfy_dir: ComfyUI base directory (default: ~/Documents/ComfyUI)
+            download_timeout: seconds to wait for model download (60-600)
+            sampler_steps: KSampler steps (1-150)
+            sampler_cfg: CFG scale (1.0-20.0)
+            sampler_name: sampler (euler, dpmpp_2m, etc.)
+            scheduler: scheduler (normal, karras, etc.)
+            denoise: denoise strength (0.0-1.0)
+            width: generated image width (64-2048)
+            height: generated image height (64-2048)
+            batch_size: batch size (1-8)
+            prompt_positive: positive prompt text
+            prompt_negative: negative prompt text
+            filename_prefix: prefix for saved images
+            ports: port(s) to check, comma-separated
+            api_timeout: seconds to wait for API response (5-120)
+            queue_timeout: seconds to wait for queue status (1-30)
+            poll_retries: max queue poll attempts (1-120)
+            poll_interval: seconds between queue polls (0.5-30)
+    """
+    if params is None:
+        params = {}
+    seed_all(seed)
+    import urllib.request
+    comfy_dir_raw = params.get("comfy_dir", "~/Documents/ComfyUI")
+    comfy_dir = Path(comfy_dir_raw).expanduser()
+    download_timeout = int(params.get("download_timeout", 300))
+    sampler_steps = int(params.get("sampler_steps", 30))
+    sampler_cfg = float(params.get("sampler_cfg", 8.0))
+    sampler_name = params.get("sampler_name", "euler")
+    scheduler = params.get("scheduler", "normal")
+    denoise = float(params.get("denoise", 1.0))
+    img_width = int(params.get("width", 768))
+    img_height = int(params.get("height", 512))
+    batch_size = int(params.get("batch_size", 1))
+    prompt_positive = params.get("prompt_positive", "oil painting of a computer workstation with a command-line terminal on screen showing fractal patterns, dramatic chiaroscuro lighting, neon blue and amber tones, cyberpunk atmospheric aesthetic, hyperrealistic render, cinematic composition")
+    prompt_negative = params.get("prompt_negative", "text, watermark, signature, frame, border, cartoon, illustration, oversaturated, low quality, blurry, distorted, ugly, deformed, happy, peaceful, safe, warm, welcoming, bright daylight")
+    filename_prefix = params.get("filename_prefix", "comfyui_v2")
+    ports_str = params.get("ports", "8000,8188")
+    ports = [int(p.strip()) for p in ports_str.split(",")]
+    api_timeout = int(params.get("api_timeout", 30))
+    queue_timeout = int(params.get("queue_timeout", 5))
+    poll_retries = int(params.get("poll_retries", 30))
+    poll_interval = float(params.get("poll_interval", 2))
+
+    ckpts = list((comfy_dir / "models" / "checkpoints").glob("*"))
+    if not ckpts:
+        print("  … downloading SD1.5 for ComfyUI (~1.7GB)")
+        try:
+            subprocess.run(
+                [str(comfy_dir / ".venv" / "bin" / "python3"), "-m", "huggingface_hub",
+                 "download", "--local-dir", str(comfy_dir / "models" / "checkpoints"),
+                 "runwayml/stable-diffusion-v1-5", "v1-5-pruned-emaonly.safetensors"],
+                capture_output=True, timeout=download_timeout,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            print(f"  ✗ ComfyUI: download failed: {e}")
+            return
+        ckpts = list((comfy_dir / "models" / "checkpoints").glob("*"))
+    if not ckpts:
+        print("  ✗ ComfyUI: no checkpoint")
+        return
+    wf = {
+        "3": {"class_type": "KSampler", "inputs": {"seed": seed, "steps": sampler_steps, "cfg": sampler_cfg, "sampler_name": sampler_name, "scheduler": scheduler, "denoise": denoise, "model": ["4", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["5", 0]}},
+        "4": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": ckpts[0].name}},
+        "5": {"class_type": "EmptyLatentImage", "inputs": {"width": img_width, "height": img_height, "batch_size": batch_size}},
+        "6": {"class_type": "CLIPTextEncode", "inputs": {
+            "text": prompt_positive,
+            "clip": ["4", 1],
+        }},
+        "7": {"class_type": "CLIPTextEncode", "inputs": {
+            "text": prompt_negative,
+            "clip": ["4", 1],
+        }},
+        "8": {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["4", 2]}},
+        "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": filename_prefix, "images": ["8", 0]}},
+    }
+    for port in ports:
+        try:
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port}/prompt",
+                data=json.dumps({"prompt": wf}).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            resp = urllib.request.urlopen(req, timeout=api_timeout)
+            pid = json.loads(resp.read()).get("prompt_id", "")
+            print(f"  … ComfyUI queued (port {port}): {pid}")
+            for _ in range(poll_retries):
+                time.sleep(poll_interval)
+                try:
+                    q = json.loads(urllib.request.urlopen(f"http://127.0.0.1:{port}/queue", timeout=queue_timeout).read())
+                except Exception:
+                    q = {"queue_running": True, "queue_pending": True}
+                if not q.get("queue_running") and not q.get("queue_pending"):
+                    break
+            out = list(comfy_dir.glob(f"**/{filename_prefix}_*.png"))
+            if out:
+                shutil.copy(str(out[-1]), str(out_dir / mn(28, "ComfyUI")))
+                # capture_frame() needs a numpy array in [0,1] (it calls
+                # arr.copy()) — load the just-copied file via load_input.
+                _cf_arr = load_input(str(out_dir / mn(28, "ComfyUI")), int(W), int(H))
+                capture_frame("28", _cf_arr)
+                print(f"  ✓ {mn(28, 'ComfyUI')}  ({out[-1].stat().st_size // 1024} KB)")
+                return
+            print("  ✗ ComfyUI: no output found")
+        except Exception as e:
+            print(f"  … ComfyUI port {port}: {e}")
+    print("  ✗ ComfyUI: no running instance found — writing fallback")
+    save(np.zeros((H, W, 3), dtype=np.float32), mn(28, "ComfyUI"), out_dir)
