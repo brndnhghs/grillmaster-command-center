@@ -489,11 +489,30 @@ try {
 <!-- Context menu -->
 <div id="graph-ctx-menu">
   <div class="ctx-item" id="ctx-feedback">Toggle feedback</div>
+  <div class="ctx-item" id="ctx-source" style="display:none">&lt;/&gt; Source code</div>
   <div class="ctx-item danger" id="ctx-del-edge">Delete edge</div>
   <div class="ctx-item danger" id="ctx-del-node">Delete node</div>
   <div class="ctx-item" id="ctx-group-sel" style="display:none">⊞ Group selection</div>
   <div class="ctx-item" id="ctx-ungroup" style="display:none">⊟ Ungroup</div>
   <div class="ctx-item" id="ctx-flag-broken" style="display:none">🚩 Flag as broken…</div>
+</div>
+
+<!-- Node source-code editor modal -->
+<div id="node-source-modal">
+  <div id="nsm-box">
+    <div id="nsm-header">
+      <span id="nsm-title">Source code</span>
+      <button id="nsm-close-btn" title="Close (Esc)">✕</button>
+    </div>
+    <div id="nsm-path"></div>
+    <textarea id="nsm-code" spellcheck="false" wrap="off"></textarea>
+    <div id="nsm-status"></div>
+    <div id="nsm-actions">
+      <button class="gm-btn primary" id="nsm-save-btn">Apply &amp; hot-reload</button>
+      <button class="gm-btn muted" id="nsm-undo-btn" style="display:none">↩ Undo</button>
+      <button class="gm-btn muted" id="nsm-close-btn2">Close</button>
+    </div>
+  </div>
 </div>
 
 <!-- Param flyout menu (dropdown) -->
