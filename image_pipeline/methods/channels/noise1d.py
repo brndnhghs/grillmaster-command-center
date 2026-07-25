@@ -13,6 +13,18 @@ from ...core.utils import seed_all
         tags=["chop", "time", "noise", "generator"],
         inputs={"rate": "SCALAR", "seed_offset": "SCALAR"},
         outputs={"value": "SCALAR"},
+        runtime={
+            "value": {
+                "type": "numeric",
+                "label": "Value",
+                "observable": True
+            }
+        },
+        signal={
+            "rate": "numeric",
+            "seed_offset": "numeric",
+            "value": "output"
+        },
         params={
             "min": {"description": "minimum output value", "default": 0.0},
             "max": {"description": "maximum output value", "default": 1.0},

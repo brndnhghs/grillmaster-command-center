@@ -44,3 +44,20 @@ register_port_type("MASK",      "#e8e8e8", "float32 ndarray (H,W) values [0,1]")
 register_port_type("COLORMAP",  "#e040fb", "float32 ndarray (N,3) or (N,4) — color palette/lookup table")
 register_port_type("TEXT",      "#f5a623", "Python str — prose, source code, or a file/asset path")
 register_port_type("ANY",       "#444444", "wildcard input type")
+
+# ── Spec signal-class colors (Exposed Parameter & Runtime UI) ──
+# These describe the *semantic* role of a port, independent of its wire type.
+# The UI uses them to color ports/parameters so users can read signal flow at
+# a glance. Wire routing still uses the underlying port type (SCALAR/FIELD/…);
+# signal classes are presentation-only.
+SIGNAL_COLORS: dict[str, str] = {
+    "numeric": "#9b59ff",  # Purple — continuous numeric values (Float, Integer, Strength, …)
+    "control": "#3b82f6",  # Blue   — control signals (Sync, Loop, Reset, Time)
+    "output":  "#22c55e",  # Green  — continuous outputs (Position, Phase, Result, Color)
+    "event":   "#f97316",  # Orange — events (Beat, Trigger, Finished, Generated)
+}
+
+
+def signal_color(name: str) -> str:
+    """Return the hex color for a signal class (falls back to gray)."""
+    return SIGNAL_COLORS.get(name, "#888888")

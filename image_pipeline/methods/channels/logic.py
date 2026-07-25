@@ -13,13 +13,26 @@ from ...core.utils import seed_all
         tags=["chop", "logic", "operator"],
         inputs={"a": "SCALAR", "b": "SCALAR", "control": "SCALAR"},
         outputs={"value": "SCALAR"},
+        runtime={
+            "value": {
+                "type": "numeric",
+                "label": "Value",
+                "observable": True
+            }
+        },
+        signal={
+            "a": "numeric",
+            "b": "numeric",
+            "control": "control",
+            "value": "output"
+        },
         params={
             "operation": {"description": "logic operation",
                           "choices": ["greater", "less", "equal", "not_equal",
                                       "select", "gate", "hold", "toggle", "pulse"],
                           "default": "greater"},
-            "true_value": {"description": "value when condition is true", "default": 1.0},
-            "false_value": {"description": "value when condition is false", "default": 0.0},
+            "true_value": {"description": "value when condition is True", "default": 1.0},
+            "false_value": {"description": "value when condition is False", "default": 0.0},
             "threshold": {"description": "comparison threshold", "default": 0.5},
         })
 def method_logic(out_dir: Path, seed: int, params=None):

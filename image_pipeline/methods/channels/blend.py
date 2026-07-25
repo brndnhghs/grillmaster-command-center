@@ -13,6 +13,19 @@ from ...core.utils import seed_all
         tags=["chop", "mix", "operator"],
         inputs={"a": "SCALAR", "b": "SCALAR", "mix": "SCALAR"},
         outputs={"value": "SCALAR"},
+        runtime={
+            "value": {
+                "type": "numeric",
+                "label": "Value",
+                "observable": True
+            }
+        },
+        signal={
+            "a": "numeric",
+            "b": "numeric",
+            "mix": "numeric",
+            "value": "output"
+        },
         params={
             "mode": {"description": "blend mode",
                      "choices": ["lerp", "add", "multiply", "screen", "overlay"],

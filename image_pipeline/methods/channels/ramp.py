@@ -13,6 +13,24 @@ from ...core.utils import seed_all
         tags=["chop", "time", "float", "generator"],
         inputs={"trigger": "SCALAR", "speed": "SCALAR"},
         outputs={"value": "SCALAR", "phase": "SCALAR"},
+        runtime={
+            "value": {
+                "type": "numeric",
+                "label": "Value",
+                "observable": True
+            },
+            "phase": {
+                "type": "output",
+                "label": "Phase",
+                "observable": True
+            }
+        },
+        signal={
+            "trigger": "event",
+            "speed": "numeric",
+            "value": "output",
+            "phase": "output"
+        },
         params={
             "start": {"description": "ramp start value", "default": 0.0},
             "end": {"description": "ramp end value", "default": 1.0},

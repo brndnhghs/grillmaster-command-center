@@ -13,6 +13,24 @@ from ...core.utils import seed_all
         tags=["chop", "time", "gate", "generator"],
         inputs={"rate": "SCALAR", "duty_cycle": "SCALAR"},
         outputs={"value": "SCALAR", "trigger": "SCALAR"},
+        runtime={
+            "value": {
+                "type": "numeric",
+                "label": "Value",
+                "observable": True
+            },
+            "trigger": {
+                "type": "event",
+                "label": "Trigger",
+                "observable": True
+            }
+        },
+        signal={
+            "rate": "numeric",
+            "duty_cycle": "numeric",
+            "value": "output",
+            "trigger": "event"
+        },
         params={
             "rate": {"description": "strobe rate in Hz", "default": 2.0},
             "duty_cycle": {"description": "fraction of cycle that is on (0-1)", "default": 0.5},

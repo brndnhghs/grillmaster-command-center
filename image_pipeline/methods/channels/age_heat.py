@@ -13,6 +13,36 @@ from ...core.utils import seed_all
         tags=["chop", "color", "age", "generator"],
         inputs={"age": "SCALAR", "max_age": "SCALAR"},
         outputs={"value": "SCALAR", "r": "SCALAR", "g": "SCALAR", "b": "SCALAR"},
+        runtime={
+            "value": {
+                "type": "numeric",
+                "label": "Value",
+                "observable": True
+            },
+            "r": {
+                "type": "output",
+                "label": "R",
+                "observable": True
+            },
+            "g": {
+                "type": "output",
+                "label": "G",
+                "observable": True
+            },
+            "b": {
+                "type": "output",
+                "label": "B",
+                "observable": True
+            }
+        },
+        signal={
+            "age": "numeric",
+            "max_age": "numeric",
+            "value": "output",
+            "r": "output",
+            "g": "output",
+            "b": "output"
+        },
         params={
             "mode": {"description": "age coloring mode",
                      "choices": ["heat", "cool", "rainbow", "mono"],

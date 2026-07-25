@@ -12,7 +12,37 @@ from ...core.utils import seed_all
 @method(id="__beats__", name="Beats", category="channels",
         tags=["chop", "time", "music", "generator"],
         inputs={"reset": "SCALAR", "swing": "SCALAR"},
-        outputs={"beat": "SCALAR", "bar": "SCALAR", "trigger": "SCALAR"},
+        outputs={"value": "SCALAR", "beat": "SCALAR", "bar": "SCALAR", "trigger": "SCALAR"},
+        runtime={
+            "value": {
+                "type": "numeric",
+                "label": "Value",
+                "observable": True
+            },
+            "beat": {
+                "type": "output",
+                "label": "Beat",
+                "observable": True
+            },
+            "bar": {
+                "type": "output",
+                "label": "Bar",
+                "observable": True
+            },
+            "trigger": {
+                "type": "event",
+                "label": "Trigger",
+                "observable": True
+            }
+        },
+        signal={
+            "reset": "control",
+            "swing": "numeric",
+            "value": "output",
+            "beat": "output",
+            "bar": "output",
+            "trigger": "event"
+        },
         params={
             "bpm": {"description": "beats per minute", "min": 20, "max": 300, "default": 120},
             "beats_per_bar": {"description": "beats per bar / time signature numerator", "min": 1, "max": 16, "default": 4},
