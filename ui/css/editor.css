@@ -248,6 +248,19 @@
   select.param-input { cursor: pointer; }
   .param-range-wrap { display: flex; gap: 8px; align-items: center; }
   .param-range-wrap input[type=range] { flex: 1; accent-color: var(--accent); }
+  /* Gradient fill on param sliders (pink → purple) to match the visual spec.
+     Scoped to the param panel so the timeline scrubber is untouched. */
+  .param-range-wrap input[type=range] {
+    -webkit-appearance: none; appearance: none; height: 6px; border-radius: 3px;
+    background: linear-gradient(90deg, #e91e8c 0%, #9b59ff 100%); outline: none; cursor: pointer;
+  }
+  .param-range-wrap input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border-radius: 50%;
+    background: #fff; border: 2px solid #9b59ff; cursor: pointer; box-shadow: 0 0 6px rgba(155,89,255,0.5);
+  }
+  .param-range-wrap input[type=range]::-moz-range-thumb {
+    width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 2px solid #9b59ff; cursor: pointer;
+  }
   .glsl-editor { width: 100%; box-sizing: border-box; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 8px 10px; font-size: 12px; font-family: var(--font-mono); line-height: 1.5; resize: vertical; outline: none; min-height: 220px; tab-size: 2; }
   .glsl-editor:focus { border-color: var(--accent); }
   .glsl-apply-btn { margin-top: 6px; width: 100%; padding: 7px; background: var(--accent); color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
@@ -889,6 +902,18 @@
   .gport.sig-control { background: #3b82f6; }
   .gport.sig-output  { background: #22c55e; }
   .gport.sig-event   { background: #f97316; }
+  /* Inline live value chip at a port (visual spec: values live ON the node).
+     Colour follows the port's signal type; text is tabular so it doesn't jitter. */
+  .port-chip {
+    display: inline-block; font: 10px/1 var(--font-mono); padding: 1px 5px;
+    border-radius: 4px; margin: 0 4px; white-space: nowrap; flex-shrink: 0;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+    font-variant-numeric: tabular-nums; pointer-events: none;
+  }
+  .port-chip.sig-numeric { color: #b388ff; border-color: rgba(179,136,255,0.5); }
+  .port-chip.sig-control  { color: #448aff; border-color: rgba(68,138,255,0.5); }
+  .port-chip.sig-output   { color: #00e676; border-color: rgba(0,230,118,0.5); }
+  .port-chip.sig-event    { color: #ff9100; border-color: rgba(255,145,0,0.5); }
 
   /* ── Driver / Controller editor (Exposed Parameter & Runtime UI, channels) ── */
   .dc-editor {
@@ -945,12 +970,10 @@
   .pt-any       { background: #888; }
 
   /* ── Edges ─────────────────────────────────────────────
-     Stroke colour is set inline per edge from the server port-type
-     registry (gRedrawEdges); these rules control weight + hover. */
-  /* Wires get their own token: at --accent they competed with every accented
-     control for attention, which is wrong for the most-repeated mark on screen. */
-  .gedge {
-    fill: none; stroke: var(--wire); stroke-width: 2; opacity: 0.85;
+     Wires are neutral white; data type is carried by the port's signal
+     colour (sig-numeric / control / output / event). These rules control
+     weight + hover. */
+    fill: none; stroke: #e8e8ec; stroke-width: 2; opacity: 0.85;
     pointer-events: stroke; cursor: pointer;
     transition: opacity 0.1s, stroke-width 0.1s, stroke 0.1s;
   }
