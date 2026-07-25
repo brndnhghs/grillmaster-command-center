@@ -239,7 +239,7 @@ def _render(state: np.ndarray) -> Image.Image:
 
 @method(
     inputs={},
-    id="92",
+    id="84",
     name="Lattice Gas",
     category="simulations",
     tags=["cellular", "fluid", "physics", "navier-stokes", "animation", "emergent"],

@@ -188,12 +188,12 @@ def test_gradient_into_ascii_chain():
 # ── 6. New typed-uniform nodes (226-231) categorical coverage ─────────
 
 NEW_TYPED = [s for _, s, _ in [
-    ("226", "plasma_gpu2", "GPU Plasma 2"),
-    ("227", "voronoi_gpu2", "GPU Voronoi 2"),
-    ("228", "kaleidoscope_gpu", "GPU Kaleidoscope"),
-    ("229", "bloom_gpu", "GPU Bloom"),
-    ("230", "posterize_gpu", "GPU Posterize"),
-    ("231", "edge_gpu", "GPU Edge Detect"),
+    ("215", "plasma_gpu2", "GPU Plasma 2"),
+    ("216", "voronoi_gpu2", "GPU Voronoi 2"),
+    ("217", "kaleidoscope_gpu", "GPU Kaleidoscope"),
+    ("218", "bloom_gpu", "GPU Bloom"),
+    ("219", "posterize_gpu", "GPU Posterize"),
+    ("220", "edge_gpu", "GPU Edge Detect"),
 ]]
 
 
@@ -273,12 +273,12 @@ def test_edge_detect_finds_structure():
 # numeric/color sweep; time also advances the animation.
 
 NEW_TYPED_PT13 = [s for _, s, _ in [
-    ("302", "schotter_typed",    "GPU Schotter"),
-    ("303", "thue_morse_typed",  "GPU Thue-Morse"),
-    ("304", "crystal_typed",     "GPU Crystal Diffraction"),
-    ("305", "apollonian_typed",  "GPU Apollonian Gasket"),
-    ("306", "parabola_typed",    "GPU Parabola Family"),
-    ("307", "hyperbolic_typed",  "GPU Hyperbolic Tiling"),
+    ("291", "schotter_typed",    "GPU Schotter"),
+    ("292", "thue_morse_typed",  "GPU Thue-Morse"),
+    ("293", "crystal_typed",     "GPU Crystal Diffraction"),
+    ("294", "apollonian_typed",  "GPU Apollonian Gasket"),
+    ("295", "parabola_typed",    "GPU Parabola Family"),
+    ("296", "hyperbolic_typed",  "GPU Hyperbolic Tiling"),
 ]]
 
 
@@ -321,12 +321,12 @@ def test_pt13_typed_animates(sname):
 # ── 7. Typed escape-time fractals (238-243) ────────────────────────────
 
 NEW_TYPED_FRACTALS = [s for _, s, _ in [
-    ("238", "mandelbrot_typed", "GPU Mandelbrot"),
-    ("239", "julia_typed", "GPU Julia"),
-    ("240", "burning_ship_typed", "GPU Burning Ship"),
-    ("241", "newton_typed", "GPU Newton"),
-    ("242", "sierpinski_typed", "GPU Sierpinski"),
-    ("243", "lyapunov_typed", "GPU Lyapunov"),
+    ("227", "mandelbrot_typed", "GPU Mandelbrot"),
+    ("228", "julia_typed", "GPU Julia"),
+    ("229", "burning_ship_typed", "GPU Burning Ship"),
+    ("230", "newton_typed", "GPU Newton"),
+    ("231", "sierpinski_typed", "GPU Sierpinski"),
+    ("232", "lyapunov_typed", "GPU Lyapunov"),
 ]]
 
 
@@ -379,12 +379,12 @@ def test_mandelbrot_zoom_and_palette_live():
 # ── 8. Typed filter / color-grade nodes (244-249) ──────────────────────
 
 NEW_TYPED_FILTERS = [s for _, s, _ in [
-    ("244", "box_blur_gpu", "GPU Box Blur"),
-    ("245", "sharpen_gpu", "GPU Sharpen"),
-    ("246", "vignette_gpu", "GPU Vignette"),
-    ("247", "threshold_gpu", "GPU Threshold"),
-    ("248", "hue_shift_gpu", "GPU Hue Shift"),
-    ("249", "dither_gpu", "GPU Dither"),
+    ("233", "box_blur_gpu", "GPU Box Blur"),
+    ("234", "sharpen_gpu", "GPU Sharpen"),
+    ("235", "vignette_gpu", "GPU Vignette"),
+    ("236", "threshold_gpu", "GPU Threshold"),
+    ("237", "hue_shift_gpu", "GPU Hue Shift"),
+    ("238", "dither_gpu", "GPU Dither"),
 ]]
 
 
@@ -438,13 +438,13 @@ def test_threshold_two_tone():
 # Single-input IMAGE filters that derive a FIELD from the upstream frame.
 
 NEW_TYPED_DERIV = [s for _, s, _ in [
-    ("258", "sobel_mag_typed",   "GPU Sobel Magnitude"),
-    ("259", "sobel_dir_typed",   "GPU Sobel Direction"),
-    ("260", "laplacian_typed",   "GPU Laplacian"),
-    ("261", "scharr_typed",      "GPU Scharr"),
-    ("262", "normal_map_typed",  "GPU Normal Map"),
-    ("263", "gradient_orient_typed", "GPU Gradient Flow"),
-    ("264", "emboss_typed",      "GPU Emboss"),
+    ("247", "sobel_mag_typed",   "GPU Sobel Magnitude"),
+    ("248", "sobel_dir_typed",   "GPU Sobel Direction"),
+    ("249", "laplacian_typed",   "GPU Laplacian"),
+    ("250", "scharr_typed",      "GPU Scharr"),
+    ("251", "normal_map_typed",  "GPU Normal Map"),
+    ("252", "gradient_orient_typed", "GPU Gradient Flow"),
+    ("253", "emboss_typed",      "GPU Emboss"),
 ]]
 
 
@@ -554,9 +554,9 @@ def test_typed_shader_never_served_by_generic_proc():
 # ── pt.15 typed procedural batch (316-318) ─────────────────────────────
 
 NEW_TYPED_PT15 = [s for _, s, _ in [
-    ("316", "droste_typed",        "GPU Droste Spiral"),
-    ("317", "stained_glass_typed", "GPU Stained Glass"),
-    ("318", "opart_typed",         "GPU Op-Art Waves"),
+    ("304", "droste_typed",        "GPU Droste Spiral"),
+    ("305", "stained_glass_typed", "GPU Stained Glass"),
+    ("306", "opart_typed",         "GPU Op-Art Waves"),
 ]]
 
 

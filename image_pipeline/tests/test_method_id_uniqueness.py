@@ -129,18 +129,18 @@ def test_detector_fires_on_synthetic_duplicate():
     """Prove the scanner actually catches a two-file collision (guards against
     the test itself regressing into a no-op)."""
     synthetic = {
-        "173": {"image_pipeline/methods/gpu_shaders.py",
+        "162": {"image_pipeline/methods/gpu_shaders.py",
                   "image_pipeline/methods/patterns/domain_warping.py"},
     }
     msgs = _collisions(synthetic)
     assert msgs, "detector failed to flag a known two-file id collision"
-    assert "173" in msgs[0]
+    assert "162" in msgs[0]
 
 
 def test_detector_fires_on_orphan_collision():
     """Prove the scanner catches a stray file claiming an already-owned id."""
-    synthetic_scan = {"173": {"image_pipeline/methods/patterns/domain_warping.py"}}
-    owner = {"173": "image_pipeline.methods.gpu_shaders"}
+    synthetic_scan = {"162": {"image_pipeline/methods/patterns/domain_warping.py"}}
+    owner = {"162": "image_pipeline.methods.gpu_shaders"}
     modules = {"image_pipeline/methods/patterns/domain_warping.py":
                "image_pipeline.methods.patterns.domain_warping"}
     msgs = _collisions(synthetic_scan, owner, modules)

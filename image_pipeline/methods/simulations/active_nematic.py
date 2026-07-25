@@ -256,7 +256,7 @@ def _render(Qxx: np.ndarray, Qxy: np.ndarray) -> np.ndarray:
 
 @method(
     inputs={},
-    id="99",
+    id="91",
     name="Active Nematic Liquid Crystals",
     category="simulations",
     tags=["slow", "animation", "expanded", "physics"],

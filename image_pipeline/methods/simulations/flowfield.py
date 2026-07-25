@@ -43,7 +43,7 @@ def _render_sandpile_preview(grid, colors, size, h, w):
     result = cv2.resize(result.astype(np.float32) / 255.0, (w, h), interpolation=cv2.INTER_NEAREST)
     return result
 
-@method(id="35", name="Flow Field", category="simulations", new_image_contract=True, tags=["particles", "vector", "expanded"],
+@method(id="33", name="Flow Field", category="simulations", new_image_contract=True, tags=["particles", "vector", "expanded"],
          params={
              "particles": {"description": "number of particles", "min": 500, "max": 10000, "default": 3000},
              "speed": {"description": "particle speed per frame", "min": 0.5, "max": 15, "default": 2.0},

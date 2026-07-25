@@ -44,7 +44,7 @@ from ...core.animation import capture_frame
 
 
 @method(
-    id="482",
+    id="408",
     name="FFT Frequency Filter",
     category="filters",
     new_image_contract=True,

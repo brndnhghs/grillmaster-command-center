@@ -17,7 +17,7 @@ except ImportError:
 
 
 @method(
-    id="417",
+    id="359",
     name="Chromatic Aberration",
     category="filters",
     new_image_contract=True,

@@ -14,7 +14,7 @@ from ...core.utils import save, mn, seed_all, W, H
 from ...core.animation import capture_frame
 
 
-@method(id="45", name="Graphviz", category="cli_tools", tags=["graph", "expanded"],
+@method(id="43", name="Graphviz", category="cli_tools", tags=["graph", "expanded"],
         # SCALAR, not FIELD: every one of these becomes a Graphviz DOT attribute
         # or a loop bound — `range(use_n_nodes)`, `fontsize={use_font_size}`,
         # `len={use_edge_len}` — so they are irreducibly one number per render.

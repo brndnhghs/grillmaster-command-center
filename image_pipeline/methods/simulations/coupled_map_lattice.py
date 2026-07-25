@@ -26,7 +26,7 @@ from image_pipeline.core.spatial import sparam
 
 @method(
     inputs={},
-    id="142",
+    id="133",
     name="Coupled Map Lattice",
     category="simulations",
     tags=["chaos", "lattice", "coupled-maps", "spatiotemporal"],

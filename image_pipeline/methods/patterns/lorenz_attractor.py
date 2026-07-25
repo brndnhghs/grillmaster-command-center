@@ -74,7 +74,7 @@ def _rk4_step(x, y, z, s, r, b, dt):
 
 
 @method(
-    id="960",
+    id="465",
     name="Lorenz Attractor",
     category="patterns",
     new_image_contract=True,

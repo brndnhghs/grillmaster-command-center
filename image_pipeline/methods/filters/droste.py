@@ -42,7 +42,7 @@ def _procedural_source(kind: str, _t: float, rng: np.random.Generator) -> np.nda
 
 
 @method(
-    id="444",
+    id="384",
     name="Droste Spiral",
     category="filters",
     tags=["droste", "conformal", "log-polar", "spiral", "escher", "remap", "npr", "animation"],

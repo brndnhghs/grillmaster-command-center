@@ -163,7 +163,7 @@ def _colorize(L: np.ndarray, ux: np.ndarray, uy: np.ndarray, mag: np.ndarray,
 
 
 @method(
-    id="354",
+    id="341",
     name="Line Integral Convolution (Filter)",
     category="filters",
     new_image_contract=True,

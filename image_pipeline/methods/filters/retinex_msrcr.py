@@ -45,7 +45,7 @@ def _gblur(a: np.ndarray, sigma: float) -> np.ndarray:
 
 
 @method(
-    id="447",
+    id="387",
     name="Retinex MSRCR",
     category="filters",
     new_image_contract=True,

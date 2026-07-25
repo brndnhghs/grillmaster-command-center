@@ -127,7 +127,7 @@ def _laplacian_pyr(x: np.ndarray, levels: int):
     return lap
 
 
-@method(id='356', name='Exposure Fusion', category='filters',
+@method(id='343', name='Exposure Fusion', category='filters',
         tags=['exposure-fusion', 'mertens-2007', 'hdr', 'computational-photography',
               'multi-scale', 'tone-fusion', 'best-exposure', 'animation'],
         params={

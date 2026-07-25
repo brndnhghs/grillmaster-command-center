@@ -19,7 +19,7 @@ except ImportError:
 
 
 @method(
-    id="339",
+    id="326",
     name="Tonal Hatching",
     category="filters",
     new_image_contract=True,

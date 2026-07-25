@@ -154,7 +154,7 @@ def _render_curvature(h: np.ndarray) -> np.ndarray:
 
 @method(
     inputs={},
-    id="135",
+    id="126",
     name="KPZ Surface Growth / Erosion",
     category="simulations",
     tags=["physics", "surface-growth", "interface", "erosion",

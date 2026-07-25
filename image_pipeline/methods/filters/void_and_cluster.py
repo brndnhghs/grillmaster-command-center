@@ -96,7 +96,7 @@ def _build_threshold_map(n: int, sigma: float) -> np.ndarray:
 
 
 @method(
-    id="533",
+    id="446",
     name="Void-and-Cluster Dither",
     category="filters",
     tags=["dither", "blue-noise", "void-and-cluster", "ordered", "halftone", "ulichney"],

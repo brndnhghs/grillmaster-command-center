@@ -16,7 +16,7 @@ from ...core.utils import save, mn, W, H, PALETTES
 
 
 @method(
-    id="130",
+    id="121",
     name="Particle Painter",
     category="simulations",
     tags=["particle", "consumer"],

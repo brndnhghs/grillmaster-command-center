@@ -110,7 +110,7 @@ IGNITION = {
 
 
 @method(
-    id="1003",
+    id="497",
     name="Sel'kov Glycolysis",
     category="simulations",
     tags=["physics", "reaction-diffusion", "excitable", "selkov", "glycolysis",

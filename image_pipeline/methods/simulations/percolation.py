@@ -26,7 +26,7 @@ _PALETTE64 = np.array(
 
 
 @method(
-    id="970",
+    id="475",
     name="Percolation",
     category="simulations",
     new_image_contract=True,

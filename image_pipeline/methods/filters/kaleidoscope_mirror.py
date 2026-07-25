@@ -152,7 +152,7 @@ def _make_source(source: str, rng: np.random.Generator, pal_name: str,
 # ── Method ──
 
 @method(
-    id="460",
+    id="393",
     name="Kaleidoscope Mirror",
     category="filters",
     new_image_contract=True,

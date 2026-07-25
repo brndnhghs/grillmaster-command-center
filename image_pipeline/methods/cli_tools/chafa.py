@@ -10,7 +10,7 @@ from ...core.utils import save, mn, seed_all, get_font, W, H
 from ...core.animation import capture_frame
 
 
-@method(id="47", name="Chafa", category="cli_tools", tags=["text", "caca", "expanded"],
+@method(id="45", name="Chafa", category="cli_tools", tags=["text", "caca", "expanded"],
         inputs={
             "image_in": "IMAGE",
             "char_scale": "SCALAR",

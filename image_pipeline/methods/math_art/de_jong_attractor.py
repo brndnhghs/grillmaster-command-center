@@ -58,7 +58,7 @@ def _inferno(t: np.ndarray) -> np.ndarray:
 
 
 @method(
-    id="498", name="De Jong Attractor", category="math_art",
+    id="421", name="De Jong Attractor", category="math_art",
     new_image_contract=True,
     tags=["attractor", "de-jong", "chaos", "strange-attractor", "procedural",
           "generative", "math-art", "animation", "expanded"],

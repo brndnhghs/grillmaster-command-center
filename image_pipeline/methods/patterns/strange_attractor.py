@@ -105,7 +105,7 @@ def _hsv_to_rgb_vec(h, s, v):
 
 
 @method(
-    id="957",
+    id="464",
     name="Strange Attractor",
     category="patterns",
     new_image_contract=True,

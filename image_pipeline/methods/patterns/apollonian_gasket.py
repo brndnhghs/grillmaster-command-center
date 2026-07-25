@@ -125,7 +125,7 @@ def _gen_gasket(seed_curv, anim_mode, _t, depth):
     return out
 
 
-@method(id="514", name="Apollonian Gasket", category="patterns",
+@method(id="431", name="Apollonian Gasket", category="patterns",
         tags=["apollonian", "descartes", "circle-packing", "tangent",
               "procedural", "geometry", "animation", "real-time-cg"],
         inputs={},

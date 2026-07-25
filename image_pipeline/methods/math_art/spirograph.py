@@ -108,7 +108,7 @@ def _closure_theta(R: int, r: int, mode: str) -> float:
 
 
 @method(
-    id="500", name="Spirograph", category="math_art",
+    id="423", name="Spirograph", category="math_art",
     new_image_contract=True,
     tags=["spirograph", "hypotrochoid", "epitrochoid", "rosette", "guilloche",
           "recreational-cg", "procedural", "math-art", "animation", "closed-form"],

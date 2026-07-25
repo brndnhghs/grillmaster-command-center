@@ -112,7 +112,7 @@ def _hsv_to_rgb_vec(h, s, v):
 
 
 @method(
-    id="962",
+    id="467",
     name="Torus Knot",
     category="patterns",
     new_image_contract=True,

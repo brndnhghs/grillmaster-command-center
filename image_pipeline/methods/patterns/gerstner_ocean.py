@@ -59,7 +59,7 @@ _G = 9.81  # gravitational accel for deep-water dispersion
 
 
 @method(
-    id="963",
+    id="468",
     name="Gerstner Ocean",
     category="patterns",
     new_image_contract=True,

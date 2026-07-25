@@ -12,7 +12,7 @@ from ...core.utils import save, mn, W, H
 
 
 @method(
-    id="137",
+    id="128",
     name="Image Blend",
     category="compositing",
     tags=["composite", "blend", "mix", "merge"],

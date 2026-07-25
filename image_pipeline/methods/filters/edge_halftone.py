@@ -19,7 +19,7 @@ except ImportError:
     _has_cv2 = False
 
 @method(
-    id="64",
+    id="60",
     name="Edge Halftone",
     new_image_contract=True,
     category="filters",

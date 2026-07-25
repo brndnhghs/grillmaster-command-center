@@ -11,7 +11,7 @@ from ...core.utils import save, mn, seed_all, W, H
 from ...core.animation import capture_frame
 
 
-@method(id="46", name="ImageMagick Plasma", category="cli_tools", tags=["imagemagick", "expanded"],
+@method(id="44", name="ImageMagick Plasma", category="cli_tools", tags=["imagemagick", "expanded"],
         params={
             "plasma_type": {"description": "plasma type for convert", "default": "fractal"},
             "oil_paint": {"description": "oil paint effect radius", "min": 0, "max": 20, "default": 3},

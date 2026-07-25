@@ -201,7 +201,7 @@ def _hsv_to_rgb(h, s, v):
 
 
 @method(
-    id="85",
+    id="80",
     name="Strange Attractors (Chaos Density)",
     category="math_art",
     tags=["chaos", "density", "static", "expanded", "optimized"],

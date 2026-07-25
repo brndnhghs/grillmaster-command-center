@@ -96,7 +96,7 @@ def _hsv2rgb(h: np.ndarray, s: np.ndarray, v: np.ndarray) -> np.ndarray:
 
 
 @method(
-    id="966",
+    id="471",
     name="Curl-Noise Particle Flow",
     category="simulations",
     tags=["curl-noise", "advection", "fluid", "particles", "trails", "animation"],

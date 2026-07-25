@@ -28,7 +28,7 @@ _INK = {
 
 
 @method(
-    id="336",
+    id="323",
     name="XDoG Sketch",
     category="filters",
     new_image_contract=True,

@@ -376,7 +376,7 @@ def _cool_cells(temp: np.ndarray, mask: np.ndarray, rate: float):
 
 @method(
     inputs={},
-    id="106",
+    id="98",
     name="Dielectric Breakdown",
     category="simulations",
     tags=["slow", "animation", "expanded", "physics", "lightning"],

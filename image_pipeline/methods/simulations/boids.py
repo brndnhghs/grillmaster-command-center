@@ -43,7 +43,7 @@ def _render_sandpile_preview(grid, colors, size, h, w):
     result = cv2.resize(result.astype(np.float32) / 255.0, (w, h), interpolation=cv2.INTER_NEAREST)
     return result
 
-@method(id="34", name="Boids Flocking", category="simulations", new_image_contract=True, tags=["agents", "organic", "expanded"],
+@method(id="32", name="Boids Flocking", category="simulations", new_image_contract=True, tags=["agents", "organic", "expanded"],
          params={
              "boids": {"description": "number of agents", "min": 10, "max": 500, "default": 80},
              "frames": {"description": "simulation steps", "min": 50, "max": 1000, "default": 300},

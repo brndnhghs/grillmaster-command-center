@@ -8,7 +8,7 @@ from ...core.animation import capture_frame
 from ..codegen.qr_code import method_09_qr_code
 
 
-@method(id="27", name="qrencode", category="cli_tools", tags=["code", "expanded"],
+@method(id="25", name="qrencode", category="cli_tools", tags=["code", "expanded"],
         params={
             "qr_data": {"description": "QR code payload text", "default": "ImagePipeline v2: method 27 (QR Code)"},
             "module_size": {"description": "QR module size in pixels", "min": 1, "max": 20, "default": 8},

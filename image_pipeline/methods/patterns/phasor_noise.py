@@ -205,7 +205,7 @@ def _render(centers_x, centers_y, ang0, psi, freq, S, anisotropy, falloff,
     return val, rgb
 
 
-@method(id='1006', name='Phasor Noise', category='patterns',
+@method(id='500', name='Phasor Noise', category='patterns',
         tags=['procedural', 'noise', 'phasor', 'anisotropic', 'sparse-convolution',
               'stripes', 'directional', 'animation'],
         inputs={'image_in': 'IMAGE'},

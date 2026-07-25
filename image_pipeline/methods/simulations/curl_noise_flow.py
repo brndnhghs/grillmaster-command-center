@@ -112,7 +112,7 @@ def _sample(arr: np.ndarray, px: np.ndarray, py: np.ndarray, Hw: int, Ww: int) -
 
 
 @method(
-    id="483",
+    id="409",
     name="Curl Noise Flow",
     category="simulations",
     new_image_contract=True,

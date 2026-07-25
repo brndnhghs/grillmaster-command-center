@@ -194,7 +194,7 @@ def _make_scene(source: str, rng: np.random.Generator, pal_name: str) -> np.ndar
 # ── Method ──
 
 @method(
-    id="420",
+    id="362",
     name="Bokeh Lens Blur",
     category="filters",
     new_image_contract=True,

@@ -91,7 +91,7 @@ def _render_flare(xx: np.ndarray, yy: np.ndarray, w: int, h: int,
 
 
 @method(
-    id="434",
+    id="374",
     name="Lens Flare",
     category="filters",
     new_image_contract=True,

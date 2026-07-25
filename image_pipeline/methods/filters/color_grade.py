@@ -128,7 +128,7 @@ def _source_rgb(source, hh, ww, rng, _t, pal_name):
 
 
 @method(
-    id="493",
+    id="416",
     name="Color Grading (OKLab)",
     category="filters",
     tags=["color", "grading", "oklab", "perceptual", "adjust", "tone", "animation", "expanded"],

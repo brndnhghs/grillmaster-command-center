@@ -128,7 +128,7 @@ def side_window_filter(img: np.ndarray, r: int) -> np.ndarray:
     return result
 
 
-@method(id='357', name='Side Window Filter', category='filters',
+@method(id='344', name='Side Window Filter', category='filters',
         tags=['side-window-filter', 'liu-2019', 'edge-preserving',
               'smoothing', 'integral-image', 'npr', 'post-fx', 'animation'],
         params={

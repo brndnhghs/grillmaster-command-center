@@ -19,7 +19,7 @@ except ImportError:
     _has_cv2 = False
 
 @method(
-    id="42",
+    id="40",
     name="Fake HDR",
     new_image_contract=True,
     category="filters",

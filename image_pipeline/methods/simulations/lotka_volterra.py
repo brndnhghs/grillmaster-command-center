@@ -89,7 +89,7 @@ def _render_mono(u: np.ndarray, v: np.ndarray, channel: str) -> Image.Image:
 
 
 @method(
-    id="118",
+    id="109",
     name="Lotka-Volterra RD",
     category="simulations",
     tags=["physics", "reaction-diffusion", "ecological", "expanded"],

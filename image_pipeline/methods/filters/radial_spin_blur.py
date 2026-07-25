@@ -14,7 +14,7 @@ from ...core.animation import capture_frame
 
 
 @method(
-    id='486',
+    id='412',
     name='Radial & Spin Blur',
     category='filters',
     new_image_contract=True,

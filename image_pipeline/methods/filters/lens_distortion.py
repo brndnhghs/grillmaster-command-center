@@ -110,7 +110,7 @@ def _synth_scene(h, w, seed):
 
 
 @method(
-    id="480",
+    id="406",
     name="Lens Distortion",
     category="filters",
     tags=["lens", "distortion", "barrel", "pincushion", "brown-conrady",

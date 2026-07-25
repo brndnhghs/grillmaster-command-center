@@ -22,7 +22,7 @@ except ImportError:
 
 
 @method(
-    id="341",
+    id="328",
     name="Poisson Cloning",
     category="filters",
     new_image_contract=True,

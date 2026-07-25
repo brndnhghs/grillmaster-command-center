@@ -122,7 +122,7 @@ def _render(points: np.ndarray, w: np.ndarray,
 
 
 @method(
-    id="988",
+    id="483",
     name="Weighted Voronoi Stippling (Halftone)",
     category="filters",
     tags=["stippling", "secord", "voronoi", "lloyd", "npr", "pen-and-ink",

@@ -155,7 +155,7 @@ INIT_MODES = {
 
 @method(
     inputs={},
-    id="154",
+    id="145",
     name="Continuous Spatial PD (Replicator Dynamics)",
     category="simulations",
     tags=["animation", "game-theory", "pde", "emergent", "flowing"],

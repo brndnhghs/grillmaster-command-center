@@ -275,7 +275,7 @@ def _build_initial_field(
 
 
 @method(
-    id="112",
+    id="104",
     name="Kelvin-Helmholtz Instability",
     category="simulations",
     tags=["physics", "fluid", "instability", "animation"],

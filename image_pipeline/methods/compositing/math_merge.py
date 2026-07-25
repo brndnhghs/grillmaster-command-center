@@ -9,7 +9,7 @@ from ...core.utils import save, mn, write_scalars, W, H
 
 
 @method(
-    id="138",
+    id="129",
     name="Scalar Math",
     category="compositing",
     tags=["scalar", "math", "merge"],

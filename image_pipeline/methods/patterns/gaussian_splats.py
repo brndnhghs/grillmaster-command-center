@@ -14,7 +14,7 @@ from ...core.animation import capture_frame
 
 
 @method(
-    inputs={}, id="965", name="2D Gaussian Splats", category="patterns",
+    inputs={}, id="470", name="2D Gaussian Splats", category="patterns",
     tags=["cg", "2023", "splatting", "fast", "animated", "3d"],
     params={
         "n_splats": {"description": "number of 2D Gaussians (splats) in the field", "min": 10, "max": 800, "default": 220},

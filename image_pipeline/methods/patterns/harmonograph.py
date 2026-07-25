@@ -27,7 +27,7 @@ def _gaussian_blur(buf: np.ndarray, sigma: float) -> np.ndarray:
 
 @method(
     inputs={},
-    id="406",
+    id="352",
     name="Harmonograph",
     category="patterns",
     tags=["generative", "curve", "pendulum", "lissajous", "animation"],

@@ -212,7 +212,7 @@ def _render_triangles(hh, ww, verts, tris, src, edge_width, edge_color):
 
 
 @method(
-    id="401",
+    id="350",
     name="Low-Poly Triangulation",
     category="filters",
     new_image_contract=True,

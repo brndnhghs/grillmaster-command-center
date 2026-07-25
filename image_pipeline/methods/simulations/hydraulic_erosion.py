@@ -156,7 +156,7 @@ def _palette(c: np.ndarray, name: str) -> np.ndarray:
     return lo + (hi - lo) * t[..., None]
 
 
-@method(id="348", name="Droplet Erosion", category="simulations",
+@method(id="335", name="Droplet Erosion", category="simulations",
         tags=["terrain", "erosion", "hydraulic", "simulation", "relief", "procedural", "expanded"],
         inputs={},
         outputs={"image": "IMAGE", "luminance": "FIELD", "height": "FIELD"},

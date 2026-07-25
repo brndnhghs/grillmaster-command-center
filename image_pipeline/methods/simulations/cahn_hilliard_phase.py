@@ -111,7 +111,7 @@ def _resize01(arr: np.ndarray, w: int, h: int) -> np.ndarray:
 
 
 @method(
-    id="951",
+    id="460",
     name="Cahn–Hilliard Phase Separation",
     category="simulations",
     tags=[

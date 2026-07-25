@@ -82,7 +82,7 @@ def _hsv_to_rgb(h, s, v):
 
 
 @method(
-    id="978",
+    id="482",
     name="Instant-NGP Hash Texture",
     category="patterns",
     new_image_contract=True,

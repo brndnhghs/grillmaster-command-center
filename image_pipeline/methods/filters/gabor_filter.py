@@ -41,7 +41,7 @@ from ...core.animation import capture_frame
 
 
 @method(
-    id="439",
+    id="379",
     name="Gabor Filter",
     category="filters",
     new_image_contract=True,

@@ -43,7 +43,7 @@ def _render_sandpile_preview(grid, colors, size, h, w):
     result = cv2.resize(result.astype(np.float32) / 255.0, (w, h), interpolation=cv2.INTER_NEAREST)
     return result
 
-@method(id="79", name="Random Walk", category="simulations", new_image_contract=True, tags=["organic", "paths", "expanded", "animation"],
+@method(id="74", name="Random Walk", category="simulations", new_image_contract=True, tags=["organic", "paths", "expanded", "animation"],
          outputs={"image": "IMAGE", "particles": "PARTICLES"},
          params={
     "walkers": {"description": "random walk threads", "min": 1, "max": 200, "default": 30},

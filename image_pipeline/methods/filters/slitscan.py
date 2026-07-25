@@ -19,7 +19,7 @@ except ImportError:
     _has_cv2 = False
 
 @method(
-    id="57",
+    id="55",
     name="Slit Scan",
     new_image_contract=True,
     category="filters",

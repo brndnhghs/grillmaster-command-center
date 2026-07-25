@@ -190,7 +190,7 @@ def _inpaint(u0: np.ndarray, hole: np.ndarray, rho: float,
 
 
 @method(
-    id="501",
+    id="424",
     name="Image Inpainting",
     category="filters",
     new_image_contract=True,

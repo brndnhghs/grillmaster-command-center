@@ -43,7 +43,7 @@ from ...core.animation import capture_frame
 
 @method(
     inputs={},
-    id="149",
+    id="140",
     name="Ferrofluid Rosensweig Instability",
     category="simulations",
     tags=["animation", "ferrofluid", "magnetic", "instability",

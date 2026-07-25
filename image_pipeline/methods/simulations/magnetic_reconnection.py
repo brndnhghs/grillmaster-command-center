@@ -413,7 +413,7 @@ def _draw_xpoints(img: Image.Image, bmag: np.ndarray):
 
 @method(
     inputs={},
-    id="152",
+    id="143",
     name="Magnetic Reconnection",
     category="simulations",
     tags=["physics", "plasma", "field-lines", "magnetic", "animation"],

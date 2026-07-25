@@ -272,7 +272,7 @@ def _build_initial_field(
 
 
 @method(
-    id="109",
+    id="101",
     name="Rayleigh-Taylor Instability",
     category="simulations",
     tags=["physics", "fluid", "instability", "animation"],

@@ -119,7 +119,7 @@ def _nearest_distances(samples, grid, cell, r):
 
 
 @method(
-    id="310", name="Blue Noise Sampling", category="simulations",
+    id="299", name="Blue Noise Sampling", category="simulations",
     tags=["blue-noise", "poisson-disk", "sampling", "stippling", "placement"],
     inputs={},
     outputs={"image": "IMAGE", "field": "FIELD", "particles": "PARTICLES",

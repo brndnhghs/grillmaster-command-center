@@ -52,7 +52,7 @@ def _resize01(arr: np.ndarray, w: int, h: int) -> np.ndarray:
 
 
 @method(
-    id="922",
+    id="452",
     name="Brusselator",
     category="simulations",
     tags=[

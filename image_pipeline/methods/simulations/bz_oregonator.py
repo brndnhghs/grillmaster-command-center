@@ -108,7 +108,7 @@ def _render_frame(
 # ── Method ──
 @method(
     inputs={},
-    id="91",
+    id="83",
     name="BZ Oregonator",
     category="simulations",
     tags=["animation", "reaction-diffusion", "spirals", "waves"],

@@ -39,7 +39,7 @@ def _render(u):
 
 @method(
     inputs={},
-    id="159",
+    id="149",
     name="Phase Separation + Darcy Advection",
     category="simulations",
     tags=["phase", "allen-cahn", "darcy", "blobs", "spots"],

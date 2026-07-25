@@ -173,7 +173,7 @@ def _render(grid, age_grid, gw, gh, frame):
 
 @method(
     inputs={},
-    id="101",
+    id="93",
     name="Viscous Fingering",
     category="simulations",
     tags=["physics", "fractal", "emergence", "expanded"],

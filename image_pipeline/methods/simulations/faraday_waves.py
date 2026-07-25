@@ -118,7 +118,7 @@ def _render_velocity(h: np.ndarray, v: np.ndarray,
 # ═══════════════════════════════════════════════════════════════
 
 @method(
-    id="144",
+    id="135",
     name="Faraday Wave Patterns",
     category="simulations",
     tags=["animation", "waves", "parametric", "patterns",

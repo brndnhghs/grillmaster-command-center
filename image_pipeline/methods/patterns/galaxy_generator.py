@@ -14,7 +14,7 @@ from ...core.animation import capture_frame
 
 
 @method(
-    id='487',
+    id='413',
     name='Galaxy Generator',
     category='patterns',
     new_image_contract=True,

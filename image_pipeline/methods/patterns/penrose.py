@@ -111,7 +111,7 @@ def _build_triangles(subdivisions: int):
 
 
 @method(
-    id="465",
+    id="398",
     name="Penrose Tiling",
     category="patterns",
     tags=["penrose", "aperiodic", "tiling", "quasicrystal", "generative",

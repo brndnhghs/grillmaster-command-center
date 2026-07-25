@@ -141,7 +141,7 @@ def rolling_guidance(img: np.ndarray, scale: float, R: int,
     return structure, detail
 
 
-@method(id='358', name='Rolling Guidance Filter', category='filters',
+@method(id='345', name='Rolling Guidance Filter', category='filters',
         tags=['rolling-guidance-filter', 'zhang-2014', 'edge-preserving',
               'structure-detail-decomposition', 'texture-suppression',
               'post-fx', 'animation'],

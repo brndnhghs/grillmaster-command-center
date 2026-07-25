@@ -136,7 +136,7 @@ def _render(acc: np.ndarray) -> Image.Image:
 # ══════════════════════════════════════════════════════════════════════
 
 @method(
-    id="518",
+    id="435",
     name="Larger Than Life Cellular Automaton",
     category="simulations",
     tags=["cellular-automaton", "life", "discrete", "emergence", "ltl", "bays"],

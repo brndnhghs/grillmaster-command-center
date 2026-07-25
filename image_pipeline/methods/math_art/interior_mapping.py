@@ -216,7 +216,7 @@ def _compute_interior(
 
 
 @method(
-    id="967",
+    id="472",
     name="Interior Mapping",
     category="math_art",
     tags=["interior", "facade", "raycast", "procedural", "architecture", "parallax"],

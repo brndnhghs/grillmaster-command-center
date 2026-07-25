@@ -128,7 +128,7 @@ def _hsv_to_rgb(h, s, v):
 
 
 @method(
-    id="997",
+    id="492",
     name="Tone Mapping",
     category="filters",
     tags=["tone-mapping", "agx", "aces", "hdr", "exposure", "color", "post-process"],

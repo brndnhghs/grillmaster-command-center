@@ -186,7 +186,7 @@ def _sun_direction(elevation_deg: float, azimuth_deg: float) -> np.ndarray:
 
 
 @method(
-    id="471",
+    id="401",
     name="Nishita Atmospheric Sky",
     category="math_art",
     tags=["sky", "atmosphere", "scattering", "rayleigh", "mie", "nishita", "procedural"],

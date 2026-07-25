@@ -23,58 +23,58 @@ from ...core.shaders import render_shader, render_procedural, SHADERS, shader_us
 
 # ── Ordered shader lists (stable IDs) ────────────────────────────────
 _PROC_SHADERS = [
-    ("173", "mandelbrot",         "GPU Mandelbrot"),
-    ("174", "julia",              "GPU Julia"),
-    ("175", "plasma",             "GPU Plasma"),
-    ("176", "domain_warp",        "GPU Domain Warp"),
-    ("177", "voronoi",            "GPU Voronoi"),
-    ("178", "voronoise",          "GPU Voronoise"),
-    ("179", "ripples",            "GPU Ripples"),
-    ("180", "cells",              "GPU Cells"),
-    ("181", "bubble_chamber",     "GPU Bubble Chamber"),
-    ("182", "stars",              "GPU Stars"),
-    ("183", "lightning_fractal",  "GPU Lightning Fractal"),
-    ("184", "spiral",             "GPU Spiral"),
-    ("185", "dendritic",          "GPU Dendritic"),
-    ("186", "barnsley",           "GPU Barnsley Fern"),
-    ("187", "spectral",           "GPU Spectral"),
-    ("188", "truchet",            "GPU Truchet"),
-    ("189", "kaleidoscope_fractal","GPU Kaleidoscope Fractal"),
-    ("190", "waves_3d",           "GPU Waves 3D"),
-    ("191", "pixel_sort_gpu",     "GPU Pixel Sort"),
-    ("192", "ocean",              "GPU Ocean"),
-    ("193", "nebula_gpu",         "GPU Nebula"),
-    ("194", "terrain",            "GPU Terrain"),
-    ("195", "wood_grain_gpu",     "GPU Wood Grain"),
-    ("196", "fire_gpu",           "GPU Fire"),
-    ("197", "smoke_gpu",          "GPU Smoke"),
-    ("412", "sdf_raymarch_gpu",   "GPU SDF Raymarch"),
-    ("413", "dot_noise_gpu",      "GPU Dot Noise"),
+    ("162", "mandelbrot",         "GPU Mandelbrot"),
+    ("163", "julia",              "GPU Julia"),
+    ("164", "plasma",             "GPU Plasma"),
+    ("165", "domain_warp",        "GPU Domain Warp"),
+    ("166", "voronoi",            "GPU Voronoi"),
+    ("167", "voronoise",          "GPU Voronoise"),
+    ("168", "ripples",            "GPU Ripples"),
+    ("169", "cells",              "GPU Cells"),
+    ("170", "bubble_chamber",     "GPU Bubble Chamber"),
+    ("171", "stars",              "GPU Stars"),
+    ("172", "lightning_fractal",  "GPU Lightning Fractal"),
+    ("173", "spiral",             "GPU Spiral"),
+    ("174", "dendritic",          "GPU Dendritic"),
+    ("175", "barnsley",           "GPU Barnsley Fern"),
+    ("176", "spectral",           "GPU Spectral"),
+    ("177", "truchet",            "GPU Truchet"),
+    ("178", "kaleidoscope_fractal","GPU Kaleidoscope Fractal"),
+    ("179", "waves_3d",           "GPU Waves 3D"),
+    ("180", "pixel_sort_gpu",     "GPU Pixel Sort"),
+    ("181", "ocean",              "GPU Ocean"),
+    ("182", "nebula_gpu",         "GPU Nebula"),
+    ("183", "terrain",            "GPU Terrain"),
+    ("184", "wood_grain_gpu",     "GPU Wood Grain"),
+    ("185", "fire_gpu",           "GPU Fire"),
+    ("186", "smoke_gpu",          "GPU Smoke"),
+    ("355", "sdf_raymarch_gpu",   "GPU SDF Raymarch"),
+    ("356", "dot_noise_gpu",      "GPU Dot Noise"),
 ]
 
 _FILT_SHADERS = [
-    ("198", "shader_bloom",           "GPU Bloom"),
-    ("199", "shader_emboss",          "GPU Emboss"),
-    ("200", "shader_kaleidoscope",    "GPU Kaleidoscope"),
-    ("201", "shader_water_ripple",    "GPU Water Ripple"),
-    ("202", "shader_heat_shimmer",    "GPU Heat Shimmer"),
-    ("203", "shader_pixelate_gpu",    "GPU Pixelate"),
-    ("204", "shader_ink_bleed",       "GPU Ink Bleed"),
-    ("205", "shader_halftone_gpu",    "GPU Halftone"),
-    ("206", "shader_crt_gpu",         "GPU CRT"),
-    ("207", "shader_hologram",        "GPU Hologram"),
-    ("208", "shader_mosaic_gpu",      "GPU Mosaic"),
-    ("209", "shader_edge_detect_gpu", "GPU Edge Detect"),
-    ("210", "shader_warhol",          "GPU Warhol"),
-    ("211", "shader_duotone_gpu",     "GPU Duotone"),
-    ("212", "shader_rgb_split",       "GPU RGB Split"),
-    ("213", "shader_caustics_gpu",    "GPU Caustics"),
-    ("214", "shader_glitch_gpu",      "GPU Glitch"),
-    ("215", "shader_posterize_gpu",   "GPU Posterize"),
-    ("216", "shader_oil_gpu",         "GPU Oil Paint"),
-    ("217", "shader_neon_gpu",        "GPU Neon Glow"),
-    ("218", "shader_pencil_gpu",      "GPU Pencil"),
-    ("219", "shader_motion_blur_gpu", "GPU Motion Blur"),
+    ("187", "shader_bloom",           "GPU Bloom"),
+    ("188", "shader_emboss",          "GPU Emboss"),
+    ("189", "shader_kaleidoscope",    "GPU Kaleidoscope"),
+    ("190", "shader_water_ripple",    "GPU Water Ripple"),
+    ("191", "shader_heat_shimmer",    "GPU Heat Shimmer"),
+    ("192", "shader_pixelate_gpu",    "GPU Pixelate"),
+    ("193", "shader_ink_bleed",       "GPU Ink Bleed"),
+    ("194", "shader_halftone_gpu",    "GPU Halftone"),
+    ("195", "shader_crt_gpu",         "GPU CRT"),
+    ("196", "shader_hologram",        "GPU Hologram"),
+    ("197", "shader_mosaic_gpu",      "GPU Mosaic"),
+    ("198", "shader_edge_detect_gpu", "GPU Edge Detect"),
+    ("199", "shader_warhol",          "GPU Warhol"),
+    ("200", "shader_duotone_gpu",     "GPU Duotone"),
+    ("201", "shader_rgb_split",       "GPU RGB Split"),
+    ("202", "shader_caustics_gpu",    "GPU Caustics"),
+    ("203", "shader_glitch_gpu",      "GPU Glitch"),
+    ("204", "shader_posterize_gpu",   "GPU Posterize"),
+    ("205", "shader_oil_gpu",         "GPU Oil Paint"),
+    ("206", "shader_neon_gpu",        "GPU Neon Glow"),
+    ("207", "shader_pencil_gpu",      "GPU Pencil"),
+    ("208", "shader_motion_blur_gpu", "GPU Motion Blur"),
 ]
 
 _PROC_PARAMS = {
@@ -152,197 +152,197 @@ def _make_filt(method_id: str, shader_name: str, method_name: str):
 # every node emits image: IMAGE + luminance: FIELD.
 
 _TYPED_SHADER_NODES = [
-    ("220", "gradient_gpu2",    "GPU Gradient"),
-    ("221", "ascii_art_gpu",    "GPU ASCII Art"),
-    ("222", "solid_color_gpu",  "GPU Solid Color"),
-    ("223", "checker_gpu2",     "GPU Checkerboard"),
-    ("224", "wave_pattern_gpu", "GPU Wave Pattern"),
-    ("225", "fbm_noise_gpu",    "GPU FBM Noise"),
+    ("209", "gradient_gpu2",    "GPU Gradient"),
+    ("210", "ascii_art_gpu",    "GPU ASCII Art"),
+    ("211", "solid_color_gpu",  "GPU Solid Color"),
+    ("212", "checker_gpu2",     "GPU Checkerboard"),
+    ("213", "wave_pattern_gpu", "GPU Wave Pattern"),
+    ("214", "fbm_noise_gpu",    "GPU FBM Noise"),
     # Categorical coverage expansion (2026-07-10): animated plasma, voronoi
     # cells, and the filter family — kaleidoscope / bloom / posterize / edge.
-    ("226", "plasma_gpu2",        "GPU Plasma 2"),
-    ("227", "voronoi_gpu2",       "GPU Voronoi 2"),
-    ("228", "kaleidoscope_gpu",   "GPU Kaleidoscope"),
-    ("229", "bloom_gpu",          "GPU Bloom"),
-    ("230", "posterize_gpu",      "GPU Posterize"),
-    ("231", "edge_gpu",           "GPU Edge Detect"),
+    ("215", "plasma_gpu2",        "GPU Plasma 2"),
+    ("216", "voronoi_gpu2",       "GPU Voronoi 2"),
+    ("217", "kaleidoscope_gpu",   "GPU Kaleidoscope"),
+    ("218", "bloom_gpu",          "GPU Bloom"),
+    ("219", "posterize_gpu",      "GPU Posterize"),
+    ("220", "edge_gpu",           "GPU Edge Detect"),
     # Categorical coverage expansion (2026-07-10 pt.2): displacement, RGB split,
     # halftone screen, concentric rings, truchet tiling, pixelate/mosaic.
-    ("232", "swirl_gpu",          "GPU Swirl"),
-    ("233", "chromatic_gpu",      "GPU Chromatic Aberration"),
-    ("234", "halftone_gpu",       "GPU Halftone"),
-    ("235", "rings_gpu",          "GPU Rings"),
-    ("236", "truchet_gpu",       "GPU Truchet"),
-    ("237", "pixelate_gpu",       "GPU Pixelate"),
+    ("221", "swirl_gpu",          "GPU Swirl"),
+    ("222", "chromatic_gpu",      "GPU Chromatic Aberration"),
+    ("223", "halftone_gpu",       "GPU Halftone"),
+    ("224", "rings_gpu",          "GPU Rings"),
+    ("225", "truchet_gpu",       "GPU Truchet"),
+    ("226", "pixelate_gpu",       "GPU Pixelate"),
     # Categorical coverage pt.3 (2026-07-10): signature escape-time fractals
     # with NAMED typed controls (zoom/center/iterations/palette/colors) replacing
     # the opaque p1..p4 shims — Mandelbrot, Julia, Burning Ship, Newton,
     # Sierpinski, Lyapunov.
-    ("238", "mandelbrot_typed",   "GPU Mandelbrot"),
-    ("239", "julia_typed",        "GPU Julia"),
-    ("240", "burning_ship_typed", "GPU Burning Ship"),
-    ("241", "newton_typed",       "GPU Newton"),
-    ("242", "sierpinski_typed",   "GPU Sierpinski"),
-    ("243", "lyapunov_typed",     "GPU Lyapunov"),
+    ("227", "mandelbrot_typed",   "GPU Mandelbrot"),
+    ("228", "julia_typed",        "GPU Julia"),
+    ("229", "burning_ship_typed", "GPU Burning Ship"),
+    ("230", "newton_typed",       "GPU Newton"),
+    ("231", "sierpinski_typed",   "GPU Sierpinski"),
+    ("232", "lyapunov_typed",     "GPU Lyapunov"),
     # Categorical coverage pt.4 (2026-07-11): per-pixel filter / color-grade
     # family with NAMED typed controls — box blur, unsharp sharpen, vignette,
     # luminance threshold, hue rotate, ordered (Bayer) dither.
-    ("244", "box_blur_gpu",       "GPU Box Blur"),
-    ("245", "sharpen_gpu",        "GPU Sharpen"),
-    ("246", "vignette_gpu",       "GPU Vignette"),
-    ("247", "threshold_gpu",      "GPU Threshold"),
-    ("248", "hue_shift_gpu",      "GPU Hue Shift"),
-    ("249", "dither_gpu",         "GPU Dither"),
+    ("233", "box_blur_gpu",       "GPU Box Blur"),
+    ("234", "sharpen_gpu",        "GPU Sharpen"),
+    ("235", "vignette_gpu",       "GPU Vignette"),
+    ("236", "threshold_gpu",      "GPU Threshold"),
+    ("237", "hue_shift_gpu",      "GPU Hue Shift"),
+    ("238", "dither_gpu",         "GPU Dither"),
     # Categorical coverage expansion (2026-07-11): closed-form field-eval twins
     # moire / chladni / dunes / quasicrystal / metaballs / nebula / wood / ripples.
-    ("250", "moire_typed",         "GPU Moiré"),
-    ("251", "chladni_typed",       "GPU Chladni"),
-    ("252", "dunes_typed",         "GPU Dunes"),
-    ("253", "quasicrystal_typed",  "GPU Quasicrystal"),
-    ("254", "metaballs_typed",     "GPU Metaballs"),
-    ("255", "nebula_typed",        "GPU Nebula"),
-    ("256", "wood_grain_typed",   "GPU Wood Grain"),
-    ("257", "ripples_typed",      "GPU Ripples"),
+    ("239", "moire_typed",         "GPU Moiré"),
+    ("240", "chladni_typed",       "GPU Chladni"),
+    ("241", "dunes_typed",         "GPU Dunes"),
+    ("242", "quasicrystal_typed",  "GPU Quasicrystal"),
+    ("243", "metaballs_typed",     "GPU Metaballs"),
+    ("244", "nebula_typed",        "GPU Nebula"),
+    ("245", "wood_grain_typed",   "GPU Wood Grain"),
+    ("246", "ripples_typed",      "GPU Ripples"),
     # Categorical coverage pt.6 (2026-07-11): derivative-field filters that
     # derive a FIELD from the upstream image — Sobel magnitude / direction,
     # Laplacian, Scharr, normal map, gradient orientation flow, emboss. Single
     # image_in: IMAGE; every numeric variable is a wireable SCALAR port.
-    ("258", "sobel_mag_typed",    "GPU Sobel Magnitude"),
-    ("259", "sobel_dir_typed",    "GPU Sobel Direction"),
-    ("260", "laplacian_typed",    "GPU Laplacian"),
-    ("261", "scharr_typed",       "GPU Scharr"),
-    ("262", "normal_map_typed",   "GPU Normal Map"),
-    ("263", "gradient_orient_typed", "GPU Gradient Flow"),
-    ("264", "emboss_typed",       "GPU Emboss"),
+    ("247", "sobel_mag_typed",    "GPU Sobel Magnitude"),
+    ("248", "sobel_dir_typed",    "GPU Sobel Direction"),
+    ("249", "laplacian_typed",    "GPU Laplacian"),
+    ("250", "scharr_typed",       "GPU Scharr"),
+    ("251", "normal_map_typed",   "GPU Normal Map"),
+    ("252", "gradient_orient_typed", "GPU Gradient Flow"),
+    ("253", "emboss_typed",       "GPU Emboss"),
     # Categorical coverage pt.7 (2026-07-11): closed-form pattern generators
     # with NAMED typed controls — spirograph, truchet maze, reaction waves,
     # hex grid, starfield, concentric rings.
-    ("265", "spirograph_typed",    "GPU Spirograph"),
-    ("266", "truchet_maze_typed",  "GPU Truchet Maze"),
-    ("267", "reaction_waves_typed", "GPU Reaction Waves"),
-    ("268", "hex_grid_typed",      "GPU Hex Grid"),
-    ("269", "starfield_typed",     "GPU Starfield"),
-    ("270", "concentric_rings_typed", "GPU Concentric Rings"),
+    ("254", "spirograph_typed",    "GPU Spirograph"),
+    ("255", "truchet_maze_typed",  "GPU Truchet Maze"),
+    ("256", "reaction_waves_typed", "GPU Reaction Waves"),
+    ("257", "hex_grid_typed",      "GPU Hex Grid"),
+    ("258", "starfield_typed",     "GPU Starfield"),
+    ("259", "concentric_rings_typed", "GPU Concentric Rings"),
     # Categorical coverage pt.8 (2026-07-11): closed-form math_art patterns
     # with NAMED typed controls — Ulam-spiral homage, hash maze, circle
     # packing, Fourier epicycles, summed waveform, Clifford strange-attractor.
-    ("271", "ulam_spiral_typed",     "GPU Ulam Spiral"),
-    ("272", "maze_typed",            "GPU Hash Maze"),
-    ("273", "circle_packing_typed",  "GPU Circle Packing"),
-    ("274", "fourier_circles_typed", "GPU Fourier Circles"),
-    ("275", "waveform_typed",        "GPU Waveform"),
-    ("276", "strange_attractor_typed", "GPU Strange Attractor"),
+    ("260", "ulam_spiral_typed",     "GPU Ulam Spiral"),
+    ("261", "maze_typed",            "GPU Hash Maze"),
+    ("262", "circle_packing_typed",  "GPU Circle Packing"),
+    ("263", "fourier_circles_typed", "GPU Fourier Circles"),
+    ("264", "waveform_typed",        "GPU Waveform"),
+    ("265", "strange_attractor_typed", "GPU Strange Attractor"),
     # Categorical coverage pt.8 (2026): closed-form patterns with NAMED typed
     # controls — phyllotaxis dots, guilloché engraving, Lissajous trace, radial
     # wave interference, curl-noise flow field, kaleidoscopic petal bloom.
-    ("277", "phyllotaxis_typed",   "GPU Phyllotaxis"),
-    ("278", "guilloche_typed",     "GPU Guilloché"),
-    ("279", "lissajous_typed",     "GPU Lissajous"),
-    ("280", "interference_typed",  "GPU Wave Interference"),
-    ("281", "flow_field_typed",    "GPU Flow Field"),
-    ("282", "kaleido_bloom_typed", "GPU Kaleido Bloom"),
+    ("266", "phyllotaxis_typed",   "GPU Phyllotaxis"),
+    ("267", "guilloche_typed",     "GPU Guilloché"),
+    ("268", "lissajous_typed",     "GPU Lissajous"),
+    ("269", "interference_typed",  "GPU Wave Interference"),
+    ("270", "flow_field_typed",    "GPU Flow Field"),
+    ("271", "kaleido_bloom_typed", "GPU Kaleido Bloom"),
     # Categorical coverage pt.9 (2026-07-11): closed-form math_art patterns
     # with NAMED typed controls — superformula, harmonograph, Maurer rose,
     # magnetic dipole field, star polygon {n/k}, torus-knot ribbon.
-    ("283", "superformula_typed",  "GPU Superformula"),
-    ("284", "harmonograph_typed",  "GPU Harmonograph"),
-    ("285", "maurer_rose_typed",   "GPU Maurer Rose"),
-    ("286", "magnetic_typed",      "GPU Magnetic Field"),
-    ("287", "star_polygon_typed",  "GPU Star Polygon"),
-    ("288", "torusknot_typed",   "GPU Torus Knot"),
+    ("272", "superformula_typed",  "GPU Superformula"),
+    ("273", "harmonograph_typed",  "GPU Harmonograph"),
+    ("274", "maurer_rose_typed",   "GPU Maurer Rose"),
+    ("275", "magnetic_typed",      "GPU Magnetic Field"),
+    ("276", "star_polygon_typed",  "GPU Star Polygon"),
+    ("277", "torusknot_typed",   "GPU Torus Knot"),
     # Categorical coverage pt.10 (2026-07-11): closed-form pattern nodes with
     # NAMED typed controls — infinite tunnel, vortex/galaxy field, woven fabric,
     # topographic contour map, cross-hatch engraving, domain-warped grid.
-    ("289", "tunnel_typed",    "GPU Tunnel"),
-    ("290", "vortex_typed",    "GPU Vortex"),
-    ("291", "weave_typed",     "GPU Weave"),
-    ("292", "contour_typed",   "GPU Contour Map"),
-    ("293", "hatch_typed",     "GPU Cross-Hatch"),
-    ("294", "gridwarp_typed",  "GPU Warp Grid"),
+    ("278", "tunnel_typed",    "GPU Tunnel"),
+    ("279", "vortex_typed",    "GPU Vortex"),
+    ("280", "weave_typed",     "GPU Weave"),
+    ("281", "contour_typed",   "GPU Contour Map"),
+    ("282", "hatch_typed",     "GPU Cross-Hatch"),
+    ("283", "gridwarp_typed",  "GPU Warp Grid"),
     # Categorical coverage pt.11 (2026-07-11): extended closed-form procedural
     # family with NAMED typed controls — domain-warped flow, animated caustics,
     # spectral prism, SDF scene, radial energy burst, iridescent bubble foam.
-    ("295", "domainwarp_typed", "GPU Domain Warp"),
-    ("296", "caustics_typed",   "GPU Caustics"),
-    ("297", "prism_typed",      "GPU Spectral Prism"),
-    ("298", "sdfscene_typed",   "GPU SDF Scene"),
-    ("299", "burst_typed",      "GPU Energy Burst"),
-    ("300", "foam_typed",   "GPU Bubble Foam"),
+    ("284", "domainwarp_typed", "GPU Domain Warp"),
+    ("285", "caustics_typed",   "GPU Caustics"),
+    ("286", "prism_typed",      "GPU Spectral Prism"),
+    ("287", "sdfscene_typed",   "GPU SDF Scene"),
+    ("288", "burst_typed",      "GPU Energy Burst"),
+    ("289", "foam_typed",   "GPU Bubble Foam"),
     # Categorical coverage pt.12 (2026-07-11): closed-form pattern node —
     # Gyroid / triply-periodic minimal-surface slice (animation by in-plane
     # spin + slice advance through the 3D field).
-    ("301", "gyroid_typed", "GPU Gyroid"),
+    ("290", "gyroid_typed", "GPU Gyroid"),
     # Categorical coverage pt.13 (2026-07-11): closed-form generative-art
     # patterns with NAMED typed controls — Schotter grid, Thue-Morse fractal,
     # crystal diffraction, Apollonian gasket, confocal parabola family,
     # Poincaré-disk hyperbolic tiling.
-    ("302", "schotter_typed",    "GPU Schotter"),
-    ("303", "thue_morse_typed",  "GPU Thue-Morse"),
-    ("304", "crystal_typed",     "GPU Crystal Diffraction"),
-    ("305", "apollonian_typed",  "GPU Apollonian Gasket"),
-    ("306", "parabola_typed",    "GPU Parabola Family"),
-    ("307", "hyperbolic_typed", "GPU Hyperbolic Tiling"),
+    ("291", "schotter_typed",    "GPU Schotter"),
+    ("292", "thue_morse_typed",  "GPU Thue-Morse"),
+    ("293", "crystal_typed",     "GPU Crystal Diffraction"),
+    ("294", "apollonian_typed",  "GPU Apollonian Gasket"),
+    ("295", "parabola_typed",    "GPU Parabola Family"),
+    ("296", "hyperbolic_typed", "GPU Hyperbolic Tiling"),
     # Categorical coverage pt.14 (2026-07-12): real-time volumetric clouds —
     # screen-space fbm density raymarch with single-scatter sun lighting.
-    ("308", "clouds_typed", "GPU Volumetric Clouds"),
+    ("297", "clouds_typed", "GPU Volumetric Clouds"),
     # Categorical coverage pt.15 (2026-07-12): closed-form procedural patterns
     # with NAMED typed controls — Droste log-spiral, Voronoi stained glass,
     # Op-Art sinusoidal band distortion. (309 free; 310-315 are CPU method ids.)
-    ("316", "droste_typed",        "GPU Droste Spiral"),
-    ("317", "stained_glass_typed", "GPU Stained Glass"),
-    ("318", "opart_typed",         "GPU Op-Art Waves"),
-    ("319", "aurora_typed",        "GPU Aurora Borealis"),
+    ("304", "droste_typed",        "GPU Droste Spiral"),
+    ("305", "stained_glass_typed", "GPU Stained Glass"),
+    ("306", "opart_typed",         "GPU Op-Art Waves"),
+    ("307", "aurora_typed",        "GPU Aurora Borealis"),
     # Categorical coverage pt.16 (2026-07-13): closed-form procedural — classic
     # Perlin-turbulence marble veining with domain warp (typed, node 320).
-    ("320", "marble_typed",         "GPU Marble"),
+    ("308", "marble_typed",         "GPU Marble"),
     # Node 321: Smooth-min Metaballs — Quilez exponential smin union of
     # orbiting SDF spheres. Distinct from node 53 (sum-of-inverse-square
     # field): true SDF + smin so `blend` (k) controls edge softness.
-    ("321", "smin_metaballs_gpu",   "GPU Smooth-min Metaballs"),
+    ("309", "smin_metaballs_gpu",   "GPU Smooth-min Metaballs"),
     # Node 322: Procedural Phasor Noise (Tricard 2019) — sum of complex Gabor
     # kernels; the ARGUMENT (phase) of the accumulated phasor field gives
     # intensity-decoupled oscillating ridges (fingerprint/wood-grain) with
     # locally controllable frequency + orientation. Renders the PHASE, not the
     # magnitude — distinct from any Perlin/Gabor magnitude node.
-    ("322", "phasor_noise_gpu",      "GPU Phasor Noise"),
+    ("310", "phasor_noise_gpu",      "GPU Phasor Noise"),
     # Node 323: Raymarched 3D Gyroid TPMS — sphere-traced triply-periodic
     # minimal surface with lambert+specular shading and orbiting camera.
     # Distinct from node 301 (flat 2D scalar-field slice): full 3D volume with
     # depth, self-occlusion and lighting.
-    ("323", "gyroid_raymarch_typed", "GPU Raymarched Gyroid"),
+    ("311", "gyroid_raymarch_typed", "GPU Raymarched Gyroid"),
     # Categorical coverage pt.17 (2026-07-14): closed-form recursive subdivision
     # fractal with NAMED typed controls — Sierpinski (Menger) carpet. Cells are
     # coloured by recursion depth; the plane spins and scale breathes with time.
-    ("324", "menger_typed", "GPU Menger Carpet"),
+    ("312", "menger_typed", "GPU Menger Carpet"),
     # Categorical coverage pt.18 (2026-07-14): closed-form atmospheric sky —
     # Nishita single-scattering GPU twin of CPU node 471. Per-pixel ray-march
     # (no ping-pong state), animated sun day-arc via u_time. Named typed
     # uniforms mirror node 471's real numeric params (contract #5/#6).
-    ("325", "nishita_sky_gpu", "GPU Nishita Sky"),
+    ("313", "nishita_sky_gpu", "GPU Nishita Sky"),
     # Categorical coverage pt.19 (2026-07-14): stochastic hex-tiling filter —
     # Heitz & Neyret (HPG 2018) histogram-preserving blending operator that
     # tiles the wired input image across the plane with NO visible repetition.
     # A true FILTER (image_in: IMAGE) with named typed controls.
-    ("327", "hex_tiling_gpu", "GPU Hex Tiling"),
+    ("315", "hex_tiling_gpu", "GPU Hex Tiling"),
     # Categorical coverage pt.20 (2026-07-16): Interior Mapping (van Dongen,
     # CGI 2008) — believable 3D rooms behind a flat facade via per-pixel
     # ray-box intersection, NO added geometry. Closed-form f(uv,t) procedural
     # twin: eye ray into a repeating room-grid, nearest interior wall shaded
     # with depth tint + hashed per-room window lights (u_time twinkle).
-    ("328", "interior_mapping_typed", "GPU Interior Mapping"),
+    ("316", "interior_mapping_typed", "GPU Interior Mapping"),
     # Node 330: Kaleidoscopic IFS - box-fold + sphere-fold (Knighty/Kali 2010).
     # Distinct from node 402 kifs_gpu (wedge + scale only): adds the sphere
     # fold (minR/maxR radius clamp) that opens the characteristic holes, plus
     # a per-iteration rotation. All 5 controls are wireable SCALAR ports so
     # LFO/counter nodes can drive the live kaleidoscope animation, and
     # contrast-only static culls are avoided by the genuine u_time motion.
-    ("330", "kifs_spherefold_gpu", "GPU KIFS Fractal"),
+    ("317", "kifs_spherefold_gpu", "GPU KIFS Fractal"),
     # Node 331: Mandelbulb — 3D escape-time fractal (White & Nylander 2009),
     # sphere-traced via the Hart et al. 1989 distance estimator. The canonical
     # "3D Mandelbrot": distinct from the 2D escape-time family and from the 3D
     # TPMS raymarches (gyroid/menger). Genuinely time-varying (power morph +
     # orbiting camera) so animation drivers have a visibly-responsive target.
-    ("331", "mandelbulb_gpu", "GPU Mandelbulb"),
+    ("318", "mandelbulb_gpu", "GPU Mandelbulb"),
     # Node 332: De Jong Attractor - GPU live-preview twin of CPU node 498.
     # Closed-form de Jong chaos map rendered as a single-pass density field
     # tone-mapped with the inferno ramp - parity with node 498 density colouring.
@@ -350,7 +350,7 @@ _TYPED_SHADER_NODES = [
     # morph+speed animate the params via u_time (CPU anim_mode morph_all) so the
     # live preview is genuinely time-varying. CPU numpy node stays authoritative.
     # 332 is the free ID above 301 (333-334 also free; 335 taken by domain warp).
-    ("346", "de_jong_typed", "GPU De Jong Attractor"),
+    ("333", "de_jong_typed", "GPU De Jong Attractor"),
     # Node 335: Domain Warping (Inigo Quilez, 2015) — fbm(fbm(p + fbm(p)))
     # two-level noise feed-forward gives marbled organic flow distinct from
     # single fbm (node 225); animated by scrolling the inner warp with u_time
@@ -358,34 +358,34 @@ _TYPED_SHADER_NODES = [
     # taken by CPU nodes — GPU-typed nodes must use free IDs above 301. Distinct
     # shader name domain_warp_palette_gpu vs node 311's domain_warp_gpu: the
     # 311 twin keeps the IQ-inferno look; this node adds a 4-colour palette.)
-    ("335", "domain_warp_palette_gpu", "GPU Domain Warp"),
+    ("322", "domain_warp_palette_gpu", "GPU Domain Warp"),
     # Node 309: Mandelbox — 3D escape-time fractal (Tom Lowe 2010), the box-fold
     # + sphere-fold companion to the Mandelbulb (node 331). DE raymarch (Hart et
     # al. 1989); the negative scale yields the iconic tiled infinite-rooms look.
     # Genuinely time-varying (orbiting camera + scale breathing) so it survives
     # the contrast-only static liveness cull and feeds animation drivers.
     # (309 is the free ID above 301 — 310-315 are taken by CPU method ids.)
-    ("309", "mandelbox_gpu", "GPU Mandelbox"),
+    ("298", "mandelbox_gpu", "GPU Mandelbox"),
     # Node 352: Gerstner Ocean — analytic trochoidal-wave height field with
     # Blinn-Phong sun glitter (typed GPU twin of CPU node 963). Closed-form
     # f(uv,t): wave phases advance with u_time so the live preview is genuinely
     # animated (survives the contrast-only static liveness cull). CPU
     # numpy node 963 stays authoritative for export (two-tier precision).
     # 352 is the free ID above 301.
-    ("352", "gerstner_ocean_gpu", "GPU Gerstner Ocean"),
+    ("339", "gerstner_ocean_gpu", "GPU Gerstner Ocean"),
     # Node 360: Gyroid TPMS — closed-form triply-periodic minimal-surface shell
     # on a swept slice plane (typed GPU twin of CPU node 964). Genuinely
     # time-varying: the slice-plane z advances with u_time so the 2D cross
     # section morphs continuously (survives the contrast-only static
     # cull). CPU numpy node 964 stays authoritative for export.
     # 360 is the free ID above 301.
-    ("360", "gyroid_tpms_gpu", "GPU Gyroid TPMS"),
+    ("347", "gyroid_tpms_gpu", "GPU Gyroid TPMS"),
     # Node 361: Phasor Noise — sparse-convolution complex-phasor field (typed GPU
     # twin of CPU node 1006). Closed-form f(uv,t): the global phase advances with
     # u_time so the live preview is genuinely animated (survives the
     # contrast-only static liveness cull). CPU numpy node 1006 stays authoritative
     # for export. 361 is the free ID above 360.
-    ("361", "phasor_noise_gpu", "GPU Phasor Noise"),
+    ("348", "phasor_noise_gpu", "GPU Phasor Noise"),
 ]
 
 
@@ -499,42 +499,42 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # existing twin, so we add a brand-new closed-form GLSL twin (core/shaders.py)
     # and route the CPU node's live preview to it. CPU fns stay authoritative for
     # export; every numeric CPU param is bound to a named u_<name> uniform/port.
-    "523": {"shader": "aurora_gpu", "type": "procedural", "typed": True,
+    "437": {"shader": "aurora_gpu", "type": "procedural", "typed": True,
             "param_map": {"curtain_count": "curtain_count", "drift_speed": "drift_speed",
                           "intensity": "intensity", "beam_height": "beam_height",
                           "color_shift": "color_shift", "turbulence": "turbulence",
                           "star_density": "star_density", "red_fringe": "red_fringe"}},
-    "954": {"shader": "autostereogram_gpu", "type": "procedural", "typed": True,
+    "463": {"shader": "autostereogram_gpu", "type": "procedural", "typed": True,
             "param_map": {"separation": "separation", "depth_scale": "depth_scale",
                           "tile_size": "tile_size"}},
-    "512": {"shader": "siren_gpu", "type": "procedural", "typed": True,
+    "429": {"shader": "siren_gpu", "type": "procedural", "typed": True,
              "param_map": {"omega0": "omega0", "omega": "omega",
                           "weight_scale": "weight_scale", "coord_scale": "coord_scale"}},
     # P0.5 typed-uniform procedural twins (535/534/953). Every numeric CPU
     # param maps to a named u_<name> uniform; choice/string params and the
     # CPU-only variable counts (n_spots/n_drops/n_tines) are dropped +
     # justified in GPU_PREVIEW_DROP_ALLOW. CPU fns stay authoritative.
-    "535": {"shader": "flow_noise_gpu", "type": "procedural", "typed": True,
+    "448": {"shader": "flow_noise_gpu", "type": "procedural", "typed": True,
              "param_map": {"scale": "scale", "octaves": "octaves", "spin_var": "spin_var",
                           "advect": "advect", "contrast": "contrast", "anim_speed": "anim_speed"}},
-    "534": {"shader": "spot_noise_gpu", "type": "procedural", "typed": True,
+    "447": {"shader": "spot_noise_gpu", "type": "procedural", "typed": True,
              "param_map": {"spot_size": "spot_size", "stretch": "stretch",
                           "contrast": "contrast", "anim_speed": "anim_speed"}},
-    "953": {"shader": "marbling_gpu", "type": "procedural", "typed": True,
+    "462": {"shader": "marbling_gpu", "type": "procedural", "typed": True,
              "param_map": {"drop_radius": "drop_radius", "tine_strength": "tine_strength",
                           "tine_sharpness": "tine_sharpness", "anim_speed": "anim_speed",
                           "seed": "seed"}},
     # 487 Galaxy Generator, 441 Marching Squares Contours, 108 4D Hypercube —
     # each is a per-pixel closed-form generator with no close existing twin.
-    "487": {"shader": "galaxy_gpu", "type": "procedural", "typed": True,
+    "413": {"shader": "galaxy_gpu", "type": "procedural", "typed": True,
             "param_map": {"arms": "arms", "tightness": "tightness", "arm_spread": "arm_spread",
                           "bulge_size": "bulge_size", "inclination": "inclination",
                           "rotation_speed": "rotation_speed", "brightness": "brightness"}},
-    "441": {"shader": "contours_gpu", "type": "procedural", "typed": True,
+    "381": {"shader": "contours_gpu", "type": "procedural", "typed": True,
             "param_map": {"n_levels": "n_levels", "grid_step": "grid_step",
                           "line_alpha": "line_alpha", "flow_amp": "flow_amp",
                           "noise_amp": "noise_amp"}},
-    "108": {"shader": "hypercube_gpu", "type": "procedural", "typed": True,
+    "100": {"shader": "hypercube_gpu", "type": "procedural", "typed": True,
             "param_map": {"speed_xw": "speed_xw", "speed_yw": "speed_yw",
                           "proj_radius": "proj_radius", "line_width": "line_width",
                           "inner_hue": "inner_hue", "outer_hue": "outer_hue"}},
@@ -544,14 +544,14 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # CLIENT_GPU_SHIMS entry. Every numeric CPU param is bound to a named
     # u_<name> uniform/SCALAR port (typed-uniform contract). Choice params and
     # the CPU-only source generators are dropped (GPU_PREVIEW_DROP_ALLOW).
-    "486": {"shader": "radial_spin_blur_gpu", "type": "filter", "typed": True,
+    "412": {"shader": "radial_spin_blur_gpu", "type": "filter", "typed": True,
             "param_map": {"length": "length", "center_x": "center_x",
                           "center_y": "center_y", "anim_speed": "anim_speed"}},
-    "438": {"shader": "ssss_gpu", "type": "filter", "typed": True,
+    "378": {"shader": "ssss_gpu", "type": "filter", "typed": True,
             "param_map": {"radius": "radius", "samples": "samples",
                           "falloff": "falloff", "strength": "strength",
                           "anim_speed": "anim_speed"}},
-    "439": {"shader": "gabor_filter_gpu", "type": "filter", "typed": True,
+    "379": {"shader": "gabor_filter_gpu", "type": "filter", "typed": True,
             "param_map": {"orientation": "orientation", "frequency": "frequency",
                           "sigma": "sigma", "aspect": "aspect", "phase": "phase",
                           "contrast": "contrast", "anim_speed": "anim_speed"}},
@@ -563,18 +563,18 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # (palette/mode/pattern/color_mode) and CPU-only per-frame frame counts are
     # dropped (GPU_PREVIEW_DROP_ALLOW); the twins animate continuously from
     # u_time so the preview is always live and the CPU export is authoritative.
-    "995": {"shader": "grav_lens_gpu", "type": "procedural", "typed": True,
+    "490": {"shader": "grav_lens_gpu", "type": "procedural", "typed": True,
             "param_map": {"einstein_radius": "einstein_radius",
                           "star_density": "star_density", "nebula": "nebula",
                           "neb_scale": "neb_scale", "exposure": "exposure",
                           "ring_brightness": "ring_brightness",
                           "ring_width": "ring_width", "anim_speed": "anim_speed"}},
-    "950": {"shader": "sdf_scene_gpu", "type": "procedural", "typed": True,
+    "459": {"shader": "sdf_scene_gpu", "type": "procedural", "typed": True,
             "param_map": {"scale": "scale", "blend": "blend",
                           "repetition": "repetition", "glow": "glow",
                           "bands": "bands", "band_mix": "band_mix",
                           "anim_speed": "anim_speed"}},
-    "967": {"shader": "interior_mapping_gpu", "type": "procedural", "typed": True,
+    "472": {"shader": "interior_mapping_gpu", "type": "procedural", "typed": True,
             "param_map": {"n_cols": "n_cols", "n_rows": "n_rows",
                           "room_depth": "room_depth", "perspective": "perspective",
                           "pan_x": "pan_x", "pan_y": "pan_y",
@@ -584,13 +584,13 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # Every numeric CPU slider is bound to a named u_<name> uniform/SCALAR port
     # (typed-uniform contract). Choice params (source/palette/anim_mode) and the
     # timeline-driven time/anim_speed are auto-justified per the coverage guard.
-    "522": {"shader": "crt_emulation_gpu", "type": "filter", "typed": True,
+    "436": {"shader": "crt_emulation_gpu", "type": "filter", "typed": True,
             "param_map": {"curvature": "curvature", "scanline": "scanline",
                           "scan_freq": "scan_freq", "mask_strength": "mask_strength",
                           "vignette": "vignette", "chroma": "chroma",
                           "roll_speed": "roll_speed", "flicker": "flicker",
                           "brightness": "brightness"}},
-    "527": {"shader": "vhs_tape_gpu", "type": "filter", "typed": True,
+    "440": {"shader": "vhs_tape_gpu", "type": "filter", "typed": True,
             "param_map": {"chroma_smear": "chroma_smear", "chroma_shift": "chroma_shift",
                           "luma_noise": "luma_noise", "line_jitter": "line_jitter",
                           "tracking": "tracking", "roll_speed": "roll_speed",
@@ -603,7 +603,7 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # `palette`/`anim_mode`/`noise_scale` are CPU-only (choice/flow-source) and
     # left unmapped (pitfall #14); the twin renders the default concentric sheen
     # and animates continuously from u_time. CPU node stays authoritative.
-    "445": {"shader": "diffraction_gpu", "type": "filter", "typed": True,
+    "385": {"shader": "diffraction_gpu", "type": "filter", "typed": True,
             "param_map": {"groove_spacing": "groove_spacing", "curvature": "curvature",
                           "interp": "interp", "light_x": "light_x", "light_y": "light_y",
                           "strength": "strength", "saturation": "saturation"}},
@@ -612,7 +612,7 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # `color`/`source`/`palette`/`anim_mode`/`noise_amp`/`blur_sigma` are CPU-only
     # (choice/source-generation) and left unmapped (pitfall #14); the twin grains
     # the live preview and flickers with u_time. CPU node authoritative.
-    "489": {"shader": "film_grain_gpu", "type": "filter", "typed": True,
+    "415": {"shader": "film_grain_gpu", "type": "filter", "typed": True,
             "param_map": {"intensity": "intensity", "adapt": "adapt",
                           "grain_size": "grain_size"}},
     # 500 Spirograph, 531 Flowing Truchet — closed-form f(uv,t) math_art twins.
@@ -620,10 +620,10 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # u_<name> uniform/SCALAR port. `mode`/`colormode`/`palette`/`bg`/`anim_mode`
     # are choice/string params (no GLSL equivalent) and are dropped
     # (GPU_PREVIEW_DROP_ALLOW); the twins animate continuously from u_time.
-    "500": {"shader": "spirograph_typed", "type": "procedural", "typed": True,
+    "423": {"shader": "spirograph_typed", "type": "procedural", "typed": True,
             "param_map": {"R": "R", "r": "r", "d": "d",
                           "line_width": "line_width", "hue_shift": "hue_shift"}},
-    "531": {"shader": "flowing_truchet_typed", "type": "procedural", "typed": True,
+    "444": {"shader": "flowing_truchet_typed", "type": "procedural", "typed": True,
             "param_map": {"scale": "scale", "line_width": "line_width",
                           "warp": "warp"}},
     "04": {"shader": "worley_gpu", "type": "procedural",
@@ -645,21 +645,21 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # CPU node stays authoritative export; this routes its live preview to the
     # matching closed-form GLSL twin. CPU params map to the shader's u_params
     # slots: scale->p1, detail(levels)->p2, hue->p3, contrast->p4.
-    "326": {"shader": "hash_field_gpu", "type": "procedural",
+    "314": {"shader": "hash_field_gpu", "type": "procedural",
             "param_map": {"scale": "p1", "detail": "p2", "hue": "p3",
                           "contrast": "p4"}},
-    "105": {"shader": "morph_grid_gpu", "type": "procedural",
+    "97": {"shader": "morph_grid_gpu", "type": "procedural",
             "param_map": {"warp_strength": "p1", "line_width": "p2"}},
     # ── P0.2 noise/cellular ──
     "05": {"shader": "voronoise", "type": "procedural",
            "param_map": {"scale": "p1", "octaves": "p2"}},
-    "29": {"shader": "voronoi", "type": "procedural",
+    "27": {"shader": "voronoi", "type": "procedural",
            "param_map": {"n_cells": "p1", "jitter": "p2"}},
     # 31 Plasma Fractal -> plasma_gpu (typed, node-param-named uniforms).
     # Choice params (source/terrain/color_mode/palette/water_level/light_angle/
     # erosion) are intentionally unmapped (pitfall #14): the twin is the
     # closed-form parity preview; the CPU diamond-square node stays authoritative.
-    "31": {"shader": "plasma_gpu", "type": "procedural", "typed": True,
+    "29": {"shader": "plasma_gpu", "type": "procedural", "typed": True,
            "param_map": {"size": "size", "roughness": "roughness",
                          "octaves": "octaves", "seed_strength": "seed_strength"}},
     # ── P0.3 escape-time / deterministic fractals ──
@@ -672,19 +672,19 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # 33 Fractal Explorer → mandelbrot_gpu. zoom/center_x/center_y/color_shift
     # already match node 33; `iterations` added to the twin so the iter slider
     # drives the preview (was frozen at MAXI=200).
-    "33": {"shader": "mandelbrot_gpu", "type": "procedural", "typed": True,
+    "31": {"shader": "mandelbrot_gpu", "type": "procedural", "typed": True,
            "param_map": {"zoom": "zoom", "center_x": "center_x",
                          "center_y": "center_y", "iterations": "iterations",
                          "escape_radius": "escape_radius",
                          "color_shift": "color_shift"}},
     # 51 Burning Ship → burning_ship_gpu. color_speed/color_offset already match
     # node 51; `iterations` added so the iter slider is live (was frozen).
-    "51": {"shader": "burning_ship_gpu", "type": "procedural", "typed": True,
+    "49": {"shader": "burning_ship_gpu", "type": "procedural", "typed": True,
            "param_map": {"color_speed": "color_speed", "color_offset": "color_offset",
                          "iterations": "iterations"}},
     # 52 Newton Fractal → newton_gpu. color_speed/color_offset match node 52;
     # `max_iter` added so the iter slider is live (was frozen at MAXI=60).
-    "52": {"shader": "newton_gpu", "type": "procedural", "typed": True,
+    "50": {"shader": "newton_gpu", "type": "procedural", "typed": True,
            "param_map": {"color_speed": "color_speed", "color_offset": "color_offset",
                          "max_iter": "max_iter"}},
     # 66 Julia Set → julia. The old shader had NO uniforms= spec, so its
@@ -692,17 +692,17 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # silent-bypass). Rewritten to carry `iterations`/`escape_radius` matching
     # node 66's REAL numeric params; the Julia `constant` is a STRING param
     # (pitfall #14) and uses the twin's own famous constant for the preview.
-    "66": {"shader": "julia", "type": "procedural", "typed": True,
+    "62": {"shader": "julia", "type": "procedural", "typed": True,
            "param_map": {"iterations": "iterations", "escape_radius": "escape_radius"}},
     # 67 Sierpinski Carpet → sierpinski_gpu. `depth` matches node 67's REAL
     # numeric param depth (1-7). `fractal_type`/`color_mode` are choice strings
     # (pitfall #14) left unmapped.
-    "67": {"shader": "sierpinski_gpu", "type": "procedural", "typed": True,
+    "63": {"shader": "sierpinski_gpu", "type": "procedural", "typed": True,
            "param_map": {"depth": "depth"}},
     # 69 Lyapunov Fractal → lyapunov_gpu. r_min/r_max match node 69; `r_max`
     # was read by the body but never declared in uniforms= (dead slider) — now
     # declared. `sequence`/`warmup`/`measure` are choice/int (pitfall #14).
-    "69": {"shader": "lyapunov_gpu", "type": "procedural", "typed": True,
+    "65": {"shader": "lyapunov_gpu", "type": "procedural", "typed": True,
            "param_map": {"r_min": "r_min", "r_max": "r_max"}},
     # ── P0.4 per-pixel filters ──
     # 12 Kaleidoscope → existing GPU twin (200). segments p1.
@@ -713,27 +713,27 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
             "param_map": {"intensity": "p1"}},
     # 41 Oil Paint → existing GPU twin (216). radius drives u_radius named uniform
     # (twin is now typed, so the client sets u_radius directly, not via p1).
-    "41": {"shader": "shader_oil_gpu", "type": "filter", "typed": True,
+    "39": {"shader": "shader_oil_gpu", "type": "filter", "typed": True,
            "param_map": {"radius": "radius"}},
     # 80 Pixel Mosaic → existing GPU twin (208). tile_size p1.
-    "80": {"shader": "shader_mosaic_gpu", "type": "filter",
+    "75": {"shader": "shader_mosaic_gpu", "type": "filter",
             "param_map": {"tile_size": "p1"}},
     # 42 Fake HDR → new twin. contrast p1, saturation p2, vignette p3, bloom p4.
     # 42 Fake HDR → typed-uniform twin. contrast/saturation/vignette/bloom are
     # the node's REAL numeric params (node 42), now wired by name to the
     # shader's u_<name> uniforms (replacing the legacy p1..p4 contract so the
     # live preview actually tracks the sliders — contract #5).
-    "42": {"shader": "hdr_gpu", "type": "filter", "typed": True,
+    "40": {"shader": "hdr_gpu", "type": "filter", "typed": True,
             "param_map": {"contrast": "contrast", "saturation": "saturation",
                         "vignette": "vignette", "bloom": "bloom"}},
     # 63 Cross Stitch → typed-uniform twin. thread_step/line_width by name.
-    "63": {"shader": "cross_stitch_gpu", "type": "filter", "typed": True,
+    "59": {"shader": "cross_stitch_gpu", "type": "filter", "typed": True,
             "param_map": {"thread_step": "thread_step", "line_width": "line_width"}},
     # 64 Edge Halftone → typed-uniform twin. dot_spacing/dot_size by name.
-    "64": {"shader": "edge_halftone_gpu", "type": "filter", "typed": True,
+    "60": {"shader": "edge_halftone_gpu", "type": "filter", "typed": True,
             "param_map": {"dot_spacing": "dot_spacing", "dot_size": "dot_size"}},
     # 74 Swirl Displacement → new twin. strength p1 (0.5 = none).
-    "74": {"shader": "swirl_gpu", "type": "filter",
+    "70": {"shader": "swirl_gpu", "type": "filter",
            "param_map": {"strength": "p1"}},
     # 13 Dithering → new twin (Bayer-8 ordered path). `levels` p1 (2..8),
     # `contrast` p2. The CPU node's default `fs` and other error-diffusion
@@ -750,7 +750,7 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # Kept on the legacy p-path: FXAA is an edge-AA filter that is a genuine
     # no-op on smooth regions, so the named-uniform drive-output guard does not
     # apply; migration to typed-uniform is deferred until that guard is relaxed.
-    "350": {"shader": "fxaa_gpu", "type": "filter",
+    "337": {"shader": "fxaa_gpu", "type": "filter",
             "param_map": {"edge_threshold": "p1"}},
     # 422 Palette Posterize → new twin (ordered-Bayer preview). levels p1,
     # 422 Palette Posterize → typed-uniform twin (ordered-Bayer preview).
@@ -759,14 +759,14 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # (serial/perceptual steps with no per-pixel GPU equivalent), so the twin
     # renders the ORDERED dither path and the CPU fn stays authoritative.
     # `use_lab`/`palette`/`dither` are string choices (pitfall #14), unmapped.
-    "422": {"shader": "dither_palette_gpu", "type": "filter", "typed": True,
+    "364": {"shader": "dither_palette_gpu", "type": "filter", "typed": True,
             "param_map": {"levels": "levels", "dither_scale": "dither_scale"}},
     # 339 Tonal Hatching → typed-uniform twin (tonal_hatching_gpu). The node's
     # REAL numeric params are mapped by name (contract #5); `paper`/`ink_tone`
     # are string choices left unmapped (pitfall #14) so the preview uses the
     # canonical light-paper / black-ink look. CPU fn stays authoritative for
     # every paper/ink palette + the flow/weave/breathe animation modes.
-    "339": {"shader": "tonal_hatching_gpu", "type": "filter", "typed": True,
+    "326": {"shader": "tonal_hatching_gpu", "type": "filter", "typed": True,
             "param_map": {"spacing": "spacing", "line_width": "line_width",
                           "layers": "layers", "angle": "angle",
                           "contrast": "contrast"}},
@@ -774,7 +774,7 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # node's REAL numeric grade params are mapped by name (contract #5); the
     # string params (source/palette/invert) + anim modes stay CPU-only. Gives
     # the `filters` category another perceptual-color GPU mirror.
-    "493": {"shader": "color_grade_gpu", "type": "filter", "typed": True,
+    "416": {"shader": "color_grade_gpu", "type": "filter", "typed": True,
             "param_map": {"exposure": "exposure", "contrast": "contrast",
                           "gamma": "gamma", "saturation": "saturation",
                           "hue_rotate": "hue_rotate", "temperature": "temperature",
@@ -797,12 +797,12 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # (2-32 forward) is inverted vs the twin's levels = 16 - p1*14 convention,
     # so it is left unmapped (preview renders the twin's default ~9 levels).
     # `poster_method` is a choice and not mapped (pitfall #14).
-    "39": {"shader": "shader_posterize_gpu", "type": "filter",
+    "37": {"shader": "shader_posterize_gpu", "type": "filter",
            "param_map": {}},
     # 77 False Color IR → typed-uniform twin. `strength` wired by name (contract
     # #5). `color_scheme` is a choice string (pitfall #14) so the preview locks to
     # the thermal ramp; CPU fn stays authoritative for all schemes.
-    "77": {"shader": "false_color_gpu", "type": "filter", "typed": True,
+    "72": {"shader": "false_color_gpu", "type": "filter", "typed": True,
            "param_map": {"strength": "strength"}},
     # ── P0.7 compositing (per-pixel utility) ──
     # __image_to_mask__: converts an IMAGE wire to a MASK. `mode` is a STRING
@@ -826,7 +826,7 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # phase_speed_x drive u_m_start/u_n_start/u_rotation_speed/u_phase_speed_x.
     # `m_end`/`n_end` are morph endpoints (anim_mode != none only) left unmapped
     # — the live preview shows the start mode. CPU export stays authoritative.
-    "125": {"shader": "chladni_gpu", "type": "procedural", "typed": True,
+    "116": {"shader": "chladni_gpu", "type": "procedural", "typed": True,
             "param_map": {"m_start": "m_start", "n_start": "n_start",
                           "rotation_speed": "rotation_speed",
                           "phase_speed_x": "phase_speed_x"}},
@@ -836,7 +836,7 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # pitfall #14b / frozen-typed class). mode/speed1/speed2/frequency now drive
     # u_mode/u_speed1/u_speed2/u_frequency. `grid_div` (choice int, full-res
     # render) left unmapped. CPU export stays authoritative.
-    "164": {"shader": "moire_gpu", "type": "procedural", "typed": True,
+    "154": {"shader": "moire_gpu", "type": "procedural", "typed": True,
             "param_map": {"mode": "mode", "speed1": "speed1",
                           "speed2": "speed2", "frequency": "frequency"}},
     # 172 Sand Dune Migration: `wind_strength` -> p1, `sediment_supply` -> p2.
@@ -844,7 +844,7 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # left unmapped — the live preview renders the closed-form "evolve"+
     # hypsometric-height default. Exact parity preview (closed-form function of
     # uv, t); CPU numpy node stays the authoritative export.
-    "172": {"shader": "dunes_gpu", "type": "procedural",
+    "161": {"shader": "dunes_gpu", "type": "procedural",
             "param_map": {"wind_strength": "p1", "sediment_supply": "p2"}},
     # 513 Caustics: typed-uniform twin — depth/scale/gain/waves map by NAME
     # (the client typed-live path reads node params by uniform name; the p-slot
@@ -852,29 +852,29 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # choice strings (pitfall #14) left unmapped → preview uses the aqua/animated
     # closed-form default. Analytic-Hessian inverse-magnification caustic is a
     # pure function of (uv, t); CPU numpy node stays the authoritative export.
-    "513": {"shader": "caustics513_gpu", "type": "procedural",
+    "430": {"shader": "caustics513_gpu", "type": "procedural",
             "param_map": {"depth": "p1", "scale": "p2", "gain": "p3", "waves": "p4"}},
     # ── P0.6 field-eval (closed-form f(uv,t) twins, same family as 125/164) ──
     # 53 Metaballs: isovalue -> p1, ball_speed -> p2. behavior/field_fn/style
     # are choice strings (pitfall #14) left unmapped; preview shows orbiting
     # soft-metaball field at the node's default isovalue. Exact parity preview.
-    "53": {"shader": "metaballs_gpu", "type": "procedural",
+    "51": {"shader": "metaballs_gpu", "type": "procedural",
            "param_map": {"isovalue": "p1", "ball_speed": "p2"}},
     # 43 Density Heatmap: sigma -> p1, colormap_shift -> p3. source/style/cmap
     # are choice strings (pitfall #14) left unmapped; preview is a drifting KDE
     # inferno field. Exact parity preview (no seeded point layout divergence).
-    "43": {"shader": "heatmap_gpu", "type": "procedural",
+    "41": {"shader": "heatmap_gpu", "type": "procedural",
            "param_map": {"sigma": "p1", "colormap_shift": "p3"}},
     # 57 Slit Scan: amplitude -> p1, frequency -> p2, slit_type -> p3. source/
     # waveform/style/color_mode are choice strings (pitfall #14) left unmapped;
     # preview is a procedural noise+rainbow displacement. Exact parity preview.
-    "57": {"shader": "slitscan_gpu", "type": "procedural",
+    "55": {"shader": "slitscan_gpu", "type": "procedural",
            "param_map": {"amplitude": "p1", "frequency": "p2", "slit_type": "p3"}},
     # 471 Nishita Atmospheric Sky: typed-uniform twin (nishita_sky_gpu). Every
     # numeric param of node 471 is mapped by NAME to u_<name> (contract #5, so
     # CPU numpy node 471 stays authoritative for export. The twin glides the sun
     # elevation with the executor's `time` uniform for live animation parity.
-    "471": {"shader": "nishita_sky_gpu", "type": "procedural", "typed": True,
+    "401": {"shader": "nishita_sky_gpu", "type": "procedural", "typed": True,
             "param_map": {"sun_elevation": "sun_elevation", "sun_azimuth": "sun_azimuth",
                           "rayleigh_k": "rayleigh_k", "mie_k": "mie_k",
                           "exposure": "exposure", "fov": "fov",
@@ -883,7 +883,7 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # colormode/anim_mode are choice strings (pitfall 14) left unmapped; the twin
     # renders the default ocean colormap in flow-mode. Closed-form f(uv,t) ->
     # exact parity preview. CPU numpy node stays authoritative for export.
-    "312": {"shader": "caustics_gpu", "type": "procedural",
+    "301": {"shader": "caustics_gpu", "type": "procedural",
             "param_map": {"scale": "p1", "caustic_gain": "p2",
                           "sharpen": "p3", "anim_speed": "p4"}},
     # 528 Voronoise: typed-uniform twin. scale/jitter/smoothness/octaves/
@@ -893,7 +893,7 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # inferno default (node 528's default colormode). Closed-form f(uv,t):
     # feature points orbit with u_time so the live preview is genuinely
     # animated. CPU numpy node 528 stays authoritative for export.
-    "528": {"shader": "voronoise_typed", "type": "procedural", "typed": True,
+    "441": {"shader": "voronoise_typed", "type": "procedural", "typed": True,
             "param_map": {"scale": "scale", "jitter": "jitter",
                           "smoothness": "smoothness", "octaves": "octaves",
                           "lacunarity": "lacunarity", "gain": "gain",
@@ -906,7 +906,7 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # fbm height field -> the one remaining honest P0.6-category gap (the only
     # geometry/stippling filter without a twin). CPU numpy node 425 stays
     # authoritative for exact export; the twin is a live-preview approximation.
-    "425": {"shader": "hbao_gpu", "type": "procedural", "typed": True,
+    "367": {"shader": "hbao_gpu", "type": "procedural", "typed": True,
             "param_map": {"freq": "freq", "octaves": "octaves",
                           "height_scale": "height_scale", "radius": "radius",
                           "directions": "directions", "steps": "steps",
@@ -919,19 +919,19 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # closed-form controls (zoom/iterations/fold/hue_shift/contrast) — a visual
     # parity preview, not a pixel-exact match of the circle-packing CPU render
     # (CPU numpy path stays authoritative for export). All uniforms wired by name.
-    "514": {"shader": "apollonian_gpu", "type": "procedural", "typed": True,
+    "431": {"shader": "apollonian_gpu", "type": "procedural", "typed": True,
             "param_map": {"depth": "depth", "seed_curv": "seed_curv"}},
     # 68 Anisotropic Kuwahara → typed-uniform twin. `radius`/`anisotropy` wired
     # by name (contract #5); presmooth/blend are not mapped — the twin renders
     # the default strength. CPU numpy node stays authoritative for export.
-    "68": {"shader": "anisotropic_kuwahara_gpu", "type": "filter", "typed": True,
+    "64": {"shader": "anisotropic_kuwahara_gpu", "type": "filter", "typed": True,
            "param_map": {"radius": "radius", "anisotropy": "anisotropy"}},
     # 311 Domain Warping: scale -> p1, warp_strength -> p2, contrast -> p3,
     # octaves -> p4. colormode/warp_levels/anim_mode are choice strings
     # (pitfall #14) left unmapped; preview shows IQ inferno marbling at the
     # node's default scale/warp/contrast. Closed-form f(uv,t) -> exact parity
     # preview; CPU numpy node stays authoritative for export.
-    "311": {"shader": "domain_warp_gpu", "type": "procedural",
+    "300": {"shader": "domain_warp_gpu", "type": "procedural",
             "param_map": {"scale": "p1", "warp_strength": "p2",
                           "contrast": "p3", "octaves": "p4"}},
     # 314 Curl-Noise Flow Field: scale -> p1, octaves -> p2, brightness -> p3,
@@ -939,7 +939,7 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # per pitfall #14 so the preview animates). render_style/colormode are
     # choice strings left unmapped; preview shows the spectral angle->hue field.
     # Closed-form f(uv,t) -> exact parity preview; CPU numpy node authoritative.
-    "314": {"shader": "curl_noise_gpu", "type": "procedural",
+    "302": {"shader": "curl_noise_gpu", "type": "procedural",
             "param_map": {"scale": "p1", "octaves": "p2",
                           "brightness": "p3", "anim_mode": "p4"}},
     # 399 CMYK Halftone: spacing -> p1, max_dot -> p2, angle_offset -> p3.
@@ -948,14 +948,14 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # Closed-form per-pixel screening f(uv, input, params) -> exact parity
     # preview; CPU numpy node stays authoritative for export. Filter twin reads
     # the wired input via u_texture.
-    "399": {"shader": "cmyk_halftone_gpu", "type": "filter",
+    "349": {"shader": "cmyk_halftone_gpu", "type": "filter",
             "param_map": {"spacing": "p1", "max_dot": "p2", "angle_offset": "p3"}},
     # 402 Kaleidoscopic IFS: scale -> p1, fold_angle -> p2, symmetry -> p3,
     # color_shift -> p4. offset_x/offset_y/anim_mode/colormode are choice or
     # multi-value params left unmapped (pitfall #14); the twin renders the
     # default 6-fold orbit coloring. Closed-form f(uv, t) -> exact parity
     # preview; CPU numpy node stays authoritative for export.
-    "402": {"shader": "kifs_gpu", "type": "procedural",
+    "351": {"shader": "kifs_gpu", "type": "procedural",
             "param_map": {"scale": "p1", "fold_angle": "p2",
                           "symmetry": "p3", "color_shift": "p4"}},
     # 417 Chromatic Aberration → typed-uniform twin. Every uniform name equals a
@@ -963,7 +963,7 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # center_drift. `source`/`palette`/`anim_mode` are string choices (pitfall
     # #14) and stay unmapped — the twin filters whatever image is wired in. CPU
     # numpy node stays authoritative for export.
-    "417": {"shader": "chromatic_aberration_gpu", "type": "filter", "typed": True,
+    "359": {"shader": "chromatic_aberration_gpu", "type": "filter", "typed": True,
             "param_map": {"amount": "amount", "curve": "curve",
                           "barrel": "barrel", "vignette": "vignette",
                           "center_drift": "center_drift"}},
@@ -972,28 +972,28 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # (contract #5). `source`/`noise_scale`/`palette`/`anim_mode` are string or
     # mode controls (pitfall #14) left unmapped; the twin paints the iridescent
     # radial bands over the wired substrate. CPU numpy node stays authoritative.
-    "419": {"shader": "thin_film_gpu", "type": "filter", "typed": True,
+    "361": {"shader": "thin_film_gpu", "type": "filter", "typed": True,
             "param_map": {"thickness": "thickness", "thickness_range": "thickness_range",
                           "ior": "ior", "angle": "angle",
                           "strength": "strength", "saturation": "saturation"}},
     # 408 Bloom / Glow → bloom_glow_gpu (typed). Uniform names match node 408's
     # real numeric params: threshold/softness/intensity/radius/streak. source/
     # palette/anim_mode are choice/string (pitfall #14) and stay unmapped.
-    "408": {"shader": "bloom_glow_gpu", "type": "filter", "typed": True,
+    "353": {"shader": "bloom_glow_gpu", "type": "filter", "typed": True,
             "param_map": {"threshold": "threshold", "softness": "softness",
                           "intensity": "intensity", "radius": "radius",
                           "streak": "streak"}},
     # 420 Bokeh Lens Blur → bokeh_gpu (typed). radius/blades/anamorphic/rotation/
     # brightness/highlight match node 420's real params. aperture_shape/source/
     # palette/anim_mode are choice/string (pitfall #14) and stay unmapped.
-    "420": {"shader": "bokeh_gpu", "type": "filter", "typed": True,
+    "362": {"shader": "bokeh_gpu", "type": "filter", "typed": True,
             "param_map": {"radius": "radius", "blades": "blades",
                           "anamorphic": "anamorphic", "rotation": "rotation",
                           "brightness": "brightness", "highlight": "highlight"}},
     # 345 Bilateral Grid → bilateral_grid_gpu (typed). grid_scale/sigma_s/
     # sigma_r/blend match node 345's real params. source/palette/anim_mode are
     # choice/string (pitfall #14) and stay unmapped.
-    "345": {"shader": "bilateral_grid_gpu", "type": "filter", "typed": True,
+    "332": {"shader": "bilateral_grid_gpu", "type": "filter", "typed": True,
             "param_map": {"grid_scale": "grid_scale", "sigma_s": "sigma_s",
                           "sigma_r": "sigma_r", "blend": "blend"}},
     # ── Categorical coverage expansion (2026-07-11): wire clean name-matching
@@ -1009,33 +1009,33 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
            "param_map": {"speed": "speed"}},
     # 65 Waveform → waveform_typed (procedural). freq1/2/3 ↔ k1/2/3 (wave
     # number = cyclic frequency, same knob); amp/thick are render-only.
-    "65": {"shader": "waveform_typed", "type": "procedural", "typed": True,
+    "61": {"shader": "waveform_typed", "type": "procedural", "typed": True,
            "param_map": {"freq1": "k1", "freq2": "k2", "freq3": "k3"}},
     # 78 Circle Packing → circle_packing_typed (procedural). min_r/max_r are
     # normalized radius bounds (CPU min_radius/max_radius are px but both scale
     # the same normalized range); speed ↔ speed.
-    "78": {"shader": "circle_packing_typed", "type": "procedural", "typed": True,
+    "73": {"shader": "circle_packing_typed", "type": "procedural", "typed": True,
            "param_map": {"min_radius": "min_r", "max_radius": "max_r",
                          "anim_speed": "speed"}},
     # 56 Maze → maze_typed (procedural). wall_thickness ↔ wall (edge width),
     # cell_size ↔ scale (tile size). algorithm/style are choice strings unmapped.
-    "56": {"shader": "maze_typed", "type": "procedural", "typed": True,
+    "54": {"shader": "maze_typed", "type": "procedural", "typed": True,
            "param_map": {"wall_thickness": "wall", "cell_size": "scale"}},
     # 81 Fourier Circles → fourier_circles_typed (procedural). Only `speed`
     # maps cleanly to a CPU param; freq1/2/3 are shader-only harmonic knobs
     # (the CPU node uses n_circles/scale/shape — no freq synth params).
-    "81": {"shader": "fourier_circles_typed", "type": "procedural", "typed": True,
+    "76": {"shader": "fourier_circles_typed", "type": "procedural", "typed": True,
            "param_map": {"speed": "speed"}},
     # 406 Harmonograph → harmonograph_typed (procedural). freq1/freq2 ↔ fx/fy,
     # phase ↔ px (both phase offset, default 0), scale ↔ scale (same framing).
     # freq3/4/damping/line_width diverge from the twin's decay/turns/steps.
-    "406": {"shader": "harmonograph_typed", "type": "procedural", "typed": True,
+    "352": {"shader": "harmonograph_typed", "type": "procedural", "typed": True,
             "param_map": {"freq1": "fx", "freq2": "fy", "phase": "px",
                           "scale": "scale"}},
     # 409 Superformula → superformula_typed (procedural). `m` ↔ `m` (exact
     # symmetry count). n1/n2/n3 (CPU supershape exponents) don't match the
     # twin's n/b/c/p uniforms, so they stay unmapped.
-    "409": {"shader": "superformula_typed", "type": "procedural", "typed": True,
+    "354": {"shader": "superformula_typed", "type": "procedural", "typed": True,
             "param_map": {"m": "m"}},
     # ── P0.6 field-eval completion (2026-07-12) ──
     # 104 Spherical Harmonics → closed-form twin. max_l/amplitude/glow_strength/
@@ -1044,7 +1044,7 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # name (pitfall #14b) — the legacy p1..p4 mapping here is for the
     # param_map-resolves test + documentation only. CPU numpy node stays
     # authoritative for exact spherical-harmonic export.
-    "104": {"shader": "spherical_harmonics_gpu", "type": "procedural",
+    "96": {"shader": "spherical_harmonics_gpu", "type": "procedural",
              "typed": True,
              "param_map": {"max_l": "max_l", "amplitude": "amplitude",
                            "glow_strength": "glow_strength",
@@ -1055,7 +1055,7 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # NO-OP (twin declares `uniforms=`, client typed-live branch ignores
     # p-slots, pitfall #14b / frozen-typed class). `noise`/anim_mode/n_frames are
     # left unmapped (CPU export stays authoritative).
-    "161": {"shader": "spectral_tapestry_gpu", "type": "procedural",
+    "151": {"shader": "spectral_tapestry_gpu", "type": "procedural",
              "typed": True,
              "param_map": {"n_modes": "n_modes", "coupling": "coupling",
                            "drift_speed": "drift_speed"}},
@@ -1064,14 +1064,14 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # anisotropy/frequency/falloff (bandwidth) mapped to the twin's p2..p4;
     # the twin's p1 (orientation) is left at its default (0) — the node has no
     # orientation param (anisotropy + wired-image warp drive direction instead).
-    "473": {"shader": "gabor_gpu", "type": "procedural", "typed": True,
+    "403": {"shader": "gabor_gpu", "type": "procedural", "typed": True,
             "param_map": {"anisotropy": "anisotropy", "frequency": "frequency",
                           "falloff": "falloff"}},
-    # 480 Lens Distortion -> closed-form filter twin (live-preview path; the
+    # 406 Lens Distortion -> closed-form filter twin (live-preview path; the
     # CPU numpy node stays authoritative for exact export).  REAL numeric
     # params amount/k2/center/aspect/chromatic mapped to the twin's typed
     # uniforms (GPU-First contract #5).
-    '480': {'shader': 'lens_distort_gpu', 'type': 'filter', 'typed': True,
+    '406': {'shader': 'lens_distort_gpu', 'type': 'filter', 'typed': True,
             'param_map': {'amount': 'amount', 'k2': 'k2',
                           'center_x': 'center_x', 'center_y': 'center_y',
                           'aspect': 'aspect', 'chromatic': 'chromatic'}},
@@ -1081,15 +1081,15 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # export (two-tier precision). Typed-True shims map the node's REAL numeric
     # params 1:1 to the shader's u_<name> uniforms (contract #5). Choice/string
     # params are intentionally left unmapped (pitfall #14).
-    "431": {"shader": "domain_coloring_typed", "type": "procedural", "typed": True,
+    "371": {"shader": "domain_coloring_typed", "type": "procedural", "typed": True,
             "param_map": {"exponent": "exponent", "scale": "scale",
                           "center_x": "center_x", "center_y": "center_y"}},
-    "432": {"shader": "maurer_rose_typed", "type": "procedural", "typed": True,
+    "372": {"shader": "maurer_rose_typed", "type": "procedural", "typed": True,
             "param_map": {"k": "petals", "d": "deg", "n_lines": "steps",
                           "line_width": "thick", "anim_speed": "speed"}},
-    '433': {'shader': 'low_discrepancy_typed', 'type': 'procedural', 'typed': True,
+    '373': {'shader': 'low_discrepancy_typed', 'type': 'procedural', 'typed': True,
             'param_map': {'count': 'count', 'radius': 'radius', 'anim_speed': 'speed'}},
-    '464': {'shader': 'thin_film_gpu', 'type': 'filter', 'typed': False,
+    '498': {'shader': 'thin_film_gpu', 'type': 'filter', 'typed': False,
             'param_map': {'thickness': 'thickness', 'thickness_scale': 'thickness_range',
                           'ior': 'ior', 'tilt': 'angle',
                           'intensity': 'strength', 'saturation': 'saturation'}},
@@ -1098,7 +1098,7 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # params scale/warp/anim_speed mapped to the twin's p1/p2/p4. The string
     # choice `function` (moebius/z2/z3/exp/sin/joukowsky) is intentionally
     # left unmapped (pitfall #14) — the twin renders the canonical Möbius map.
-    "503": {"shader": "conformal_gpu", "type": "procedural", "typed": True,
+    "425": {"shader": "conformal_gpu", "type": "procedural", "typed": True,
             "param_map": {"scale": "scale", "warp": "warp", "anim_speed": "anim_speed"}},
     # 460 Kaleidoscope Mirror -> typed-uniform filter twin kaleidoscope_mirror_gpu
     # (live-preview path; CPU numpy node 460 stays authoritative for export).
@@ -1108,7 +1108,7 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # choice/string params (pitfall #14) left unmapped -> preview uses the wired
     # input image (or perlin source) with the default mirror-fold. Genuine
     # per-pixel wrap avoids the contrast-only static cull.
-    "460": {"shader": "kaleidoscope_mirror_gpu", "type": "filter", "typed": True,
+    "393": {"shader": "kaleidoscope_mirror_gpu", "type": "filter", "typed": True,
             "param_map": {"segments": "segments", "center_x": "center_x",
                           "center_y": "center_y", "rotation": "rotation",
                           "r_scale": "r_scale", "mirror": "mirror",
@@ -1122,7 +1122,7 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # Pure per-pixel f(uv,t) spectral integral (P0.6 field-eval family); CPU numpy
     # node 1004 stays authoritative for exact export (69-sample spectrum + rng
     # fbm scale), the twin is a 35-sample live-preview approximation.
-    "1004": {"shader": "thin_film_spectral_gpu", "type": "procedural", "typed": True,
+    "498": {"shader": "thin_film_spectral_gpu", "type": "procedural", "typed": True,
              "param_map": {"thickness": "thickness",
                            "thickness_range": "thickness_range", "ior": "ior",
                            "drainage": "drainage", "view_angle": "view_angle",
@@ -1135,7 +1135,7 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # image (or perlin source). Single-pass box-mean approximation of the
     # edge-preserving side-window selection; CPU keeps the exact integral-image
     # version. `anim_mode`/`anim_speed`/`time` are animation/clock params.
-    "357": {"shader": "side_window_gpu", "type": "filter", "typed": True,
+    "344": {"shader": "side_window_gpu", "type": "filter", "typed": True,
             "param_map": {"radius": "radius", "blend": "blend"}},
     # 446 God Rays -> typed-uniform filter twin god_rays_gpu (live-preview path;
     # CPU numpy node 446 stays authoritative for export). REAL numeric params
@@ -1144,7 +1144,7 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # (hue scalar, hardcoded white sun to avoid vec3 risk), `num_samples`
     # (hardcoded 64 in GLSL — constant loop bound), `anim_mode`/`anim_speed`/
     # `time` are left unmapped. Y-flip (1.0 - u_light_y) matches CPU y-down.
-    "446": {"shader": "god_rays_gpu", "type": "filter", "typed": True,
+    "386": {"shader": "god_rays_gpu", "type": "filter", "typed": True,
             "param_map": {"light_x": "light_x", "light_y": "light_y",
                           "density": "density", "decay": "decay",
                           "weight": "weight", "exposure": "exposure",
@@ -1159,7 +1159,7 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # preview animates (liveness); CPU export honours anim_mode. Filter twin
     # renders black with no input_image (pitfall #10c) — verified with a
     # synthetic input.
-    "430": {"shader": "rolling_shutter_gpu", "type": "filter", "typed": True,
+    "370": {"shader": "rolling_shutter_gpu", "type": "filter", "typed": True,
             "param_map": {"skew": "skew", "wobble": "wobble", "wobble_freq": "wobble_freq"}},
     # 529 R2 Dither -> typed-uniform filter twin r2_dither_gpu (live-preview
     # path; CPU numpy node 529 stays authoritative for export). REAL numeric
@@ -1168,14 +1168,14 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # the twin hardcodes the static `r2` mode on a wired input; CPU export
     # honours the exact choice. Filter twin renders black with no input_image
     # (pitfall #10c) — verified with a synthetic input.
-    "529": {"shader": "r2_dither_gpu", "type": "filter", "typed": True,
+    "442": {"shader": "r2_dither_gpu", "type": "filter", "typed": True,
             "param_map": {"levels": "levels", "contrast": "contrast", "gamma": "gamma"}},
     # 923 MatCap Relight -> typed-uniform filter twin matcap_relight_gpu
     # (live-preview path; CPU numpy node 923 stays authoritative). REAL numeric
     # params light_dir/relief/strength/spec_pow map BY NAME. `source`/`matcap`/
     # `albedo_r/g/b`/`anim_mode` left unmapped (twin hardcodes a pearl-ish
     # studio matcap on the wired-input luminance; CPU export honours choices).
-    "923": {"shader": "matcap_relight_gpu", "type": "filter", "typed": True,
+    "453": {"shader": "matcap_relight_gpu", "type": "filter", "typed": True,
             "param_map": {"light_dir": "light_dir", "relief": "relief",
                           "strength": "strength", "spec_pow": "spec_pow"}},
     # 462 Cel Shading -> typed-uniform filter twin cel_shading_gpu (live-preview
@@ -1183,30 +1183,30 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # light_azimuth/light_elevation/bands/specular/rim/outline/base_hue map BY
     # NAME. `source`/`bg_mode`/`anim_mode` left unmapped (twin shades the wired
     # input as a height field; CPU export honours the generated-scene choices).
-    "462": {"shader": "cel_shading_gpu", "type": "filter", "typed": True,
+    "395": {"shader": "cel_shading_gpu", "type": "filter", "typed": True,
             "param_map": {"light_azimuth": "light_azimuth", "light_elevation": "light_elevation",
                           "bands": "bands", "specular": "specular", "spec_threshold": "spec_threshold",
                           "rim": "rim", "outline": "outline", "base_hue": "base_hue"}},
     # === P0 shims: CPU pattern/math-art nodes -> existing typed GPU twins (cron run) ===
     # Faithful matches: node param names align with shader uniforms so the live
     # preview reflects the sliders; unmapped params stay CPU-authoritative.
-    "963": {"shader": "gerstner_ocean_gpu", "type": "procedural", "typed": True,
+    "468": {"shader": "gerstner_ocean_gpu", "type": "procedural", "typed": True,
              "param_map": {"n_waves": "n_waves", "base_wavelength": "base_wavelength", "wavelength_falloff": "wavelength_falloff", "amplitude": "amplitude", "steepness": "steepness", "wind_angle": "wind_angle", "wind_spread": "wind_spread", "sun_angle": "sun_angle", "sun_height": "sun_height", "shininess": "shininess", "glint": "glint", "deep_hue": "deep_hue", "crest_hue": "crest_hue", "exposure": "exposure", "gamma": "gamma"}},
-    "964": {"shader": "gyroid_tpms_gpu", "type": "procedural", "typed": True,
+    "469": {"shader": "gyroid_tpms_gpu", "type": "procedural", "typed": True,
              "param_map": {"surface": "surface", "freq": "freq", "level": "level", "thickness": "thickness", "warp": "warp", "contrast": "contrast", "shell": "shell"}},
-    "1006": {"shader": "phasor_noise_gpu", "type": "procedural", "typed": True,
+    "500": {"shader": "phasor_noise_gpu", "type": "procedural", "typed": True,
              "param_map": {"scale": "scale", "anisotropy": "anisotropy", "falloff": "falloff", "frequency": "frequency", "profile": "profile", "sharpness": "sharpness"}},
-    "498": {"shader": "de_jong_typed", "type": "procedural", "typed": True,
+    "421": {"shader": "de_jong_typed", "type": "procedural", "typed": True,
              "param_map": {"a": "a", "b": "b", "c": "c", "d": "d", "exposure": "exposure"}},
-    "342": {"shader": "strange_attractor_typed", "type": "procedural", "typed": True,
+    "329": {"shader": "strange_attractor_typed", "type": "procedural", "typed": True,
              "param_map": {"a": "a", "b": "b", "c": "c", "d": "d"}},
-    "957": {"shader": "strange_attractor_typed", "type": "procedural", "typed": True,
+    "464": {"shader": "strange_attractor_typed", "type": "procedural", "typed": True,
              "param_map": {"a": "a", "b": "b", "c": "c", "d": "d"}},
-    "962": {"shader": "torusknot_typed", "type": "procedural", "typed": True,
+    "467": {"shader": "torusknot_typed", "type": "procedural", "typed": True,
              "param_map": {"p": "p", "q": "q"}},
-    "444": {"shader": "droste_typed", "type": "procedural", "typed": True,
+    "384": {"shader": "droste_typed", "type": "procedural", "typed": True,
              "param_map": {"twist": "twist", "zoom": "zoom"}},
-    "510": {"shader": "flow_field_typed", "type": "procedural", "typed": True,
+    "428": {"shader": "flow_field_typed", "type": "procedural", "typed": True,
              "param_map": {"speed": "speed"}},
     # === P0 shims: CPU closed-form nodes -> faithful typed GPU twins (cron run) ===
     # Each node is the SAME closed-form algorithm as its twin, so the live preview
@@ -1214,20 +1214,20 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # precision, GPU-First guardrail) and are listed in GPU_PREVIEW_DROP_ALLOW. Twin
     # uniforms with no clean CPU-node synonym (secondary artistic knobs) are
     # documented in test_gpu_twin_invariant._TWIN_UNIFORM_ALLOW.
-    "355": {"shader": "curl_noise_gpu", "type": "procedural", "typed": True,
+    "342": {"shader": "curl_noise_gpu", "type": "procedural", "typed": True,
              "param_map": {"scale": "scale", "octaves": "octaves"}},
-    "343": {"shader": "hex_grid_typed", "type": "procedural", "typed": True,
+    "330": {"shader": "hex_grid_typed", "type": "procedural", "typed": True,
              "param_map": {"scale": "scale"}},
-    "470": {"shader": "mandelbulb_gpu", "type": "procedural", "typed": True,
+    "400": {"shader": "mandelbulb_gpu", "type": "procedural", "typed": True,
              "param_map": {"power": "power", "iterations": "iterations", "cam_dist": "cam_dist"}},
-    "62": {"shader": "strange_attractor_typed", "type": "procedural", "typed": True,
+    "58": {"shader": "strange_attractor_typed", "type": "procedural", "typed": True,
             "param_map": {"a": "a", "b": "b", "c": "c", "d": "d"}},
-    "351": {"shader": "mandelbrot_gpu", "type": "procedural", "typed": True,
+    "338": {"shader": "mandelbrot_gpu", "type": "procedural", "typed": True,
              "param_map": {"center_x": "center_x", "center_y": "center_y",
                            "escape_radius": "escape_radius", "iterations": "iterations", "zoom": "zoom"}},
-    "997": {"shader": "color_grade_gpu", "type": "procedural", "typed": True,
+    "492": {"shader": "color_grade_gpu", "type": "procedural", "typed": True,
              "param_map": {"exposure": "exposure", "gamma": "gamma", "saturation": "saturation"}},
-    "991": {"shader": "bilateral_grid_gpu", "type": "procedural", "typed": True,
+    "486": {"shader": "bilateral_grid_gpu", "type": "procedural", "typed": True,
              "param_map": {"blend": "blend", "sigma_r": "sigma_r", "sigma_s": "sigma_s"}},
     # ── P0.7 closed-form pattern twins (gap nodes) ──
     # CPU node stays authoritative for export; these route the live preview to
@@ -1235,15 +1235,15 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # params are wired by name; choice params (anim_mode/color_mode/orientation/
     # source/bg/palette/...) are intentionally left unmapped — the twin animates
     # continuously from u_time so the preview is always live (pitfall #14).
-    "466": {"shader": "hex_mosaic_gpu", "type": "procedural", "typed": True,
+    "399": {"shader": "hex_mosaic_gpu", "type": "procedural", "typed": True,
             "param_map": {"hex_size": "hex_size", "rotation": "rotation",
                           "grout": "grout", "grout_color": "grout_color",
                           "anim_speed": "anim_speed"}},
-    "505": {"shader": "metaballs_505_gpu", "type": "procedural", "typed": True,
+    "427": {"shader": "metaballs_505_gpu", "type": "procedural", "typed": True,
             "param_map": {"balls": "balls", "ball_size": "ball_size",
                           "threshold": "threshold", "edge_soft": "edge_soft",
                           "drift_amp": "drift_amp", "anim_speed": "anim_speed"}},
-    "426": {"shader": "truchet_sdf_gpu", "type": "procedural", "typed": True,
+    "368": {"shader": "truchet_sdf_gpu", "type": "procedural", "typed": True,
             "param_map": {"tile_size": "tile_size", "stroke": "stroke",
                           "edge_glow": "edge_glow", "anim_speed": "anim_speed"}},
     # ── Node 353: IFS Fractal attractor ─────────────────────────────────────────
@@ -1252,7 +1252,7 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # named u_<name> uniform. Choice params (coloring/anim_mode) and the legacy
     # time slot are dropped (GPU_PREVIEW_DROP_ALLOW); the preview is live via
     # the orbit-dispatch + u_time. CPU numpy fn stays authoritative export.
-    "353": {"shader": "ifs_fractal_gpu", "type": "procedural", "typed": True,
+    "340": {"shader": "ifs_fractal_gpu", "type": "procedural", "typed": True,
             "param_map": {"preset": "preset", "points": "points",
                           "hue_shift": "hue_shift", "anim_speed": "anim_speed"}},
     # ── Node 416: Symmetric Icon attractor ──────────────────────────────────────
@@ -1261,7 +1261,7 @@ CLIENT_GPU_SHIMS: dict[str, dict] = {
     # seed_strength) is bound to a named u_<name> uniform. Choice params
     # (colormode/source/anim_mode) and the legacy time slot are dropped; preview
     # is live via orbit dispatch + u_time. CPU numpy fn stays authoritative.
-    "416": {"shader": "symmetric_icon_gpu", "type": "procedural", "typed": True,
+    "358": {"shader": "symmetric_icon_gpu", "type": "procedural", "typed": True,
             "param_map": {"symmetry": "symmetry", "a0": "a0", "a1": "a1",
                           "a2": "a2", "a3": "a3", "a4": "a4",
                           "palette_shift": "palette_shift", "anim_speed": "anim_speed",
@@ -1300,7 +1300,7 @@ GPU_PREVIEW_DROP_ALLOW: dict[str, dict[str, str]] = {
     # 3-tine hash loops for the live preview (CPU uses variable 1-60 / 1-12).
     # 535 Flow Noise: colormode/palette/source/anim_mode are choice/string
     # params (no GLSL equivalent); time is the system clock.
-    "535": {"colormode": "choice/string color mapping (no GLSL equivalent); GPU twin inlines inferno",
+    "448": {"colormode": "choice/string color mapping (no GLSL equivalent); GPU twin inlines inferno",
             "palette": "choice/string palette name (no GLSL equivalent); GPU twin inlines inferno",
             "source": "choice/string source selector (no GLSL equivalent); GPU twin uses procedural noise",
             "anim_mode": "choice/string animation-mode selector (no GLSL equivalent); GPU twin animates continuously from u_time"},
@@ -1308,24 +1308,24 @@ GPU_PREVIEW_DROP_ALLOW: dict[str, dict[str, str]] = {
     # hash loop for the live preview (CPU uses variable 100-4000). flow/colormode/
     # palette/anim_mode/source are choice/string params (no GLSL equivalent); the
     # GPU twin hardcodes a circular flow field + inferno colormap.
-    "534": {"n_spots": "fixed 64-spot hash loop for live preview (CPU uses variable 100-4000)",
+    "447": {"n_spots": "fixed 64-spot hash loop for live preview (CPU uses variable 100-4000)",
             "flow": "choice/string flow-field selector (circular/sine/saddle/curl/radial); GPU twin hardcodes a circular flow field for live preview",
             "colormode": "choice/string color mapping (no GLSL equivalent); GPU twin inlines inferno",
             "palette": "choice/string palette name (no GLSL equivalent); GPU twin inlines inferno",
             "anim_mode": "choice/string animation-mode selector (no GLSL equivalent); GPU twin animates continuously from u_time",
             "source": "choice/string source selector (no GLSL equivalent); GPU twin uses procedural noise"},
-    "953": {"n_drops": "fixed 32-drop inverse for live preview (CPU uses variable 1-60)",
+    "462": {"n_drops": "fixed 32-drop inverse for live preview (CPU uses variable 1-60)",
              "n_tines": "fixed 3-tine strokes for live preview (CPU uses variable 1-12)",
              "source": "choice/string source selector (no GLSL equivalent); GPU twin uses procedural noise",
              "anim_mode": "choice/string animation-mode selector (no GLSL equivalent); GPU twin animates continuously from u_time"},
-    "487": {"star_count": "param not wired to GPU twin; CPU export authoritative for this param (Galaxy Generator samples this many stars on the CPU; the closed-form GLSL twin renders a continuous density field at canvas resolution)"},
-    "108": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param (export frame count, timeline-driven)"},
-    "995": {"palette": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin inlines the cosmic palette; CPU node honours the exact palette choice)", "mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin animates continuously from u_time — a drift+breathe superposition)", "anim_mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin animates continuously from u_time)", "time": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin drives phase from u_time)"},
-    "950": {"pattern": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin renders the combo composition; CPU node honours the exact pattern choice)", "color_mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin inlines the amber palette)", "anim_mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin animates continuously from u_time — rotate+drift+pulse superposition)", "time": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin drives phase from u_time)"},
-    "967": {"anim_mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin animates continuously from u_time — pan+lights superposition)", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param (export frame count for Architecture-A capture)", "time": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin drives phase from u_time)"},
-    "486": {"blur_type": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin always applies a combined radial-zoom + spin motion blur; the CPU node honours the exact blur_type choice)", "source": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin samples the wired upstream image)", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "palette": "param not wired to GPU twin; CPU export authoritative for this param", "anim_mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin animates continuously from u_time)"},
-    "438": {"source": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin samples the wired upstream image)", "tint": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "palette": "param not wired to GPU twin; CPU export authoritative for this param", "anim_mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin animates continuously from u_time)", "time": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "439": {"source": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin samples the wired upstream image)", "n_orientations": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin renders a single-orientation response)", "combine": "param not wired to GPU twin; CPU export authoritative for this param", "output": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin renders the energy magnitude)", "anim_mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin animates continuously from u_time)"},
+    "413": {"star_count": "param not wired to GPU twin; CPU export authoritative for this param (Galaxy Generator samples this many stars on the CPU; the closed-form GLSL twin renders a continuous density field at canvas resolution)"},
+    "100": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param (export frame count, timeline-driven)"},
+    "490": {"palette": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin inlines the cosmic palette; CPU node honours the exact palette choice)", "mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin animates continuously from u_time — a drift+breathe superposition)", "anim_mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin animates continuously from u_time)", "time": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin drives phase from u_time)"},
+    "459": {"pattern": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin renders the combo composition; CPU node honours the exact pattern choice)", "color_mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin inlines the amber palette)", "anim_mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin animates continuously from u_time — rotate+drift+pulse superposition)", "time": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin drives phase from u_time)"},
+    "472": {"anim_mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin animates continuously from u_time — pan+lights superposition)", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param (export frame count for Architecture-A capture)", "time": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin drives phase from u_time)"},
+    "412": {"blur_type": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin always applies a combined radial-zoom + spin motion blur; the CPU node honours the exact blur_type choice)", "source": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin samples the wired upstream image)", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "palette": "param not wired to GPU twin; CPU export authoritative for this param", "anim_mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin animates continuously from u_time)"},
+    "378": {"source": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin samples the wired upstream image)", "tint": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "palette": "param not wired to GPU twin; CPU export authoritative for this param", "anim_mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin animates continuously from u_time)", "time": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "379": {"source": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin samples the wired upstream image)", "n_orientations": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin renders a single-orientation response)", "combine": "param not wired to GPU twin; CPU export authoritative for this param", "output": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin renders the energy magnitude)", "anim_mode": "param not wired to GPU twin; CPU export authoritative for this param (GPU twin animates continuously from u_time)"},
     "04": {"cell_border": "param not wired to GPU twin; CPU export authoritative for this param", "feature": "param not wired to GPU twin; CPU export authoritative for this param", "fractal": "param not wired to GPU twin; CPU export authoritative for this param", "points": "param not wired to GPU twin; CPU export authoritative for this param", "tile_size": "param not wired to GPU twin; CPU export authoritative for this param"},
     "05": {"cell_borders": "param not wired to GPU twin; CPU export authoritative for this param", "cell_points": "param not wired to GPU twin; CPU export authoritative for this param", "domain_warp": "param not wired to GPU twin; CPU export authoritative for this param", "erosion": "param not wired to GPU twin; CPU export authoritative for this param", "gain": "param not wired to GPU twin; CPU export authoritative for this param", "lacunarity": "param not wired to GPU twin; CPU export authoritative for this param", "ring_count": "param not wired to GPU twin; CPU export authoritative for this param", "ring_wobble": "param not wired to GPU twin; CPU export authoritative for this param", "water_level": "param not wired to GPU twin; CPU export authoritative for this param"},
     "06": {"gap": "param not wired to GPU twin; CPU export authoritative for this param", "penrose_generations": "param not wired to GPU twin; CPU export authoritative for this param", "star_rays": "param not wired to GPU twin; CPU export authoritative for this param", "tile_size": "param not wired to GPU twin; CPU export authoritative for this param"},
@@ -1336,129 +1336,129 @@ GPU_PREVIEW_DROP_ALLOW: dict[str, dict[str, str]] = {
     "16": {"color_hue": "param not wired to GPU twin; CPU export authoritative for this param", "freq": "param not wired to GPU twin; CPU export authoritative for this param", "line_width": "param not wired to GPU twin; CPU export authoritative for this param", "n_particles": "param not wired to GPU twin; CPU export authoritative for this param", "n_waves": "param not wired to GPU twin; CPU export authoritative for this param", "trail_length": "param not wired to GPU twin; CPU export authoritative for this param"},
     "17": {"bit_depth": "param not wired to GPU twin; CPU export authoritative for this param", "channel_offset": "param not wired to GPU twin; CPU export authoritative for this param", "jpeg_quality": "param not wired to GPU twin; CPU export authoritative for this param", "noise_blocks": "param not wired to GPU twin; CPU export authoritative for this param", "scanlines": "param not wired to GPU twin; CPU export authoritative for this param", "shift_count": "param not wired to GPU twin; CPU export authoritative for this param", "shift_magnitude": "param not wired to GPU twin; CPU export authoritative for this param", "shift_max_height": "param not wired to GPU twin; CPU export authoritative for this param", "vhs_tracking": "param not wired to GPU twin; CPU export authoritative for this param", "wave_distort": "param not wired to GPU twin; CPU export authoritative for this param"},
     "18": {"age_input": "param not wired to GPU twin; CPU export authoritative for this param", "cell_size": "param not wired to GPU twin; CPU export authoritative for this param", "hue_shift": "param not wired to GPU twin; CPU export authoritative for this param", "init_select": "param not wired to GPU twin; CPU export authoritative for this param", "inject_rate": "param not wired to GPU twin; CPU export authoritative for this param", "rule_select": "param not wired to GPU twin; CPU export authoritative for this param", "seed_threshold": "param not wired to GPU twin; CPU export authoritative for this param", "size": "param not wired to GPU twin; CPU export authoritative for this param", "wave_phase": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "29": {"line_width": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "31": {"erosion": "param not wired to GPU twin; CPU export authoritative for this param", "light_angle": "param not wired to GPU twin; CPU export authoritative for this param", "roughness_decay": "param not wired to GPU twin; CPU export authoritative for this param", "water_level": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "32": {"bias_x": "param not wired to GPU twin; CPU export authoritative for this param", "bias_y": "param not wired to GPU twin; CPU export authoritative for this param", "dt": "param not wired to GPU twin; CPU export authoritative for this param", "feedback_strength": "param not wired to GPU twin; CPU export authoritative for this param", "inject_strength": "param not wired to GPU twin; CPU export authoritative for this param", "inject_x": "param not wired to GPU twin; CPU export authoritative for this param", "inject_y": "param not wired to GPU twin; CPU export authoritative for this param", "iterations": "param not wired to GPU twin; CPU export authoritative for this param", "particle_count": "param not wired to GPU twin; CPU export authoritative for this param", "particle_speed": "param not wired to GPU twin; CPU export authoritative for this param", "perturbations": "param not wired to GPU twin; CPU export authoritative for this param", "seed_size": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "33": {"trap_strength": "param not wired to GPU twin; CPU export authoritative for this param", "trap_x": "param not wired to GPU twin; CPU export authoritative for this param", "trap_y": "param not wired to GPU twin; CPU export authoritative for this param", "warp_strength": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "39": {"n_colors": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "41": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "brush_size": "param not wired to GPU twin; CPU export authoritative for this param", "edge_threshold": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "noise_offset": "param not wired to GPU twin; CPU export authoritative for this param", "quantize_levels": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "42": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "exposure": "param not wired to GPU twin; CPU export authoritative for this param", "gamma": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "tint_b": "param not wired to GPU twin; CPU export authoritative for this param", "tint_g": "param not wired to GPU twin; CPU export authoritative for this param", "tint_r": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "43": {"contour_levels": "param not wired to GPU twin; CPU export authoritative for this param", "light_alt": "param not wired to GPU twin; CPU export authoritative for this param", "light_angle": "param not wired to GPU twin; CPU export authoritative for this param", "n_clusters": "param not wired to GPU twin; CPU export authoritative for this param", "point_speed": "param not wired to GPU twin; CPU export authoritative for this param", "points": "param not wired to GPU twin; CPU export authoritative for this param", "ridge_spacing": "param not wired to GPU twin; CPU export authoritative for this param", "scatter_alpha": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "471": {"num_samples": "param not wired to GPU twin; CPU export authoritative for this param (MSAA-style sampling count, meaningless for the closed-form sky preview)", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param (export frame count, timeline-driven)"},
-    "51": {"anim_zoom_speed": "param not wired to GPU twin; CPU export authoritative for this param", "antialias": "param not wired to GPU twin; CPU export authoritative for this param", "escape_radius": "param not wired to GPU twin; CPU export authoritative for this param", "exponent": "param not wired to GPU twin; CPU export authoritative for this param", "warp_strength": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "52": {"anim_float_amplitude": "param not wired to GPU twin; CPU export authoritative for this param", "anim_zoom_speed": "param not wired to GPU twin; CPU export authoritative for this param", "tol": "param not wired to GPU twin; CPU export authoritative for this param", "warp_strength": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "53": {"balls": "param not wired to GPU twin; CPU export authoritative for this param", "color_speed": "param not wired to GPU twin; CPU export authoritative for this param", "multi_threshold_levels": "param not wired to GPU twin; CPU export authoritative for this param", "radius_max": "param not wired to GPU twin; CPU export authoritative for this param", "radius_min": "param not wired to GPU twin; CPU export authoritative for this param", "trail_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "56": {"braid": "param not wired to GPU twin; CPU export authoritative for this param", "color_saturation": "param not wired to GPU twin; CPU export authoritative for this param", "growing_bias": "param not wired to GPU twin; CPU export authoritative for this param", "loops": "param not wired to GPU twin; CPU export authoritative for this param", "multi_seed": "param not wired to GPU twin; CPU export authoritative for this param", "rings": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "57": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "feedback_decay": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "tint_b": "param not wired to GPU twin; CPU export authoritative for this param", "tint_g": "param not wired to GPU twin; CPU export authoritative for this param", "tint_r": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "58": {"hue_shift": "param not wired to GPU twin; CPU export authoritative for this param", "init_select": "param not wired to GPU twin; CPU export authoritative for this param", "rule_select": "param not wired to GPU twin; CPU export authoritative for this param", "speed": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "63": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "speckle_count": "param not wired to GPU twin; CPU export authoritative for this param", "thread_density": "param not wired to GPU twin; CPU export authoritative for this param", "thread_variation": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "64": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "canny_high": "param not wired to GPU twin; CPU export authoritative for this param", "canny_low": "param not wired to GPU twin; CPU export authoritative for this param", "dot_variation": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "65": {"amplitude_ratio": "param not wired to GPU twin; CPU export authoritative for this param", "decay_rate": "param not wired to GPU twin; CPU export authoritative for this param", "fill_alpha": "param not wired to GPU twin; CPU export authoritative for this param", "line_width": "param not wired to GPU twin; CPU export authoritative for this param", "mod_depth": "param not wired to GPU twin; CPU export authoritative for this param", "mod_freq": "param not wired to GPU twin; CPU export authoritative for this param", "noise_level": "param not wired to GPU twin; CPU export authoritative for this param", "num_bars": "param not wired to GPU twin; CPU export authoritative for this param", "num_tracks": "param not wired to GPU twin; CPU export authoritative for this param", "pulse_width": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "66": {"warp_strength": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "68": {"blend": "param not wired to GPU twin; CPU export authoritative for this param", "blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "presmooth": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "69": {"measure": "param not wired to GPU twin; CPU export authoritative for this param", "seed_strength": "param not wired to GPU twin; CPU export authoritative for this param", "warmup": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "74": {"amplitude": "param not wired to GPU twin; CPU export authoritative for this param", "blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "frequency": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "rotation": "param not wired to GPU twin; CPU export authoritative for this param", "segments": "param not wired to GPU twin; CPU export authoritative for this param", "zoom": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "78": {"attempts": "param not wired to GPU twin; CPU export authoritative for this param", "concentric_rings": "param not wired to GPU twin; CPU export authoritative for this param", "gap": "param not wired to GPU twin; CPU export authoritative for this param", "halftone_density": "param not wired to GPU twin; CPU export authoritative for this param", "max_circles": "param not wired to GPU twin; CPU export authoritative for this param", "outline_width": "param not wired to GPU twin; CPU export authoritative for this param", "relaxation_iters": "param not wired to GPU twin; CPU export authoritative for this param", "sunburst_rays": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "80": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "grout_width": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "tile_jitter": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "81": {"line_width": "param not wired to GPU twin; CPU export authoritative for this param", "n_circles": "param not wired to GPU twin; CPU export authoritative for this param", "offset_x": "param not wired to GPU twin; CPU export authoritative for this param", "offset_y": "param not wired to GPU twin; CPU export authoritative for this param", "scale": "param not wired to GPU twin; CPU export authoritative for this param", "trace_fade": "param not wired to GPU twin; CPU export authoritative for this param", "trace_length": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "87": {"grid_scale": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "91": {"Dv": "param not wired to GPU twin; CPU export authoritative for this param", "dt": "param not wired to GPU twin; CPU export authoritative for this param", "grid_size": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "93": {"L": "param not wired to GPU twin; CPU export authoritative for this param", "T_min": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "updates_per_frame": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "95": {"burn_in": "param not wired to GPU twin; CPU export authoritative for this param", "grid_h": "param not wired to GPU twin; CPU export authoritative for this param", "grid_w": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "96": {"grid_h": "param not wired to GPU twin; CPU export authoritative for this param", "grid_w": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "99": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "substeps": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "100": {"gamma": "param not wired to GPU twin; CPU export authoritative for this param", "n_sources": "param not wired to GPU twin; CPU export authoritative for this param", "n_steps_per_frame": "param not wired to GPU twin; CPU export authoritative for this param", "orbit_radius": "param not wired to GPU twin; CPU export authoritative for this param", "orbit_speed": "param not wired to GPU twin; CPU export authoritative for this param", "pulse_width": "param not wired to GPU twin; CPU export authoritative for this param", "source_spread": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "104": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "osc_spread": "param not wired to GPU twin; CPU export authoritative for this param", "twist_amplitude": "param not wired to GPU twin; CPU export authoritative for this param", "twist_speed": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "105": {"grid_size": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "106": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "seeds": "param not wired to GPU twin; CPU export authoritative for this param", "spark_prob": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "118": {"dt": "param not wired to GPU twin; CPU export authoritative for this param", "du": "param not wired to GPU twin; CPU export authoritative for this param", "dv": "param not wired to GPU twin; CPU export authoritative for this param", "init_amp": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "119": {"dt": "param not wired to GPU twin; CPU export authoritative for this param", "du": "param not wired to GPU twin; CPU export authoritative for this param", "dv": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "120": {"dt": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "121": {"dt": "param not wired to GPU twin; CPU export authoritative for this param", "du_x": "param not wired to GPU twin; CPU export authoritative for this param", "du_y": "param not wired to GPU twin; CPU export authoritative for this param", "dv_x": "param not wired to GPU twin; CPU export authoritative for this param", "dv_y": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "122": {"impurity_density": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "n_seeds": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "124": {"amplitude": "param not wired to GPU twin; CPU export authoritative for this param", "background_noise": "param not wired to GPU twin; CPU export authoritative for this param", "initial_width": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "n_solitons": "param not wired to GPU twin; CPU export authoritative for this param", "phase_strength": "param not wired to GPU twin; CPU export authoritative for this param", "plane_wave_amp": "param not wired to GPU twin; CPU export authoritative for this param", "single_momentum": "param not wired to GPU twin; CPU export authoritative for this param", "soliton_momentum": "param not wired to GPU twin; CPU export authoritative for this param", "soliton_offset": "param not wired to GPU twin; CPU export authoritative for this param", "substeps": "param not wired to GPU twin; CPU export authoritative for this param", "vortex_radius_ratio": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "125": {"breathe_amp": "param not wired to GPU twin; CPU export authoritative for this param", "m_end": "param not wired to GPU twin; CPU export authoritative for this param", "n_end": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "n_modes": "param not wired to GPU twin; CPU export authoritative for this param", "nodal_glow": "param not wired to GPU twin; CPU export authoritative for this param", "phase_speed_y": "param not wired to GPU twin; CPU export authoritative for this param", "sigmoid_gain": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "126": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "n_seeds": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "spiral_r": "param not wired to GPU twin; CPU export authoritative for this param", "substeps": "param not wired to GPU twin; CPU export authoritative for this param", "wave_k": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "127": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "substeps": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "128": {"grid_size": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "substeps": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "132": {"dt": "param not wired to GPU twin; CPU export authoritative for this param", "grid_div": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "n_obstacles": "param not wired to GPU twin; CPU export authoritative for this param", "n_sources": "param not wired to GPU twin; CPU export authoritative for this param", "obstacle_radius": "param not wired to GPU twin; CPU export authoritative for this param", "obstacle_x": "param not wired to GPU twin; CPU export authoritative for this param", "obstacle_y": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "133": {"amplitude": "param not wired to GPU twin; CPU export authoritative for this param", "diff_v": "param not wired to GPU twin; CPU export authoritative for this param", "dt": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "135": {"amplitude": "param not wired to GPU twin; CPU export authoritative for this param", "grid_div": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "142": {"morph_speed": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "noise": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "143": {"diff_n": "param not wired to GPU twin; CPU export authoritative for this param", "init_radius": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "noise_intensity": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "144": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "nonlinear": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "146": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "148": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "150": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "153": {"grid_size": "param not wired to GPU twin; CPU export authoritative for this param", "init_coop": "param not wired to GPU twin; CPU export authoritative for this param", "mutation_rate": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "steps_per_frame": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "154": {"diffusion_rate": "param not wired to GPU twin; CPU export authoritative for this param", "grid_size": "param not wired to GPU twin; CPU export authoritative for this param", "init_coop": "param not wired to GPU twin; CPU export authoritative for this param", "mutation_rate": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amplitude": "param not wired to GPU twin; CPU export authoritative for this param", "steps_per_frame": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "155": {"cell_max": "param not wired to GPU twin; CPU export authoritative for this param", "cell_min": "param not wired to GPU twin; CPU export authoritative for this param", "dt": "param not wired to GPU twin; CPU export authoritative for this param", "grad_sweep": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "157": {"morph_speed": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "160": {"diff_n": "param not wired to GPU twin; CPU export authoritative for this param", "init_radius": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "noise_intensity": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "161": {"dt": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "noise": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "162": {"coupling": "param not wired to GPU twin; CPU export authoritative for this param", "dt": "param not wired to GPU twin; CPU export authoritative for this param", "grid_div": "param not wired to GPU twin; CPU export authoritative for this param", "init_amplitude": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "163": {"diff_u": "param not wired to GPU twin; CPU export authoritative for this param", "dt": "param not wired to GPU twin; CPU export authoritative for this param", "grid_div": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "164": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "166": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "nonlinear": "param not wired to GPU twin; CPU export authoritative for this param", "pump_ratio": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "168": {"K": "param not wired to GPU twin; CPU export authoritative for this param", "alpha": "param not wired to GPU twin; CPU export authoritative for this param", "bias": "param not wired to GPU twin; CPU export authoritative for this param", "dt": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "noise": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "169": {"Dv": "param not wired to GPU twin; CPU export authoritative for this param", "dt": "param not wired to GPU twin; CPU export authoritative for this param", "growth_rate": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "noise": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "170": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "psi0": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "172": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "311": {"gain": "param not wired to GPU twin; CPU export authoritative for this param", "lacunarity": "param not wired to GPU twin; CPU export authoritative for this param", "warp_levels": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "312": {"amplitude": "param not wired to GPU twin; CPU export authoritative for this param", "waves": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "314": {"line_density": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "326": {"resolution": "hash-table grid resolution is a CPU-domain export knob; the closed-form GLSL twin renders at the canvas resolution (GPU coverage contract: explicit drop)"},
-    "339": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "source_blur": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "345": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "presmooth": "param not wired to GPU twin; CPU export authoritative for this param", "z_bins": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "348": {"capacity": "param not wired to GPU twin; CPU export authoritative for this param", "droplets": "param not wired to GPU twin; CPU export authoritative for this param", "gravity": "param not wired to GPU twin; CPU export authoritative for this param", "grid": "param not wired to GPU twin; CPU export authoritative for this param", "height_scale": "param not wired to GPU twin; CPU export authoritative for this param", "inertia": "param not wired to GPU twin; CPU export authoritative for this param", "lifetime": "param not wired to GPU twin; CPU export authoritative for this param", "light_angle": "param not wired to GPU twin; CPU export authoritative for this param", "octaves": "param not wired to GPU twin; CPU export authoritative for this param", "radius": "param not wired to GPU twin; CPU export authoritative for this param", "roughness": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "350": {"noise_amp": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "402": {"escape_radius": "param not wired to GPU twin; CPU export authoritative for this param", "iterations": "param not wired to GPU twin; CPU export authoritative for this param", "offset_x": "param not wired to GPU twin; CPU export authoritative for this param", "offset_y": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "406": {"color_shift": "param not wired to GPU twin; CPU export authoritative for this param", "damping": "param not wired to GPU twin; CPU export authoritative for this param", "freq3": "param not wired to GPU twin; CPU export authoritative for this param", "freq4": "param not wired to GPU twin; CPU export authoritative for this param", "line_width": "param not wired to GPU twin; CPU export authoritative for this param", "samples": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "408": {"iterations": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "409": {"n1": "param not wired to GPU twin; CPU export authoritative for this param", "n2": "param not wired to GPU twin; CPU export authoritative for this param", "n3": "param not wired to GPU twin; CPU export authoritative for this param", "palette_shift": "param not wired to GPU twin; CPU export authoritative for this param", "spread": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "417": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "419": {"noise_scale": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "422": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "432": {"brightness": "param not wired to GPU twin; CPU export authoritative for this param", "hue": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "464": {"noise_freq": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "473": {"contrast": "param not wired to GPU twin; CPU export authoritative for this param", "scale": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "499": {"gamma": "param not wired to GPU twin; CPU export authoritative for this param", "n_steps_per_frame": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "512": {"resolution": "param not wired to GPU twin; CPU export authoritative for this param (output resolution is a CPU-domain export knob; the closed-form GLSL twin renders at canvas resolution)", "hidden": "param not wired to GPU twin; CPU export authoritative for this param (SIREN hidden-layer width is compute topology, not a live-preview visual control)", "layers": "param not wired to GPU twin; CPU export authoritative for this param (SIREN layer count is compute topology, not a live-preview visual control)"},
-    "523": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param (export frame count, timeline-driven)"},
-    "513": {"resolution": "hash-table grid resolution is a CPU-domain export knob; the closed-form GLSL twin renders at the canvas resolution (GPU coverage contract: explicit drop)"},
-    "999": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "1003": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "dt": "param not wired to GPU twin; CPU export authoritative for this param", "pace_period": "param not wired to GPU twin; CPU export authoritative for this param", "pace_radius": "param not wired to GPU twin; CPU export authoritative for this param", "rot_radius": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "1008": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "dt": "param not wired to GPU twin; CPU export authoritative for this param", "n_seeds": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "131": {"grid_size": "param not wired to GPU twin; CPU export authoritative for this param", "noise": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "steps_per_frame": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "27": {"line_width": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "29": {"erosion": "param not wired to GPU twin; CPU export authoritative for this param", "light_angle": "param not wired to GPU twin; CPU export authoritative for this param", "roughness_decay": "param not wired to GPU twin; CPU export authoritative for this param", "water_level": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "30": {"bias_x": "param not wired to GPU twin; CPU export authoritative for this param", "bias_y": "param not wired to GPU twin; CPU export authoritative for this param", "dt": "param not wired to GPU twin; CPU export authoritative for this param", "feedback_strength": "param not wired to GPU twin; CPU export authoritative for this param", "inject_strength": "param not wired to GPU twin; CPU export authoritative for this param", "inject_x": "param not wired to GPU twin; CPU export authoritative for this param", "inject_y": "param not wired to GPU twin; CPU export authoritative for this param", "iterations": "param not wired to GPU twin; CPU export authoritative for this param", "particle_count": "param not wired to GPU twin; CPU export authoritative for this param", "particle_speed": "param not wired to GPU twin; CPU export authoritative for this param", "perturbations": "param not wired to GPU twin; CPU export authoritative for this param", "seed_size": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "31": {"trap_strength": "param not wired to GPU twin; CPU export authoritative for this param", "trap_x": "param not wired to GPU twin; CPU export authoritative for this param", "trap_y": "param not wired to GPU twin; CPU export authoritative for this param", "warp_strength": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "37": {"n_colors": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "39": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "brush_size": "param not wired to GPU twin; CPU export authoritative for this param", "edge_threshold": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "noise_offset": "param not wired to GPU twin; CPU export authoritative for this param", "quantize_levels": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "40": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "exposure": "param not wired to GPU twin; CPU export authoritative for this param", "gamma": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "tint_b": "param not wired to GPU twin; CPU export authoritative for this param", "tint_g": "param not wired to GPU twin; CPU export authoritative for this param", "tint_r": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "41": {"contour_levels": "param not wired to GPU twin; CPU export authoritative for this param", "light_alt": "param not wired to GPU twin; CPU export authoritative for this param", "light_angle": "param not wired to GPU twin; CPU export authoritative for this param", "n_clusters": "param not wired to GPU twin; CPU export authoritative for this param", "point_speed": "param not wired to GPU twin; CPU export authoritative for this param", "points": "param not wired to GPU twin; CPU export authoritative for this param", "ridge_spacing": "param not wired to GPU twin; CPU export authoritative for this param", "scatter_alpha": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "401": {"num_samples": "param not wired to GPU twin; CPU export authoritative for this param (MSAA-style sampling count, meaningless for the closed-form sky preview)", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param (export frame count, timeline-driven)"},
+    "49": {"anim_zoom_speed": "param not wired to GPU twin; CPU export authoritative for this param", "antialias": "param not wired to GPU twin; CPU export authoritative for this param", "escape_radius": "param not wired to GPU twin; CPU export authoritative for this param", "exponent": "param not wired to GPU twin; CPU export authoritative for this param", "warp_strength": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "50": {"anim_float_amplitude": "param not wired to GPU twin; CPU export authoritative for this param", "anim_zoom_speed": "param not wired to GPU twin; CPU export authoritative for this param", "tol": "param not wired to GPU twin; CPU export authoritative for this param", "warp_strength": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "51": {"balls": "param not wired to GPU twin; CPU export authoritative for this param", "color_speed": "param not wired to GPU twin; CPU export authoritative for this param", "multi_threshold_levels": "param not wired to GPU twin; CPU export authoritative for this param", "radius_max": "param not wired to GPU twin; CPU export authoritative for this param", "radius_min": "param not wired to GPU twin; CPU export authoritative for this param", "trail_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "54": {"braid": "param not wired to GPU twin; CPU export authoritative for this param", "color_saturation": "param not wired to GPU twin; CPU export authoritative for this param", "growing_bias": "param not wired to GPU twin; CPU export authoritative for this param", "loops": "param not wired to GPU twin; CPU export authoritative for this param", "multi_seed": "param not wired to GPU twin; CPU export authoritative for this param", "rings": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "55": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "feedback_decay": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "tint_b": "param not wired to GPU twin; CPU export authoritative for this param", "tint_g": "param not wired to GPU twin; CPU export authoritative for this param", "tint_r": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "56": {"hue_shift": "param not wired to GPU twin; CPU export authoritative for this param", "init_select": "param not wired to GPU twin; CPU export authoritative for this param", "rule_select": "param not wired to GPU twin; CPU export authoritative for this param", "speed": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "59": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "speckle_count": "param not wired to GPU twin; CPU export authoritative for this param", "thread_density": "param not wired to GPU twin; CPU export authoritative for this param", "thread_variation": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "60": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "canny_high": "param not wired to GPU twin; CPU export authoritative for this param", "canny_low": "param not wired to GPU twin; CPU export authoritative for this param", "dot_variation": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "61": {"amplitude_ratio": "param not wired to GPU twin; CPU export authoritative for this param", "decay_rate": "param not wired to GPU twin; CPU export authoritative for this param", "fill_alpha": "param not wired to GPU twin; CPU export authoritative for this param", "line_width": "param not wired to GPU twin; CPU export authoritative for this param", "mod_depth": "param not wired to GPU twin; CPU export authoritative for this param", "mod_freq": "param not wired to GPU twin; CPU export authoritative for this param", "noise_level": "param not wired to GPU twin; CPU export authoritative for this param", "num_bars": "param not wired to GPU twin; CPU export authoritative for this param", "num_tracks": "param not wired to GPU twin; CPU export authoritative for this param", "pulse_width": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "62": {"warp_strength": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "64": {"blend": "param not wired to GPU twin; CPU export authoritative for this param", "blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "presmooth": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "65": {"measure": "param not wired to GPU twin; CPU export authoritative for this param", "seed_strength": "param not wired to GPU twin; CPU export authoritative for this param", "warmup": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "70": {"amplitude": "param not wired to GPU twin; CPU export authoritative for this param", "blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "frequency": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "rotation": "param not wired to GPU twin; CPU export authoritative for this param", "segments": "param not wired to GPU twin; CPU export authoritative for this param", "zoom": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "73": {"attempts": "param not wired to GPU twin; CPU export authoritative for this param", "concentric_rings": "param not wired to GPU twin; CPU export authoritative for this param", "gap": "param not wired to GPU twin; CPU export authoritative for this param", "halftone_density": "param not wired to GPU twin; CPU export authoritative for this param", "max_circles": "param not wired to GPU twin; CPU export authoritative for this param", "outline_width": "param not wired to GPU twin; CPU export authoritative for this param", "relaxation_iters": "param not wired to GPU twin; CPU export authoritative for this param", "sunburst_rays": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "75": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "grout_width": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "tile_jitter": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "76": {"line_width": "param not wired to GPU twin; CPU export authoritative for this param", "n_circles": "param not wired to GPU twin; CPU export authoritative for this param", "offset_x": "param not wired to GPU twin; CPU export authoritative for this param", "offset_y": "param not wired to GPU twin; CPU export authoritative for this param", "scale": "param not wired to GPU twin; CPU export authoritative for this param", "trace_fade": "param not wired to GPU twin; CPU export authoritative for this param", "trace_length": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "81": {"grid_scale": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "83": {"Dv": "param not wired to GPU twin; CPU export authoritative for this param", "dt": "param not wired to GPU twin; CPU export authoritative for this param", "grid_size": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "85": {"L": "param not wired to GPU twin; CPU export authoritative for this param", "T_min": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "updates_per_frame": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "87": {"burn_in": "param not wired to GPU twin; CPU export authoritative for this param", "grid_h": "param not wired to GPU twin; CPU export authoritative for this param", "grid_w": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "88": {"grid_h": "param not wired to GPU twin; CPU export authoritative for this param", "grid_w": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "91": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "substeps": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "92": {"gamma": "param not wired to GPU twin; CPU export authoritative for this param", "n_sources": "param not wired to GPU twin; CPU export authoritative for this param", "n_steps_per_frame": "param not wired to GPU twin; CPU export authoritative for this param", "orbit_radius": "param not wired to GPU twin; CPU export authoritative for this param", "orbit_speed": "param not wired to GPU twin; CPU export authoritative for this param", "pulse_width": "param not wired to GPU twin; CPU export authoritative for this param", "source_spread": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "96": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "osc_spread": "param not wired to GPU twin; CPU export authoritative for this param", "twist_amplitude": "param not wired to GPU twin; CPU export authoritative for this param", "twist_speed": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "97": {"grid_size": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "98": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "seeds": "param not wired to GPU twin; CPU export authoritative for this param", "spark_prob": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "109": {"dt": "param not wired to GPU twin; CPU export authoritative for this param", "du": "param not wired to GPU twin; CPU export authoritative for this param", "dv": "param not wired to GPU twin; CPU export authoritative for this param", "init_amp": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "110": {"dt": "param not wired to GPU twin; CPU export authoritative for this param", "du": "param not wired to GPU twin; CPU export authoritative for this param", "dv": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "111": {"dt": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "112": {"dt": "param not wired to GPU twin; CPU export authoritative for this param", "du_x": "param not wired to GPU twin; CPU export authoritative for this param", "du_y": "param not wired to GPU twin; CPU export authoritative for this param", "dv_x": "param not wired to GPU twin; CPU export authoritative for this param", "dv_y": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "113": {"impurity_density": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "n_seeds": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "115": {"amplitude": "param not wired to GPU twin; CPU export authoritative for this param", "background_noise": "param not wired to GPU twin; CPU export authoritative for this param", "initial_width": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "n_solitons": "param not wired to GPU twin; CPU export authoritative for this param", "phase_strength": "param not wired to GPU twin; CPU export authoritative for this param", "plane_wave_amp": "param not wired to GPU twin; CPU export authoritative for this param", "single_momentum": "param not wired to GPU twin; CPU export authoritative for this param", "soliton_momentum": "param not wired to GPU twin; CPU export authoritative for this param", "soliton_offset": "param not wired to GPU twin; CPU export authoritative for this param", "substeps": "param not wired to GPU twin; CPU export authoritative for this param", "vortex_radius_ratio": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "116": {"breathe_amp": "param not wired to GPU twin; CPU export authoritative for this param", "m_end": "param not wired to GPU twin; CPU export authoritative for this param", "n_end": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "n_modes": "param not wired to GPU twin; CPU export authoritative for this param", "nodal_glow": "param not wired to GPU twin; CPU export authoritative for this param", "phase_speed_y": "param not wired to GPU twin; CPU export authoritative for this param", "sigmoid_gain": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "117": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "n_seeds": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "spiral_r": "param not wired to GPU twin; CPU export authoritative for this param", "substeps": "param not wired to GPU twin; CPU export authoritative for this param", "wave_k": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "118": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "substeps": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "119": {"grid_size": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "substeps": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "123": {"dt": "param not wired to GPU twin; CPU export authoritative for this param", "grid_div": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "n_obstacles": "param not wired to GPU twin; CPU export authoritative for this param", "n_sources": "param not wired to GPU twin; CPU export authoritative for this param", "obstacle_radius": "param not wired to GPU twin; CPU export authoritative for this param", "obstacle_x": "param not wired to GPU twin; CPU export authoritative for this param", "obstacle_y": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "124": {"amplitude": "param not wired to GPU twin; CPU export authoritative for this param", "diff_v": "param not wired to GPU twin; CPU export authoritative for this param", "dt": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "126": {"amplitude": "param not wired to GPU twin; CPU export authoritative for this param", "grid_div": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "133": {"morph_speed": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "noise": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "134": {"diff_n": "param not wired to GPU twin; CPU export authoritative for this param", "init_radius": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "noise_intensity": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "135": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "nonlinear": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "137": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "139": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "141": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "144": {"grid_size": "param not wired to GPU twin; CPU export authoritative for this param", "init_coop": "param not wired to GPU twin; CPU export authoritative for this param", "mutation_rate": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "steps_per_frame": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "145": {"diffusion_rate": "param not wired to GPU twin; CPU export authoritative for this param", "grid_size": "param not wired to GPU twin; CPU export authoritative for this param", "init_coop": "param not wired to GPU twin; CPU export authoritative for this param", "mutation_rate": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amplitude": "param not wired to GPU twin; CPU export authoritative for this param", "steps_per_frame": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "146": {"cell_max": "param not wired to GPU twin; CPU export authoritative for this param", "cell_min": "param not wired to GPU twin; CPU export authoritative for this param", "dt": "param not wired to GPU twin; CPU export authoritative for this param", "grad_sweep": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "147": {"morph_speed": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "150": {"diff_n": "param not wired to GPU twin; CPU export authoritative for this param", "init_radius": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "noise_intensity": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "151": {"dt": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "noise": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "152": {"coupling": "param not wired to GPU twin; CPU export authoritative for this param", "dt": "param not wired to GPU twin; CPU export authoritative for this param", "grid_div": "param not wired to GPU twin; CPU export authoritative for this param", "init_amplitude": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "153": {"diff_u": "param not wired to GPU twin; CPU export authoritative for this param", "dt": "param not wired to GPU twin; CPU export authoritative for this param", "grid_div": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "154": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "155": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "nonlinear": "param not wired to GPU twin; CPU export authoritative for this param", "pump_ratio": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "157": {"K": "param not wired to GPU twin; CPU export authoritative for this param", "alpha": "param not wired to GPU twin; CPU export authoritative for this param", "bias": "param not wired to GPU twin; CPU export authoritative for this param", "dt": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "noise": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "158": {"Dv": "param not wired to GPU twin; CPU export authoritative for this param", "dt": "param not wired to GPU twin; CPU export authoritative for this param", "growth_rate": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "noise": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "159": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "psi0": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "161": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "300": {"gain": "param not wired to GPU twin; CPU export authoritative for this param", "lacunarity": "param not wired to GPU twin; CPU export authoritative for this param", "warp_levels": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "301": {"amplitude": "param not wired to GPU twin; CPU export authoritative for this param", "waves": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "302": {"line_density": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "314": {"resolution": "hash-table grid resolution is a CPU-domain export knob; the closed-form GLSL twin renders at the canvas resolution (GPU coverage contract: explicit drop)"},
+    "326": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "source_blur": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "332": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param", "presmooth": "param not wired to GPU twin; CPU export authoritative for this param", "z_bins": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "335": {"capacity": "param not wired to GPU twin; CPU export authoritative for this param", "droplets": "param not wired to GPU twin; CPU export authoritative for this param", "gravity": "param not wired to GPU twin; CPU export authoritative for this param", "grid": "param not wired to GPU twin; CPU export authoritative for this param", "height_scale": "param not wired to GPU twin; CPU export authoritative for this param", "inertia": "param not wired to GPU twin; CPU export authoritative for this param", "lifetime": "param not wired to GPU twin; CPU export authoritative for this param", "light_angle": "param not wired to GPU twin; CPU export authoritative for this param", "octaves": "param not wired to GPU twin; CPU export authoritative for this param", "radius": "param not wired to GPU twin; CPU export authoritative for this param", "roughness": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "337": {"noise_amp": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "351": {"escape_radius": "param not wired to GPU twin; CPU export authoritative for this param", "iterations": "param not wired to GPU twin; CPU export authoritative for this param", "offset_x": "param not wired to GPU twin; CPU export authoritative for this param", "offset_y": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "352": {"color_shift": "param not wired to GPU twin; CPU export authoritative for this param", "damping": "param not wired to GPU twin; CPU export authoritative for this param", "freq3": "param not wired to GPU twin; CPU export authoritative for this param", "freq4": "param not wired to GPU twin; CPU export authoritative for this param", "line_width": "param not wired to GPU twin; CPU export authoritative for this param", "samples": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "353": {"iterations": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "354": {"n1": "param not wired to GPU twin; CPU export authoritative for this param", "n2": "param not wired to GPU twin; CPU export authoritative for this param", "n3": "param not wired to GPU twin; CPU export authoritative for this param", "palette_shift": "param not wired to GPU twin; CPU export authoritative for this param", "spread": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "359": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "361": {"noise_scale": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "364": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param", "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "372": {"brightness": "param not wired to GPU twin; CPU export authoritative for this param", "hue": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "397": {"noise_freq": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "403": {"contrast": "param not wired to GPU twin; CPU export authoritative for this param", "scale": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "422": {"gamma": "param not wired to GPU twin; CPU export authoritative for this param", "n_steps_per_frame": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "429": {"resolution": "param not wired to GPU twin; CPU export authoritative for this param (output resolution is a CPU-domain export knob; the closed-form GLSL twin renders at canvas resolution)", "hidden": "param not wired to GPU twin; CPU export authoritative for this param (SIREN hidden-layer width is compute topology, not a live-preview visual control)", "layers": "param not wired to GPU twin; CPU export authoritative for this param (SIREN layer count is compute topology, not a live-preview visual control)"},
+    "437": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param (export frame count, timeline-driven)"},
+    "430": {"resolution": "hash-table grid resolution is a CPU-domain export knob; the closed-form GLSL twin renders at the canvas resolution (GPU coverage contract: explicit drop)"},
+    "494": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "497": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "dt": "param not wired to GPU twin; CPU export authoritative for this param", "pace_period": "param not wired to GPU twin; CPU export authoritative for this param", "pace_radius": "param not wired to GPU twin; CPU export authoritative for this param", "rot_radius": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "502": {"n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "dt": "param not wired to GPU twin; CPU export authoritative for this param", "n_seeds": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "122": {"grid_size": "param not wired to GPU twin; CPU export authoritative for this param", "noise": "param not wired to GPU twin; CPU export authoritative for this param", "n_frames": "param not wired to GPU twin; CPU export authoritative for this param", "steps_per_frame": "param not wired to GPU twin; CPU export authoritative for this param"},
     # Closed-form live-preview twins (pattern / math-art) whose backing CPU node
     # is a different/serial algorithm whose params do not map 1:1 onto the
     # twin's per-pixel knobs. The twin is a live-preview approximation; the CPU
     # fn stays authoritative (two-tier precision, GPU-First guardrail). These
     # numeric sliders are intentionally not wired to the twin (same pattern as
     # the 16/65/78/56/81/406/409 entries above).
-    "342": {"brightness": "param not wired to GPU twin; CPU export authoritative for this param", "points": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "444": {"ring_spacing": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "498": {"discard": "param not wired to GPU twin; CPU export authoritative for this param", "steps": "param not wired to GPU twin; CPU export authoritative for this param", "walkers": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "510": {"dt": "param not wired to GPU twin; CPU export authoritative for this param", "exposure": "param not wired to GPU twin; CPU export authoritative for this param", "noise_scale": "param not wired to GPU twin; CPU export authoritative for this param", "particles": "param not wired to GPU twin; CPU export authoritative for this param", "steps": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "957": {"dot_size": "param not wired to GPU twin; CPU export authoritative for this param", "exposure": "param not wired to GPU twin; CPU export authoritative for this param", "gamma": "param not wired to GPU twin; CPU export authoritative for this param", "hue": "param not wired to GPU twin; CPU export authoritative for this param", "n_points": "param not wired to GPU twin; CPU export authoritative for this param", "sat": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "962": {"exposure": "param not wired to GPU twin; CPU export authoritative for this param", "gamma": "param not wired to GPU twin; CPU export authoritative for this param", "glow": "param not wired to GPU twin; CPU export authoritative for this param", "hue": "param not wired to GPU twin; CPU export authoritative for this param", "line_width": "param not wired to GPU twin; CPU export authoritative for this param", "major_r": "param not wired to GPU twin; CPU export authoritative for this param", "n_points": "param not wired to GPU twin; CPU export authoritative for this param", "sat": "param not wired to GPU twin; CPU export authoritative for this param", "tube_r": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "329": {"brightness": "param not wired to GPU twin; CPU export authoritative for this param", "points": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "384": {"ring_spacing": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "421": {"discard": "param not wired to GPU twin; CPU export authoritative for this param", "steps": "param not wired to GPU twin; CPU export authoritative for this param", "walkers": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "428": {"dt": "param not wired to GPU twin; CPU export authoritative for this param", "exposure": "param not wired to GPU twin; CPU export authoritative for this param", "noise_scale": "param not wired to GPU twin; CPU export authoritative for this param", "particles": "param not wired to GPU twin; CPU export authoritative for this param", "steps": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "464": {"dot_size": "param not wired to GPU twin; CPU export authoritative for this param", "exposure": "param not wired to GPU twin; CPU export authoritative for this param", "gamma": "param not wired to GPU twin; CPU export authoritative for this param", "hue": "param not wired to GPU twin; CPU export authoritative for this param", "n_points": "param not wired to GPU twin; CPU export authoritative for this param", "sat": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "467": {"exposure": "param not wired to GPU twin; CPU export authoritative for this param", "gamma": "param not wired to GPU twin; CPU export authoritative for this param", "glow": "param not wired to GPU twin; CPU export authoritative for this param", "hue": "param not wired to GPU twin; CPU export authoritative for this param", "line_width": "param not wired to GPU twin; CPU export authoritative for this param", "major_r": "param not wired to GPU twin; CPU export authoritative for this param", "n_points": "param not wired to GPU twin; CPU export authoritative for this param", "sat": "param not wired to GPU twin; CPU export authoritative for this param", "tube_r": "param not wired to GPU twin; CPU export authoritative for this param"},
     # === P0 closed-form CPU nodes -> faithful typed twins (cron run) ===
     # Preview-approximation twins: node numeric params with no twin uniform are
     # CPU-authoritative (two-tier precision, GPU-First guardrail). Twin uniforms
     # with no CPU-node synonym are documented in test_gpu_twin_invariant._TWIN_UNIFORM_ALLOW.
-    "355": {"warp_strength": "param not wired to GPU twin; CPU export authoritative for this param",
+    "342": {"warp_strength": "param not wired to GPU twin; CPU export authoritative for this param",
             "anisotropy": "param not wired to GPU twin; CPU export authoritative for this param",
             "substeps": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "343": {"contrast": "param not wired to GPU twin; CPU export authoritative for this param",
+    "330": {"contrast": "param not wired to GPU twin; CPU export authoritative for this param",
             "edge_width": "param not wired to GPU twin; CPU export authoritative for this param",
             "jitter": "param not wired to GPU twin; CPU export authoritative for this param",
             "octaves": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "470": {"detail": "param not wired to GPU twin; CPU export authoritative for this param",
+    "400": {"detail": "param not wired to GPU twin; CPU export authoritative for this param",
             "elevation": "param not wired to GPU twin; CPU export authoritative for this param",
             "palette_shift": "param not wired to GPU twin; CPU export authoritative for this param",
             "steps": "param not wired to GPU twin; CPU export authoritative for this param",
             "warp_strength": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "62": {"bifurcation_max": "param not wired to GPU twin; CPU export authoritative for this param",
+    "58": {"bifurcation_max": "param not wired to GPU twin; CPU export authoritative for this param",
            "bifurcation_min": "param not wired to GPU twin; CPU export authoritative for this param",
            "density_inc": "param not wired to GPU twin; CPU export authoritative for this param",
            "lorenz_beta": "param not wired to GPU twin; CPU export authoritative for this param",
@@ -1467,19 +1467,19 @@ GPU_PREVIEW_DROP_ALLOW: dict[str, dict[str, str]] = {
            "n": "param not wired to GPU twin; CPU export authoritative for this param",
            "poincare_mod": "param not wired to GPU twin; CPU export authoritative for this param",
            "trace_length": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "351": {"box_size": "param not wired to GPU twin; CPU export authoritative for this param",
+    "338": {"box_size": "param not wired to GPU twin; CPU export authoritative for this param",
             "c_imag": "param not wired to GPU twin; CPU export authoritative for this param",
             "c_real": "param not wired to GPU twin; CPU export authoritative for this param",
             "fold_rot": "param not wired to GPU twin; CPU export authoritative for this param",
             "folds": "param not wired to GPU twin; CPU export authoritative for this param",
             "scale": "param not wired to GPU twin; CPU export authoritative for this param",
             "warp_strength": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "997": {"white": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "991": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param",
+    "492": {"white": "param not wired to GPU twin; CPU export authoritative for this param"},
+    "486": {"blur_sigma": "param not wired to GPU twin; CPU export authoritative for this param",
             "iterations": "param not wired to GPU twin; CPU export authoritative for this param",
             "noise_amp": "param not wired to GPU twin; CPU export authoritative for this param"},
-    "445": {"noise_scale": "param not wired to GPU twin; closed-form diffraction_gpu renders a parametric Stam iridescence model (no procedural flow groove substrate); CPU export authoritative for this param"},
-    "489": {"noise_amp": "param not wired to GPU twin; closed-form film_grain_gpu renders hash-based grain (no source-based noise field); CPU export authoritative for this param",
+    "385": {"noise_scale": "param not wired to GPU twin; closed-form diffraction_gpu renders a parametric Stam iridescence model (no procedural flow groove substrate); CPU export authoritative for this param"},
+    "415": {"noise_amp": "param not wired to GPU twin; closed-form film_grain_gpu renders hash-based grain (no source-based noise field); CPU export authoritative for this param",
             "blur_sigma": "param not wired to GPU twin; closed-form film_grain_gpu has no source-based noise field to blur; CPU export authoritative for this param"},
     # ── Node 353: IFS Fractal attractor ─────────────────────────────────────────
     # Typed-uniform closed-form GPU twin (ifs_fractal_gpu in core/shaders.py).
@@ -1487,14 +1487,14 @@ GPU_PREVIEW_DROP_ALLOW: dict[str, dict[str, str]] = {
     # named u_<name> uniform. Choice params (coloring/anim_mode) and the legacy
     # time slot are dropped (GPU_PREVIEW_DROP_ALLOW); the preview is live via
     # the orbit-dispatch + u_time. CPU numpy fn stays authoritative export.
-    "353": {},
+    "340": {},
     # ── Node 416: Symmetric Icon attractor ──────────────────────────────────────
     # Typed-uniform closed-form GPU twin (symmetric_icon_gpu in core/shaders.py).
     # Every numeric CPU param (symmetry/a0..a4/palette_shift/anim_speed/
     # seed_strength) is bound to a named u_<name> uniform. Choice params
     # (colormode/source/anim_mode) and the legacy time slot are dropped; preview
     # is live via orbit dispatch + u_time. CPU numpy fn stays authoritative.
-    "416": {
+    "358": {
         "iterations": "param not wired to GPU twin; CPU export authoritative for this param",
         "orbits": "param not wired to GPU twin; CPU export authoritative for this param",
     },
@@ -1515,7 +1515,7 @@ GPU_SHADER_NODE_MAP.update(CLIENT_GPU_SHIMS)
 # the P0 shims the CPU numpy path (methods/simulations/gray_scott.py) stays the
 # authoritative export — two-tier precision, nothing here is rendered server-side.
 CLIENT_GPU_SIMS: dict[str, dict] = {
-    "155": {
+    "146": {
         "type": "sim",
         "seed": "grayscott_seed",
         "step": "grayscott_step",
@@ -1531,7 +1531,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
     # Sel'kov 1003, BZ 91). State packs φ (phase) in .r, μ (chemical
     # potential) in .g (two channels). Live-preview twin only; CPU node
     # (simulations/cahn_hilliard.py) stays authoritative for export.
-    "1008": {
+    "502": {
         "type": "sim",
         "seed": "cahn_hilliard_seed",
         "step": "cahn_hilliard_step",
@@ -1550,7 +1550,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
     # once, preserved). Many substeps/frame let a cascade propagate cell-to-cell
     # within one rendered frame. Live-preview twin only; CPU node
     # (simulations/burridge_knopoff.py) stays authoritative for export.
-    "131": {
+    "122": {
         "type": "sim",
         "seed": "burridge_seed",
         "step": "burridge_step",
@@ -1565,7 +1565,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
     # Self-organized synchronization — a brand-new GPU-sim category (no coupled
     # oscillator existed before). State packs phase in .r, Ω in .g, RNG in .b.
     # Live-preview twin only; CPU node (simulations/kuramoto.py) stays authoritative.
-    "999": {
+    "494": {
         "type": "sim",
         "seed": "kuramoto_seed",
         "step": "kuramoto_step",
@@ -1582,7 +1582,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
     # from the seeded blob — a distinct dynamical regime from Gray-Scott (155)
     # and BZ (91). Live-preview twin only; CPU node (simulations/selkov_glycolysis.py)
     # stays authoritative.
-    "1003": {
+    "497": {
         "type": "sim",
         "seed": "selkov_seed",
         "step": "selkov_step",
@@ -1593,7 +1593,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "param_map": {"a": "p1", "b": "p2", "diff_u": "p3", "diff_v": "p4"},
     },
     # ── Node 106: Dielectric Breakdown Model (GPU sim twin) ──
-    "106": {
+    "98": {
         "type": "sim",
         "seed": "dbm_seed",
         "step": "dbm_step",
@@ -1605,7 +1605,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
     },
     # ── P1.1 textbook sims (reuse the proven ping-pong machinery) ──
     # 32 Reaction-Diffusion: same Gray-Scott engine, parametric preset.
-    "32": {
+    "30": {
         "type": "sim",
         "seed": "grayscott_seed",
         "step": "grayscott_step",
@@ -1627,7 +1627,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "reset_on": ["seed", "param", "loop", "resize"],
         "param_map": {"density": "p1"},
     },
-    "58": {
+    "56": {
         "type": "sim",
         "seed": "ca_seed",
         "step": "ca_step",
@@ -1638,7 +1638,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "param_map": {"density": "p1"},
     },
     # 91 BZ Oregonator: 2-var RD, Oregonator kinetics.
-    "91": {
+    "83": {
         "type": "sim",
         "seed": "bz_seed",
         "step": "bz_step",
@@ -1650,14 +1650,14 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
     },
     # ── P1.2 RD family (same Laplacian/ping-pong, different reaction term) ──
     # 118 / 119 Lotka-Volterra RD: p1=alpha, p2=beta, p3=gamma, p4=delta.
-    "118": {
+    "109": {
         "type": "sim",
         "seed": "rd_seed", "step": "lv_step", "display": "rd_display_composite",
         "state_channels": 2, "substeps": 6,
         "reset_on": ["seed", "param", "loop", "resize"],
         "param_map": {"alpha": "p1", "beta": "p2", "gamma": "p3", "delta": "p4"},
     },
-    "119": {
+    "110": {
         "type": "sim",
         "seed": "rd_seed", "step": "lv_step", "display": "rd_display_composite",
         "state_channels": 2, "substeps": 6,
@@ -1665,7 +1665,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "param_map": {"alpha": "p1", "beta": "p2", "gamma": "p3", "delta": "p4"},
     },
     # 120 LV 3-species food web: U,V,W channels. Approx interaction strengths.
-    "120": {
+    "111": {
         "type": "sim",
         "seed": "lv3_seed", "step": "lv3_step", "display": "lv3_display",
         "state_channels": 3, "substeps": 4,
@@ -1673,7 +1673,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "param_map": {"noise_amp": "p1"},
     },
     # 121 LV anisotropic: isotropic approximation of the RD step for live preview.
-    "121": {
+    "112": {
         "type": "sim",
         "seed": "rd_seed", "step": "lv_step", "display": "rd_display_composite",
         "state_channels": 2, "substeps": 6,
@@ -1681,7 +1681,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "param_map": {"alpha": "p1", "beta": "p2"},
     },
     # 133 FitzHugh-Nagumo: p1=epsilon, p2=param_a, p3=param_b, p4=diff_u.
-    "133": {
+    "124": {
         "type": "sim",
         "seed": "rd_seed", "step": "fhn_step", "display": "rd_display_u",
         "state_channels": 2, "substeps": 8,
@@ -1689,14 +1689,14 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "param_map": {"epsilon": "p1", "param_a": "p2", "param_b": "p3", "diff_u": "p4"},
     },
     # 143 / 160 Bacterial colony: N nutrient (.r), C colony (.g).
-    "143": {
+    "134": {
         "type": "sim",
         "seed": "colony_seed", "step": "colony_step", "display": "colony_display",
         "state_channels": 2, "substeps": 4,
         "reset_on": ["seed", "param", "loop", "resize"],
         "param_map": {"growth_rate": "p1", "diff_c": "p2", "consumption": "p3", "death_rate": "p4"},
     },
-    "160": {
+    "150": {
         "type": "sim",
         "seed": "colony_seed", "step": "colony_step", "display": "colony_display",
         "state_channels": 2, "substeps": 4,
@@ -1704,7 +1704,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "param_map": {"growth_rate": "p1", "diff_c": "p2", "consumption": "p3", "death_rate": "p4"},
     },
     # 168 PM anisotropic RD: p1=b, p2=c, p3=bias (isotropic live approximation).
-    "168": {
+    "157": {
         "type": "sim",
         "seed": "rd_seed", "step": "turing_step", "display": "rd_display_u",
         "state_channels": 2, "substeps": 6,
@@ -1712,7 +1712,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "param_map": {"b": "p1", "c": "p2"},
     },
     # 169 Turing morphogenesis (Schnakenberg): p1=a, p2=b, p3=gamma, p4=Du.
-    "169": {
+    "158": {
         "type": "sim",
         "seed": "rd_seed", "step": "turing_step", "display": "rd_display_u",
         "state_channels": 2, "substeps": 6,
@@ -1721,7 +1721,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
     },
     # 146 AC + PM Diffusion: single scalar field, Allen-Cahn reaction +
     # Perona-Malik anisotropic diffusion. p1=alpha, p2=K, p3=bias, p4=dt.
-    "146": {
+    "137": {
         "type": "sim",
         "seed": "acpm_seed", "step": "acpm_step", "display": "acpm_display",
         "state_channels": 1, "substeps": 4,
@@ -1730,7 +1730,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
     },
     # ── P1.3 wave-equation family (leapfrog u/v fields on RGBA-float ping-pong) ──
     # 100 Wave Equation: p1=speed, p2=damping, p3=source_frequency, p4=source_amplitude.
-    "100": {
+    "92": {
         "type": "sim",
         "seed": "wave_eq_seed", "step": "wave_eq_step", "display": "wave_eq_display",
         "state_channels": 2, "substeps": 4,
@@ -1739,7 +1739,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
                       "source_frequency": "p3", "source_amplitude": "p4"},
     },
     # 499 Sine-Gordon: p1=wave_speed, p2=damping, p3=coupling G, p4=drive_amplitude A.
-    "499": {
+    "422": {
         "type": "sim",
         "seed": "sine_gordon_seed", "step": "sine_gordon_step", "display": "sine_gordon_display",
         "state_channels": 2, "substeps": 4,
@@ -1748,7 +1748,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
                       "coupling": "p3", "drive_amplitude": "p4"},
     },
     # 144 Faraday Waves: p1=amplitude, p2=omega0, p3=damping, p4=capillary.
-    "144": {
+    "135": {
         "type": "sim",
         "seed": "faraday_seed", "step": "faraday_step", "display": "faraday_display",
         "state_channels": 2, "substeps": 4,
@@ -1757,7 +1757,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
     },
     # 166 Parametric Oscillator Lattice (Oscillon): p1=epsilon, p2=omega0,
     # p3=damping, p4=diffusion.
-    "166": {
+    "155": {
         "type": "sim",
         "seed": "oscillon_seed", "step": "oscillon_step", "display": "oscillon_display",
         "state_channels": 2, "substeps": 4,
@@ -1766,7 +1766,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
     },
     # ── P1.3b — Fluid / surface-growth / lattice sim twins ──
     # 132 Shallow Water Waves: p1=gravity, p2=base_depth, p3=viscosity, p4=amplitude.
-    "132": {
+    "123": {
         "type": "sim",
         "seed": "sw_seed", "step": "sw_step", "display": "sw_display",
         "state_channels": 3, "substeps": 4,
@@ -1778,7 +1778,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "param_map": {"gravity": "p1", "base_depth": "p2", "amplitude": "p4"},
     },
     # 135 KPZ Surface Growth: p1=nu, p2=lambda, p3=noise_amplitude, p4=dt.
-    "135": {
+    "126": {
         "type": "sim",
         "seed": "kpz_seed", "step": "kpz_step", "display": "kpz_display",
         "state_channels": 2, "substeps": 6,
@@ -1786,7 +1786,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "param_map": {"nu": "p1", "lam": "p2", "noise_amplitude": "p3", "dt": "p4"},
     },
     # 150 FPU Chain Lattice: p1=k2, p2=k3, p3=k4, p4=dt.
-    "150": {
+    "141": {
         "type": "sim",
         "seed": "fpu_seed", "step": "fpu_step", "display": "fpu_display",
         "state_channels": 2, "substeps": 6,
@@ -1794,7 +1794,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "param_map": {"k2": "p1", "k3": "p2", "k4": "p3", "dt": "p4"},
     },
     # 95 Coupled Logistic: p1=r, p2=eps, p3=decay(trail). Magma colormap display.
-    "95": {
+    "87": {
         "type": "sim",
         "seed": "cml_seed", "step": "cml_step", "display": "cml95_display",
         "state_channels": 2, "substeps": 2,
@@ -1802,7 +1802,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "param_map": {"r": "p1", "eps": "p2"},
     },
     # 142 Coupled Map Lattice: p1=r, p2=epsilon, p3=decay(trail). Grayscale display.
-    "142": {
+    "133": {
         "type": "sim",
         "seed": "cml_seed", "step": "cml_step", "display": "cml142_display",
         "state_channels": 2, "substeps": 2,
@@ -1811,7 +1811,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
     },
     # ── P1.4 discrete CA / stat-mech twins (clean per-frame ping-pong CAs) ──
     # 87 Cyclic (RPS) CA: p1=n_states, p2=threshold. 1 step per frame.
-    "87": {
+    "81": {
         "type": "sim",
         "seed": "cyclic_ca_seed", "step": "cyclic_ca_step", "display": "cyclic_ca_display",
         "state_channels": 3, "substeps": 1,
@@ -1819,7 +1819,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "param_map": {"n_states": "p1", "threshold": "p2"},
     },
     # 96 Forest Fire: p1=p(growth), p2=f(lightning), p3=initial_trees. 1 step/frame.
-    "96": {
+    "88": {
         "type": "sim",
         "seed": "forest_fire_seed", "step": "forest_fire_step", "display": "forest_fire_display",
         "state_channels": 3, "substeps": 1,
@@ -1828,7 +1828,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
     },
     # 93 Ising Model (Glauber live approx of Wolff): p1=J, p2=T/Tc. Many Glauber
     # sweeps per frame for a smooth live magnetization wander; below Tc -> domains.
-    "93": {
+    "85": {
         "type": "sim",
         "seed": "ising_seed", "step": "ising_step", "display": "ising_display",
         "state_channels": 3, "substeps": 6,
@@ -1837,7 +1837,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
     },
     # 153 Spatial Prisoner's Dilemma: binary coop/defect lattice, Fermi imitation.
     # p1=temptation T, p2=sucker_payoff S, p3=fermi_K. 1 step/frame; RNG carried in .b.
-    "153": {
+    "144": {
         "type": "sim",
         "seed": "spd125_seed", "step": "spd125_step", "display": "spd125_display",
         "state_channels": 3, "substeps": 2,
@@ -1846,7 +1846,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
     },
     # 154 Continuous Spatial PD (replicator dynamics): continuous field s∈[0,1]
     # PDE. p1=temptation, p2=reward, p3=sucker, p4=punishment. R=raw s, G=EMA trail.
-    "154": {
+    "145": {
         "type": "sim",
         "seed": "spd154_seed", "step": "spd154_step", "display": "spd154_display",
         "state_channels": 3, "substeps": 3,
@@ -1856,7 +1856,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
     # P1.3 complex-field PDE — Complex Ginzburg-Landau (node 126). Complex field
     # A packed as R=Re(A), G=Im(A); explicit Euler + 5-pt Laplacian, toroidal.
     # alpha/beta/dt are numeric node params → map cleanly to p1..p3.
-    "126": {
+    "117": {
         "type": "sim",
         "seed": "cgl_seed", "step": "cgl_step", "display": "cgl_display",
         "state_channels": 2, "substeps": 4,
@@ -1866,7 +1866,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
     # P1.3 complex-field PDE — Nonlinear Schrödinger (node 124). Same R/G complex
     # field packing as CGL. beta/g/dt are numeric node params → map cleanly to
     # p1..p3; trap_strength → p4 (harmonic confining potential for live preview).
-    "124": {
+    "115": {
         "type": "sim",
         "seed": "nls_seed", "step": "nls_step", "display": "nls_display",
         "state_channels": 2, "substeps": 4,
@@ -1877,7 +1877,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
     # field packing as CGL/NLSE. g/stir_speed/alpha/stir_amp are all numeric
     # node params → map cleanly to p1..p4. Sim-time for the orbiting stirrer is
     # carried in the .b state channel (step shaders get u_time=0, pitfall #6b).
-    "148": {
+    "139": {
         "type": "sim",
         "seed": "gpe_seed", "step": "gpe_step", "display": "gpe_display",
         "state_channels": 3, "substeps": 3,
@@ -1886,7 +1886,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
     },
     # ── P1.3b scalar-PDE twins (single/3-channel ping-pong, 5-pt operators) ──
     # 127 Kuramoto-Sivashinsky: nu=p1, dt=p2, noise_amp=p3, aniso_ratio=p4.
-    "127": {
+    "118": {
         "type": "sim",
         "seed": "ks_seed", "step": "ks_step", "display": "ks_display",
         "state_channels": 1, "substeps": 3,
@@ -1895,7 +1895,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
     },
     # 128 Swift-Hohenberg (ε·u − u³ − (1+∇²)²u): epsilon=p1, dt=p2,
     # noise_amp=p3, linear_gain=p4 (preview of (1+∇²) weight).
-    "128": {
+    "119": {
         "type": "sim",
         "seed": "sh128_seed", "step": "sh128_step", "display": "sh128_display",
         "state_channels": 1, "substeps": 5,
@@ -1903,7 +1903,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "param_map": {"epsilon": "p1", "dt": "p2", "noise_amp": "p3"},
     },
     # 157 Swift-Hohenberg (r·u − (∇²+q0²)²u − u³): r=p1, q0=p2, dt=p3, noise=p4.
-    "157": {
+    "147": {
         "type": "sim",
         "seed": "sh157_seed", "step": "sh157_step", "display": "sh157_display",
         "state_channels": 1, "substeps": 5,
@@ -1912,7 +1912,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
     },
     # 162 Coupled Rössler Oscillator Array (3-var): a=p1, b=p2, c_ross=p3,
     # omega=p4. coupling D fixed in the twin (CPU authoritative for export).
-    "162": {
+    "152": {
         "type": "sim",
         "seed": "ross_seed", "step": "ross_step", "display": "ross_display",
         "state_channels": 3, "substeps": 2,
@@ -1920,7 +1920,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
         "param_map": {"a": "p1", "b": "p2", "c_ross": "p3", "omega": "p4"},
     },
     # 170 Phase Field Crystal: epsilon=p1, dt=p2, noise=p3, r2(=r/2)=p4.
-    "170": {
+    "159": {
         "type": "sim",
         "seed": "pfc_seed", "step": "pfc_step", "display": "pfc_display",
         "state_channels": 1, "substeps": 4,
@@ -1932,7 +1932,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
     # undercooling=p1, anisotropy=p2, symmetry=p3, dt=p4. n_seeds/impurity/
     # anim_mode are count/choice params (pitfall #14) left unmapped — the twin
     # renders the default single-seed "evolve" nucleus. CPU node authoritative.
-    "122": {
+    "113": {
         "type": "sim",
         "seed": "dendrite_seed", "step": "dendrite_step", "display": "dendrite_display",
         "state_channels": 2, "substeps": 3,
@@ -1945,7 +1945,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
     # for the exact (-∇²)^(α/2)). feed=p1, kill=p2, alpha=p3, diff_v=p4. Reuses
     # grayscott_seed; fire-colormap display. anim_mode/render_style are choice
     # strings (pitfall #14) left unmapped — twin renders the default fire mitosis.
-    "163": {
+    "153": {
         "type": "sim",
         "seed": "grayscott_seed", "step": "frac_rd_step", "display": "frac_rd_display",
         "state_channels": 2, "substeps": 8,
@@ -1957,7 +1957,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
     # elastic_d=p2, A_landau=p3, noise_amp=p4. Thermal noise (defect nucleation)
     # reproduced as state-dependent hash noise. anim_mode is a choice string
     # (pitfall #14) left unmapped — twin renders the default "evolve" turbulence.
-    "99": {
+    "91": {
         "type": "sim",
         "seed": "nematic_seed", "step": "nematic_step", "display": "nematic_display",
         "state_channels": 2, "substeps": 10,
@@ -1977,7 +1977,7 @@ CLIENT_GPU_SIMS: dict[str, dict] = {
     # knob on the droplet model); the live preview stays non-black via the
     # shader's clamp on u_params. Choice params (colormap/hillshade/light_angle)
     # are cosmetic and left unmapped (pitfall #14).
-    "348": {
+    "335": {
         "type": "sim",
         "seed": "erosion_seed", "step": "erosion_step", "display": "erosion_display",
         "state_channels": 3, "substeps": 4,

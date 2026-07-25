@@ -40,7 +40,7 @@ def _diffuse(f: np.ndarray, k: float) -> np.ndarray:
 
 
 @method(
-    id="974",
+    id="478",
     name="Ant Colony",
     category="simulations",
     tags=["ant-colony", "stigmergy", "pheromone", "agents", "foraging", "animation", "color_intrinsic"],

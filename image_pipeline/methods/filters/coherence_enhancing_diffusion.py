@@ -20,7 +20,7 @@ except ImportError:
 
 
 @method(
-    id="994",
+    id="489",
     name="Coherence-Enhancing Diffusion",
     category="filters",
     new_image_contract=True,

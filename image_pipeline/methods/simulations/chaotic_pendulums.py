@@ -122,7 +122,7 @@ def _hue_to_rgb(hue: float) -> tuple[int, int, int]:
 
 @method(
     inputs={},
-    id="103",
+    id="95",
     name="Chaotic Pendulums",
     category="simulations",
     tags=["physics", "chaos", "butterfly-effect", "expanded"],

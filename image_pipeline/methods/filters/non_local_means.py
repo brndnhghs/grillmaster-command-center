@@ -17,7 +17,7 @@ except ImportError:
 
 
 @method(
-    id="418",
+    id="360",
     name="Non-Local Means",
     category="filters",
     new_image_contract=True,

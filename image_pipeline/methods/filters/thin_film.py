@@ -38,7 +38,7 @@ def _fbm(nx, ny, t, scale):
 
 
 @method(
-    id="419",
+    id="361",
     name="Thin-Film Interference",
     category="filters",
     new_image_contract=True,

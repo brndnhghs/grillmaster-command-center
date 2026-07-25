@@ -100,7 +100,7 @@ def _inferno(t: np.ndarray) -> np.ndarray:
     return np.clip(out, 0.0, 1.0)
 
 
-@method(id="504", name="JFA Voronoi", category="patterns",
+@method(id="426", name="JFA Voronoi", category="patterns",
         tags=["procedural", "voronoi", "jfa", "distance-transform", "geometry",
               "animation", "gpu-twin-candidate"],
         inputs={},

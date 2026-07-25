@@ -142,7 +142,7 @@ def _source_rgb(source, hh, ww, rng, _t, pal_name):
 
 
 @method(
-    id="496",
+    id="419",
     name="Local Laplacian (edge-aware tone/detail)",
     category="filters",
     tags=["color", "tone", "detail", "laplacian", "edge-aware", "pyramid",

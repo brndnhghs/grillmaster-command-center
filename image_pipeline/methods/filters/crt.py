@@ -134,7 +134,7 @@ def _warp_maps(Ww: int, Hh: int, k: float, scale: float = 1.0):
 # ── Method ──
 
 @method(
-    id="522",
+    id="436",
     name="CRT Emulation",
     category="filters",
     new_image_contract=True,

@@ -18,7 +18,7 @@ except ImportError:
     _has_cv2 = False
 
 @method(
-    id="80",
+    id="75",
     name="Pixel Mosaic",
     new_image_contract=True,
     category="filters",

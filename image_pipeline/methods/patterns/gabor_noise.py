@@ -206,7 +206,7 @@ def _render(centers_x, centers_y, ang0, amp, freq, S, anisotropy, falloff,
     return val.astype(np.float32), rgb
 
 
-@method(id='473', name='Gabor Noise', category='patterns',
+@method(id='403', name='Gabor Noise', category='patterns',
         tags=['procedural', 'noise', 'gabor', 'anisotropic', 'sparse-convolution',
               'directional', 'animation'],
         inputs={'image_in': 'IMAGE'},

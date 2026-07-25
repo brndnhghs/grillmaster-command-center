@@ -116,7 +116,7 @@ def _hsv2rgb(h: np.ndarray, s: np.ndarray, v: np.ndarray) -> np.ndarray:
 
 
 @method(
-    id="993",
+    id="488",
     name="Bitangent-Noise Particle Flow",
     category="simulations",
     tags=["bitangent-noise", "divergence-free", "advection", "fluid", "particles", "trails", "animation"],

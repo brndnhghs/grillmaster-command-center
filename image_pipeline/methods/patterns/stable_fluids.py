@@ -280,7 +280,7 @@ def _init_state(seed, N, Xg, Yg, iters, dt, vort):
 
 
 @method(
-    id="961",
+    id="466",
     name="Stable Fluids (Procedural)",
     category="patterns",
     new_image_contract=True,

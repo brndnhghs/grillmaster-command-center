@@ -66,7 +66,7 @@ def _colorize(val: np.ndarray, hue: float, palette: str) -> np.ndarray:
 
 
 @method(
-    id="326",
+    id="314",
     name="Hash Field",
     category="patterns",
     tags=["hash-encoding", "instant-ngp", "muller-2022", "procedural",

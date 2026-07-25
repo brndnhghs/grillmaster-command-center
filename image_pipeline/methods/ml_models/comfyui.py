@@ -16,7 +16,7 @@ from ...core.registry import method
 from ...core.utils import save, mn, seed_all, W, H, load_input
 
 
-@method(id="28", name="ComfyUI", category="ml_models", tags=["ml", "slow", "gpu", "expanded"], timeout=120,
+@method(id="26", name="ComfyUI", category="ml_models", tags=["ml", "slow", "gpu", "expanded"], timeout=120,
         params={
             "comfy_dir": {"description": "ComfyUI base directory", "default": "~/Documents/ComfyUI"},
             "download_timeout": {"description": "seconds to wait for model download", "min": 60, "max": 600, "default": 300},

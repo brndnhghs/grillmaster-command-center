@@ -177,7 +177,7 @@ def _render_frame(spins: np.ndarray) -> Image.Image:
 
 @method(
     inputs={},
-    id="93",
+    id="85",
     name="Ising Model",
     category="simulations",
     tags=["animation", "statistical-physics", "phase-transition", "emergence"],

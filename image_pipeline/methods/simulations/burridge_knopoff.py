@@ -240,7 +240,7 @@ def _render_fracture(
 
 @method(
     inputs={},
-    id="131",
+    id="122",
     name="Burridge-Knopoff Earthquakes",
     category="simulations",
     tags=["animation", "cascades", "fracture", "branching", "emergence"],

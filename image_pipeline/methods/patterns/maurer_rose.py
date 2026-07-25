@@ -73,7 +73,7 @@ def _hsl_to_rgb(h: float, s: float, l: float):
 
 
 @method(
-    id="432",
+    id="372",
     name="Maurer Rose",
     category="patterns",
     new_image_contract=True,

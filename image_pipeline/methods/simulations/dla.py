@@ -44,7 +44,7 @@ def _render_sandpile_preview(grid, colors, size, h, w):
     return result
 
 @method(
-    inputs={},id="36", name="DLA", category="simulations", tags=["aggregation", "slow", "expanded"],
+    inputs={},id="34", name="DLA", category="simulations", tags=["aggregation", "slow", "expanded"],
          params={
              "particles": {"description": "aggregate particles", "min": 1000, "max": 100000, "default": 30000},
              "seed_radius": {"description": "initial seed cluster radius", "min": 1, "max": 80, "default": 5},

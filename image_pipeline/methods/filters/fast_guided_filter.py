@@ -146,7 +146,7 @@ def _bilinear_upsample(X: np.ndarray, H: int, W: int) -> np.ndarray:
     return top * (1.0 - wya) + bot * wya
 
 
-@method(id='969', name='Fast Guided Filter', category='filters',
+@method(id='474', name='Fast Guided Filter', category='filters',
         tags=['guided-filter', 'fast-guided-filter', 'he-sun-2015', 'edge-preserving',
               'smoothing', 'detail-enhancement', 'joint-upsampling', 'expanded', 'animation'],
         params={

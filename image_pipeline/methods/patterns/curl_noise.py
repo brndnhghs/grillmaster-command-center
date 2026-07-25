@@ -85,7 +85,7 @@ def _hsv2rgb(h: np.ndarray, s: np.ndarray, v: np.ndarray) -> np.ndarray:
     return np.stack([r, g, b], axis=-1)
 
 
-@method(id="314", name="Curl-Noise Flow Field", category="patterns",
+@method(id="302", name="Curl-Noise Flow Field", category="patterns",
         tags=["procedural", "curl-noise", "flow-field", "divergence-free", "fluid", "animation"],
         inputs={},
         outputs={"image": "IMAGE", "luminance": "FIELD"},

@@ -220,7 +220,7 @@ def _lic(noise, Xg, Yg, Hw, Ww, ud, vd, steps, step_size, kernel,
 
 
 @method(
-    id="484",
+    id="410",
     name="Line Integral Convolution (Animated)",
     category="simulations",
     new_image_contract=True,

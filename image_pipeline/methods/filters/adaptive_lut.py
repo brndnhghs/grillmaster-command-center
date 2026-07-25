@@ -38,7 +38,7 @@ _LOOKS = [
 
 
 @method(
-    id="463",
+    id="396",
     name="Adaptive 3D LUT",
     category="filters",
     new_image_contract=True,

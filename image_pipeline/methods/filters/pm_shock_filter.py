@@ -153,7 +153,7 @@ def _run_channel(ch: np.ndarray, mode: str, n_diff: int, n_shock: int,
 # ══════════════════════════════════════════════════════════════════════════
 
 @method(
-    id="516",
+    id="433",
     name="PM + Shock Filter",
     category="filters",
     new_image_contract=True,

@@ -155,7 +155,7 @@ def _build_source(source: str, w: int, h: int, seed: int) -> np.ndarray:
 
 
 @method(
-    id="975",
+    id="479",
     name="Color Transfer",
     category="filters",
     new_image_contract=True,

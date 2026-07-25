@@ -40,7 +40,7 @@ def _cos_pal(t: np.ndarray, shift: float):
 
 
 @method(
-    id="409",
+    id="354",
     name="Superformula",
     category="patterns",
     new_image_contract=True,

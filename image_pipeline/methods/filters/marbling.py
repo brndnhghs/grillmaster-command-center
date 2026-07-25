@@ -177,7 +177,7 @@ def _tine_warp(field: np.ndarray, n_tines: int, strength: float,
 
 
 @method(
-    id="437",
+    id="377",
     name="Marbling (Sumi-e)",
     category="filters",
     tags=["marbling", "suminagashi", "ebru", "deformation", "npr", "expanded"],

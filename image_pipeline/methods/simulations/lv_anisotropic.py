@@ -105,7 +105,7 @@ def _render_lv(u: np.ndarray, v: np.ndarray) -> Image.Image:
 
 
 @method(
-    id="121",
+    id="112",
     name="LV Anisotropic Diffusion",
     category="simulations",
     tags=["physics", "reaction-diffusion", "ecological", "anisotropic", "expanded"],

@@ -17,7 +17,7 @@ except ImportError:
 
 
 @method(
-    id="340",
+    id="327",
     name="Anisotropic Diffusion",
     category="filters",
     new_image_contract=True,

@@ -474,7 +474,7 @@ def _render_vortex(n, pos, vel, frame, color_scheme, rng):
 
 @method(
     inputs={},
-    id="113",
+    id="105",
     name="N-Body Gravity",
     category="simulations",
     tags=["physics", "gravity", "orbital", "emergent", "expanded"],

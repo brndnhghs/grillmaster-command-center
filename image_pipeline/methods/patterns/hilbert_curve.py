@@ -82,7 +82,7 @@ def _palette_lookup(palette: str, hue: np.ndarray) -> np.ndarray:
 
 
 @method(
-    id='940', name='Hilbert Curve', category='patterns',
+    id='457', name='Hilbert Curve', category='patterns',
     tags=['hilbert', 'space-filling', 'fractal', 'locality', 'curve', 'animation'],
     params={
         'order': {'description': 'recursion order; side = 2^order, points = 4^order', 'min': 1, 'max': 8, 'default': 5},

@@ -10,7 +10,7 @@ from ...core.utils import save, mn, seed_all, get_font, W, H
 from ...core.animation import capture_frame
 
 
-@method(id="44", name="img2txt", category="cli_tools", tags=["text", "caca", "expanded"],
+@method(id="42", name="img2txt", category="cli_tools", tags=["text", "caca", "expanded"],
         inputs={
             "image_in": "IMAGE",
             "ascii_width": "SCALAR",

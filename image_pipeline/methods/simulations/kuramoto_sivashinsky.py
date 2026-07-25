@@ -215,7 +215,7 @@ def _init_anisotropic(rng: np.random.Generator,
 # ════════════════════════════════════════════════════════════
 
 @method(
-    id="127",
+    id="118",
     name="Kuramoto-Sivashinsky",
     category="simulations",
     tags=["simulation", "animation", "physics", "pde", "chaos", "flame"],

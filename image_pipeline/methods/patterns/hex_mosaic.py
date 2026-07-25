@@ -19,7 +19,7 @@ from ...core.utils import PALETTES
 
 
 @method(
-    id="466",
+    id="399",
     name="Hexagonal Mosaic",
     category="patterns",
     tags=["hex", "mosaic", "hexel", "stylize", "postprocess", "fast", "animation"],

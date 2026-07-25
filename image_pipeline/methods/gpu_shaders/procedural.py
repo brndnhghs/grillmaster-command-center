@@ -10,7 +10,7 @@ from ._shared import SHADER_NAMES
 
 
 @method(
-    id="82",
+    id="77",
     name="GPU Procedural Shaders",
     category="ml_models",
     new_image_contract=True,

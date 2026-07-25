@@ -255,7 +255,7 @@ def _edge_detection(lum, threshold):
 
 
 @method(
-    id="989",
+    id="484",
     name="SMAA Antialiasing",
     category="filters",
     new_image_contract=True,

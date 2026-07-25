@@ -43,7 +43,7 @@ def _render_sandpile_preview(grid, colors, size, h, w):
     result = cv2.resize(result.astype(np.float32) / 255.0, (w, h), interpolation=cv2.INTER_NEAREST)
     return result
 
-@method(id="53", name="Metaballs", category="simulations", new_image_contract=True, tags=["organic", "blob", "animation", "expanded"],
+@method(id="51", name="Metaballs", category="simulations", new_image_contract=True, tags=["organic", "blob", "animation", "expanded"],
          inputs={"image_in": "IMAGE"},
          params={
              "balls": {"description": "metaball count", "min": 3, "max": 80, "default": 20},

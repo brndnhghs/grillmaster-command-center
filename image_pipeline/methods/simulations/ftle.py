@@ -266,7 +266,7 @@ def _turbo(t: np.ndarray) -> np.ndarray:
 
 
 @method(
-    id="998",
+    id="493",
     name="FTLE / Lagrangian Coherent Structures",
     category="simulations",
     new_image_contract=True,

@@ -226,7 +226,7 @@ def _render(nodes, parents, n_show, W, H, bg, line_w, palette,
 
 
 @method(
-    id="337", name="Space Colonization", category="simulations",
+    id="324", name="Space Colonization", category="simulations",
     new_image_contract=True,
     tags=["space-colonization", "procedural", "organic", "tree", "branching",
           "growth", "animated", "runions-2007"],

@@ -60,7 +60,7 @@ def _bayer8() -> np.ndarray:
 
 
 @method(
-    id="529",
+    id="442",
     name="R2 Dither",
     category="filters",
     tags=["dither", "r2", "low-discrepancy", "quasirandom", "ordered", "temporal", "banding"],

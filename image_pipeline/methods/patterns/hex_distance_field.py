@@ -80,7 +80,7 @@ def _sd_hexagon(px: np.ndarray, py: np.ndarray, r: float) -> np.ndarray:
 
 
 @method(
-    id='343', name='Hex Distance Field', category='patterns',
+    id='330', name='Hex Distance Field', category='patterns',
     tags=['procedural', 'hexagonal', 'voronoi', 'distance-field', 'sampling-lattice', 'animation'],
     params={
         'scale': {'description': 'hex cell size (centre-to-vertex), in pixels', 'min': 6.0, 'max': 80.0, 'default': 28.0},

@@ -122,7 +122,7 @@ def _render_nutrient(n: np.ndarray, c: np.ndarray, sh: int, sw: int) -> Image.Im
 
 @method(
     inputs={},
-    id="143",
+    id="134",
     name="Bacterial Colony (v2)",
     category="simulations",
     tags=["animation", "reaction-diffusion", "branching", "fractal",

@@ -14,7 +14,7 @@ from ...core.animation import capture_frame
 # --- 39 Posterize ---
 
 @method(
-    inputs={},id="39", name="Posterize", category="codegen",
+    inputs={},id="37", name="Posterize", category="codegen",
          tags=["color", "quantize", "poster", "animation", "expanded"],
          params={
              "n_colors": {"description": "number of output colors", "min": 2, "max": 32, "default": 8},

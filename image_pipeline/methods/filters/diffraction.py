@@ -51,7 +51,7 @@ def _fbm(nx, ny, t, scale):
 
 
 @method(
-    id="445",
+    id="385",
     name="Diffraction Grating",
     category="filters",
     new_image_contract=True,

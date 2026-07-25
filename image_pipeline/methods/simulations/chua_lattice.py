@@ -18,7 +18,7 @@ from ...core.registry import method
 from ...core.utils import save, mn, seed_all, W, H, wired_source_lum
 from ...core.animation import capture_frame
 
-@method(id="150", name="FPU Chain Lattice", category="simulations",
+@method(id="141", name="FPU Chain Lattice", category="simulations",
         tags=["fpu", "nonlinear", "recurrence", "lattice"], timeout=600,
         inputs={"image_in": "IMAGE"},
         params={
