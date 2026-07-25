@@ -1,6 +1,7 @@
 """FastAPI server for the image-generation pipeline GUI."""
 from __future__ import annotations
 import asyncio
+import atexit
 import base64
 import glob
 import importlib
@@ -12,6 +13,7 @@ import os
 import queue
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -396,15 +398,6 @@ app.mount("/ui", _RevalidatingStatic(directory=str(UI_DIR)), name="ui")
 ASSETS_DIR = OUTPUT_ROOT / "assets"
 ASSETS_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
-
-# ── Chord Bot sub-application (served at /chordbot/) ─────────────────
-# Guarded import: chord_bot is an independent sibling app. A failure there
-# (missing deps, import error) must not take down the image server boot path.
-try:
-    from chord_bot.server import app as _chord_app  # noqa: E402
-    app.mount("/chordbot", _chord_app)
-except Exception as _chord_err:  # noqa: BLE001 — keep the image editor alive
-    print(f"[warn] chord_bot not mounted at /chordbot: {_chord_err}")
 
 # ── Thread-safe stdout/stderr proxy ──────────────────────────────────
 # Each job thread installs its own writer via the proxy instead of replacing
@@ -1106,6 +1099,123 @@ def get_node_defs():
     return out
 
 
+# ── Agent node authoring (runtime, over HTTP) ─────────────────────────
+# An LLM authors a brand-new GPU node into THIS server's live registry — no
+# file edit, no restart. Same functions the MCP sidecar uses
+# (tools/mcp_authoring_server.py), but mounted here they target the running
+# graph: on success we fire the same `node-defs-updated` SSE event the
+# hot-reloader uses, so the authored node pops into the open editor's palette.
+from image_pipeline.agent_authoring import (
+    register_node_type as _author_register,
+    unregister_node_type as _author_unregister,
+    render_node as _author_render,
+    plan_wire as _author_plan_wire,
+    validate_connection as _author_validate_connection,
+)
+
+
+class AuthorNodeRequest(BaseModel):
+    name: str
+    type: str = "procedural"
+    description: str = ""
+    glsl: str = ""                 # GPU types (procedural/filter/feedback)
+    uniforms: dict | None = None   # GPU typed-uniform manifest
+    expr: str = ""                 # expression type: safe math body
+    vars: dict | None = None       # expression type: per-free-var defaults/min/max
+
+
+class RenderNodeRequest(BaseModel):
+    node_id: str
+    params: dict | None = None
+
+
+class PortTypeRequest(BaseModel):
+    name: str
+    color: str
+    description: str
+    accepts_from: list[str] | None = None
+
+
+@app.post("/api/nodes/author", dependencies=[Depends(require_token)])
+async def author_node(req: AuthorNodeRequest):
+    """Compile + register an agent-authored GPU node. Returns the node id +
+    derived ports/params, or {"ok": false, "compile_error": ...} to iterate on."""
+    result = _author_register(req.model_dump())
+    if result.get("ok"):
+        await _broadcast_sse("node-defs-updated")
+    return result
+
+
+@app.post("/api/nodes/render")
+def render_authored_node(req: RenderNodeRequest):
+    """Cook a single authored node once (proves it executes)."""
+    return _author_render(req.node_id, params=req.params)
+
+
+@app.delete("/api/nodes/{node_id}", dependencies=[Depends(require_token)])
+async def unregister_authored_node(node_id: str):
+    """Drop an agent-authored node and free its shader slot."""
+    result = _author_unregister(node_id)
+    if result.get("ok"):
+        await _broadcast_sse("node-defs-updated")
+    return result
+
+
+@app.post("/api/port-types", dependencies=[Depends(require_token)])
+async def author_port_type(req: PortTypeRequest):
+    """Declare a new semantic port type at runtime (a new routable data type)."""
+    from image_pipeline.core.port_types import register_port_type
+    register_port_type(req.name.upper(), req.color, req.description, req.accepts_from or [])
+    await _broadcast_sse("node-defs-updated")
+    return {"ok": True, "name": req.name.upper()}
+
+
+class WireRequest(BaseModel):
+    add_nodes: list[dict] = []    # [{ref, method_id, params, x, y, render}]
+    connect: list[dict] = []      # [{src, src_port, dst, dst_port, feedback}]
+    by: str | None = None
+
+
+@app.post("/api/graph/validate-edge")
+def validate_edge(payload: dict):
+    """Type-check one edge against the live node-defs without touching the graph.
+    payload: {src_method_id, src_port, dst_method_id, dst_port}."""
+    return _author_validate_connection(
+        payload.get("src_method_id", ""), payload.get("src_port", ""),
+        payload.get("dst_method_id", ""), payload.get("dst_port", ""))
+
+
+@app.post("/api/graph/{gid}/wire", dependencies=[Depends(require_token)])
+async def wire_graph(gid: str, req: WireRequest):
+    """Atomically add authored nodes and CONNECT them in the live graph, with
+    port/type validation up front. All-or-nothing: on any error nothing is
+    applied and the errors come back for the agent to fix. On success the nodes
+    + edges land in the shared doc and a graph:patch event repaints the editor.
+
+    Local `ref` aliases in add_nodes let the agent add + wire in one call
+    without knowing generated node ids (connect by ref or by existing node id).
+    """
+    with _graph_store_lock:
+        doc = _load_graph_doc(gid)
+        plan = _author_plan_wire(doc, req.add_nodes, req.connect)
+        if not plan["ok"]:
+            return plan  # {ok:False, errors:[...]} — nothing mutated
+        doc["nodes"].extend(plan["nodes"])
+        doc["edges"].extend(plan["edges"])
+        by = req.by or "agent"
+        _touch_graph_meta(doc, by)
+        _persist_graph_doc(doc)
+    _broadcast_graph_event("graph:patch", {
+        "gid": gid,
+        "ops": [{"op": "add_node", "node": n} for n in plan["nodes"]]
+               + [{"op": "add_edge", "edge": e} for e in plan["edges"]],
+        "by": by, "doc": doc,
+    })
+    return {"ok": True, "id": gid, "ref_ids": plan["ref_ids"],
+            "node_ids": [n["id"] for n in plan["nodes"]],
+            "edges": plan["edges"]}
+
+
 @app.get("/api/shader-sources")
 def get_shader_sources():
     """Read-only: WebGL2 fragment sources for every GPU shader, from the SAME
@@ -1338,6 +1448,91 @@ _CLIENT_3D_IDS = frozenset(_THREEJS_3D_NODE_DEFS.keys())
 _THREEJS_SIDECAR_URL = os.environ.get(
     'THREEJS_SIDECAR_URL', 'http://127.0.0.1:7862'
 )
+_THREEJS_SIDECAR_SCRIPT = Path(__file__).resolve().parent / "3d" / "threejs-sidecar.mjs"
+# Set THREEJS_SIDECAR_EXTERNAL=1 when something else owns the sidecar process
+# (a supervisor, a debugger, a remote host via THREEJS_SIDECAR_URL).
+_THREEJS_SIDECAR_EXTERNAL = os.environ.get('THREEJS_SIDECAR_EXTERNAL', '') == '1'
+_threejs_proc: subprocess.Popen | None = None
+_threejs_lock = threading.Lock()
+
+
+def _threejs_healthy(timeout: float = 1.0) -> bool:
+    import httpx
+    try:
+        return httpx.get(f"{_THREEJS_SIDECAR_URL}/health", timeout=timeout).status_code == 200
+    except Exception:  # noqa: BLE001 — any transport failure means "not up"
+        return False
+
+
+def _ensure_threejs_sidecar(boot_timeout: float = 20.0) -> None:
+    """Make sure the headless three.js renderer is listening, spawning it if not.
+
+    The 3D render path depends on this Node process, so the server that depends
+    on it owns its lifecycle. Idempotent and safe under concurrent renders: an
+    already-running sidecar (started by hand or by a supervisor) answers /health
+    and is adopted rather than duplicated.
+    """
+    global _threejs_proc
+    if _THREEJS_SIDECAR_EXTERNAL or _threejs_healthy():
+        return
+    with _threejs_lock:
+        # Another thread may have booted it while we waited for the lock.
+        if _threejs_healthy():
+            return
+        if _threejs_proc is not None and _threejs_proc.poll() is None:
+            pass  # spawned but not yet answering — fall through to the wait loop
+        else:
+            if not _THREEJS_SIDECAR_SCRIPT.exists():
+                raise HTTPException(500, f"3D sidecar script missing: {_THREEJS_SIDECAR_SCRIPT}")
+            port = (_THREEJS_SIDECAR_URL.rsplit(":", 1)[-1] or "7862").strip("/")
+            env = {**os.environ, "THREEJS_PORT": port}
+            log_dir = _repo_root / "data" / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                _threejs_proc = subprocess.Popen(
+                    ["node", str(_THREEJS_SIDECAR_SCRIPT)],
+                    cwd=str(_THREEJS_SIDECAR_SCRIPT.parent),
+                    env=env,
+                    stdout=(log_dir / "3d.log").open("a"),
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
+            except FileNotFoundError:
+                raise HTTPException(
+                    500, "3D sidecar needs Node.js on PATH (`node` not found)"
+                )
+            print(f"[3d] spawned three.js sidecar on :{port} (pid {_threejs_proc.pid})")
+        deadline = time.time() + boot_timeout
+        while time.time() < deadline:
+            if _threejs_healthy():
+                return
+            if _threejs_proc.poll() is not None:
+                raise HTTPException(
+                    502,
+                    f"3D sidecar exited during boot (code {_threejs_proc.returncode}) "
+                    f"— see data/logs/3d.log",
+                )
+            time.sleep(0.25)
+        raise HTTPException(502, f"3D sidecar did not answer /health within {boot_timeout:.0f}s")
+
+
+def _stop_threejs_sidecar() -> None:
+    """Terminate a sidecar we spawned. Adopted/external ones are left alone."""
+    global _threejs_proc
+    proc, _threejs_proc = _threejs_proc, None
+    if proc is None or proc.poll() is not None:
+        return
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        proc.wait(timeout=5)
+    except Exception:  # noqa: BLE001 — best-effort shutdown
+        try:
+            proc.kill()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+atexit.register(_stop_threejs_sidecar)
 
 
 @app.get("/api/graph/{gid}/render")
@@ -1362,10 +1557,11 @@ def render_graph_bytes(gid: str = "active", frame: int = 0, fmt: str = "png",
     if not nodes:
         raise HTTPException(400, "Graph is empty")
 
-    # Proxy 3D graphs to Node.js sidecar
+    # Proxy 3D graphs to Node.js sidecar, booting it on first use.
     has_3d = any(n.get("method_id") in _CLIENT_3D_IDS for n in nodes)
     if has_3d:
         import httpx
+        _ensure_threejs_sidecar()
         try:
             resp = httpx.post(
                 f"{_THREEJS_SIDECAR_URL}/render",
@@ -2395,6 +2591,46 @@ def get_sequence_frame(name: str, frame: int):
     )
 
 
+class SeqFrameUpload(BaseModel):
+    frame: int
+    data: str            # base64 PNG, with or without a data: URL prefix
+    reset: bool = False  # first frame of a run — clear the directory first
+
+
+@app.post("/api/sequences/{name}/frames")
+def put_sequence_frame(name: str, req: SeqFrameUpload):
+    """Store one browser-rendered frame in a sequence directory.
+
+    Client-rendered graphs (3D / p5) cook on the browser GPU, so the server
+    never sees their pixels. Without somewhere to put them a client run can
+    only ever show one live canvas — there is no sequence for the timeline to
+    scrub, and so no clip. This is the client engine's equivalent of the
+    per-frame PNG write in the server run job.
+
+    `reset` wipes the directory first so a shorter re-render cannot leave the
+    tail of a previous longer run trailing off the end of the new clip.
+    """
+    name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+    seq_dir = SEQUENCES_DIR / name
+    if req.reset and seq_dir.exists():
+        shutil.rmtree(str(seq_dir))
+    seq_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        blob = base64.b64decode(req.data.split(",", 1)[-1])
+    except Exception as exc:
+        raise HTTPException(400, f"Bad base64 frame data: {exc}")
+
+    png_path = seq_dir / f"frame_{req.frame:04d}.png"
+    png_path.write_bytes(blob)
+    # get_sequence_frame serves a cached JPEG sibling whenever one exists.
+    # Re-encode it now (a stale one from a previous run would otherwise shadow
+    # the frame just written) so timeline playback of this fresh clip never
+    # stalls on a lazy conversion.
+    _write_seq_jpeg(png_path)
+    return {"ok": True, "frame": req.frame}
+
+
 @app.delete("/api/sequences/{name}")
 def delete_sequence(name: str):
     name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
@@ -2834,6 +3070,147 @@ def tn_get_report(node_id: str):
     if not report_path.exists():
         return {"report": None}
     return {"report": json.loads(report_path.read_text())}
+
+
+# ── Broken-node ledger ───────────────────────────────────────────────────
+# A user flags a node in the editor ("this is broken, here's what's wrong")
+# and the report lands in a single tracked JSON file. Agents read that file to
+# spot patterns no single report shows — e.g. every flagged node in
+# methods/simulations/ complaining that `seed` does nothing points at a shared
+# helper, not at ten separate nodes.
+#
+# It lives under docs/reports/ (tracked) rather than output/ (gitignored and
+# routinely wiped) because the accumulated history IS the diagnostic value.
+
+BROKEN_NODES_PATH = _repo_root / "docs" / "reports" / "broken-nodes.json"
+_broken_lock = threading.Lock()
+
+
+def _load_broken_ledger() -> dict:
+    """Read the ledger, tolerating a missing or corrupt file."""
+    if not BROKEN_NODES_PATH.exists():
+        return {"version": 1, "updated_at": None, "reports": []}
+    try:
+        doc = json.loads(BROKEN_NODES_PATH.read_text())
+    except Exception:
+        return {"version": 1, "updated_at": None, "reports": []}
+    if not isinstance(doc, dict) or not isinstance(doc.get("reports"), list):
+        return {"version": 1, "updated_at": None, "reports": []}
+    doc.setdefault("version", 1)
+    doc.setdefault("updated_at", None)
+    return doc
+
+
+def _save_broken_ledger(doc: dict) -> None:
+    doc["updated_at"] = datetime.now(timezone.utc).isoformat()
+    BROKEN_NODES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = BROKEN_NODES_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n")
+    tmp.replace(BROKEN_NODES_PATH)
+
+
+def _method_context(method_id: str) -> dict:
+    """Registry facts an agent needs to act on a report without the UI."""
+    meta = registry.get_meta(method_id)
+    if not meta:
+        return {"method_name": "", "category": "", "source_path": ""}
+    path = _get_method_path(method_id)
+    try:
+        rel = str(path.relative_to(_repo_root)) if path else ""
+    except ValueError:
+        rel = str(path) if path else ""
+    return {
+        "method_name": meta.name,
+        "category": meta.category,
+        "source_path": rel,
+    }
+
+
+@app.get("/api/broken-nodes")
+def broken_nodes_list(status: str | None = None):
+    """All flagged nodes. `?status=open` filters to unresolved reports."""
+    doc = _load_broken_ledger()
+    reports = doc["reports"]
+    if status:
+        reports = [r for r in reports if r.get("status") == status]
+    return {"reports": reports, "updated_at": doc.get("updated_at")}
+
+
+@app.post("/api/broken-nodes")
+async def broken_nodes_add(payload: dict):
+    """Flag a node as broken.
+
+    Payload: {method_id, note, node_id?, params?, graph_name?, reported_by?}
+    """
+    method_id = str(payload.get("method_id", "")).strip()
+    note = str(payload.get("note", "")).strip()
+    if not method_id:
+        raise HTTPException(400, "method_id is required")
+    if not note:
+        raise HTTPException(400, "note is required — say what is broken")
+
+    report = {
+        "id": "brk-" + uuid.uuid4().hex[:10],
+        "method_id": method_id,
+        **_method_context(method_id),
+        "note": note[:4000],
+        "status": "open",
+        "flagged_at": datetime.now(timezone.utc).isoformat(),
+        "resolved_at": None,
+        # Reproduction context — the exact node instance and params in play
+        # when the user hit the problem.
+        "node_id": payload.get("node_id") or "",
+        "graph_name": payload.get("graph_name") or "",
+        "params": payload.get("params") if isinstance(payload.get("params"), dict) else {},
+        "reported_by": payload.get("reported_by") or "ui",
+    }
+
+    with _broken_lock:
+        doc = _load_broken_ledger()
+        doc["reports"].append(report)
+        _save_broken_ledger(doc)
+
+    await _broadcast_sse("broken-nodes-updated")
+    return {"ok": True, "report": report}
+
+
+@app.patch("/api/broken-nodes/{report_id}")
+async def broken_nodes_update(report_id: str, payload: dict):
+    """Edit a report's note or flip its status ("open" / "resolved")."""
+    with _broken_lock:
+        doc = _load_broken_ledger()
+        report = next((r for r in doc["reports"] if r.get("id") == report_id), None)
+        if report is None:
+            raise HTTPException(404, f"No broken-node report '{report_id}'")
+        if "note" in payload:
+            report["note"] = str(payload["note"]).strip()[:4000]
+        if "status" in payload:
+            status = str(payload["status"])
+            if status not in ("open", "resolved"):
+                raise HTTPException(400, "status must be 'open' or 'resolved'")
+            report["status"] = status
+            report["resolved_at"] = (
+                datetime.now(timezone.utc).isoformat() if status == "resolved" else None
+            )
+        _save_broken_ledger(doc)
+
+    await _broadcast_sse("broken-nodes-updated")
+    return {"ok": True, "report": report}
+
+
+@app.delete("/api/broken-nodes/{report_id}")
+async def broken_nodes_delete(report_id: str):
+    """Drop a report entirely (the editor's "clear flag" action)."""
+    with _broken_lock:
+        doc = _load_broken_ledger()
+        before = len(doc["reports"])
+        doc["reports"] = [r for r in doc["reports"] if r.get("id") != report_id]
+        if len(doc["reports"]) == before:
+            raise HTTPException(404, f"No broken-node report '{report_id}'")
+        _save_broken_ledger(doc)
+
+    await _broadcast_sse("broken-nodes-updated")
+    return {"ok": True}
 
 
 # ── Entry point ───────────────────────────────────────────────────────

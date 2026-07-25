@@ -142,23 +142,34 @@ sequenceDiagram
     participant UI as "dashboard/ui/index.html"
     participant Dashboard as "dashboard/__init__.py"
     participant Pipeline as "image_pipeline :7860"
+<<<<<<< HEAD
     participant Chord as "chord_bot :7861"
+=======
+>>>>>>> e8e914e2179763c737478a76917a6345f23718fe
     participant Sidecar as "3d sidecar :7862"
 
     User->>UI: clicks Launch All
     UI->>Dashboard: POST /api/launch
     Dashboard->>Dashboard: launch_all()
     Dashboard->>Pipeline: _spawn(pipeline, image_pipeline.server, 7860)
+<<<<<<< HEAD
     Dashboard->>Chord: _spawn(chord, chord_bot.server, 7861)
     Dashboard->>Sidecar: _spawn_node(3d, threejs-sidecar.mjs, 7862)
     Dashboard->>Pipeline: poll /health (up to 15s)
     Dashboard->>Chord: poll /health (up to 15s)
+=======
+    Dashboard->>Sidecar: _spawn_node(3d, threejs-sidecar.mjs, 7862)
+    Dashboard->>Pipeline: poll /health (up to 15s)
+>>>>>>> e8e914e2179763c737478a76917a6345f23718fe
     Dashboard-->>UI: {status: running} per service
     User->>UI: clicks Stop
     UI->>Dashboard: POST /api/stop
     Dashboard->>Dashboard: stop_all()
     Dashboard->>Pipeline: _stop(pipeline) -> killpg(SIGTERM)
+<<<<<<< HEAD
     Dashboard->>Chord: _stop(chord) -> killpg(SIGTERM)
+=======
+>>>>>>> e8e914e2179763c737478a76917a6345f23718fe
     Dashboard->>Sidecar: _stop(3d) -> killpg(SIGTERM)
     Dashboard-->>UI: {status: stopped}
 ```

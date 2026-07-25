@@ -78,10 +78,6 @@ if existing is not None and existing.module != fn.__module__:
 - Caught in `_hot_reload_path()`, logged as `[hot-reload] error reloading {module}`
 - Does not crash the server; the old method remains registered
 
-### Chord Bot Import Error
-- Guarded import: `except Exception` logs a warning
-- Image pipeline continues running; `/chordbot` mount is silently absent
-
 ## Error Categories
 
 | Category | Example | Recovery |

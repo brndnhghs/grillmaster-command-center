@@ -784,7 +784,19 @@ class GraphExecutor:
                         continue
 
             # ── Architecture A: simulation with capture_frame() ──────
-            node_seed = seed + frame + _stable_node_offset(node_id)
+            # No `+ frame` here, deliberately. An Arch-A node cooks its ENTIRE
+            # clip in one call and the executor replays that clip for every
+            # output frame — so the cook must not depend on which frame happened
+            # to trigger it. The sim cache is keyed (node_id, seed) + params_hash;
+            # folding `frame` into the seed put a variable into the cached content
+            # that is absent from the key, so whichever frame missed first decided
+            # the whole clip. Rendering frame 0 after frame 5 then returned a
+            # different image than rendering frame 0 first, breaking the
+            # determinism contract (identical graph + seed + params => identical
+            # output, always). Arch B recomputes its own node_seed *with* `+ frame`
+            # further down, which is correct there: B is called once per output
+            # frame and wants a fresh RNG stream each time.
+            node_seed = seed + _stable_node_offset(node_id)
             from .arch import detect_architecture
             arch = detect_architecture(meta)
             sim_cache_key = (node_id, seed)
@@ -871,6 +883,22 @@ class GraphExecutor:
                 sim_params = dict(node.params)
                 if "n_frames" in sim_params and frames > 1:
                     sim_params["n_frames"] = frames
+                # `time` / `_timeline` stay on the LIVE frame's clock, and that is
+                # a known residual determinism hole, not an oversight. They are in
+                # _VOLATILE_PARAM_KEYS (excluded from the cache key so the clip is
+                # not re-cooked every frame) yet they still reach the cook, so an
+                # Arch-A method that reads either cooks a clip that depends on
+                # which output frame missed the cache first — the same defect the
+                # node_seed comment above describes, through a second channel.
+                # Pinning them to frame 0 was tried and reverted: it silently kills
+                # the spatial-param response of every sim that uses `time` as an
+                # initial-condition input (measured: 112 Kelvin-Helmholtz u_shear
+                # and 359 Lenia mu both drop from a live field response to exactly
+                # 0.000000 — see test_spatial_params). A node whose cooked clip
+                # legitimately depends on the output frame is not a cook-once-and-
+                # replay node at all; it is Architecture B wearing an `n_frames`
+                # param, and the fix belongs in the architecture declaration, not
+                # here. Tracked in docs/plans/2026-07-23-mcp-server-plan.md as P1b.
                 sim_params["_timeline"] = timeline
                 sim_params["time"] = timeline.phase
                 sim_params["frame"] = 0

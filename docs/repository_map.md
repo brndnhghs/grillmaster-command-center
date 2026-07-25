@@ -21,7 +21,6 @@ Grillmaster Command Center is a **node-based generative image & video editor**. 
 | Methods (all categories) | ~89,000 lines |
 | Tests | ~9,600 lines |
 | Frontend (HTML/JS) | ~11,631 lines |
-| Chord Bot | ~6,869 lines |
 | Instruments (tools) | ~1,763 lines |
 | Shell scripts | ~330 lines |
 | Contributors | 1 primary (brndnhghs) |
@@ -160,28 +159,6 @@ grillmaster-command-center/
 │   ├── 3d/                        # (empty or forthcoming — 3D extension)
 │   └── output/                    # Runtime: generated images, sequences, backups
 │
-├── chord_bot/                     # INDEPENDENT APPLICATION — music chord progression node system
-│   ├── __init__.py, server.py, executor.py, registry.py, cli.py
-│   ├── chord_types.py, port_types.py, keyframes.py
-│   ├── nodes/                     # Chord Bot node library
-│   │   ├── __init__.py, tonic.py, function.py, cadence.py, bass.py
-│   │   ├── modulation.py, neapolitan.py, passing_chord.py, pedal.py
-│   │   ├── phrase.py, planing.py, secondary_dominant.py
-│   │   ├── sequence.py, substitution.py, suspension.py
-│   │   ├── arpeggiator.py, color.py, repeat.py, rest.py, rhythm.py
-│   │   ├── tension_shaper.py, voice_leader.py
-│   ├── export/                    # Chord export: MIDI, text
-│   │   ├── midi.py, text.py
-│   ├── ui/                        # Chord Bot frontend (SPA)
-│   │   ├── index.html, wiki.html, app.js, api.js, audio.js
-│   │   ├── config.js, drawer.js, preview.js, rail.js, state.js
-│   ├── tests/                     # Chord Bot tests
-│   │   ├── test_executor.py, test_function.py, test_neapolitan.py
-│   │   ├── test_nodes.py, test_planing.py, test_secondary_dominant.py
-│   ├── demo/                      # Demo scripts + graph files
-│   │   ├── planing_demo_graph.json, render_neapolitan_demo.py, render_planing_demo.py
-│   ├── pyproject.toml
-│
 ├── dashboard/                     # UNIFIED CONTROL PANEL (port 7870)
 │   ├── __init__.py, __main__.py
 │   └── ui/index.html
@@ -207,7 +184,6 @@ grillmaster-command-center/
 │
 ├── scripts/                       # LAUNCHERS & UTILITY SCRIPTS
 │   ├── grillmaster-launcher.sh    # Main server launcher (FastAPI)
-│   ├── chord-bot-launcher.sh      # Chord Bot server launcher
 │   ├── dashboard.sh               # Unified dashboard launcher
 │   ├── tunnel.sh, localhostrun-tunnel.sh, tunnel-watchdog.sh  # Tunneling
 │   ├── generate_ca_demos.py       # Generate cellular automata demo graphs
@@ -237,7 +213,7 @@ grillmaster-command-center/
 ├── requirements.txt               # Python dependencies
 ├── package.json / package-lock.json  # Node.js deps (Puppeteer, Three.js, gl)
 ├── pytest.ini                     # pytest config (slow marker excluded by default)
-├── pyproject.toml                 # (project config, if any — note chord_bot has its own)
+├── pyproject.toml                 # project config (if any)
 │
 ├── *.mp4, *.png, *.jpg            # Generated output files (at repo root)
 ├── _*.py, _*.sh                   # Scratch/diagnostic scripts
@@ -267,11 +243,11 @@ grillmaster-command-center/
               ┌────────────────────┼────────────────────┐
               │                    │                    │
               ▼                    ▼                    ▼
-    ┌─────────────────┐  ┌──────────────┐  ┌────────────────┐
-    │   ui/index.html  │  │ chord_bot/   │  │  dashboard/     │
-    │   Editor SPA     │  │ Music nodes  │  │ Control panel   │
-    │   (port 7860)    │  │ (port 7861)  │  │ (port 7870)     │
-    └─────────────────┘  └──────────────┘  └────────────────┘
+    ┌─────────────────┐              ┌────────────────┐
+    │   ui/index.html  │              │  dashboard/     │
+    │   Editor SPA     │              │ Control panel   │
+    │   (port 7860)    │              │ (port 7870)     │
+    └─────────────────┘              └────────────────┘
 ```
 
 ---
@@ -281,7 +257,6 @@ grillmaster-command-center/
 | File | Purpose |
 |------|---------|
 | `requirements.txt` | Python dependencies for image_pipeline |
-| `chord_bot/pyproject.toml` | Chord Bot Python package config |
 | `package.json` | Node.js dependencies (Puppeteer, Three.js) |
 | `pytest.ini` | pytest markers, excludes slow tests by default |
 | `.pre-commit-config.yaml` | Pre-commit hook: runs `audit_methods.py --fail-on-violations` |
@@ -309,7 +284,6 @@ grillmaster-command-center/
 | File | Role | Port |
 |------|------|------|
 | `image_pipeline/server.py` | FastAPI server — main application | 7860 |
-| `chord_bot/server.py` | Chord Bot FastAPI server | 7861 |
 | `dashboard/__main__.py` | Unified dashboard server | 7870 |
 | `scripts/grillmaster-launcher.sh` | Production launcher for server.py | 7860 |
 | `scripts/dashboard.sh` | Dashboard launcher | 7870 |
@@ -322,7 +296,6 @@ grillmaster-command-center/
 |-----------|----------|--------|---------|
 | Core tests | `image_pipeline/tests/` | ~40 files | Registration, live regression, GPU, simulations, transports |
 | Slow tests | same | `-m slow` | Long-running render/perf guards — excluded from default run |
-| Chord Bot tests | `chord_bot/tests/` | 6 files | Node execution, harmony correctness |
 | Pre-commit gate | `tools/audit_methods.py` | CI | Method contract enforcement |
 
 ---
@@ -337,13 +310,11 @@ image_pipeline/core/  ←── image_pipeline/methods/  (registry → @method d
 image_pipeline/server.py ◄───────┘
        │
        ├── ui/index.html     (editor served as static files)
-       ├── ui/vendor/        (Three.js, p5.js, etc.)
-       │
-       └── chord_bot/        (mounted at /chordbot, separate app)
-             └── chord_bot/ui/  (separate but similar frontend)
+       └── ui/vendor/        (Three.js, p5.js, etc.)
 
 dashboard/
-       └── spawns: image_pipeline.server + chord_bot.server
+       └── spawns: image_pipeline.server + the three.js sidecar
+          (optional — server self-boots the sidecar on first 3D render)
 ```
 
 ---

@@ -9,13 +9,6 @@
       "autoPort": false
     },
     {
-      "name": "chord-bot-server",
-      "runtimeExecutable": "/opt/homebrew/bin/python3",
-      "runtimeArgs": ["-m", "chord_bot.server"],
-      "port": 7861,
-      "autoPort": false
-    },
-    {
       "name": "image-pipeline-verify",
       "runtimeExecutable": ".venv/bin/python",
       "runtimeArgs": ["-m", "image_pipeline.server", "--port", "7871"],

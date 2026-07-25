@@ -40,9 +40,6 @@ bash scripts/dashboard.sh --autostart  # boots both services
 ```bash
 # Image Pipeline (port 7860)
 .venv/bin/python -m image_pipeline.server
-
-# Chord Bot (port 7861)
-.venv/bin/python -m chord_bot.server
 ```
 
 ## Tunneling

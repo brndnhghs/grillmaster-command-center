@@ -18,7 +18,6 @@
 | ML & 3D | 4 | 300+ | Low — optional dependencies |
 | Utilities | 4 | 200+ | Low — edge cases |
 | **Total (image_pipeline)** | **~40** | **~9,621** | **Medium-High** |
-| Chord Bot | 6 | 300+ | Medium |
 | Pre-commit audit | 1 | 831 | N/A (static analysis) |
 
 ## Critical Paths
@@ -93,6 +92,5 @@
 
 ## Integration Test Gaps
 
-1. **Chord Bot → Image Pipeline** — No test for the `/chordbot` mount.
-2. **Dashboard → Server** — No test for the dashboard launching/monitoring both services.
-3. **Node Doctor → Hermes** — No integration test for the Node Doctor repair flow.
+1. **Dashboard → Server** — No test for the dashboard launching/monitoring its services.
+2. **Node Doctor → Hermes** — No integration test for the Node Doctor repair flow.

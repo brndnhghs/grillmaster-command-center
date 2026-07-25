@@ -72,7 +72,6 @@ docs/
 | Server | 3,015 lines |
 | Tests | 9,621 lines (40 files) |
 | Frontend | 11,631 lines (HTML/JS) |
-| Chord Bot | 6,869 lines |
 | Tools | 1,763 lines |
 | Docs generated | 22 files |
 

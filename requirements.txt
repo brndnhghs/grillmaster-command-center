@@ -22,5 +22,6 @@ watchdog>=4.0.0         # file-system watcher for method hot-reload
 # pyfiglet         # ASCII-art / typography methods (cli_tools)
 # qrcode           # method #09 QR Code
 moderngl          # method #82 GPU Shaders
+mcp>=1.2          # tools/mcp_authoring_server.py — runtime agent node-authoring over MCP
 # torch            # method #21 Stable Diffusion 1.5 (ml_models; pulls ~2GB+)
 # diffusers        # method #21 Stable Diffusion 1.5 (ml_models)
