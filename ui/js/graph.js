@@ -587,16 +587,35 @@ function _tlDisplayBitmap(bmp) {
 // frames a shallow, bounded one — recomputed from the live frame footprint and
 // the timeline fps by _tlRecalcBudget(). In-flight + decode dedup stop the
 // wider prefetch from re-requesting frames already on the wire.
-const _TL_MEM_BUDGET = 64 * 1024 * 1024;   // ~64 MB of decoded frames resident
+//
+// Budget & floors are tuned so the look-ahead covers real decode latency at
+// 60fps. Measured cold decode: ~0.7ms @768×512, ~16ms @1080p, ~64ms @4K. To
+// stay ahead at 60fps (16.7ms/frame) the window must hold more frames than the
+// decode takes to refill; since createImageBitmap runs off-thread, several
+// parallel decodes overlap. Resulting depth (60fps): 768×512 → 120-frame cap;
+// 1080p → 30 frames (~0.5s look-ahead); 1440p → 18; 4K → the 12-frame floor.
+// A decoded 4K ImageBitmap is ~33MB, so a full 0.5s (30-frame) 4K buffer would
+// be ~1GB — the floor deliberately caps the 4K working set at ~400MB (floor
+// overrides the byte budget, same intent as the old 8-frame min).
+//
+// ≤1440p sustains 60fps outright. 4K is DECODE-bound, not buffer-bound: measured
+// off-thread decode throughput saturates at ~52fps around a 16-frame window and
+// does not improve past it (16→52fps/506MB, 24→52fps/759MB), so buffering alone
+// can't reach 60fps at 4K — the deeper floor lifts it from ~30 toward that ~52
+// ceiling, and true 4K@60 needs a worker/WebCodecs GPU-decode path.
+const _TL_MEM_BUDGET = 256 * 1024 * 1024;  // ~256 MB of decoded frames resident
 let _tlFrameBytes = 768 * 512 * 4;         // last-seen frame footprint (seed guess)
-let _tlCacheMax   = 16;                     // dynamic; see _tlRecalcBudget
-let _tlPrefetch   = 8;                      // dynamic; see _tlRecalcBudget
+let _tlCacheMax   = 30;                     // dynamic; see _tlRecalcBudget
+let _tlPrefetch   = 15;                     // dynamic; see _tlRecalcBudget
 function _tlRecalcBudget(fps) {
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-  _tlCacheMax = clamp(Math.floor(_TL_MEM_BUDGET / Math.max(1, _tlFrameBytes)), 8, 120);
+  // Floor of 12 (was 8): keeps a usable read-ahead at 4K where the byte budget
+  // alone would collapse the cache to ~7 frames. Cap of 120 bounds tiny frames.
+  _tlCacheMax = clamp(Math.floor(_TL_MEM_BUDGET / Math.max(1, _tlFrameBytes)), 12, 120);
   // ~0.5s of look-ahead in wall time: higher fps buffers more frames for the
-  // same horizon. Always leave headroom below the cache cap.
-  _tlPrefetch = clamp(Math.round(Math.max(1, fps) * 0.5), 6, _tlCacheMax - 2);
+  // same horizon. Floor of 10 (was 6) keeps 4K's shallow buffer decode-deep
+  // enough to stay ahead. Always leave headroom below the cache cap.
+  _tlPrefetch = clamp(Math.round(Math.max(1, fps) * 0.5), 10, _tlCacheMax - 2);
 }
 
 function tlLoadFrame(timelineFrame) {
