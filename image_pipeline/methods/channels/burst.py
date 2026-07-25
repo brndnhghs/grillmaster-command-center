@@ -13,6 +13,24 @@ from ...core.utils import seed_all
         tags=["chop", "time", "pulse", "generator"],
         inputs={"trigger": "SCALAR", "rate": "SCALAR"},
         outputs={"value": "SCALAR", "active": "SCALAR"},
+        runtime={
+            "value": {
+                "type": "numeric",
+                "label": "Value",
+                "observable": True
+            },
+            "active": {
+                "type": "output",
+                "label": "Active",
+                "observable": True
+            }
+        },
+        signal={
+            "trigger": "event",
+            "rate": "numeric",
+            "value": "output",
+            "active": "output"
+        },
         params={
             "n_pulses": {"description": "number of pulses per burst", "min": 1, "max": 100, "default": 5},
             "pulse_interval": {"description": "frames between pulses in a burst", "min": 1, "max": 100, "default": 6},
@@ -41,7 +59,7 @@ def method_burst(out_dir: Path, seed: int, params=None):
     amp = float(params.get("amplitude", 1.0))
     loop = params.get("loop", True)
     if isinstance(loop, str):
-        loop = loop.lower() in ("true", "1", "yes")
+        loop = loop.lower() in ("True", "1", "yes")
 
     # SCALAR overrides
     trigger_val = params.get("trigger")

@@ -13,6 +13,18 @@ from ...core.utils import seed_all
         tags=["chop", "time", "adsr", "generator"],
         inputs={"trigger": "SCALAR", "gate": "SCALAR"},
         outputs={"value": "SCALAR"},
+        runtime={
+            "value": {
+                "type": "numeric",
+                "label": "Value",
+                "observable": True
+            }
+        },
+        signal={
+            "trigger": "event",
+            "gate": "control",
+            "value": "output"
+        },
         params={
             "attack": {"description": "attack time in frames", "min": 0, "max": 1000, "default": 10},
             "decay": {"description": "decay time in frames", "min": 0, "max": 1000, "default": 20},
@@ -41,7 +53,7 @@ def method_envelope(out_dir: Path, seed: int, params=None):
     release = int(params.get("release", 50))
     loop = params.get("loop", False)
     if isinstance(loop, str):
-        loop = loop.lower() in ("true", "1", "yes")
+        loop = loop.lower() in ("True", "1", "yes")
 
     # Use sustain param, fall back to sustain_level
     sustain = float(params.get("sustain_level", sustain))

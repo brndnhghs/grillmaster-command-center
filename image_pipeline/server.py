@@ -165,7 +165,7 @@ def _broadcast_graph_event(event: str, data: dict) -> None:
         pass
 
 
-def _broadcast_ws_frame(jpeg_bytes: bytes, ws_meta: dict | None = None):
+def _broadcast_ws_frame(jpeg_bytes: bytes | None, ws_meta: dict | None = None):
     """Send a per-frame JSON message to all connected WebSocket clients.
 
     The message shape:
@@ -204,7 +204,8 @@ def _broadcast_ws_frame(jpeg_bytes: bytes, ws_meta: dict | None = None):
             "canvas_h":     ws_meta.get("canvas_h", 0),
             "fps_limit":    ws_meta.get("fps_limit", False),
             "target_fps":   ws_meta.get("target_fps", 0.0),
-            "img":          base64.b64encode(jpeg_bytes).decode("ascii"),
+            "node_values":  ws_meta.get("node_values", {}),
+            "img":          base64.b64encode(jpeg_bytes).decode("ascii") if jpeg_bytes is not None else None,
         }
         payload_text  = json.dumps(msg, separators=(",", ":"))
         payload_bytes = None
@@ -276,13 +277,19 @@ def _push_live_frame(arr, ws_meta: dict | None = None):
     ws_meta: diagnostics snapshot to embed in the WS message.  When provided
     the WS receives a JSON frame (image + metadata).  MJPEG clients always
     receive raw JPEG regardless.
+
+    `arr` may be None (e.g. channel-only graphs with no image render target) —
+    in that case the MJPEG buffer is left untouched and only a metadata-only WS
+    frame is broadcast (carrying node_values for the on-node Runtime section).
     """
     global _LIVE_FRAME, _LIVE_FRAME_ID
-    jpeg_bytes = _encode_jpeg(arr, quality=85, max_width=1280)
-    with _LIVE_FRAME_LOCK:
-        _LIVE_FRAME = jpeg_bytes
-        _LIVE_FRAME_ID += 1
-        _LIVE_FRAME_COND.notify_all()
+    jpeg_bytes = None
+    if arr is not None:
+        jpeg_bytes = _encode_jpeg(arr, quality=85, max_width=1280)
+        with _LIVE_FRAME_LOCK:
+            _LIVE_FRAME = jpeg_bytes
+            _LIVE_FRAME_ID += 1
+            _LIVE_FRAME_COND.notify_all()
     _broadcast_ws_frame(jpeg_bytes, ws_meta)
 UI_DIR = Path(__file__).resolve().parent.parent / "ui"
 
@@ -303,6 +310,20 @@ def _hot_reload_path(filepath: str):
     """Re-import a changed method file and re-register it."""
     path = Path(filepath)
     if path.suffix != '.py':
+        return
+    # ── Syntax guard (defense in depth) ────────────────────────────
+    # Validate BEFORE unregistering the old method ids. The editor path is
+    # covered by nd_apply's guard, but a direct file edit in an external editor
+    # still flows through here — if we unregistered first and the reload then
+    # raised on a SyntaxError, the node would be left unregistered and the
+    # editor could no longer load its source.
+    try:
+        src = path.read_text()
+    except OSError:
+        return
+    ok, err = _validate_method_source(src, str(path))
+    if not ok:
+        print(f"[hot-reload] skipping {filepath}: {err}")
         return
     try:
         rel = path.relative_to(Path(__file__).parent)
@@ -1253,6 +1274,12 @@ async def save_graph(payload: dict):
     name = (payload.get("name", "untitled") or "untitled").strip() or "untitled"
     name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
     graph_data = payload.get("graph", {})
+    # Strip transient runtime state (keys starting with '_') from saved
+    # node params — these are live counters/state, never serialized (spec).
+    for _n in graph_data.get("nodes", []):
+        if isinstance(_n, dict) and isinstance(_n.get("params"), dict):
+            _n["params"] = {k: v for k, v in _n["params"].items()
+                            if not k.startswith("_")}
     graph_data["name"] = name
     graph_data["saved_at"] = datetime.now(timezone.utc).isoformat()
     path = SAVED_GRAPHS_DIR / f"{name}.json"
@@ -2130,9 +2157,22 @@ def live_graph_sim(req: GraphRequest):
                     _live_stats["canvas_w"]     = live_w
                     _live_stats["canvas_h"]     = live_h
 
-                    # Push frame + per-frame metadata to MJPEG buffer and WS clients
-                    if arr is not None:
-                        _push_live_frame(arr, ws_meta=dict(_live_stats))
+                    # Per-node live scalar outputs — feeds the on-node Runtime
+                    # section. These are read-only readouts (Current Value,
+                    # Phase, Beat, …) that update every frame and are NEVER
+                    # serialized into saved graphs (spec: Runtime is transient).
+                    _live_stats["node_values"] = {
+                        n["id"]: {k: float(v) for k, v in (flat_outputs.get(n["id"]) or {}).items()
+                                  if isinstance(v, (int, float))
+                                  and k not in ("image", "field", "particles", "mask")}
+                        for n in work_nodes
+                    }
+
+                    # Push frame + per-frame metadata to MJPEG buffer and WS clients.
+                    # Unconditional: channel-only graphs have no image (arr is
+                    # None) but still need their per-node Runtime readouts
+                    # (node_values) streamed to the UI every frame.
+                    _push_live_frame(arr, ws_meta=dict(_live_stats))
                 except Exception:
                     import traceback as _tb
                     print(f"[live-sim] frame {frame} failed:\n{_tb.format_exc(limit=6)}")
@@ -2740,6 +2780,24 @@ def _get_method_path(method_id: str) -> Path | None:
     return Path(mod.__file__)
 
 
+def _validate_method_source(source: str, path_str: str) -> tuple[bool, str | None]:
+    """Offline syntax pre-flight for edited node source (no LLM, no network).
+
+    Runs the same bytecode compilation the import machinery would, so a
+    SyntaxError / IndentationError / ValueError (null bytes) is caught BEFORE
+    the source is written to disk. Writing broken source first is what lets the
+    watchdog hot-reload unregister the node and leave the code editor unable to
+    reload the node's source. ``compile`` mirrors import-time checks exactly.
+
+    Returns ``(True, None)`` for valid source, else ``(False, "<error>")``.
+    """
+    try:
+        compile(source, path_str, "exec")
+        return True, None
+    except (SyntaxError, ValueError) as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+
+
 @app.get("/api/node-doctor/source/{method_id}")
 def nd_get_source(method_id: str):
     path = _get_method_path(method_id)
@@ -2927,6 +2985,18 @@ async def nd_apply(payload: dict):
     if not path or not path.exists():
         return {"error": "Method source file not found"}
 
+    # ── Pre-flight syntax guard ────────────────────────────────────
+    # Reject broken source BEFORE writing it to disk. Writing first would let
+    # the watchdog hot-reload a SyntaxError, unregister the node, and leave the
+    # editor unable to reload the source. compile() mirrors import-time checks.
+    ok, err = _validate_method_source(new_source, str(path))
+    if not ok:
+        return {
+            "ok": False,
+            "error": f"Syntax error — not applied: {err}",
+            "compile_error": err,
+        }
+
     backup_id = uuid.uuid4().hex[:8]
     # Backups live outside methods/ — in-tree copies carry duplicate
     # @method ids, feed the file watcher, and pollute the audit scan.
@@ -2939,6 +3009,25 @@ async def nd_apply(payload: dict):
     path.write_text(new_source)
     # watchdog picks up the change and hot-reloads automatically
     return {"ok": True, "backup_id": backup_id}
+
+
+@app.post("/api/node-doctor/validate", dependencies=[Depends(require_token)])
+async def nd_validate(payload: dict):
+    """Offline syntax pre-flight for the node source editor.
+
+    Returns ``{"ok": true}`` for valid source, or
+    ``{"ok": false, "error": ..., "compile_error": ...}`` for a SyntaxError.
+    Never writes to disk or touches the registry — pure ``compile()`` check,
+    no LLM, no network. The editor calls this on Apply (and live, on input)
+    to catch broken code before the save / hot-reload round-trip.
+    """
+    source = payload.get("source", "")
+    method_id = payload.get("method_id")
+    path_str = f"<{method_id or 'node-source'}>"
+    ok, err = _validate_method_source(source, path_str)
+    if not ok:
+        return {"ok": False, "error": f"Syntax error: {err}", "compile_error": err}
+    return {"ok": True}
 
 
 @app.post("/api/node-doctor/undo/{backup_id}", dependencies=[Depends(require_token)])

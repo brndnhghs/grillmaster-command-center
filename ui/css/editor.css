@@ -863,6 +863,80 @@
   .gnode-port-row.output .gport { right: -6px; }
   .gport-label { font-size: 10px; color: var(--muted); padding: 0 14px; font-family: var(--font-mono); }
 
+  /* ── Runtime section (Exposed Parameter & Runtime UI, channels) ── */
+  .gnode-runtime {
+    border-top: 1px solid var(--border);
+    margin-top: 4px; padding: 6px 10px 8px;
+    background: rgba(0,0,0,0.18);
+  }
+  .gnode-section-label {
+    font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 4px; font-weight: 700;
+  }
+  .gnode-rt-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 1px 0; font-family: var(--font-mono); font-size: 11px;
+  }
+  .gnode-rt-label { color: var(--muted); }
+  .gnode-rt-val { color: var(--text); font-variant-numeric: tabular-nums; }
+
+  /* Signal-class colors (numeric/control/output/event) */
+  .sig-numeric { color: #9b59ff; }
+  .sig-control { color: #3b82f6; }
+  .sig-output  { color: #22c55e; }
+  .sig-event   { color: #f97316; }
+  .gport.sig-numeric { background: #9b59ff; }
+  .gport.sig-control { background: #3b82f6; }
+  .gport.sig-output  { background: #22c55e; }
+  .gport.sig-event   { background: #f97316; }
+
+  /* ── Driver / Controller editor (Exposed Parameter & Runtime UI, channels) ── */
+  .dc-editor {
+    border-top: 1px solid var(--border);
+    margin-top: 10px; padding-top: 8px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .dc-param { display: flex; flex-direction: column; gap: 3px; }
+  .dc-param-name {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .dc-driver-sel {
+    width: 100%; padding: 4px 6px; font-size: 12px;
+    background: var(--bg2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 5px; cursor: pointer;
+  }
+  .dc-stack { display: flex; flex-direction: column; gap: 3px; margin: 2px 0 2px 8px; }
+  .dc-ctrl {
+    display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+    padding: 3px 4px; background: rgba(0,0,0,0.18);
+    border: 1px solid var(--border); border-radius: 5px;
+  }
+  .dc-ctrl.dc-disabled { opacity: 0.45; }
+  .dc-ctrl-type {
+    font-size: 11px; background: var(--bg3); color: var(--text);
+    border: 1px solid var(--border); border-radius: 4px; padding: 2px 4px;
+  }
+  .dc-ctrl-fields { display: inline-flex; gap: 3px; align-items: center; }
+  .dc-ctrl-num, .dc-ctrl-points {
+    width: 56px; font-size: 11px; padding: 2px 4px;
+    background: var(--bg2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 4px;
+  }
+  .dc-ctrl-points { width: 120px; font-family: var(--font-mono); }
+  .dc-ctrl-mv, .dc-ctrl-del {
+    font-size: 11px; line-height: 1; padding: 2px 5px; cursor: pointer;
+    background: var(--bg3); color: var(--text);
+    border: 1px solid var(--border); border-radius: 4px;
+  }
+  .dc-ctrl-del:hover { color: #ff6b6b; border-color: #ff6b6b; }
+  .dc-add-btn {
+    align-self: flex-start; margin-top: 2px; font-size: 11px; cursor: pointer;
+    padding: 3px 8px; background: var(--bg3); color: var(--text);
+    border: 1px solid var(--border); border-radius: 5px;
+  }
+  .dc-add-btn:hover { border-color: var(--accent); }
+
   .pt-image     { background: #4a9eff; }
   .pt-field     { background: #51cf66; }
   .pt-particles { background: #ff922b; }

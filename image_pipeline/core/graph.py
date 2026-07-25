@@ -54,6 +54,14 @@ class GraphNode:
     keyframes:   list[dict] = field(default_factory=list)
     paramKeyframes: dict[str, list[dict]] = field(default_factory=dict)
     prebake:     int   = 0
+    # ── Exposed Parameter & Runtime UI: Driver/Controller stack (channels) ──
+    # drivers: param -> {node, port} declaring the param's value originates
+    #   elsewhere (replaces manual ownership). controllers: param -> list of
+    #   controller dicts applied in order (multiply/clamp/curve/...). Both are
+    #   persistent config (serialized), empty by default so other node types
+    #   and existing graphs are byte-for-byte unaffected at runtime.
+    drivers:     dict[str, dict] = field(default_factory=dict)
+    controllers: dict[str, list[dict]] = field(default_factory=dict)
 
 
 # ── Auto-generate NodeDefs from registry ─────────────────────────────
@@ -173,6 +181,8 @@ def get_all_node_defs() -> dict[str, dict]:
             # the serialised contract (e.g. Blender Render needs is_time_varying
             # True to re-cook the spin animation each frame).
             "is_time_varying": meta.is_time_varying,
+            "runtime":         meta.runtime,
+            "signal":          meta.signal,
             "start_frame":     0,
             "end_frame":       0,
             "prebake":         0,
@@ -184,6 +194,107 @@ def clear_node_defs_cache() -> None:
     """Invalidate the cached node defs after hot-reload so the next request
     rebuilds from the updated registry."""
     get_all_node_defs.cache_clear()
+
+
+# ── Exposed Parameter & Runtime UI: Driver/Controller math (channels) ──
+# Real, minimal controller evaluators applied in the executor's Arch-B path
+# (channel nodes) before the method runs. No-op unless a node declares
+# drivers/controllers, so non-channel nodes and existing graphs are untouched.
+def _resolve_driver_value(node, param, gedges, flat_outputs) -> float | None:
+    """Return the upstream scalar driving `param` of `node`, or None.
+
+    Authoritative source is the declared driver in ``node.drivers[param] =
+    {node, port}`` (set by the UI dropdown); falls back to scanning incoming
+    edges so a driver works whether or not the user also drew an explicit edge.
+    """
+    drv = (node.drivers or {}).get(param)
+    if drv:
+        slot = flat_outputs.get(drv.get("node")) or {}
+        v = slot.get(drv.get("port"))
+        if v is None and drv.get("port") == "value" and isinstance(slot.get("luminance"), (int, float)):
+            v = float(slot["luminance"])
+        if isinstance(v, (int, float)):
+            return float(v)
+    for e in gedges:
+        if e.dst_node == node.id and e.dst_port == param and not e.feedback:
+            slot = flat_outputs.get(e.src_node) or {}
+            v = slot.get(e.src_port)
+            if v is None and e.src_port == "value" and isinstance(slot.get("luminance"), (int, float)):
+                v = float(slot["luminance"])
+            if isinstance(v, (int, float)):
+                return float(v)
+    return None
+
+
+def _eval_curve(x: float, pts: list) -> float:
+    """Piecewise-linear curve through [x,y] control points; clamp outside range."""
+    if not pts:
+        return x
+    pts = sorted(([float(p[0]), float(p[1])] for p in pts), key=lambda p: p[0])
+    if x <= pts[0][0]:
+        return pts[0][1]
+    if x >= pts[-1][0]:
+        return pts[-1][1]
+    for i in range(len(pts) - 1):
+        x0, y0 = pts[i]
+        x1, y1 = pts[i + 1]
+        if x0 <= x <= x1:
+            if x1 == x0:
+                return y1
+            t = (x - x0) / (x1 - x0)
+            return y0 + (y1 - y0) * t
+    return pts[-1][1]
+
+
+def _apply_controller(v: float, ctrl: dict) -> float:
+    """Apply one controller dict to scalar v. Unknown types pass through."""
+    t = ctrl.get("type")
+    if t == "multiply":
+        return v * float(ctrl.get("factor", 1.0))
+    if t == "add":
+        return v + float(ctrl.get("offset", 0.0))
+    if t == "clamp":
+        lo = ctrl.get("min")
+        hi = ctrl.get("max")
+        if lo is not None:
+            v = max(v, float(lo))
+        if hi is not None:
+            v = min(v, float(hi))
+        return v
+    if t == "invert":
+        return 1.0 - v
+    if t == "smoothstep":
+        x = min(1.0, max(0.0, v))
+        return x * x * (3.0 - 2.0 * x)
+    if t == "abs":
+        return abs(v)
+    if t == "negate":
+        return -v
+    if t == "curve":
+        return _eval_curve(v, ctrl.get("points") or [[0.0, 0.0], [1.0, 1.0]])
+    return v
+
+
+def _apply_driver_controller_pass(node, meta, run_params, gedges, flat_outputs) -> None:
+    """Channels-only: resolve declared drivers, then apply controller chains to
+    run_params in place. Source → Driver → Controller(s) → Parameter."""
+    if getattr(meta, "category", None) != "channels":
+        return
+    if not (node.drivers or node.controllers):
+        return
+    for _p, _drv in (node.drivers or {}).items():
+        _dv = _resolve_driver_value(node, _p, gedges, flat_outputs)
+        if _dv is not None:
+            run_params[_p] = _dv
+    for _p, _chain in (node.controllers or {}).items():
+        if _p not in run_params or not _chain:
+            continue
+        _v = run_params[_p]
+        for _c in _chain:
+            if not _c.get("enabled", True):
+                continue
+            _v = _apply_controller(_v, _c)
+        run_params[_p] = _v
 
 
 # ── Var-injection helpers ─────────────────────────────────────────────
@@ -1390,6 +1501,12 @@ class GraphExecutor:
             try:
                 from image_pipeline.core import utils as _core_utils
                 _core_utils.set_method_id(meta.id)
+                # ── Channels Driver/Controller pass (spec: Driver → Controller(s) → Parameter) ──
+                # Resolves declared drivers to upstream scalars and applies the
+                # controller chain to run_params in place. No-op unless the node
+                # declares drivers/controllers; gated to channels so other node
+                # types are byte-for-byte unchanged at runtime.
+                _apply_driver_controller_pass(node, meta, run_params, gedges, flat_outputs)
                 _fn_result = meta.fn(node_dir, node_seed, params=run_params)
             except TypeError as _te:
                 if "unexpected keyword argument" not in str(_te):

@@ -13,6 +13,25 @@ from ...core.utils import seed_all
         tags=["chop", "time", "oscillator", "generator"],
         inputs={"rate": "SCALAR", "phase_offset": "SCALAR", "amplitude": "SCALAR"},
         outputs={"value": "SCALAR", "bipolar": "SCALAR"},
+        runtime={
+            "value": {
+                "type": "numeric",
+                "label": "Value",
+                "observable": True
+            },
+            "bipolar": {
+                "type": "output",
+                "label": "Bipolar",
+                "observable": True
+            }
+        },
+        signal={
+            "rate": "numeric",
+            "phase_offset": "numeric",
+            "amplitude": "numeric",
+            "value": "output",
+            "bipolar": "output"
+        },
         params={
             "waveform": {"description": "LFO waveform",
                          "choices": ["sine", "triangle", "saw", "square", "random", "noise"],
@@ -64,7 +83,7 @@ def method_lfo(out_dir: Path, seed: int, params=None):
     phase_offset = float(params.get("phase", 0.0))
     bipolar_mode = params.get("bipolar", False)
     if isinstance(bipolar_mode, str):
-        bipolar_mode = bipolar_mode.lower() in ("true", "1", "yes")
+        bipolar_mode = bipolar_mode.lower() in ("True", "1", "yes")
 
     # SCALAR overrides
     rate_override = params.get("rate")

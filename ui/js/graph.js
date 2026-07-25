@@ -1575,6 +1575,8 @@ function gSerializeNodeForApi(n, frame) {
     keyframes: n.keyframes || [],
     paramKeyframes: n.paramKeyframes || {},
     prebake: n.prebake || 0,
+    drivers: n.drivers || {},
+    controllers: n.controllers || {},
   };
 }
 function gDefaultParams(def) {
@@ -1633,6 +1635,9 @@ function gRenderNode(node) {
   function _mkPort(name, type, dir) {
     const dot = document.createElement('div');
     dot.className = `gport pt-${type}`;
+    // Spec signal-class color (numeric/control/output/event) — channels only.
+    const sig = def.signal && def.signal[name];
+    if (sig) dot.classList.add('sig-' + sig);
     Object.assign(dot.dataset, { nid: node.id, port: name, dir, ptype: type });
     return dot;
   }
@@ -1716,6 +1721,36 @@ function gRenderNode(node) {
   }
 
   if (portsEl.children.length) el.appendChild(portsEl);
+
+  // ── Runtime section (channels only) ──────────────────────────
+  // Read-only live readouts (Current Value, Phase, Beat, …) that update every
+  // frame from the live WS feed (msg.node_values). Never serialized. Per spec
+  // every node follows Title → Inputs → Properties → Runtime → Outputs.
+  if (def.category === 'channels' && def.runtime) {
+    const rtEl = document.createElement('div');
+    rtEl.className = 'gnode-runtime';
+    const rtLabel = document.createElement('div');
+    rtLabel.className = 'gnode-section-label';
+    rtLabel.textContent = 'Runtime';
+    rtEl.appendChild(rtLabel);
+    for (const [name, spec] of Object.entries(def.runtime)) {
+      const row = document.createElement('div');
+      row.className = 'gnode-rt-row';
+      const sig = (def.signal && def.signal[name]) || spec.type || '';
+      const lbl = document.createElement('span');
+      lbl.className = 'gnode-rt-label' + (sig ? ' sig-' + sig : '');
+      lbl.textContent = spec.label || name;
+      const val = document.createElement('span');
+      val.className = 'gnode-rt-val';
+      val.id = 'rt-' + node.id + '-' + name;
+      val.textContent = '–';
+      row.appendChild(lbl);
+      row.appendChild(val);
+      rtEl.appendChild(row);
+    }
+    el.appendChild(rtEl);
+  }
+
   gNodesEl.appendChild(el);
 
   header.querySelector('.gnode-delete').addEventListener('click', e => {
@@ -2498,6 +2533,8 @@ function gShowNodeParams(node) {
       }
     }
   }
+  // Driver / Controller stack editor (channels only)
+  if (def.category === 'channels') gRenderDriverControllerUI(node, def);
   gParamsForm.querySelectorAll('input[type=range]').forEach(r => {
     const key = r.id.replace('p_',''), v = gParamsForm.querySelector(`#val_${key}`);
     r.addEventListener('input', () => { if (v) v.textContent = formatVal(r.value); gUpdateNodeParam(node.id, key, parseFloat(r.value)); gDoAutoGen(); });
@@ -3428,6 +3465,19 @@ function _gUpdateLiveMeta(msg) {
   }
   // Per-node meters + heat glow on the graph canvas, edge-flow march
   gApplyNodeMetrics(msg);
+  // Live Runtime readouts on channel nodes (spec: Runtime section). Read-only
+  // per-frame values (Current Value, Phase, Beat, …) that never serialize.
+  // Gated on element existence so non-channel nodes are untouched.
+  if (msg.node_values) {
+    for (const [nid, vals] of Object.entries(msg.node_values)) {
+      for (const [k, v] of Object.entries(vals)) {
+        const el = document.getElementById('rt-' + nid + '-' + k);
+        if (!el) continue;
+        const x = Number(v), a = Math.abs(x);
+        el.textContent = a >= 100 ? x.toFixed(1) : a >= 1 ? x.toFixed(2) : x.toFixed(3);
+      }
+    }
+  }
   // Feed into Diagnostics tab — diagRender is exposed globally from the IIFE
   if (typeof window.diagRender === 'function') {
     const paused = typeof window.diagIsPaused === 'function' ? window.diagIsPaused() : false;
@@ -3629,10 +3679,10 @@ function _gOpenLiveWs() {
 
     let msg;
     try { msg = JSON.parse(evt.data); } catch { return; }
-    if (!msg.img) return;
 
-    // Draw JPEG onto the canvas
-    if (gLiveCanvas) {
+    // Draw JPEG onto the canvas (only when an image is present — channel-only
+    // graphs stream metadata-only frames with img:null).
+    if (msg.img && gLiveCanvas) {
       try {
         const bin = atob(msg.img);
         const u8  = new Uint8Array(bin.length);
@@ -3649,13 +3699,13 @@ function _gOpenLiveWs() {
       } catch (_) {}
     }
 
-    // Update status bar. `fps` is cook throughput; when the limiter is on the
-    // delivered rate is target_fps, so show both rather than a misleading one.
-    gSetStatus(`Live · frame ${msg.frame} · ${msg.cook_ms}ms · ${msg.fps} fps`
-      + (msg.fps_limit ? ` · limited ${msg.target_fps}` : ''));
-
-    // Update live metadata readout overlay
-    _gUpdateLiveMeta(msg);
+    // Update status bar + live metadata readouts. Always runs — even for
+    // metadata-only frames from channel-only graphs (no image render target).
+    if (msg.frame !== undefined) {
+      gSetStatus(`Live · frame ${msg.frame} · ${msg.cook_ms}ms · ${msg.fps} fps`
+        + (msg.fps_limit ? ` · limited ${msg.target_fps}` : ''));
+      _gUpdateLiveMeta(msg);
+    }
   };
 
   ws.onerror = () => {};
@@ -5791,6 +5841,147 @@ for (const id of ['graph-canvas-preset', 'graph-canvas-preset-mob']) {
 }
 
 // ── Serialize graph to plain object ───────────────────────────
+// ── Driver / Controller stack editor (Exposed Parameter & Runtime UI) ──
+// Channels only. Renders, per editable param: a Driver dropdown (manual vs an
+// upstream node output) and a Controller chain (multiply/add/clamp/curve/…).
+// Every mutation writes node.drivers / node.controllers and calls gSave().
+function gRenderDriverControllerUI(node, def) {
+  if (!node || def.category !== 'channels') return;
+  if (!node.drivers) node.drivers = {};
+  if (!node.controllers) node.controllers = {};
+
+  const wrap = document.createElement('div');
+  wrap.className = 'dc-editor';
+  const hdr = document.createElement('div');
+  hdr.className = 'section-label';
+  hdr.textContent = 'Drivers & Controllers';
+  wrap.appendChild(hdr);
+
+  for (const p of Object.keys(def.params || {})) {
+    const row = document.createElement('div');
+    row.className = 'dc-param';
+    const lbl = document.createElement('div');
+    lbl.className = 'dc-param-name';
+    lbl.textContent = p;
+    row.appendChild(lbl);
+
+    // Driver select: Manual + every other node's outputs
+    const drvSel = document.createElement('select');
+    drvSel.className = 'dc-driver-sel';
+    drvSel.id = `dc_drv_${p}`;
+    const noneOpt = document.createElement('option');
+    noneOpt.value = ''; noneOpt.textContent = 'Manual';
+    drvSel.appendChild(noneOpt);
+    for (const u of gNodes) {
+      if (u.id === node.id) continue;
+      const udef = gNodeDefs[u.method_id];
+      if (!udef) continue;
+      for (const op of Object.keys(udef.outputs || {})) {
+        const o = document.createElement('option');
+        o.value = u.id + '::' + op;
+        o.textContent = `${udef.name} · ${op}`;
+        drvSel.appendChild(o);
+      }
+    }
+    const cur = node.drivers[p];
+    if (cur) drvSel.value = cur.node + '::' + cur.port;
+    drvSel.addEventListener('change', () => {
+      if (!drvSel.value) delete node.drivers[p];
+      else {
+        const [nid, port] = drvSel.value.split('::');
+        node.drivers[p] = { node: nid, port };
+      }
+      gSave();
+    });
+    row.appendChild(drvSel);
+
+    const stack = document.createElement('div');
+    stack.className = 'dc-stack';
+    stack.id = `dc_stack_${p}`;
+    row.appendChild(stack);
+
+    const addBtn = document.createElement('button');
+    addBtn.className = 'dc-add-btn';
+    addBtn.textContent = '+ Controller';
+    addBtn.addEventListener('click', () => {
+      if (!node.controllers[p]) node.controllers[p] = [];
+      node.controllers[p].push({ type: 'multiply', factor: 1, enabled: true });
+      gSave();
+      gRenderControllerStack(node, p, stack);
+    });
+    row.appendChild(addBtn);
+
+    wrap.appendChild(row);
+    gRenderControllerStack(node, p, stack);
+  }
+  gParamsForm.appendChild(wrap);
+}
+
+function gRenderControllerStack(node, p, stack) {
+  stack.innerHTML = '';
+  const chain = node.controllers[p] || [];
+  chain.forEach((c, i) => {
+    const crow = document.createElement('div');
+    crow.className = 'dc-ctrl' + (c.enabled === false ? ' dc-disabled' : '');
+
+    const typeSel = document.createElement('select');
+    typeSel.className = 'dc-ctrl-type';
+    for (const t of ['multiply','add','clamp','curve','invert','smoothstep','abs','negate']) {
+      const o = document.createElement('option'); o.value = t; o.textContent = t;
+      typeSel.appendChild(o);
+    }
+    typeSel.value = c.type || 'multiply';
+    typeSel.addEventListener('change', () => { c.type = typeSel.value; gSave(); gRenderControllerStack(node, p, stack); });
+    crow.appendChild(typeSel);
+
+    const fields = document.createElement('span');
+    fields.className = 'dc-ctrl-fields';
+    if (c.type === 'multiply') fields.appendChild(gDcNum('factor', c.factor ?? 1, v => { c.factor = v; gSave(); }));
+    else if (c.type === 'add') fields.appendChild(gDcNum('offset', c.offset ?? 0, v => { c.offset = v; gSave(); }));
+    else if (c.type === 'clamp') {
+      fields.appendChild(gDcNum('min', c.min ?? 0, v => { c.min = v; gSave(); }));
+      fields.appendChild(gDcNum('max', c.max ?? 1, v => { c.max = v; gSave(); }));
+    } else if (c.type === 'curve') {
+      const ta = document.createElement('input');
+      ta.type = 'text'; ta.className = 'dc-ctrl-points';
+      ta.value = (c.points || [[0,0],[1,1]]).map(pt => pt.join(',')).join('; ');
+      ta.title = 'x,y pairs separated by ;';
+      ta.addEventListener('change', () => {
+        try {
+          c.points = ta.value.split(';').map(s => s.trim().split(',').map(Number))
+            .filter(a => a.length === 2 && a.every(Number.isFinite));
+          gSave();
+        } catch {}
+      });
+      fields.appendChild(ta);
+    }
+    crow.appendChild(fields);
+
+    const en = document.createElement('input');
+    en.type = 'checkbox'; en.checked = c.enabled !== false; en.title = 'Enabled';
+    en.addEventListener('change', () => { c.enabled = en.checked; gSave(); });
+    crow.appendChild(en);
+
+    const up = document.createElement('button'); up.className = 'dc-ctrl-mv'; up.textContent = '↑';
+    up.addEventListener('click', () => { if (i > 0) { [chain[i-1], chain[i]] = [chain[i], chain[i-1]]; gSave(); gRenderControllerStack(node, p, stack); } });
+    const down = document.createElement('button'); down.className = 'dc-ctrl-mv'; down.textContent = '↓';
+    down.addEventListener('click', () => { if (i < chain.length - 1) { [chain[i+1], chain[i]] = [chain[i], chain[i+1]]; gSave(); gRenderControllerStack(node, p, stack); } });
+    const del = document.createElement('button'); del.className = 'dc-ctrl-del'; del.textContent = '✕';
+    del.addEventListener('click', () => { chain.splice(i, 1); gSave(); gRenderControllerStack(node, p, stack); });
+    crow.appendChild(up); crow.appendChild(down); crow.appendChild(del);
+
+    stack.appendChild(crow);
+  });
+}
+
+function gDcNum(name, val, onInput) {
+  const inp = document.createElement('input');
+  inp.type = 'number'; inp.step = 'any'; inp.className = 'dc-ctrl-num';
+  inp.value = val; inp.title = name;
+  inp.addEventListener('input', () => onInput(parseFloat(inp.value) || 0));
+  return inp;
+}
+
 function gSerializeGraph() {
   return {
     version: 1,
@@ -5814,6 +6005,8 @@ function gSerializeGraph() {
         start_frame:    n.start_frame || 0,
         end_frame:      n.end_frame   || 0,
         keyframes:      n.keyframes   || [],
+        drivers:       n.drivers      || {},
+        controllers:   n.controllers  || {},
         x:              Math.round(n.x),
         y:              Math.round(n.y),
         render:         !!n.render,
@@ -5859,7 +6052,7 @@ async function gLoadGraph(data) {
     } else {
       const def = gNodeDefs[n.method_id];
       if (!def) continue;
-      const node = { id: n.id, method_id: n.method_id, params: n.params || gDefaultParams(def), animParams: n.animParams || {}, paramKeyframes: n.paramKeyframes || {}, start_frame: n.start_frame || 0, end_frame: n.end_frame || 0, keyframes: n.keyframes || [], x: n.x, y: n.y, render: !!n.render, dirty: true };
+      const node = { id: n.id, method_id: n.method_id, params: n.params || gDefaultParams(def), animParams: n.animParams || {}, paramKeyframes: n.paramKeyframes || {}, start_frame: n.start_frame || 0, end_frame: n.end_frame || 0, keyframes: n.keyframes || [], drivers: n.drivers || {}, controllers: n.controllers || {}, x: n.x, y: n.y, render: !!n.render, dirty: true };
       gNodes.push(node);
       gRenderNode(node);
     }

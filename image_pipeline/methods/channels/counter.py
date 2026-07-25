@@ -13,6 +13,24 @@ from ...core.utils import seed_all
         tags=["chop", "time", "integer", "generator"],
         inputs={"reset": "SCALAR", "step": "SCALAR"},
         outputs={"value": "SCALAR", "phase": "SCALAR"},
+        runtime={
+            "value": {
+                "type": "numeric",
+                "label": "Value",
+                "observable": True
+            },
+            "phase": {
+                "type": "output",
+                "label": "Phase",
+                "observable": True
+            }
+        },
+        signal={
+            "reset": "control",
+            "step": "numeric",
+            "value": "output",
+            "phase": "output"
+        },
         params={
             "start": {"description": "counter start value", "default": 0},
             "end": {"description": "counter end value (inclusive)", "default": 100},

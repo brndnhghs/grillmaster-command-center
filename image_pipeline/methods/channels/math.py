@@ -13,6 +13,18 @@ from ...core.utils import seed_all
         tags=["chop", "math", "operator"],
         inputs={"a": "SCALAR", "b": "SCALAR"},
         outputs={"value": "SCALAR"},
+        runtime={
+            "value": {
+                "type": "numeric",
+                "label": "Value",
+                "observable": True
+            }
+        },
+        signal={
+            "a": "numeric",
+            "b": "numeric",
+            "value": "output"
+        },
         params={
             "operation": {"description": "math operation",
                           "choices": ["add", "sub", "mul", "div", "mod", "pow",

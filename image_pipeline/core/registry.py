@@ -35,6 +35,8 @@ class MethodMeta:
         module: str = "",
         new_image_contract: bool = False,
         is_time_varying: bool = True,
+        runtime: dict[str, dict] | None = None,
+        signal: dict[str, str] | None = None,
     ):
         self.id = id
         self.name = name
@@ -64,6 +66,11 @@ class MethodMeta:
         # and upstream inputs — no frame number, no injected time, no RNG-per-frame.
         # Default True is the safe fallback: when in doubt, re-cook every frame.
         self.is_time_varying: bool = is_time_varying
+        # Read-only live readouts (Runtime section) — declared per node.
+        self.runtime: dict[str, dict] = runtime or {}
+        # Optional per-port signal-class overrides (numeric/control/output/event)
+        # for the Exposed Parameter & Runtime UI port-color system.
+        self.signal: dict[str, str] = signal or {}
 
     @property
     def label(self) -> str:
@@ -105,6 +112,8 @@ def method(
     deprecated: bool = False,
     new_image_contract: bool = False,
     is_time_varying: bool = True,
+    runtime: dict[str, dict] | None = None,
+    signal: dict[str, str] | None = None,
 ):
     """Decorator: register a generation method."""
 
@@ -134,6 +143,8 @@ def method(
             module=fn.__module__,
             new_image_contract=new_image_contract,
             is_time_varying=is_time_varying,
+            runtime=runtime,
+            signal=signal,
         )
         _registry[id] = meta
         _categories.setdefault(category, []).append(id)
