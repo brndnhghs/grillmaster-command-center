@@ -461,10 +461,7 @@ function _tlDiagEnsureEl() {
     'border:1px solid var(--border);border-radius:var(--radius-s,6px);box-shadow:var(--shadow-2);' +
     'pointer-events:none;opacity:.94';
   el.innerHTML = '<div style="color:var(--muted)">playback…</div>';
-<<<<<<< HEAD
-=======
   // gMainPreview holds the <img>; make it the positioning context.
->>>>>>> e8e914e2179763c737478a76917a6345f23718fe
   if (getComputedStyle(gMainPreview).position === 'static') gMainPreview.style.position = 'relative';
   gMainPreview.appendChild(el);
   _tlDiag.el = el;
@@ -528,11 +525,7 @@ function tlLoadFrame(timelineFrame) {
   if (!hit) { tlClearPreview(); return; }
   const { seqName, localFrame, srcOffset, ver } = hit;
   const fileFrame = localFrame + (srcOffset || 0);
-<<<<<<< HEAD
-  const keyOf = f => `${seqName}:${f}`;
-=======
   const keyOf = f => `${seqName}:${f}:${ver || ''}`;
->>>>>>> e8e914e2179763c737478a76917a6345f23718fe
   const cacheKey = keyOf(fileFrame);
 
   const token = ++_tlFrameSeq;
@@ -546,11 +539,7 @@ function tlLoadFrame(timelineFrame) {
     _tlDisplayBlob(cached);
   } else {
     const _t0 = performance.now();
-<<<<<<< HEAD
-    _tlFetchFrame(seqName, fileFrame).then(blob => {
-=======
     _tlFetchFrame(seqName, fileFrame, ver).then(blob => {
->>>>>>> e8e914e2179763c737478a76917a6345f23718fe
       if (token !== _tlFrameSeq) return;  // the playhead has already moved on
       if (blob) {
         _tlDiagRec({ kind: 'miss', fetchMs: performance.now() - _t0 });
@@ -570,11 +559,7 @@ function tlLoadFrame(timelineFrame) {
   for (let i = 1; i <= _TL_PREFETCH; i++) {
     const k = keyOf(fileFrame + i);
     if (_tlFrameCache.has(k)) continue;
-<<<<<<< HEAD
-    _tlFetchFrame(seqName, fileFrame + i)
-=======
     _tlFetchFrame(seqName, fileFrame + i, ver)
->>>>>>> e8e914e2179763c737478a76917a6345f23718fe
       .then(blob => { if (blob) _tlFrameCache.set(k, blob); });
   }
 
@@ -2714,11 +2699,8 @@ function gShowEdgeCtx(eid, x, y) {
   document.getElementById('ctx-feedback').style.display = '';
   const edge = gEdges.find(e => e.id===eid);
   document.getElementById('ctx-feedback').textContent = edge?.feedback ? 'Remove feedback' : 'Mark as feedback';
-<<<<<<< HEAD
-=======
   // Must be an explicit value: #graph-ctx-menu is `display:none` in the
   // stylesheet, so clearing the inline style re-hides the menu.
->>>>>>> e8e914e2179763c737478a76917a6345f23718fe
   gCtxMenu.style.cssText = `left:${x}px;top:${y}px;display:block`;
 }
 document.getElementById('ctx-feedback').addEventListener('click', () => {
@@ -2742,9 +2724,6 @@ gNodesEl.addEventListener('contextmenu', e => {
   document.getElementById('ctx-feedback').style.display = 'none';
   document.getElementById('ctx-group-sel').style.display = hasMultiSel ? '' : 'none';
   document.getElementById('ctx-ungroup').style.display = isGroup ? '' : 'none';
-<<<<<<< HEAD
-  gCtxMenu.style.left=e.clientX+'px'; gCtxMenu.style.top=e.clientY+'px'; gCtxMenu.style.display='block';
-=======
   // Group nodes have no method_id, so there is no source file to flag.
   const flagItem = document.getElementById('ctx-flag-broken');
   flagItem.style.display = isGroup ? 'none' : '';
@@ -2756,7 +2735,6 @@ gNodesEl.addEventListener('contextmenu', e => {
 document.getElementById('ctx-flag-broken').addEventListener('click', () => {
   gCtxMenu.style.display = 'none';
   if (gSelectedNode) gOpenBrokenFlagModal(gSelectedNode);
->>>>>>> e8e914e2179763c737478a76917a6345f23718fe
 });
 document.getElementById('ctx-group-sel').addEventListener('click', () => { gCtxMenu.style.display='none'; gGroupSelectedNodes(); });
 document.getElementById('ctx-ungroup').addEventListener('click', () => { gCtxMenu.style.display='none'; if (gSelectedNode) gUngroup(gSelectedNode); });
