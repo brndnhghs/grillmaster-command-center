@@ -276,6 +276,10 @@ try { gPreviewExpanded = localStorage.getItem('graph-preview-expanded') === 'tru
 
 // Single live-preview img that gets its src swapped in-place each frame
 let gLivePreviewImg = null;
+// Timeline playback paints to a <canvas> via drawImage(ImageBitmap), not an
+// <img>.src swap: decode happens ahead of the playhead (see _tlAcquireBitmap),
+// so the display path is a sub-ms GPU blit with no per-frame JPEG decode.
+let gTlCanvas = null;
 
 function gGraphFrameUpdate(b64) {
   // Don't touch the main preview during rendering — timeline handles all display.
@@ -332,11 +336,16 @@ function tlClipAtFrame(timelineFrame) {
 }
 
 function tlClearPreview() {
-  if (gLivePreviewImg) {
-    gLivePreviewImg.style.opacity = '0';
-  }
+  if (gTlCanvas) gTlCanvas.style.opacity = '0';
+  if (gLivePreviewImg) gLivePreviewImg.style.opacity = '0';
 }
 
+// key → ImageBitmap. The cache holds *decoded* frames, not compressed blobs:
+// a cache hit must avoid the JPEG decode, not just the network round-trip.
+// Storing blobs (the old design) still paid a full main-thread decode on every
+// painted frame, so even a 100%-hit playthrough dropped frames to decode. An
+// ImageBitmap is GPU-ready; painting it is a drawImage blit measured in tens of
+// microseconds. Evicted bitmaps are .close()d to release their backing memory.
 const _tlFrameCache = new Map();
 // Fetches currently on the wire, keyed like the cache. A frame already in
 // flight is awaited rather than requested a second time: the read-ahead below
@@ -345,6 +354,10 @@ const _tlFrameCache = new Map();
 // code then issued a duplicate request for it — doubling load exactly when
 // playback was already behind (measured 40 requests in a second that needed 24).
 const _tlInflight = new Map(); // key → Promise<Blob|null>
+// Decode-in-flight dedup, same idea one layer up: fetch → createImageBitmap is
+// a single logical acquire, so the display path and the read-ahead never decode
+// the same frame twice.
+const _tlDecoding = new Map(); // key → Promise<ImageBitmap|null>
 // Bumped on every load. Responses arrive out of order, so one that comes back
 // against a stale token belongs to a frame the playhead has already passed and
 // must not be painted over a newer one. Pausing deliberately does *not* bump it:
@@ -367,6 +380,45 @@ function _tlFetchFrame(seqName, fileFrame, ver) {
   return p;
 }
 
+// Resolves to a cached, decoded ImageBitmap (or null if the frame is missing /
+// undecodable). Fetch and decode are both deduped and the result is memoised in
+// _tlFrameCache, so this is the single entry point for both the display path and
+// the read-ahead. createImageBitmap decodes off the main thread, so pre-warming
+// the cache costs the playhead nothing. `ver` is the clip render stamp — it must
+// thread through so a re-render's frames don't collide with the stale cache.
+function _tlAcquireBitmap(seqName, fileFrame, ver) {
+  const key = `${seqName}:${fileFrame}:${ver || ''}`;
+  const have = _tlFrameCache.get(key);
+  if (have) return Promise.resolve(have);
+  const pending = _tlDecoding.get(key);
+  if (pending) return pending;
+  const p = _tlFetchFrame(seqName, fileFrame, ver)
+    .then(blob => (blob ? createImageBitmap(blob).catch(() => null) : null))
+    .then(bmp => {
+      if (bmp) {
+        // A concurrent acquire could have raced us to the cache; keep the
+        // resident one and close the duplicate rather than leak it.
+        const existing = _tlFrameCache.get(key);
+        if (existing && existing !== bmp) { try { bmp.close(); } catch {} return existing; }
+        _tlFrameCache.set(key, bmp);
+      }
+      return bmp;
+    })
+    .finally(() => { if (_tlDecoding.get(key) === p) _tlDecoding.delete(key); });
+  _tlDecoding.set(key, p);
+  return p;
+}
+
+// Close every resident bitmap and empty the cache. Called when the preview pane
+// is torn down (graph clear, entering live mode) so decoded frames — which can
+// be tens of MB each at high resolution — don't linger until GC.
+function _tlResetCache() {
+  for (const bmp of _tlFrameCache.values()) {
+    if (bmp && bmp.close) { try { bmp.close(); } catch {} }
+  }
+  _tlFrameCache.clear();
+}
+
 // ── Streaming-playback diagnostics ───────────────────────────────
 // A live readout of what the timeline preview is actually doing during
 // playback, so a hitch can be attributed instead of guessed at. Off by default
@@ -375,7 +427,7 @@ function _tlFetchFrame(seqName, fileFrame, ver) {
 //   fps      painted frames/s vs the target — the headline "is it smooth" number
 //   jitter   worst gap between painted frames (ms); a spike is a visible stutter
 //   drops    frames the playback clock skipped over to stay on wall time
-//   buffer   frames resident in the read-ahead cache (of _TL_CACHE_MAX)
+//   buffer   frames resident in the read-ahead cache (of _tlCacheMax)
 //   fetch    cache hit-rate, plus avg/worst network fetch latency for misses
 //   miss     frames the server had no render for (fetch 404) — not a perf issue
 const _tlDiag = {
@@ -413,7 +465,7 @@ function _tlDiagCompute() {
   const served = hit + miss;
   return {
     target, fps, jitter,
-    drops, buffer: _tlFrameCache.size, inflight: _tlInflight.size,
+    drops, buffer: _tlFrameCache.size, inflight: _tlInflight.size + _tlDecoding.size,
     hitRate: served ? hit / served : 1,
     fetchAvg: fetchN ? fetchSum / fetchN : 0, fetchWorst, missing,
     budget: 1000 / target,
@@ -438,7 +490,7 @@ function _tlDiagRender() {
       row('fps', `<b style="${fpsCol}">${d.fps}</b> / ${d.target}`) +
       row('jitter', `${d.jitter.toFixed(0)}ms`, jitCol) +
       row('drops/s', d.drops, dropCol) +
-      row('buffer', `${d.buffer}/${_TL_CACHE_MAX}` + (d.inflight ? ` (+${d.inflight})` : '')) +
+      row('buffer', `${d.buffer}/${_tlCacheMax}` + (d.inflight ? ` (+${d.inflight})` : '')) +
       row('cache hit', `${Math.round(d.hitRate * 100)}%`, hitCol) +
       row('fetch', d.fetchAvg ? `${d.fetchAvg.toFixed(0)}/${d.fetchWorst.toFixed(0)}ms` : '—') +
       (d.missing ? row('no render', d.missing, warn) : '');
@@ -484,41 +536,68 @@ function tlPlaybackDiag(on) {
 }
 window.tlPlaybackDiag = tlPlaybackDiag;
 
-function _tlDisplayBlob(blob) {
-  // Don't clobber the live canvas
-  if (gLiveMode) return;
-  const url = URL.createObjectURL(blob);
-  if (!gLivePreviewImg) {
-    gMainPreview.innerHTML = '';
-    gLivePreviewImg = document.createElement('img');
-    gLivePreviewImg.addEventListener('click', () => gOpenFullscreen());
-    gMainPreview.appendChild(gLivePreviewImg);
-    gMainPreview.classList.add('active');
-    gPreviewShow();
-  }
-  if (gLivePreviewImg._tlUrl) URL.revokeObjectURL(gLivePreviewImg._tlUrl);
-  gLivePreviewImg._tlUrl = url;
-  gLivePreviewImg.src = url;
-  gLivePreviewImg.style.display = '';
-  gLivePreviewImg.style.opacity = '1';
-  // Timestamp the *painted* frame, not just the src assignment: decode() resolves
-  // once the new bitmap is ready to show, so the interval between these marks is
-  // the true on-screen frame cadence — a hitch is a gap here, wherever it came
-  // from (slow fetch, main-thread decode, GC). See _tlDiag.
-  if (_tlDiag.enabled) {
-    if (gLivePreviewImg.decode) gLivePreviewImg.decode().then(_tlDiagPaint, _tlDiagPaint);
-    else _tlDiagPaint();
-  }
+// Mount (or re-mount, if the preview pane was rebuilt out from under us) the
+// timeline playback canvas. Mirrors _tlDiagEnsureEl's orphan check so a stale
+// detached reference re-creates cleanly.
+function _tlEnsureCanvas() {
+  if (gTlCanvas && !gTlCanvas.isConnected) gTlCanvas = null;
+  if (gTlCanvas) return gTlCanvas;
+  gMainPreview.innerHTML = '';
+  gTlCanvas = document.createElement('canvas');
+  gTlCanvas.id = 'tl-playback-canvas';
+  gTlCanvas.style.cssText =
+    'max-width:100%;max-height:100%;object-fit:contain;display:block;cursor:pointer';
+  gTlCanvas.addEventListener('click', () => gOpenFullscreen());
+  gMainPreview.appendChild(gTlCanvas);
+  gMainPreview.classList.add('active');
+  gPreviewShow();
+  return gTlCanvas;
 }
 
-// Read-ahead window. At 24-60fps a frame is on screen for 16-42ms, less than a
-// fetch+decode round-trip, so a single frame of look-ahead was never a buffer:
-// one slow fetch — or the frame-skipping the playback clock does to stay on wall
-// time — desynced it, and from then on every frame was a cache miss that stalled
-// on full fetch latency. A deeper window keeps frames ahead of the playhead
-// resident even across a skip; in-flight dedup stops it re-requesting.
-const _TL_PREFETCH  = 6;
-const _TL_CACHE_MAX = 12;
+function _tlDisplayBitmap(bmp) {
+  // Don't clobber the live canvas
+  if (gLiveMode || !bmp) return;
+  const cv = _tlEnsureCanvas();
+  if (cv.width !== bmp.width || cv.height !== bmp.height) {
+    cv.width = bmp.width; cv.height = bmp.height;
+  }
+  // Re-size the buffer to this frame's real footprint (and the current fps), so
+  // the memory budget tracks the sequence actually playing.
+  const bytes = bmp.width * bmp.height * 4;
+  if (bytes !== _tlFrameBytes) {
+    _tlFrameBytes = bytes;
+    _tlRecalcBudget(Math.max(1, parseFloat(tlFps?.value) || 24));
+  }
+  const ctx = cv.getContext('2d');
+  ctx.drawImage(bmp, 0, 0);
+  cv.style.display = '';
+  cv.style.opacity = '1';
+  // drawImage has already put the pixels on the backing store, so this marks the
+  // true on-screen cadence — a hitch is a gap between these, wherever it came
+  // from (slow fetch, decode falling behind the playhead, GC). See _tlDiag.
+  if (_tlDiag.enabled) _tlDiagPaint();
+}
+
+// Read-ahead window and cache, sized by a decoded-pixel MEMORY budget rather
+// than a fixed frame count. Decode-ahead is the whole point — a frame is only
+// "ready" once its bitmap is resident — so the window must cover fetch+decode
+// latency across a skip, but a decoded ImageBitmap costs ~W·H·4 bytes, so a
+// fixed count that is comfortable at 768×512 (24MB) is 500MB at 4K. Sizing by
+// budget instead gives low-res frames a deep, resilient buffer and high-res
+// frames a shallow, bounded one — recomputed from the live frame footprint and
+// the timeline fps by _tlRecalcBudget(). In-flight + decode dedup stop the
+// wider prefetch from re-requesting frames already on the wire.
+const _TL_MEM_BUDGET = 64 * 1024 * 1024;   // ~64 MB of decoded frames resident
+let _tlFrameBytes = 768 * 512 * 4;         // last-seen frame footprint (seed guess)
+let _tlCacheMax   = 16;                     // dynamic; see _tlRecalcBudget
+let _tlPrefetch   = 8;                      // dynamic; see _tlRecalcBudget
+function _tlRecalcBudget(fps) {
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  _tlCacheMax = clamp(Math.floor(_TL_MEM_BUDGET / Math.max(1, _tlFrameBytes)), 8, 120);
+  // ~0.5s of look-ahead in wall time: higher fps buffers more frames for the
+  // same horizon. Always leave headroom below the cache cap.
+  _tlPrefetch = clamp(Math.round(Math.max(1, fps) * 0.5), 6, _tlCacheMax - 2);
+}
 
 function tlLoadFrame(timelineFrame) {
   const hit = tlClipAtFrame(timelineFrame);
@@ -530,23 +609,25 @@ function tlLoadFrame(timelineFrame) {
 
   const token = ++_tlFrameSeq;
 
-  // Check cache first. Keep the hit in the cache — a short back-scrub or a skip
+  // Check cache first. A hit is a decoded bitmap — paint is a pure blit, no
+  // decode on the critical path. Keep it resident: a short back-scrub or a skip
   // that re-lands on it should still hit; eviction below drops it once the
-  // playhead has moved past.
+  // playhead has moved well past.
   const cached = _tlFrameCache.get(cacheKey);
   if (cached) {
     _tlDiagRec({ kind: 'hit', fetchMs: 0 });
-    _tlDisplayBlob(cached);
+    _tlDisplayBitmap(cached);
   } else {
     const _t0 = performance.now();
-    _tlFetchFrame(seqName, fileFrame, ver).then(blob => {
+    _tlAcquireBitmap(seqName, fileFrame, ver).then(bmp => {
       if (token !== _tlFrameSeq) return;  // the playhead has already moved on
-      if (blob) {
+      if (bmp) {
         _tlDiagRec({ kind: 'miss', fetchMs: performance.now() - _t0 });
-        _tlFrameCache.set(cacheKey, blob); _tlDisplayBlob(blob); return;
+        _tlDisplayBitmap(bmp); return;
       }
       _tlDiagRec({ kind: 'missing', fetchMs: performance.now() - _t0 });
-      if (!gLivePreviewImg) {
+      if (!gTlCanvas || !gTlCanvas.isConnected) {
+        gTlCanvas = null;
         gMainPreview.innerHTML = '<div style="padding:20px;color:var(--muted);font-size:12px;text-align:center;">No frame rendered yet</div>';
         gMainPreview.classList.add('active');
         gPreviewShow();
@@ -554,21 +635,41 @@ function tlLoadFrame(timelineFrame) {
     });
   }
 
-  // Pre-fetch the next several frames so the buffer survives a slow fetch or a
-  // skipped frame instead of collapsing back to synchronous per-frame fetches.
-  for (let i = 1; i <= _TL_PREFETCH; i++) {
-    const k = keyOf(fileFrame + i);
-    if (_tlFrameCache.has(k)) continue;
-    _tlFetchFrame(seqName, fileFrame + i, ver)
-      .then(blob => { if (blob) _tlFrameCache.set(k, blob); });
+  // Decode-ahead the frames the playhead will actually reach next. During
+  // playback this follows the loop wrap (and clip-to-clip boundaries) through
+  // tlClipAtFrame, so the frames at the loop seam are decoded ~0.5s before the
+  // wrap instead of being a cold miss the instant playback jumps back to the
+  // start — that cold miss at the seam was the loop hitch. Paused/scrubbing keeps
+  // the plain forward walk. _tlAcquireBitmap dedups fetch+decode and memoises.
+  const _st   = parseInt(tlStart?.value) || 0;
+  const _en   = parseInt(tlEnd?.value);
+  const _span = Number.isFinite(_en) ? Math.max(1, _en - _st + 1) : 0;
+  const _wrap = tlPlaying && _span > 0;
+  for (let i = 1; i <= _tlPrefetch; i++) {
+    let seq = seqName, ff, vv = ver;
+    if (_wrap) {
+      const tf = _st + (((timelineFrame - _st + i) % _span) + _span) % _span;
+      const h = tlClipAtFrame(tf);
+      if (!h) continue;                       // seam lands on a gap in the timeline
+      seq = h.seqName; ff = h.localFrame + (h.srcOffset || 0); vv = h.ver;
+    } else {
+      ff = fileFrame + i;
+    }
+    const k = `${seq}:${ff}:${vv || ''}`;
+    if (_tlFrameCache.has(k) || _tlDecoding.has(k)) continue;
+    _tlAcquireBitmap(seq, ff, vv);
   }
 
   // Evict the frames furthest behind the playhead first — insertion order tracks
   // forward playback, so the oldest key is the one longest past — keeping the
-  // read-ahead window resident.
-  while (_tlFrameCache.size > _TL_CACHE_MAX) {
+  // read-ahead window resident. Close the bitmap to free its backing memory; the
+  // displayed frame lives on the canvas, not this handle, so this is safe even
+  // if the evicted key is the one on screen.
+  while (_tlFrameCache.size > _tlCacheMax) {
     const firstKey = _tlFrameCache.keys().next().value;
+    const bmp = _tlFrameCache.get(firstKey);
     _tlFrameCache.delete(firstKey);
+    if (bmp && bmp.close) { try { bmp.close(); } catch {} }
   }
 }
 
@@ -2877,6 +2978,7 @@ function gMountClientCanvas(canvas) {
   if (canvas._mounted && canvas.parentNode === gMainPreview) return;
   gMainPreview.innerHTML = '';
   gLivePreviewImg = null; gLiveCanvas = null; gLiveImg = null;
+  gTlCanvas = null; _tlResetCache();
   canvas.id = 'client3d-canvas';
   canvas.style.maxWidth = '100%';
   canvas.style.maxHeight = '100%';
@@ -3767,6 +3869,7 @@ async function _gSetLiveImpl(on) {
     gMainPreview.innerHTML = '';
     gLivePreviewImg = null;
     gLiveCanvas = null; gLiveImg = null;
+    gTlCanvas = null; _tlResetCache();
 
     const useWs = 'WebSocket' in window;
     if (useWs) {
@@ -5258,8 +5361,10 @@ tlNext.addEventListener('click', () => {
 // setInterval to 1Hz when hidden, which made playback advance 28 frames in 26
 // seconds and then resume that far behind.
 function _tlPlayFrom(frame) {
-  _tlPlayClock = { at: performance.now(), frame, fps: Math.max(1, parseFloat(tlFps.value) || 24) };
+  const fps = Math.max(1, parseFloat(tlFps.value) || 24);
+  _tlPlayClock = { at: performance.now(), frame, fps };
   _tlPlayShown = frame;
+  _tlRecalcBudget(fps);  // prefetch depth tracks fps; re-based on every scrub/fps change
 }
 
 function _tlHaltPlayback() {
@@ -5583,7 +5688,7 @@ function gDoClear() {
   gNodes=[]; gEdges=[]; gSelectedNode=null; gSelectedEdge=null; gSelectedNodes.clear();
   gPanX=0; gPanY=0; gApplyPan();
   gNodesEl.innerHTML=''; gEdgesEl.innerHTML=''; gOutputStrip.innerHTML='';
-  gLivePreviewImg = null; gMainPreview.innerHTML=''; gMainPreview.classList.remove('active');
+  gLivePreviewImg = null; gTlCanvas = null; _tlResetCache(); gMainPreview.innerHTML=''; gMainPreview.classList.remove('active');
   gPreviewHide(); gShowNodeParams(null);
   if (isMobile()) gParamsSheetClose();
   tlClips = []; localStorage.removeItem('tl-clips'); renderTimelineRuler();
@@ -5712,7 +5817,7 @@ async function gLoadGraph(data) {
   gSelectedNodes.clear();
   gPanX = 0; gPanY = 0; gApplyPan();
   gNodesEl.innerHTML = ''; gEdgesEl.innerHTML = ''; gOutputStrip.innerHTML = '';
-  gLivePreviewImg = null; gMainPreview.innerHTML = ''; gMainPreview.classList.remove('active');
+  gLivePreviewImg = null; gTlCanvas = null; _tlResetCache(); gMainPreview.innerHTML = ''; gMainPreview.classList.remove('active');
   gPreviewHide(); gShowNodeParams(null);
   if (isMobile()) gParamsSheetClose();
   gSetStatus('');

@@ -83,11 +83,11 @@ from ...core.animation import capture_frame
         "anim_mode": {
             "description": "animation mode for testing temporal continuity",
             "choices": ["none", "pattern_morph", "scalar_sweep", "field_rotate"],
-            "default": "none",
+            "default": "pattern_morph",
         },
         "anim_speed": {
             "description": "animation speed multiplier (can be driven by SCALAR)",
-            "min": 0.0, "max": 5.0, "default": 0.5,
+            "min": 0.0, "max": 5.0, "default": 1,
         },
     },
 )
@@ -104,7 +104,7 @@ def method_test_node(out_dir: Path, seed: int, params=None):
         params = {}
 
     t = float(params.get("time", 0.0))
-    anim_mode = params.get("anim_mode", "none")
+    anim_mode = params.get("anim_mode", "pattern_morph")
     # anim_speed is a rate, not a per-pixel quantity: the _field_ read here only
     # ever took the mean, so it advertised per-pixel support that never existed.
     anim_speed = float(params.get("anim_speed", 0.5))
