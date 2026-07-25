@@ -2695,6 +2695,7 @@ let gCtxTarget = null;
 function gShowEdgeCtx(eid, x, y) {
   gSelectedEdge = eid; gCtxTarget = 'edge';
   document.getElementById('ctx-del-node').style.display = 'none';
+  document.getElementById('ctx-source').style.display = 'none';
   document.getElementById('ctx-del-edge').style.display = '';
   document.getElementById('ctx-feedback').style.display = '';
   const edge = gEdges.find(e => e.id===eid);
@@ -2722,6 +2723,8 @@ gNodesEl.addEventListener('contextmenu', e => {
   document.getElementById('ctx-del-node').style.display = '';
   document.getElementById('ctx-del-edge').style.display = 'none';
   document.getElementById('ctx-feedback').style.display = 'none';
+  // Source code only applies to real (registry-backed) nodes, not groups.
+  document.getElementById('ctx-source').style.display = isGroup ? 'none' : '';
   document.getElementById('ctx-group-sel').style.display = hasMultiSel ? '' : 'none';
   document.getElementById('ctx-ungroup').style.display = isGroup ? '' : 'none';
   // Group nodes have no method_id, so there is no source file to flag.
@@ -2736,6 +2739,7 @@ document.getElementById('ctx-flag-broken').addEventListener('click', () => {
   gCtxMenu.style.display = 'none';
   if (gSelectedNode) gOpenBrokenFlagModal(gSelectedNode);
 });
+document.getElementById('ctx-source').addEventListener('click', () => { gCtxMenu.style.display='none'; if (gSelectedNode) gOpenNodeSource(gSelectedNode); });
 document.getElementById('ctx-group-sel').addEventListener('click', () => { gCtxMenu.style.display='none'; gGroupSelectedNodes(); });
 document.getElementById('ctx-ungroup').addEventListener('click', () => { gCtxMenu.style.display='none'; if (gSelectedNode) gUngroup(gSelectedNode); });
 document.addEventListener('click', () => { gCtxMenu.style.display='none'; });
@@ -6574,6 +6578,161 @@ gLoadBrokenNodes();
 gLoadMethodPalette();
 gLoadPortTypes();
 gLoadGroupPresets();
+
+// ── Node source-code editor ────────────────────────────────────
+// Right-click a node → "Source code" opens the backing module in an
+// editable code block. Applying reuses the Node Doctor apply/undo
+// endpoints (server writes a backup then hot-reloads via watchdog).
+(function() {
+  const modal    = document.getElementById('node-source-modal');
+  const titleEl  = document.getElementById('nsm-title');
+  const pathEl   = document.getElementById('nsm-path');
+  const codeEl   = document.getElementById('nsm-code');
+  const statusEl = document.getElementById('nsm-status');
+  const saveBtn  = document.getElementById('nsm-save-btn');
+  const undoBtn  = document.getElementById('nsm-undo-btn');
+  const closeBtn = document.getElementById('nsm-close-btn');
+  const closeBtn2= document.getElementById('nsm-close-btn2');
+
+  let curMethodId = null;
+  let backupId    = null;
+  let loaded      = '';   // last-loaded source, for dirty detection
+  let busy        = false;
+
+  function setStatus(msg, kind) {
+    statusEl.textContent = msg || '';
+    statusEl.className = kind || '';
+  }
+
+  function close() {
+    modal.classList.remove('open');
+    curMethodId = null;
+    backupId = null;
+  }
+
+  async function open(nodeId) {
+    const node = gNodes.find(n => n.id === nodeId);
+    if (!node || !node.method_id) return;
+    curMethodId = node.method_id;
+    backupId = null;
+    const def = gNodeDefs[node.method_id];
+    titleEl.textContent = `Source — ${def?.name || node.method_id}`;
+    pathEl.textContent = 'loading…';
+    codeEl.value = '';
+    codeEl.readOnly = true;
+    saveBtn.disabled = true;
+    undoBtn.style.display = 'none';
+    setStatus('');
+    modal.classList.add('open');
+    codeEl.focus();
+
+    try {
+      const r = await fetch(`/api/node-doctor/source/${encodeURIComponent(node.method_id)}`);
+      const d = await r.json();
+      if (!d.path) {
+        pathEl.textContent = `#${node.method_id}`;
+        codeEl.value = '';
+        setStatus('No editable source file for this node (built-in or client-side node).', 'err');
+        return;
+      }
+      pathEl.textContent = d.path;
+      loaded = d.source || '';
+      codeEl.value = loaded;
+      codeEl.readOnly = false;
+      saveBtn.disabled = false;
+      codeEl.scrollTop = 0;
+    } catch (err) {
+      pathEl.textContent = `#${node.method_id}`;
+      setStatus('⚠ Failed to load source: ' + err.message, 'err');
+    }
+  }
+
+  async function save() {
+    if (busy || curMethodId == null) return;
+    const source = codeEl.value;
+    if (source === loaded) { setStatus('No changes to apply.', ''); return; }
+    busy = true;
+    saveBtn.disabled = true;
+    setStatus('Applying & hot-reloading…', '');
+    try {
+      const r = await fetch('/api/node-doctor/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ method_id: curMethodId, source }),
+      });
+      const d = await r.json();
+      if (!d.ok) {
+        setStatus('⚠ Apply failed: ' + (d.error || 'unknown'), 'err');
+        saveBtn.disabled = false;
+        return;
+      }
+      backupId = d.backup_id;
+      loaded = source;
+      undoBtn.style.display = '';
+      undoBtn.disabled = false;
+      // Wait for the watchdog hot-reload confirmation (same signal the
+      // Node Doctor listens for), or fall back after a short timeout.
+      const confirmed = await new Promise(resolve => {
+        const t = setTimeout(() => resolve(false), 5000);
+        window.addEventListener('nd-hot-reload', () => { clearTimeout(t); resolve(true); }, { once: true });
+      });
+      setStatus(confirmed
+        ? '✓ Hot-reload complete — method updated.'
+        : '⚠ Applied, but hot-reload confirmation not received (server may need restart).',
+        confirmed ? 'ok' : 'err');
+      saveBtn.disabled = false;
+    } catch (err) {
+      setStatus('⚠ ' + err.message, 'err');
+      saveBtn.disabled = false;
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function undo() {
+    if (busy || !backupId) return;
+    busy = true;
+    undoBtn.disabled = true;
+    setStatus('Reverting…', '');
+    try {
+      const r = await fetch(`/api/node-doctor/undo/${backupId}`, { method: 'POST' });
+      const d = await r.json();
+      if (d.ok) {
+        backupId = null;
+        undoBtn.style.display = 'none';
+        setStatus('↩ Reverted to previous version. Re-open to reload.', 'ok');
+      } else {
+        setStatus('⚠ Undo failed: ' + (d.error || 'unknown'), 'err');
+        undoBtn.disabled = false;
+      }
+    } catch (err) {
+      setStatus('⚠ ' + err.message, 'err');
+      undoBtn.disabled = false;
+    } finally {
+      busy = false;
+    }
+  }
+
+  saveBtn.addEventListener('click', save);
+  undoBtn.addEventListener('click', undo);
+  closeBtn.addEventListener('click', close);
+  closeBtn2.addEventListener('click', close);
+  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+  // Cmd/Ctrl+S applies from inside the editor; Esc closes.
+  codeEl.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); save(); }
+    else if (e.key === 'Escape') { e.preventDefault(); close(); }
+    else if (e.key === 'Tab') {
+      // Insert a real tab instead of moving focus out of the editor.
+      e.preventDefault();
+      const s = codeEl.selectionStart, en = codeEl.selectionEnd;
+      codeEl.value = codeEl.value.slice(0, s) + '    ' + codeEl.value.slice(en);
+      codeEl.selectionStart = codeEl.selectionEnd = s + 4;
+    }
+  });
+
+  window.gOpenNodeSource = open;
+})();
 
 // ── NODE DOCTOR ────────────────────────────────────────────────
 (function() {
