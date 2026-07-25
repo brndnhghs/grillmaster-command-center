@@ -9,7 +9,7 @@ PIPELINE_PORT=7860
 DATA_DIR="/Users/admin/Documents/GitHub/grillmaster-command-center/data"
 CHORD_DIR="/Users/admin/Documents/GitHub/grillmaster-command-center/chord_bot"
 PIPELINE_DIR="/Users/admin/Documents/GitHub/grillmaster-command-center/image_pipeline"
-VENV_PYTHON="/Users/admin/Documents/GitHub/hermes-agent/venv/bin/python"
+VENV_PYTHON="/Users/admin/Documents/GitHub/grillmaster-command-center/.venv/bin/python"
 LOG_DIR="$DATA_DIR/logs"
 mkdir -p "$LOG_DIR"
 

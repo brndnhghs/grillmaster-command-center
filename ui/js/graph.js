@@ -2684,7 +2684,7 @@ function gShowEdgeCtx(eid, x, y) {
   document.getElementById('ctx-feedback').style.display = '';
   const edge = gEdges.find(e => e.id===eid);
   document.getElementById('ctx-feedback').textContent = edge?.feedback ? 'Remove feedback' : 'Mark as feedback';
-  gCtxMenu.style.cssText = `left:${x}px;top:${y}px;display:`;
+  gCtxMenu.style.cssText = `left:${x}px;top:${y}px;display:block`;
 }
 document.getElementById('ctx-feedback').addEventListener('click', () => {
   const e = gEdges.find(e => e.id===gSelectedEdge);
@@ -2707,7 +2707,7 @@ gNodesEl.addEventListener('contextmenu', e => {
   document.getElementById('ctx-feedback').style.display = 'none';
   document.getElementById('ctx-group-sel').style.display = hasMultiSel ? '' : 'none';
   document.getElementById('ctx-ungroup').style.display = isGroup ? '' : 'none';
-  gCtxMenu.style.left=e.clientX+'px'; gCtxMenu.style.top=e.clientY+'px'; gCtxMenu.style.display='';
+  gCtxMenu.style.left=e.clientX+'px'; gCtxMenu.style.top=e.clientY+'px'; gCtxMenu.style.display='block';
 });
 document.getElementById('ctx-group-sel').addEventListener('click', () => { gCtxMenu.style.display='none'; gGroupSelectedNodes(); });
 document.getElementById('ctx-ungroup').addEventListener('click', () => { gCtxMenu.style.display='none'; if (gSelectedNode) gUngroup(gSelectedNode); });
