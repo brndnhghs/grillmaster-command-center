@@ -1983,17 +1983,6 @@ const _gCatIcons = {
     widgetArea.className = 'gnode-widget';
     centerCol.appendChild(widgetArea);
     _renderNodeWidget(node, def, widgetArea);
-    if (rtEl) centerCol.appendChild(rtEl);
-    body.appendChild(centerCol);
-    const rightCol = document.createElement('div');
-    rightCol.className = 'gnode-body-col gnode-col-right';
-    if (outPortsEl && outPortsEl.children.length) rightCol.appendChild(outPortsEl);
-    body.appendChild(rightCol);
-    el.appendChild(body);
-  } else {
-    if (portsEl.children.length) el.appendChild(portsEl);
-    if (outPortsEl && outPortsEl.children.length) el.appendChild(outPortsEl);
-    if (rtEl) el.appendChild(rtEl);
     // LFO waveform preview canvas (visual-spec: live waveform with playhead)
     if (node.method_id === '__lfo__') {
       const canvasDiv = document.createElement('div');
@@ -2003,7 +1992,7 @@ const _gCatIcons = {
       canvas.className = 'gnode-lfo-canvas';
       canvas.width = 200; canvas.height = 50;
       canvasDiv.appendChild(canvas);
-      el.appendChild(canvasDiv);
+      centerCol.appendChild(canvasDiv);
       // Initial draw (static preview until live WS frame arrives)
       setTimeout(() => _renderLfoWaveform(node.id, 0, node.params), 0);
     }
@@ -2016,10 +2005,21 @@ const _gCatIcons = {
       canvas.className = 'gnode-counter-canvas';
       canvas.width = 200; canvas.height = 28;
       canvasDiv.appendChild(canvas);
-      el.appendChild(canvasDiv);
+      centerCol.appendChild(canvasDiv);
       // Initial draw (static preview until live WS frame arrives)
       setTimeout(() => _renderCounterProgress(node.id, 0, 0, 0, node.params), 0);
     }
+    if (rtEl) centerCol.appendChild(rtEl);
+    body.appendChild(centerCol);
+    const rightCol = document.createElement('div');
+    rightCol.className = 'gnode-body-col gnode-col-right';
+    if (outPortsEl && outPortsEl.children.length) rightCol.appendChild(outPortsEl);
+    body.appendChild(rightCol);
+    el.appendChild(body);
+  } else {
+    if (portsEl.children.length) el.appendChild(portsEl);
+    if (outPortsEl && outPortsEl.children.length) el.appendChild(outPortsEl);
+    if (rtEl) el.appendChild(rtEl);
   }
 
   gNodesEl.appendChild(el);
