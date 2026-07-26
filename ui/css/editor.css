@@ -869,9 +869,10 @@
     border-right: 1px solid rgba(255,255,255,0.06); }
   .gnode-col-right { flex: 0 0 auto; align-items: flex-end; }
   .gnode-widget {
-    width: 100%; min-height: 40px;
-    display: flex; align-items: center; justify-content: center;
+    display: none; width: 100%; min-height: 0;
+    align-items: center; justify-content: center;
   }
+  .gnode-widget.has-content { display: flex; }
   .gnode-port-row {
     display: flex; align-items: center; padding: 3px 0; position: relative;
     min-height: 28px;

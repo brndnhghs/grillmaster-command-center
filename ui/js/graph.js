@@ -1646,7 +1646,8 @@ const _gCatIcons = {
      svg.appendChild(c);
    }
 
-   area.appendChild(svg);
+    area.classList.add('has-content');
+    area.appendChild(svg);
  }
 
  function gRenderNode(node) {
