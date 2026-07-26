@@ -1662,6 +1662,21 @@ function gRenderNode(node) {
     chip.textContent = (dflt === undefined || dflt === null) ? '–' : formatVal(dflt);
     return chip;
   }
+  // Static input-port chip: shows the param default (dimmed). WS node_values
+  // only carries OUTPUTS, so inputs can never be live — a frozen live-style
+  // chip would mislead. This matches the screenshot's greyed Min/Max/Time boxes.
+  // Gated to channels + signal-typed ports (same gates as output chips).
+  function _mkStaticChip(name) {
+    const sig = def.signal && def.signal[name];
+    if (def.category !== 'channels' || !sig) return null;
+    const dflt = (node.params && name in node.params) ? node.params[name]
+               : (def.params && def.params[name] && def.params[name].default);
+    if (dflt === undefined || dflt === null) return null;
+    const chip = document.createElement('span');
+    chip.className = 'port-chip sig-' + sig + ' static';
+    chip.textContent = formatVal(dflt);
+    return chip;
+  }
   // Left: image input
   { const row = document.createElement('div');
     row.className = 'gnode-port-row input';
@@ -1715,6 +1730,7 @@ function gRenderNode(node) {
       const outType = (def.outputs || {})[outName];
       row.className = 'gnode-port-row paired';
       row.appendChild(_mkPort(name, type, 'input'));
+      const cs = _mkStaticChip(name); if (cs) row.appendChild(cs);
       row.appendChild(_mkLabel(name));
       row.appendChild(_mkLabel(outName));
       row.appendChild(_mkPort(outName, outType, 'output'));
@@ -1722,6 +1738,7 @@ function gRenderNode(node) {
     } else {
       row.className = 'gnode-port-row input';
       row.appendChild(_mkPort(name, type, 'input'));
+      const cs = _mkStaticChip(name); if (cs) row.appendChild(cs);
       row.appendChild(_mkLabel(name));
     }
     portsEl.appendChild(row);

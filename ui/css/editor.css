@@ -914,6 +914,8 @@
   .port-chip.sig-control  { color: #448aff; border-color: rgba(68,138,255,0.5); }
   .port-chip.sig-output   { color: #00e676; border-color: rgba(0,230,118,0.5); }
   .port-chip.sig-event    { color: #ff9100; border-color: rgba(255,145,0,0.5); }
+  /* Static input chips: dimmed to subordinate them to live output chips. */
+  .port-chip.static { opacity: 0.55; pointer-events: none; }
 
   /* ── Driver / Controller editor (Exposed Parameter & Runtime UI, channels) ── */
   .dc-editor {
