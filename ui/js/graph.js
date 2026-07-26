@@ -63,6 +63,120 @@ function gPortLabel(name) {
   return m[name] || name;
 }
 
+// ── Waveform math for live LFO visualization ─────────────────────────────
+// Matches Python implementation in channels/lfo.py exactly (same closed-form
+// formulas for sine/triangle/saw/square/gaussian with bias).
+// random/noise are indicative preview-only (not seed-deterministic).
+function _lfoWaveformAt(waveform, t, bias) {
+  t = t < 0 ? t - Math.floor(t) : t - Math.trunc(t); // [0,1)
+  bias = bias || 0;
+  switch (waveform) {
+    case 'sine':
+      return Math.sin(t * 2 * Math.PI);
+    case 'triangle': {
+      const peak = Math.max(0.05, Math.min(0.95, 0.5 + bias * 0.45));
+      return t < peak ? -1 + 2 * (t / peak) : 1 - 2 * ((t - peak) / (1 - peak));
+    }
+    case 'saw':
+      return 2 * (t - Math.floor(t + 0.5));
+    case 'square': {
+      const duty = Math.max(0.05, Math.min(0.95, 0.5 + bias * 0.45));
+      return t < duty ? 1 : -1;
+    }
+    case 'random':
+      return (Math.floor(t * 8) % 2 === 0) ? 0.6 : -0.8;
+    case 'noise': {
+      const p = t * 10;
+      const idx = Math.floor(p) % 10;
+      const fade = p % 1;
+      const sf = fade * fade * (3 - 2 * fade);
+      const ha = ((idx * 127.1 + 311.7) % 1) / 1;
+      const hb = (((idx + 1) * 127.1 + 311.7) % 1) / 1;
+      return (ha * 2 - 1) + ((hb * 2 - 1) - (ha * 2 - 1)) * sf;
+    }
+    case 'gaussian': {
+      const mean = Math.max(0.05, Math.min(0.95, 0.5 + bias * 0.4));
+      const sigma = 0.15;
+      return Math.exp(-((t - mean) ** 2) / (2 * sigma * sigma)) * 2 - 1;
+    }
+    default:
+      return 0;
+  }
+}
+
+function _renderLfoWaveform(nid, phaseNorm, params) {
+  const canvas = document.getElementById('lfo-canvas-' + nid);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const wf = (params && params.waveform) || 'sine';
+  const bias = (params && params.bias) || 0;
+  // Coerce play: param may be string "False" in stored node
+  const playRaw = params && params.play;
+  const play = !(playRaw === false || playRaw === 'False' || playRaw === 0 || playRaw === '0');
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.offsetWidth || 200, h = 50;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  // Background
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.fillRect(0, 0, w, h);
+
+  // Center line
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, h / 2);
+  ctx.lineTo(w, h / 2);
+  ctx.stroke();
+
+  // Quarter grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  for (let gx = 0.25; gx < 1; gx += 0.25) {
+    const gpx = gx * w;
+    ctx.beginPath();
+    ctx.moveTo(gpx, 0);
+    ctx.lineTo(gpx, h);
+    ctx.stroke();
+  }
+
+  // Waveform curve
+  const steps = 200;
+  const amp = h * 0.42;
+  const color = play ? '#00e676' : '#ff9100';
+  ctx.beginPath();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.lineJoin = 'round';
+  for (let i = 0; i <= steps; i++) {
+    const ti = i / steps;
+    const y = _lfoWaveformAt(wf, ti, bias);
+    const px = ti * w;
+    const py = h / 2 - y * amp;
+    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+
+  // Playhead
+  const ph = (phaseNorm !== undefined && phaseNorm !== null && !isNaN(phaseNorm)) ? phaseNorm : 0;
+  const phx = Math.max(0, Math.min(w, ph * w));
+  const phy = h / 2 - _lfoWaveformAt(wf, ph, bias) * amp;
+  ctx.strokeStyle = '#ff5252';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(phx, 0);
+  ctx.lineTo(phx, h);
+  ctx.stroke();
+  ctx.fillStyle = '#ff5252';
+  ctx.beginPath();
+  ctx.arc(phx, phy, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  canvas.classList.toggle('paused', !play);
+}
+
 // Wire compatibility: IMAGE←FIELD is allowed; otherwise types must match
 function gPortsCompatible(srcDot, dstDot) {
   if (!srcDot || !dstDot) return true;
@@ -1781,6 +1895,19 @@ function gRenderNode(node) {
       rtEl.appendChild(row);
     }
     el.appendChild(rtEl);
+    // LFO waveform preview canvas (visual-spec: live waveform with playhead)
+    if (node.method_id === '__lfo__') {
+      const canvasDiv = document.createElement('div');
+      canvasDiv.className = 'gnode-lfo-canvas-wrap';
+      const canvas = document.createElement('canvas');
+      canvas.id = 'lfo-canvas-' + node.id;
+      canvas.className = 'gnode-lfo-canvas';
+      canvas.width = 200; canvas.height = 50;
+      canvasDiv.appendChild(canvas);
+      el.appendChild(canvasDiv);
+      // Initial draw (static preview until live WS frame arrives)
+      setTimeout(() => _renderLfoWaveform(node.id, 0, node.params), 0);
+    }
   }
 
   gNodesEl.appendChild(el);
@@ -3307,6 +3434,15 @@ function _gUpdateLiveMeta(msg) {
         // Inline live value chip at the port (visual spec: values live ON the node)
         const pc = document.getElementById('pc-' + nid + '-' + k);
         if (pc) pc.textContent = a >= 100 ? x.toFixed(1) : a >= 1 ? x.toFixed(2) : x.toFixed(3);
+      }
+    }
+    // Live LFO waveform playhead — one separate loop per WS frame
+    for (const [nid, vals] of Object.entries(msg.node_values)) {
+      if (typeof vals.phase === 'number') {
+        const lfoNode = gNodes.find(n => n.id === nid);
+        if (lfoNode && lfoNode.method_id === '__lfo__') {
+          _renderLfoWaveform(nid, vals.phase, lfoNode.params);
+        }
       }
     }
   }

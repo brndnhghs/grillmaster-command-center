@@ -917,6 +917,25 @@
   /* Static input chips: dimmed to subordinate them to live output chips. */
   .port-chip.static { opacity: 0.55; pointer-events: none; }
 
+  /* ── LFO waveform preview canvas ── */
+  .gnode-lfo-canvas-wrap {
+    margin: 6px 10px 4px;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  .gnode-lfo-canvas {
+    display: block;
+    width: 100%;
+    height: 50px;
+    border-radius: 4px;
+    background: rgba(0,0,0,0.12);
+  }
+  .gnode-lfo-canvas.paused {
+    opacity: 0.6;
+    filter: saturate(0.5);
+  }
+
   /* ── Driver / Controller editor (Exposed Parameter & Runtime UI, channels) ── */
   .dc-editor {
     border-top: 1px solid var(--border);

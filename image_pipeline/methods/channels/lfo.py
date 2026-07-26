@@ -11,9 +11,11 @@ from ...core.utils import seed_all
 
 # ── Per-node state for play/pause/reset ──────────────────────────────────
 # Keyed by _node_id (injected by GraphExecutor into run_params).
-# Stores {"playing_frame": int, "prev_resetpulse": float, "resetting": bool}.
-# Only populated when play controls are explicitly engaged; absent in
-# backward-compat/default mode so existing graphs are unaffected.
+# Stores per-instance tracking: {"playing_frame": int, "prev_resetpulse": float,
+#                                 "prev_reset": float, "prev_frame": int}.
+# Populated whenever _node_id is available (i.e. when running through the
+# graph executor — always in graph/live mode, never in standalone batch/test
+# calls where backward-compat frame-based computation is used).
 _LFO_STATE: dict[str, dict] = {}
 # Lazy-prune counter — module-level to avoid Pyright function-attribute error
 _LFO_PRUNE_COUNTER = 0
@@ -22,7 +24,7 @@ _LFO_PRUNE_COUNTER = 0
 @method(id="__lfo__", name="LFO", category="channels",
         tags=["chop", "time", "oscillator", "generator"],
         inputs={"rate": "SCALAR", "phase_offset": "SCALAR", "amplitude": "SCALAR",
-                "reset": "SCALAR"},
+                "reset_in": "SCALAR", "octave": "SCALAR"},
         outputs={"value": "SCALAR", "bipolar": "SCALAR", "phase": "SCALAR"},
         runtime={
             "value": {
@@ -45,7 +47,8 @@ _LFO_PRUNE_COUNTER = 0
             "rate": "numeric",
             "phase_offset": "numeric",
             "amplitude": "numeric",
-            "reset": "control",
+            "reset_in": "control",
+            "octave": "numeric",
             "value": "output",
             "bipolar": "output",
             "phase": "output"
@@ -144,6 +147,11 @@ def method_lfo(out_dir: Path, seed: int, params=None):
     if amp_override is not None:
         max_val = min_val + float(amp_override)
 
+    # Octave Control input: alters rate exponentially (rate *= 2^octave)
+    octave_override = params.get("octave")
+    if octave_override is not None:
+        rate *= 2.0 ** float(octave_override)
+
     # ── Stateful play/pause/reset ───────────────────────────────────────
     # When _node_id is present (graph executor), use accumulated state so
     # play/pause/reset interact correctly. Without _node_id (standalone
@@ -159,14 +167,18 @@ def method_lfo(out_dir: Path, seed: int, params=None):
             "prev_resetpulse": 0.0,
             "prev_reset": 0.0,
             "prev_frame": frame,
-            "_was_playing": True,
         })
 
-        _was_playing = state.get("_was_playing", True)
-
         # ── Frame delta — only accumulate when playing ──
+        # NOTE: if the timeline frame regresses (scrubbing backward) we detect
+        # it here and resync playing_frame so the LFO doesn't freeze.  The
+        # `max(0, ...)` guard handles single-frame skips; the regression check
+        # handles multi-frame backward jumps.
         _delta = max(0, frame - state["prev_frame"]) if play else 0
         state["prev_frame"] = frame
+        if _delta <= 0 and not play and frame < state.get("prev_regression_check", frame):
+            state["playing_frame"] = frame
+        state["prev_regression_check"] = frame
 
         # ── Reset pulse (button — rising edge detection) ──
         if resetpulse_val and not state.get("prev_resetpulse", 0.0):
@@ -176,7 +188,7 @@ def method_lfo(out_dir: Path, seed: int, params=None):
 
         # ── Reset condition from SCALAR input ──
         if not reset_active:
-            _reset_in = params.get("reset", 0.0)
+            _reset_in = params.get("reset_in", 0.0)
             if isinstance(_reset_in, (int, float)):
                 prev_reset = state.get("prev_reset", 0.0)
                 if resetcondition == "rising_edge" and prev_reset <= 0.5 < _reset_in:
@@ -206,8 +218,6 @@ def method_lfo(out_dir: Path, seed: int, params=None):
             state["playing_frame"] = 0
         else:
             state["playing_frame"] += _delta
-
-        state["_was_playing"] = play
 
         # Use stateful frame
         frame = state["playing_frame"]
@@ -280,20 +290,25 @@ def method_lfo(out_dir: Path, seed: int, params=None):
     else:
         bipolar = 0.0
 
-    # ── Apply amp scaling and offset ─────────────────────────────────────
-    bipolar_scaled = bipolar * amp_scale + offset
-
+    # ── Apply amp scaling and offset ──
+    # NOTE: offset is added AFTER range mapping (not scaled by _range), matching
+    # the User Spec for LFO: "Values output from the CHOP can be scaled (amp)
+    # and have an offset added to them."  The SCALAR `amplitude` input port
+    # (legacy) sets max_val = min_val + amplitude and is distinct from `amp`.
+    # The `reset_in` SCALAR input port was renamed from `reset` to avoid
+    # collision with the `reset` bool toggle param.
+    bipolar_amp = bipolar * amp_scale
     if reset_active:
         bipolar = 0.0
-        bipolar_scaled = 0.0
+        bipolar_amp = 0.0
         phase_norm = 0.0
         val = 0.0
     elif bipolar_mode:
-        val = bipolar_scaled
+        val = bipolar_amp + offset
     else:
         mid = (min_val + max_val) / 2
         _range = (max_val - min_val) / 2
-        val = mid + bipolar_scaled * _range
+        val = mid + bipolar_amp * _range + offset
 
     return {"value": float(val), "bipolar": float(bipolar),
             "phase": float(phase_norm)}
