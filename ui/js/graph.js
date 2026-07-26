@@ -1708,15 +1708,19 @@ function gRenderNode(node) {
   const nonImgOut = Object.entries(def.outputs || {}).filter(([,t]) => t !== 'image');
 
   // Build pairing: outName → inName (first input whose name starts with outName, same type)
+  // Disabled for channels nodes — the flex-row layout separates inputs (left) and outputs
+  // (right) into distinct columns, so paired rows can't span the gap.
   const pairedOut  = new Map();   // outName -> inName
   const usedInPort = new Set();
-  for (const [outName, outType] of nonImgOut) {
-    if (outName === 'luminance') continue;
-    for (const [inName, inType] of nonImgIn) {
-      if (!usedInPort.has(inName) && inType === outType && inName.startsWith(outName)) {
-        pairedOut.set(outName, inName);
-        usedInPort.add(inName);
-        break;
+  if (def.category !== 'channels') {
+    for (const [outName, outType] of nonImgOut) {
+      if (outName === 'luminance') continue;
+      for (const [inName, inType] of nonImgIn) {
+        if (!usedInPort.has(inName) && inType === outType && inName.startsWith(outName)) {
+          pairedOut.set(outName, inName);
+          usedInPort.add(inName);
+          break;
+        }
       }
     }
   }
@@ -1744,6 +1748,11 @@ function gRenderNode(node) {
     portsEl.appendChild(row);
   }
 
+  // For channels nodes, separate outputs into their own container so the
+  // flex-row layout can place them in the right column.
+  const outPortsEl = def.category === 'channels' ? document.createElement('div') : null;
+  if (outPortsEl) outPortsEl.className = 'gnode-ports';
+
   // Render native outputs (no matching input) — right-side only, stacked below
   for (const [name, type] of nonImgOut) {
     if (pairedOut.has(name)) continue;
@@ -1752,10 +1761,11 @@ function gRenderNode(node) {
     row.appendChild(_mkLabel(name));
     const c = _mkChip(name, 'output'); if (c) row.appendChild(c);
     row.appendChild(_mkPort(name, type, 'output'));
-    portsEl.appendChild(row);
+    (outPortsEl || portsEl).appendChild(row);
   }
 
   if (portsEl.children.length) el.appendChild(portsEl);
+  if (outPortsEl && outPortsEl.children.length) el.appendChild(outPortsEl);
 
   // ── Runtime section (channels only) ──────────────────────────
   // Read-only live readouts (Current Value, Phase, Beat, …) that update every
