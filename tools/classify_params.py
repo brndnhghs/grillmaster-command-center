@@ -51,7 +51,6 @@ NON_SPATIAL_NAMES = {
     "width", "height", "canvas_w", "canvas_h", "size", "resolution",
     "n_seeds", "steps", "n_steps", "iterations", "iters", "substeps",
     "anim_mode", "anim_speed", "render_style", "source", "palette_name",
-    "prebake", "start_frame", "end_frame",
 }
 
 # Calls that force their argument to a single number.

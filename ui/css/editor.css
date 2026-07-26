@@ -936,6 +936,25 @@
     filter: saturate(0.5);
   }
 
+  /* ── Counter progress bar canvas ── */
+  .gnode-counter-canvas-wrap {
+    margin: 6px 10px 4px;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  .gnode-counter-canvas {
+    display: block;
+    width: 100%;
+    height: 28px;
+    border-radius: 4px;
+    background: rgba(0,0,0,0.12);
+  }
+  .gnode-counter-canvas.triggered {
+    border-color: rgba(0,230,118,0.4);
+    box-shadow: 0 0 6px rgba(0,230,118,0.15);
+  }
+
   /* ── Driver / Controller editor (Exposed Parameter & Runtime UI, channels) ── */
   .dc-editor {
     border-top: 1px solid var(--border);

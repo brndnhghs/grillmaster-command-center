@@ -30,10 +30,8 @@ Node graph execution engine — wires registered methods into a DAG (Directed Ac
 | `x, y` | float | Canvas position |
 | `render` | bool | Whether this node is the render terminal |
 | `dirty` | bool | True = re-cook; False = use cached output |
-| `start_frame, end_frame` | int | Per-node animation timing window |
 | `keyframes` | list[dict] | Legacy keyframes |
 | `paramKeyframes` | dict[str, list[dict]] | Per-param keyframe tracks |
-| `prebake` | int | Extra simulation steps before first output |
 | `drivers` | dict[str, dict] | Channel-node only. Maps param → `{node, port}` declaring the param's value comes from an upstream output instead of the static field. |
 | `controllers` | dict[str, list[dict]] | Channel-node only. Maps param → ordered chain of controller dicts (math transforms) applied sequentially to the driven value. |
 

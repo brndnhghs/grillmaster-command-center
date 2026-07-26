@@ -1,4 +1,5 @@
-"""CHOP-like channel generator nodes.
+"""
+CHOP-like channel generator nodes.
 Auto-imported by channels/__init__.py.
 """
 from __future__ import annotations
@@ -9,10 +10,14 @@ import numpy as np
 from ...core.registry import method
 from ...core.utils import seed_all
 
+# Per-node trigger latch for hysteresis
+_COUNTER_STATE: dict[str, dict] = {}
+
+
 @method(id="__counter__", name="Counter", category="channels",
         tags=["chop", "time", "integer", "generator"],
-        inputs={"reset": "SCALAR", "step": "SCALAR"},
-        outputs={"value": "SCALAR", "phase": "SCALAR"},
+        inputs={"reset": "SCALAR", "step": "SCALAR", "signal": "SCALAR"},
+        outputs={"value": "SCALAR", "phase": "SCALAR", "triggered": "SCALAR"},
         runtime={
             "value": {
                 "type": "numeric",
@@ -23,13 +28,20 @@ from ...core.utils import seed_all
                 "type": "output",
                 "label": "Phase",
                 "observable": True
+            },
+            "triggered": {
+                "type": "numeric",
+                "label": "Triggered",
+                "observable": True
             }
         },
         signal={
             "reset": "control",
             "step": "numeric",
+            "signal": "numeric",
             "value": "output",
-            "phase": "output"
+            "phase": "output",
+            "triggered": "output"
         },
         params={
             "start": {"description": "counter start value", "default": 0},
@@ -38,16 +50,20 @@ from ...core.utils import seed_all
             "mode": {"description": "counter mode",
                      "choices": ["once", "loop", "pingpong"],
                      "default": "loop"},
+            "threshup": {"description": "Trigger Threshold", "default": 0.5},
+            "threshdown": {"description": "Release Threshold", "default": 0.3},
+            "release": {"description": "If on, use trigger threshold also as release", "default": True},
         })
 def method_counter(out_dir: Path, seed: int, params=None):
     """Integer counter that advances per frame.
 
     Counts from start to end, then wraps or reverses based on mode.
-    Can be wired into simulation n_frames to control sub-stepping.
+    Emits triggered=1 when signal input exceeds threshup.
 
     Outputs:
         value (SCALAR): current count
         phase (SCALAR): normalized position 0->1 between start and end
+        triggered (SCALAR): 1 if signal input exceeds trigger threshold
     """
     if params is None:
         params = {}
@@ -64,11 +80,8 @@ def method_counter(out_dir: Path, seed: int, params=None):
     if reset_val is not None:
         frame = int(reset_val)
 
-    # The GraphExecutor injects a per-frame Timeline (params["_timeline"]) but
-    # does NOT inject an integer `frame` for CHOP generators. Derive the live
-    # frame from the Timeline so the counter advances on every rendered frame
-    # instead of staying pinned at frame 0 (which froze driver-driven graphs
-    # and culled them as static in the liveness gate).
+    # Derive the live frame from the injected Timeline so the counter
+    # advances on every rendered frame instead of staying pinned at 0.
     if frame == 0:
         _tl = params.get("_timeline")
         if _tl is not None:
@@ -80,7 +93,7 @@ def method_counter(out_dir: Path, seed: int, params=None):
 
     total = end - start
     if total <= 0:
-        return {"value": float(start), "phase": 0.0}
+        return {"value": float(start), "phase": 0.0, "triggered": 0.0}
 
     raw = frame * step_size
     if mode == "once":
@@ -92,4 +105,29 @@ def method_counter(out_dir: Path, seed: int, params=None):
         val = start + (raw % (total + 1))
 
     phase = (val - start) / total if total > 0 else 0.0
-    return {"value": float(val), "phase": float(phase)}
+
+    # Schmitt-trigger hysteresis for the triggered output
+    # Latch state keyed by _node_id so threshold crossings are stable
+    signal_val = params.get("signal")
+    threshup = float(params.get("threshup", 0.5))
+    threshdown = float(params.get("threshdown", 0.3))
+    release_shared = str(params.get("release", "True")).lower() in ("true", "1", "yes")
+    eff_thr_dn = threshup if release_shared else threshdown
+    node_id = params.get("_node_id", "")
+
+    if signal_val is not None and float(signal_val) > threshup:
+        triggered = 1.0
+    elif signal_val is not None and float(signal_val) < eff_thr_dn:
+        triggered = 0.0
+    elif signal_val is not None and node_id and node_id in _COUNTER_STATE:
+        # Within the hysteresis window — hold the last state
+        triggered = 1.0 if _COUNTER_STATE[node_id].get("triggered", False) else 0.0
+    else:
+        # Unwired or no signal: green while counting (val > start)
+        triggered = 1.0 if val > start else 0.0
+
+    # Persist latch for next frame
+    if node_id:
+        _COUNTER_STATE[node_id] = {"triggered": triggered > 0.5, "frame": frame}
+
+    return {"value": float(val), "phase": float(phase), "triggered": float(triggered)}

@@ -104,7 +104,7 @@ function _lfoWaveformAt(waveform, t, bias) {
   }
 }
 
-function _renderLfoWaveform(nid, phaseNorm, params) {
+function _renderLfoWaveform(nid, phaseNorm, params, bipolarVal) {
   const canvas = document.getElementById('lfo-canvas-' + nid);
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
@@ -120,6 +120,29 @@ function _renderLfoWaveform(nid, phaseNorm, params) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
 
+  // Phase-indexed buffer for random/noise — store streamed bipolar values
+  const BIN = 200;
+  let buf = canvas._lfoBuf;
+  if (!buf || buf.wf !== wf || buf.bias !== bias) {
+    buf = { wf, bias, data: new Float32Array(BIN + 1), filled: new Uint8Array(BIN + 1) };
+    canvas._lfoBuf = buf;
+  }
+  if (bipolarVal !== undefined && bipolarVal !== null && !isNaN(bipolarVal) && phaseNorm !== undefined && phaseNorm !== null) {
+    const bidx = Math.min(BIN, Math.floor(phaseNorm * BIN));
+    buf.data[bidx] = bipolarVal;
+    buf.filled[bidx] = 1;
+  }
+  const useBuf = (wf === 'random' || wf === 'noise');
+  // Pre-fill buffer with preview math so the wave shows immediately,
+  // then gets overwritten by streamed bipolar values as they arrive.
+  if (useBuf && buf.filled[0] === 0) {
+    for (let _i = 0; _i <= BIN; _i++) {
+      const _t = _i / BIN;
+      buf.data[_i] = _lfoWaveformAt(wf, _t, bias);
+      buf.filled[_i] = 1;
+    }
+  }
+  const amp = h * 0.42;
   // Background
   ctx.fillStyle = 'rgba(0,0,0,0.18)';
   ctx.fillRect(0, 0, w, h);
@@ -144,7 +167,6 @@ function _renderLfoWaveform(nid, phaseNorm, params) {
 
   // Waveform curve
   const steps = 200;
-  const amp = h * 0.42;
   const color = play ? '#00e676' : '#ff9100';
   ctx.beginPath();
   ctx.strokeStyle = color;
@@ -152,17 +174,17 @@ function _renderLfoWaveform(nid, phaseNorm, params) {
   ctx.lineJoin = 'round';
   for (let i = 0; i <= steps; i++) {
     const ti = i / steps;
-    const y = _lfoWaveformAt(wf, ti, bias);
+    const y = (useBuf && buf.filled[i]) ? buf.data[i] : _lfoWaveformAt(wf, ti, bias);
     const px = ti * w;
     const py = h / 2 - y * amp;
     i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
   }
   ctx.stroke();
 
-  // Playhead
+  // Playhead — exact Y from streamed bipolar when available, else preview math
   const ph = (phaseNorm !== undefined && phaseNorm !== null && !isNaN(phaseNorm)) ? phaseNorm : 0;
   const phx = Math.max(0, Math.min(w, ph * w));
-  const phy = h / 2 - _lfoWaveformAt(wf, ph, bias) * amp;
+  const phy = h / 2 - ((bipolarVal !== undefined && bipolarVal !== null && !isNaN(bipolarVal)) ? bipolarVal : _lfoWaveformAt(wf, ph, bias)) * amp;
   ctx.strokeStyle = '#ff5252';
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -892,7 +914,7 @@ const GCLIENT_NODE_DEFS = {
     outputs: { image: 'image', luminance: 'field' },
     param_ports: [],
     description: 'Client-side p5.js sketch (instance mode). Generator or filter.',
-    version: 1, deprecated: false, start_frame: 0, end_frame: 0, prebake: 0,
+    version: 1, deprecated: false,
     params: {
       sketch_code: {
         description: 'p5.js sketch — setup(p,g) & draw(p,g). g={width,height,time,frame,p1..p4,input(p5.Image in filter mode),WEBGL,P2D}',
@@ -1682,10 +1704,8 @@ function gSerializeNodeForApi(n, frame) {
   return {
     id: n.id, method_id: n.method_id, params,
     x: n.x, y: n.y, render: !!n.render, dirty: n.dirty !== false,
-    start_frame: n.start_frame || 0, end_frame: n.end_frame || 0,
     keyframes: n.keyframes || [],
     paramKeyframes: n.paramKeyframes || {},
-    prebake: n.prebake || 0,
     drivers: n.drivers || {},
     controllers: n.controllers || {},
   };
@@ -1908,6 +1928,20 @@ function gRenderNode(node) {
       // Initial draw (static preview until live WS frame arrives)
       setTimeout(() => _renderLfoWaveform(node.id, 0, node.params), 0);
     }
+    // Counter progress bar canvas (visual-spec: live count + trigger indicator)
+    if (node.method_id === '__counter__') {
+      const canvasDiv = document.createElement('div');
+      canvasDiv.className = 'gnode-counter-canvas-wrap';
+      const canvas = document.createElement('canvas');
+      canvas.id = 'counter-canvas-' + node.id;
+      canvas.className = 'gnode-counter-canvas';
+      canvas.width = 200; canvas.height = 28;
+      canvasDiv.appendChild(canvas);
+      el.appendChild(canvasDiv);
+      // Initial draw (static preview until live WS frame arrives)
+      setTimeout(() => _renderCounterProgress(node.id, 0, 0, 0, node.params), 0);
+    }
+
   }
 
   gNodesEl.appendChild(el);
@@ -2556,39 +2590,6 @@ function gShowNodeParams(node) {
     });
   });
   gRefreshParamOverrides(node.id);
-
-  // ── Per-node timing offset spinners ────────────────────────────
-  const timingSection = document.createElement('div');
-  timingSection.style.cssText = 'margin-top:12px;border-top:1px solid var(--border);padding-top:10px;';
-  timingSection.innerHTML = `
-    <div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:6px;">⏱ Timing Offset</div>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-      <label style="font-size:10px;color:var(--muted);">Start</label>
-      <input id="node-start-frame" type="number" min="0" value="${node.start_frame || 0}" style="width:48px;background:var(--bg2);border:1px solid var(--border);border-radius:3px;color:var(--text);padding:2px 4px;font-size:10px;">
-      <label style="font-size:10px;color:var(--muted);">End</label>
-      <input id="node-end-frame" type="number" min="0" value="${node.end_frame || 0}" style="width:48px;background:var(--bg2);border:1px solid var(--border);border-radius:3px;color:var(--text);padding:2px 4px;font-size:10px;">
-      <span style="font-size:9px;color:var(--muted);">(0 = use global)</span>
-    </div>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">
-      <label style="font-size:10px;color:var(--muted);">Prebake</label>
-      <input id="node-prebake" type="number" min="0" max="300" value="${node.prebake || 0}" style="width:48px;background:var(--bg2);border:1px solid var(--border);border-radius:3px;color:var(--text);padding:2px 4px;font-size:10px;">
-      <span style="font-size:9px;color:var(--muted);">frames (run sim ahead before first output frame)</span>
-    </div>
-  `;
-  gParamsForm.appendChild(timingSection);
-
-  document.getElementById('node-start-frame')?.addEventListener('change', function() {
-    node.start_frame = parseInt(this.value) || 0;
-    gSave();
-  });
-  document.getElementById('node-end-frame')?.addEventListener('change', function() {
-    node.end_frame = parseInt(this.value) || 0;
-    gSave();
-  });
-  document.getElementById('node-prebake')?.addEventListener('change', function() {
-    node.prebake = parseInt(this.value) || 0;
-    gSave();
-  });
 
   // ── Per-param keyframe section ──────────────────────────────
   const kfSection = document.createElement('div');
@@ -3441,10 +3442,20 @@ function _gUpdateLiveMeta(msg) {
       if (typeof vals.phase === 'number') {
         const lfoNode = gNodes.find(n => n.id === nid);
         if (lfoNode && lfoNode.method_id === '__lfo__') {
-          _renderLfoWaveform(nid, vals.phase, lfoNode.params);
+          _renderLfoWaveform(nid, vals.phase, lfoNode.params, vals.bipolar);
         }
       }
     }
+    // Live Counter progress bar — one separate loop per WS frame
+    for (const [nid, vals] of Object.entries(msg.node_values)) {
+      if (typeof vals.phase === 'number') {
+        const counterNode = gNodes.find(n => n.id === nid);
+        if (counterNode && counterNode.method_id === '__counter__') {
+          _renderCounterProgress(nid, vals.value, vals.phase, vals.triggered, counterNode.params);
+        }
+      }
+    }
+
   }
   // Feed into Diagnostics tab — diagRender is exposed globally from the IIFE
   if (typeof window.diagRender === 'function') {
@@ -5575,10 +5586,8 @@ async function tlDoRenderSequence() {
         id: n.id, method_id: n.method_id, params: n.params,
         animParams: n.animParams || {},
         x: n.x, y: n.y, render: !!n.render, dirty: n.dirty !== false,
-        start_frame: n.start_frame || 0, end_frame: n.end_frame || 0,
         keyframes: n.keyframes || [],
         paramKeyframes: n.paramKeyframes || {},
-        prebake: n.prebake || 0,
       })),
       edges: gEdges.filter(e => !tlDrop.has(e.src_node) && !tlDrop.has(e.dst_node)).map(e => ({
         src_node: e.src_node, src_port: e.src_port,
@@ -5968,8 +5977,6 @@ function gSerializeGraph() {
         params:         n.params || {},
         animParams:     n.animParams || {},
         paramKeyframes: n.paramKeyframes || {},
-        start_frame:    n.start_frame || 0,
-        end_frame:      n.end_frame   || 0,
         keyframes:      n.keyframes   || [],
         drivers:       n.drivers      || {},
         controllers:   n.controllers  || {},
@@ -6018,7 +6025,7 @@ async function gLoadGraph(data) {
     } else {
       const def = gNodeDefs[n.method_id];
       if (!def) continue;
-      const node = { id: n.id, method_id: n.method_id, params: n.params || gDefaultParams(def), animParams: n.animParams || {}, paramKeyframes: n.paramKeyframes || {}, start_frame: n.start_frame || 0, end_frame: n.end_frame || 0, keyframes: n.keyframes || [], drivers: n.drivers || {}, controllers: n.controllers || {}, x: n.x, y: n.y, render: !!n.render, dirty: true };
+      const node = { id: n.id, method_id: n.method_id, params: n.params || gDefaultParams(def), animParams: n.animParams || {}, paramKeyframes: n.paramKeyframes || {}, keyframes: n.keyframes || [], drivers: n.drivers || {}, controllers: n.controllers || {}, x: n.x, y: n.y, render: !!n.render, dirty: true };
       gNodes.push(node);
       gRenderNode(node);
     }
@@ -7279,3 +7286,25 @@ gLoadGroupPresets();
 // ── Load saved clips on init ──────────────────────────────────
 tlLoadClips();
 renderTimelineRuler();
+
+function _renderCounterProgress(nid, value, phase, triggered, params) {
+  const canvas = document.getElementById('counter-canvas-' + nid);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.offsetWidth || 200, h = 28;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(0, 0, w, h);
+  const pct = Math.max(0, Math.min(1, phase || 0));
+  const trig = triggered && triggered > 0.5;
+  ctx.fillStyle = trig ? 'rgba(0,230,118,0.35)' : 'rgba(100,140,255,0.25)';
+  ctx.fillRect(2, 2, pct * (w - 4), h - 4);
+  if (trig) { ctx.fillStyle = 'rgba(0,230,118,0.6)'; ctx.fillRect(2, 2, 4, h - 4); }
+  ctx.fillStyle = trig ? '#00e676' : 'rgba(255,255,255,0.7)';
+  ctx.font = (h * 0.5) + 'px monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(value != null ? Math.round(value) : '-', w / 2, h / 2);
+  canvas.classList.toggle('triggered', trig);
+}

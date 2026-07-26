@@ -8,8 +8,7 @@ import image_pipeline.methods  # noqa: F401
 def _make_node(node_id, method_id, render=False, params=None, dirty=True):
     return {'id': node_id, 'method_id': method_id, 'params': params or {},
             'render': render, 'dirty': dirty, 'x': 0, 'y': 0,
-            'start_frame': 0, 'end_frame': 0, 'keyframes': [],
-            'paramKeyframes': {}, 'prebake': 0}
+            'keyframes': [], 'paramKeyframes': {}}
 
 def _make_edge(src, dst, src_port='image', dst_port='image_in', feedback=False):
     return {'src_node': src, 'src_port': src_port, 'dst_node': dst,

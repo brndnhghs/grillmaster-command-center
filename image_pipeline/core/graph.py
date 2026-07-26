@@ -49,11 +49,8 @@ class GraphNode:
     y:           float = 0.0
     render:      bool  = False
     dirty:       bool  = True
-    start_frame: int   = 0
-    end_frame:   int   = 0
     keyframes:   list[dict] = field(default_factory=list)
     paramKeyframes: dict[str, list[dict]] = field(default_factory=dict)
-    prebake:     int   = 0
     # ── Exposed Parameter & Runtime UI: Driver/Controller stack (channels) ──
     # drivers: param -> {node, port} declaring the param's value originates
     #   elsewhere (replaces manual ownership). controllers: param -> list of
@@ -183,9 +180,6 @@ def get_all_node_defs() -> dict[str, dict]:
             "is_time_varying": meta.is_time_varying,
             "runtime":         meta.runtime,
             "signal":          meta.signal,
-            "start_frame":     0,
-            "end_frame":       0,
-            "prebake":         0,
         }
     return result
 
@@ -1147,33 +1141,9 @@ class GraphExecutor:
 
             run_params = dict(node.params)
             run_params["_node_id"] = node.id
-            # ── Prebake: run sim ahead before first output frame ──────
-            # Multiply n_frames by prebake so Architecture A methods run
-            # more internal steps before the first captured frame.
-            if node.prebake > 0 and "n_frames" in run_params:
-                run_params["n_frames"] = int(run_params["n_frames"]) + node.prebake
-
-            # ── Per-node timeline with timing offset ──────────────────
-            # When a node has non-zero end_frame, create a per-node timeline
-            # that remaps t/phase to the node's window [start_frame, end_frame).
-            # Outside the window: hold at boundary (t=0 before, t=1 after).
-            if node.end_frame > 0:
-                node_tl = make_timeline(
-                    global_frame=timeline.global_frame,
-                    total_frames=timeline.total_frames,
-                    fps=timeline.fps,
-                    speed=timeline.speed,
-                    start_frame=node.start_frame,
-                    end_frame=node.end_frame,
-                )
-                run_params["_timeline"] = node_tl
-                run_params["time"] = node_tl.phase
-            else:
-                run_params["_timeline"] = timeline
-                # Don't overwrite time if the live loop already injected
-                # the raw frame number for continuous evolution.
-                if "time" not in run_params:
-                    run_params["time"] = timeline.phase
+            run_params["_timeline"] = timeline
+            if "time" not in run_params:
+                run_params["time"] = timeline.phase
             # Single animation driver: expose the global speed so methods that
             # read anim_speed (the legacy param) stay in sync with the Timeline
             # clock instead of defaulting to 1.0. Guarded so an explicit
