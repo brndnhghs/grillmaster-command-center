@@ -1646,6 +1646,37 @@ function gRenderNode(node) {
     lbl.className = 'gport-label'; lbl.textContent = gPortLabel(name);
     return lbl;
   }
+  // Inline live value chip at a port (visual-spec: values live ON the node).
+  // Outputs only: the WS node_values feed carries flat_outputs (node outputs),
+  // so only output ports have a live value. Inputs are params (defaults shown
+  // in the side panel) — a frozen chip there would mislead, so we skip them.
+  function _mkChip(name, dir) {
+    if (dir !== 'output') return null;
+    const sig = def.signal && def.signal[name];
+    if (def.category !== 'channels' || !sig) return null;
+    const chip = document.createElement('span');
+    chip.className = 'port-chip sig-' + sig;
+    chip.id = 'pc-' + node.id + '-' + name;
+    const dflt = (node.params && name in node.params) ? node.params[name]
+               : (def.params && def.params[name] && def.params[name].default);
+    chip.textContent = (dflt === undefined || dflt === null) ? '–' : formatVal(dflt);
+    return chip;
+  }
+  // Static input-port chip: shows the param default (dimmed). WS node_values
+  // only carries OUTPUTS, so inputs can never be live — a frozen live-style
+  // chip would mislead. This matches the screenshot's greyed Min/Max/Time boxes.
+  // Gated to channels + signal-typed ports (same gates as output chips).
+  function _mkStaticChip(name) {
+    const sig = def.signal && def.signal[name];
+    if (def.category !== 'channels' || !sig) return null;
+    const dflt = (node.params && name in node.params) ? node.params[name]
+               : (def.params && def.params[name] && def.params[name].default);
+    if (dflt === undefined || dflt === null) return null;
+    const chip = document.createElement('span');
+    chip.className = 'port-chip sig-' + sig + ' static';
+    chip.textContent = formatVal(dflt);
+    return chip;
+  }
   // Left: image input
   { const row = document.createElement('div');
     row.className = 'gnode-port-row input';
@@ -1699,12 +1730,15 @@ function gRenderNode(node) {
       const outType = (def.outputs || {})[outName];
       row.className = 'gnode-port-row paired';
       row.appendChild(_mkPort(name, type, 'input'));
+      const cs = _mkStaticChip(name); if (cs) row.appendChild(cs);
       row.appendChild(_mkLabel(name));
       row.appendChild(_mkLabel(outName));
       row.appendChild(_mkPort(outName, outType, 'output'));
+      const cOut = _mkChip(outName, 'output'); if (cOut) row.appendChild(cOut);
     } else {
       row.className = 'gnode-port-row input';
       row.appendChild(_mkPort(name, type, 'input'));
+      const cs = _mkStaticChip(name); if (cs) row.appendChild(cs);
       row.appendChild(_mkLabel(name));
     }
     portsEl.appendChild(row);
@@ -1716,6 +1750,7 @@ function gRenderNode(node) {
     const row = document.createElement('div');
     row.className = 'gnode-port-row output';
     row.appendChild(_mkLabel(name));
+    const c = _mkChip(name, 'output'); if (c) row.appendChild(c);
     row.appendChild(_mkPort(name, type, 'output'));
     portsEl.appendChild(row);
   }
@@ -2286,9 +2321,9 @@ function gRedrawEdges() {
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('d', `M${p0.x},${p0.y} L${p1.x},${p1.y}`);
     path.setAttribute('class', 'gedge' + (edge.feedback ? ' feedback' : ''));
-    // Wire color = source port's payload type, from the server registry
-    const ptSpec = (window.gPortTypes || {})[(s.dataset.ptype || '').toUpperCase()];
-    if (ptSpec && ptSpec.color) path.style.stroke = ptSpec.color;
+    // Wires are neutral white (set in CSS .gedge); data type is carried by the
+    // port's signal colour (sig-numeric / control / output / event), matching
+    // the visual spec. No inline stroke, so :hover / .feedback still apply.
     path.dataset.eid = edge.id;
     path.addEventListener('contextmenu', ev => { ev.preventDefault(); gShowEdgeCtx(edge.id, ev.clientX, ev.clientY); });
     path.addEventListener('mousedown', ev => {
@@ -3475,6 +3510,9 @@ function _gUpdateLiveMeta(msg) {
         if (!el) continue;
         const x = Number(v), a = Math.abs(x);
         el.textContent = a >= 100 ? x.toFixed(1) : a >= 1 ? x.toFixed(2) : x.toFixed(3);
+        // Inline live value chip at the port (visual spec: values live ON the node)
+        const pc = document.getElementById('pc-' + nid + '-' + k);
+        if (pc) pc.textContent = a >= 100 ? x.toFixed(1) : a >= 1 ? x.toFixed(2) : x.toFixed(3);
       }
     }
   }
