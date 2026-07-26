@@ -975,6 +975,7 @@
      Wires are neutral white; data type is carried by the port's signal
      colour (sig-numeric / control / output / event). These rules control
      weight + hover. */
+  .gedge {
     fill: none; stroke: #e8e8ec; stroke-width: 2; opacity: 0.85;
     pointer-events: stroke; cursor: pointer;
     transition: opacity 0.1s, stroke-width 0.1s, stroke 0.1s;
