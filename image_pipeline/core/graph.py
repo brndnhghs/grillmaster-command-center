@@ -1146,6 +1146,7 @@ class GraphExecutor:
                 # If no frames captured, fall through to normal execution
 
             run_params = dict(node.params)
+            run_params["_node_id"] = node.id
             # ── Prebake: run sim ahead before first output frame ──────
             # Multiply n_frames by prebake so Architecture A methods run
             # more internal steps before the first captured frame.

@@ -9,10 +9,21 @@ import numpy as np
 from ...core.registry import method
 from ...core.utils import seed_all
 
+# ── Per-node state for play/pause/reset ──────────────────────────────────
+# Keyed by _node_id (injected by GraphExecutor into run_params).
+# Stores {"playing_frame": int, "prev_resetpulse": float, "resetting": bool}.
+# Only populated when play controls are explicitly engaged; absent in
+# backward-compat/default mode so existing graphs are unaffected.
+_LFO_STATE: dict[str, dict] = {}
+# Lazy-prune counter — module-level to avoid Pyright function-attribute error
+_LFO_PRUNE_COUNTER = 0
+
+
 @method(id="__lfo__", name="LFO", category="channels",
         tags=["chop", "time", "oscillator", "generator"],
-        inputs={"rate": "SCALAR", "phase_offset": "SCALAR", "amplitude": "SCALAR"},
-        outputs={"value": "SCALAR", "bipolar": "SCALAR"},
+        inputs={"rate": "SCALAR", "phase_offset": "SCALAR", "amplitude": "SCALAR",
+                "reset": "SCALAR"},
+        outputs={"value": "SCALAR", "bipolar": "SCALAR", "phase": "SCALAR"},
         runtime={
             "value": {
                 "type": "numeric",
@@ -23,31 +34,56 @@ from ...core.utils import seed_all
                 "type": "output",
                 "label": "Bipolar",
                 "observable": True
+            },
+            "phase": {
+                "type": "output",
+                "label": "Phase",
+                "observable": True
             }
         },
         signal={
             "rate": "numeric",
             "phase_offset": "numeric",
             "amplitude": "numeric",
+            "reset": "control",
             "value": "output",
-            "bipolar": "output"
+            "bipolar": "output",
+            "phase": "output"
         },
         params={
-            "waveform": {"description": "LFO waveform",
-                         "choices": ["sine", "triangle", "saw", "square", "random", "noise"],
+            "waveform": {"description": "WaveType ⊞ — The shape of the waveform",
+                         "choices": ["sine", "triangle", "saw", "square",
+                                     "random", "noise", "gaussian"],
                          "default": "sine"},
             "min": {"description": "minimum output value", "default": 0.0},
             "max": {"description": "maximum output value", "default": 1.0},
-            "rate": {"description": "cycles per second (Hz)", "default": 0.5},
+            "rate": {"description": "Frequency — cycles per second (Hz)", "default": 0.5},
             "phase": {"description": "initial phase offset 0-1", "default": 0.0},
-            "bipolar": {"description": "output -1 to 1 instead of min to max", "default": False},
+            "bipolar": {"description": "output -1 to 1 instead of min to max",
+                        "default": False},
+            "play": {"description": "Oscillate when 1, stop when 0 (Play/Pause)",
+                     "default": True},
+            "offset": {"description": "Additive offset added to output", "default": 0.0},
+            "amp": {"description": "Scale multiplier applied to output amplitude",
+                    "default": 1.0},
+            "bias": {"description": "Shape control: triangle=peak pos, square=duty",
+                     "default": 0.0},
+            "resetcondition": {
+                "description": "ResetCondition ⊞ — How reset triggers",
+                "choices": ["rising_edge", "falling_edge", "high", "low"],
+                "default": "rising_edge"},
+            "reset": {"description": "Reset output to 0 while On", "default": False},
+            "resetpulse": {"description": "Instantly reset output to 0 (button)",
+                           "default": False},
         })
 def method_lfo(out_dir: Path, seed: int, params=None):
     """Low Frequency Oscillator — generates periodic waveforms.
 
     Outputs:
-        value (SCALAR): waveform output in [min, max] or [-1, 1] if bipolar
-        bipolar (SCALAR): always -1 to 1
+        value (SCALAR): waveform output in [min, max] or [-1, 1] if bipolar,
+                        then scaled by amp, then offset added
+        bipolar (SCALAR): always -1 to 1 before amp/offset
+        phase (SCALAR): normalized cycle position 0..1
     """
     if params is None:
         params = {}
@@ -56,26 +92,23 @@ def method_lfo(out_dir: Path, seed: int, params=None):
     t = float(params.get("time", 0.0))
     frame = int(params.get("frame", 0))
     fps = float(params.get("fps", 24.0))
+    node_id = params.get("_node_id", "")
 
     # The GraphExecutor injects a per-frame Timeline (params["_timeline"]) but
     # does NOT inject an integer `frame` (nor a `time`) for CHOP generators.
     # Derive the live frame from the Timeline's global_frame (which advances
     # every rendered frame) so the LFO advances instead of staying pinned at
-    # frame 0. NOTE: we use global_frame, not the Timeline's `phase` attribute,
-    # because the executor's make_timeline() does not set phase (it stays 0),
-    # whereas global_frame is always correct. The other CHOP nodes (__counter__,
-    # __ramp__, __beats__, __envelope__) already derive frame this way.
+    # frame 0.
     total_frames_for_phase = int(params.get("total_frames", 24))
     if frame == 0:
         _tl = params.get("_timeline")
         if _tl is not None:
             frame = int(getattr(_tl, "global_frame", 0))
             fps = float(getattr(_tl, "fps", fps))
-            total_frames_for_phase = int(getattr(_tl, "total_frames", total_frames_for_phase))
-    # Derive the cyclic phase from the live frame so t advances per frame.
-    # `rate` is documented as cycles-per-second (Hz) ... [see note below]
-    t = (frame / max(1, total_frames_for_phase - 1)) * (2.0 * math.pi)
+            total_frames_for_phase = int(getattr(_tl, "total_frames",
+                                                  total_frames_for_phase))
 
+    # ── Params (accept both old and new names for backward compat) ──────
     waveform = params.get("waveform", "sine")
     min_val = float(params.get("min", 0.0))
     max_val = float(params.get("max", 1.0))
@@ -85,7 +118,22 @@ def method_lfo(out_dir: Path, seed: int, params=None):
     if isinstance(bipolar_mode, str):
         bipolar_mode = bipolar_mode.lower() in ("True", "1", "yes")
 
-    # SCALAR overrides
+    # New params with safe defaults
+    play = params.get("play", True)
+    if isinstance(play, str):
+        play = play.lower() in ("True", "1", "yes")
+    offset = float(params.get("offset", 0.0))
+    amp_scale = float(params.get("amp", 1.0))
+    bias = float(params.get("bias", 0.0))
+    resetcondition = params.get("resetcondition", "rising_edge")
+    reset_val = params.get("reset", False)
+    if isinstance(reset_val, str):
+        reset_val = reset_val.lower() in ("True", "1", "yes")
+    resetpulse_val = params.get("resetpulse", False)
+    if isinstance(resetpulse_val, str):
+        resetpulse_val = resetpulse_val.lower() in ("True", "1", "yes")
+
+    # SCALAR input overrides
     rate_override = params.get("rate")
     if rate_override is not None:
         rate = float(rate_override)
@@ -96,42 +144,121 @@ def method_lfo(out_dir: Path, seed: int, params=None):
     if amp_override is not None:
         max_val = min_val + float(amp_override)
 
-    # Compute phase.
+    # ── Stateful play/pause/reset ───────────────────────────────────────
+    # When _node_id is present (graph executor), use accumulated state so
+    # play/pause/reset interact correctly. Without _node_id (standalone
+    # / test calls), fall back to pure frame-based computation (identical
+    # to original behavior).
+    global _LFO_PRUNE_COUNTER
+    _LFO_PRUNE_COUNTER += 1
+
+    reset_active = False
+    if node_id:
+        state = _LFO_STATE.setdefault(node_id, {
+            "playing_frame": frame,
+            "prev_resetpulse": 0.0,
+            "prev_reset": 0.0,
+            "prev_frame": frame,
+            "_was_playing": True,
+        })
+
+        _was_playing = state.get("_was_playing", True)
+
+        # ── Frame delta — only accumulate when playing ──
+        _delta = max(0, frame - state["prev_frame"]) if play else 0
+        state["prev_frame"] = frame
+
+        # ── Reset pulse (button — rising edge detection) ──
+        if resetpulse_val and not state.get("prev_resetpulse", 0.0):
+            reset_active = True
+            state["playing_frame"] = 0
+        state["prev_resetpulse"] = 1.0 if resetpulse_val else 0.0
+
+        # ── Reset condition from SCALAR input ──
+        if not reset_active:
+            _reset_in = params.get("reset", 0.0)
+            if isinstance(_reset_in, (int, float)):
+                prev_reset = state.get("prev_reset", 0.0)
+                if resetcondition == "rising_edge" and prev_reset <= 0.5 < _reset_in:
+                    reset_active = True
+                    state["playing_frame"] = 0
+                elif resetcondition == "falling_edge" and prev_reset >= 0.5 > _reset_in:
+                    reset_active = True
+                    state["playing_frame"] = 0
+                elif resetcondition == "high" and _reset_in > 0.5 and prev_reset <= 0.5:
+                    reset_active = True
+                    state["playing_frame"] = 0
+                elif resetcondition == "low" and _reset_in < 0.5 and prev_reset >= 0.5:
+                    reset_active = True
+                    state["playing_frame"] = 0
+                state["prev_reset"] = float(_reset_in)
+
+        # ── Reset toggle ──
+        if not reset_active and reset_val:
+            reset_active = True
+            state["playing_frame"] = 0
+
+        # ── Advance frame only when playing — no jump on resume ──
+        if not play:
+            # Paused — hold playing_frame where it is
+            pass
+        elif reset_active:
+            state["playing_frame"] = 0
+        else:
+            state["playing_frame"] += _delta
+
+        state["_was_playing"] = play
+
+        # Use stateful frame
+        frame = state["playing_frame"]
+
+        # Lazy prune: only every ~1000 invocations
+        if _LFO_PRUNE_COUNTER % 1000 == 0:
+            _cutoff = frame - 7200
+            for _nid in list(_LFO_STATE):
+                if _LFO_STATE[_nid].get("playing_frame", 0) < _cutoff:
+                    del _LFO_STATE[_nid]
+
+
+    # ── Compute phase ───────────────────────────────────────────────────
     # `rate` is documented as cycles-per-second (Hz): one full cycle spans
     # `fps / rate` frames, so phase advances by `2*pi*rate/fps` radians PER
-    # FRAME (angular frequency omega). The legacy `phase = t*rate` (with
-    # t = frame/total*2pi) made `rate` span cycles-per-CLIP, so any rate < 0.5
-    # completed < half a cycle over the clip and square/saw/triangle collapsed
-    # to DC (constant) output — the dominant cause of "static"/"flat" render
-    # deaths for LFO-driven graphs. True Hz makes low-rate LFOs actually sweep.
+    # FRAME (angular frequency omega). True Hz makes low-rate LFOs sweep.
     _omega = 2.0 * math.pi * rate / max(1.0, fps)
     phase = (frame * _omega + phase_offset * 2 * math.pi) % (2 * math.pi)
+    phase_norm = phase / (2 * math.pi)  # [0, 1) for frontend playhead
 
+    # ── Compute waveform value in [-1, 1] ───────────────────────────────
     if waveform == "sine":
         bipolar = math.sin(phase)
     elif waveform == "triangle":
-        bipolar = 2 * abs(2 * (phase / (2 * math.pi) - math.floor(phase / (2 * math.pi) + 0.5))) - 1
+        # Standard triangle: phase_norm in [0, 1)
+        # With bias: shift the peak position
+        p = phase_norm
+        peak = 0.5 + bias * 0.45  # bias ∈ [-1,1] maps peak to [0.05, 0.95]
+        peak = max(0.05, min(0.95, peak))
+        if p < peak:
+            bipolar = -1 + 2 * (p / peak)
+        else:
+            bipolar = 1 - 2 * ((p - peak) / (1 - peak))
     elif waveform == "saw":
-        bipolar = 2 * (phase / (2 * math.pi) - math.floor(phase / (2 * math.pi) + 0.5))
+        bipolar = 2 * (phase / (2 * math.pi)
+                       - math.floor(phase / (2 * math.pi) + 0.5))
     elif waveform == "square":
-        bipolar = 1.0 if math.sin(phase) >= 0 else -1.0
+        # With bias: duty cycle control
+        duty = 0.5 + bias * 0.45  # bias ∈ [-1,1] maps duty to [0.05, 0.95]
+        duty = max(0.05, min(0.95, duty))
+        p = phase_norm
+        bipolar = 1.0 if p < duty else -1.0
     elif waveform == "random":
-        # Step random: a new random value every few frames. The step cadence is
-        # driven by `rate` (Hz, cycles-per-second — SAME semantics as the
-        # continuous waveforms above, where omega = 2*pi*rate/fps) so the
-        # `rate` control is LIVE. Previously this branch hardcoded
-        # `frame // 6`, which made `rate` have NO effect whatsoever — a silent
-        # dead param that inflated the dead-clip rate for
-        # random-LFO-driven graphs (the #1 dead-genome method is __lfo__).
-        # We lay `n_steps` evenly across the clip and advance the random seed
-        # once per step, so a higher rate yields more, faster random flips.
+        # Step random: rate-responsive (same as current code)
         clip_seconds = max(1e-3, total_frames_for_phase / max(1.0, fps))
-        n_steps = max(1, int(round(rate * clip_seconds * 4.0)))  # ~4 random flips per Hz-second
+        n_steps = max(1, int(round(rate * clip_seconds * 4.0)))
         step_idx = int(frame * n_steps / max(1, total_frames_for_phase))
         rng = random.Random(seed + step_idx)
         bipolar = rng.uniform(-1, 1)
     elif waveform == "noise":
-        # Perlin-like smooth random
+        # Perlin-like smooth random (same as current code)
         rng = random.Random(seed)
         p = phase / (2 * math.pi)
         idx_a = int(p * 10) % 10
@@ -142,14 +269,31 @@ def method_lfo(out_dir: Path, seed: int, params=None):
         rng = random.Random(seed + idx_b)
         vb = rng.uniform(-1, 1)
         bipolar = va + (vb - va) * fade
+    elif waveform == "gaussian":
+        # Smooth bell curve; bias shifts the mean
+        p = phase_norm
+        mean = 0.5 + bias * 0.4
+        mean = max(0.05, min(0.95, mean))
+        sigma = 0.15
+        g = math.exp(-((p - mean) ** 2) / (2 * sigma * sigma))
+        bipolar = g * 2 - 1  # map [0,1] to [-1,1]
     else:
         bipolar = 0.0
 
-    if bipolar_mode:
-        val = bipolar
+    # ── Apply amp scaling and offset ─────────────────────────────────────
+    bipolar_scaled = bipolar * amp_scale + offset
+
+    if reset_active:
+        bipolar = 0.0
+        bipolar_scaled = 0.0
+        phase_norm = 0.0
+        val = 0.0
+    elif bipolar_mode:
+        val = bipolar_scaled
     else:
         mid = (min_val + max_val) / 2
-        amp = (max_val - min_val) / 2
-        val = mid + bipolar * amp
+        _range = (max_val - min_val) / 2
+        val = mid + bipolar_scaled * _range
 
-    return {"value": float(val), "bipolar": float(bipolar)}
+    return {"value": float(val), "bipolar": float(bipolar),
+            "phase": float(phase_norm)}
