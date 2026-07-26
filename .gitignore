@@ -37,3 +37,6 @@ image_pipeline/output/
 
 # Node.js dependencies (installed, never committed)
 node_modules/
+
+# Editor artifacts
+.obsidian/
