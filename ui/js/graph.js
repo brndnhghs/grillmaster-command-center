@@ -63,6 +63,142 @@ function gPortLabel(name) {
   return m[name] || name;
 }
 
+// ── Waveform math for live LFO visualization ─────────────────────────────
+// Matches Python implementation in channels/lfo.py exactly (same closed-form
+// formulas for sine/triangle/saw/square/gaussian with bias).
+// random/noise are indicative preview-only (not seed-deterministic).
+function _lfoWaveformAt(waveform, t, bias) {
+  t = t < 0 ? t - Math.floor(t) : t - Math.trunc(t); // [0,1)
+  bias = bias || 0;
+  switch (waveform) {
+    case 'sine':
+      return Math.sin(t * 2 * Math.PI);
+    case 'triangle': {
+      const peak = Math.max(0.05, Math.min(0.95, 0.5 + bias * 0.45));
+      return t < peak ? -1 + 2 * (t / peak) : 1 - 2 * ((t - peak) / (1 - peak));
+    }
+    case 'saw':
+      return 2 * (t - Math.floor(t + 0.5));
+    case 'square': {
+      const duty = Math.max(0.05, Math.min(0.95, 0.5 + bias * 0.45));
+      return t < duty ? 1 : -1;
+    }
+    case 'random':
+      return (Math.floor(t * 8) % 2 === 0) ? 0.6 : -0.8;
+    case 'noise': {
+      const p = t * 10;
+      const idx = Math.floor(p) % 10;
+      const fade = p % 1;
+      const sf = fade * fade * (3 - 2 * fade);
+      const ha = ((idx * 127.1 + 311.7) % 1) / 1;
+      const hb = (((idx + 1) * 127.1 + 311.7) % 1) / 1;
+      return (ha * 2 - 1) + ((hb * 2 - 1) - (ha * 2 - 1)) * sf;
+    }
+    case 'gaussian': {
+      const mean = Math.max(0.05, Math.min(0.95, 0.5 + bias * 0.4));
+      const sigma = 0.15;
+      return Math.exp(-((t - mean) ** 2) / (2 * sigma * sigma)) * 2 - 1;
+    }
+    default:
+      return 0;
+  }
+}
+
+function _renderLfoWaveform(nid, phaseNorm, params, bipolarVal) {
+  const canvas = document.getElementById('lfo-canvas-' + nid);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const wf = (params && params.waveform) || 'sine';
+  const bias = (params && params.bias) || 0;
+  // Coerce play: param may be string "False" in stored node
+  const playRaw = params && params.play;
+  const play = !(playRaw === false || playRaw === 'False' || playRaw === 0 || playRaw === '0');
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.offsetWidth || 200, h = 50;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  // Phase-indexed buffer for random/noise — store streamed bipolar values
+  const BIN = 200;
+  let buf = canvas._lfoBuf;
+  if (!buf || buf.wf !== wf || buf.bias !== bias) {
+    buf = { wf, bias, data: new Float32Array(BIN + 1), filled: new Uint8Array(BIN + 1) };
+    canvas._lfoBuf = buf;
+  }
+  if (bipolarVal !== undefined && bipolarVal !== null && !isNaN(bipolarVal) && phaseNorm !== undefined && phaseNorm !== null) {
+    const bidx = Math.min(BIN, Math.floor(phaseNorm * BIN));
+    buf.data[bidx] = bipolarVal;
+    buf.filled[bidx] = 1;
+  }
+  const useBuf = (wf === 'random' || wf === 'noise');
+  // Pre-fill buffer with preview math so the wave shows immediately,
+  // then gets overwritten by streamed bipolar values as they arrive.
+  if (useBuf && buf.filled[0] === 0) {
+    for (let _i = 0; _i <= BIN; _i++) {
+      const _t = _i / BIN;
+      buf.data[_i] = _lfoWaveformAt(wf, _t, bias);
+      buf.filled[_i] = 1;
+    }
+  }
+  const amp = h * 0.42;
+  // Background
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.fillRect(0, 0, w, h);
+
+  // Center line
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, h / 2);
+  ctx.lineTo(w, h / 2);
+  ctx.stroke();
+
+  // Quarter grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  for (let gx = 0.25; gx < 1; gx += 0.25) {
+    const gpx = gx * w;
+    ctx.beginPath();
+    ctx.moveTo(gpx, 0);
+    ctx.lineTo(gpx, h);
+    ctx.stroke();
+  }
+
+  // Waveform curve
+  const steps = 200;
+  const color = play ? '#00e676' : '#ff9100';
+  ctx.beginPath();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.lineJoin = 'round';
+  for (let i = 0; i <= steps; i++) {
+    const ti = i / steps;
+    const y = (useBuf && buf.filled[i]) ? buf.data[i] : _lfoWaveformAt(wf, ti, bias);
+    const px = ti * w;
+    const py = h / 2 - y * amp;
+    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+
+  // Playhead — exact Y from streamed bipolar when available, else preview math
+  const ph = (phaseNorm !== undefined && phaseNorm !== null && !isNaN(phaseNorm)) ? phaseNorm : 0;
+  const phx = Math.max(0, Math.min(w, ph * w));
+  const phy = h / 2 - ((bipolarVal !== undefined && bipolarVal !== null && !isNaN(bipolarVal)) ? bipolarVal : _lfoWaveformAt(wf, ph, bias)) * amp;
+  ctx.strokeStyle = '#ff5252';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(phx, 0);
+  ctx.lineTo(phx, h);
+  ctx.stroke();
+  ctx.fillStyle = '#ff5252';
+  ctx.beginPath();
+  ctx.arc(phx, phy, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  canvas.classList.toggle('paused', !play);
+}
+
 // Wire compatibility: IMAGE←FIELD is allowed; otherwise types must match
 function gPortsCompatible(srcDot, dstDot) {
   if (!srcDot || !dstDot) return true;
@@ -778,7 +914,7 @@ const GCLIENT_NODE_DEFS = {
     outputs: { image: 'image', luminance: 'field' },
     param_ports: [],
     description: 'Client-side p5.js sketch (instance mode). Generator or filter.',
-    version: 1, deprecated: false, start_frame: 0, end_frame: 0, prebake: 0,
+    version: 1, deprecated: false,
     params: {
       sketch_code: {
         description: 'p5.js sketch — setup(p,g) & draw(p,g). g={width,height,time,frame,p1..p4,input(p5.Image in filter mode),WEBGL,P2D}',
@@ -1131,12 +1267,10 @@ function gAddNode(method_id, x, y) {
   gNodes.push(node);
   gRenderNode(node);
   gPushApart(node);
-  gPhysicsKick();
   gSave();
   return node;
 }
 
-// ── Dispatch render by node type ───────────────────────────────
 function gRenderAnyNode(node) {
   if (node.type === 'group') gRenderGroupNode(node);
   else gRenderNode(node);
@@ -1274,9 +1408,9 @@ function gRenderGroupNode(node) {
     e.stopPropagation();
     if (!gPendingEdge) return;
     if (gPendingEdge.reverse && dot.dataset.dir === 'output')
-      gAddEdge(node.id, dot.dataset.port, gPendingEdge.dst_node, gPendingEdge.dst_port);
+      gAddEdge(node.id, dot.dataset.port, gPendingEdge.dst_node, gPendingEdge.dst_port, e);
     else if (!gPendingEdge.reverse && dot.dataset.dir === 'input')
-      gAddEdge(gPendingEdge.src_node, gPendingEdge.src_port, node.id, dot.dataset.port);
+      gAddEdge(gPendingEdge.src_node, gPendingEdge.src_port, node.id, dot.dataset.port, e);
     gPendingEdge = null; gPendingEl.style.display = 'none';
   }
 
@@ -1494,7 +1628,6 @@ function gAddGroupNode(groupDef, x, y) {
   gNodes.push(node);
   gRenderGroupNode(node);
   gPushApart(node);
-  gPhysicsKick();
   gSave();
   return node;
 }
@@ -1571,10 +1704,8 @@ function gSerializeNodeForApi(n, frame) {
   return {
     id: n.id, method_id: n.method_id, params,
     x: n.x, y: n.y, render: !!n.render, dirty: n.dirty !== false,
-    start_frame: n.start_frame || 0, end_frame: n.end_frame || 0,
     keyframes: n.keyframes || [],
     paramKeyframes: n.paramKeyframes || {},
-    prebake: n.prebake || 0,
     drivers: n.drivers || {},
     controllers: n.controllers || {},
   };
@@ -1863,6 +1994,32 @@ const _gCatIcons = {
     if (portsEl.children.length) el.appendChild(portsEl);
     if (outPortsEl && outPortsEl.children.length) el.appendChild(outPortsEl);
     if (rtEl) el.appendChild(rtEl);
+    // LFO waveform preview canvas (visual-spec: live waveform with playhead)
+    if (node.method_id === '__lfo__') {
+      const canvasDiv = document.createElement('div');
+      canvasDiv.className = 'gnode-lfo-canvas-wrap';
+      const canvas = document.createElement('canvas');
+      canvas.id = 'lfo-canvas-' + node.id;
+      canvas.className = 'gnode-lfo-canvas';
+      canvas.width = 200; canvas.height = 50;
+      canvasDiv.appendChild(canvas);
+      el.appendChild(canvasDiv);
+      // Initial draw (static preview until live WS frame arrives)
+      setTimeout(() => _renderLfoWaveform(node.id, 0, node.params), 0);
+    }
+    // Counter progress bar canvas (visual-spec: live count + trigger indicator)
+    if (node.method_id === '__counter__') {
+      const canvasDiv = document.createElement('div');
+      canvasDiv.className = 'gnode-counter-canvas-wrap';
+      const canvas = document.createElement('canvas');
+      canvas.id = 'counter-canvas-' + node.id;
+      canvas.className = 'gnode-counter-canvas';
+      canvas.width = 200; canvas.height = 28;
+      canvasDiv.appendChild(canvas);
+      el.appendChild(canvasDiv);
+      // Initial draw (static preview until live WS frame arrives)
+      setTimeout(() => _renderCounterProgress(node.id, 0, 0, 0, node.params), 0);
+    }
   }
 
   gNodesEl.appendChild(el);
@@ -1935,9 +2092,9 @@ const _gCatIcons = {
     e.stopPropagation();
     if (!gPendingEdge) return;
     if (gPendingEdge.reverse && dot.dataset.dir === 'output')
-      gAddEdge(node.id, dot.dataset.port, gPendingEdge.dst_node, gPendingEdge.dst_port);
+      gAddEdge(node.id, dot.dataset.port, gPendingEdge.dst_node, gPendingEdge.dst_port, e);
     else if (!gPendingEdge.reverse && dot.dataset.dir === 'input')
-      gAddEdge(gPendingEdge.src_node, gPendingEdge.src_port, node.id, dot.dataset.port);
+      gAddEdge(gPendingEdge.src_node, gPendingEdge.src_port, node.id, dot.dataset.port, e);
     gPendingEdge = null; gPendingEl.style.display = 'none';
   }
 
@@ -2033,7 +2190,7 @@ document.addEventListener('touchend', e => {
     hit = best;
   }
   if (hit && hit.dataset.dir === 'input')
-    gAddEdge(gPendingEdge.src_node, gPendingEdge.src_port, hit.dataset.nid, hit.dataset.port);
+    gAddEdge(gPendingEdge.src_node, gPendingEdge.src_port, hit.dataset.nid, hit.dataset.port, e);
   gPendingEdge = null; gPendingEl.style.display = 'none';
 });
 document.addEventListener('touchcancel', () => {
@@ -2067,7 +2224,6 @@ function gAttachNodeDrag(el, node) {
       document.removeEventListener('touchcancel', onEnd);
       node._pinned = false;
       gSave();
-      gPhysicsKick();
     }
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onEnd);
@@ -2079,46 +2235,10 @@ function gAttachNodeDrag(el, node) {
   header.addEventListener('touchstart', startDrag, { passive: false });
 }
 
-// ── Push-apart & Physics ────────────────────────────────────────
-const PHYSICS = {
-  k_r: 40000, k_s_push: 0, k_s_pull: 0, rest: 125, damping: 0.80, k_c: 0.001,
-  k_lane: 0.06, k_dir: 0.5, lane_width: 280, margin: 80, dt: 1.0,
-};
-let gPhysicsActive = false;
-let gPhysicsRafId  = null;
-let gDepths        = null;   // cached topological depths, invalidated on graph change
-
+// ── Push-apart ──────────────────────────────────────────────────
 function _nodeBox(n) {
   const el = document.getElementById('gnode-' + n.id);
   return { w: el ? el.offsetWidth : 160, h: el ? el.offsetHeight : 120 };
-}
-
-// BFS longest-path (Kahn's topological sort) from source nodes (no incoming non-feedback edges).
-function gComputeDepths() {
-  const inDeg = new Map(gNodes.map(n => [n.id, 0]));
-  const adj   = new Map(gNodes.map(n => [n.id, []]));
-  for (const e of gEdges) {
-    if (e.feedback) continue;
-    inDeg.set(e.dst_node, (inDeg.get(e.dst_node) || 0) + 1);
-    if (adj.has(e.src_node)) adj.get(e.src_node).push(e.dst_node);
-  }
-  const depths = new Map(gNodes.map(n => [n.id, 0]));
-  const queue  = gNodes.filter(n => (inDeg.get(n.id) || 0) === 0).map(n => n.id);
-  let i = 0;
-  while (i < queue.length) {
-    const id = queue[i++];
-    for (const nid of (adj.get(id) || [])) {
-      depths.set(nid, Math.max(depths.get(nid) || 0, (depths.get(id) || 0) + 1));
-      inDeg.set(nid, (inDeg.get(nid) || 0) - 1);
-      if ((inDeg.get(nid) || 0) === 0) queue.push(nid);
-    }
-  }
-  // Render-target node is placed one lane past the deepest node
-  let maxDepth = 0;
-  for (const d of depths.values()) maxDepth = Math.max(maxDepth, d);
-  const renderNode = gNodes.find(n => n.render);
-  if (renderNode) depths.set(renderNode.id, maxDepth + 1);
-  return depths;
 }
 
 function gPushApart(newNode, padding = 20) {
@@ -2141,181 +2261,8 @@ function gPushApart(newNode, padding = 20) {
   if (gNodes.length > 1) gRedrawEdges();
 }
 
-function gPhysicsKick() {
-  gDepths = null;  // invalidate depth cache on every graph change
-  if (!gPhysicsActive || gPhysicsRafId) return;
-  gPhysicsRafId = requestAnimationFrame(gPhysicsTick);
-}
-
-function gPhysicsBurst(ticks = 80) {
-  // Run physics for a fixed number of ticks regardless of gPhysicsActive.
-  // Used when combine nodes are auto-spawned so they settle immediately.
-  gDepths = null;
-  const wasActive = gPhysicsActive;
-  gPhysicsActive = true;
-  let t = 0;
-  function tick() {
-    gPhysicsTick();
-    if (++t < ticks && gPhysicsRafId === null) {
-      gPhysicsRafId = requestAnimationFrame(tick);
-    } else if (t >= ticks) {
-      if (!wasActive) {
-        gPhysicsActive = false;
-        gPhysicsRafId = null;
-      }
-    }
-  }
-  if (!gPhysicsRafId) gPhysicsRafId = requestAnimationFrame(tick);
-}
-
-function gPhysicsTick() {
-  gPhysicsRafId = null;
-  if (!gPhysicsActive || gNodes.length < 2) return;
-
-  // Recompute depths once per simulation burst
-  if (!gDepths) gDepths = gComputeDepths();
-
-  const rect = gCanvasWrap.getBoundingClientRect();
-  const ccx  = (rect.width  / 2 - gPanX) / gCanvasScale;
-  const ccy  = (rect.height / 2 - gPanY) / gCanvasScale;
-
-  // ── Pass 1: edge direction bias (per-edge, accumulate into force map) ──
-  const fxBias = new Map(gNodes.map(n => [n.id, 0]));
-  for (const edge of gEdges) {
-    if (edge.feedback) continue;
-    const src = gNodes.find(n => n.id === edge.src_node);
-    const dst = gNodes.find(n => n.id === edge.dst_node);
-    if (!src || !dst) continue;
-    // Push src leftward and dst rightward; flip sign if dst is already left of src
-    const edgeDirX = PHYSICS.k_dir * (dst.x < src.x ? -1 : 1);
-    fxBias.set(src.id, (fxBias.get(src.id) || 0) - edgeDirX);
-    fxBias.set(dst.id, (fxBias.get(dst.id) || 0) + edgeDirX);
-  }
-
-  // ── Pass 2: per-node forces ──
-  for (const n of gNodes) {
-    if (n._vx === undefined) { n._vx = 0; n._vy = 0; }
-    if (n._pinned || n.render) { n._vx = 0; n._vy = 0; continue; }
-    const { w, h } = _nodeBox(n);
-    const ncx    = n.x + w / 2, ncy = n.y + h / 2;
-    const nDepth = gDepths.get(n.id) ?? 0;
-    let fx = fxBias.get(n.id) || 0;
-    let fy = 0;
-
-    // Node-node repulsion — 2.5× stronger between same-lane nodes (vertical spread)
-    for (const m of gNodes) {
-      if (m.id === n.id) continue;
-      const { w: mw, h: mh } = _nodeBox(m);
-      const dx = ncx - (m.x + mw / 2), dy = ncy - (m.y + mh / 2);
-      const d  = Math.hypot(dx, dy) || 0.1;
-      const ux = dx / d, uy = dy / d;
-
-      // Soft repulsion — 1/d² with minimum-distance clamp to prevent singularity oscillation.
-      const effD = Math.max(d, (w + mw) / 6);
-      const f = PHYSICS.k_r / (effD * effD);
-      fx += ux * f; fy += uy * f * 0.15;
-    }
-
-    // Edge spring attraction (radial, bidirectional)
-    for (const edge of gEdges) {
-      let other = null;
-      if      (edge.src_node === n.id) other = gNodes.find(m => m.id === edge.dst_node);
-      else if (edge.dst_node === n.id) other = gNodes.find(m => m.id === edge.src_node);
-      if (!other) continue;
-      const { w: ow, h: oh } = _nodeBox(other);
-      const dx = (other.x + ow / 2) - ncx, dy = (other.y + oh / 2) - ncy;
-      const d  = Math.hypot(dx, dy) || 1;
-      const overlap = d - PHYSICS.rest;
-      const f = overlap < 0 ? PHYSICS.k_s_push * overlap : PHYSICS.k_s_pull * overlap;
-      fx += (dx / d) * f; fy += (dy / d) * f;
-    }
-
-    // Lane force — pull node's left edge toward its target x lane (horizontal only)
-    const targetX = nDepth * PHYSICS.lane_width + PHYSICS.margin;
-    fx += PHYSICS.k_lane * (targetX - n.x);
-
-    // Weak vertical centering (don't apply horizontal — lane force owns that axis)
-    fy += PHYSICS.k_c * (ccy - ncy);
-
-    // Integrate — dampen vertical force to reduce excessive up/down drift
-    n._vx = (n._vx + fx * PHYSICS.dt) * PHYSICS.damping;
-    n._vy = (n._vy + fy * PHYSICS.dt) * PHYSICS.damping;
-    n.x  += n._vx * PHYSICS.dt;
-    n.y  += n._vy * PHYSICS.dt;
-    const el = document.getElementById('gnode-' + n.id);
-    if (el) { el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; }
-  }
-
-  // ── Pass 3: hard overlap resolution (post-integration) ──
-  // Directly separate any pair whose bounding boxes actually intersect.
-  // Applied as position correction, not force — no oscillation.
-  for (let iter = 0; iter < 3; iter++) {
-    let anyOverlap = false;
-    for (const n of gNodes) {
-      if (n._pinned || n.render) continue;
-      const { w: nw, h: nh } = _nodeBox(n);
-      const ncx = n.x + nw / 2, ncy = n.y + nh / 2;
-      for (const m of gNodes) {
-        if (m.id === n.id) continue;
-        const { w: mw, h: mh } = _nodeBox(m);
-        const dx = ncx - (m.x + mw / 2), dy = ncy - (m.y + mh / 2);
-        const gapX = Math.abs(dx) - (nw + mw) / 2;
-        const gapY = Math.abs(dy) - (nh + mh) / 2;
-        if (gapX >= 0 || gapY >= 0) continue;
-        anyOverlap = true;
-        // Push apart along the axis with the least overlap
-        if (gapX < gapY) {
-          const sign = dx > 0 ? 1 : -1;
-          n.x += sign * (-gapX + 2);
-          m.x -= sign * (-gapX + 2);
-        } else {
-          const sign = dy > 0 ? 1 : -1;
-          n.y += sign * (-gapY + 2);
-          m.y -= sign * (-gapY + 2);
-        }
-      }
-    }
-    if (!anyOverlap) break;
-  }
-  // Re-render positions after hard resolution
-  for (const n of gNodes) {
-    const el = document.getElementById('gnode-' + n.id);
-    if (el) { el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; }
-  }
-
-  gRedrawEdges();
-  let maxV = 0;
-  for (const n of gNodes) maxV = Math.max(maxV, Math.hypot(n._vx || 0, n._vy || 0));
-  if (maxV > 0.5) {
-    gPhysicsRafId = requestAnimationFrame(gPhysicsTick);
-  } else {
-    // Snap to grid when settled
-    for (const n of gNodes) {
-      n.x = Math.round(n.x / GRID) * GRID;
-      n.y = Math.round(n.y / GRID) * GRID;
-      const el = document.getElementById('gnode-' + n.id);
-      if (el) { el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; }
-    }
-    gRedrawEdges();
-    gSave();
-  }
-}
-
-function gPhysicsToggle() {
-  gPhysicsActive = !gPhysicsActive;
-  document.getElementById('graph-layout-btn')?.classList.toggle('active', gPhysicsActive);
-  document.getElementById('graph-layout-btn-desk')?.classList.toggle('active', gPhysicsActive);
-  if (gPhysicsActive) {
-    gNodes.forEach(n => { n._vx = 0; n._vy = 0; });
-    gPhysicsKick();
-  } else {
-    if (gPhysicsRafId) { cancelAnimationFrame(gPhysicsRafId); gPhysicsRafId = null; }
-    gSave();
-  }
-}
-
 // ── Edges ──────────────────────────────────────────────────────
-function gAddEdge(src_node, src_port, dst_node, dst_port) {
+function gAddEdge(src_node, src_port, dst_node, dst_port, evt) {
   if (src_node === dst_node) return;
   const srcDot = gNodesEl.querySelector(`.gport[data-nid="${src_node}"][data-port="${src_port}"][data-dir="output"]`);
   const dstDot = gNodesEl.querySelector(`.gport[data-nid="${dst_node}"][data-port="${dst_port}"][data-dir="input"]`);
@@ -2327,42 +2274,49 @@ function gAddEdge(src_node, src_port, dst_node, dst_port) {
   if (conflict) {
     const ptype = (srcDot?.dataset?.ptype || dstDot?.dataset?.ptype || '').toUpperCase();
     const mergeMap = {
-      IMAGE:     { method: '137', out_port: 'image',     in_a: 'image_a',     in_b: 'image_b'     },
-      SCALAR:    { method: '138', out_port: 'value',     in_a: 'value_a',     in_b: 'value_b'     },
-      FIELD:     { method: '139', out_port: 'field',     in_a: 'field_a',     in_b: 'field_b'     },
-      PARTICLES: { method: '140', out_port: 'particles', in_a: 'particles_a', in_b: 'particles_b' },
+      IMAGE:     { method: '128', out_port: 'image',     in_a: 'image_a',     in_b: 'image_b'     },
+      SCALAR:    { method: '129', out_port: 'value',     in_a: 'value_a',     in_b: 'value_b'     },
+      FIELD:     { method: '130', out_port: 'field',     in_a: 'field_a',     in_b: 'field_b'     },
+      PARTICLES: { method: '131', out_port: 'particles', in_a: 'particles_a', in_b: 'particles_b' },
       // Client-side 3D: two objects into one Scene port → auto-group them.
       OBJECT3D:  { method: '__group3d__', out_port: 'object', in_a: 'object_a', in_b: 'object_b' },
     };
     const spec = mergeMap[ptype];
+
     if (!spec) { gSetStatus(`Cannot merge ${ptype || 'unknown'} wires`); return; }
-    const nodeA = gNodes.find(n => n.id === conflict.src_node);
-    const nodeB = gNodes.find(n => n.id === src_node);
-    const mx = ((nodeA?.x || 0) + (nodeB?.x || 0)) / 2 + 140;
-    const my = ((nodeA?.y || 0) + (nodeB?.y || 0)) / 2;
-    const mergeNode = gAddNode(spec.method, mx, my);
-    if (!mergeNode) { gSetStatus('Merge method not found — restart server'); return; }
+
+    if (evt && (evt.metaKey || evt.ctrlKey)) {
+      const nodeA = gNodes.find(n => n.id === conflict.src_node);
+      const nodeB = gNodes.find(n => n.id === src_node);
+      const mx = ((nodeA?.x || 0) + (nodeB?.x || 0)) / 2 + 140;
+      const my = ((nodeA?.y || 0) + (nodeB?.y || 0)) / 2;
+      const mergeNode = gAddNode(spec.method, mx, my);
+      if (!mergeNode) { gSetStatus('Merge method not found — restart server'); return; }
+      gEdges = gEdges.filter(e => e.id !== conflict.id);
+      gEdges.push({ id: 'e'+(++gEdgeCounter), src_node: conflict.src_node, src_port: conflict.src_port, dst_node: mergeNode.id, dst_port: spec.in_a,     feedback: false });
+      gEdges.push({ id: 'e'+(++gEdgeCounter), src_node,                    src_port,                    dst_node: mergeNode.id, dst_port: spec.in_b,     feedback: false });
+      gEdges.push({ id: 'e'+(++gEdgeCounter), src_node: mergeNode.id,      src_port: spec.out_port,     dst_node,               dst_port,                feedback: false });
+      gUpdateConnectedPorts();
+      if (gSelectedNode === dst_node) gRefreshParamOverrides(dst_node);
+      gRedrawEdges(); gSave();
+      return;
+    }
+
+    // Cmd not held (or unsupported ptype): just swap the old edge for the new one.
     gEdges = gEdges.filter(e => e.id !== conflict.id);
-    gEdges.push({ id: 'e'+(++gEdgeCounter), src_node: conflict.src_node, src_port: conflict.src_port, dst_node: mergeNode.id, dst_port: spec.in_a,     feedback: false });
-    gEdges.push({ id: 'e'+(++gEdgeCounter), src_node,                    src_port,                    dst_node: mergeNode.id, dst_port: spec.in_b,     feedback: false });
-    gEdges.push({ id: 'e'+(++gEdgeCounter), src_node: mergeNode.id,      src_port: spec.out_port,     dst_node,               dst_port,                feedback: false });
-    gUpdateConnectedPorts();
-    if (gSelectedNode === dst_node) gRefreshParamOverrides(dst_node);
-    gRedrawEdges(); gSave(); gPhysicsBurst();
-    return;
   }
 
   gEdges.push({ id: 'e'+(++gEdgeCounter), src_node, src_port, dst_node, dst_port, feedback: false });
   gUpdateConnectedPorts();
   if (gSelectedNode === dst_node) gRefreshParamOverrides(dst_node);
-  gRedrawEdges(); gSave(); gPhysicsKick();
+  gRedrawEdges(); gSave();
 }
 function gDeleteEdge(id) {
   const edge = gEdges.find(e => e.id === id);
   gEdges = gEdges.filter(e => e.id !== id);
   gUpdateConnectedPorts();
   if (edge && gSelectedNode === edge.dst_node) gRefreshParamOverrides(edge.dst_node);
-  gRedrawEdges(); gSave(); gPhysicsKick();
+  gRedrawEdges(); gSave();
 }
 function gDeleteNode(id) {
   gNodes = gNodes.filter(n => n.id !== id);
@@ -2379,7 +2333,7 @@ function gDeleteNode(id) {
   // clipboard's paste path resolves an empty fragment.
   gSelectedNodes.delete(id);
   gUpdateConnectedPorts();
-  gRedrawEdges(); gSave(); gPhysicsKick();
+  gRedrawEdges(); gSave();
 }
 
 // Keep the edge-id counter ahead of every edge already in the document.
@@ -2714,39 +2668,6 @@ function gShowNodeParams(node) {
     });
   });
   gRefreshParamOverrides(node.id);
-
-  // ── Per-node timing offset spinners ────────────────────────────
-  const timingSection = document.createElement('div');
-  timingSection.style.cssText = 'margin-top:12px;border-top:1px solid var(--border);padding-top:10px;';
-  timingSection.innerHTML = `
-    <div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:6px;">⏱ Timing Offset</div>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-      <label style="font-size:10px;color:var(--muted);">Start</label>
-      <input id="node-start-frame" type="number" min="0" value="${node.start_frame || 0}" style="width:48px;background:var(--bg2);border:1px solid var(--border);border-radius:3px;color:var(--text);padding:2px 4px;font-size:10px;">
-      <label style="font-size:10px;color:var(--muted);">End</label>
-      <input id="node-end-frame" type="number" min="0" value="${node.end_frame || 0}" style="width:48px;background:var(--bg2);border:1px solid var(--border);border-radius:3px;color:var(--text);padding:2px 4px;font-size:10px;">
-      <span style="font-size:9px;color:var(--muted);">(0 = use global)</span>
-    </div>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">
-      <label style="font-size:10px;color:var(--muted);">Prebake</label>
-      <input id="node-prebake" type="number" min="0" max="300" value="${node.prebake || 0}" style="width:48px;background:var(--bg2);border:1px solid var(--border);border-radius:3px;color:var(--text);padding:2px 4px;font-size:10px;">
-      <span style="font-size:9px;color:var(--muted);">frames (run sim ahead before first output frame)</span>
-    </div>
-  `;
-  gParamsForm.appendChild(timingSection);
-
-  document.getElementById('node-start-frame')?.addEventListener('change', function() {
-    node.start_frame = parseInt(this.value) || 0;
-    gSave();
-  });
-  document.getElementById('node-end-frame')?.addEventListener('change', function() {
-    node.end_frame = parseInt(this.value) || 0;
-    gSave();
-  });
-  document.getElementById('node-prebake')?.addEventListener('change', function() {
-    node.prebake = parseInt(this.value) || 0;
-    gSave();
-  });
 
   // ── Per-param keyframe section ──────────────────────────────
   const kfSection = document.createElement('div');
@@ -3594,6 +3515,25 @@ function _gUpdateLiveMeta(msg) {
         if (pc) pc.textContent = a >= 100 ? x.toFixed(1) : a >= 1 ? x.toFixed(2) : x.toFixed(3);
       }
     }
+    // Live LFO waveform playhead — one separate loop per WS frame
+    for (const [nid, vals] of Object.entries(msg.node_values)) {
+      if (typeof vals.phase === 'number') {
+        const lfoNode = gNodes.find(n => n.id === nid);
+        if (lfoNode && lfoNode.method_id === '__lfo__') {
+          _renderLfoWaveform(nid, vals.phase, lfoNode.params, vals.bipolar);
+        }
+      }
+    }
+    // Live Counter progress bar — one separate loop per WS frame
+    for (const [nid, vals] of Object.entries(msg.node_values)) {
+      if (typeof vals.phase === 'number') {
+        const counterNode = gNodes.find(n => n.id === nid);
+        if (counterNode && counterNode.method_id === '__counter__') {
+          _renderCounterProgress(nid, vals.value, vals.phase, vals.triggered, counterNode.params);
+        }
+      }
+    }
+
   }
   // Feed into Diagnostics tab — diagRender is exposed globally from the IIFE
   if (typeof window.diagRender === 'function') {
@@ -5724,10 +5664,8 @@ async function tlDoRenderSequence() {
         id: n.id, method_id: n.method_id, params: n.params,
         animParams: n.animParams || {},
         x: n.x, y: n.y, render: !!n.render, dirty: n.dirty !== false,
-        start_frame: n.start_frame || 0, end_frame: n.end_frame || 0,
         keyframes: n.keyframes || [],
         paramKeyframes: n.paramKeyframes || {},
-        prebake: n.prebake || 0,
       })),
       edges: gEdges.filter(e => !tlDrop.has(e.src_node) && !tlDrop.has(e.dst_node)).map(e => ({
         src_node: e.src_node, src_port: e.src_port,
@@ -5882,8 +5820,6 @@ function gDoClear() {
 }
 gClearBtn.addEventListener('click', gDoClear);
 gClearBtnDesk.addEventListener('click', gDoClear);
-document.getElementById('graph-layout-btn')?.addEventListener('click', gPhysicsToggle);
-document.getElementById('graph-layout-btn-desk')?.addEventListener('click', gPhysicsToggle);
 
 // ── Persistence ────────────────────────────────────────────────
 function gSave() {
@@ -6119,8 +6055,6 @@ function gSerializeGraph() {
         params:         n.params || {},
         animParams:     n.animParams || {},
         paramKeyframes: n.paramKeyframes || {},
-        start_frame:    n.start_frame || 0,
-        end_frame:      n.end_frame   || 0,
         keyframes:      n.keyframes   || [],
         drivers:       n.drivers      || {},
         controllers:   n.controllers  || {},
@@ -6169,7 +6103,7 @@ async function gLoadGraph(data) {
     } else {
       const def = gNodeDefs[n.method_id];
       if (!def) continue;
-      const node = { id: n.id, method_id: n.method_id, params: n.params || gDefaultParams(def), animParams: n.animParams || {}, paramKeyframes: n.paramKeyframes || {}, start_frame: n.start_frame || 0, end_frame: n.end_frame || 0, keyframes: n.keyframes || [], drivers: n.drivers || {}, controllers: n.controllers || {}, x: n.x, y: n.y, render: !!n.render, dirty: true };
+      const node = { id: n.id, method_id: n.method_id, params: n.params || gDefaultParams(def), animParams: n.animParams || {}, paramKeyframes: n.paramKeyframes || {}, keyframes: n.keyframes || [], drivers: n.drivers || {}, controllers: n.controllers || {}, x: n.x, y: n.y, render: !!n.render, dirty: true };
       gNodes.push(node);
       gRenderNode(node);
     }
@@ -7430,3 +7364,25 @@ gLoadGroupPresets();
 // ── Load saved clips on init ──────────────────────────────────
 tlLoadClips();
 renderTimelineRuler();
+
+function _renderCounterProgress(nid, value, phase, triggered, params) {
+  const canvas = document.getElementById('counter-canvas-' + nid);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.offsetWidth || 200, h = 28;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(0, 0, w, h);
+  const pct = Math.max(0, Math.min(1, phase || 0));
+  const trig = triggered && triggered > 0.5;
+  ctx.fillStyle = trig ? 'rgba(0,230,118,0.35)' : 'rgba(100,140,255,0.25)';
+  ctx.fillRect(2, 2, pct * (w - 4), h - 4);
+  if (trig) { ctx.fillStyle = 'rgba(0,230,118,0.6)'; ctx.fillRect(2, 2, 4, h - 4); }
+  ctx.fillStyle = trig ? '#00e676' : 'rgba(255,255,255,0.7)';
+  ctx.font = (h * 0.5) + 'px monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(value != null ? Math.round(value) : '-', w / 2, h / 2);
+  canvas.classList.toggle('triggered', trig);
+}

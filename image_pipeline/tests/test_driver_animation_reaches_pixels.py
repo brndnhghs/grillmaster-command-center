@@ -30,7 +30,7 @@ class FakeTL:
         self.total_frames = 48
 
 
-FRAME_BASED = ("__counter__", "__ramp__", "__beats__", "__envelope__")
+FRAME_BASED = ("__counter__", "__beats__", "__envelope__")
 
 
 @pytest.mark.slow

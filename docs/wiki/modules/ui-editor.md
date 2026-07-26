@@ -12,7 +12,7 @@ The shell is a **tabbed layout** defined in `index.html`:
 ### JS module system
 `ui/js/` holds the bundle. Observed entry/orchestration points:
 - `app.js` (~32 KB) — Methods-tab controller: fetches `/api/methods`, wires the generate/stop/auto buttons, drives the SSE job stream, and applies a token-aware `fetch` wrapper (when `localStorage['api-token']` is set, every request carries `X-Api-Token`).
-- `graph.js` (~275 KB) — the node-graph canvas editor (nodes, edges, drag, wiring, save/load).
+- `graph.js` (~275 KB) — the node-graph canvas editor (nodes, edges, drag, wiring, save/load). Also includes the **Driver/Controller stack editor** (`gRenderDriverControllerUI`) — a per-param UI for channel nodes that lets you route parameters from upstream outputs (Driver dropdown) and apply a chain of math transforms (Controller stack: multiply, add, clamp, curve, etc.) without drawing extra wires. Every mutation writes `node.drivers` / `node.controllers` and auto-saves. See [core-graph.md: Drivers & Controllers](../../modules/core-graph.md#drivers--controllers-channel-parameter-modulation).
 - `client3d.js` / `editor3d.js` — the three.js viewport and its editor controls.
 - `diagnostics.js` — the Diagnostics tab.
 - `theme.js` — theme bootstrap (runs before first paint to avoid flash; mirrors the `gm-theme` / `gm-theme-custom` localStorage keys).

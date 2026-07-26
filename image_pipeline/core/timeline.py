@@ -28,8 +28,7 @@ class Timeline:
     """Structured animation clock for one frame of a node graph render.
 
     Every node in the graph receives the same Timeline for a given frame,
-    then applies its own per-node offset (start_frame / end_frame) to remap
-    ``t`` and ``phase``.
+    is used by all nodes for a given frame.
     """
 
     # ── Global frame counters ────────────────────────────────────────
@@ -52,29 +51,6 @@ class Timeline:
     substep: int = 0            # which substep within this frame (0 = first)
     total_substeps: int = 1     # total substeps per output frame (1 = no subdivision)
 
-    # ── Per-node timing window (set by GraphExecutor per node) ───────
-    start_frame: int = 0        # first frame this node animates
-    end_frame: int = 0          # last frame this node animates (exclusive)
-
-    # ── Derived helpers ──────────────────────────────────────────────
-
-    @property
-    def progress(self) -> float:
-        """Normalised progress within the per-node window [start_frame, end_frame).
-
-        Returns 0.0 before start_frame, 1.0 after end_frame.
-        """
-        window = self.end_frame - self.start_frame
-        if window <= 0:
-            return 1.0
-        pos = (self.global_frame - self.start_frame) / window
-        return max(0.0, min(1.0, pos))
-
-    @property
-    def local_phase(self) -> float:
-        """Cyclic phase within the per-node window, in [0, 2π)."""
-        return self.progress * 2.0 * math.pi
-
     def to_dict(self) -> dict:
         """Serialise to a plain dict for injection into run_params."""
         return {
@@ -86,8 +62,6 @@ class Timeline:
             "speed": self.speed,
             "substep": self.substep,
             "total_substeps": self.total_substeps,
-            "start_frame": self.start_frame,
-            "end_frame": self.end_frame,
         }
 
 
@@ -223,8 +197,6 @@ def make_timeline(
     speed: float = 1.0,
     substep: int = 0,
     total_substeps: int = 1,
-    start_frame: int = 0,
-    end_frame: int | None = None,
 ) -> Timeline:
     """Factory: create a Timeline for a given frame.
 
@@ -242,18 +214,10 @@ def make_timeline(
         Which substep within this frame (0 = first).
     total_substeps : int
         Total substeps per output frame (1 = no subdivision).
-    start_frame : int
-        Per-node start frame (default 0).
-    end_frame : int | None
-        Per-node end frame (defaults to total_frames).
-
     Returns
     -------
     Timeline
     """
-    if end_frame is None:
-        end_frame = total_frames
-
     # Normalised t across the *global* timeline
     if total_frames > 1:
         t = global_frame / (total_frames - 1)
@@ -272,6 +236,4 @@ def make_timeline(
         speed=speed,
         substep=substep,
         total_substeps=total_substeps,
-        start_frame=start_frame,
-        end_frame=end_frame,
     )
