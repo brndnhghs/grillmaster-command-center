@@ -6,7 +6,7 @@ import math
 from collections import deque
 from pathlib import Path
 from ...core.registry import method
-from ...core.utils import seed_all
+from ...core.utils import seed_all, write_scalars
 
 # ── Per-node state ──────────────────────────────────────────────────────
 _LAG_STATE: dict[str, dict] = {}
@@ -120,10 +120,18 @@ def method_lag(out_dir: Path, seed: int, params=None):
         resetpulse_param = resetpulse_param.lower() in ("true", "1", "yes")
 
     # ── SCALAR input overrides ───────────────────────────────────────────
-    input_val = params.get("signal")
-    if input_val is not None:
-        input_val = float(input_val)
-    else:
+    # The executor injects upstream SCALAR values under the upstream's output
+    # port name (e.g. LFO emits "value").  Our input port is "signal", but
+    # the executor may not resolve "signal" directly, so scan the common
+    # output keys that upstream channel nodes produce.  This mirrors the
+    # proven multi-key fallback in __counter__.
+    input_val = None
+    for _k in ("signal", "value", "output", "level", "bipolar", "phase", "rate"):
+        _candidate = params.get(_k)
+        if _candidate is not None and isinstance(_candidate, (int, float)):
+            input_val = float(_candidate)
+            break
+    if input_val is None:
         input_val = 0.0
 
     reset_in_val = params.get("reset_in")
@@ -308,6 +316,10 @@ def method_lag(out_dir: Path, seed: int, params=None):
                 if _LAG_STATE[_nid].get("prev_frame", 0) < _cutoff:
                     del _LAG_STATE[_nid]
 
+    # ── Write scalar outputs to disk (required by executor) ──────────
+    write_scalars(out_dir, value=float(output),
+                  velocity=float(velocity),
+                  acceleration=float(acceleration))
     return {
         "value": float(output),
         "velocity": float(velocity),
