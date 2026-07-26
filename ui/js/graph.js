@@ -1272,9 +1272,9 @@ function gRenderGroupNode(node) {
     e.stopPropagation();
     if (!gPendingEdge) return;
     if (gPendingEdge.reverse && dot.dataset.dir === 'output')
-      gAddEdge(node.id, dot.dataset.port, gPendingEdge.dst_node, gPendingEdge.dst_port);
+      gAddEdge(node.id, dot.dataset.port, gPendingEdge.dst_node, gPendingEdge.dst_port, e);
     else if (!gPendingEdge.reverse && dot.dataset.dir === 'input')
-      gAddEdge(gPendingEdge.src_node, gPendingEdge.src_port, node.id, dot.dataset.port);
+      gAddEdge(gPendingEdge.src_node, gPendingEdge.src_port, node.id, dot.dataset.port, e);
     gPendingEdge = null; gPendingEl.style.display = 'none';
   }
 
@@ -1853,9 +1853,9 @@ function gRenderNode(node) {
     e.stopPropagation();
     if (!gPendingEdge) return;
     if (gPendingEdge.reverse && dot.dataset.dir === 'output')
-      gAddEdge(node.id, dot.dataset.port, gPendingEdge.dst_node, gPendingEdge.dst_port);
+      gAddEdge(node.id, dot.dataset.port, gPendingEdge.dst_node, gPendingEdge.dst_port, e);
     else if (!gPendingEdge.reverse && dot.dataset.dir === 'input')
-      gAddEdge(gPendingEdge.src_node, gPendingEdge.src_port, node.id, dot.dataset.port);
+      gAddEdge(gPendingEdge.src_node, gPendingEdge.src_port, node.id, dot.dataset.port, e);
     gPendingEdge = null; gPendingEl.style.display = 'none';
   }
 
@@ -1951,7 +1951,7 @@ document.addEventListener('touchend', e => {
     hit = best;
   }
   if (hit && hit.dataset.dir === 'input')
-    gAddEdge(gPendingEdge.src_node, gPendingEdge.src_port, hit.dataset.nid, hit.dataset.port);
+    gAddEdge(gPendingEdge.src_node, gPendingEdge.src_port, hit.dataset.nid, hit.dataset.port, e);
   gPendingEdge = null; gPendingEl.style.display = 'none';
 });
 document.addEventListener('touchcancel', () => {
@@ -2023,7 +2023,7 @@ function gPushApart(newNode, padding = 20) {
 }
 
 // ── Edges ──────────────────────────────────────────────────────
-function gAddEdge(src_node, src_port, dst_node, dst_port) {
+function gAddEdge(src_node, src_port, dst_node, dst_port, evt) {
   if (src_node === dst_node) return;
   const srcDot = gNodesEl.querySelector(`.gport[data-nid="${src_node}"][data-port="${src_port}"][data-dir="output"]`);
   const dstDot = gNodesEl.querySelector(`.gport[data-nid="${dst_node}"][data-port="${dst_port}"][data-dir="input"]`);
@@ -2035,29 +2035,36 @@ function gAddEdge(src_node, src_port, dst_node, dst_port) {
   if (conflict) {
     const ptype = (srcDot?.dataset?.ptype || dstDot?.dataset?.ptype || '').toUpperCase();
     const mergeMap = {
-      IMAGE:     { method: '137', out_port: 'image',     in_a: 'image_a',     in_b: 'image_b'     },
-      SCALAR:    { method: '138', out_port: 'value',     in_a: 'value_a',     in_b: 'value_b'     },
-      FIELD:     { method: '139', out_port: 'field',     in_a: 'field_a',     in_b: 'field_b'     },
-      PARTICLES: { method: '140', out_port: 'particles', in_a: 'particles_a', in_b: 'particles_b' },
+      IMAGE:     { method: '128', out_port: 'image',     in_a: 'image_a',     in_b: 'image_b'     },
+      SCALAR:    { method: '129', out_port: 'value',     in_a: 'value_a',     in_b: 'value_b'     },
+      FIELD:     { method: '130', out_port: 'field',     in_a: 'field_a',     in_b: 'field_b'     },
+      PARTICLES: { method: '131', out_port: 'particles', in_a: 'particles_a', in_b: 'particles_b' },
       // Client-side 3D: two objects into one Scene port → auto-group them.
       OBJECT3D:  { method: '__group3d__', out_port: 'object', in_a: 'object_a', in_b: 'object_b' },
     };
     const spec = mergeMap[ptype];
+
     if (!spec) { gSetStatus(`Cannot merge ${ptype || 'unknown'} wires`); return; }
-    const nodeA = gNodes.find(n => n.id === conflict.src_node);
-    const nodeB = gNodes.find(n => n.id === src_node);
-    const mx = ((nodeA?.x || 0) + (nodeB?.x || 0)) / 2 + 140;
-    const my = ((nodeA?.y || 0) + (nodeB?.y || 0)) / 2;
-    const mergeNode = gAddNode(spec.method, mx, my);
-    if (!mergeNode) { gSetStatus('Merge method not found — restart server'); return; }
+
+    if (evt && (evt.metaKey || evt.ctrlKey)) {
+      const nodeA = gNodes.find(n => n.id === conflict.src_node);
+      const nodeB = gNodes.find(n => n.id === src_node);
+      const mx = ((nodeA?.x || 0) + (nodeB?.x || 0)) / 2 + 140;
+      const my = ((nodeA?.y || 0) + (nodeB?.y || 0)) / 2;
+      const mergeNode = gAddNode(spec.method, mx, my);
+      if (!mergeNode) { gSetStatus('Merge method not found — restart server'); return; }
+      gEdges = gEdges.filter(e => e.id !== conflict.id);
+      gEdges.push({ id: 'e'+(++gEdgeCounter), src_node: conflict.src_node, src_port: conflict.src_port, dst_node: mergeNode.id, dst_port: spec.in_a,     feedback: false });
+      gEdges.push({ id: 'e'+(++gEdgeCounter), src_node,                    src_port,                    dst_node: mergeNode.id, dst_port: spec.in_b,     feedback: false });
+      gEdges.push({ id: 'e'+(++gEdgeCounter), src_node: mergeNode.id,      src_port: spec.out_port,     dst_node,               dst_port,                feedback: false });
+      gUpdateConnectedPorts();
+      if (gSelectedNode === dst_node) gRefreshParamOverrides(dst_node);
+      gRedrawEdges(); gSave();
+      return;
+    }
+
+    // Cmd not held (or unsupported ptype): just swap the old edge for the new one.
     gEdges = gEdges.filter(e => e.id !== conflict.id);
-    gEdges.push({ id: 'e'+(++gEdgeCounter), src_node: conflict.src_node, src_port: conflict.src_port, dst_node: mergeNode.id, dst_port: spec.in_a,     feedback: false });
-    gEdges.push({ id: 'e'+(++gEdgeCounter), src_node,                    src_port,                    dst_node: mergeNode.id, dst_port: spec.in_b,     feedback: false });
-    gEdges.push({ id: 'e'+(++gEdgeCounter), src_node: mergeNode.id,      src_port: spec.out_port,     dst_node,               dst_port,                feedback: false });
-    gUpdateConnectedPorts();
-    if (gSelectedNode === dst_node) gRefreshParamOverrides(dst_node);
-    gRedrawEdges(); gSave();
-    return;
   }
 
   gEdges.push({ id: 'e'+(++gEdgeCounter), src_node, src_port, dst_node, dst_port, feedback: false });
