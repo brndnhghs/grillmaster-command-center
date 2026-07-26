@@ -1131,12 +1131,10 @@ function gAddNode(method_id, x, y) {
   gNodes.push(node);
   gRenderNode(node);
   gPushApart(node);
-  gPhysicsKick();
   gSave();
   return node;
 }
 
-// ── Dispatch render by node type ───────────────────────────────
 function gRenderAnyNode(node) {
   if (node.type === 'group') gRenderGroupNode(node);
   else gRenderNode(node);
@@ -1494,7 +1492,6 @@ function gAddGroupNode(groupDef, x, y) {
   gNodes.push(node);
   gRenderGroupNode(node);
   gPushApart(node);
-  gPhysicsKick();
   gSave();
   return node;
 }
@@ -1988,7 +1985,6 @@ function gAttachNodeDrag(el, node) {
       document.removeEventListener('touchcancel', onEnd);
       node._pinned = false;
       gSave();
-      gPhysicsKick();
     }
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onEnd);
@@ -2000,46 +1996,10 @@ function gAttachNodeDrag(el, node) {
   header.addEventListener('touchstart', startDrag, { passive: false });
 }
 
-// ── Push-apart & Physics ────────────────────────────────────────
-const PHYSICS = {
-  k_r: 40000, k_s_push: 0, k_s_pull: 0, rest: 125, damping: 0.80, k_c: 0.001,
-  k_lane: 0.06, k_dir: 0.5, lane_width: 280, margin: 80, dt: 1.0,
-};
-let gPhysicsActive = false;
-let gPhysicsRafId  = null;
-let gDepths        = null;   // cached topological depths, invalidated on graph change
-
+// ── Push-apart ──────────────────────────────────────────────────
 function _nodeBox(n) {
   const el = document.getElementById('gnode-' + n.id);
   return { w: el ? el.offsetWidth : 160, h: el ? el.offsetHeight : 120 };
-}
-
-// BFS longest-path (Kahn's topological sort) from source nodes (no incoming non-feedback edges).
-function gComputeDepths() {
-  const inDeg = new Map(gNodes.map(n => [n.id, 0]));
-  const adj   = new Map(gNodes.map(n => [n.id, []]));
-  for (const e of gEdges) {
-    if (e.feedback) continue;
-    inDeg.set(e.dst_node, (inDeg.get(e.dst_node) || 0) + 1);
-    if (adj.has(e.src_node)) adj.get(e.src_node).push(e.dst_node);
-  }
-  const depths = new Map(gNodes.map(n => [n.id, 0]));
-  const queue  = gNodes.filter(n => (inDeg.get(n.id) || 0) === 0).map(n => n.id);
-  let i = 0;
-  while (i < queue.length) {
-    const id = queue[i++];
-    for (const nid of (adj.get(id) || [])) {
-      depths.set(nid, Math.max(depths.get(nid) || 0, (depths.get(id) || 0) + 1));
-      inDeg.set(nid, (inDeg.get(nid) || 0) - 1);
-      if ((inDeg.get(nid) || 0) === 0) queue.push(nid);
-    }
-  }
-  // Render-target node is placed one lane past the deepest node
-  let maxDepth = 0;
-  for (const d of depths.values()) maxDepth = Math.max(maxDepth, d);
-  const renderNode = gNodes.find(n => n.render);
-  if (renderNode) depths.set(renderNode.id, maxDepth + 1);
-  return depths;
 }
 
 function gPushApart(newNode, padding = 20) {
@@ -2060,179 +2020,6 @@ function gPushApart(newNode, padding = 20) {
     if (el) { el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; }
   }
   if (gNodes.length > 1) gRedrawEdges();
-}
-
-function gPhysicsKick() {
-  gDepths = null;  // invalidate depth cache on every graph change
-  if (!gPhysicsActive || gPhysicsRafId) return;
-  gPhysicsRafId = requestAnimationFrame(gPhysicsTick);
-}
-
-function gPhysicsBurst(ticks = 80) {
-  // Run physics for a fixed number of ticks regardless of gPhysicsActive.
-  // Used when combine nodes are auto-spawned so they settle immediately.
-  gDepths = null;
-  const wasActive = gPhysicsActive;
-  gPhysicsActive = true;
-  let t = 0;
-  function tick() {
-    gPhysicsTick();
-    if (++t < ticks && gPhysicsRafId === null) {
-      gPhysicsRafId = requestAnimationFrame(tick);
-    } else if (t >= ticks) {
-      if (!wasActive) {
-        gPhysicsActive = false;
-        gPhysicsRafId = null;
-      }
-    }
-  }
-  if (!gPhysicsRafId) gPhysicsRafId = requestAnimationFrame(tick);
-}
-
-function gPhysicsTick() {
-  gPhysicsRafId = null;
-  if (!gPhysicsActive || gNodes.length < 2) return;
-
-  // Recompute depths once per simulation burst
-  if (!gDepths) gDepths = gComputeDepths();
-
-  const rect = gCanvasWrap.getBoundingClientRect();
-  const ccx  = (rect.width  / 2 - gPanX) / gCanvasScale;
-  const ccy  = (rect.height / 2 - gPanY) / gCanvasScale;
-
-  // ── Pass 1: edge direction bias (per-edge, accumulate into force map) ──
-  const fxBias = new Map(gNodes.map(n => [n.id, 0]));
-  for (const edge of gEdges) {
-    if (edge.feedback) continue;
-    const src = gNodes.find(n => n.id === edge.src_node);
-    const dst = gNodes.find(n => n.id === edge.dst_node);
-    if (!src || !dst) continue;
-    // Push src leftward and dst rightward; flip sign if dst is already left of src
-    const edgeDirX = PHYSICS.k_dir * (dst.x < src.x ? -1 : 1);
-    fxBias.set(src.id, (fxBias.get(src.id) || 0) - edgeDirX);
-    fxBias.set(dst.id, (fxBias.get(dst.id) || 0) + edgeDirX);
-  }
-
-  // ── Pass 2: per-node forces ──
-  for (const n of gNodes) {
-    if (n._vx === undefined) { n._vx = 0; n._vy = 0; }
-    if (n._pinned || n.render) { n._vx = 0; n._vy = 0; continue; }
-    const { w, h } = _nodeBox(n);
-    const ncx    = n.x + w / 2, ncy = n.y + h / 2;
-    const nDepth = gDepths.get(n.id) ?? 0;
-    let fx = fxBias.get(n.id) || 0;
-    let fy = 0;
-
-    // Node-node repulsion — 2.5× stronger between same-lane nodes (vertical spread)
-    for (const m of gNodes) {
-      if (m.id === n.id) continue;
-      const { w: mw, h: mh } = _nodeBox(m);
-      const dx = ncx - (m.x + mw / 2), dy = ncy - (m.y + mh / 2);
-      const d  = Math.hypot(dx, dy) || 0.1;
-      const ux = dx / d, uy = dy / d;
-
-      // Soft repulsion — 1/d² with minimum-distance clamp to prevent singularity oscillation.
-      const effD = Math.max(d, (w + mw) / 6);
-      const f = PHYSICS.k_r / (effD * effD);
-      fx += ux * f; fy += uy * f * 0.15;
-    }
-
-    // Edge spring attraction (radial, bidirectional)
-    for (const edge of gEdges) {
-      let other = null;
-      if      (edge.src_node === n.id) other = gNodes.find(m => m.id === edge.dst_node);
-      else if (edge.dst_node === n.id) other = gNodes.find(m => m.id === edge.src_node);
-      if (!other) continue;
-      const { w: ow, h: oh } = _nodeBox(other);
-      const dx = (other.x + ow / 2) - ncx, dy = (other.y + oh / 2) - ncy;
-      const d  = Math.hypot(dx, dy) || 1;
-      const overlap = d - PHYSICS.rest;
-      const f = overlap < 0 ? PHYSICS.k_s_push * overlap : PHYSICS.k_s_pull * overlap;
-      fx += (dx / d) * f; fy += (dy / d) * f;
-    }
-
-    // Lane force — pull node's left edge toward its target x lane (horizontal only)
-    const targetX = nDepth * PHYSICS.lane_width + PHYSICS.margin;
-    fx += PHYSICS.k_lane * (targetX - n.x);
-
-    // Weak vertical centering (don't apply horizontal — lane force owns that axis)
-    fy += PHYSICS.k_c * (ccy - ncy);
-
-    // Integrate — dampen vertical force to reduce excessive up/down drift
-    n._vx = (n._vx + fx * PHYSICS.dt) * PHYSICS.damping;
-    n._vy = (n._vy + fy * PHYSICS.dt) * PHYSICS.damping;
-    n.x  += n._vx * PHYSICS.dt;
-    n.y  += n._vy * PHYSICS.dt;
-    const el = document.getElementById('gnode-' + n.id);
-    if (el) { el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; }
-  }
-
-  // ── Pass 3: hard overlap resolution (post-integration) ──
-  // Directly separate any pair whose bounding boxes actually intersect.
-  // Applied as position correction, not force — no oscillation.
-  for (let iter = 0; iter < 3; iter++) {
-    let anyOverlap = false;
-    for (const n of gNodes) {
-      if (n._pinned || n.render) continue;
-      const { w: nw, h: nh } = _nodeBox(n);
-      const ncx = n.x + nw / 2, ncy = n.y + nh / 2;
-      for (const m of gNodes) {
-        if (m.id === n.id) continue;
-        const { w: mw, h: mh } = _nodeBox(m);
-        const dx = ncx - (m.x + mw / 2), dy = ncy - (m.y + mh / 2);
-        const gapX = Math.abs(dx) - (nw + mw) / 2;
-        const gapY = Math.abs(dy) - (nh + mh) / 2;
-        if (gapX >= 0 || gapY >= 0) continue;
-        anyOverlap = true;
-        // Push apart along the axis with the least overlap
-        if (gapX < gapY) {
-          const sign = dx > 0 ? 1 : -1;
-          n.x += sign * (-gapX + 2);
-          m.x -= sign * (-gapX + 2);
-        } else {
-          const sign = dy > 0 ? 1 : -1;
-          n.y += sign * (-gapY + 2);
-          m.y -= sign * (-gapY + 2);
-        }
-      }
-    }
-    if (!anyOverlap) break;
-  }
-  // Re-render positions after hard resolution
-  for (const n of gNodes) {
-    const el = document.getElementById('gnode-' + n.id);
-    if (el) { el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; }
-  }
-
-  gRedrawEdges();
-  let maxV = 0;
-  for (const n of gNodes) maxV = Math.max(maxV, Math.hypot(n._vx || 0, n._vy || 0));
-  if (maxV > 0.5) {
-    gPhysicsRafId = requestAnimationFrame(gPhysicsTick);
-  } else {
-    // Snap to grid when settled
-    for (const n of gNodes) {
-      n.x = Math.round(n.x / GRID) * GRID;
-      n.y = Math.round(n.y / GRID) * GRID;
-      const el = document.getElementById('gnode-' + n.id);
-      if (el) { el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; }
-    }
-    gRedrawEdges();
-    gSave();
-  }
-}
-
-function gPhysicsToggle() {
-  gPhysicsActive = !gPhysicsActive;
-  document.getElementById('graph-layout-btn')?.classList.toggle('active', gPhysicsActive);
-  document.getElementById('graph-layout-btn-desk')?.classList.toggle('active', gPhysicsActive);
-  if (gPhysicsActive) {
-    gNodes.forEach(n => { n._vx = 0; n._vy = 0; });
-    gPhysicsKick();
-  } else {
-    if (gPhysicsRafId) { cancelAnimationFrame(gPhysicsRafId); gPhysicsRafId = null; }
-    gSave();
-  }
 }
 
 // ── Edges ──────────────────────────────────────────────────────
@@ -2269,21 +2056,21 @@ function gAddEdge(src_node, src_port, dst_node, dst_port) {
     gEdges.push({ id: 'e'+(++gEdgeCounter), src_node: mergeNode.id,      src_port: spec.out_port,     dst_node,               dst_port,                feedback: false });
     gUpdateConnectedPorts();
     if (gSelectedNode === dst_node) gRefreshParamOverrides(dst_node);
-    gRedrawEdges(); gSave(); gPhysicsBurst();
+    gRedrawEdges(); gSave();
     return;
   }
 
   gEdges.push({ id: 'e'+(++gEdgeCounter), src_node, src_port, dst_node, dst_port, feedback: false });
   gUpdateConnectedPorts();
   if (gSelectedNode === dst_node) gRefreshParamOverrides(dst_node);
-  gRedrawEdges(); gSave(); gPhysicsKick();
+  gRedrawEdges(); gSave();
 }
 function gDeleteEdge(id) {
   const edge = gEdges.find(e => e.id === id);
   gEdges = gEdges.filter(e => e.id !== id);
   gUpdateConnectedPorts();
   if (edge && gSelectedNode === edge.dst_node) gRefreshParamOverrides(edge.dst_node);
-  gRedrawEdges(); gSave(); gPhysicsKick();
+  gRedrawEdges(); gSave();
 }
 function gDeleteNode(id) {
   gNodes = gNodes.filter(n => n.id !== id);
@@ -2300,7 +2087,7 @@ function gDeleteNode(id) {
   // clipboard's paste path resolves an empty fragment.
   gSelectedNodes.delete(id);
   gUpdateConnectedPorts();
-  gRedrawEdges(); gSave(); gPhysicsKick();
+  gRedrawEdges(); gSave();
 }
 
 // Keep the edge-id counter ahead of every edge already in the document.
@@ -5803,8 +5590,6 @@ function gDoClear() {
 }
 gClearBtn.addEventListener('click', gDoClear);
 gClearBtnDesk.addEventListener('click', gDoClear);
-document.getElementById('graph-layout-btn')?.addEventListener('click', gPhysicsToggle);
-document.getElementById('graph-layout-btn-desk')?.addEventListener('click', gPhysicsToggle);
 
 // ── Persistence ────────────────────────────────────────────────
 function gSave() {
