@@ -1733,55 +1733,9 @@ function gCategoryColor(cat) {
 const _gCatIcons = {
   gpu_shaders: '⚡', client_3d: '🧊', p5_sketches: '🎨', ml_models: '🧠',
   simulations: '🌀', cli_tools: '⌨️', io: '📁', channels: '🎛️',
- };
+};
 
- // Inline node widget renderer (channels only). Called from gRenderNode after
- // the widget mount point is created. Override per method_id to draw embedded
- // controls inside the node body (curve, slider, etc.). By default a no-op.
- function _renderNodeWidget(node, def, area) {
-   if (def.method_id !== '__envelope__') return;
-
-   const p = node.params || {};
-   const attack  = Math.max(1, parseInt(p.attack)  || 10);
-   const decay   = Math.max(1, parseInt(p.decay)   || 20);
-   const sustain = Math.max(0, Math.min(1, parseFloat(p.sustain_level) || parseFloat(p.sustain) || 0.7));
-   const release = Math.max(1, parseInt(p.release) || 50);
-   const hold    = 50;
-
-   const total = attack + decay + hold + release;
-   const W = 120, H = 56, P = 4;
-   const x = t => P + (t / total) * (W - 2 * P);
-   const y = v => H - P - v * (H - 2 * P);
-
-   const ns = 'http://www.w3.org/2000/svg';
-   const svg = document.createElementNS(ns, 'svg');
-   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-   svg.style.cssText = 'width:100%;height:100%;display:block;border-radius:4px;background:#0d1b2a;';
-
-   const bg = document.createElementNS(ns, 'rect');
-   bg.setAttribute('width', W); bg.setAttribute('height', H); bg.setAttribute('rx', 4); bg.setAttribute('fill', '#0d1b2a');
-   svg.appendChild(bg);
-
-   const a2 = attack, d2 = attack + decay, h2 = attack + decay + hold;
-   const pts = `M${x(0)},${y(0)} L${x(a2)},${y(1)} L${x(d2)},${y(sustain)} L${x(h2)},${y(sustain)} L${x(total)},${y(0)}`;
-   const path = document.createElementNS(ns, 'path');
-   path.setAttribute('d', pts); path.setAttribute('fill', 'none');
-   path.setAttribute('stroke', '#448aff'); path.setAttribute('stroke-width', '2');
-   path.setAttribute('stroke-linecap', 'round'); path.setAttribute('stroke-linejoin', 'round');
-   svg.appendChild(path);
-
-   for (const [px, py] of [[a2, 1], [d2, sustain], [h2, sustain]]) {
-     const c = document.createElementNS(ns, 'circle');
-     c.setAttribute('cx', x(px)); c.setAttribute('cy', y(py));
-     c.setAttribute('r', '3'); c.setAttribute('fill', '#fff');
-     svg.appendChild(c);
-   }
-
-    area.classList.add('has-content');
-    area.appendChild(svg);
- }
-
- function gRenderNode(node) {
+function gRenderNode(node) {
   const def = gNodeDefs[node.method_id];
   if (!def) return;
 
@@ -1885,19 +1839,15 @@ const _gCatIcons = {
   const nonImgOut = Object.entries(def.outputs || {}).filter(([,t]) => t !== 'image');
 
   // Build pairing: outName → inName (first input whose name starts with outName, same type)
-  // Disabled for channels nodes — the flex-row layout separates inputs (left) and outputs
-  // (right) into distinct columns, so paired rows can't span the gap.
   const pairedOut  = new Map();   // outName -> inName
   const usedInPort = new Set();
-  if (def.category !== 'channels') {
-    for (const [outName, outType] of nonImgOut) {
-      if (outName === 'luminance') continue;
-      for (const [inName, inType] of nonImgIn) {
-        if (!usedInPort.has(inName) && inType === outType && inName.startsWith(outName)) {
-          pairedOut.set(outName, inName);
-          usedInPort.add(inName);
-          break;
-        }
+  for (const [outName, outType] of nonImgOut) {
+    if (outName === 'luminance') continue;
+    for (const [inName, inType] of nonImgIn) {
+      if (!usedInPort.has(inName) && inType === outType && inName.startsWith(outName)) {
+        pairedOut.set(outName, inName);
+        usedInPort.add(inName);
+        break;
       }
     }
   }
@@ -1925,11 +1875,6 @@ const _gCatIcons = {
     portsEl.appendChild(row);
   }
 
-  // For channels nodes, separate outputs into their own container so the
-  // flex-row layout can place them in the right column.
-  const outPortsEl = def.category === 'channels' ? document.createElement('div') : null;
-  if (outPortsEl) outPortsEl.className = 'gnode-ports';
-
   // Render native outputs (no matching input) — right-side only, stacked below
   for (const [name, type] of nonImgOut) {
     if (pairedOut.has(name)) continue;
@@ -1938,13 +1883,17 @@ const _gCatIcons = {
     row.appendChild(_mkLabel(name));
     const c = _mkChip(name, 'output'); if (c) row.appendChild(c);
     row.appendChild(_mkPort(name, type, 'output'));
-    (outPortsEl || portsEl).appendChild(row);
+    portsEl.appendChild(row);
   }
 
-  // Build runtime section (shared by both layout paths)
-  let rtEl = null;
-  if (def.runtime) {
-    rtEl = document.createElement('div');
+  if (portsEl.children.length) el.appendChild(portsEl);
+
+  // ── Runtime section (channels only) ──────────────────────────
+  // Read-only live readouts (Current Value, Phase, Beat, …) that update every
+  // frame from the live WS feed (msg.node_values). Never serialized. Per spec
+  // every node follows Title → Inputs → Properties → Runtime → Outputs.
+  if (def.category === 'channels' && def.runtime) {
+    const rtEl = document.createElement('div');
     rtEl.className = 'gnode-runtime';
     const rtLabel = document.createElement('div');
     rtLabel.className = 'gnode-section-label';
@@ -1965,35 +1914,7 @@ const _gCatIcons = {
       row.appendChild(val);
       rtEl.appendChild(row);
     }
-  }
-
-  // ── Body layout ──────────────────────────────────────────────
-  // Channels nodes get a flex-row body: inputs-left ∙ widget/runtime center ∙ outputs-right.
-  // Non-channel nodes keep traditional vertical stacking (ports then runtime).
-  if (def.category === 'channels') {
-    const body = document.createElement('div');
-    body.className = 'gnode-body';
-    const leftCol = document.createElement('div');
-    leftCol.className = 'gnode-body-col gnode-col-left';
-    if (portsEl.children.length) leftCol.appendChild(portsEl);
-    body.appendChild(leftCol);
-    const centerCol = document.createElement('div');
-    centerCol.className = 'gnode-body-col gnode-col-center';
-    const widgetArea = document.createElement('div');
-    widgetArea.className = 'gnode-widget';
-    centerCol.appendChild(widgetArea);
-    _renderNodeWidget(node, def, widgetArea);
-    if (rtEl) centerCol.appendChild(rtEl);
-    body.appendChild(centerCol);
-    const rightCol = document.createElement('div');
-    rightCol.className = 'gnode-body-col gnode-col-right';
-    if (outPortsEl && outPortsEl.children.length) rightCol.appendChild(outPortsEl);
-    body.appendChild(rightCol);
-    el.appendChild(body);
-  } else {
-    if (portsEl.children.length) el.appendChild(portsEl);
-    if (outPortsEl && outPortsEl.children.length) el.appendChild(outPortsEl);
-    if (rtEl) el.appendChild(rtEl);
+    el.appendChild(rtEl);
     // LFO waveform preview canvas (visual-spec: live waveform with playhead)
     if (node.method_id === '__lfo__') {
       const canvasDiv = document.createElement('div');
@@ -2020,6 +1941,7 @@ const _gCatIcons = {
       // Initial draw (static preview until live WS frame arrives)
       setTimeout(() => _renderCounterProgress(node.id, 0, 0, 0, node.params), 0);
     }
+
   }
 
   gNodesEl.appendChild(el);
@@ -2115,18 +2037,18 @@ const _gCatIcons = {
   });
 
   el.addEventListener('mousedown', e => {
-    if (e.button !== 0 || e.target.closest('.gnode-port-row, .gnode-header, .gport, .gnode-runtime, .gnode-widget')) return;
+    if (e.button !== 0 || e.target.closest('.gnode-port-row, .gnode-header, .gport')) return;
     const nr = el.getBoundingClientRect();
-    if (def.category !== 'channels' && (e.clientX - nr.left) <= nr.width / 2) return;
+    if ((e.clientX - nr.left) <= nr.width / 2) return;
     const dot = _nearestPort2('output');
     if (!dot) return;
     e.stopPropagation(); e.preventDefault();
     _startWireFrom2(dot, e);
   });
   el.addEventListener('mouseup', e => {
-    if (!gPendingEdge || e.target.closest('.gnode-port-row, .gport, .gnode-widget, .gnode-runtime')) return;
+    if (!gPendingEdge || e.target.closest('.gnode-port-row, .gport')) return;
     const nr = el.getBoundingClientRect();
-    if (def.category !== 'channels' && (e.clientX - nr.left) > nr.width / 2) return;
+    if ((e.clientX - nr.left) > nr.width / 2) return;
     const dot = _nearestPort2('input');
     if (!dot) return;
     _acceptWireAt2(dot, e);

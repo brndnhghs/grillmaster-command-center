@@ -857,22 +857,6 @@
   }
   .gnode-top-ports .gnode-port-row { flex: 1; }
   .gnode-ports { padding: 6px 0; }
-
-  /* ── Flex-row body (channels) ────────────────────────── */
-  .gnode-body { display: flex; flex-direction: row; align-items: stretch; }
-  .gnode-body-col {
-    display: flex; flex-direction: column; justify-content: flex-start;
-  }
-  .gnode-col-left  { flex: 0 0 auto; }
-  .gnode-col-center { flex: 1 1 auto; min-width: 80px; padding: 4px 8px; gap: 6px;
-    border-left: 1px solid rgba(255,255,255,0.06);
-    border-right: 1px solid rgba(255,255,255,0.06); }
-  .gnode-col-right { flex: 0 0 auto; align-items: flex-end; }
-  .gnode-widget {
-    display: none; width: 100%; min-height: 0;
-    align-items: center; justify-content: center;
-  }
-  .gnode-widget.has-content { display: flex; }
   .gnode-port-row {
     display: flex; align-items: center; padding: 3px 0; position: relative;
     min-height: 28px;
@@ -932,6 +916,7 @@
   .port-chip.sig-event    { color: #ff9100; border-color: rgba(255,145,0,0.5); }
   /* Static input chips: dimmed to subordinate them to live output chips. */
   .port-chip.static { opacity: 0.55; pointer-events: none; }
+
   /* ── LFO waveform preview canvas ── */
   .gnode-lfo-canvas-wrap {
     margin: 6px 10px 4px;
@@ -2330,3 +2315,4 @@
   .diag-chip.gpu-chip  .chip-val { color: #fbbf24; }
   .diag-chip.mem-chip  .chip-val { color: var(--accent2); }
   .diag-chip.disk-chip .chip-val { color: var(--muted); }
+
