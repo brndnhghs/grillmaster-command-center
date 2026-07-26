@@ -6,7 +6,7 @@ import math
 from collections import deque
 from pathlib import Path
 from ...core.registry import method
-from ...core.utils import seed_all, write_scalars
+from ...core.utils import seed_all
 
 # ── Per-node state ──────────────────────────────────────────────────────
 _LAG_STATE: dict[str, dict] = {}
@@ -316,10 +316,6 @@ def method_lag(out_dir: Path, seed: int, params=None):
                 if _LAG_STATE[_nid].get("prev_frame", 0) < _cutoff:
                     del _LAG_STATE[_nid]
 
-    # ── Write scalar outputs to disk (required by executor) ──────────
-    write_scalars(out_dir, value=float(output),
-                  velocity=float(velocity),
-                  acceleration=float(acceleration))
     return {
         "value": float(output),
         "velocity": float(velocity),
