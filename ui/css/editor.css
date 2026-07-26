@@ -857,6 +857,21 @@
   }
   .gnode-top-ports .gnode-port-row { flex: 1; }
   .gnode-ports { padding: 6px 0; }
+
+  /* ── Flex-row body (channels) ────────────────────────── */
+  .gnode-body { display: flex; flex-direction: row; align-items: stretch; }
+  .gnode-body-col {
+    display: flex; flex-direction: column; justify-content: flex-start;
+  }
+  .gnode-col-left  { flex: 0 0 auto; }
+  .gnode-col-center { flex: 1 1 auto; min-width: 80px; padding: 4px 8px; gap: 6px;
+    border-left: 1px solid rgba(255,255,255,0.06);
+    border-right: 1px solid rgba(255,255,255,0.06); }
+  .gnode-col-right { flex: 0 0 auto; align-items: flex-end; }
+  .gnode-widget {
+    width: 100%; min-height: 40px;
+    display: flex; align-items: center; justify-content: center;
+  }
   .gnode-port-row {
     display: flex; align-items: center; padding: 3px 0; position: relative;
     min-height: 28px;
