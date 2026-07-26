@@ -932,7 +932,6 @@
   .port-chip.sig-event    { color: #ff9100; border-color: rgba(255,145,0,0.5); }
   /* Static input chips: dimmed to subordinate them to live output chips. */
   .port-chip.static { opacity: 0.55; pointer-events: none; }
-
   /* ── LFO waveform preview canvas ── */
   .gnode-lfo-canvas-wrap {
     margin: 6px 10px 4px;
@@ -2331,4 +2330,3 @@
   .diag-chip.gpu-chip  .chip-val { color: #fbbf24; }
   .diag-chip.mem-chip  .chip-val { color: var(--accent2); }
   .diag-chip.disk-chip .chip-val { color: var(--muted); }
-
