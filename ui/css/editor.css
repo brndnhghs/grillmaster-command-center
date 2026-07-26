@@ -933,6 +933,44 @@
   /* Static input chips: dimmed to subordinate them to live output chips. */
   .port-chip.static { opacity: 0.55; pointer-events: none; }
 
+  /* ── LFO waveform preview canvas ── */
+  .gnode-lfo-canvas-wrap {
+    margin: 6px 10px 4px;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  .gnode-lfo-canvas {
+    display: block;
+    width: 100%;
+    height: 50px;
+    border-radius: 4px;
+    background: rgba(0,0,0,0.12);
+  }
+  .gnode-lfo-canvas.paused {
+    opacity: 0.6;
+    filter: saturate(0.5);
+  }
+
+  /* ── Counter progress bar canvas ── */
+  .gnode-counter-canvas-wrap {
+    margin: 6px 10px 4px;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  .gnode-counter-canvas {
+    display: block;
+    width: 100%;
+    height: 28px;
+    border-radius: 4px;
+    background: rgba(0,0,0,0.12);
+  }
+  .gnode-counter-canvas.triggered {
+    border-color: rgba(0,230,118,0.4);
+    box-shadow: 0 0 6px rgba(0,230,118,0.15);
+  }
+
   /* ── Driver / Controller editor (Exposed Parameter & Runtime UI, channels) ── */
   .dc-editor {
     border-top: 1px solid var(--border);
@@ -991,6 +1029,7 @@
      Wires are neutral white; data type is carried by the port's signal
      colour (sig-numeric / control / output / event). These rules control
      weight + hover. */
+  .gedge {
     fill: none; stroke: #e8e8ec; stroke-width: 2; opacity: 0.85;
     pointer-events: stroke; cursor: pointer;
     transition: opacity 0.1s, stroke-width 0.1s, stroke 0.1s;
@@ -1036,7 +1075,7 @@
   }
   #graph-canvas-preset:hover { color: var(--text); border-color: var(--border-strong); }
   /* Ghost-button family: every secondary toolbar control shares this look */
-  #graph-clear-btn, #graph-clear-btn-desk, #graph-layout-btn, #graph-layout-btn-desk,
+  #graph-clear-btn, #graph-clear-btn-desk,
   .g-autobtn, .g-savebtn, .g-loadbtn, #graph-help-btn,
   #graph-undo-btn, #graph-redo-btn {
     height: 30px; padding: 0 12px; display: inline-flex; align-items: center; gap: 5px;
@@ -1045,7 +1084,7 @@
     font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap;
     transition: background 0.12s, color 0.12s, border-color 0.12s;
   }
-  #graph-clear-btn:hover, #graph-clear-btn-desk:hover, #graph-layout-btn:hover, #graph-layout-btn-desk:hover,
+  #graph-clear-btn:hover, #graph-clear-btn-desk:hover,
   .g-autobtn:hover, .g-savebtn:hover, .g-loadbtn:hover, #graph-help-btn:hover,
   #graph-undo-btn:not(:disabled):hover, #graph-redo-btn:not(:disabled):hover {
     color: var(--text); background: var(--bg3); border-color: var(--border-strong);
@@ -1084,7 +1123,6 @@
     flex: 1 1 auto; min-width: 0; max-width: 320px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  #graph-layout-btn.active, #graph-layout-btn-desk.active,
   .g-autobtn.active {
     background: rgba(52,211,153,0.1); color: var(--success); border-color: var(--success);
   }

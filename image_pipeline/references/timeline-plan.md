@@ -19,12 +19,12 @@ Replace the ad-hoc `t = frame/max_frames * 2π` with a structured `Timeline` obj
 - The Timeline node (Phase 5) exposes a `speed` output port that can be wired or keyframed
 - No pipeline-level changes needed — speed is purely a method-level concern
 
-### Phase 3 ✅ — Per-Node Timing Offset
-- `start_frame` and `end_frame` fields on `GraphNode` (default: 0, 0 = no offset)
-- When `end_frame > 0`, `execute()` creates a per-node timeline with the window applied
-- `_timeline.t` and `_timeline.phase` are remapped to [start_frame, end_frame)
-- Outside the window: holds at boundary (t=0 before, t=1 after)
-- Exposed in node defs for the UI to render as spinners
+### Phase 3 ❌ — Per-Node Timing Offset (Removed)
+*This feature was removed — see timing-offset-removal commit for context.*
+- `start_frame` and `end_frame` fields on `GraphNode` (default: 0, 0 = no offset) were removed
+- Per-node timeline remapping in `GraphExecutor.execute()` was removed
+- UI spinners for per-node start/end/prebake were removed
+- `prebake` (extra sim steps before first output) was also removed
 
 ### Phase 4 ✅ — Keyframe System
 - `Keyframe` dataclass: frame, values dict, easing string, cubic-bézier handles
@@ -51,7 +51,6 @@ Replace the ad-hoc `t = frame/max_frames * 2π` with a structured `Timeline` obj
 - Bézier handle editor in keyframe UI: P1/P2 numeric inputs + live canvas preview with grid, curve, control points, and dashed handle lines
 - Click on canvas to set the nearest control point
 - Drag-to-reposition keyframes on the timeline ruler (mousedown → mousemove → mouseup, snaps to 12px grid)
-- Per-node start/end frame spinners in the node params panel ("Timing Offset" section)
 - Cubic-bezier option added to easing dropdown
 
 ## Design Rules

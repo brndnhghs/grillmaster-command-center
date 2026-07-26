@@ -30,10 +30,10 @@ Node graph execution engine — wires registered methods into a DAG (Directed Ac
 | `x, y` | float | Canvas position |
 | `render` | bool | Whether this node is the render terminal |
 | `dirty` | bool | True = re-cook; False = use cached output |
-| `start_frame, end_frame` | int | Per-node animation timing window |
 | `keyframes` | list[dict] | Legacy keyframes |
 | `paramKeyframes` | dict[str, list[dict]] | Per-param keyframe tracks |
-| `prebake` | int | Extra simulation steps before first output |
+| `drivers` | dict[str, dict] | Channel-node only. Maps param → `{node, port}` declaring the param's value comes from an upstream output instead of the static field. |
+| `controllers` | dict[str, list[dict]] | Channel-node only. Maps param → ordered chain of controller dicts (math transforms) applied sequentially to the driven value. |
 
 ### `GraphEdge` dataclass
 | Field | Type | Description |
@@ -51,6 +51,60 @@ Node graph execution engine — wires registered methods into a DAG (Directed Ac
 | `inputs` | dict[str, str] | Port name → port type |
 | `outputs` | dict[str, str] | Port name → port type |
 | `param_ports` | set[str] | Input ports that map to params |
+
+### Drivers & Controllers (Channel Parameter Modulation)
+
+A CHOP-style modulation system for **channel nodes only** (orange, `category == "channels"` — LFO, Ramp, Envelope, Math, Strobe, etc.). Lets you procedurally animate a node's parameters from upstream outputs without extra wires or keyframes.
+
+#### Architecture
+
+```
+Upstream node output → Driver binding → Controller 1 → Controller 2 → ... → Final param value
+```
+
+Two pieces:
+
+- **Driver** — a declaration on a per-param basis: `this param's value comes from that node's output port`. Stored as `node.drivers[param] = {"node": "…", "port": "…"}`.
+- **Controller** — a chain of math transforms stacked on top of the driven value. Each link is one operation; the chain executes in order. Stored as `node.controllers[param] = [{type, factor, enabled}, …]`.
+
+Both fields persist in the graph JSON (serialized in `gSerializeGraph`, survive save/load). Empty by default — non-channel nodes and existing graphs are untouched.
+
+#### Execution path
+
+`_apply_driver_controller_pass(node, meta, run_params, gedges, flat_outputs)` runs **every frame, just before the method executes**, and is gated by `if category != "channels": return`. It does two things:
+
+1. **Driver resolution** — reads `node.drivers[param]`, looks up that node's output in `flat_outputs`, and writes the scalar value into `run_params[param]`. Falls back to scanning incoming graph edges for the same param (backward compat when no explicit driver is set).
+2. **Controller application** — for each param with a controller chain, applies each enabled controller in sequence to the current value, then writes the result back to `run_params[param]`.
+
+#### Controller types
+
+All operate on scalar values. Unknown types pass through silently.
+
+| Type | Params | Operation |
+|------|--------|-----------|
+| `multiply` | `factor` (default 1.0) | `v × factor` |
+| `add` | `offset` (default 0.0) | `v + offset` |
+| `clamp` | `min, max` | `clamp(v, min, max)` |
+| `invert` | — | `1.0 − v` |
+| `smoothstep` | — | `v²(3 − 2v)` (clamped to [0,1] first) |
+| `abs` | — | `abs(v)` |
+| `negate` | — | `−v` |
+| `curve` | `points` — `[[x0,y0], [x1,y1], …]` | Piecewise-linear remap via control points; clamped outside range |
+
+#### Why it exists
+
+Before Drivers & Controllers, modulating a channel node's parameter live meant either (a) wiring up separate Math nodes and cluttering the graph, or (b) setting keyframes — fine for static animation but dead for reactive, live-tweaked modulation. This system gives a TouchDesigner-style CHOP → Param workflow inside each node's panel. The signal stays alive: tweak a controller's factor while the graph runs and you see the result immediately. The graph canvas stays clean because the routing is declared inside the node, not as edges.
+
+#### Example
+
+An LFO node outputs a sine `value` (0–1). You want to drive another node's `rate` parameter with it, doubled and capped:
+
+1. Open the channel node's panel → find `rate` in the Drivers & Controllers section.
+2. **Driver** dropdown → pick `LFO · value`.
+3. **+ Controller** → type `multiply`, factor `2`.
+4. **+ Controller** → type `clamp`, min `0`, max `5`.
+
+Result: `rate = clamp(LFO.value × 2, 0, 5)` — every frame, no extra nodes, no keyframes.
 
 ## Key Functions
 

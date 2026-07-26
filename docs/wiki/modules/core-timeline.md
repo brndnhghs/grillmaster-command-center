@@ -22,10 +22,6 @@ Structured animation clock for the node graph. Provides a single source of truth
 | `speed` | float | 1.0 | Speed multiplier |
 | `substep` | int | 0 | Current substep within frame |
 | `total_substeps` | int | 1 | Total substeps per output frame |
-| `start_frame` | int | 0 | Per-node animation start |
-| `end_frame` | int | 0 | Per-node animation end |
-
-**Properties:** `progress` (normalized within per-node window), `local_phase` (cyclic phase within per-node window)
 
 **Methods:** `to_dict()` — serialise to plain dict
 
@@ -52,7 +48,6 @@ Structured animation clock for the node graph. Provides a single source of truth
 ### `make_timeline(global_frame, total_frames, fps, speed, ...) -> Timeline`
 Factory function creating a `Timeline` for a given frame. Handles edge cases:
 - `total_frames <= 1` → `t = 0.0` (pins time)
-- `end_frame` defaults to `total_frames`
 
 ## Dependencies
 - `easing.py` — `apply_easing`, `lerp_dict`
@@ -65,6 +60,5 @@ Factory function creating a `Timeline` for a given frame. Handles edge cases:
 
 ## Key Design
 - Single animation clock: all nodes receive the same `Timeline` for a given frame
-- Per-node `start_frame`/`end_frame` allow staggered animation windows
-- `progress` property computes normalized position within the per-node window
+- `t` is normalized across the global timeline
 - Keyframe interpolation: hold before first keyframe, ease between, hold after last

@@ -28,7 +28,6 @@ def threejs_node_def(method_id: str, name: str, *,
         "inputs": inputs or {}, "outputs": outputs or {},
         "param_ports": [], "description": description,
         "version": 1, "deprecated": deprecated,
-        "start_frame": 0, "end_frame": 0, "prebake": 0,
         "params": params or {},
     }
 
