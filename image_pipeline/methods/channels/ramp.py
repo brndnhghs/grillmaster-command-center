@@ -144,6 +144,7 @@ _LEGACY_KEYS = {"start", "end", "duration_frames", "easing", "mode", "frame", "s
         "control_points": {
             "description": "JSON array of {x, y} control-point dicts defining the curve",
             "default": None,
+            "widget": "curve_editor",
         },
         "out_of_range": {
             "description": "Behaviour when x is outside the curve x-range",

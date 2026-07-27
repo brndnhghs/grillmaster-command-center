@@ -41,7 +41,10 @@ def test_frame_based_drivers_advance_per_frame():
         assert meta is not None, f"{mid} not registered"
         vals = []
         for f in range(24):
-            out = meta.fn(Path(tempfile.mkdtemp()), 42, params={"_timeline": FakeTL(f)})
+            params = {"_timeline": FakeTL(f)}
+            if mid == "__counter__":
+                params["advance_mode"] = "free"
+            out = meta.fn(Path(tempfile.mkdtemp()), 42, params=params)
             key = "value" if "value" in out else next(iter(out))
             vals.append(float(out[key]))
         spread = max(vals) - min(vals)
@@ -84,7 +87,7 @@ def test_driver_modulation_reaches_pixels():
     best = None
     passed = None
     for driver_mid in ("__lfo__", "__counter__"):
-        drv_params = {"waveform": "sine", "min": 0.0, "max": 1.0, "rate": 0.6} if driver_mid == "__lfo__" else {}
+        drv_params = {"waveform": "sine", "min": 0.0, "max": 1.0, "rate": 0.6} if driver_mid == "__lfo__" else {"advance_mode": "free"}
         for tgt_mid, tgt_param in candidates[:6]:
             tgt_meta = get_meta(tgt_mid)
             tgt_params = {k: (v.get("default") if isinstance(v, dict) else v)

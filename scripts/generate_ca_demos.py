@@ -62,14 +62,14 @@ write("01-simulate", graph("simulate", [ca], []))
 # ══════════════════════════════════════════════════════════════════════
 # 2. f2l (age heatmap)
 # ══════════════════════════════════════════════════════════════════════
-cnt = node("__counter__", {"mode":"loop","end":100}, x=100, y=200)
+cnt = node("__counter__", {"mode":"loop","end":100,"advance_mode":"free"}, x=100, y=200)
 ca  = node("18", {**CA_PARAMS}, x=400, y=200, render=True)
 write("02-f2l", graph("f2l", [cnt, ca], [edge(cnt, "value", ca, "age_input")]))
 
 # ══════════════════════════════════════════════════════════════════════
 # 3. rule_cycle
 # ══════════════════════════════════════════════════════════════════════
-cnt = node("__counter__", {"mode":"loop","end":15}, x=100, y=200)
+cnt = node("__counter__", {"mode":"loop","end":15,"advance_mode":"free"}, x=100, y=200)
 mth = node("__math__", {"operation":"map_range","map_src_min":0,"map_src_max":15,"map_dst_min":0,"map_dst_max":1}, x=250, y=200)
 ca  = node("18", {**CA_PARAMS}, x=500, y=200, render=True)
 write("03-rule-cycle", graph("rule_cycle", [cnt, mth, ca], [
@@ -182,7 +182,7 @@ write("18-invasion", graph("invasion", [ca], []))
 # ══════════════════════════════════════════════════════════════════════
 # 19. domination
 # ══════════════════════════════════════════════════════════════════════
-cnt = node("__counter__", {"mode":"loop","end":15,"step_size":2}, x=100, y=200)
+cnt = node("__counter__", {"mode":"loop","end":15,"step_size":2,"advance_mode":"free"}, x=100, y=200)
 mth = node("__math__", {"operation":"map_range","map_src_min":0,"map_src_max":15,"map_dst_min":0,"map_dst_max":1}, x=250, y=200)
 ca  = node("18", {**CA_PARAMS}, x=500, y=200, render=True)
 write("19-domination", graph("domination", [cnt, mth, ca], [
@@ -200,7 +200,7 @@ write("20-maze-generator", graph("maze_generator", [ca], []))
 # Combined demo: Glider Swarm
 # ══════════════════════════════════════════════════════════════════════
 brs = node("__burst__", {"n_pulses":5,"pulse_interval":6,"loop":True}, x=100, y=150)
-cnt = node("__counter__", {"mode":"loop","end":15}, x=100, y=300)
+cnt = node("__counter__", {"mode":"loop","end":15,"advance_mode":"free"}, x=100, y=300)
 mth = node("__math__", {"operation":"map_range","map_src_min":0,"map_src_max":15,"map_dst_min":0,"map_dst_max":1}, x=300, y=300)
 ca  = node("18", {**CA_PARAMS}, x=550, y=200, render=True)
 write("combined-glider-swarm", graph("glider_swarm", [brs, cnt, mth, ca], [
@@ -235,7 +235,7 @@ write("combined-wave-explosion", graph("wave_explosion", [lfo, rmp, ca], [
 # Combined demo: Freeze-Frame Rule Cycle
 # ══════════════════════════════════════════════════════════════════════
 stb = node("__strobe__", {"rate":4.0,"duty_cycle":0.3}, x=100, y=150)
-cnt = node("__counter__", {"mode":"loop","end":15}, x=100, y=350)
+cnt = node("__counter__", {"mode":"loop","end":15,"advance_mode":"free"}, x=100, y=350)
 mth = node("__math__", {"operation":"map_range","map_src_min":0,"map_src_max":15,"map_dst_min":0,"map_dst_max":1}, x=300, y=350)
 ca  = node("18", {**CA_PARAMS}, x=550, y=250, render=True)
 write("combined-freeze-rule-cycle", graph("freeze_rule_cycle", [stb, cnt, mth, ca], [
@@ -247,7 +247,7 @@ write("combined-freeze-rule-cycle", graph("freeze_rule_cycle", [stb, cnt, mth, c
 # ══════════════════════════════════════════════════════════════════════
 # Combined demo: Age Heatmap with Density Sweep
 # ══════════════════════════════════════════════════════════════════════
-cnt = node("__counter__", {"mode":"loop","end":100}, x=100, y=150)
+cnt = node("__counter__", {"mode":"loop","end":100,"advance_mode":"free"}, x=100, y=150)
 lfo = node("__lfo__", {"waveform":"sine","min":0.05,"max":0.7}, x=100, y=300)
 ca  = node("18", {**CA_PARAMS}, x=400, y=200, render=True)
 write("combined-age-density", graph("age_density", [cnt, lfo, ca], [
