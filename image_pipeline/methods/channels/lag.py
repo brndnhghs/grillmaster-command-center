@@ -41,8 +41,8 @@ _LN10 = math.log(10.0)  # ≈2.3026 — used for 90% response time constant
         },
         params={
             "value": {"description": "upstream SCALAR value to lag", "default": 0.0},
-            "signal": {"description": "upstream SCALAR (alias for explicit wires)", "default": 0.0},
-            "reset_in": {"description": "external reset pulse (rising edge)", "default": 0.0},
+            "signal": {"description": "upstream SCALAR (alias for explicit wires)", "default": None, "hidden": True},
+            "reset_in": {"description": "external reset pulse (rising edge)", "default": None, "hidden": True},
             "delay": {"description": "Delay in seconds before lag begins", "default": 0.0},
             "lagmethod": {"description": "LagMethod — The method by which lag is applied",
                           "choices": ["exponential", "spring"], "default": "exponential"},

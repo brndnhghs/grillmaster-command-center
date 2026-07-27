@@ -1339,9 +1339,14 @@ class GraphExecutor:
                     continue
 
                 # ── Route to target param ─────────────────────────────
-                if edge.dst_port in node.params:
-                    # User wired to a specific named param port — inject directly,
-                    # enforcing type compatibility (logs warning on mismatch).
+                if edge.dst_port in node.params or edge.dst_port in (meta.inputs or {}):
+                    # User wired to a specific named param or declared input port —
+                    # inject directly, enforcing type compatibility (logs warning on
+                    # mismatch).  Declared input ports (meta.inputs) such as ``signal``
+                    # or ``reset_in`` are NOT in node.params unless the user explicitly
+                    # set them (Bug: the old guard only checked node.params, causing
+                    # wires to declared SCALAR ports to be silently dropped, freezing
+                    # nodes like __lag__ that read input values from params).
                     _inject_typed(run_params, edge.dst_port, src_val, src_type,
                                   node.params, (meta.params or {}).get(edge.dst_port))
                 else:
