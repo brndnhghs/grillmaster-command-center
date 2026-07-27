@@ -2316,3 +2316,12 @@
   .diag-chip.mem-chip  .chip-val { color: var(--accent2); }
   .diag-chip.disk-chip .chip-val { color: var(--muted); }
 
+  /* ── Curve editor widget ─────────────────────────── */
+  .curve-editor { flex-direction: column; }
+  .curve-editor-inner { width: 100%; }
+  .curve-editor-canvas { aspect-ratio: 1/1; width: 100%; display: block; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-s); cursor: crosshair; touch-action: none; }
+  .ce-grid { stroke: var(--grid-dot); stroke-width: 0.005; }
+  .ce-curve { fill: none; stroke: var(--accent); stroke-width: 0.008; stroke-linejoin: round; }
+  .ce-point-end { fill: var(--accent2); stroke: var(--bg0); stroke-width: 0.004; }
+  .ce-point-mid { fill: var(--text); stroke: var(--bg0); stroke-width: 0.004; }
+
