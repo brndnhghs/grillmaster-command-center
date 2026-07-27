@@ -1,27 +1,22 @@
-"""Stateless curve evaluator node — maps an input SCALAR through control points.
+"""Stateless curve evaluator — maps an input SCALAR through control points (v2).
 
-Replaces the original time-based ramp generator (version=2, is_time_varying=False).
-Now a pure y = f(x) evaluator: no frame dependency, no internal state.
+Replaces the original time-based ramp generator (is_time_varying=False).
+Now y = f(x): no frame dependency, no internal state.
 
 Inputs:
     x (SCALAR): Value to evaluate the curve at. Overrides the x param when wired.
-    trigger (SCALAR): **Deprecated back-compat alias** for x.
-        Will be removed in a future version — use the x port instead.
+    trigger (SCALAR): Deprecated back-compat alias for x.
 
 Params:
-    x: Float input value (overridden by the x port when wired). Default 0.0.
-    trigger: Deprecated alias; only used when the x param is absent. Default None.
-    control_points: JSON array of {x, y} float dicts defining the curve.
-        The frontend curve-editor serializes to this field. Default None → identity [0→0, 1→1].
-    out_of_range: Behaviour when x is outside the curve x-range.
-        clamp — nearest endpoint y. extend — linear extrapolation along end slope.
-        wrap — modulo x into the domain and evaluate.
-    curve_interpolation: Interpolation between control points.
-        linear — straight line between adjacent points. smooth — Catmull-Rom cubic.
+    x: Float input (overridden by x port). Default 0.0.
+    trigger: Deprecated alias; only used when x param absent. Default None.
+    control_points: JSON array of {x,y} float dicts. Default None → identity [0→0, 1→1].
+    out_of_range: clamp | extend | wrap. Default clamp.
+    curve_interpolation: linear | smooth (Catmull-Rom). Default linear.
 
 Outputs:
     value (SCALAR): y = f(x) evaluated on the curve.
-    phase (SCALAR): Normalized position of x within the curve's domain [0, 1].
+    phase (SCALAR): Normalized position [0, 1] within the curve's domain.
 """
 from __future__ import annotations
 
@@ -32,13 +27,12 @@ from pathlib import Path
 
 from ...core.registry import method
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
+
+# ── Internal helpers ──────────────────────────────────────────────────
 
 
 def _validate_points(points: list[dict]) -> list[dict]:
-    """Sort by x, deduplicate x (keep first y), return ≥2 points."""
+    """Sort by x, deduplicate, pad degenerate → ≥2 points."""
     if not points:
         return [{"x": 0.0, "y": 0.0}, {"x": 1.0, "y": 1.0}]
 
@@ -56,23 +50,21 @@ def _validate_points(points: list[dict]) -> list[dict]:
             continue
         seen.add(x)
         deduped.append({"x": x, "y": y})
-
     deduped.sort(key=lambda p: p["x"])
 
-    # Degenerate cases — pad to a usable curve
     if len(deduped) == 0:
         return [{"x": 0.0, "y": 0.0}, {"x": 1.0, "y": 1.0}]
     if len(deduped) == 1:
         only = deduped[0]
-        return [{"x": only["x"] - 1.0, "y": only["y"]},
-                only,
-                {"x": only["x"] + 1.0, "y": only["y"]}]
-
+        return [
+            {"x": only["x"] - 1.0, "y": only["y"]},
+            only,
+            {"x": only["x"] + 1.0, "y": only["y"]},
+        ]
     return deduped
 
 
 def _catmull_rom(t: float, p0: float, p1: float, p2: float, p3: float) -> float:
-    """Standard Catmull-Rom (tension 0.5), t in [0, 1]."""
     return 0.5 * (
         (2 * p1)
         + (-p0 + p2) * t
@@ -82,44 +74,32 @@ def _catmull_rom(t: float, p0: float, p1: float, p2: float, p3: float) -> float:
 
 
 def _evaluate_curve(x: float, pts: list[dict], interp: str, oob: str) -> float:
-    """Evaluate y = f(x) on the sorted control-point curve *pts*."""
     if not pts:
         return x
-
-    x_min = pts[0]["x"]
-    x_max = pts[-1]["x"]
+    x_min, x_max = pts[0]["x"], pts[-1]["x"]
     span = x_max - x_min
 
-    # Out-of-range handling
     if x < x_min:
         if oob == "clamp":
             return pts[0]["y"]
-        elif oob == "wrap":
-            if span == 0:
-                return pts[0]["y"]
+        elif oob == "wrap" and span:
             x = x_min + ((x - x_min) % span)
     elif x > x_max:
         if oob == "clamp":
             return pts[-1]["y"]
-        elif oob == "wrap":
-            if span == 0:
-                return pts[-1]["y"]
+        elif oob == "wrap" and span:
             x = x_min + ((x - x_min) % span)
 
     n = len(pts)
-
-    # Extrapolation before/after first/last point (extend mode only)
     if x <= pts[0]["x"]:
         dx = pts[1]["x"] - pts[0]["x"]
         dy = pts[1]["y"] - pts[0]["y"]
         return pts[0]["y"] + dy / dx * (x - pts[0]["x"]) if dx else pts[0]["y"]
-
     if x >= pts[-1]["x"]:
         dx = pts[-1]["x"] - pts[-2]["x"]
         dy = pts[-1]["y"] - pts[-2]["y"]
         return pts[-1]["y"] + dy / dx * (x - pts[-1]["x"]) if dx else pts[-1]["y"]
 
-    # Binary search for the segment
     lo, hi = 0, n - 1
     while hi - lo > 1:
         mid = (lo + hi) // 2
@@ -133,40 +113,34 @@ def _evaluate_curve(x: float, pts: list[dict], interp: str, oob: str) -> float:
     seg_len = x1 - x0
     if seg_len == 0:
         return (y0 + y1) * 0.5
-
     t = (x - x0) / seg_len
-
     if interp == "smooth":
         p0 = pts[lo - 1]["y"] if lo > 0 else y0 + (y0 - pts[lo + 1]["y"])
         p1 = y0
         p2 = y1
         p3 = pts[hi + 1]["y"] if hi < n - 1 else y1 + (y1 - pts[hi - 1]["y"])
         return _catmull_rom(t, p0, p1, p2, p3)
-
     return y0 + (y1 - y0) * t
 
 
-# ---------------------------------------------------------------------------
-# Legacy param keys (now ignored — v2 breakage detection)
-# ---------------------------------------------------------------------------
+# ── Legacy keys ───────────────────────────────────────────────────────
+
 _LEGACY_KEYS = {"start", "end", "duration_frames", "easing", "mode", "frame", "speed"}
 
 
-# ---------------------------------------------------------------------------
-# Registered node
-# ---------------------------------------------------------------------------
+# ── Registered node ───────────────────────────────────────────────────
 
 
 @method(
     id="__ramp__",
-    name="Ramp",
+    name="Ramp (Curve Evaluator)",
     category="channels",
     tags=["chop", "float", "curve", "mapper"],
     inputs={"x": "SCALAR", "trigger": "SCALAR"},
     outputs={"value": "SCALAR", "phase": "SCALAR"},
     params={
-        "x": {"description": "Input x value (overridden by the x port when wired)", "default": None},
-        "trigger": {"description": "Deprecated back-compat alias — use the x port instead", "default": None},
+        "x": {"description": "Input x value (overridden by x port when wired)", "default": 0.0},
+        "trigger": {"description": "Deprecated back-compat port alias — use x instead", "default": None},
         "control_points": {
             "description": "JSON array of {x, y} control-point dicts defining the curve",
             "default": None,
@@ -196,8 +170,7 @@ _LEGACY_KEYS = {"start", "end", "duration_frames", "easing", "mode", "frame", "s
     is_time_varying=False,
     description=(
         "Stateless curve evaluator: y = f(x) on a control-point curve. "
-        "Replaces the legacy time-based ramp (no frame dependency). "
-        "Wire the x port; trigger port is deprecated."
+        "Replaces the legacy time-based ramp (no frame dependency)."
     ),
 )
 def method_ramp(out_dir: Path, seed: int, params: dict | None = None) -> dict:
@@ -218,11 +191,8 @@ def method_ramp(out_dir: Path, seed: int, params: dict | None = None) -> dict:
             UserWarning,
             stacklevel=2,
         )
-    # ── Resolve x ──────────────────────────────────────────────────
-    # x port → trigger (back-compat) → 0.0 default.
-    # Must explicitly check is None: when an x port exists but is unwired the
-    # executor sets params["x"]=None, and dict.get("x", fallback) still returns
-    # None (it does NOT fall through to trigger).
+
+    # Resolve x: wired x port → wired trigger (back-compat) → x param → 0.0
     x = params.get("x")
     if x is None:
         x = params.get("trigger", 0.0)
@@ -248,7 +218,6 @@ def method_ramp(out_dir: Path, seed: int, params: dict | None = None) -> dict:
 
     pts = _validate_points(points)
 
-    # Behaviours
     oob = params.get("out_of_range", "clamp")
     if oob not in ("clamp", "extend", "wrap"):
         oob = "clamp"
@@ -256,10 +225,8 @@ def method_ramp(out_dir: Path, seed: int, params: dict | None = None) -> dict:
     if interp not in ("linear", "smooth"):
         interp = "linear"
 
-    # Evaluate
     value = _evaluate_curve(x, pts, interp, oob)
 
-    # Phase: normalized x within curve domain
     xs = [p["x"] for p in pts]
     x_min, x_max = min(xs), max(xs)
     span = x_max - x_min

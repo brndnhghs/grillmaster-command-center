@@ -17,11 +17,11 @@ C,__counter__,Counter,start,node emits no image,image_pipeline/methods/channels.
 C,__counter__,Counter,end,node emits no image,image_pipeline/methods/channels.py,False
 C,__counter__,Counter,step_size,node emits no image,image_pipeline/methods/channels.py,False
 C,__counter__,Counter,mode,node emits no image,image_pipeline/methods/channels.py,False
-C,__ramp__,Ramp,start,node emits no image,image_pipeline/methods/channels.py,False
-C,__ramp__,Ramp,end,node emits no image,image_pipeline/methods/channels.py,False
-C,__ramp__,Ramp,duration_frames,node emits no image,image_pipeline/methods/channels.py,False
-C,__ramp__,Ramp,easing,node emits no image,image_pipeline/methods/channels.py,False
-C,__ramp__,Ramp,mode,node emits no image,image_pipeline/methods/channels.py,False
+C,__ramp__,Ramp (Curve Evaluator),x,node emits no image,image_pipeline/methods/channels/ramp.py,False
+C,__ramp__,Ramp (Curve Evaluator),trigger,node emits no image,image_pipeline/methods/channels/ramp.py,False
+C,__ramp__,Ramp (Curve Evaluator),control_points,node emits no image,image_pipeline/methods/channels/ramp.py,False
+C,__ramp__,Ramp (Curve Evaluator),out_of_range,node emits no image,image_pipeline/methods/channels/ramp.py,False
+C,__ramp__,Ramp (Curve Evaluator),curve_interpolation,node emits no image,image_pipeline/methods/channels/ramp.py,False
 C,__lfo__,LFO,waveform,node emits no image,image_pipeline/methods/channels.py,False
 C,__lfo__,LFO,min,node emits no image,image_pipeline/methods/channels.py,False
 C,__lfo__,LFO,max,node emits no image,image_pipeline/methods/channels.py,False

@@ -129,7 +129,7 @@ write("10-life-music", graph("life_music", [lfo, ca], [edge(lfo, "value", ca, "r
 # ══════════════════════════════════════════════════════════════════════
 # 11. explosion (legacy __ramp__ graphs now fire a v2 warning but still produce output)
 # ══════════════════════════════════════════════════════════════════════
-rmp = node("__ramp__", {"mode":"once","start":0.3,"end":0.6,"duration_frames":30}, x=100, y=200)
+rmp = node("__lfo__", {"waveform":"saw","min":0.3,"max":0.6,"rate":0.5}, x=100, y=200)
 ca  = node("18", {**CA_PARAMS}, x=400, y=200, render=True)
 write("11-explosion", graph("explosion", [rmp, ca], [edge(rmp, "value", ca, "density")]))
 
@@ -224,7 +224,7 @@ write("combined-color-pulse", graph("color_pulse", [stb, lfo, ca], [
 # Combined demo: Wave Explosion (legacy __ramp__ graphs fire a v2 warning)
 # ══════════════════════════════════════════════════════════════════════
 lfo = node("__lfo__", {"waveform":"sine","min":0.0,"max":1.0}, x=100, y=150)
-rmp = node("__ramp__", {"mode":"once","start":0.3,"end":0.6,"duration_frames":30}, x=100, y=300)
+rmp = node("__lfo__", {"waveform":"saw","min":0.3,"max":0.6,"rate":0.5}, x=100, y=300)
 ca  = node("18", {**CA_PARAMS}, x=400, y=200, render=True)
 write("combined-wave-explosion", graph("wave_explosion", [lfo, rmp, ca], [
     edge(lfo, "value", ca, "wave_phase"),
