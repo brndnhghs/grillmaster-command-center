@@ -66,7 +66,7 @@ N_FRAMES = 8
 DRIVERS = {
     "__lfo__": {"waveform": "sine", "min": 0.0, "max": 60.0,
                 "rate": 1.0, "phase": 0.0},
-    "__counter__": {"start": 0, "end": 60, "step_size": 8, "mode": "loop"},
+    "__counter__": {"start": 0, "end": 60, "step_size": 8, "mode": "loop", "advance_mode": "free"},
 }
 
 

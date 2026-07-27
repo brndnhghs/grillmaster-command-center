@@ -79,7 +79,7 @@ def test_driver_scalar_reaches_pixels_e2e(driver_mid):
     tgt_params["anim_mode"] = "none"
     drv_params = (
         {"waveform": "sine", "min": 0.0, "max": 1.0, "rate": 0.6}
-        if driver_mid == "__lfo__" else {}
+        if driver_mid == "__lfo__" else {"advance_mode": "free"}
     )
 
     nodes = [
