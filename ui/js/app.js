@@ -389,6 +389,7 @@ function renderColorField(key, spec) {
 }
 
 function renderParamField(key, spec) {
+  if (spec.hidden) return '';
   const def = spec.default;
   const desc = spec.description || '';
   const hint = spec.hint || '';
@@ -475,6 +476,27 @@ function renderParamField(key, spec) {
       <textarea class="glsl-editor param-ctrl" id="p_${escHtml(key)}" spellcheck="false">${safeVal}</textarea>
       <button class="glsl-apply-btn" id="glsl-apply-${escHtml(key)}">${key === 'sketch_code' ? 'Apply Sketch' : 'Apply Shader'}</button>
       <div class="glsl-error" id="glsl-err-${escHtml(key)}"></div>
+    </div>`;
+  }
+
+  // 5b. Curve editor widget — interactive SVG curve for control_points etc.
+  if (spec.widget === 'curve_editor') {
+    return `<div class="param-row curve-editor">
+      <div class="param-label">
+        <span class="param-name">${escHtml(key)}</span>
+        <span class="param-desc">${escHtml(desc)}</span>
+      </div>
+      <div class="curve-editor-inner">
+        <svg class="curve-editor-canvas" id="ce_${escHtml(key)}" viewBox="0 0 1 1" preserveAspectRatio="none">
+          <line class="ce-grid" x1="0.00" y1="0.25" x2="1.00" y2="0.25"/>
+          <line class="ce-grid" x1="0.00" y1="0.50" x2="1.00" y2="0.50"/>
+          <line class="ce-grid" x1="0.00" y1="0.75" x2="1.00" y2="0.75"/>
+          <line class="ce-grid" x1="0.25" y1="0.00" x2="0.25" y2="1.00"/>
+          <line class="ce-grid" x1="0.50" y1="0.00" x2="0.50" y2="1.00"/>
+          <line class="ce-grid" x1="0.75" y1="0.00" x2="0.75" y2="1.00"/>
+          <path class="ce-curve" id="ce_${escHtml(key)}_path" d="M0,1 L1,0"/>
+        </svg>
+      </div>
     </div>`;
   }
 

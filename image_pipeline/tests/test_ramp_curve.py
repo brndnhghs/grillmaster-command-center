@@ -203,7 +203,7 @@ class TestMethodRamp:
             legacy_warns = [x for x in w if "legacy" in str(x.message).lower()]
             assert len(legacy_warns) >= 1
 
-    def test_x_none_falls_back_to_trigger(self):
-        """When x param is not set but trigger is, use trigger."""
-        res = self.fn(Path("/tmp"), 0, {"trigger": 0.8})
-        assert abs(res["value"] - 0.8) < 1e-9
+    def test_x_defaults_to_zero(self):
+        """When x param is not set, default to 0.0."""
+        res = self.fn(Path("/tmp"), 0, {})
+        assert abs(res["value"]) < 1e-9

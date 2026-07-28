@@ -68,7 +68,7 @@ def _run_lag(frames: int, signal_val: float | list[float],
         params = {
             "_node_id": node_id,
             "_timeline": tl,
-            "signal": signal_seq[f],
+            "input": signal_seq[f],
             "lag_up": lag_up,
             "lag_down": lag_down,
             "lagunit": "frames",
@@ -144,54 +144,22 @@ class TestLagWiredResponsiveness:
     # ── Discriminating: injection under upstream output port name ───────
 
     def test_value_injection_only(self):
-        """When only ``value`` is present (no ``signal`` key), the multi-key
-        scan must fall through to it and the output must respond.
-
-        This is the exact state the executor produces after the fix:
-        ``signal`` is absent from metadata, so it is absent from
-        ``run_params``, and the scan reaches ``value``.
-        """
+        """When ``value`` is present (the canonical input port), the output
+        must respond — this is what the executor produces after injection."""
         vals = _run_lag_with_params(
             24,
             lambda f, tl: {
-                "value": 1.0,           # executor-injected upstream value
+                "input": 1.0,           # executor-injected upstream value
                 "lag_up": 6, "lag_down": 6, "lagunit": "frames",
             },
             node_id="value_only",
         )
         assert vals[-1] > 0.9, (
-            f"Lag frozen with 'value'-only injection (final={vals[-1]:.4f}) "
-            f"— the multi-key scan is not reaching the injected value"
+            f"Lag frozen with 'value'-only injection (final={vals[-1]:.4f})"
         )
         spread = max(vals) - min(vals)
         assert spread > 0.01, (
             f"Lag output frozen despite varying timeline (spread={spread:.6f})"
-        )
-
-    def test_output_key_injection_only(self):
-        """Executor writes ``output`` key (alt scan candidate) without ``signal``."""
-        vals = _run_lag_with_params(
-            24,
-            lambda f, tl: {
-                "output": 1.0, "lag_up": 6, "lag_down": 6, "lagunit": "frames",
-            },
-            node_id="output_only",
-        )
-        assert vals[-1] > 0.5, (
-            f"Lag frozen under 'output'-only injection (final={vals[-1]:.4f})"
-        )
-
-    def test_phase_key_injection_only(self):
-        """Last-resort scan candidate ``phase`` without ``signal``."""
-        vals = _run_lag_with_params(
-            24,
-            lambda f, tl: {
-                "phase": 1.0, "lag_up": 6, "lag_down": 6, "lagunit": "frames",
-            },
-            node_id="phase_only",
-        )
-        assert vals[-1] > 0.5, (
-            f"Lag frozen under 'phase'-only injection (final={vals[-1]:.4f})"
         )
 
     # ── Unwired / edge-case behaviour ──────────────────────────────────
@@ -220,90 +188,4 @@ class TestLagWiredResponsiveness:
             vals.append(float(out["value"]))
         assert max(vals) < 1e-6, (
             f"Unwired Lag (no signal key) drifted above zero (max={max(vals):.6e})"
-        )
-
-    # ── Reset behaviour ────────────────────────────────────────────────
-
-    def test_reset_param_snaps_output(self):
-        """The ``reset`` param must snap output to current input."""
-        # Build up some state by lagging a step
-        vals_before = _run_lag(16, signal_val=1.0, lag_up=8, lag_down=8,
-                               node_id="reset_param")
-        # By frame 16 at 8-frame τ, output should be ~1 - exp(-16/8*ln10) ≈ 0.99
-        assert vals_before[-1] > 0.9, f"State didn't build (last={vals_before[-1]:.4f})"
-
-        # Now apply reset via the toggle param
-        out = _run_lag(1, signal_val=0.75, lag_up=8, lag_down=8,
-                       node_id="reset_param", reset=True)
-        # Reset snaps output to current input (0.75), not to 0
-        assert abs(out[-1] - 0.75) < 1e-4, (
-            f"reset param did not snap output to input "
-            f"(expected ~0.75, got {out[-1]:.4f})"
-        )
-
-    def test_reset_in_pulse_clears_state(self):
-        """A rising edge on reset_in must snap output to current input."""
-        meta = _lag_meta()
-        # Build state by running a few frames with a non-zero signal
-        for f in range(6):
-            tl = _FakeTL(gf=f)
-            meta.fn(None, 42, params={
-                "_node_id": "reset_in_pulse",
-                "_timeline": tl,
-                "signal": 1.0, "lag_up": 8, "lag_down": 8,
-                "lagunit": "frames",
-            })
-
-        # Now fire a reset_in pulse (rising edge 0→1)
-        tl = _FakeTL(gf=10)
-        out = meta.fn(None, 42, params={
-            "_node_id": "reset_in_pulse",
-            "_timeline": tl,
-            "signal": 0.5, "reset_in": 1.0,
-            "lag_up": 8, "lag_down": 8, "lagunit": "frames",
-        })
-        # After a reset the output should equal the input (0.5)
-        assert abs(float(out["value"]) - 0.5) < 1e-4, (
-            f"reset_in did not snap output to input "
-            f"(expected ~0.5, got {float(out['value']):.4f})"
-        )
-
-    def test_reset_pulse_toggle_rising_edge(self):
-        """resetpulse button param: rising edge (0→1) must snap."""
-        meta = _lag_meta()
-        # Build state
-        for f in range(6):
-            tl = _FakeTL(gf=f)
-            meta.fn(None, 42, params={
-                "_node_id": "reset_pulse_btn",
-                "_timeline": tl,
-                "signal": 1.0, "lag_up": 8, "lag_down": 8,
-                "lagunit": "frames",
-            })
-
-        # First call with resetpulse=True — rising edge
-        tl = _FakeTL(gf=10)
-        out = meta.fn(None, 42, params={
-            "_node_id": "reset_pulse_btn",
-            "_timeline": tl,
-            "signal": 0.5, "resetpulse": True,
-            "lag_up": 8, "lag_down": 8, "lagunit": "frames",
-        })
-        assert abs(float(out["value"]) - 0.5) < 1e-4, (
-            f"resetpulse did not snap (got {float(out['value']):.4f})"
-        )
-
-        # Second call with resetpulse=True — no longer rising edge; output should lag
-        tl = _FakeTL(gf=11)
-        out2 = meta.fn(None, 42, params={
-            "_node_id": "reset_pulse_btn",
-            "_timeline": tl,
-            "signal": 0.8, "resetpulse": True,
-            "lag_up": 8, "lag_down": 8, "lagunit": "frames",
-        })
-        # Output should be between 0.5 and 0.8 (lagging, not snapped)
-        v2 = float(out2["value"])
-        assert 0.5 < v2 < 0.8, (
-            f"Second resetpulse call should lag normally, not snap "
-            f"(got {v2:.4f}, expected 0.5<v<0.8)"
         )

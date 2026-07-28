@@ -18,6 +18,16 @@ def _pulse(mid: str, low_high: tuple[float, float] = (0.0, 1.0), **kw):
     return method_counter(_TMP, 0, {**kw, "trigger": hi})  # rising edge
 
 
+def _pulse_port(mid: str, port: str = "trigger",
+                low_high: tuple[float, float] = (0.0, 1.0), **kw):
+    """Drive one rising edge on *any* SCALAR event port. Settles low,
+    then fires high.  Returns the high-edge result."""
+    kw["_node_id"] = mid
+    lo, hi = low_high
+    method_counter(_TMP, 0, {**kw, port: lo})  # settle low
+    return method_counter(_TMP, 0, {**kw, port: hi})  # rising edge
+
+
 def _settle(mid: str, level: float = 0.0, **kw):
     """Probe at a stable level without firing a new edge.  Returns result."""
     kw["_node_id"] = mid
@@ -53,21 +63,44 @@ def test_counter_triggered_above_threshup():
 
 
 def test_counter_triggered_below_threshup():
-    """triggered=0 when signal <= threshup."""
+    """triggered=0 when signal < threshup (below inclusive threshold)."""
     r = method_counter(_TMP, 0, {"frame": 0, "start": 0, "end": 100,
                                  "signal": 0.3, "threshup": 0.5})
     assert r["triggered"] == 0.0
 
 
 def test_counter_triggered_at_threshold():
-    """triggered=0 when signal exactly equals threshup."""
+    """triggered=1 when signal >= threshup (inclusive trigger)."""
     r = method_counter(_TMP, 0, {"frame": 0, "start": 0, "end": 100,
                                  "signal": 0.5, "threshup": 0.5})
-    assert r["triggered"] == 0.0
+    assert r["triggered"] == 1.0
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# Backward-compat: ``advance_mode="free"``  (frame-based)
+# released output (inverse of triggered)
+# ═══════════════════════════════════════════════════════════════════════
+
+def test_released_above_threshup():
+    r = method_counter(_TMP, 0, dict(frame=0, start=0, end=100,
+                                     signal=0.7, threshup=0.5))
+    assert r["released"] == 0.0
+
+
+def test_released_below_threshup():
+    r = method_counter(_TMP, 0, dict(frame=0, start=0, end=100,
+                                     signal=0.2, threshup=0.5))
+    assert r["released"] == 1.0
+
+
+def test_released_inverse_of_triggered():
+    for sig in (0.0, 0.3, 0.5, 0.7, 1.0):
+        r = method_counter(_TMP, 0, dict(frame=0, start=0, end=100,
+                                         signal=sig, threshup=0.5))
+        assert r["released"] == 1.0 - r["triggered"]
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Backward-compat: advance_mode=free  (frame-based)
 # ═══════════════════════════════════════════════════════════════════════
 
 def test_counter_modes_loop_free():
@@ -169,7 +202,7 @@ def test_trigger_loop_wraps():
 
 
 def test_trigger_reset_override():
-    """Reset SCALAR overrides accumulated trigger count."""
+    """Rising edge on reset resets counter to start."""
     mid = "t_rst"
     # Accumulate 3 edges
     for _ in range(3):
@@ -177,9 +210,78 @@ def test_trigger_reset_override():
     # Verify we're at 3
     r = _settle(mid, 0.0, start=0, end=20)
     assert r["value"] == 3.0
-    # Reset to 10
-    r = _settle(mid, 0.0, start=0, end=20, reset=10)
+    # Reset via rising edge on reset port
+    r = _pulse_port(mid, "reset", start=0, end=20)
+    assert r["value"] == 0.0  # back to start
+
+
+def test_reset_edge_does_not_repeat():
+    """Sustained high on reset does NOT keep resetting — only the rising edge."""
+    mid = "t_rpt"
+    _pulse(mid, start=20, end=100)  # edge → value=21
+    r = _settle(mid, 0.0, start=20, end=100)
+    assert r["value"] == 21.0
+    # Rising edge on reset
+    r = _pulse_port(mid, "reset", start=20, end=100)
+    assert r["value"] == 20.0  # back to start
+    # Still high — should NOT re-trigger reset
+    r = _settle(mid, 0.0, start=20, end=100, reset=1.0)
+    assert r["value"] == 20.0
+    # Still high again
+    r = _settle(mid, 0.0, start=20, end=100, reset=1.0)
+    assert r["value"] == 20.0
+
+
+def test_reset_fall_then_rise_triggers_again():
+    """A fall back to low followed by a rise is a second reset edge."""
+    mid = "t_fall"
+    _pulse(mid, start=0, end=50)  # value=1
+    r = _pulse_port(mid, "reset", start=0, end=50)
+    assert r["value"] == 0.0  # reset to start
+    # Advance again
+    _pulse(mid, start=0, end=50)  # value=1
+    _pulse(mid, start=0, end=50)  # value=2
+    r = _settle(mid, 0.0, start=0, end=50)
+    assert r["value"] == 2.0
+    # Reset fell to 0, then rises again — second reset edge
+    r = _pulse_port(mid, "reset", start=0, end=50)
+    assert r["value"] == 0.0  # reset to start again
+
+
+def test_reset_edge_resets_to_start_not_reset_value():
+    """reset edge always goes to `start`, regardless of the reset port level."""
+    mid = "t_start"
+    _pulse(mid, start=10, end=100)  # value=11
+    _pulse(mid, start=10, end=100)  # value=12
+    # Reset with a lower level than the reset=10 they used to pass
+    r = _pulse_port(mid, "reset", start=10, end=100, reset=0.7)
+    assert r["value"] == 10.0  # reset to start, not to 0.7
+    # Check value stayed at start even with reset still high
+    r = _settle(mid, 0.0, start=10, end=100, reset=0.7)
     assert r["value"] == 10.0
+
+
+def test_reset_and_trigger_same_frame():
+    """Reset edge fires before trigger edge on the same frame."""
+    mid = "t_both"
+    _pulse(mid, start=0, end=50)  # value=1
+    _pulse(mid, start=0, end=50)  # value=2
+    # Simultaneous: first settle reset low, then fire both high
+    r0 = _settle(mid, 0.0, start=0, end=50, reset=0.0, trigger=0.0)
+    assert r0["value"] == 2.0
+    # Rising edge on both in the same call — reset to start, then trigger increments
+    r = method_counter(_TMP, 0, {"_node_id": mid, "start": 0, "end": 50,
+                                  "reset": 1.0, "trigger": 1.0})
+    assert r["value"] == 1.0  # reset to 0, then trigger increments to 1
+
+
+def test_reset_edge_unwired_trigger():
+    """Reset edge still works when trigger port is unwired."""
+    mid = "t_unw"
+    _pulse(mid, start=0, end=50)  # settle + edge, value=1
+    # Now reset without trigger in params
+    r = _pulse_port(mid, "reset", start=0, end=50)
+    assert r["value"] == 0.0  # reset to start
 
 
 def test_trigger_default_step_size_one():
@@ -212,3 +314,70 @@ def test_trigger_phase_normalizes():
     # value=35, total=200 → phase = (35-10)/200 = 0.125
     assert r["value"] == 35.0
     assert abs(r["phase"] - 0.125) < 1e-6
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Signal-driven increment (threshold-crossing count)
+# ═══════════════════════════════════════════════════════════════════════
+
+def test_signal_rising_edge_increments():
+    """Signal crossing above threshup increments counter by step_size."""
+    mid = "sig_inc"
+    r = _pulse_port(mid, "signal", start=0, end=50)
+    assert r["value"] == 1.0
+    assert r["triggered"] == 1.0
+
+
+def test_signal_edge_level_does_not_repeat():
+    """Sustained signal above threshup only fires once per edge."""
+    mid = "sig_lvl"
+    r = _pulse_port(mid, "signal", start=0, end=50)  # 0→1, value=1
+    assert r["value"] == 1.0
+    # Still high — no new edge (use direct call, _settle forces trigger=level)
+    r = method_counter(_TMP, 0, {"_node_id": mid, "start": 0, "end": 50,
+                                  "signal": 1.0})
+    assert r["value"] == 1.0
+    r = method_counter(_TMP, 0, {"_node_id": mid, "start": 0, "end": 50,
+                                  "signal": 1.0})
+    assert r["value"] == 1.0
+
+
+def test_signal_below_threshup_does_not_increment():
+    """Signal below threshup does NOT increment counter."""
+    mid = "sig_below"
+    r = method_counter(_TMP, 0, {"_node_id": mid, "start": 0, "end": 50,
+                                 "signal": 0.2, "threshup": 0.5})
+    assert r["value"] == 0.0  # no rising edge
+
+
+def test_signal_crosses_below_then_above():
+    """Signal falling below threshup then rising above fires a new increment."""
+    mid = "sig_cross"
+    r = _pulse_port(mid, "signal", start=0, end=50)   # 0→1, value=1
+    assert r["value"] == 1.0
+    # Fall back below threshup
+    r = _settle(mid, 0.0, start=0, end=50, signal=0.2)
+    assert r["value"] == 1.0  # no new edge, steady
+    # Cross above again
+    r = _pulse_port(mid, "signal", start=0, end=50)   # 0→1 again, value=2
+    assert r["value"] == 2.0
+
+
+def test_signal_custom_threshup():
+    """Signal uses configurable threshup for edge detection."""
+    mid = "sig_thr"
+    r = method_counter(_TMP, 0, {"_node_id": mid, "start": 0, "end": 50,
+                                 "signal": 0.5, "threshup": 0.4})
+    assert r["value"] == 1.0  # 0.5 >= 0.4 > 0 → rising edge
+
+
+def test_signal_trigger_independent_same_frame():
+    """Both trigger and signal can fire on the same frame for double increment."""
+    mid = "sig_trig"
+    # Settle both low
+    _settle(mid, 0.0, start=0, end=50, trigger=0.0, signal=0.0)
+    # Fire both high same frame
+    r = method_counter(_TMP, 0, {"_node_id": mid, "start": 0, "end": 50,
+                                  "trigger": 1.0, "signal": 1.0})
+    assert r["value"] == 2.0  # trigger (0→1) + signal (0.5→1 threshold cross)
+    assert r["triggered"] == 1.0

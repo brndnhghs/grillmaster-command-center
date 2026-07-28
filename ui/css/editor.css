@@ -261,6 +261,40 @@
   .param-range-wrap input[type=range]::-moz-range-thumb {
     width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 2px solid #9b59ff; cursor: pointer;
   }
+  /* ── Inline slider on node body (Input Slider) ───────────── */
+  .gnode-inline-slider {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 12px 10px;
+    border-top: 1px solid var(--border);
+  }
+  .gnode-is-label {
+    font-size: 10px; font-weight: 600; color: var(--muted);
+    flex-shrink: 0; min-width: 36px;
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .gnode-is-range {
+    flex: 1; height: 6px; border-radius: 3px;
+    -webkit-appearance: none; appearance: none;
+    background: linear-gradient(90deg, #e91e8c 0%, #9b59ff 100%);
+    outline: none; cursor: pointer;
+  }
+  .gnode-is-range::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+    background: #fff; border: 2px solid #9b59ff; cursor: pointer;
+    box-shadow: 0 0 6px rgba(155,89,255,0.5);
+  }
+  .gnode-is-range::-moz-range-thumb {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #fff; border: 2px solid #9b59ff; cursor: pointer;
+  }
+  .gnode-is-val {
+    font-size: 12px; color: var(--muted);
+    min-width: 40px; text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .gnode-is-range:disabled {
+    opacity: 0.6; cursor: not-allowed;
+  }
   .glsl-editor { width: 100%; box-sizing: border-box; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 8px 10px; font-size: 12px; font-family: var(--font-mono); line-height: 1.5; resize: vertical; outline: none; min-height: 220px; tab-size: 2; }
   .glsl-editor:focus { border-color: var(--accent); }
   .glsl-apply-btn { margin-top: 6px; width: 100%; padding: 7px; background: var(--accent); color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
@@ -946,13 +980,42 @@
   .gnode-counter-canvas {
     display: block;
     width: 100%;
-    height: 28px;
+    height: 44px;
     border-radius: 4px;
     background: rgba(0,0,0,0.12);
   }
   .gnode-counter-canvas.triggered {
     border-color: rgba(0,230,118,0.4);
     box-shadow: 0 0 6px rgba(0,230,118,0.15);
+  }
+
+  /* ── Ramp curve preview (inline on node body) ── */
+  .gnode-ramp-curve-wrap {
+    margin: 6px 10px 4px;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.08);
+    cursor: pointer;
+  }
+  .gnode-ramp-curve {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1/1;
+    background: rgba(0,0,0,0.12);
+  }
+  .gnode-ramp-curve .ce-grid { stroke: rgba(255,255,255,0.06); stroke-width: 0.005; }
+  .gnode-ramp-curve .ce-curve { fill: none; stroke: var(--accent); stroke-width: 0.008; stroke-linejoin: round; }
+  .gnode-ramp-curve .ce-point { fill: var(--text); stroke: var(--bg0); stroke-width: 0.004; }
+  .gnode-ramp-curve .ce-point-end { fill: var(--accent2); stroke: var(--bg0); stroke-width: 0.004; }
+  .gnode-ramp-playhead {
+    stroke: #ff5252;
+    stroke-width: 0.006;
+    stroke-dasharray: 0.008,0.008;
+  }
+  .gnode-ramp-pip {
+    fill: #ff5252;
+    stroke: #fff;
+    stroke-width: 0.004;
   }
 
   /* ── Driver / Controller editor (Exposed Parameter & Runtime UI, channels) ── */

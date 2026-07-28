@@ -199,6 +199,224 @@ function _renderLfoWaveform(nid, phaseNorm, params, bipolarVal) {
   canvas.classList.toggle('paused', !play);
 }
 
+// Curve editor widget
+
+
+// Render ramp inline curve on node body (curve path + playhead PIP)
+function _renderRampCurve(nid, params) {
+  const svg = document.getElementById('rc-' + nid);
+  if (!svg) return;
+  const path = document.getElementById('rcp-' + nid);
+  const playLine = document.getElementById('rch-' + nid);
+  const playDot = document.getElementById('rcpip-' + nid);
+  if (!path) return;
+
+  // Parse control points or use identity
+  let pts;
+  const raw = params && params.control_points;
+  try { pts = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : null; }
+  catch(e) { pts = null; }
+  if (!Array.isArray(pts) || pts.length < 2) pts = [{x:0,y:0}, {x:1,y:1}];
+  pts = pts.filter(p => p && typeof p.x === 'number' && typeof p.y === 'number').sort((a,b) => a.x - b.x);
+
+  // Build curve path (linear or smooth Catmull-Rom)
+  const smooth = params && params.curve_interpolation === 'smooth';
+  const segs = 30;
+  let d = '';
+  for (let i = 0; i <= segs; i++) {
+    const t = i / segs;
+    const x = pts[0].x + t * (pts[pts.length-1].x - pts[0].x);
+    let lo = 0;
+    for (let j = 0; j < pts.length - 1; j++) {
+      if (x >= pts[j].x && x <= pts[j+1].x) { lo = j; break; }
+    }
+    if (lo >= pts.length - 1) lo = pts.length - 2;
+    const p0 = pts[lo], p1 = pts[lo+1];
+    const segT = (x - p0.x) / (p1.x - p0.x || 1);
+    let y;
+    if (smooth && pts.length > 2) {
+      const segStart = pts[lo], segEnd = pts[lo+1];
+      const prev = lo > 0 ? pts[lo-1] : {x: segStart.x-(segEnd.x-segStart.x), y: segStart.y+(segStart.y-segEnd.y)};
+      const next = lo+2 < pts.length ? pts[lo+2] : {x: segEnd.x+(segEnd.x-segStart.x), y: segEnd.y+(segEnd.y-segStart.y)};
+      const t2 = segT*segT, t3 = t2*segT;
+      y = 0.5 * ((2*segStart.y) + (-prev.y+segEnd.y)*segT + (2*prev.y-5*segStart.y+4*segEnd.y-next.y)*t2 + (-prev.y+3*segStart.y-3*segEnd.y+next.y)*t3);
+    } else {
+      y = p0.y + (p1.y - p0.y) * segT;
+    }
+    const sx = x, sy = 1 - y;
+    d += (i === 0 ? 'M' : 'L') + sx.toFixed(4) + ',' + sy.toFixed(4);
+  }
+  path.setAttribute('d', d);
+
+  // Draw mini control points (non-interactive, just visual)
+  svg.querySelectorAll('.ce-point').forEach(el => el.remove());
+  const ns = 'http://www.w3.org/2000/svg';
+  pts.forEach((p, i) => {
+    const circ = document.createElementNS(ns, 'circle');
+    circ.setAttribute('class', 'ce-point' + (i===0||i===pts.length-1?' ce-point-end':''));
+    circ.setAttribute('cx', p.x.toFixed(4));
+    circ.setAttribute('cy', (1 - p.y).toFixed(4));
+    circ.setAttribute('r', '0.018');
+    svg.appendChild(circ);
+  });
+
+  // Re-position playhead from stored values (phase → x, value → y)
+  if (params && typeof params._pipPhase === 'number' && typeof params._pipValue === 'number') {
+    const px = Math.max(0, Math.min(1, params._pipPhase));
+    const py = Math.max(0, Math.min(1, 1 - params._pipValue));
+    if (playLine) {
+      playLine.setAttribute('x1', px.toFixed(4));
+      playLine.setAttribute('x2', px.toFixed(4));
+      playLine.setAttribute('y1', '0');
+      playLine.setAttribute('y2', '1');
+      playLine.setAttribute('visibility', 'visible');
+    }
+    if (playDot) {
+      playDot.setAttribute('cx', px.toFixed(4));
+      playDot.setAttribute('cy', py.toFixed(4));
+      playDot.setAttribute('visibility', 'visible');
+    }
+  } else {
+    if (playLine) playLine.setAttribute('visibility', 'hidden');
+    if (playDot) playDot.setAttribute('visibility', 'hidden');
+  }
+}
+function initCurveEditor(svg, node, key) {
+  function parsePoints() {
+    const raw = node.params && node.params[key];
+    if (!raw) return [{x:0,y:0}, {x:1,y:1}];
+    let pts;
+    try { pts = typeof raw === 'string' ? JSON.parse(raw) : raw; }
+    catch(e) { pts = null; }
+    if (!Array.isArray(pts) || pts.length < 2) return [{x:0,y:0}, {x:1,y:1}];
+    return pts.filter(p => p && typeof p.x === 'number' && typeof p.y === 'number').sort((a,b) => a.x - b.x);
+  }
+
+  let points = parsePoints();
+  let dragging = null, dragStart = null, dragOrig = null;
+  const NS = 'http://www.w3.org/2000/svg';
+
+  function dataToSvg(p) { return {x: p.x, y: 1 - p.y}; }
+  function svgToData(px, py) { return {x: Math.max(0,Math.min(1,px)), y: Math.max(0,Math.min(1,1 - py))}; }
+
+  function buildCurvePath(pts) {
+    if (pts.length < 2) return '';
+    const segs = 40; let d = '';
+    for (let i = 0; i <= segs; i++) {
+      const t = i / segs;
+      const x = pts[0].x + t * (pts[pts.length-1].x - pts[0].x);
+      let lo = 0;
+      for (let j = 0; j < pts.length - 1; j++) {
+        if (x >= pts[j].x && x <= pts[j+1].x) { lo = j; break; }
+      }
+      if (lo >= pts.length - 1) lo = pts.length - 2;
+      const p0 = pts[lo], p1 = pts[lo+1];
+      const segT = (x - p0.x) / (p1.x - p0.x || 1);
+      let y;
+      if (svg._ceSmooth && pts.length > 2) {
+        const segStart = pts[lo], segEnd = pts[lo+1];
+        const prev = lo > 0 ? pts[lo-1] : {x: segStart.x-(segEnd.x-segStart.x), y: segStart.y+(segStart.y-segEnd.y)};
+        const next = lo+2 < pts.length ? pts[lo+2] : {x: segEnd.x+(segEnd.x-segStart.x), y: segEnd.y+(segEnd.y-segStart.y)};
+        const t2 = segT*segT, t3 = t2*segT;
+        y = 0.5 * ((2*segStart.y) + (-prev.y+segEnd.y)*segT + (2*prev.y-5*segStart.y+4*segEnd.y-next.y)*t2 + (-prev.y+3*segStart.y-3*segEnd.y+next.y)*t3);
+      } else {
+        y = p0.y + (p1.y - p0.y) * segT;
+      }
+      const sp = dataToSvg({x, y: Math.max(0, Math.min(1, y))});
+      d += (i === 0 ? 'M' : 'L') + sp.x.toFixed(4) + ',' + sp.y.toFixed(4);
+    }
+    return d;
+  }
+
+  function redraw() {
+    svg.querySelectorAll('.ce-point').forEach(el => el.remove());
+    let path = svg.querySelector('.ce-curve');
+    if (!path) {
+      path = document.createElementNS(NS, 'path');
+      path.setAttribute('class', 'ce-curve');
+      svg.insertBefore(path, svg.querySelector('.ce-grid'));
+    }
+    path.setAttribute('d', buildCurvePath(points));
+
+    points.forEach((p, i) => {
+      const sp = dataToSvg(p);
+      const circ = document.createElementNS(NS, 'circle');
+      circ.setAttribute('class', 'ce-point' + (i===0||i===points.length-1?' ce-point-end':' ce-point-mid'));
+      circ.setAttribute('cx', sp.x.toFixed(4));
+      circ.setAttribute('cy', sp.y.toFixed(4));
+      circ.setAttribute('r', '0.025');
+      circ.dataset.idx = i;
+      svg.appendChild(circ);
+
+      circ.addEventListener('pointerdown', e => {
+        e.stopPropagation(); e.preventDefault();
+        dragging = parseInt(circ.dataset.idx);
+        dragStart = svgPoint(e);
+        dragOrig = {...points[dragging]};
+        circ.setPointerCapture(e.pointerId);
+      });
+      circ.addEventListener('pointermove', e => {
+        if (dragging === null) return;
+        e.preventDefault();
+        const pt = svgPoint(e);
+        let newX = Math.max(0, Math.min(1, dragOrig.x + (pt.x - dragStart.x)));
+        let newY = Math.max(0, Math.min(1, dragOrig.y + (dragStart.y - pt.y)));
+        if (dragging === 0) newX = 0;
+        if (dragging === points.length - 1) newX = 1;
+        if (dragging > 0) newX = Math.max(newX, points[dragging-1].x + 0.001);
+        if (dragging < points.length - 1) newX = Math.min(newX, points[dragging+1].x - 0.001);
+        points[dragging] = {x: newX, y: newY};
+        commit();
+      });
+      circ.addEventListener('pointerup', () => { dragging = null; });
+      circ.addEventListener('pointercancel', () => { dragging = null; });
+      circ.addEventListener('dblclick', e => {
+        e.stopPropagation(); e.preventDefault();
+        if (points.length <= 2 || i === 0 || i === points.length-1) return;
+        points.splice(i, 1);
+        commit();
+      });
+    });
+  }
+
+  function svgPoint(e) {
+    const rect = svg.getBoundingClientRect();
+    const vb = svg.viewBox.baseVal;
+    return {x: (e.clientX - rect.left) * (vb.width/rect.width) + vb.x, y: (e.clientY - rect.top) * (vb.height/rect.height) + vb.y};
+  }
+
+  function commit() {
+    const cleaned = points.filter((p,i) => i===0 || p.x > points[i-1].x);
+    if (cleaned.length >= 2) points = cleaned;
+    points[0].x = 0; points[points.length-1].x = 1;
+    redraw();
+    const json = JSON.stringify(points.map(p => ({x:+p.x.toFixed(4), y:+p.y.toFixed(4)})));
+    if (node.params) node.params[key] = json;
+    gUpdateNodeParam(node.id, key, json);
+    gDoAutoGen();
+  }
+
+  svg.addEventListener('pointerdown', e => {
+    if (dragging !== null) return;
+    if (e.target !== svg && e.target !== svg.querySelector('.ce-curve')) return;
+    const pt = svgPoint(e);
+    const dataPt = svgToData(pt.x, pt.y);
+    for (const p of points) {
+      if (Math.abs(p.x - dataPt.x) < 0.03 && Math.abs(p.y - dataPt.y) < 0.03) return;
+    }
+    points.push(dataPt);
+    points.sort((a,b) => a.x - b.x);
+    points[0].x = 0; points[points.length-1].x = 1;
+    commit();
+  });
+
+  svg._ceSmooth = (node.params && node.params.curve_interpolation === 'smooth');
+  svg._ceNodeId = node.id;
+  svg._ceKey = key;
+  redraw();
+}
+
+
 // Wire compatibility: IMAGE←FIELD is allowed; otherwise types must match
 function gPortsCompatible(srcDot, dstDot) {
   if (!srcDot || !dstDot) return true;
@@ -1888,6 +2106,48 @@ function gRenderNode(node) {
 
   if (portsEl.children.length) el.appendChild(portsEl);
 
+  // ── Inline slider for Input Slider node ──────────────────────
+  if (node.method_id === '__input_slider__') {
+    const sp  = (def.params && def.params.slider)     || {};
+    const lp  = (def.params && def.params.low_value)  || {};
+    const hp  = (def.params && def.params.high_value) || {};
+    const nd  = node.params;
+    const sv  = nd.slider     ?? sp.default ?? 0.5;
+    const low = nd.low_value  ?? lp.default ?? 0;
+    const high= nd.high_value ?? hp.default ?? 1;
+    const wired = gEdges && gEdges.some(e => e.dst_node === node.id && e.dst_port === 'value_in');
+    const incoming = nd.value_in;
+    // Normalised slider position: either from slider param (unwired) or
+    // reverse-mapped from the incoming wired value.
+    const norm = wired
+      ? (incoming != null ? ((+incoming - low) / ((high - low) || 1)) : 0.5)
+      : sv;
+    // Display value (mapped to range)
+    const display = wired
+      ? (incoming != null ? +incoming : (low + sv * (high - low)))
+      : low + sv * (high - low);
+    const wrap = document.createElement('div');
+    wrap.className = 'gnode-inline-slider';
+    wrap.dataset.wired = wired ? '1' : '0';
+    wrap.dataset.nid = node.id;
+    wrap.innerHTML = `<span class="gnode-is-label">Value</span>
+      <input type="range" class="gnode-is-range" min="0" max="1" step="0.01" value="${norm}"${wired ? ' disabled' : ''}>
+      <span class="gnode-is-val">${formatVal(display)}</span>`;
+    const range = wrap.querySelector('.gnode-is-range');
+    const valEl = wrap.querySelector('.gnode-is-val');
+    range.addEventListener('mousedown', e => e.stopPropagation());
+    range.addEventListener('touchstart', e => e.stopPropagation(), {passive:true});
+    range.addEventListener('input', () => {
+      if (gEdges.some(e => e.dst_node === node.id && e.dst_port === 'value_in')) return;  // read-only
+      const newSlider = parseFloat(range.value);
+      const newDisplay = low + newSlider * (high - low);
+      valEl.textContent = formatVal(newDisplay);
+      gUpdateNodeParam(node.id, 'slider', newSlider);
+    });
+    range.addEventListener('change', () => { if (!wired) gDoAutoGen(); });
+    el.appendChild(wrap);
+  }
+
   // ── Runtime section (channels only) ──────────────────────────
   // Read-only live readouts (Current Value, Phase, Beat, …) that update every
   // frame from the live WS feed (msg.node_values). Never serialized. Per spec
@@ -1935,11 +2195,40 @@ function gRenderNode(node) {
       const canvas = document.createElement('canvas');
       canvas.id = 'counter-canvas-' + node.id;
       canvas.className = 'gnode-counter-canvas';
-      canvas.width = 200; canvas.height = 28;
+      canvas.width = 200; canvas.height = 44;
       canvasDiv.appendChild(canvas);
       el.appendChild(canvasDiv);
       // Initial draw (static preview until live WS frame arrives)
-      setTimeout(() => _renderCounterProgress(node.id, 0, 0, 0, node.params), 0);
+      setTimeout(() => _renderCounterProgress(node.id, 0, 0, 0, undefined, node.params), 0);
+    }
+    // Ramp inline curve preview (visual-spec: compact curve + playhead PIP)
+    if (node.method_id === '__ramp__') {
+      const svgWrap = document.createElement('div');
+      svgWrap.className = 'gnode-ramp-curve-wrap';
+      const ns = 'http://www.w3.org/2000/svg';
+      const svg = document.createElementNS(ns, 'svg');
+      svg.setAttribute('class', 'gnode-ramp-curve');
+      svg.setAttribute('id', 'rc-' + node.id);
+      svg.setAttribute('viewBox', '0 0 1 1');
+      svg.setAttribute('preserveAspectRatio', 'none');
+      svg.innerHTML =
+        '<line class="ce-grid" x1="0.00" y1="0.25" x2="1.00" y2="0.25"/>' +
+        '<line class="ce-grid" x1="0.00" y1="0.50" x2="1.00" y2="0.50"/>' +
+        '<line class="ce-grid" x1="0.00" y1="0.75" x2="1.00" y2="0.75"/>' +
+        '<line class="ce-grid" x1="0.25" y1="0.00" x2="0.25" y2="1.00"/>' +
+        '<line class="ce-grid" x1="0.50" y1="0.00" x2="0.50" y2="1.00"/>' +
+        '<line class="ce-grid" x1="0.75" y1="0.00" x2="0.75" y2="1.00"/>' +
+        '<path class="ce-curve" id="rcp-' + node.id + '" d="M0,1 L1,0"/>' +
+        '<line class="gnode-ramp-playhead" id="rch-' + node.id + '" x1="0" y1="0" x2="0" y2="1" visibility="hidden"/>' +
+        '<circle class="gnode-ramp-pip" id="rcpip-' + node.id + '" cx="0" cy="0" r="0.025" visibility="hidden"/>';
+      svgWrap.appendChild(svg);
+      svgWrap.addEventListener('click', e => {
+        e.stopPropagation();
+        gShowNodeParams(node);
+      });
+      el.appendChild(svgWrap);
+      // Initial curve render from stored control_points
+      _renderRampCurve(node.id, node.params);
     }
 
   }
@@ -2589,6 +2878,24 @@ function gShowNodeParams(node) {
       gDoAutoGen();
     });
   });
+
+  // Initialize curve editor widgets
+  gParamsForm.querySelectorAll('.curve-editor-canvas').forEach(svg => {
+    const key = svg.id.replace(/^ce_/, '');
+    initCurveEditor(svg, node, key);
+  });
+  // Re-render curve when interpolation mode changes
+  const interpEl = document.getElementById('p_curve_interpolation');
+  if (interpEl) {
+    interpEl.addEventListener('change', () => {
+      const svg = document.getElementById('ce_control_points');
+      if (svg) {
+        svg._ceSmooth = (interpEl.value === 'smooth');
+        // Re-init with current node state
+        initCurveEditor(svg, node, 'control_points');
+      }
+    });
+  }
   gRefreshParamOverrides(node.id);
 
   // ── Per-param keyframe section ──────────────────────────────
@@ -2799,6 +3106,35 @@ function openPerParamKfEditor(node, pname, idx, kf) {
 }
 function gUpdateNodeParam(nodeId, key, val) {
   const n = gNodes.find(n => n.id===nodeId); if (n) { n.params[key]=val; n.dirty=true; gSave(); }
+  // Keep the inline slider on the Input Slider node body in sync with side-panel edits.
+  if (n && (n.method_id === '__input_slider__')) {
+    const el = document.getElementById('gnode-' + nodeId);
+    if (el) {
+      const range = el.querySelector('.gnode-is-range');
+      const valEl = el.querySelector('.gnode-is-val');
+      const wrap = el.querySelector('.gnode-inline-slider');
+      if (!range || !valEl || !wrap) return; // not an input slider node DOM
+      const lp = (gNodeDefs['__input_slider__']?.params?.low_value)  || {};
+      const hp = (gNodeDefs['__input_slider__']?.params?.high_value) || {};
+      const low = n.params.low_value  ?? lp.default ?? 0;
+      const high= n.params.high_value ?? hp.default ?? 1;
+      const incoming = n.params.value_in;
+      let sliderVal, displayVal;
+      if (key === 'slider' || key === 'value_in' || key === 'low_value' || key === 'high_value') {
+        const liveWired = gEdges.some(e => e.dst_node === nodeId && e.dst_port === 'value_in');
+        if (liveWired && incoming != null) {
+          sliderVal = (+incoming - low) / ((high - low) || 1);
+          displayVal = +incoming;
+        } else {
+          const sv = 'slider' in n.params ? n.params.slider : 0.5;
+          sliderVal = sv;
+          displayVal = low + sv * (high - low);
+        }
+        range.value = sliderVal;
+        valEl.textContent = formatVal(displayVal);
+      }
+    }
+  }
   // Keep the 3D viewport editor in sync with slider edits.
   if (window._gEditor3D && window._gEditor3D.isOpen() && !window._gEditor3DWriting)
     window._gEditor3D.refresh();
@@ -3451,7 +3787,39 @@ function _gUpdateLiveMeta(msg) {
       if (typeof vals.phase === 'number') {
         const counterNode = gNodes.find(n => n.id === nid);
         if (counterNode && counterNode.method_id === '__counter__') {
-          _renderCounterProgress(nid, vals.value, vals.phase, vals.triggered, counterNode.params);
+          _renderCounterProgress(nid, vals.value, vals.phase, vals.triggered, vals.signal_level, counterNode.params);
+        }
+      }
+    }
+
+    // Live Ramp playhead PIP — phase → x, value → y; sits exactly on the curve
+    for (const [nid, vals] of Object.entries(msg.node_values)) {
+      if (typeof vals.value === 'number' || typeof vals.phase === 'number') {
+        const rampNode = gNodes.find(n => n.id === nid);
+        if (rampNode && rampNode.method_id === '__ramp__') {
+          const pipParams = {...rampNode.params, _pipValue: vals.value ?? 0, _pipPhase: vals.phase ?? 0};
+          _renderRampCurve(nid, pipParams);
+        }
+      }
+    }
+    // Live Input Slider read-out — push WS value into inline slider when wired
+    for (const [nid, vals] of Object.entries(msg.node_values)) {
+      if (typeof vals.value === 'number') {
+        const sliderNode = gNodes.find(n => n.id === nid);
+        if (sliderNode && sliderNode.method_id === '__input_slider__') {
+          const el = document.getElementById('gnode-' + nid);
+          if (!el) continue;
+          const wrap = el.querySelector('.gnode-inline-slider');
+          const range = el.querySelector('.gnode-is-range');
+          const valEl = el.querySelector('.gnode-is-val');
+          if (!wrap || !range || !valEl) continue;
+          const liveWired = gEdges.some(e => e.dst_node === nid && e.dst_port === 'value_in');
+          if (liveWired) {
+            const low  = sliderNode.params.low_value  ?? 0;
+            const high = sliderNode.params.high_value ?? 1;
+            range.value = (vals.value - low) / ((high - low) || 1);
+            valEl.textContent = formatVal(vals.value);
+          }
         }
       }
     }
@@ -7287,24 +7655,60 @@ gLoadGroupPresets();
 tlLoadClips();
 renderTimelineRuler();
 
-function _renderCounterProgress(nid, value, phase, triggered, params) {
+function _renderCounterProgress(nid, value, phase, triggered, signalLevel, params) {
   const canvas = document.getElementById('counter-canvas-' + nid);
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
-  const w = canvas.offsetWidth || 200, h = 28;
+  const w = canvas.offsetWidth || 200, h = 44;
+  const barH = 24;
   canvas.width = w * dpr; canvas.height = h * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(0, 0, w, h);
+
+  // ── Top: counter progress bar ──────────────────────────────────────
+  ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(0, 0, w, barH);
   const pct = Math.max(0, Math.min(1, phase || 0));
   const trig = triggered && triggered > 0.5;
   ctx.fillStyle = trig ? 'rgba(0,230,118,0.35)' : 'rgba(100,140,255,0.25)';
-  ctx.fillRect(2, 2, pct * (w - 4), h - 4);
-  if (trig) { ctx.fillStyle = 'rgba(0,230,118,0.6)'; ctx.fillRect(2, 2, 4, h - 4); }
+  ctx.fillRect(2, 2, pct * (w - 4), barH - 4);
+  if (trig) { ctx.fillStyle = 'rgba(0,230,118,0.6)'; ctx.fillRect(2, 2, 4, barH - 4); }
   ctx.fillStyle = trig ? '#00e676' : 'rgba(255,255,255,0.7)';
-  ctx.font = (h * 0.5) + 'px monospace';
+  ctx.font = (barH * 0.45) + 'px monospace';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(value != null ? Math.round(value) : '-', w / 2, h / 2);
+  ctx.fillText(value != null ? Math.round(value) : '-', w / 2, barH / 2);
   canvas.classList.toggle('triggered', trig);
+
+  // ── Bottom: threshold band ─────────────────────────────────────────
+  const threshX = w * 0.12, barW = w * 0.7, bandTop = barH + 2, bandH = 18;
+  const threshup = (params && params.threshup != null) ? +params.threshup : 0.5;
+
+  ctx.fillStyle = 'rgba(0,0,0,0.12)'; ctx.fillRect(threshX, bandTop, barW, bandH);
+
+  // threshup caret — green when triggered
+  const upX = threshX + threshup * barW;
+  ctx.fillStyle = trig ? '#00e676' : 'rgba(255,255,255,0.5)';
+  ctx.beginPath();
+  ctx.moveTo(upX, bandTop);
+  ctx.lineTo(upX - 4, bandTop + 6);
+  ctx.lineTo(upX + 4, bandTop + 6);
+  ctx.closePath(); ctx.fill();
+  ctx.font = '8px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.fillStyle = trig ? '#00e676' : 'rgba(255,255,255,0.45)';
+  ctx.fillText('↑' + threshup.toFixed(2), upX, bandTop - 1);
+
+  // Signal-level pip
+  if (signalLevel != null) {
+    const pipX = Math.max(threshX, Math.min(threshX + barW, threshX + signalLevel * barW));
+    const pipY = bandTop + bandH / 2;
+    ctx.beginPath();
+    ctx.arc(pipX, pipY, 5, 0, Math.PI * 2);
+    ctx.fillStyle = trig ? 'rgba(0,230,118,0.25)' : 'rgba(255,255,255,0.12)';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(pipX, pipY, 3, 0, Math.PI * 2);
+    ctx.fillStyle = trig ? '#00e676' : '#ffffff';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1; ctx.stroke();
+  }
 }

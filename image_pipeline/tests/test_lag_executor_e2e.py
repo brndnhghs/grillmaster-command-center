@@ -52,7 +52,7 @@ class TestLagExecutorE2E:
             _make_node("term", "05", render=True),  # any image-generating terminal
         ]
         edges = [
-            _make_edge("lfo", "lag", "value", "signal"),
+            _make_edge("lfo", "lag", "value", "input"),
             _make_edge("lag", "term", "value", "scale", feedback=False),
         ]
 
@@ -108,7 +108,7 @@ class TestLagExecutorE2E:
             _make_node("term", "05", render=True),
         ]
         edges = [
-            _make_edge("lfo", "lag", "value", "signal"),
+            _make_edge("lfo", "lag", "value", "input"),
             _make_edge("lag", "term", "value", "scale"),
         ]
         vals = []
@@ -131,7 +131,7 @@ class TestLagExecutorE2E:
             _make_node("term", "05", render=True),
         ]
         edges = [
-            _make_edge("lfo", "lag", "value", "value"),   # value port, not signal
+            _make_edge("lfo", "lag", "value", "input"),   # input port, not value
             _make_edge("lag", "term", "value", "scale"),
         ]
         vals = []

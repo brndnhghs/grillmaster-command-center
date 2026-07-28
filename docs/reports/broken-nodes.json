@@ -1,5 +1,26 @@
 {
   "version": 1,
-  "updated_at": "2026-07-24T06:18:58.204408+00:00",
-  "reports": []
+  "updated_at": "2026-07-27T07:55:15.952790+00:00",
+  "reports": [
+    {
+      "id": "brk-31c27bfc6b",
+      "method_id": "__noise1d__",
+      "method_name": "Noise1D",
+      "category": "channels",
+      "source_path": "image_pipeline/methods/channels/noise1d.py",
+      "note": "redundant - feature covered by LFO node",
+      "status": "open",
+      "flagged_at": "2026-07-27T07:55:15.952370+00:00",
+      "resolved_at": null,
+      "node_id": "nms2xliw7c",
+      "graph_name": "",
+      "params": {
+        "min": 0,
+        "max": 1,
+        "rate": 0.5,
+        "smooth": 2
+      },
+      "reported_by": "ui"
+    }
+  ]
 }

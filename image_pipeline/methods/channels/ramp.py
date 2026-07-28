@@ -1,22 +1,9 @@
-"""Stateless curve evaluator — maps an input SCALAR through control points (v2).
+"""Stateless curve evaluator — remaps float x through a user-defined curve.
 
-Replaces the original time-based ramp generator (is_time_varying=False).
-Now y = f(x): no frame dependency, no internal state.
+    y = f(remap(x, range_low, range_high))
 
-Inputs:
-    x (SCALAR): Value to evaluate the curve at. Overrides the x param when wired.
-    trigger (SCALAR): Deprecated back-compat alias for x.
-
-Params:
-    x: Float input (overridden by x port). Default 0.0.
-    trigger: Deprecated alias; only used when x param absent. Default None.
-    control_points: JSON array of {x,y} float dicts. Default None → identity [0→0, 1→1].
-    out_of_range: clamp | extend | wrap. Default clamp.
-    curve_interpolation: linear | smooth (Catmull-Rom). Default linear.
-
-Outputs:
-    value (SCALAR): y = f(x) evaluated on the curve.
-    phase (SCALAR): Normalized position [0, 1] within the curve's domain.
+    Inputs: x, range_low, range_high (all SCALAR).
+    Outputs: value (SCALAR), phase (SCALAR).
 """
 from __future__ import annotations
 
@@ -136,11 +123,9 @@ _LEGACY_KEYS = {"start", "end", "duration_frames", "easing", "mode", "frame", "s
     name="Ramp (Curve Evaluator)",
     category="channels",
     tags=["chop", "float", "curve", "mapper"],
-    inputs={"x": "SCALAR", "trigger": "SCALAR"},
+    inputs={"x": "SCALAR", "range_low": "SCALAR", "range_high": "SCALAR"},
     outputs={"value": "SCALAR", "phase": "SCALAR"},
     params={
-        "x": {"description": "Input x value (overridden by x port when wired)", "default": 0.0},
-        "trigger": {"description": "Deprecated back-compat port alias — use x instead", "default": None},
         "control_points": {
             "description": "JSON array of {x, y} control-point dicts defining the curve",
             "default": None,
@@ -163,15 +148,16 @@ _LEGACY_KEYS = {"start", "end", "duration_frames", "easing", "mode", "frame", "s
     },
     signal={
         "x": "numeric",
-        "trigger": "numeric",
+        "range_low": "numeric",
+        "range_high": "numeric",
         "value": "output",
         "phase": "output",
     },
     version=2,
     is_time_varying=False,
     description=(
-        "Stateless curve evaluator: y = f(x) on a control-point curve. "
-        "Replaces the legacy time-based ramp (no frame dependency)."
+        "Remaps input x from [range_low, range_high] → [0, 1], then evaluates "
+        "against control-point curve. Stateless — no frame dependency."
     ),
 )
 def method_ramp(out_dir: Path, seed: int, params: dict | None = None) -> dict:
@@ -193,14 +179,29 @@ def method_ramp(out_dir: Path, seed: int, params: dict | None = None) -> dict:
             stacklevel=2,
         )
 
-    # Resolve x: wired x port → wired trigger (back-compat) → x param → 0.0
-    x = params.get("x")
-    if x is None:
-        x = params.get("trigger", 0.0)
+    # Resolve x: wired x port → x param → 0.0
+    x = params.get("x", 0.0)
     try:
         x = float(x)
     except (TypeError, ValueError):
         x = 0.0
+
+    # Resolve range_low/range_high: wired port → fallback default
+    try:
+        range_low = float(params.get("range_low", 0.0))
+    except (TypeError, ValueError):
+        range_low = 0.0
+    try:
+        range_high = float(params.get("range_high", 1.0))
+    except (TypeError, ValueError):
+        range_high = 1.0
+
+    # Remap x from [range_low, range_high] → [0, 1]
+    span = range_high - range_low
+    if span == 0:
+        t = 0.0
+    else:
+        t = (x - range_low) / span
 
     # Parse control points
     raw = params.get("control_points")
@@ -226,17 +227,17 @@ def method_ramp(out_dir: Path, seed: int, params: dict | None = None) -> dict:
     if interp not in ("linear", "smooth"):
         interp = "linear"
 
-    value = _evaluate_curve(x, pts, interp, oob)
+    value = _evaluate_curve(t, pts, interp, oob)
 
     xs = [p["x"] for p in pts]
     x_min, x_max = min(xs), max(xs)
-    span = x_max - x_min
-    if span == 0:
+    span_crv = x_max - x_min
+    if span_crv == 0:
         phase = 0.0
     elif oob == "wrap":
-        phase = ((x - x_min) % span) / span
+        phase = ((t - x_min) % span_crv) / span_crv
     else:
-        clamped = max(x_min, min(x, x_max))
-        phase = (clamped - x_min) / span
+        clamped = max(x_min, min(t, x_max))
+        phase = (clamped - x_min) / span_crv
 
     return {"value": float(value), "phase": float(phase)}

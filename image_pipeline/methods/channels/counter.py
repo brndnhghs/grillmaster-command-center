@@ -36,7 +36,7 @@ _COUNTER_PRUNE_COUNTER = 0
             }
         },
         signal={
-            "reset": "control",
+            "reset": "event",
             "step": "numeric",
             "signal": "numeric",
             "trigger": "event",
@@ -56,9 +56,7 @@ _COUNTER_PRUNE_COUNTER = 0
             "mode": {"description": "counter wrap mode",
                      "choices": ["once", "loop", "pingpong"],
                      "default": "loop"},
-            "threshup": {"description": "Trigger Threshold", "default": 0.5},
-            "threshdown": {"description": "Release Threshold", "default": 0.3},
-            "release": {"description": "If on, use trigger threshold also as release", "default": True},
+            "threshup": {"description": "Trigger threshold", "default": 0.5},
         })
 def method_counter(out_dir: Path, seed: int, params=None):
     """Integer counter with configurable advance mode.
@@ -66,17 +64,25 @@ def method_counter(out_dir: Path, seed: int, params=None):
     Two advance modes (``advance_mode`` param):
 
       - **trigger** (default): the counter increments by ``step_size`` on
-        each rising edge (>0.5 transition) of the ``trigger`` SCALAR input.
-        When unwired the counter holds at ``start`` — it does NOT advance
-        by frame.  The count is accumulated statefully.
+        each rising edge (≥0.5 transition) of the ``trigger`` SCALAR input,
+        AND/OR on each rising threshold-crossing (≥``threshup`` transition)
+        of the ``signal`` SCALAR input.  A rising edge on the ``reset``
+        SCALAR input resets the count to ``start``.  ``trigger`` and
+        ``signal`` are independent — both can fire in the same frame for
+        a total of 2× ``step_size``.  When all ports are unwired the
+        counter holds at ``start`` — it does NOT advance by frame.  The
+        count is accumulated statefully.
 
       - **free**: backward-compatible frame-based counting.  The counter
         advances by ``step_size`` every rendered frame, computed from
-        ``frame * step_size``.  No trigger input needed.
+        ``frame * step_size``.  No trigger/signal input needed.  ``reset``
+        is level-sensitive in this mode (forcing the count to the given
+        value).
 
-    ``trigger`` (SCALAR input, event) drives the count increment, while
-    ``signal`` (SCALAR input) drives the Schmitt-trigger ``triggered`` output
-    — they are independent functions.
+    ``trigger`` (SCALAR input, event) drives the count increment using a
+    fixed 0.5 threshold.  ``signal`` (SCALAR input, numeric) drives both the
+    count increment (using the configurable ``threshup`` threshold) AND the
+    Schmitt-trigger ``triggered`` output — they are independent functions.
 
     Wrap modes:
       - once: clamp at ``end``
@@ -86,7 +92,7 @@ def method_counter(out_dir: Path, seed: int, params=None):
     Outputs:
         value (SCALAR): current count
         phase (SCALAR): normalized position 0→1 between start and end
-        triggered (SCALAR): 1 when signal input exceeds threshup (Schmitt)
+        triggered (SCALAR): 1 when signal >= threshup, 0 otherwise
     """
     if params is None:
         params = {}
@@ -102,7 +108,8 @@ def method_counter(out_dir: Path, seed: int, params=None):
 
     total = end - start
     if total <= 0:
-        return {"value": float(start), "phase": 0.0, "triggered": 0.0}
+        return {"value": float(start), "phase": 0.0, "triggered": 0.0,
+                "signal_level": 0.0}
 
     advance_mode = params.get("advance_mode", "trigger")
 
@@ -115,15 +122,22 @@ def method_counter(out_dir: Path, seed: int, params=None):
 
     # ── SCALAR overrides (shared) ───────────────────────────────────────
     reset_val: int | None = None
+    reset_raw: float | None = None
     _rv = params.get("reset")
     if _rv is not None:
-        reset_val = int(round(float(_rv)))
+        reset_raw = float(_rv)
+        reset_val = int(round(reset_raw))
 
     step_override = params.get("step")
     if step_override is not None:
         step_size = max(1, int(round(float(step_override))))
 
     node_id = params.get("_node_id", "")
+
+    # ── Threshold param ─────────────────────────────────────────────────
+    threshup = float(params.get("threshup", 0.5))
+    signal_val = params.get("signal")
+    signal_level = float(signal_val) if signal_val is not None else 0.0
 
     # ── Compute value ───────────────────────────────────────────────────
     if advance_mode == "free":
@@ -147,29 +161,42 @@ def method_counter(out_dir: Path, seed: int, params=None):
         else:  # loop
             raw_val = start + (raw % (total + 1))
 
-    elif trigger_input is not None:
+    elif trigger_input is not None or reset_raw is not None or signal_val is not None:
         # ── Trigger-driven (edge-detected, stateful) ────────────────────
-        # Always create a local state dict even without node_id, so the
-        # code path doesn't KeyError on state["current_value"].
         state = _COUNTER_STATE.setdefault(node_id, {
             "current_value": float(start),
             "prev_trigger": 0.0,
+            "prev_reset": 0.0,
+            "prev_signal_raw": 0.0,
             "frame": 0,
         }) if node_id else {
             "current_value": float(start),
             "prev_trigger": 0.0,
+            "prev_reset": 0.0,
+            "prev_signal_raw": 0.0,
         }
 
-        # Reset takes precedence (level-sensitive, like original)
-        if reset_val is not None:
-            state["current_value"] = float(reset_val)
-        else:
-            # Rising-edge detection on trigger
+        # Reset edge (rising edge on reset → reset to start)
+        prev_reset = state.get("prev_reset", 0.0)
+        if reset_raw is not None and reset_raw >= 0.5 > prev_reset:
+            state["current_value"] = float(start)
+        if reset_raw is not None:
+            state["prev_reset"] = reset_raw
+
+        # Rising-edge detection on trigger (increment)
+        if trigger_input is not None:
             prev_trigger = state.get("prev_trigger", 0.0)
             if trigger_input >= 0.5 > prev_trigger:
                 state["current_value"] += step_size
+            state["prev_trigger"] = trigger_input
 
-        state["prev_trigger"] = trigger_input
+        # Rising-edge detection on signal (threshold-crossing → increment)
+        if signal_val is not None:
+            prev_signal = state.get("prev_signal_raw", 0.0)
+            current_signal = float(signal_val)
+            if current_signal >= threshup > prev_signal:
+                state["current_value"] += step_size
+            state["prev_signal_raw"] = current_signal
         if node_id:
             state["frame"] = int(params.get("frame", state.get("frame", 0)))
 
@@ -194,23 +221,10 @@ def method_counter(out_dir: Path, seed: int, params=None):
     val = raw_val
     phase = (val - start) / total if total > 0 else 0.0
 
-    # ── Schmitt-trigger hysteresis ──────────────────────────────────────
-    signal_val = params.get("signal")
-    threshup = float(params.get("threshup", 0.5))
-    threshdown = float(params.get("threshdown", 0.3))
-    release_shared = str(params.get("release", "True")).lower() in ("true", "1", "yes")
-    eff_thr_dn = threshup if release_shared else threshdown
-    prev_state = _COUNTER_STATE.get(node_id, {}) if node_id else {}
-
-    if signal_val is not None and float(signal_val) > threshup:
+    # ── Comparator ───────────────────────────────────────────────────────
+    if signal_val is not None and float(signal_val) >= threshup:
         triggered = 1.0
-    elif signal_val is not None and float(signal_val) < eff_thr_dn:
-        triggered = 0.0
-    elif signal_val is not None and node_id and node_id in _COUNTER_STATE:
-        # Within the hysteresis window — hold the last state
-        triggered = 1.0 if prev_state.get("triggered", False) else 0.0
     else:
-        # Unwired or no signal: not triggered
         triggered = 0.0
 
     if node_id:
@@ -225,4 +239,5 @@ def method_counter(out_dir: Path, seed: int, params=None):
             if _COUNTER_STATE[_nid].get("frame", 0) < _cutoff:
                 del _COUNTER_STATE[_nid]
 
-    return {"value": float(val), "phase": float(phase), "triggered": float(triggered)}
+    return {"value": float(val), "phase": float(phase), "triggered": float(triggered),
+            "signal_level": signal_level}
