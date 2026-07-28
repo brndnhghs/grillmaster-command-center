@@ -423,6 +423,11 @@ function renderParamField(key, spec) {
     return renderColorField(key, spec);
   }
 
+  // 0c. Curve editor — interactive control-point graph for curve/easing params
+  if (spec.widget === 'curve_editor' || key === 'control_points') {
+    return renderCurveEditor(key, spec);
+  }
+
   // 1. Explicit choices array on the spec
   if (spec.choices && spec.choices.length) return makeSelect(spec.choices);
 
