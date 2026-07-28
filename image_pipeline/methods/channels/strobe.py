@@ -9,6 +9,7 @@ import numpy as np
 from ...core.registry import method
 from ...core.utils import seed_all
 
+
 @method(id="__strobe__", name="Strobe", category="channels",
         tags=["chop", "time", "gate", "generator"],
         inputs={"rate": "SCALAR", "duty_cycle": "SCALAR"},
@@ -52,39 +53,35 @@ def method_strobe(out_dir: Path, seed: int, params=None):
         params = {}
     seed_all(seed)
 
-    t = float(params.get("time", 0.0))
     rate = float(params.get("rate", 2.0))
     duty = float(params.get("duty_cycle", 0.5))
     on_val = float(params.get("on_value", 1.0))
     off_val = float(params.get("off_value", 0.0))
 
     # The GraphExecutor injects a per-frame Timeline (params["_timeline"]) but
-    # does NOT inject a `time` for CHOP generators. Derive the live phase from
-    # the Timeline's global_frame so the strobe advances every rendered frame
-    # instead of staying pinned at t=0 (which froze driver-driven graphs and
-    # culled them as static — see __counter__ / __lfo__ / __noise1d__).
-    if t == 0.0:
+    # does NOT inject `frame` nor `fps` for CHOP generators.  Derive the live
+    # frame from the Timeline's global_frame so the strobe advances every
+    # rendered frame.
+    frame = int(params.get("frame", 0))
+    fps = float(params.get("fps", 24.0))
+    if frame == 0:
         _tl = params.get("_timeline")
         if _tl is not None:
-            _gf = int(getattr(_tl, "global_frame", 0))
-            _tf = int(getattr(_tl, "total_frames", 24))
-            t = (_gf / max(1, _tf - 1)) * (2.0 * math.pi)
-
-    # SCALAR overrides
-    rate_override = params.get("rate")
-    if rate_override is not None:
-        rate = float(rate_override)
-    duty_override = params.get("duty_cycle")
-    if duty_override is not None:
-        duty = float(duty_override)
+            frame = int(getattr(_tl, "global_frame", 0))
+            fps = float(getattr(_tl, "fps", fps))
 
     duty = max(0.01, min(0.99, duty))
-    phase = (t * rate) % 1.0
+
+    # Phase advances by rate cycles per second of elapsed real time.
+    # t_seconds = frame / fps gives the correct seconds-based time base,
+    # so rate=2Hz produces exactly 2 full cycles per second.
+    t_seconds = frame / max(1.0, fps)
+    phase = (t_seconds * rate) % 1.0
     gate_open = phase < duty
     val = on_val if gate_open else off_val
 
-    # Trigger on rising edge
-    prev_phase = ((t - 1.0 / 24.0) * rate) % 1.0
+    # Trigger on rising edge: previous frame was before the gate, now inside
+    prev_phase = ((t_seconds - 1.0 / max(1.0, fps)) * rate) % 1.0
     trigger = 1.0 if (prev_phase >= duty and gate_open) else 0.0
 
     return {"value": float(val), "trigger": float(trigger)}

@@ -2148,6 +2148,126 @@ function gRenderNode(node) {
     el.appendChild(wrap);
   }
 
+  // ── Inline button for Button node ────────────────────────────
+  if (node.method_id === '__button__') {
+    const pressed = node.params.button_pressed === true || node.params.button_pressed === 'true';
+    const wrap = document.createElement('div');
+    wrap.className = 'gnode-inline-btn-wrap';
+    wrap.dataset.nid = node.id;
+    const btn = document.createElement('button');
+    btn.className = 'gnode-inline-btn' + (pressed ? ' gnode-inline-btn-on' : '');
+    btn.textContent = pressed ? '● ON' : '○ OFF';
+    const _btnMode = () => node.params.mode || 'momentary';
+    btn.addEventListener('mousedown', e => {
+      e.stopPropagation();
+      if (_btnMode() === 'momentary') {
+        gUpdateNodeParam(node.id, 'button_pressed', true);
+        btn.classList.add('gnode-inline-btn-on');
+        btn.textContent = '● ON';
+        gDoAutoGen();
+      }
+    });
+    btn.addEventListener('mouseup', e => {
+      e.stopPropagation();
+      if (_btnMode() === 'momentary') {
+        gUpdateNodeParam(node.id, 'button_pressed', false);
+        btn.classList.remove('gnode-inline-btn-on');
+        btn.textContent = '○ OFF';
+        gDoAutoGen();
+      }
+    });
+    btn.addEventListener('mouseleave', e => {
+      // Release if still held (mouse dragged outside the button)
+      if (_btnMode() === 'momentary' && (node.params.button_pressed === true || node.params.button_pressed === 'true')) {
+        gUpdateNodeParam(node.id, 'button_pressed', false);
+        btn.classList.remove('gnode-inline-btn-on');
+        btn.textContent = '○ OFF';
+        gDoAutoGen();
+      }
+    });
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (_btnMode() === 'toggle') {
+        const newPressed = !(node.params.button_pressed === true || node.params.button_pressed === 'true');
+        gUpdateNodeParam(node.id, 'button_pressed', newPressed);
+        if (newPressed) {
+          btn.classList.add('gnode-inline-btn-on');
+          btn.textContent = '● ON';
+        } else {
+          btn.classList.remove('gnode-inline-btn-on');
+          btn.textContent = '○ OFF';
+        }
+        gDoAutoGen();
+      }
+    });
+    wrap.appendChild(btn);
+    el.appendChild(wrap);
+  }
+
+  // ── Inline configure button for Webcam node ──────────────────
+  if (node.method_id === '__webcam__') {
+    const wrap = document.createElement('div');
+    wrap.className = 'gnode-inline-btn-wrap';
+    const btn = document.createElement('button');
+    btn.className = 'gnode-inline-btn';
+    btn.innerHTML = '📷 Camera Permissions…';
+
+    // Small status chip below button showing detected app name
+    const statusEl = document.createElement('div');
+    statusEl.style.cssText = 'font-size:10px;color:var(--muted);text-align:center;padding:2px 0 4px;line-height:1.3';
+
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      btn.disabled = true;
+      btn.textContent = 'Probing…';
+      statusEl.textContent = '';
+
+      try {
+        const r = await fetch('/api/webcam/configure', { method: 'POST' });
+        const d = await r.json();
+
+        if (d.ok) {
+          const name = d.process_name || 'your terminal or IDE';
+          const status = d.tcc_status || 'unknown';
+          const tree = d.process_tree || [];
+
+          // Button label
+          let label = '';
+          if (status === 'allowed') {
+            label = '✅ Camera OK';
+          } else if (status === 'triggered_background') {
+            label = `🔔 Dialog sent — look for “${name}”`;
+          } else {
+            label = `📷 Look for “${name}”`;
+          }
+          btn.textContent = label;
+
+          // Status chip shows the process chain
+          if (tree.length > 1) {
+            const chain = tree.map(p => p.name.split('/').pop()).join(' ← ');
+            statusEl.textContent = `Process: ${chain}`;
+            statusEl.title = tree.map(p => `pid ${p.pid}: ${p.name}`).join('\n');
+          } else {
+            statusEl.textContent = `Look for: ${name}`;
+          }
+
+          gShowToast(d.msg || `Opened Settings → Camera. Look for “${name}”`);
+        } else {
+          gShowToast('Failed: ' + (d.msg || 'unknown error'), true);
+        }
+      } catch (err) {
+        gShowToast('Request failed: ' + err.message, true);
+      }
+
+      btn.disabled = false;
+      setTimeout(() => { btn.innerHTML = '📷 Camera Permissions…'; }, 12000);
+    });
+
+    wrap.appendChild(btn);
+    wrap.appendChild(statusEl);
+    el.appendChild(wrap);
+  }
+
   // ── Runtime section (channels only) ──────────────────────────
   // Read-only live readouts (Current Value, Phase, Beat, …) that update every
   // frame from the live WS feed (msg.node_values). Never serialized. Per spec
@@ -2201,6 +2321,27 @@ function gRenderNode(node) {
       // Initial draw (static preview until live WS frame arrives)
       setTimeout(() => _renderCounterProgress(node.id, 0, 0, 0, undefined, node.params), 0);
     }
+    // Step Sequencer step-bar canvas (visual-spec: live step bars + playhead)
+    if (node.method_id === '__stepseq__') {
+      const canvasDiv = document.createElement('div');
+      canvasDiv.className = 'gnode-stepseq-canvas-wrap';
+      canvasDiv.style.position = 'relative';
+      const canvas = document.createElement('canvas');
+      canvas.id = 'stepseq-canvas-' + node.id;
+      canvas.className = 'gnode-stepseq-canvas';
+      canvas.width = 200; canvas.height = 100;
+      canvasDiv.appendChild(canvas);
+      // Hidden input for inline value editing
+      const vi = document.createElement('input');
+      vi.className = 'gnode-stepseq-value-input';
+      vi.id = 'ss-val-' + node.id;
+      vi.type = 'text';
+      vi.inputMode = 'decimal';
+      canvasDiv.appendChild(vi);
+      el.appendChild(canvasDiv);
+      // Initial draw (static preview until live WS frame arrives)
+      setTimeout(() => _renderStepSeqProgress(node.id, 0, 0, 0, undefined, node.params), 0);
+    }
     // Ramp inline curve preview (visual-spec: compact curve + playhead PIP)
     if (node.method_id === '__ramp__') {
       const svgWrap = document.createElement('div');
@@ -2229,6 +2370,46 @@ function gRenderNode(node) {
       el.appendChild(svgWrap);
       // Initial curve render from stored control_points
       _renderRampCurve(node.id, node.params);
+    }
+    // Predict time-series canvas (visual-spec: rolling history + prediction ghost)
+    if (node.method_id === '__predict__') {
+      const canvasDiv = document.createElement('div');
+      canvasDiv.className = 'gnode-predict-canvas-wrap';
+      const canvas = document.createElement('canvas');
+      canvas.id = 'predict-canvas-' + node.id;
+      canvas.className = 'gnode-predict-canvas';
+      canvas.width = 200; canvas.height = 60;
+      canvasDiv.appendChild(canvas);
+      el.appendChild(canvasDiv);
+      // Initial draw (static placeholder until live WS frame arrives)
+      setTimeout(() => _renderPredictGraph(node.id, {}), 0);
+      // Inline button click handler — zones drawn by _renderPredictGraph
+      canvasDiv.addEventListener('click', function(e) {
+        e.stopPropagation();
+        const cvs = document.getElementById('predict-canvas-' + node.id);
+        if (!cvs || !cvs._predictBtnAreas) return;
+        const r = cvs.getBoundingClientRect();
+        const x = e.clientX - r.left, y = e.clientY - r.top;
+        const areas = cvs._predictBtnAreas;
+        for (const [action, area] of Object.entries(areas)) {
+          if (x >= area.x && x <= area.x + area.w && y >= area.y && y <= area.y + area.h) {
+            if (action === 'record') {
+              gUpdateNodeParam(node.id, 'record', 1);
+              gDoAutoGen();
+              setTimeout(() => { gUpdateNodeParam(node.id, 'record', 0); gDoAutoGen(); }, 50);
+            } else if (action === 'save') {
+              gUpdateNodeParam(node.id, 'save_pattern', 1);
+              gDoAutoGen();
+              setTimeout(() => { gUpdateNodeParam(node.id, 'save_pattern', 0); gDoAutoGen(); }, 50);
+            } else if (action === 'clear') {
+              gUpdateNodeParam(node.id, 'reset', 1);
+              gDoAutoGen();
+              setTimeout(() => { gUpdateNodeParam(node.id, 'reset', 0); gDoAutoGen(); }, 50);
+            }
+            break;
+          }
+        }
+      });
     }
 
   }
@@ -2672,6 +2853,11 @@ function gShowNodeParams(node) {
     reportDiv.innerHTML = '<div class="section-label">Test Report</div><div id="tn-report-body" style="font-size:11px;color:var(--muted)">Run the graph to generate a report.</div>';
     gParamsForm.appendChild(reportDiv);
     gLoadTestNodeReport(node.id);
+  }
+
+  // ── Predict: reorganize params into groups ──────────────────────
+  if (node.method_id === '__predict__') {
+    _reorgPredictParams(gParamsForm, node);
   }
 
   // ── Upload button for params that accept a file (spec.upload = accept list).
@@ -3791,6 +3977,18 @@ function _gUpdateLiveMeta(msg) {
         }
       }
     }
+    // Live Step Sequencer step bar — one separate loop per WS frame
+    for (const [nid, vals] of Object.entries(msg.node_values)) {
+      if (typeof vals.value === 'number') {
+        const ssNode = gNodes.find(n => n.id === nid);
+        if (ssNode && ssNode.method_id === '__stepseq__') {
+          // Don't let WS frames override while user is dragging
+          if (!_SS_DRAG.dragging || _SS_DRAG.nid !== nid) {
+            _renderStepSeqProgress(nid, vals.value, vals.index, vals.phase, vals.triggered, ssNode.params);
+          }
+        }
+      }
+    }
 
     // Live Ramp playhead PIP — phase → x, value → y; sits exactly on the curve
     for (const [nid, vals] of Object.entries(msg.node_values)) {
@@ -3799,6 +3997,17 @@ function _gUpdateLiveMeta(msg) {
         if (rampNode && rampNode.method_id === '__ramp__') {
           const pipParams = {...rampNode.params, _pipValue: vals.value ?? 0, _pipPhase: vals.phase ?? 0};
           _renderRampCurve(nid, pipParams);
+        }
+      }
+    }
+    // Live Predict time-series graph — signal_level + predicted_value drive canvas
+    for (const [nid, vals] of Object.entries(msg.node_values)) {
+      if (typeof vals.signal_level === 'number' || typeof vals.predicted_value === 'number') {
+        const predNode = gNodes.find(n => n.id === nid);
+        if (predNode && predNode.method_id === '__predict__') {
+          _renderPredictGraph(nid, vals);
+          // Update pattern library panel live info
+          _updatePredictPatternLibFromVals(nid, vals);
         }
       }
     }
@@ -3820,6 +4029,22 @@ function _gUpdateLiveMeta(msg) {
             range.value = (vals.value - low) / ((high - low) || 1);
             valEl.textContent = formatVal(vals.value);
           }
+        }
+      }
+    }
+
+    // Live Button inline widget — sync button text with WS value
+    for (const [nid, vals] of Object.entries(msg.node_values)) {
+      if (typeof vals.value === 'number') {
+        const btnNode = gNodes.find(n => n.id === nid);
+        if (btnNode && btnNode.method_id === '__button__') {
+          const el = document.getElementById('gnode-' + nid);
+          if (!el) continue;
+          const btn = el.querySelector('.gnode-inline-btn');
+          if (!btn) continue;
+          const on = vals.value >= 0.5;
+          btn.classList.toggle('gnode-inline-btn-on', on);
+          btn.textContent = on ? '● ON' : '○ OFF';
         }
       }
     }
@@ -3928,14 +4153,15 @@ async function _gPollLiveStats() {
 }
 
 // ── Live cook-rate limiter ─────────────────────────────────────
-// Off, live cooks flat out (server: capped at 30fps; client GPU: every rAF).
-// On, both pace their cooking to the timeline FPS field — a heavy graph stops
-// burning the machine on frames nobody sees, and the preview runs at the
-// tempo the sequence will export at.
+// OFF (default): the `tl-fps` value is a *ceiling* — the loop sleeps to
+// stay under this rate.  Set fps=0 for completely unlimited cooking.
+// ON: the `tl-fps` value is a strict *pace* — useful for previewing
+// animation timing at the export frame rate.
 const gFpsLimitEl   = document.getElementById('tl-fps-limit');
 const gFpsLimitWrap = document.getElementById('tl-fps-limit-wrap');
 function gLiveRate() {
-  const fps = Math.max(1, parseInt(document.getElementById('tl-fps')?.value) || 24);
+  const raw = parseInt(document.getElementById('tl-fps')?.value) || 0;
+  const fps = raw >= 0 ? raw : 0;
   return { fps, fps_limit: !!gFpsLimitEl?.checked };
 }
 
@@ -3971,13 +4197,14 @@ gFpsLimitEl?.addEventListener('change', () => {
   gApplyLiveRate();
   gSetStatus(gFpsLimitEl.checked
     ? `Live cook limited to ${gLiveRate().fps} fps`
-    : 'Live cook limiter off');
+    : `Live · no limit (fps=${gLiveRate().fps} ceiling)`);
 });
-// 'change' (not 'input'): committing the field, not every keystroke, retunes
-// the running loop — an in-flight POST per typed digit is pure waste.
+// Changing the FPS field always retunes the loop — the value is used as
+// the ceiling when the limiter is OFF and the pacing rate when ON.
 document.getElementById('tl-fps')?.addEventListener('change', () => {
-  if (gFpsLimitEl?.checked) gApplyLiveRate();
+  gApplyLiveRate();  // always — fps is always the target now
 });
+
 try {
   if (localStorage.getItem('live-fps-limit') === '1' && gFpsLimitEl) {
     gFpsLimitEl.checked = true;
@@ -7710,5 +7937,671 @@ function _renderCounterProgress(nid, value, phase, triggered, signalLevel, param
     ctx.fillStyle = trig ? '#00e676' : '#ffffff';
     ctx.fill();
     ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1; ctx.stroke();
+  }
+}
+
+// ── Predict: time-series history + prediction graph ────────────────────────
+// Draws a compact oscilloscope-style viewport showing:
+//   · Rolling history as a solid line (observed values)
+//   · Current-value cursor (vertical line + pip at "now")
+//   · Predicted value as a dashed line extending right of "now"
+//   · Prediction confidence as the prediction line's opacity
+//   · Pattern match score label + progress bar
+//   · Recording progress indicator when active
+
+// Predict rendering constant: how many history samples to buffer on the canvas
+const _PREDICT_BUF_LEN = 120;
+
+function _renderPredictGraph(nid, vals) {
+  const canvas = document.getElementById('predict-canvas-' + nid);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.offsetWidth || 200, h = 60;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  // ── Maintain rolling history buffer on the canvas element ──
+  let buf = canvas._predictBuf;
+  if (!buf) {
+    buf = { data: new Float32Array(_PREDICT_BUF_LEN), len: 0, idx: 0 };
+    canvas._predictBuf = buf;
+  }
+
+  // Push new value into ring buffer
+  const sig = vals.signal_level;
+  if (sig !== undefined && sig !== null && !isNaN(sig)) {
+    buf.data[buf.idx % _PREDICT_BUF_LEN] = sig;
+    buf.idx++;
+    if (buf.len < _PREDICT_BUF_LEN) buf.len++;
+  }
+
+  const count = buf.len;
+  if (count < 2) {
+    // Not enough history — draw placeholder
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.font = '11px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('waiting for signal…', w / 2, h / 2);
+    return;
+  }
+
+  // ── Determine signal range for vertical scaling ──
+  var vMin = Infinity, vMax = -Infinity;
+  var offset = buf.idx >= _PREDICT_BUF_LEN ? buf.idx - _PREDICT_BUF_LEN : 0;
+  for (var i = 0; i < count; i++) {
+    var v = buf.data[(offset + i) % _PREDICT_BUF_LEN];
+    if (v < vMin) vMin = v;
+    if (v > vMax) vMax = v;
+  }
+  var vRange = vMax - vMin;
+  if (vRange < 0.01) { vMin -= 0.5; vMax += 0.5; vRange = 1.0; }
+  var pad = vRange * 0.15;
+  vMin -= pad; vMax += pad; vRange = vMax - vMin;
+
+  function toY(v) { return h - ((v - vMin) / vRange) * (h - 4) - 2; }
+  function toX(f) { return f * w; }
+
+  // ── Background ──
+  ctx.fillStyle = 'rgba(0,0,0,0.20)';
+  ctx.fillRect(0, 0, w, h);
+
+  // ── Grid lines ──
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  ctx.lineWidth = 1;
+  for (var gy = 0.25; gy < 1; gy += 0.25) {
+    var ypx = toY(vMin + gy * vRange);
+    ctx.beginPath(); ctx.moveTo(0, ypx); ctx.lineTo(w, ypx); ctx.stroke();
+  }
+
+  // ── Split point: history vs prediction ──
+  const nowX = w * 0.75;
+
+  // ── History line (solid) — fills the left 75% ──
+  ctx.beginPath();
+  ctx.strokeStyle = 'rgba(100,180,255,0.85)';
+  ctx.lineWidth = 1.5;
+  ctx.lineJoin = 'round';
+  for (var i = 0; i < count; i++) {
+    var v = buf.data[(offset + i) % _PREDICT_BUF_LEN];
+    var x = (i / Math.max(1, count - 1)) * nowX;
+    var y = toY(v);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // ── Filled area under history ──
+  ctx.beginPath();
+  for (var i = 0; i < count; i++) {
+    var v = buf.data[(offset + i) % _PREDICT_BUF_LEN];
+    var x = (i / Math.max(1, count - 1)) * nowX;
+    var y = toY(v);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.lineTo(nowX, h);
+  ctx.lineTo(0, h);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(100,180,255,0.08)';
+  ctx.fill();
+
+  // ── Now cursor ──
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath(); ctx.moveTo(nowX, 0); ctx.lineTo(nowX, h); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // ── Current value pip at now cursor ──
+  if (count > 0) {
+    var lastV = buf.data[(offset + count - 1) % _PREDICT_BUF_LEN];
+    var pipY = toY(lastV);
+    ctx.fillStyle = '#64b4ff';
+    ctx.beginPath(); ctx.arc(nowX, pipY, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // ── Predicted value (dot at the horizon) ──
+  const pred = vals.predicted_value;
+  const conf = vals.prediction_confidence;
+  if (pred !== undefined && pred !== null && !isNaN(pred)) {
+    // Clamp prediction to visible range for drawing
+    var predY = toY(Math.max(vMin, Math.min(vMax, pred)));
+    var predX = w;  // predicted value at the far right edge
+    var confAlpha = Math.max(0.1, Math.min(1, conf || 0.5));
+
+    // Dashed prediction line from now to end
+    ctx.strokeStyle = 'rgba(255,200,80,' + confAlpha.toFixed(2) + ')';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    var lastY = toY(lastV);
+    ctx.moveTo(nowX, lastY);
+    ctx.lineTo(predX, predY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Prediction target dot
+    ctx.fillStyle = 'rgba(255,200,80,' + confAlpha.toFixed(2) + ')';
+    ctx.beginPath(); ctx.arc(predX, predY, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,200,80,0.5)'; ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // ── Bottom info bar ──
+  // Pattern match score bar
+  const match = vals.pattern_match;
+  if (match !== undefined && match > 0) {
+    var barY = h - 10, barH = 4, barW = 50;
+    var barX = w - barW - 4;
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(barX, barY, barW, barH);
+    ctx.fillStyle = match > 0.7 ? 'rgba(0,230,118,0.8)' : 'rgba(255,200,80,0.7)';
+    ctx.fillRect(barX, barY, match * barW, barH);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.font = '7px monospace';
+    ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+    ctx.fillText((match * 100).toFixed(0) + '%', barX - 2, barY + barH - 1);
+  }
+
+  // Recording progress bar (if active)
+  const recProg = vals.record_progress;
+  if (recProg !== undefined && recProg > 0) {
+    var rBarX = 4, rBarY = h - 10, rBarW = 50, rBarH = 4;
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(rBarX, rBarY, rBarW, rBarH);
+    ctx.fillStyle = 'rgba(255,100,100,0.8)';
+    ctx.fillRect(rBarX, rBarY, recProg * rBarW, rBarH);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.font = '7px monospace';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+    ctx.fillText('REC', rBarX, rBarY - 1);
+  }
+
+  // ── Inline button zones (bottom edge) ──
+  var btnH = 0, btnY = h;
+  var btnAreas = {};
+  // Record zone (left)
+  var recBtnX = 4, recBtnW = 38, btnGap = 4;
+  btnAreas.record = { x: recBtnX, y: btnY - 12, w: recBtnW, h: 10 };
+  // Save zone (middle)
+  var saveBtnX = recBtnX + recBtnW + btnGap;
+  btnAreas.save = { x: saveBtnX, y: btnY - 12, w: 30, h: 10 };
+  // Clear history zone (right)
+  var clrBtnX = saveBtnX + 30 + btnGap;
+  btnAreas.clear = { x: clrBtnX, y: btnY - 12, w: 30, h: 10 };
+
+  // Record button
+  var isRecording = recProg > 0;
+  ctx.fillStyle = isRecording ? 'rgba(255,80,80,0.5)' : 'rgba(255,255,255,0.10)';
+  ctx.fillRect(btnAreas.record.x, btnAreas.record.y, btnAreas.record.w, btnAreas.record.h);
+  ctx.fillStyle = isRecording ? '#ff5050' : 'rgba(255,255,255,0.4)';
+  ctx.font = '7px monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('REC', btnAreas.record.x + btnAreas.record.w / 2, btnAreas.record.y + btnAreas.record.h / 2);
+
+  // Save button
+  ctx.fillStyle = 'rgba(255,255,255,0.10)';
+  ctx.fillRect(btnAreas.save.x, btnAreas.save.y, btnAreas.save.w, btnAreas.save.h);
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.fillText('SAVE', btnAreas.save.x + btnAreas.save.w / 2, btnAreas.save.y + btnAreas.save.h / 2);
+
+  // Clear button
+  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  ctx.fillRect(btnAreas.clear.x, btnAreas.clear.y, btnAreas.clear.w, btnAreas.clear.h);
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.fillText('CLR', btnAreas.clear.x + btnAreas.clear.w / 2, btnAreas.clear.y + btnAreas.clear.h / 2);
+
+  // Store button areas on canvas for click detection
+  canvas._predictBtnAreas = btnAreas;
+
+  // Predicted direction indicator
+  const dir = vals.predicted_direction;
+  if (dir !== undefined) {
+    var dirLabel = '';
+    var dirColor = 'rgba(255,255,255,0.4)';
+    if (dir === 1) { dirLabel = '↑'; dirColor = 'rgba(100,255,100,0.7)'; }
+    else if (dir === 2) { dirLabel = '↓'; dirColor = 'rgba(255,100,100,0.7)'; }
+    else if (dir === 3) { dirLabel = '→'; dirColor = 'rgba(255,255,100,0.5)'; }
+    if (dirLabel) {
+      ctx.fillStyle = dirColor;
+      ctx.font = '14px monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(dirLabel, w * 0.88, h * 0.25);
+    }
+  }
+}
+
+// ── Predict: reorganize sidebar params into groups ────────────────────────
+function _reorgPredictParams(form, node) {
+  // Define param group keys
+  const groups = [
+    { label: '▸ Prediction', keys: ['history_window','prediction_horizon','prediction_method','smooth_factor','error_tracking_window'] },
+    { label: '▸ Pattern Matching', keys: ['enable_matching','pattern_window','pattern_match_threshold','pattern_threshdown','pattern_conditioned_enabled','pattern_conditioned_blend'] },
+    { label: '▸ Pattern Recording', keys: ['pattern_name','pattern_recording_duration'] },
+  ];
+
+  // Hide everything first
+  form.querySelectorAll('.param-row').forEach(function(r) { r.style.display = 'none'; });
+
+  var insertBefore = form.querySelector('.param-row');
+  if (!insertBefore) return;
+
+  groups.forEach(function(g) {
+    var visible = g.keys.filter(function(k) { return form.querySelector('#p_' + k); });
+    if (visible.length === 0) return;
+
+    var sec = document.createElement('div');
+    sec.style.cssText = 'border-top:1px solid var(--border);padding-top:8px;margin-top:8px';
+    var hdr = document.createElement('div');
+    hdr.className = 'section-label';
+    hdr.textContent = g.label;
+    hdr.style.cssText = 'font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:6px';
+    sec.appendChild(hdr);
+
+    visible.forEach(function(k) {
+      var row = form.querySelector('.param-row[data-param="' + k + '"]');
+      if (row) {
+        row.style.display = '';
+        // Check if it's a boolean (checkbox)
+        var inp = row.querySelector('#p_' + k);
+        if (inp && inp.type === 'checkbox') {
+          row.style.cssText = 'margin:6px 0 4px;display:flex;align-items:center;gap:6px';
+        }
+        sec.appendChild(row);
+      }
+    });
+
+    form.insertBefore(sec, insertBefore);
+  });
+
+  // ── Pattern library panel ──
+  var patLib = document.createElement('div');
+  patLib.style.cssText = 'border-top:1px solid var(--border);padding-top:8px;margin-top:8px';
+  patLib.innerHTML = '<div class="section-label" style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:6px">▸ Pattern Library</div>';
+  patLib.id = 'predict-patlib-' + node.id;
+
+  // Read stored patterns from the server via a fetch (best-effort)
+  var pBody = document.createElement('div');
+  pBody.id = 'predict-patlib-body-' + node.id;
+  pBody.style.cssText = 'font-size:11px;color:var(--muted);min-height:20px';
+  pBody.textContent = 'Looking up patterns…';
+  patLib.appendChild(pBody);
+  form.appendChild(patLib);
+
+  // Fetch stored patterns from the live/WS node_values pattern_id
+  // For now, show a placeholder that gets populated by _updatePredictPatternLib
+  _updatePredictPatternLib(node.id);
+}
+
+// ── Predict: update pattern library panel from WS data ─────────────────────
+function _updatePredictPatternLib(nid) {
+  // This is called from the sidebar when params are shown.
+  // Currently a no-op — the pattern library updates from the live WS data.
+}
+function _updatePredictPatternLibFromVals(nid, vals) {
+  var body = document.getElementById('predict-patlib-body-' + nid);
+  if (!body) return;
+  var match = vals.pattern_match || 0;
+  var patId = vals.pattern_id;
+  var trigger = vals.pattern_trigger;
+  var conf = vals.prediction_confidence || 0;
+  var dir = vals.predicted_direction;
+
+  var dirLabel = '';
+  if (dir === 1) dirLabel = '↑ RISING';
+  else if (dir === 2) dirLabel = '↓ FALLING';
+  else if (dir === 3) dirLabel = '→ STABLE';
+  else dirLabel = '— UNKNOWN';
+
+  var matchLabel = (match * 100).toFixed(0) + '%';
+  var confLabel = (conf * 100).toFixed(0) + '%';
+  var patLabel = patId !== undefined && patId >= 0
+    ? 'Pattern #' + patId
+    : 'No match';
+
+  body.innerHTML = (
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:10px;font-family:monospace">' +
+      '<span style="color:var(--muted)">Direction</span>' +
+      '<span style="text-align:right;font-weight:600">' + dirLabel + '</span>' +
+      '<span style="color:var(--muted)">Confidence</span>' +
+      '<span style="text-align:right;color:' + (conf > 0.5 ? '#00e676' : '#ffb74d') + '">' + confLabel + '</span>' +
+      '<span style="color:var(--muted)">Match</span>' +
+      '<span style="text-align:right;color:' + (match > 0.7 ? '#00e676' : match > 0.3 ? '#ffb74d' : 'var(--muted)') + '">' + matchLabel + '</span>' +
+      '<span style="color:var(--muted)">Pattern</span>' +
+      '<span style="text-align:right">' + patLabel + '</span>' +
+    '</div>'
+  );
+  if (trigger > 0.5) {
+    body.innerHTML += '<div style="margin-top:4px;padding:2px 6px;background:rgba(0,230,118,0.15);border-radius:3px;font-size:10px;color:#00e676;text-align:center">🔥 TRIGGERED</div>';
+  }
+}
+
+// ── Step Sequencer: interactive step-bar grid ─────────────────────────────
+// Click toggle squares (top) to mute/reactivate a step (via step_active param).
+// Click or drag the vertical slider area to set a step's level (via step_values).
+// Drag is guarded so WS live-updates don't override user input mid-drag.
+// Muted steps hold their last output value — triggered never fires on them.
+
+const _SS_DRAG = {nid: null, step: -1, dragging: false};
+
+function _ssParseStepValues(raw) {
+  if (!raw) return [0.5];
+  if (Array.isArray(raw)) return raw.map(Number);
+  return String(raw).split(',').map(function(s) {
+    var v = parseFloat(s.trim());
+    return isNaN(v) ? 0 : Math.max(0, Math.min(1, v));
+  });
+}
+
+function _ssParseStepActive(raw, nSteps) {
+  if (!raw) return new Array(nSteps).fill(1);
+  if (Array.isArray(raw)) {
+    var a = raw.map(Number);
+    while (a.length < nSteps) a.push(1);
+    return a.slice(0, nSteps);
+  }
+  var a = String(raw).split(',').map(function(s) {
+    var v = parseFloat(s.trim());
+    return isNaN(v) ? 1 : (v > 0.5 ? 1 : 0);
+  });
+  while (a.length < nSteps) a.push(1);
+  return a.slice(0, nSteps);
+}
+
+function _ssGetStepCol(canvas, clientX) {
+  var rect = canvas.getBoundingClientRect();
+  var x = (clientX - rect.left) / rect.width;
+  var node = gNodes.find(function(n) { return n.id === canvas._ssNid; });
+  if (!node) return -1;
+  var steps = _ssParseStepValues(node.params && node.params.step_values);
+  var nSteps = steps.length;
+  if (nSteps < 1) return -1;
+  var padX = 4 / 200, gap = 2 / 200;
+  var colW = Math.max(8 / 200, (1 - padX * 2 - gap * (nSteps - 1)) / nSteps);
+  for (var i = 0; i < nSteps; i++) {
+    var cx = padX + i * (colW + gap);
+    if (x >= cx && x < cx + colW) return i;
+  }
+  return -1;
+}
+
+function _ssYToValue(canvas, clientY) {
+  var rect = canvas.getBoundingClientRect();
+  var wy = (clientY - rect.top) / rect.height;
+  var toggleFrac = 18 / 100;
+  var labelFrac = 9 / 100;
+  var sliderFrac = 1 - toggleFrac - labelFrac;
+  if (sliderFrac <= 0) return 0.5;
+  var y = (wy - toggleFrac) / sliderFrac;
+  return Math.max(0, Math.min(1, 1 - y));
+}
+
+function _ssCommitBoth(nid, steps, active) {
+  var stepStr = steps.map(function(v) { return v.toFixed(3); }).join(',');
+  var activeStr = active.join(',');
+  gUpdateNodeParam(nid, 'step_values', stepStr);
+  gUpdateNodeParam(nid, 'step_active', activeStr);
+  // Push changes to the server (Live hot-swap or auto-regenerate)
+  gDoAutoGen();
+  // Immediate re-render so the user sees the change
+  var node = gNodes.find(function(n) { return n.id === nid; });
+  if (node) {
+    _renderStepSeqProgress(nid, steps[0], 0, 0, 0, node.params);
+  }
+}
+
+function _ssToggleStep(nid, step) {
+  var node = gNodes.find(function(n) { return n.id === nid; });
+  if (!node) return;
+  var steps = _ssParseStepValues(node.params && node.params.step_values);
+  if (step < 0 || step >= steps.length) return;
+  var active = _ssParseStepActive(node.params && node.params.step_active, steps.length);
+  active[step] = active[step] ? 0 : 1;
+  _ssCommitBoth(nid, steps, active);
+}
+
+function _ssSetStepValue(nid, step, val) {
+  var node = gNodes.find(function(n) { return n.id === nid; });
+  if (!node) return;
+  var steps = _ssParseStepValues(node.params && node.params.step_values);
+  if (step < 0 || step >= steps.length) return;
+  val = Math.max(0, Math.min(1, val));
+  steps[step] = val;
+  var active = _ssParseStepActive(node.params && node.params.step_active, steps.length);
+  // Dragging a value > threshold auto-activates the step
+  if (!active[step] && val > 0.005) {
+    active[step] = 1;
+  }
+  _ssCommitBoth(nid, steps, active);
+}
+
+function _ssOnMouseDown(e) {
+  var canvas = e.currentTarget;
+  var nid = canvas._ssNid;
+  var rect = canvas.getBoundingClientRect();
+  var wy = (e.clientY - rect.top) / rect.height;  // normalized 0-1
+  var step = _ssGetStepCol(canvas, e.clientX);
+  if (step < 0) return;
+  e.stopPropagation();
+  e.preventDefault();
+  if (wy < 18 / 100) {
+    _ssToggleStep(nid, step);
+  } else {
+    _SS_DRAG.nid = nid;
+    _SS_DRAG.step = step;
+    _SS_DRAG.dragging = true;
+    _ssSetStepValue(nid, step, _ssYToValue(canvas, e.clientY));
+  }
+}
+
+function _ssOnMouseMove(e) {
+  if (!_SS_DRAG.dragging) return;
+  e.preventDefault();
+  _ssSetStepValue(_SS_DRAG.nid, _SS_DRAG.step, _ssYToValue(e.currentTarget, e.clientY));
+}
+
+function _ssOnMouseUp() {
+  _SS_DRAG.dragging = false;
+  _SS_DRAG.nid = null;
+  _SS_DRAG.step = -1;
+}
+
+function _ssOnDblClick(e) {
+  var canvas = e.currentTarget;
+  var nid = canvas._ssNid;
+  var step = _ssGetStepCol(canvas, e.clientX);
+  if (step < 0) return;
+  var node = gNodes.find(function(n) { return n.id === nid; });
+  if (!node) return;
+  var steps = _ssParseStepValues(node.params && node.params.step_values);
+  if (step >= steps.length) return;
+
+  e.stopPropagation();
+  e.preventDefault();
+
+  var input = document.getElementById('ss-val-' + nid);
+  if (!input) return;
+  input.value = steps[step].toFixed(3);
+  input._ssStep = step;
+  input._ssNid = nid;
+
+  // Position the input over the step column
+  var rect = canvas.getBoundingClientRect();
+  var wrap = canvas.parentElement;
+  var wrapRect = wrap.getBoundingClientRect();
+  var padX = 4, gap = 2;
+  var nSteps = steps.length;
+  var colW = Math.max(8, (canvas.offsetWidth - padX * 2 - gap * (nSteps - 1)) / nSteps);
+  var ix = padX + step * (colW + gap);
+  input.style.left = (ix - 2) + 'px';
+  input.style.top = (canvas.offsetHeight - 9 - 2) + 'px';
+  input.style.width = Math.max(30, colW + 4) + 'px';
+  input.style.display = 'block';
+  input.focus();
+  input.select();
+
+  // Remove on blur or enter
+  input.onblur = function() { _ssCommitInput(input); };
+  input.onkeydown = function(ev) {
+    if (ev.key === 'Enter') { _ssCommitInput(input); }
+    if (ev.key === 'Escape') { input.style.display = 'none'; }
+  };
+}
+
+function _ssCommitInput(input) {
+  input.style.display = 'none';
+  input.onblur = null;
+  input.onkeydown = null;
+  var nid = input._ssNid;
+  var step = input._ssStep;
+  if (nid == null || step == null) return;
+  var val = parseFloat(input.value);
+  if (isNaN(val)) return;
+  val = Math.max(0, Math.min(1, val));
+  var node = gNodes.find(function(n) { return n.id === nid; });
+  if (!node) return;
+  var steps = _ssParseStepValues(node.params && node.params.step_values);
+  if (step >= steps.length) return;
+  steps[step] = val;
+  var active = _ssParseStepActive(node.params && node.params.step_active, steps.length);
+  if (!active[step] && val > 0.005) { active[step] = 1; }
+  _ssCommitBoth(nid, steps, active);
+}
+
+function _renderStepSeqProgress(nid, value, index, phase, triggered, params) {
+  var canvas = document.getElementById('stepseq-canvas-' + nid);
+  if (!canvas) return;
+
+  // Setup interaction handlers once
+  if (!canvas._ssInit) {
+    canvas._ssInit = true;
+    canvas._ssNid = nid;
+    canvas.addEventListener('mousedown', _ssOnMouseDown);
+    canvas.addEventListener('mousemove', _ssOnMouseMove);
+    canvas.addEventListener('mouseup', _ssOnMouseUp);
+    canvas.addEventListener('mouseleave', _ssOnMouseUp);
+    canvas.addEventListener('dblclick', _ssOnDblClick);
+  }
+
+  var ctx = canvas.getContext('2d');
+  var dpr = window.devicePixelRatio || 1;
+  var w = canvas.offsetWidth || 200, h = 100;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  var trig = triggered && triggered > 0.5;
+  canvas.classList.toggle('triggered', trig);
+
+  var steps = _ssParseStepValues(params && params.step_values);
+  var nSteps = steps.length;
+  if (nSteps < 1) { steps = [0.5]; nSteps = 1; }
+  var activeFlags = _ssParseStepActive(params && params.step_active, nSteps);
+  var curIdx = index != null ? Math.max(0, Math.min(Math.round(index), nSteps - 1)) : 0;
+
+  var padX = 4, gap = 2;
+  var toggleH = 18, labelH = 9;
+  var sliderH = h - toggleH - labelH;
+  var colW = Math.max(8, (w - padX * 2 - gap * (nSteps - 1)) / nSteps);
+
+  for (var i = 0; i < nSteps; i++) {
+    var x = padX + i * (colW + gap);
+    var isCurrent = (i === curIdx);
+    var val = Math.max(0, Math.min(1, steps[i]));
+    var active = activeFlags[i] > 0.5;
+    var barH = Math.max(1, val * sliderH);
+    var sliderY = toggleH;
+    var fillY = sliderY + sliderH - barH;
+
+    // ── Slider background ──
+    ctx.fillStyle = isCurrent ? (trig ? 'rgba(0,230,118,0.08)' : 'rgba(100,180,255,0.06)')
+                              : 'rgba(0,0,0,0.12)';
+    ctx.fillRect(x, sliderY, colW, sliderH);
+
+    // ── Slider bar fill (rounded top) ──
+    if (barH > 1) {
+      var grad = ctx.createLinearGradient(x, sliderY + sliderH, x, fillY);
+      if (active) {
+        if (isCurrent && trig) {
+          grad.addColorStop(0, 'rgba(0,230,118,0.7)');
+          grad.addColorStop(1, 'rgba(0,230,118,0.2)');
+        } else if (isCurrent) {
+          grad.addColorStop(0, 'rgba(100,180,255,0.55)');
+          grad.addColorStop(1, 'rgba(100,180,255,0.15)');
+        } else {
+          grad.addColorStop(0, 'rgba(255,255,255,0.35)');
+          grad.addColorStop(1, 'rgba(255,255,255,0.08)');
+        }
+      } else {
+        grad.addColorStop(0, 'rgba(255,255,255,0.06)');
+        grad.addColorStop(1, 'rgba(255,255,255,0.02)');
+      }
+      ctx.fillStyle = grad;
+      var r = Math.min(2, colW * 0.25);
+      ctx.beginPath();
+      ctx.moveTo(x + colW, fillY + r);
+      ctx.quadraticCurveTo(x + colW, fillY, x + colW - r, fillY);
+      ctx.lineTo(x + r, fillY);
+      ctx.quadraticCurveTo(x, fillY, x, fillY + r);
+      ctx.lineTo(x, sliderY + sliderH);
+      ctx.lineTo(x + colW, sliderY + sliderH);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // ── Current step outline on slider ──
+    if (isCurrent) {
+      ctx.strokeStyle = trig ? 'rgba(0,230,118,0.4)' : 'rgba(100,180,255,0.3)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 0.5, sliderY + 0.5, colW - 1, sliderH - 1);
+    }
+
+    // ── Toggle square ──
+    var togSize = Math.min(14, colW - 4);
+    var togX = x + (colW - togSize) / 2;
+    var togY = (toggleH - togSize) / 2;
+    if (active) {
+      ctx.fillStyle = isCurrent ? (trig ? '#00e676' : '#64b4ff') : 'rgba(255,255,255,0.45)';
+      ctx.fillRect(togX, togY, togSize, togSize);
+      ctx.strokeStyle = isCurrent ? (trig ? '#00e676' : '#64b4ff') : 'rgba(255,255,255,0.3)';
+      ctx.lineWidth = 0.5;
+      ctx.strokeRect(togX, togY, togSize, togSize);
+      // Muted indicator: bright × over inactive steps
+      if (!active) {
+        ctx.strokeStyle = 'rgba(255,80,80,0.5)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(togX + 2, togY + 2);
+        ctx.lineTo(togX + togSize - 2, togY + togSize - 2);
+        ctx.moveTo(togX + togSize - 2, togY + 2);
+        ctx.lineTo(togX + 2, togY + togSize - 2);
+        ctx.stroke();
+      }
+    } else {
+      ctx.strokeStyle = isCurrent ? (trig ? 'rgba(0,230,118,0.5)' : 'rgba(100,180,255,0.4)')
+                                  : 'rgba(255,255,255,0.15)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(togX, togY, togSize, togSize);
+      // Small × inside empty toggle
+      ctx.strokeStyle = 'rgba(255,80,80,0.4)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(togX + 2, togY + 2);
+      ctx.lineTo(togX + togSize - 2, togY + togSize - 2);
+      ctx.moveTo(togX + togSize - 2, togY + 2);
+      ctx.lineTo(togX + 2, togY + togSize - 2);
+      ctx.stroke();
+    }
+
+    // ── Value label ──
+    var labelY = h - labelH + 1;
+    ctx.fillStyle = active ? (isCurrent && trig ? '#00e676' : 'rgba(255,255,255,0.45)')
+                           : 'rgba(255,255,255,0.12)';
+    ctx.font = '8px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(val.toFixed(1), x + colW / 2, labelY);
   }
 }

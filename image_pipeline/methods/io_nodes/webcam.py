@@ -9,6 +9,19 @@ camera access in System Settings:
 
     System Settings → Privacy & Security → Camera → enable <your terminal app>
     (e.g. Terminal.app, iTerm2, or VS Code), then restart the server.
+
+A **Camera Permissions…** button on the node body opens this System Settings
+panel directly — click it, toggle the switch for your terminal/IDE, then
+restart the server (or toggle the node off/on to prompt a re‑probe).
+
+Performance & resolution
+------------------------
+The ``capture_resolution`` param controls the camera's target capture size
+(default **720p**).  Smaller resolutions (480p, 360p, 240p) improve FPS at the
+cost of quality by reducing both the USB transfer time and the resize overhead.
+The captured frame is resized to the graph's canvas size (default 768×512)
+using ``cv2.INTER_LINEAR`` — significantly faster than the previous PIL LANCZOS
+path.  When capture already matches the canvas, the resize is skipped entirely.
 """
 from __future__ import annotations
 
@@ -24,9 +37,11 @@ from ...core.utils import save, mn, W, H
 # ── Module-level camera cache ──────────────────────────────────────────
 # Opening a cv2.VideoCapture is expensive (~100–200 ms per USB camera).
 # For live-mode graphs where this node cooks every frame, we cache handles
-# keyed by device index and reuse them across calls.
+# keyed by (device_index, cap_res) so that changing the resolution param
+# forces a fresh open (with new cap.set() calls) instead of reusing the old
+# handle at the previous resolution.
 # Entries are closed + evicted after CAMERA_IDLE_TIMEOUT seconds of disuse.
-_camera_cache = {}  # dict[int, (cv2.VideoCapture | None, float)]
+_camera_cache = {}  # dict[tuple[int, str], (cv2.VideoCapture | None, float)]
 CAMERA_IDLE_TIMEOUT = 5.0  # seconds before evicting an unused handle
 
 # On first probe failure we run a full sweep across indices 0–4 and log the
@@ -34,7 +49,6 @@ CAMERA_IDLE_TIMEOUT = 5.0  # seconds before evicting an unused handle
 # so we don't re-sweep every frame.
 _last_probe_results: dict[int, str] = {}  # device_index → reason
 _probe_printed: bool = False
-_first_grab_logged: bool = False
 
 
 def _log(msg: str) -> None:
@@ -68,9 +82,11 @@ def _probe_devices() -> None:
                     if ok and frame is not None:
                         mean_val = float(frame.mean())
                         results.append(f"{backend_name}=✓({w}×{h})")
-                        # Cache the first fully-working handle
-                        if i not in _camera_cache:
-                            _camera_cache[i] = (cap, time.time())
+                        # Cache the first fully-working handle (resolution-agnostic
+                        # key so the main method's eventual open can evict it).
+                        probe_key = (i, "*probe*")
+                        if probe_key not in _camera_cache:
+                            _camera_cache[probe_key] = (cap, time.time())
                             rep = "live" if frame.max() > 1 else "all-black"
                             _log(f"  device {i} via {backend_name}: {w}×{h}, "
                                  f"frame={mean_val:.3f} ({rep}) — CACHED")
@@ -146,6 +162,11 @@ def _fallback_frame(device_index: int) -> np.ndarray:
             "choices": ["true", "false"],
             "default": "true",
         },
+        "capture_resolution": {
+            "description": "capture resolution (pixel dimensions, lower = faster fps)",
+            "choices": ["1920×1080", "1280×720", "1024×768", "800×600", "640×480", "320×240"],
+            "default": "1280×720",
+        },
     },
     description="Captures a live frame from a webcam/USB camera device as a graph source node.",
 )
@@ -166,22 +187,32 @@ def method_webcam(out_dir: Path, seed: int, params=None):
     params = params or {}
     device_index = int(params.get("device_index", 0))
     flip = str(params.get("flip_horizontal", "true")).lower() in (
-        "true",
-        "1",
-        "yes",
+        "true", "1", "yes",
     )
+
+    # ── Resolve capture resolution ──────────────────────────────────
+    cap_res = str(params.get("capture_resolution", "1280×720")).strip()
+    CAP_RES_MAP = {
+        "1920×1080": (1920, 1080), "1280×720": (1280, 720),
+        "1024×768": (1024, 768),   "800×600": (800, 600),
+        "640×480": (640, 480),     "320×240": (320, 240),
+    }
+    cap_w, cap_h = CAP_RES_MAP.get(cap_res, (1280, 720))
+    canvas_w = int(W)
+    canvas_h = int(H)
+    cache_key = (device_index, cap_res)
 
     arr: np.ndarray | None = None
 
     # ── Reuse or open a cached camera handle ──────────────────────────
     now = time.time()
-    cap, last_used = _camera_cache.get(device_index, (None, 0.0))
+    cap, last_used = _camera_cache.get(cache_key, (None, 0.0))
 
-    # Evict stale handles
+    # Evict stale handle
     if cap is not None and now - last_used > CAMERA_IDLE_TIMEOUT:
         cap.release()
         cap = None
-        _camera_cache.pop(device_index, None)
+        _camera_cache.pop(cache_key, None)
 
     if cap is None or not cap.isOpened():
         # Try CAP_ANY first, then CAP_AVFOUNDATION
@@ -192,8 +223,8 @@ def method_webcam(out_dir: Path, seed: int, params=None):
             try:
                 cap = cv2.VideoCapture(device_index, backend_val)
                 if cap.isOpened():
-                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, int(W))
-                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, int(H))
+                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, cap_w)
+                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, cap_h)
                     break
                 cap.release()
                 cap = None
@@ -203,7 +234,7 @@ def method_webcam(out_dir: Path, seed: int, params=None):
     if cap is not None:
         ok, bgr = cap.read()
         if ok and bgr is not None:
-            _camera_cache[device_index] = (cap, now)
+            _camera_cache[cache_key] = (cap, now)
 
             # Warm the probe-printed flag so we don't re-sweep
             global _probe_printed
@@ -213,26 +244,37 @@ def method_webcam(out_dir: Path, seed: int, params=None):
             if flip:
                 rgb = np.fliplr(rgb)
 
-            from PIL import Image as _PIL
+            # ── Actual camera resolution (for logging & resize decision) ──
+            actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            # The cap.read() frame dimensions are the ground truth
+            h, w = rgb.shape[:2]
 
-            arr = (
-                np.array(
-                    _PIL.fromarray(rgb).resize(
-                        (int(W), int(H)), _PIL.LANCZOS
-                    ),
-                    dtype=np.float32,
-                )
-                / 255.0
-            )
+            # ── Resize to canvas preserving aspect ratio ─────────────────
+            # Center-crop to the canvas aspect ratio first so the final
+            # image fills the canvas without distortion.
+            if w != canvas_w or h != canvas_h:
+                target_ratio = canvas_w / canvas_h
+                src_ratio = w / h
+                if abs(src_ratio - target_ratio) > 0.01:
+                    if src_ratio > target_ratio:
+                        # Source wider — crop width
+                        new_w = int(h * target_ratio)
+                        offset = (w - new_w) // 2
+                        rgb = rgb[:, offset:offset + new_w]
+                    else:
+                        # Source taller — crop height
+                        new_h = int(w / target_ratio)
+                        offset = (h - new_h) // 2
+                        rgb = rgb[offset:offset + new_h, :]
+                rgb = cv2.resize(rgb, (canvas_w, canvas_h),
+                                 interpolation=cv2.INTER_LINEAR)
 
-            # Log the first successful grab so operator knows it's alive
-            global _first_grab_logged
-            if not _first_grab_logged:
-                _log(f"device {device_index}: frame captured ({arr.shape[1]}×{arr.shape[0]})")
-                _first_grab_logged = True
+            arr = rgb.astype(np.float32) / 255.0
+
         else:
             cap.release()
-            _camera_cache.pop(device_index, None)
+            _camera_cache.pop(cache_key, None)
             _log(f"device {device_index}: open succeeded but read() failed")
 
     if arr is None:

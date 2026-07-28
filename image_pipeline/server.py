@@ -1173,6 +1173,279 @@ def render_authored_node(req: RenderNodeRequest):
     return _author_render(req.node_id, params=req.params)
 
 
+# ── Compiled Swift TCC helper ────────────────────────────────────────
+# macOS AVFoundation API callers need to be a proper Mach-O binary to
+# reliably trigger the TCC dialog.  We ship the source inline and compile
+# it lazily on first use.
+_TCC_SWIFT_SRC = _repo_root / "image_pipeline" / "_tcc_helper.swift"
+_TCC_SWIFT_BIN: Path | None = None
+_TCC_SWIFT_LOCK = threading.Lock()
+
+_TCC_SWIFT_CODE = r"""import AVFoundation
+import Foundation
+
+let sem = DispatchSemaphore(value: 0)
+var result = "unknown"
+
+let status = AVCaptureDevice.authorizationStatus(for: .video)
+switch status {
+case .authorized:
+    result = "allowed"
+    sem.signal()
+case .denied:
+    result = "denied"
+    sem.signal()
+case .restricted:
+    result = "restricted"
+    sem.signal()
+case .notDetermined:
+    print("notDetermined", terminator: "")
+    fflush(stdout)
+    AVCaptureDevice.requestAccess(for: .video) { granted in
+        result = granted ? "triggered_allowed" : "triggered_denied"
+        sem.signal()
+    }
+@unknown default:
+    result = "unknown_status"
+    sem.signal()
+}
+
+_ = sem.wait(timeout: .now() + 30)
+print(result)
+"""
+
+
+def _ensure_tcc_helper() -> Path | None:
+    """Lazily compile the Swift TCC helper binary.  Returns the path, or
+    ``None`` if ``xcrun swiftc`` is unavailable or compilation fails."""
+    global _TCC_SWIFT_BIN
+    if _TCC_SWIFT_BIN is not None:
+        return _TCC_SWIFT_BIN
+    with _TCC_SWIFT_LOCK:
+        if _TCC_SWIFT_BIN is not None:
+            return _TCC_SWIFT_BIN
+        try:
+            # Write source
+            _TCC_SWIFT_SRC.write_text(_TCC_SWIFT_CODE)
+            bin_path = _TCC_SWIFT_SRC.with_suffix("")
+            subprocess.run(
+                ["xcrun", "swiftc", "-o", str(bin_path), str(_TCC_SWIFT_SRC)],
+                capture_output=True, text=True, timeout=30,
+            )
+            if bin_path.exists():
+                _TCC_SWIFT_BIN = bin_path
+                return bin_path
+        except Exception:
+            pass
+        return None
+
+
+def _tcc_process_name() -> str:
+    """Walk the process tree to find the terminal/IDE/app name that macOS TCC
+    will display in the Camera permissions list.
+
+    macOS grants camera permission to the *responsible* parent app (e.g.
+    Terminal.app, iTerm2, Code, Hermes) rather than the immediate Python
+    child.  We walk up the ancestry looking for any process that lives inside
+    a ``.app`` bundle.
+    """
+    import os as _os
+
+    try:
+        pid = _os.getpid()
+        seen = set()
+        for _ in range(20):  # safety limit
+            if pid in seen or pid <= 1:
+                break
+            seen.add(pid)
+            out = subprocess.run(
+                ["ps", "-o", "ppid=,comm=", "-p", str(pid)],
+                capture_output=True, text=True, timeout=2,
+            ).stdout.strip()
+            parts = out.split(None, 1)
+            if len(parts) < 2:
+                break
+            ppid, comm = parts
+            # Check if this process lives inside a .app bundle
+            # macOS apps have paths like: .../Hermes.app/Contents/MacOS/Hermes
+            app_match = _os.pathsep.join(
+                p for p in comm.split("/") if ".app" in p.lower()
+            )
+            if app_match:
+                # Extract "Hermes" from ".../Hermes.app/..."
+                for part in comm.split("/"):
+                    if ".app" in part.lower():
+                        return part.removesuffix(".app") + ".app"
+            # Check for known terminal/IDE names (any path)
+            base = _os.path.basename(comm).removesuffix(".app")
+            if base.lower() in (
+                "terminal", "iterm2", "code", "code -insiders",
+                "windsurf", "cursor", "electron",
+            ):
+                return base + ".app"
+            pid = int(ppid)
+        # Last resort: the current process name
+        leaf = _os.path.basename(subprocess.run(
+            ["ps", "-o", "comm=", "-p", str(_os.getpid())],
+            capture_output=True, text=True, timeout=2,
+        ).stdout.strip())
+        return leaf or "Python"
+    except Exception:
+        return "your terminal or IDE"
+
+
+def _tcc_process_tree() -> list[dict]:
+    """Return the full process ancestry (pid, name) for diagnostic display."""
+    import os as _os
+
+    tree = []
+    pid = _os.getpid()
+    seen = set()
+    for _ in range(20):
+        if pid in seen or pid <= 0:
+            break
+        seen.add(pid)
+        try:
+            out = subprocess.run(
+                ["ps", "-o", "ppid=,comm=", "-p", str(pid)],
+                capture_output=True, text=True, timeout=2,
+            ).stdout.strip()
+            parts = out.split(None, 1)
+            if len(parts) >= 2:
+                ppid, comm = parts
+                tree.append({"pid": pid, "name": comm.strip()})
+                pid = int(ppid)
+            else:
+                tree.append({"pid": pid, "name": "?"})
+                break
+        except Exception:
+            tree.append({"pid": pid, "name": "(error)"})
+            break
+    tree.reverse()
+    return tree
+
+
+def _tcc_native_trigger() -> str:
+    """Trigger the macOS TCC camera permission dialog using a compiled Swift
+    binary that calls ``AVCaptureDevice.requestAccess(for: .video)``.
+
+    cv2.VideoCapture often fails to trigger the TCC dialog on macOS Ventura+
+    because it's a C FFI call that macOS may silently deny for unsigned
+    processes.  A proper Mach-O binary compiled from Swift using the
+    first-party AVFoundation framework reliably triggers the TCC prompt and
+    registers the responsible process in the permissions database.
+
+    This is fire-and-forget — the binary runs in the background and the TCC
+    dialog appears within a few seconds.  The endpoint returns immediately.
+
+    Returns the detected TCC status from a quick ``authorizationStatus``
+    check only (no blocking wait).
+    """
+    helper = _ensure_tcc_helper()
+    if helper is None:
+        return "no_swift_helper"
+
+    # 1. Quick check — read current auth status without triggering dialog
+    try:
+        import cv2 as _cv2
+        cap = _cv2.VideoCapture(0, _cv2.CAP_AVFOUNDATION)
+        if cap.isOpened():
+            ok, _ = cap.read()
+            cap.release()
+            if ok:
+                return "allowed"
+    except Exception:
+        pass
+
+    # 2. Fire the Swift helper in the background to trigger the TCC dialog
+    try:
+        subprocess.Popen(
+            [str(helper)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass
+
+    # 3. Also fire ffmpeg avfoundation probe as a secondary TCC trigger
+    #    (ffmpeg is installed per system check)
+    try:
+        subprocess.Popen(
+            ["ffmpeg", "-f", "avfoundation", "-list_devices", "true", "-i", ""],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass
+
+    return "triggered_background"
+
+
+@app.post("/api/webcam/configure")
+async def webcam_open_permissions():
+    """Open macOS System Settings → Camera privacy panel.
+
+    macOS TCC (Transparency, Consent, & Control) only shows an app in the
+    camera-permissions list *after* it has attempted camera access. This
+    endpoint:
+
+    1. Identifies the **app bundle** process that macOS TCC will show
+       (e.g. Hermes.app, Terminal.app, Code) by walking the process tree.
+    2. Fires a compiled Swift binary that calls the native AVFoundation
+       API to trigger the TCC permission dialog (runs in background so
+       the endpoint returns immediately).
+    3. Also fires ``ffmpeg -f avfoundation`` as a secondary TCC trigger.
+    4. Opens System Settings → Privacy → Camera so the user can toggle it ON.
+    """
+    parent_name = _tcc_process_name()
+    tree = _tcc_process_tree()
+
+    # ── Trigger TCC dialog (fire-and-forget) ──────────────────────────
+    tcc_status = _tcc_native_trigger()
+
+    # ── Open System Settings → Privacy → Camera ──────────────────────
+    try:
+        subprocess.Popen(
+            ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"]
+        )
+    except Exception as e:
+        return {"ok": False, "msg": f"Failed to open preferences: {e}"}
+
+    # ── Build contextual message ─────────────────────────────────────
+    msg = ""
+    if tcc_status == "allowed":
+        msg = (
+            "Camera permission already granted. "
+            "If the webcam node still shows no image, try device_index=1 "
+            "or check your camera hardware."
+        )
+    elif tcc_status == "triggered_background":
+        # Build a readable process chain for the message
+        chain_str = " → ".join(
+            p["name"].split("/")[-1] for p in tree
+        )
+        msg = (
+            "**System camera permission dialog triggered.**\n\n"
+            "A dialog should appear asking for camera access — click **Allow**.\n\n"
+            "Then go to **System Settings → Privacy → Camera** — "
+            "look for **" + parent_name + "** in the list and ensure it's "
+            "toggled **ON**.\n\n"
+            f"*(Process ancestry: {chain_str})*"
+        )
+    else:
+        msg = (
+            "Opened System Settings → Privacy → Camera. "
+            "Look for **" + parent_name + "** in the list and toggle it ON, "
+            "then restart the server."
+        )
+
+    return {
+        "ok": True,
+        "msg": msg,
+        "process_name": parent_name,
+        "tcc_status": tcc_status,
+        "process_tree": tree,
+    }
+
+
 @app.delete("/api/nodes/{node_id}", dependencies=[Depends(require_token)])
 async def unregister_authored_node(node_id: str):
     """Drop an agent-authored node and free its shader slot."""
@@ -1395,6 +1668,9 @@ async def patch_graph(gid: str, patch: GraphPatch):
             elif kind == "clear":
                 doc["nodes"] = []
                 doc["edges"] = []
+                applied.append(kind)
+            elif kind == "set_meta":
+                doc["meta"] = {**doc.get("meta", {}), **op.get("meta", {})}
                 applied.append(kind)
         _touch_graph_meta(doc, by)
         _persist_graph_doc(doc)
@@ -1794,7 +2070,9 @@ _live_stats: dict = {
 # Live cook-rate limiter. Deliberately NOT captured by the loop closure: the
 # loop re-reads it every frame, so retuning the rate is a hot-swap (a running
 # render keeps its executor and sim caches) instead of a thread restart.
-LIVE_DISPLAY_FPS_CAP = 30.0
+#
+# ``limit`` = True: pace cooking to the timeline FPS (for sequence preview).
+# ``limit`` = False: cook as fast as the graph allows (no cap at all).
 _live_rate: dict = {"limit": False, "fps": 24.0}
 
 # Persistent executor — survives hot-swaps so Arch-A sim caches are kept
@@ -2053,6 +2331,13 @@ def live_graph_sim(req: GraphRequest):
                     _set_canvas(live_w, live_h)
                 _tick_start = time.monotonic()
                 try:
+                    # ── Loop status from graph doc meta ────────────────────
+                    # loop_sim: when true, wraps frame within LIVE_TOTAL_FRAMES
+                    # so stateful sims reset at the boundary.
+                    _meta = _doc.get("meta", {})
+                    loop_sim = _meta.get("loop_sim", False)
+                    lf = frame % LIVE_TOTAL_FRAMES if loop_sim else frame
+
                     # ── Phase 6: Selective dirty marking ──────────────────────
                     # Build the initial set of dirty nodes for this frame:
                     #   • Time-varying nodes (is_time_varying=True) — always
@@ -2075,10 +2360,9 @@ def live_graph_sim(req: GraphRequest):
                             is_tv = True
 
                         if is_tv:
-                            # Inject time only into time-varying nodes.
-                            # Static nodes keep their last `time` value (or none),
-                            # so their params hash stays stable.
-                            n["params"]["time"] = float(frame)
+                            # Wrap frame when loop_sim so stateful nodes
+                            # see the same time at each cycle boundary.
+                            n["params"]["time"] = float(lf)
                             initially_dirty.add(nid)
                         else:
                             # Non-time-varying: check if user params changed
@@ -2098,11 +2382,9 @@ def live_graph_sim(req: GraphRequest):
                     for n in work_nodes:
                         n["dirty"] = n["id"] in dirty_set
 
-                    # The executor is shared with hot-swap invalidation and
-                    # with any loop still winding down — one cook at a time.
                     with _live_exec_lock:
                         flat_outputs, terminal_id, node_errors = executor.execute(
-                            work_nodes, work_edges, seed, frame=frame % LIVE_TOTAL_FRAMES, frames=LIVE_TOTAL_FRAMES
+                            work_nodes, work_edges, seed, frame=lf, frames=LIVE_TOTAL_FRAMES
                         )
                     # Blocking on that lock can take a whole frame; re-check
                     # before publishing anything.
@@ -2122,7 +2404,7 @@ def live_graph_sim(req: GraphRequest):
                     frame += 1
                     consecutive_errors = 0
                     _cook_ms = (time.monotonic() - _tick_start) * 1000.0
-                    _live_stats["frame"]    = frame
+                    _live_stats["frame"]    = frame % LIVE_TOTAL_FRAMES if loop_sim else frame
                     _live_stats["cook_ms"]  = round(_cook_ms, 1)
                     _live_stats["fps"]      = round(1000.0 / max(_cook_ms, 1.0), 1)
                     _live_stats["node_errors"] = {
@@ -2181,18 +2463,21 @@ def live_graph_sim(req: GraphRequest):
                         print("[live-sim] 10 consecutive failures — stopping loop")
                         break
                     time.sleep(0.5)
-                # Pace the next cook: the timeline FPS when the limiter is on,
-                # otherwise ~30fps so the browser can display each frame. Read
-                # per frame, so a limiter/FPS change retunes this loop in place.
-                _target_fps = (_live_rate["fps"] if _live_rate["limit"]
-                               else LIVE_DISPLAY_FPS_CAP)
-                _frame_interval = 1.0 / max(0.1, _target_fps)
-                _elapsed = time.monotonic() - _tick_start
-                _sleep = _frame_interval - _elapsed
-                if _sleep > 0:
-                    # Wake early on cancel so a stop is not stuck behind a long
-                    # limiter interval (1 fps ⇒ a whole second of dead sleep).
-                    cancel.wait(_sleep)
+                # Pace the next cook.  The `tl-fps` value is always the target:
+                #   fps > 0  → sleep to maintain that rate (ceiling when limiter
+                #               is OFF, strict pacing when ON).
+                #   fps = 0  → no cap at all, cook as fast as the graph allows.
+                # Read per frame, so changing the FPS field or toggling the
+                # limiter retunes the loop in-place without a restart.
+                _target_fps = _live_rate["fps"]
+                if _target_fps > 0:
+                    _frame_interval = 1.0 / _target_fps
+                    _elapsed = time.monotonic() - _tick_start
+                    _sleep = _frame_interval - _elapsed
+                    if _sleep > 0:
+                        # Wake early on cancel so a stop is not stuck behind a
+                        # long interval (1 fps ⇒ a whole second of dead sleep).
+                        cancel.wait(_sleep)
 
         _live_sim_cancel = cancel
         # Named so a stacked loop is visible in threading.enumerate() / a

@@ -176,12 +176,17 @@ def test_arch_a_loops_cache_past_cooked_length():
 # ── Invariant 3: live playback actually produces motion ─────────────────────
 
 def _live_execute(ex: GraphExecutor, nodes, edges, seed, frame):
-    """Mirror the server live loop's per-frame contract exactly."""
+    """Mirror the server live loop's per-frame contract exactly.
+
+    The live loop passes a continuous (non-modulo'd) frame so stateful
+    nodes never see a backward step and reset at 300-frame boundaries.
+    ``t`` still wraps internally in the Timeline for looping animation.
+    """
     for n in nodes:
         n["dirty"] = True                       # always re-cook
         n.setdefault("params", {})["time"] = float(frame)   # monotonic time
     return ex.execute(nodes, edges, seed,
-                      frame=frame % LIVE_TOTAL_FRAMES, frames=LIVE_TOTAL_FRAMES)
+                      frame=frame, frames=LIVE_TOTAL_FRAMES)
 
 
 def test_cellular_automata_18_animates_live():
