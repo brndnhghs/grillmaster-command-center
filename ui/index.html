@@ -285,6 +285,10 @@ try {
                title="Limit live cooking to the FPS above — stops a heavy graph cooking frames nobody sees">
           <input id="tl-fps-limit" type="checkbox"><span>⏱ limit</span>
         </label>
+        <label id="tl-loop-wrap" class="tl-toggle"
+               title="Loop live sim — wraps frame back to 0 at the end of the range, resetting stateful nodes">
+          <input id="tl-loop" type="checkbox"><span>⟳ loop</span>
+        </label>
       </div>
       <div id="tl-name-group" class="tl-group">
         <label>Name</label><input id="tl-name" type="text" placeholder="my-sequence" style="width:110px">

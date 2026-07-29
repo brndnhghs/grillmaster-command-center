@@ -42,6 +42,32 @@ let tlClips = [];  // {id, name, seqName, startFrame, endFrame, lane, color, nod
 let tlClipIdCounter = 0;
 let tlDragClip = null;  // {clip, lane, startX}
 
+// ── Math node equation display symbols ─────────────────────────
+const _OP_SYMBOLS = {
+  add: '{a} + {b}', sub: '{a} − {b}', mul: '{a} × {b}', div: '{a} ÷ {b}',
+  mod: '{a} mod {b}', pow: '{a}^({b})', min: 'min({a}, {b})', max: 'max({a}, {b})',
+  average: '({a}+{b})/2', sum: '{a}+{b}', product: '{a}×{b}', difference: '|{a}−{b}|',
+  abs: '|{a}|', round: '⌊{a}⌉', floor: '⌊{a}⌋', ceil: '⌈{a}⌉',
+  negate: '−{a}', reciprocal: '1/{a}', sign: 'sgn({a})',
+  normalize: 'norm({a})', fit: 'fit({a})', scale: '{a}×k', bias: '{a}+k',
+  gain: 'gain({a})', offset: '{a}+k', wrap: 'wrap({a})', fold: 'fold({a})',
+  mirror: 'mirror({a})', quantize: 'Q({a})', snap: 'snap({a})',
+  gamma: 'γ({a})', exponential: 'exp({a})', logarithmic: 'log({a})',
+  smoothstep: 'SS({a})', smootherstep: 'SS₂({a})',
+  ease_in: 'easeIn({a})', ease_out: 'easeOut({a})', ease_inout: 'easeInOut({a})',
+  map_range: 'map({a})', clamp: 'clamp({a})',
+  threshold: 'T({a})', range_gate: 'gate({a})', dead_zone: 'dz({a})', soft_threshold: 'soft({a})',
+  weighted_avg: 'wAvg({a},{b})', crossfade: 'xfade({a},{b})',
+  distance: '|{a}−{b}|', magnitude: '√({a}²+{b}²)', dot_product: '{a}·{b}',
+};
+const _OP_UNARY = new Set([
+  'abs', 'round', 'floor', 'ceil', 'negate', 'reciprocal', 'sign',
+  'normalize', 'scale', 'bias', 'gain', 'offset', 'wrap', 'fold', 'mirror',
+  'quantize', 'snap', 'gamma', 'exponential', 'logarithmic',
+  'smoothstep', 'smootherstep', 'ease_in', 'ease_out', 'ease_inout',
+  'clamp', 'threshold', 'range_gate', 'dead_zone', 'soft_threshold',
+]);
+
 function getEventPos(e) {
   if (e.touches && e.touches.length) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
   if (e.changedTouches && e.changedTouches.length) return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
@@ -1486,6 +1512,8 @@ function gAddNode(method_id, x, y) {
   gRenderNode(node);
   gPushApart(node);
   gSave();
+  // Apply dynamic op-layout filtering immediately on creation
+  setTimeout(() => gApplyOpLayout(id), 0);
   return node;
 }
 
@@ -2412,6 +2440,25 @@ function gRenderNode(node) {
       });
     }
 
+    // Math equation readout (visual-spec: live equation like "a + b = 0.723")
+    if (node.method_id === '__math__') {
+      const eqEl = document.createElement('div');
+      eqEl.className = 'gnode-math-eq';
+      eqEl.id = 'eq-' + node.id;
+      // Build initial equation from default operation
+      const op = node.params?.operation || 'add';
+      const a = node.params?.a_default ?? 0;
+      const b = node.params?.b_default ?? 1;
+      const sym = _OP_SYMBOLS[op] || op;
+      const fmt = (v) => { const a = Math.abs(v); return a >= 100 ? v.toFixed(1) : a >= 1 ? v.toFixed(3) : v.toFixed(4); };
+      if (_OP_UNARY.has(op)) {
+        eqEl.textContent = sym.replace('{a}', fmt(a)) + ' = …';
+      } else {
+        eqEl.textContent = sym.replace('{a}', fmt(a)).replace('{b}', fmt(b)) + ' = …';
+      }
+      el.appendChild(eqEl);
+    }
+
   }
 
   gNodesEl.appendChild(el);
@@ -3084,9 +3131,11 @@ function gShowNodeParams(node) {
   }
   gRefreshParamOverrides(node.id);
 
+  // ── Apply dynamic op-layout filtering ───────────────────────
+  gApplyOpLayout(node.id);
+
   // ── Per-param keyframe section ──────────────────────────────
   const kfSection = document.createElement('div');
-  kfSection.style.cssText = 'margin-top:16px;border-top:1px solid var(--border);padding-top:12px;';
   kfSection.innerHTML = `
     <div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:8px;">
       <span>🎬 Per-Param Keyframes</span>
@@ -3290,6 +3339,76 @@ function openPerParamKfEditor(node, pname, idx, kf) {
     drawBezierPreview();
   });
 }
+
+// ── Dynamic op-layout filtering for mode-based nodes (Math, Logic, etc.) ──
+// When a node's def has `op_layouts`, the param side-panel and node-body
+// ports are filtered to show only the params/inputs relevant to the selected
+// operation/mode.
+function gApplyOpLayout(nodeId) {
+  const node = gNodes.find(n => n.id === nodeId);
+  if (!node) return;
+  const def = gNodeDefs[node.method_id];
+  if (!def || !def.op_layouts) return;
+
+  // Read the current operation/mode from the node's params
+  const op = node.params && (node.params.operation || node.params.mode);
+  if (!op) return;
+  const layout = def.op_layouts[op];
+  if (!layout) return;
+
+  const showParams = new Set(layout.show_params || []);
+  const showInputs = new Set(layout.show_inputs || []);
+
+  // ── Filter param rows in the side panel ──
+  gParamsForm.querySelectorAll('.param-row').forEach(row => {
+    // Don't hide the operation selector itself
+    const key = row.dataset.param;
+    if (!key || key === 'operation' || key === 'mode') return;
+    const visible = showParams.size === 0 || showParams.has(key);
+    row.style.display = visible ? '' : 'none';
+  });
+
+  // ── Filter input port rows on the node body ──
+  const nodeEl = document.getElementById('gnode-' + nodeId);
+  if (!nodeEl) return;
+  nodeEl.querySelectorAll('.gnode-ports .gnode-port-row.input').forEach(row => {
+    const label = row.querySelector('.gport-label');
+    if (!label) return;
+    const portName = label.textContent;
+    const visible = showInputs.size === 0 || showInputs.has(portName);
+    row.style.display = visible ? '' : 'none';
+  });
+
+  // ── Update equation readout for Math nodes ──
+  if (node.method_id === '__math__') {
+    const eqEl = document.getElementById('eq-' + nodeId);
+    if (eqEl) {
+      const a = node.params?.a ?? node.params?.a_default ?? 0;
+      const b = node.params?.b ?? node.params?.b_default ?? 0;
+      const sym = _OP_SYMBOLS[op] || op;
+      const fmt = (v) => { const a = Math.abs(v); return a >= 100 ? v.toFixed(1) : a >= 1 ? v.toFixed(3) : v.toFixed(4); };
+      if (_OP_UNARY.has(op)) {
+        eqEl.textContent = sym.replace('{a}', fmt(a)) + ' = …';
+      } else {
+        eqEl.textContent = sym.replace('{a}', fmt(a)).replace('{b}', fmt(b)) + ' = …';
+      }
+    }
+  }
+}
+
+// ── Wire operation/mode-select change listeners to re-apply layout ──
+document.addEventListener('change', function(e) {
+  const ctrl = e.target;
+  if (ctrl.id === 'p_operation' || ctrl.id === 'p_mode') {
+    const nodeSelect = document.querySelector('.gnode.selected');
+    if (nodeSelect) {
+      const nid = nodeSelect.id.replace('gnode-', '');
+      // Defer so the element's own change listener updates node.params first
+      setTimeout(() => gApplyOpLayout(nid), 0);
+    }
+  }
+});
+
 function gUpdateNodeParam(nodeId, key, val) {
   const n = gNodes.find(n => n.id===nodeId); if (n) { n.params[key]=val; n.dirty=true; gSave(); }
   // Keep the inline slider on the Input Slider node body in sync with side-panel edits.
@@ -4011,6 +4130,29 @@ function _gUpdateLiveMeta(msg) {
         }
       }
     }
+    // Live Math equation readout — build symbolic display from op + values
+    for (const [nid, vals] of Object.entries(msg.node_values)) {
+      if (typeof vals.value === 'number') {
+        const eqEl = document.getElementById('eq-' + nid);
+        if (!eqEl) continue;
+        const mathNode = gNodes.find(n => n.id === nid);
+        if (!mathNode || mathNode.method_id !== '__math__') continue;
+        const op = mathNode.params?.operation || 'add';
+        const a = mathNode.params?.a ?? mathNode.params?.a_default ?? 0;
+        const b = mathNode.params?.b ?? mathNode.params?.b_default ?? 0;
+        const out = vals.value;
+        const fmt = (v) => { const a = Math.abs(v); return a >= 100 ? v.toFixed(1) : a >= 1 ? v.toFixed(3) : v.toFixed(4); };
+        const sym = _OP_SYMBOLS[op] || op;
+        // Build equation string based on op
+        let eq;
+        if (_OP_UNARY.has(op)) {
+          eq = sym.replace('{a}', fmt(a)) + ' = ' + fmt(out);
+        } else {
+          eq = sym.replace('{a}', fmt(a)).replace('{b}', fmt(b)) + ' = ' + fmt(out);
+        }
+        eqEl.textContent = eq;
+      }
+    }
     // Live Input Slider read-out — push WS value into inline slider when wired
     for (const [nid, vals] of Object.entries(msg.node_values)) {
       if (typeof vals.value === 'number') {
@@ -4167,11 +4309,15 @@ function gLiveRate() {
 
 function gLiveGraphBody(stop) {
   const { fps, fps_limit } = gLiveRate();
+  const _start = parseInt(document.getElementById('tl-start')?.value) || 0;
+  const _end   = parseInt(document.getElementById('tl-end')?.value)   || 24;
   return {
     ...gServerGraphPayload(),
     seed: 42, frames: stop ? 0 : 1,
     width: gCanvasW, height: gCanvasH,
     fps, fps_limit,
+    frame_start: Math.max(0, _start),
+    frame_end:   Math.max(1, _end),
   };
 }
 
@@ -4209,6 +4355,36 @@ try {
   if (localStorage.getItem('live-fps-limit') === '1' && gFpsLimitEl) {
     gFpsLimitEl.checked = true;
     gFpsLimitWrap?.classList.add('on');
+  }
+} catch {}
+
+// ── Live sim loop toggle ────────────────────────────────────────
+// Sends a set_meta PATCH to the graph doc so the live loop reads
+// loop_sim and wraps the frame every LIVE_TOTAL_FRAMES.
+const gLoopEl = document.getElementById('tl-loop');
+const gLoopWrap = document.getElementById('tl-loop-wrap');
+async function gApplyLoop() {
+  if (gLoopWrap) gLoopWrap.classList.toggle('on', !!gLoopEl?.checked);
+  try {
+    await fetch('/api/graph/active', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ops: [{ op: 'set_meta', meta: { loop_sim: !!gLoopEl?.checked } }] }),
+    });
+  } catch (e) { /* best-effort */ }
+  gSetStatus(gLoopEl?.checked ? 'Loop ON — sim resets at frame boundary' : 'Loop OFF — continuous');
+}
+gLoopEl?.addEventListener('change', () => {
+  try { localStorage.setItem('live-loop', gLoopEl.checked ? '1' : ''); } catch {}
+  gApplyLoop();
+});
+// Restore persisted preference on load
+try {
+  if (localStorage.getItem('live-loop') === '1' && gLoopEl) {
+    gLoopEl.checked = true;
+    gLoopWrap?.classList.add('on');
+    // Sync to server on reconnect
+    gApplyLoop();
   }
 } catch {}
 
@@ -4706,6 +4882,17 @@ function gPopOutViewer() {
   labLimit.addEventListener('click', () => { chkLimit.checked = !chkLimit.checked; fire(chkLimit, 'change'); });
   gRange.append(chkLimit, labLimit);
 
+  // Loop toggle, mirrored from the main timeline bar
+  const chkLoop = d.createElement('input');
+  chkLoop.type = 'checkbox';
+  chkLoop.checked = !!gLoopEl?.checked;
+  chkLoop.style.cssText = `accent-color:${_accent};width:12px;height:12px;margin:0 0 0 6px;cursor:pointer`;
+  const labLoop = mkLabel('⟳ loop');
+  labLoop.title = 'Loop live sim — resets stateful nodes at frame boundary';
+  labLoop.style.cursor = 'pointer';
+  labLoop.addEventListener('click', () => { chkLoop.checked = !chkLoop.checked; fire(chkLoop, 'change'); });
+  gRange.append(chkLoop, labLoop);
+
   // Name
   const gName = mkGroup();
   gName.appendChild(mkLabel('Name'));
@@ -4808,6 +4995,11 @@ function gPopOutViewer() {
     gFpsLimitEl.checked = chkLimit.checked;
     fire(gFpsLimitEl, 'change');
   });
+  chkLoop.addEventListener('change', () => {
+    if (!gLoopEl) return;
+    gLoopEl.checked = chkLoop.checked;
+    fire(gLoopEl, 'change');
+  });
   inName.addEventListener('input', () => { tlName.value = inName.value; fire(tlName, 'input'); });
   btnPrev.addEventListener('click', () => tlPrev.click());
   btnPlay.addEventListener('click', () => tlPlay.click());
@@ -4833,6 +5025,7 @@ function gPopOutViewer() {
     if (d.activeElement !== inEnd)   inEnd.value = tlEnd.value;
     if (d.activeElement !== inFps)   inFps.value = tlFps.value;
     if (gFpsLimitEl) chkLimit.checked = gFpsLimitEl.checked;
+    if (gLoopEl)     chkLoop.checked   = gLoopEl.checked;
     if (d.activeElement !== inName)  inName.value = tlName.value;
     btnPlay.textContent = tlPlay.textContent;
     btnLive.style.background = gLiveMode ? '#2b6' : '#26262c';

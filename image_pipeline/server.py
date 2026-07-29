@@ -1718,6 +1718,8 @@ class GraphRequest(BaseModel):
     graph_id: str | None = None  # optional shared-doc id; if set, live loop reads this doc each frame
     fps: float = 24.0        # timeline FPS — the live cook-rate limiter's target
     fps_limit: bool = False  # when True the live loop paces its cooks to `fps`
+    frame_start: int = 0     # live loop frame range start (used for looping wrap)
+    frame_end: int = 300     # live loop frame range end (used for looping wrap)
 
 
 @app.post("/api/graph/{gid}/execute")
@@ -2304,9 +2306,14 @@ def live_graph_sim(req: GraphRequest):
             consecutive_errors = 0
             # Params snapshot for per-node change detection (excludes volatile keys)
             _last_params: dict[str, dict] = {}
-            LIVE_TOTAL_FRAMES = 300
+            # Frame range from the request — used for looping wrap. The executor
+            # also receives this as its `frames` param so the timeline is aware
+            # of the clip duration.
+            _loop_start = req.frame_start
+            _loop_end   = req.frame_end
+            _loop_range = max(1, _loop_end - _loop_start)
             print(f"[live-sim] starting loop gen={my_gen}, {len(nodes)} nodes, "
-                  f"{len(edges)} edges, {_inv_msg}")
+                  f"{len(edges)} edges, range=[{_loop_start},{_loop_end}), {_inv_msg}")
             while not cancel.is_set():
                 # A newer loop (or a stop) has taken over — leave without
                 # cooking or pushing, so two loops never render at once.
@@ -2331,12 +2338,15 @@ def live_graph_sim(req: GraphRequest):
                     _set_canvas(live_w, live_h)
                 _tick_start = time.monotonic()
                 try:
-                    # ── Loop status from graph doc meta ────────────────────
-                    # loop_sim: when true, wraps frame within LIVE_TOTAL_FRAMES
-                    # so stateful sims reset at the boundary.
+                    # ── Frame wrapping (prevent unbounded growth) ───────────
                     _meta = _doc.get("meta", {})
-                    loop_sim = _meta.get("loop_sim", False)
-                    lf = frame % LIVE_TOTAL_FRAMES if loop_sim else frame
+                    # ALWAYS wrap lf within the loop range to prevent unbounded
+                    # frame growth. The live cook counter (`frame`) still counts
+                    # monotonically behind the scenes for pacing, but the frame
+                    # visible to the timeline and every node (lf/global_frame/time)
+                    # cycles within [0, _loop_range). Without this wrap a live
+                    # session that runs for ~5000 frames causes visible lag.
+                    lf = _loop_start + (frame - _loop_start) % _loop_range
 
                     # ── Phase 6: Selective dirty marking ──────────────────────
                     # Build the initial set of dirty nodes for this frame:
@@ -2360,8 +2370,8 @@ def live_graph_sim(req: GraphRequest):
                             is_tv = True
 
                         if is_tv:
-                            # Wrap frame when loop_sim so stateful nodes
-                            # see the same time at each cycle boundary.
+                            # time = wrapped lf (always cycles within loop range,
+                            # preventing unbounded frame growth that causes lag).
                             n["params"]["time"] = float(lf)
                             initially_dirty.add(nid)
                         else:
@@ -2384,7 +2394,7 @@ def live_graph_sim(req: GraphRequest):
 
                     with _live_exec_lock:
                         flat_outputs, terminal_id, node_errors = executor.execute(
-                            work_nodes, work_edges, seed, frame=lf, frames=LIVE_TOTAL_FRAMES
+                            work_nodes, work_edges, seed, frame=lf, frames=_loop_range
                         )
                     # Blocking on that lock can take a whole frame; re-check
                     # before publishing anything.
@@ -2404,7 +2414,7 @@ def live_graph_sim(req: GraphRequest):
                     frame += 1
                     consecutive_errors = 0
                     _cook_ms = (time.monotonic() - _tick_start) * 1000.0
-                    _live_stats["frame"]    = frame % LIVE_TOTAL_FRAMES if loop_sim else frame
+                    _live_stats["frame"]    = _loop_start + (frame - _loop_start) % _loop_range
                     _live_stats["cook_ms"]  = round(_cook_ms, 1)
                     _live_stats["fps"]      = round(1000.0 / max(_cook_ms, 1.0), 1)
                     _live_stats["node_errors"] = {

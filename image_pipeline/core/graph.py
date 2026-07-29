@@ -180,6 +180,7 @@ def get_all_node_defs() -> dict[str, dict]:
             "is_time_varying": meta.is_time_varying,
             "runtime":         meta.runtime,
             "signal":          meta.signal,
+            "op_layouts":      meta.op_layouts,
         }
     return result
 

@@ -22,6 +22,8 @@ import threading
 import numpy as np
 from PIL import Image
 
+from .ascii_gpu_shader import build_ascii_glsl
+
 
 # ═══════════════════════════════════════════════
 #  GL CONTEXT (per-thread lazy singleton)
@@ -89,7 +91,7 @@ SHADERS = {}
 # Specs travel to the browser via shader_sources_for_client(), so the client
 # parity renderer sets the same uniforms from the same node params.
 
-_UNIFORM_GLSL_TYPES = {"float": "float", "int": "int", "color": "vec3", "choice": "int"}
+_UNIFORM_GLSL_TYPES = {"float": "float", "int": "int", "color": "vec3", "choice": "int", "sampler2D": "sampler2D"}
 
 
 def uniform_glsl_decls(uniforms: dict) -> str:
@@ -3895,6 +3897,21 @@ def render_shader(shader_name: str, resolution: tuple[int, int] = (512, 512),
         texture.use(0)
         prog['u_texture'].value = 0
 
+    # Bind glyph atlas for ascii_art_gpu shader
+    atlas_tex = None
+    if shader_name == 'ascii_art_gpu' and 'u_glyph_atlas' in prog:
+        from .ascii_gpu_fonts_json import get_atlas_texture
+        font_idx = 0
+        if named_params and 'font' in named_params:
+            font_choices = info.get('uniforms', {}).get('font', {}).get('choices', [])
+            font_name = named_params['font']
+            if font_name in font_choices:
+                font_idx = font_choices.index(font_name)
+        atlas_tex = get_atlas_texture(ctx, prog, font_idx)
+        if atlas_tex is not None:
+            atlas_tex.use(1)
+            prog['u_glyph_atlas'].value = 1
+
     ctx.clear(0.0, 0.0, 0.0)
     vao.render()
     data = fbo.read()
@@ -6542,51 +6559,23 @@ void main() {
                  "description": "dither strength (hides banding)"},
 })
 
-_register("ascii_art_gpu", "ASCII-art the input image with a procedural bitmap font",
-          "filter", '''
-// 4x5 glyphs bit-packed in floats (movAX13h encoding): brightness ramp
-// . : * o & 8 @ # — classic, WebGL-safe (float exp2/mod, no int precision).
-float glyph_px(float n, vec2 p) {
-    p = floor(p * vec2(-4.0, 4.0) + 2.5);
-    if (clamp(p.x, 0.0, 4.0) == p.x && clamp(p.y, 0.0, 4.0) == p.y) {
-        float k = p.x + 5.0 * p.y;
-        if (int(mod(n / exp2(k), 2.0)) == 1) return 1.0;
-    }
-    return 0.0;
-}
-
-float glyph_for(float g) {
-    float n = 0.0;                        // ' '
-    if (g > 0.1) n = 4096.0;              // .
-    if (g > 0.2) n = 65600.0;             // :
-    if (g > 0.3) n = 332772.0;            // *
-    if (g > 0.4) n = 15255086.0;          // o
-    if (g > 0.5) n = 23385164.0;          // &
-    if (g > 0.6) n = 15252014.0;          // 8
-    if (g > 0.7) n = 13199452.0;          // @
-    if (g > 0.8) n = 11512810.0;          // #
-    return n;
-}
-
-void main() {
-    float cell = max(u_cell_size, 4.0);
-    vec2 cellOrigin = floor(gl_FragCoord.xy / cell) * cell;
-    vec2 cellCenterUV = (cellOrigin + 0.5 * cell) / u_resolution;
-    vec3 src = texture(u_texture, cellCenterUV).rgb;
-    float g = dot(src, vec3(0.299, 0.587, 0.114));
-    g = pow(clamp(g, 0.0, 1.0), max(u_gamma, 0.05));
-    if (u_invert == 1) g = 1.0 - g;
-    vec2 p = (gl_FragCoord.xy - cellOrigin) / cell * 2.0 - 1.0;   // [-1,1] in cell
-    float px = glyph_px(glyph_for(g), p);
-    vec3 col;
-    if (u_mode == 1)      col = mix(u_bg_color, src, px);                    // colored
-    else if (u_mode == 2) col = mix(vec3(0.0, 0.05, 0.0), vec3(0.2, 1.0, 0.3) * (0.4 + 0.6 * g), px); // terminal
-    else                  col = mix(u_bg_color, u_fg_color, px);             // mono
-    f_color = vec4(col, 1.0);
-}
-''', uniforms={
+_register("ascii_art_gpu", "ASCII-art with shape-vector selection (6D staggered sampling + contrast enhancement + multi-font)",
+          "filter", build_ascii_glsl(), uniforms={
     "cell_size": {"glsl": "float", "min": 4.0, "max": 32.0, "default": 8.0,
-                  "description": "character cell size (px)"},
+                  "description": "character cell width (px)"},
+    "cell_aspect": {"glsl": "float", "min": 1.0, "max": 3.0, "default": 2.0,
+                    "description": "cell height/width ratio (monospace ~2:1)"},
+    "font":      {"glsl": "choice", "choices": ["menlo", "courier", "monaco", "sf-mono",
+                                                  "andale", "courier-new"],
+                  "default": "menlo", "description": "monospace font for glyph rendering"},
+    "contrast": {"glsl": "float", "min": 1.0, "max": 4.0, "default": 1.0,
+                 "description": "global contrast exponent (>1 enhances edges)"},
+    "directional_strength": {"glsl": "float", "min": 1.0, "max": 4.0, "default": 1.0,
+                             "description": "directional contrast exponent (>1 sharpens external edges)"},
+    "charset":   {"glsl": "choice", "choices": ["full", "classic", "minimal", "dense", "letters",
+                                                  "caps", "lower", "symbols", "digits", "wide",
+                                                  "sharp", "half"],
+                  "default": "full", "description": "character set preset"},
     "mode":      {"glsl": "choice", "choices": ["mono", "colored", "terminal"],
                   "default": "colored", "description": "coloring mode"},
     "fg_color":  {"glsl": "color", "default": "#e8e8e8", "description": "glyph color (mono mode)"},

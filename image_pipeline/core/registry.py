@@ -37,6 +37,7 @@ class MethodMeta:
         is_time_varying: bool = True,
         runtime: dict[str, dict] | None = None,
         signal: dict[str, str] | None = None,
+        op_layouts: dict[str, dict] | None = None,
     ):
         self.id = id
         self.name = name
@@ -71,6 +72,10 @@ class MethodMeta:
         # Optional per-port signal-class overrides (numeric/control/output/event)
         # for the Exposed Parameter & Runtime UI port-color system.
         self.signal: dict[str, str] = signal or {}
+        # Optional per-operation layout overrides for mode-based nodes.
+        # Maps operation_name → dict with keys "show_params" (list[str]) and
+        # "show_inputs" (list[str]). When absent, all params/inputs are visible.
+        self.op_layouts: dict[str, dict] = op_layouts or {}
 
     @property
     def label(self) -> str:
@@ -114,6 +119,7 @@ def method(
     is_time_varying: bool = True,
     runtime: dict[str, dict] | None = None,
     signal: dict[str, str] | None = None,
+    op_layouts: dict[str, dict] | None = None,
 ):
     """Decorator: register a generation method."""
 
@@ -145,6 +151,7 @@ def method(
             is_time_varying=is_time_varying,
             runtime=runtime,
             signal=signal,
+            op_layouts=op_layouts,
         )
         _registry[id] = meta
         _categories.setdefault(category, []).append(id)
