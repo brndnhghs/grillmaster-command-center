@@ -431,6 +431,20 @@ try {
       <div class="settings-hint">Restore default panel sizes and preview height.</div>
       <button id="settings-reset-layout" class="g-autobtn">Reset panel sizes</button>
     </div>
+    <div class="settings-section">
+      <div class="settings-title">🎨 Palettes</div>
+      <div class="settings-hint">
+        <span id="palette-count-hint">0 palettes available</span>
+        &nbsp;·&nbsp;
+        <button id="palette-refresh-btn" class="g-autobtn" style="font-size:11px;padding:2px 8px">⟳ Refresh list</button>
+      </div>
+      <div style="display:flex;gap:6px;margin:6px 0">
+        <input id="palette-search-input" type="text" placeholder="Search VS Code Marketplace..." style="flex:1;padding:5px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg2);color:var(--fg);font-size:12px">
+        <button id="palette-search-btn" class="g-autobtn" style="padding:5px 12px;font-size:12px">Search</button>
+      </div>
+      <div id="palette-search-results" style="max-height:300px;overflow-y:auto;font-size:12px"></div>
+      <div id="palette-output" style="margin-top:4px;font-size:11px;color:var(--ok);min-height:16px"></div>
+    </div>
   </div>
 </div>
 
@@ -492,6 +506,7 @@ try {
 <div id="graph-ctx-menu">
   <div class="ctx-item" id="ctx-feedback">Toggle feedback</div>
   <div class="ctx-item" id="ctx-source" style="display:none">&lt;/&gt; Source code</div>
+  <div class="ctx-item" id="ctx-node-doctor" style="display:none">🩺 Node Doctor</div>
   <div class="ctx-item danger" id="ctx-del-edge">Delete edge</div>
   <div class="ctx-item danger" id="ctx-del-node">Delete node</div>
   <div class="ctx-item" id="ctx-group-sel" style="display:none">⊞ Group selection</div>

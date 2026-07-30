@@ -59,6 +59,13 @@
     --heat-cool: var(--success);
     --heat-warm: var(--warn);
     --heat-hot:  var(--err);
+    /* data-type port colors (adhere to active theme) */
+    --pt-image:     #4a9eff;
+    --pt-field:     #51cf66;
+    --pt-particles: #ff922b;
+    --pt-scalar:    #aaa;
+    --pt-mask:      #e8e8e8;
+    --pt-any:       #888;
     /* system (theme-independent) */
     --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'Menlo', 'Consolas', monospace;
     --radius-s: 4px;
@@ -98,6 +105,12 @@
     --viewport-bg:  #0f0c0a;
     --viewport-grid:#6b5230;
     --glow:         rgba(249,115,22,0.30);
+    --pt-image:     #93a8e8;
+    --pt-field:     #6aab7a;
+    --pt-particles: #e8925a;
+    --pt-scalar:    #9a8a7a;
+    --pt-mask:      #d4ccc4;
+    --pt-any:       #7a6a5a;
   }
 
   /* ── Theme: Flux — cold high-contrast cyan/violet, maximum separation ── */
@@ -128,6 +141,12 @@
     --viewport-bg:  #06090f;
     --viewport-grid:#38507a;
     --glow:         rgba(34,211,238,0.28);
+    --pt-image:     #6a9ef0;
+    --pt-field:     #5bc0ad;
+    --pt-particles: #e8985a;
+    --pt-scalar:    #8a9ab8;
+    --pt-mask:      #c0d0e8;
+    --pt-any:       #6a7a98;
   }
 
   /* ── Theme: Graphite — warm near-black, ember accent ── */
@@ -147,6 +166,13 @@
     --tag-fg: #c9a37a;
     --grid-dot: #34332c;
     --focus-ring: 0 0 0 2px rgba(194,98,45,0.35);
+    --wire:         #6a5a4a;
+    --pt-image:     #8a9ec8;
+    --pt-field:     #6a9b6a;
+    --pt-particles: #d8824a;
+    --pt-scalar:    #8a7a6a;
+    --pt-mask:      #c8c0b8;
+    --pt-any:       #6a625a;
   }
 
   /* ── Theme: Midnight — deep blue, neon accent (the original look) ── */
@@ -166,6 +192,13 @@
     --tag-fg: #818cf8;
     --grid-dot: #2f3650;
     --focus-ring: 0 0 0 2px rgba(108,142,245,0.32);
+    --wire:         #3a5a8a;
+    --pt-image:     #6a8ed8;
+    --pt-field:     #5a9a8a;
+    --pt-particles: #d08a5a;
+    --pt-scalar:    #7a8aa8;
+    --pt-mask:      #b0c0d8;
+    --pt-any:       #5a6a8a;
   }
 
   html, body { height: 100%; background: var(--bg0); color: var(--text); font-family: system-ui, -apple-system, sans-serif; font-size: 14px; }
@@ -252,14 +285,14 @@
      Scoped to the param panel so the timeline scrubber is untouched. */
   .param-range-wrap input[type=range] {
     -webkit-appearance: none; appearance: none; height: 6px; border-radius: 3px;
-    background: linear-gradient(90deg, #e91e8c 0%, #9b59ff 100%); outline: none; cursor: pointer;
+    background: linear-gradient(90deg, var(--accent) 0%, var(--accent2) 100%); outline: none; cursor: pointer;
   }
   .param-range-wrap input[type=range]::-webkit-slider-thumb {
     -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border-radius: 50%;
-    background: #fff; border: 2px solid #9b59ff; cursor: pointer; box-shadow: 0 0 6px rgba(155,89,255,0.5);
+    background: #fff; border: 2px solid var(--accent); cursor: pointer; box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 50%, transparent);
   }
   .param-range-wrap input[type=range]::-moz-range-thumb {
-    width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 2px solid #9b59ff; cursor: pointer;
+    width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 2px solid var(--accent); cursor: pointer;
   }
   /* ── Inline slider on node body (Input Slider) ───────────── */
   .gnode-inline-slider {
@@ -275,20 +308,21 @@
   .gnode-is-range {
     flex: 1; height: 6px; border-radius: 3px;
     -webkit-appearance: none; appearance: none;
-    background: linear-gradient(90deg, #e91e8c 0%, #9b59ff 100%);
+    background: linear-gradient(90deg, var(--accent) 0%, var(--accent2) 100%);
     outline: none; cursor: pointer;
   }
   .gnode-is-range::-webkit-slider-thumb {
     -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
-    background: #fff; border: 2px solid #9b59ff; cursor: pointer;
-    box-shadow: 0 0 6px rgba(155,89,255,0.5);
+    background: #fff; border: 2px solid var(--accent); cursor: pointer;
   }
   .gnode-is-range::-moz-range-thumb {
-    width: 14px; height: 14px; border-radius: 50%;
-    background: #fff; border: 2px solid #9b59ff; cursor: pointer;
+    width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 2px solid var(--accent); cursor: pointer;
   }
-  .gnode-is-val {
-    font-size: 12px; color: var(--muted);
+  .gnode-is-range::-webkit-slider-thumb {
+    box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 50%, transparent);
+  }
+
+  /* ── Timeline scrubber ───────────────────────────────── */
     min-width: 40px; text-align: right;
     font-variant-numeric: tabular-nums;
   }
@@ -1170,19 +1204,19 @@
   }
   .dc-add-btn:hover { border-color: var(--accent); }
 
-  .pt-image     { background: #4a9eff; }
-  .pt-field     { background: #51cf66; }
-  .pt-particles { background: #ff922b; }
-  .pt-scalar    { background: #aaa; }
-  .pt-mask      { background: #e8e8e8; border: 2px solid #333; box-sizing: border-box; }
-  .pt-any       { background: #888; }
+  .pt-image     { background: var(--pt-image); }
+  .pt-field     { background: var(--pt-field); }
+  .pt-particles { background: var(--pt-particles); }
+  .pt-scalar    { background: var(--pt-scalar); }
+  .pt-mask      { background: var(--pt-mask); border: 2px solid #333; box-sizing: border-box; }
+  .pt-any       { background: var(--pt-any); }
 
   /* ── Edges ─────────────────────────────────────────────
      Wires are neutral white; data type is carried by the port's signal
      colour (sig-numeric / control / output / event). These rules control
      weight + hover. */
   .gedge {
-    fill: none; stroke: #e8e8ec; stroke-width: 2; opacity: 0.85;
+    fill: none; stroke: var(--wire); stroke-width: 2; opacity: 0.85;
     pointer-events: stroke; cursor: pointer;
     transition: opacity 0.1s, stroke-width 0.1s, stroke 0.1s;
   }

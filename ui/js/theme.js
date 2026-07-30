@@ -36,6 +36,10 @@
   // Slate is the bare :root block, so it is the one preset with no attribute.
   const BASE_PRESET = 'slate';
 
+  // Dynamically populated from installed VS Code palettes.
+  // Structure: paletteId -> { name, desc, sw: [hex, hex, hex], css: {token: val} }
+  const DYNAMIC_PRESETS = {};
+
   // ── Token registry ─────────────────────────────────────────────
   // Drives the editor UI. `type` picks the control; order here is the order
   // shown. Only tokens listed here are user-editable — internal ones
@@ -73,6 +77,9 @@
   const COLOR_TOKENS = GROUPS.filter(g => g.type !== 'range')
                              .flatMap(g => g.tokens.map(t => t[0]));
 
+  // Port/wire tokens managed by themes but not in the editor UI.
+  const PORT_TOKENS = ['--pt-image','--pt-field','--pt-particles','--pt-scalar','--pt-mask','--pt-any','--wire'];
+
   // ── State ──────────────────────────────────────────────────────
   const read = (k, fallback) => { try { return localStorage.getItem(k) ?? fallback; } catch { return fallback; } };
   let preset = read(KEY_PRESET, DEFAULT_PRESET);
@@ -101,6 +108,7 @@
     // Clear first: a token dropped from `custom` must fall back to the preset,
     // and setProperty alone never removes anything.
     for (const t of COLOR_TOKENS) root.style.removeProperty(t);
+    for (const t of PORT_TOKENS) { root.style.removeProperty(t); delete custom[t]; }
     for (const g of GROUPS) if (g.type === 'range') for (const [t] of g.tokens) root.style.removeProperty(t);
     for (const [t, v] of Object.entries(custom)) root.style.setProperty(t, v);
   }
@@ -138,6 +146,62 @@
   if (!picker) return;
 
   // ── Preset cards ───────────────────────────────────────────────
+  function buildPickerCards() {
+    // Remove old dynamic preset cards (keep built-in ones)
+    picker.querySelectorAll('.theme-card.dynamic').forEach(c => c.remove());
+    const sep = picker.querySelector('.theme-dynamic-sep');
+    if (sep) sep.remove();
+
+    const dynKeys = Object.keys(DYNAMIC_PRESETS);
+    if (dynKeys.length) {
+      const sepEl = document.createElement('div');
+      sepEl.className = 'theme-dynamic-sep';
+      sepEl.textContent = '— Imported Palettes —';
+      sepEl.style.cssText = 'font-size:10px;color:var(--muted);text-align:center;padding:6px 0 2px;grid-column:1/-1;border-top:1px solid var(--border);margin-top:4px';
+      picker.appendChild(sepEl);
+    }
+
+    for (const [id, t] of Object.entries(DYNAMIC_PRESETS)) {
+      const card = document.createElement('button');
+      card.className = 'theme-card dynamic';
+      card.dataset.theme = id;
+      card.innerHTML =
+        `<span class="theme-swatches">${t.sw.map(c => `<i style="background:${c}"></i>`).join('')}</span>` +
+        `<span class="theme-name">${t.name}</span>` +
+        `<span class="theme-desc">${t.desc}</span>`;
+      card.addEventListener('click', () => {
+        // Clear prior overrides first — both editor tokens and port/wire tokens
+        for (const k of Object.keys(custom)) {
+          if (!COLOR_TOKENS.includes(k) && !PORT_TOKENS.includes(k) && !GROUPS.some(g => g.type==='range' && g.tokens.some(t => t[0]===k))) continue;
+          delete custom[k];
+        }
+        if (DYNAMIC_PRESETS[id]) {
+          // Apply swatch colors as CSS overrides so the UI changes visibly
+          const t = DYNAMIC_PRESETS[id];
+          custom['--bg0'] = t.sw[0];
+          custom['--bg1'] = t.sw[0];
+          custom['--accent'] = t.sw[1];
+          custom['--text'] = t.sw[2];
+          custom['--muted'] = t.sw[2];
+          custom['--border'] = t.sw[0];
+          custom['--node-bg'] = t.sw[0];
+          // Port + wire colors derived from the accent
+          custom['--wire'] = t.sw[1];
+          custom['--pt-image'] = t.sw[1];
+          custom['--pt-field'] = t.sw[1];
+          custom['--pt-particles'] = t.sw[1];
+          custom['--pt-scalar'] = t.sw[2];
+          custom['--pt-mask'] = t.sw[2];
+          custom['--pt-any'] = t.sw[0];
+        }
+        preset = id;
+        apply();
+      });
+      picker.appendChild(card);
+    }
+    syncUI();
+  }
+
   for (const [id, t] of Object.entries(PRESETS)) {
     const card = document.createElement('button');
     card.className = 'theme-card';
@@ -146,9 +210,91 @@
       `<span class="theme-swatches">${t.sw.map(c => `<i style="background:${c}"></i>`).join('')}</span>` +
       `<span class="theme-name">${t.name}</span>` +
       `<span class="theme-desc">${t.desc}</span>`;
-    card.addEventListener('click', () => { preset = id; apply(); });
+    card.addEventListener('click', () => {
+      // Clearing any leftover dynamic-preset overrides so the built-in
+      // CSS preset (from editor.css) shows cleanly — includes port/wire tokens.
+      for (const k of Object.keys(custom)) {
+        if (!COLOR_TOKENS.includes(k) && !PORT_TOKENS.includes(k) && !GROUPS.some(g => g.type==='range' && g.tokens.some(t => t[0]===k))) continue;
+        delete custom[k];
+      }
+      preset = id;
+      apply();
+    });
     picker.appendChild(card);
   }
+
+  // ── Load imported palettes as theme presets ─────────────────
+  function loadDynamicPresets() {
+    // Only fetch user-category palettes
+    fetch('/api/palettes/categories')
+      .then(r => r.json())
+      .then(cats => {
+        const userNames = (cats.user || []).filter(n => n !== 'none');
+        // Remove stale dynamic presets
+        for (const k of Object.keys(DYNAMIC_PRESETS)) {
+          if (!userNames.includes(k)) delete DYNAMIC_PRESETS[k];
+        }
+        // Fetch swatches for each user palette and create a preset
+        const fetches = userNames.map(name =>
+          fetch(`/api/palettes/info?name=${encodeURIComponent(name)}`)
+            .then(r => r.json())
+            .then(info => {
+              if (info.error) return;
+              const swatches = info.swatches || info.preview;
+              // Derive 3 swatch colors from the palette
+              // Darkest → surface, mid-high saturation → accent, lightest → text
+              let accent = '#666';
+              let surface = '#111';
+              let text = '#ddd';
+              if (info.preview) {
+                const first = info.preview.first_3;
+                const last = info.preview.last_3;
+                if (first && first.length) surface = '#' + first[0].map(c => c.toString(16).padStart(2,'0')).join('');
+                if (last && last.length) text = '#' + last[last.length-1].map(c => c.toString(16).padStart(2,'0')).join('');
+                // Pick a mid-range color for accent (use info.swatches or derive)
+                if (info.count > 4) {
+                  // We'll get the actual swatches via a second call
+                  // For now use the brightest swatch - shift toward center
+                }
+              }
+              // Better: get actual swatches
+              return fetch(`/api/palettes/swatches?name=${encodeURIComponent(name)}`)
+                .then(r => r.json())
+                .then(swData => {
+                  if (swData.error || !swData.swatches || swData.swatches.length < 3) return;
+                  const s = swData.swatches;
+                  const n = s.length;
+                  const hex = (c) => '#' + c.map(v => v.toString(16).padStart(2,'0')).join('');
+                  const lum = (c) => 0.299*c[0] + 0.587*c[1] + 0.114*c[2];
+                  // Surface = ~10th percentile darkness
+                  const darkIx = Math.max(0, Math.floor(n * 0.08));
+                  const surface = hex(s[darkIx]);
+                  // Text = ~90th percentile brightness
+                  const lightIx = Math.min(n-1, Math.floor(n * 0.92));
+                  const text = hex(s[lightIx]);
+                  // Accent = most saturated color (max chroma)
+                  const chroma = s.map(c => Math.max(c[0],c[1],c[2]) - Math.min(c[0],c[1],c[2]));
+                  const accentIx = chroma.indexOf(Math.max(...chroma));
+                  const accent = hex(s[accentIx]);
+                  const displayName = info.name.replace(/_/g,' ').replace(/\b\w/g, l => l.toUpperCase());
+                  DYNAMIC_PRESETS[info.name] = {
+                    name: displayName.length > 40 ? displayName.slice(0,40)+'…' : displayName,
+                    desc: `${info.count} colors · imported`,
+                    sw: [surface, accent, text],
+                  };
+                  buildPickerCards();
+                });
+            })
+            .catch(() => {})
+        );
+        return Promise.allSettled(fetches);
+      })
+      .catch(() => {});
+  }
+
+  // Load dynamic presets now and expose for external refresh
+  loadDynamicPresets();
+  window._refreshPalettePresets = loadDynamicPresets;
 
   if (!editor) { syncUI(); return; }
 
@@ -282,6 +428,16 @@
   window.gTheme = {
     get: currentValue,
     preset: () => preset,
-    apply: (id) => { if (PRESETS[id]) { preset = id; apply(); } },
+    apply: (id) => {
+      if (PRESETS[id] || DYNAMIC_PRESETS[id]) {
+        // Clear stale port/wire overrides from custom when switching via API
+        for (const t of PORT_TOKENS) {
+          delete custom[t];
+          root.style.removeProperty(t);
+        }
+        preset = id;
+        apply();
+      }
+    },
   };
 })();

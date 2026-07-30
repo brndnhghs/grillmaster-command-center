@@ -1067,6 +1067,273 @@ def list_palettes():
     return list(PALETTES.keys())
 
 
+@app.get("/api/palettes/categories")
+def list_palette_categories():
+    """Return palette names partitioned by source category."""
+    from image_pipeline.core.palette_registry import list_categories
+    return list_categories()
+
+
+@app.get("/api/palettes/info")
+def palette_info(name: str):
+    """Return metadata for a palette: swatch count, source, preview (first/last 3 colors)."""
+    from image_pipeline.core.palette_registry import get, get_source
+    swatches = get(name)
+    if swatches is None:
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"error": f"palette '{name}' not found"}, status_code=404)
+    return {
+        "name": name,
+        "source": get_source(name),
+        "count": len(swatches),
+        "preview": {
+            "first_3": swatches[:3],
+            "last_3": swatches[-3:] if len(swatches) >= 3 else swatches,
+        },
+    }
+
+
+@app.get("/api/palettes/swatches")
+def palette_swatches(name: str):
+    """Return the full swatch list for a palette."""
+    from image_pipeline.core.palette_registry import get
+    swatches = get(name)
+    if swatches is None:
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"error": f"palette '{name}' not found"}, status_code=404)
+    return {"name": name, "swatches": swatches}
+
+
+@app.post("/api/palettes/install")
+def install_palette_url(url: str, name: str = ""):
+    """Install a palette from a raw theme JSON URL (VS Code theme or colormap JSON).
+
+    If *name* is empty, auto-derive from the JSON's ``name`` field.
+    Returns the registered palette name + swatch count.
+    """
+    import json as _json
+    import urllib.request as _req
+
+    from image_pipeline.core.palette_registry import (
+        register,
+        extract_colors_from_vscode_theme,
+    )
+
+    try:
+        with _req.urlopen(url, timeout=15) as resp:
+            theme = _json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            {"error": f"Failed to fetch/parse URL: {exc}"}, status_code=400
+        )
+
+    swatches = extract_colors_from_vscode_theme(theme)
+    if len(swatches) < 2:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            {"error": f"Only {len(swatches)} unique colors extracted — need at least 2"},
+            status_code=400,
+        )
+
+    palette_name = name or theme.get("name", "unknown").lower().replace(" ", "-")
+    register(palette_name, swatches)
+    return {
+        "name": palette_name,
+        "count": len(swatches),
+    }
+
+
+@app.get("/api/palettes/marketplace-search")
+def marketplace_search(query: str):
+    """Search VS Code Marketplace for theme extensions.
+
+    Returns a list of matching themes with publisher, display name, rating, installs.
+    """
+    import json as _json
+    import urllib.request as _req
+
+    url = "https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery"
+    payload = {
+        "filters": [
+            {
+                "criteria": [
+                    {"filterType": 5, "value": "Themes"},
+                    {"filterType": 10, "value": query},
+                ],
+                "pageNumber": 1,
+                "pageSize": 20,
+                "sortBy": 4,
+                "sortOrder": 0,
+            }
+        ],
+        "flags": 0x304,  # IncludeLatestVersionOnly | IncludeStatistics | IncludeCategoryAndTags
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json;api-version=7.2-preview.1",
+    }
+    try:
+        req = _req.Request(url, data=_json.dumps(payload).encode(), headers=headers, method="POST")
+        with _req.urlopen(req, timeout=15) as resp:
+            data = _json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            {"error": f"Marketplace search failed: {exc}"}, status_code=502
+        )
+
+    results = []
+    for ext in data.get("results", [{}])[0].get("extensions", []):
+        stats = ext.get("statistics", [])
+        stat_map = {s["statisticName"]: s.get("value", 0) for s in stats}
+        results.append(
+            {
+                "publisher": ext.get("publisher", {}).get("publisherName", ""),
+                "extensionName": ext.get("extensionName", ""),
+                "extensionId": f"{ext.get('publisher', {}).get('publisherName', '')}.{ext.get('extensionName', '')}",
+                "displayName": ext.get("displayName", ""),
+                "description": (ext.get("shortDescription") or "")[:200],
+                "version": ext.get("versions", [{}])[0].get("version", ""),
+                "rating": round(stat_map.get("averagerating", 0), 1),
+                "ratingCount": int(stat_map.get("ratingcount", 0)),
+                "installCount": int(stat_map.get("install", 0)),
+                "iconUrl": "",
+            }
+        )
+    # Find icon URLs
+    for ext in data.get("results", [{}])[0].get("extensions", []):
+        for version in ext.get("versions", []):
+            for asset in version.get("files", []):
+                if asset.get("assetType") == "Microsoft.VisualStudio.Services.Icons.Default":
+                    for r in results:
+                        if r["extensionName"] == ext.get("extensionName", ""):
+                            r["iconUrl"] = asset.get("source", "")
+                    break
+
+    return {"results": results, "count": len(results)}
+
+
+@app.get("/api/marketplace-install/{extension_id}")
+def marketplace_install(extension_id: str):
+    """Install a VS Code Marketplace theme by extension ID (publisher.extensionName).
+
+    Downloads the VSIX, extracts the first theme JSON, converts colors to a palette,
+    and registers it. Returns the registered palette name and swatch count.
+    """
+    import io as _io
+    import json as _json
+    import zipfile as _zipfile
+    import urllib.request as _req
+
+    from image_pipeline.core.palette_registry import (
+        register,
+        extract_colors_from_vscode_theme,
+    )
+
+    parts = extension_id.split(".", 1)
+    if len(parts) != 2:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            {"error": f"Invalid extension ID '{extension_id}'. Expected format: publisher.extensionName"},
+            status_code=400,
+        )
+    publisher, ext_name = parts
+
+    # Look up via Marketplace API
+    url = "https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery"
+    payload = {
+        "filters": [{
+            "criteria": [{"filterType": 7, "value": extension_id}],
+            "pageNumber": 1, "pageSize": 1, "sortBy": 0, "sortOrder": 0,
+        }],
+        "flags": 0x312,
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json;api-version=7.2-preview.1",
+    }
+    try:
+        req = _req.Request(url, data=_json.dumps(payload).encode(), headers=headers, method="POST")
+        with _req.urlopen(req, timeout=15) as resp:
+            data = _json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"error": f"Lookup failed: {exc}"}, status_code=502)
+
+    extensions = data.get("results", [{}])[0].get("extensions", [])
+    if not extensions:
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"error": f"Extension '{extension_id}' not found"}, status_code=404)
+
+    ext = extensions[0]
+    display_name = ext.get("displayName", ext_name)
+    version_data = ext.get("versions", [{}])[0]
+
+    # Find VSIX URL
+    vsix_url = None
+    for f in version_data.get("files", []):
+        if f.get("assetType") == "Microsoft.VisualStudio.Services.VSIXPackage":
+            vsix_url = f.get("source", "")
+            break
+
+    if not vsix_url:
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"error": "No VSIX URL found"}, status_code=404)
+
+    # Download VSIX
+    try:
+        with _req.urlopen(vsix_url, timeout=30) as resp:
+            vsix_data = resp.read()
+    except Exception as exc:
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"error": f"VSIX download failed: {exc}"}, status_code=502)
+
+    # Extract theme JSON from VSIX
+    theme_json_data = None
+    with _zipfile.ZipFile(_io.BytesIO(vsix_data)) as zf:
+        candidates = sorted(
+            p for p in zf.namelist()
+            if p.endswith(".json") and ("theme" in p.lower() or "color" in p.lower())
+        )
+        if not candidates:
+            candidates = sorted(
+                p for p in zf.namelist()
+                if p.endswith(".json") and "package" not in p.lower()
+            )
+        for candidate in candidates:
+            try:
+                raw = zf.read(candidate)
+                parsed = _json.loads(raw)
+                if isinstance(parsed, dict) and ("colors" in parsed or "tokenColors" in parsed):
+                    theme_json_data = parsed
+                    break
+            except Exception:
+                continue
+
+    if theme_json_data is None:
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"error": "No parsable theme JSON found in VSIX"}, status_code=400)
+
+    swatches = extract_colors_from_vscode_theme(theme_json_data)
+    if len(swatches) < 2:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            {"error": f"Only {len(swatches)} unique colors extracted — need at least 2"},
+            status_code=400,
+        )
+
+    # Derive palette name from extension name
+    palette_name = ext_name.replace("-", "_").replace(".", "_").lower()
+    register(palette_name, swatches)
+
+    return {
+        "palette_name": palette_name,
+        "swatch_count": len(swatches),
+        "display_name": display_name,
+    }
+
+
 @app.get("/api/graph/wire-payload/{job_id}/{src_node_id}")
 def get_wire_payload(job_id: str, src_node_id: str):
     """Return the payload manifest for a node output (keys + port types)."""

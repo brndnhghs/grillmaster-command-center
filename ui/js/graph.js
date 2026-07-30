@@ -1595,7 +1595,7 @@ function gRenderGroupNode(node) {
     document.querySelectorAll('.gnode.render-target').forEach(n => n.classList.remove('render-target'));
     node.render = !wasActive;
     if (node.render) { e.currentTarget.classList.add('active'); el.classList.add('render-target'); }
-    gSave();
+    gSave(); gDoAutoGen();
   });
 
   let _tapStart = null;
@@ -2478,7 +2478,7 @@ function gRenderNode(node) {
       e.currentTarget.classList.add('active');
       el.classList.add('render-target');
     }
-    gSave();
+    gSave(); gDoAutoGen();
   });
   // Tap-to-select: only open params on short tap, not after a drag
   const _isBtn = t => t.classList.contains('gport') || t.classList.contains('gnode-delete') || t.classList.contains('gnode-render');
@@ -2737,7 +2737,7 @@ function gAddEdge(src_node, src_port, dst_node, dst_port, evt) {
       gEdges.push({ id: 'e'+(++gEdgeCounter), src_node: mergeNode.id,      src_port: spec.out_port,     dst_node,               dst_port,                feedback: false });
       gUpdateConnectedPorts();
       if (gSelectedNode === dst_node) gRefreshParamOverrides(dst_node);
-      gRedrawEdges(); gSave();
+      gRedrawEdges(); gSave(); gDoAutoGen();
       return;
     }
 
@@ -2748,14 +2748,14 @@ function gAddEdge(src_node, src_port, dst_node, dst_port, evt) {
   gEdges.push({ id: 'e'+(++gEdgeCounter), src_node, src_port, dst_node, dst_port, feedback: false });
   gUpdateConnectedPorts();
   if (gSelectedNode === dst_node) gRefreshParamOverrides(dst_node);
-  gRedrawEdges(); gSave();
+  gRedrawEdges(); gSave(); gDoAutoGen();
 }
 function gDeleteEdge(id) {
   const edge = gEdges.find(e => e.id === id);
   gEdges = gEdges.filter(e => e.id !== id);
   gUpdateConnectedPorts();
   if (edge && gSelectedNode === edge.dst_node) gRefreshParamOverrides(edge.dst_node);
-  gRedrawEdges(); gSave();
+  gRedrawEdges(); gSave(); gDoAutoGen();
 }
 function gDeleteNode(id) {
   gNodes = gNodes.filter(n => n.id !== id);
@@ -2772,7 +2772,7 @@ function gDeleteNode(id) {
   // clipboard's paste path resolves an empty fragment.
   gSelectedNodes.delete(id);
   gUpdateConnectedPorts();
-  gRedrawEdges(); gSave();
+  gRedrawEdges(); gSave(); gDoAutoGen();
 }
 
 // Keep the edge-id counter ahead of every edge already in the document.
@@ -3451,6 +3451,7 @@ function gShowEdgeCtx(eid, x, y) {
   gSelectedEdge = eid; gCtxTarget = 'edge';
   document.getElementById('ctx-del-node').style.display = 'none';
   document.getElementById('ctx-source').style.display = 'none';
+  document.getElementById('ctx-node-doctor').style.display = 'none';
   document.getElementById('ctx-del-edge').style.display = '';
   document.getElementById('ctx-feedback').style.display = '';
   const edge = gEdges.find(e => e.id===eid);
@@ -3480,6 +3481,7 @@ gNodesEl.addEventListener('contextmenu', e => {
   document.getElementById('ctx-feedback').style.display = 'none';
   // Source code only applies to real (registry-backed) nodes, not groups.
   document.getElementById('ctx-source').style.display = isGroup ? 'none' : '';
+  document.getElementById('ctx-node-doctor').style.display = isGroup ? 'none' : '';
   document.getElementById('ctx-group-sel').style.display = hasMultiSel ? '' : 'none';
   document.getElementById('ctx-ungroup').style.display = isGroup ? '' : 'none';
   // Group nodes have no method_id, so there is no source file to flag.
@@ -3495,6 +3497,13 @@ document.getElementById('ctx-flag-broken').addEventListener('click', () => {
   if (gSelectedNode) gOpenBrokenFlagModal(gSelectedNode);
 });
 document.getElementById('ctx-source').addEventListener('click', () => { gCtxMenu.style.display='none'; if (gSelectedNode) gOpenNodeSource(gSelectedNode); });
+document.getElementById('ctx-node-doctor').addEventListener('click', () => {
+  gCtxMenu.style.display='none';
+  if (gSelectedNode) {
+    const def = gNodeDefs[gSelectedNode.method_id];
+    ndPrefill(`Working on node “${def ? def.name : gSelectedNode.method_id}” — what would you like to change?`);
+  }
+});
 document.getElementById('ctx-group-sel').addEventListener('click', () => { gCtxMenu.style.display='none'; gGroupSelectedNodes(); });
 document.getElementById('ctx-ungroup').addEventListener('click', () => { gCtxMenu.style.display='none'; if (gSelectedNode) gUngroup(gSelectedNode); });
 document.addEventListener('click', () => { gCtxMenu.style.display='none'; });

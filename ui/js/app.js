@@ -86,6 +86,9 @@ async function loadMethods() {
     allMethods = await res.json();
     gPalettes  = await palRes.json();
     renderMethodList(allMethods);
+    // Update palette count in settings (if settings panel was already opened)
+    const cntHint = document.getElementById('palette-count-hint');
+    if (cntHint) cntHint.textContent = `${gPalettes.length} palettes available`;
   } catch (e) {
     methodList.innerHTML = `<p style="padding:16px 14px;color:var(--err)">Failed to load methods: ${e.message}</p>`;
   }
@@ -425,7 +428,23 @@ function renderParamField(key, spec) {
 
   // 0c. Curve editor — interactive control-point graph for curve/easing params
   if (spec.widget === 'curve_editor' || key === 'control_points') {
-    return renderCurveEditor(key, spec);
+    return `<div class="param-row curve-editor">
+      <div class="param-label">
+        <span class="param-name">${escHtml(key)}</span>
+        <span class="param-desc">${escHtml(desc)}</span>
+      </div>
+      <div class="curve-editor-inner">
+        <svg class="curve-editor-canvas" id="ce_${escHtml(key)}" viewBox="0 0 1 1" preserveAspectRatio="none">
+          <line class="ce-grid" x1="0.00" y1="0.25" x2="1.00" y2="0.25"/>
+          <line class="ce-grid" x1="0.00" y1="0.50" x2="1.00" y2="0.50"/>
+          <line class="ce-grid" x1="0.00" y1="0.75" x2="1.00" y2="0.75"/>
+          <line class="ce-grid" x1="0.25" y1="0.00" x2="0.25" y2="1.00"/>
+          <line class="ce-grid" x1="0.50" y1="0.00" x2="0.50" y2="1.00"/>
+          <line class="ce-grid" x1="0.75" y1="0.00" x2="0.75" y2="1.00"/>
+          <path class="ce-curve" id="ce_${escHtml(key)}_path" d="M0,1 L1,0"/>
+        </svg>
+      </div>
+    </div>`;
   }
 
   // 1. Explicit choices array on the spec
@@ -484,26 +503,7 @@ function renderParamField(key, spec) {
     </div>`;
   }
 
-  // 5b. Curve editor widget — interactive SVG curve for control_points etc.
-  if (spec.widget === 'curve_editor') {
-    return `<div class="param-row curve-editor">
-      <div class="param-label">
-        <span class="param-name">${escHtml(key)}</span>
-        <span class="param-desc">${escHtml(desc)}</span>
-      </div>
-      <div class="curve-editor-inner">
-        <svg class="curve-editor-canvas" id="ce_${escHtml(key)}" viewBox="0 0 1 1" preserveAspectRatio="none">
-          <line class="ce-grid" x1="0.00" y1="0.25" x2="1.00" y2="0.25"/>
-          <line class="ce-grid" x1="0.00" y1="0.50" x2="1.00" y2="0.50"/>
-          <line class="ce-grid" x1="0.00" y1="0.75" x2="1.00" y2="0.75"/>
-          <line class="ce-grid" x1="0.25" y1="0.00" x2="0.25" y2="1.00"/>
-          <line class="ce-grid" x1="0.50" y1="0.00" x2="0.50" y2="1.00"/>
-          <line class="ce-grid" x1="0.75" y1="0.00" x2="0.75" y2="1.00"/>
-          <path class="ce-curve" id="ce_${escHtml(key)}_path" d="M0,1 L1,0"/>
-        </svg>
-      </div>
-    </div>`;
-  }
+  // 5b. (handled above at 0c — this block is no longer reached)
 
   // 5. String fallback — free text
   return `<div class="param-row">
@@ -842,4 +842,128 @@ attachDivider(
 
 // ── Init ───────────────────────────────────────────────────────────
 loadMethods();
+
+// ── Palette marketplace (inside Settings gear panel) ─────────────
+
+function initPaletteMarketplace() {
+  const searchInput = document.getElementById('palette-search-input');
+  const searchBtn = document.getElementById('palette-search-btn');
+  const resultsEl = document.getElementById('palette-search-results');
+  const outputEl = document.getElementById('palette-output');
+  const countHint = document.getElementById('palette-count-hint');
+  const refreshBtn = document.getElementById('palette-refresh-btn');
+
+  function updateCount() {
+    countHint.textContent = `${gPalettes.length} palettes available`;
+  }
+
+  function doSearch() {
+    const q = searchInput.value.trim();
+    if (!q) return;
+    resultsEl.innerHTML = '<div style="color:var(--muted);padding:12px;text-align:center">Searching...</div>';
+    outputEl.textContent = '';
+    fetch(`/api/palettes/marketplace-search?query=${encodeURIComponent(q)}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) {
+          resultsEl.innerHTML = `<div style="color:var(--err);padding:12px;text-align:center">${escHtml(data.error)}</div>`;
+          return;
+        }
+        if (!data.results || !data.results.length) {
+          resultsEl.innerHTML = '<div style="color:var(--muted);padding:12px;text-align:center">No results.</div>';
+          return;
+        }
+        let html = '<table style="width:100%;border-collapse:collapse;font-size:11px">';
+        for (const r of data.results) {
+          const stars = r.rating > 0
+            ? '★'.repeat(Math.round(r.rating)) + '☆'.repeat(5 - Math.round(r.rating))
+            : '–';
+          const installed = gPalettes.includes(r.extensionName.replace(/-/g,'_').toLowerCase());
+          html += `<tr style="border-bottom:1px solid var(--bg2)">
+            <td style="padding:4px 6px"><b>${escHtml(r.displayName)}</b><br><span style="color:var(--muted)">${escHtml(r.publisher)}</span></td>
+            <td style="padding:4px 6px;color:var(--warn);text-align:center;white-space:nowrap">${stars}<br><span style="color:var(--muted);font-size:10px">${r.rating > 0 ? r.rating.toFixed(1) : ''}</span></td>
+            <td style="padding:4px 6px;color:var(--muted);text-align:right;font-size:10px">${r.installCount > 0 ? (r.installCount / 1e6).toFixed(1) + 'M' : ''}</td>
+            <td style="padding:4px 6px;text-align:center">
+              ${installed
+                ? '<span style="color:var(--ok);font-size:11px">✓</span>'
+                : `<button class="pi-btn" data-eid="${escHtml(r.extensionId)}" data-name="${escHtml(r.displayName)}" style="padding:2px 10px;border-radius:3px;border:1px solid var(--accent);background:transparent;color:var(--accent);cursor:pointer;font-size:11px">+ Install</button>`
+              }
+            </td>
+          </tr>`;
+        }
+        html += '</table>';
+        resultsEl.innerHTML = html;
+      })
+      .catch(err => {
+        resultsEl.innerHTML = `<div style="color:var(--err);padding:12px;text-align:center">Error: ${escHtml(err.message)}</div>`;
+      });
+  }
+
+  // Install handler (delegation)
+  resultsEl.addEventListener('click', e => {
+    const btn = e.target.closest('.pi-btn');
+    if (!btn) return;
+    const eid = btn.dataset.eid;
+    const name = btn.dataset.name;
+    btn.disabled = true;
+    btn.textContent = '⏳';
+    outputEl.textContent = `Installing ${name}...`;
+
+    fetch(`/api/marketplace-install/${encodeURIComponent(eid)}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) {
+          outputEl.style.color = 'var(--err)';
+          outputEl.textContent = `Failed: ${data.error}`;
+          btn.disabled = false;
+          btn.textContent = '+ Install';
+          return;
+        }
+        outputEl.style.color = 'var(--ok)';
+        outputEl.textContent = `✓ Installed '${data.palette_name}' (${data.swatch_count} colors)`;
+
+        // Refresh global palette list
+        fetch('/api/palettes').then(r => r.json()).then(pals => {
+          gPalettes = pals;
+          updateCount();
+          doSearch(); // re-render results to show ✓
+        });
+        // Refresh theme picker cards
+        if (window._refreshPalettePresets) window._refreshPalettePresets();
+
+        btn.textContent = '✓';
+        btn.style.borderColor = 'var(--ok)';
+        btn.style.color = 'var(--ok)';
+        btn.disabled = true;
+      })
+      .catch(err => {
+        outputEl.style.color = 'var(--err)';
+        outputEl.textContent = `Error: ${err.message}`;
+        btn.disabled = false;
+        btn.textContent = '+ Install';
+      });
+  });
+
+  searchBtn.addEventListener('click', doSearch);
+  searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+  refreshBtn.addEventListener('click', () => {
+    fetch('/api/palettes').then(r => r.json()).then(pals => {
+      gPalettes = pals;
+      updateCount();
+      outputEl.textContent = 'Palette list refreshed';
+    });
+  });
+
+  // Update count whenever settings is opened (settings-close-btn's sibling events)
+  updateCount();
+
+  // Also wire the settings-close-btn to clear search on close (not necessary but nice)
+  document.getElementById('settings-close-btn').addEventListener('click', () => {
+    resultsEl.innerHTML = '';
+    outputEl.textContent = '';
+  });
+}
+
+// Init when DOM is ready
+document.addEventListener('DOMContentLoaded', initPaletteMarketplace);
 

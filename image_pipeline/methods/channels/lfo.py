@@ -157,33 +157,41 @@ def method_lfo(out_dir: Path, seed: int, params=None):
     # play/pause/reset interact correctly. Without _node_id (standalone
     # / test calls), fall back to pure frame-based computation (identical
     # to original behavior).
+    #
+    # Phase is accumulated in radians, not raw frames.  This means changing
+    # `rate` mid-sweep only affects the *forward* increment size and does
+    # NOT retroactively shift the accumulated phase (no phase jump on
+    # rate change).
     global _LFO_PRUNE_COUNTER
     _LFO_PRUNE_COUNTER += 1
 
     reset_active = False
     if node_id:
         state = _LFO_STATE.setdefault(node_id, {
-            "playing_frame": frame,
+            "accumulated_phase": None,  # lazy-init from first frame + rate
             "prev_resetpulse": 0.0,
             "prev_reset": 0.0,
             "prev_frame": frame,
+            "initialized": False,
         })
 
+        # ── Instantaneous omega for forward increment ──
+        # Computed here (once) so lazy-init and advance use the same rate.
+        omega = 2.0 * math.pi * rate / max(1.0, fps)
+
         # ── Frame delta — only accumulate when playing ──
-        # NOTE: if the timeline frame regresses (scrubbing backward) we detect
-        # it here and resync playing_frame so the LFO doesn't freeze.  The
-        # `max(0, ...)` guard handles single-frame skips; the regression check
-        # handles multi-frame backward jumps.
         _delta = max(0, frame - state["prev_frame"]) if play else 0
         state["prev_frame"] = frame
-        if _delta <= 0 and not play and frame < state.get("prev_regression_check", frame):
-            state["playing_frame"] = frame
-        state["prev_regression_check"] = frame
+
+        # ── Lazy init accumulated phase from first frame + current rate ──
+        if not state["initialized"]:
+            state["accumulated_phase"] = (frame * omega) % (2 * math.pi)
+            state["initialized"] = True
 
         # ── Reset pulse (button — rising edge detection) ──
         if resetpulse_val and not state.get("prev_resetpulse", 0.0):
             reset_active = True
-            state["playing_frame"] = 0
+            state["accumulated_phase"] = 0.0
         state["prev_resetpulse"] = 1.0 if resetpulse_val else 0.0
 
         # ── Reset condition from SCALAR input ──
@@ -193,50 +201,44 @@ def method_lfo(out_dir: Path, seed: int, params=None):
                 prev_reset = state.get("prev_reset", 0.0)
                 if resetcondition == "rising_edge" and prev_reset <= 0.5 < _reset_in:
                     reset_active = True
-                    state["playing_frame"] = 0
+                    state["accumulated_phase"] = 0.0
                 elif resetcondition == "falling_edge" and prev_reset >= 0.5 > _reset_in:
                     reset_active = True
-                    state["playing_frame"] = 0
+                    state["accumulated_phase"] = 0.0
                 elif resetcondition == "high" and _reset_in > 0.5 and prev_reset <= 0.5:
                     reset_active = True
-                    state["playing_frame"] = 0
+                    state["accumulated_phase"] = 0.0
                 elif resetcondition == "low" and _reset_in < 0.5 and prev_reset >= 0.5:
                     reset_active = True
-                    state["playing_frame"] = 0
+                    state["accumulated_phase"] = 0.0
                 state["prev_reset"] = float(_reset_in)
 
         # ── Reset toggle ──
         if not reset_active and reset_val:
             reset_active = True
-            state["playing_frame"] = 0
+            state["accumulated_phase"] = 0.0
 
-        # ── Advance frame only when playing — no jump on resume ──
-        if not play:
-            # Paused — hold playing_frame where it is
-            pass
-        elif reset_active:
-            state["playing_frame"] = 0
-        else:
-            state["playing_frame"] += _delta
+        # ── Advance accumulated phase only when playing ──
+        if play and not reset_active and _delta > 0:
+            state["accumulated_phase"] = (
+                state["accumulated_phase"] + omega * _delta) % (2 * math.pi)
 
-        # Use stateful frame
-        frame = state["playing_frame"]
+        # Compute phase from accumulated phase + offset
+        phase = (state["accumulated_phase"] + phase_offset * 2 * math.pi) % (2 * math.pi)
+        phase_norm = phase / (2 * math.pi)
 
         # Lazy prune: only every ~1000 invocations
         if _LFO_PRUNE_COUNTER % 1000 == 0:
-            _cutoff = frame - 7200
             for _nid in list(_LFO_STATE):
-                if _LFO_STATE[_nid].get("playing_frame", 0) < _cutoff:
+                if frame - _LFO_STATE[_nid].get("prev_frame", 0) > 7200:
                     del _LFO_STATE[_nid]
 
 
-    # ── Compute phase ───────────────────────────────────────────────────
-    # `rate` is documented as cycles-per-second (Hz): one full cycle spans
-    # `fps / rate` frames, so phase advances by `2*pi*rate/fps` radians PER
-    # FRAME (angular frequency omega). True Hz makes low-rate LFOs sweep.
-    _omega = 2.0 * math.pi * rate / max(1.0, fps)
-    phase = (frame * _omega + phase_offset * 2 * math.pi) % (2 * math.pi)
-    phase_norm = phase / (2 * math.pi)  # [0, 1) for frontend playhead
+    # ── Fallback phase for standalone / test calls (no node_id) ─────────
+    if not node_id:
+        _fallback_omega = 2.0 * math.pi * rate / max(1.0, fps)
+        phase = (frame * _fallback_omega + phase_offset * 2 * math.pi) % (2 * math.pi)
+        phase_norm = phase / (2 * math.pi)  # [0, 1) for frontend playhead
 
     # ── Compute waveform value in [-1, 1] ───────────────────────────────
     if waveform == "sine":
