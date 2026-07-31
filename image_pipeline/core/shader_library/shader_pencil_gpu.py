@@ -1,0 +1,22 @@
+"""shader_pencil_gpu — GPU shader registration (dynamically loaded by core/shaders.py)."""
+
+from ._registry import _register
+from ._helpers import _filter_typed
+
+
+
+_register("shader_pencil_gpu", "GPU pencil sketch", "filter", _filter_typed('''
+    float gx = 0.0, gy = 0.0;
+    for (int x = -1; x <= 1; x++) {
+        for (int y = -1; y <= 1; y++) {
+            vec2 off = vec2(float(x), float(y)) * step;
+            float v = dot(texture(u_texture, uv + off).rgb, vec3(0.299, 0.587, 0.114));
+            gx += float(x) * v; gy += float(y) * v;
+        }
+    }
+    float edge = sqrt(gx*gx + gy*gy);
+    float sketch = 1.0 - edge * 4.0;
+    f_color = vec4(mix(orig.rgb, vec3(sketch), u_strength), 1.0);
+'''), uniforms={
+    "strength": {"glsl": "float", "min": 0.0, "max": 1.0, "default": 0.5, "description": "pencil strength"},
+})

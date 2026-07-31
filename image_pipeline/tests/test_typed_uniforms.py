@@ -169,10 +169,10 @@ def test_gradient_into_ascii_chain():
     try:
         ex = GraphExecutor(out, in_memory=True, audit_to_disk=False)
         nodes = [
-            {"id": "g", "method_id": "220",
+            {"id": "g", "method_id": "209",
              "params": {"mode": "linear", "color_a": "#000000", "color_b": "#ffffff"},
              "dirty": True},
-            {"id": "a", "method_id": "221", "params": {"mode": "terminal"},
+            {"id": "a", "method_id": "210", "params": {"mode": "terminal"},
              "dirty": True, "render": True},
         ]
         edges = [{"src_node": "g", "src_port": "image", "dst_node": "a", "dst_port": "image_in"}]
@@ -593,6 +593,7 @@ def test_pt15_typed_animates(sname):
     a = np.asarray(render_shader(sname, (96, 64), named_params=named, time=0.0), dtype=float)
     b = np.asarray(render_shader(sname, (96, 64), named_params=named, time=3.14159265), dtype=float)
     assert np.abs(a - b).mean() > 0.05, f"{sname}: no animation between t=0 and t=π (Δ={np.abs(a-b).mean():.3f})"
+
 
 
 

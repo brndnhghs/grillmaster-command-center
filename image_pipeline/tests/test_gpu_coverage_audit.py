@@ -53,8 +53,13 @@ from image_pipeline.methods.gpu_shaders import GPU_SHADER_NODE_MAP
 # 309 -> 312: +3 closed-form typed-uniform procedural twins (995/950/967).
 # 312 -> 314: +2 closed-form typed-uniform filter twins (445/489).
 # 314 -> 316: +2 closed-form typed-uniform procedural twins (353/416).
+# 316 -> 326: the 85512e2 id-renumbering re-keyed the shims and left the map
+#             at 326 (the guard had drifted two behind; pre-renumbering it
+#             was 327). Synced to the real count.
+# 326 -> 328: +2 typed-uniform filter nodes (503 Pixel Sort A, 504 Pixel Sort B).
+# 328 -> 325: -3 pixel-sort nodes removed (180 GPU Pixel Sort, 503 Pixel Sort A,
+#             504 Pixel Sort B) — shaders + registrations deleted.
 EXPECTED_MAP_ENTRIES = 325
-#             gpu-twin-candidate CPU nodes (431, 432, 433, 464).
 
 # Simulations-category CPU nodes that are intentionally NOT GPU-mirrored yet.
 # These are Architecture-A stateful sims (discrete CA, agent/particle systems,
@@ -62,13 +67,14 @@ EXPECTED_MAP_ENTRIES = 325
 # browser WebGL2 parity — out of scope for headless verification. If you port
 # one, remove it from this set AND add the appropriate CLIENT_GPU_SIMS entry.
 DEFERRED_SIM_IDS = set(
-    "20 34 35 36 55 79 83 84 88 92 94 97 98 101 102 103 "
-    "107 109 110 111 112 113 114 116 117 123 129 130 134 "
-    "136 145 147 149 151 152 158 159 167 337 429 440 448 922 310 "
-    "483 484 517 951 966 560 518 530 532 970 971 974 "
-    # 1007 MLS-MPM: Material-Point-Method continuum solver — heavy, not a
-    # ping-pong-twin candidate (no closed-form per-pixel update), defer.
-    "915 993 998 359 996 1000 1007".split()
+    # Post-renumbering (85512e2) sequential ids of every `simulations` node
+    # without a GPU mirror. The historical notes above explain the deferral
+    # classes; the ids they cite were renumbered — these are the CURRENT ids.
+    "20 32 33 34 53 74 78 79 82 84 86 89 90 93 94 95 99 "
+    "101 102 103 104 105 106 107 108 114 120 121 125 127 "
+    "136 138 140 142 143 148 149 156 299 324 346 369 380 "
+    "388 409 410 434 435 443 445 450 451 452 460 471 475 "
+    "476 478 488 491 493 495 501".split()
 )
 # 1000 Lattice Boltzmann Fluid (D2Q9 BGK): Arch-A CFD solver whose state is the
 # full 9-channel D2Q9 distribution function f_i(x) — one scalar per lattice

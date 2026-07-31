@@ -518,13 +518,81 @@ def _threejs_ids() -> set[str]:
         return set()
 
 
+def _grave_node_file(node_id: str, meta=None) -> dict:
+    """Move a deleted node's source into ``methods/__NodeGraveyard__``.
+
+    Returns a small status dict describing what happened so the UI/endpoint
+    can report it. Two cases:
+
+    * File-backed node (its own module): move that ``.py`` into the graveyard,
+      collision-renamed if a file with that name already rests there. Moving
+      (not deleting) keeps the code recoverable; the watchdog ignores the
+      graveyard dir so the node is not resurrected on the next edit.
+    * GPU shader node — its "source" is a *shared* file under
+      ``core/shader_library/`` that holds many shaders, so moving it would
+      unregister its siblings too. Instead drop a tombstone ``.txt`` naming the
+      node id + shader, leaving the shared file (and the other shaders) intact.
+
+    ``meta`` must be passed by the caller (captured BEFORE unregistering the
+    node), since the registry no longer holds it by the time we move the file.
+    """
+    from .core import registry
+    from pathlib import Path as _P
+    import shutil as _shutil
+    import sys as _sys
+
+    if meta is None:
+        meta = registry.get_meta(node_id)
+    if meta is None:
+        return {"graved": False, "reason": "node already gone"}
+
+    grave_dir = _P(__file__).resolve().parent / "methods" / "__NodeGraveyard__"
+    grave_dir.mkdir(parents=True, exist_ok=True)
+
+    # GPU-shader nodes: shared source file, can't move it.
+    if getattr(meta, "module", None) == "image_pipeline.methods.gpu_shaders._shared":
+        try:
+            from .methods.gpu_shaders import GPU_SHADER_NODE_MAP
+            entry = GPU_SHADER_NODE_MAP.get(node_id)
+            shader = entry.get("shader") if entry else None
+        except Exception:
+            shader = None
+        tomb = grave_dir / f"{node_id}.tombstone.txt"
+        tomb.write_text(
+            f"Deleted node id={node_id!r} name={getattr(meta, 'name', '')!r}\n"
+            f"type=gpu_shader\n"
+            f"shader={shader!r}\n"
+            f"source=image_pipeline/core/shader_library/{shader}.py (shared; left in place)\n"
+        )
+        return {"graved": True, "kind": "tombstone", "path": str(tomb)}
+
+    # File-backed node: resolve its module file and move it.
+    mod = _sys.modules.get(getattr(meta, "module", None) or "")
+    src = _P(mod.__file__) if mod and getattr(mod, "__file__", None) else None
+    if not src or not src.exists():
+        return {"graved": False, "reason": "no source file to move"}
+
+    dest = grave_dir / src.name
+    # Collision-safe rename: append the node id.
+    if dest.exists():
+        dest = grave_dir / f"{src.stem}.{node_id}{src.suffix}"
+    try:
+        _shutil.move(str(src), str(dest))
+    except OSError as e:
+        return {"graved": False, "reason": f"move failed: {e}"}
+    return {"graved": True, "kind": "file", "path": str(dest)}
+
+
 def unregister_node_type(node_id: str) -> dict:
-    """Drop an agent-authored node and free its shader-library slot."""
+    """Drop an agent-authored node, free its shader-library slot, and move its
+    source into ``methods/__NodeGraveyard__`` so the deletion is durable
+    (a restart will not re-register it)."""
     from .core import registry
     from .core.shaders import SHADERS, _get_prog_cache
     from .core.graph import clear_node_defs_cache
 
-    if registry.get_meta(node_id) is None:
+    meta = registry.get_meta(node_id)
+    if meta is None:
         return {"ok": False, "error": f"no node with id {node_id!r}"}
 
     registry.unregister(node_id)
@@ -537,7 +605,130 @@ def unregister_node_type(node_id: str) -> dict:
     except Exception:
         pass
     clear_node_defs_cache()
-    return {"ok": True, "id": node_id}
+
+    grave = _grave_node_file(node_id, meta)
+    return {"ok": True, "id": node_id, "graveyard": grave}
+
+
+def _graveyard_dir() -> Path:
+    return Path(__file__).resolve().parent / "methods" / "__NodeGraveyard__"
+
+
+def list_graveyard() -> list[dict]:
+    """List every deleted-node tombstone so the UI can offer restore.
+
+    Returns one entry per graved artifact:
+      * file nodes  — ``{id, name, kind:"file", file}`` (id parsed from the
+        ``<stem>.<id>.py`` collision-renamed name, else from the tombstone).
+      * gpu nodes   — ``{id, name, kind:"gpu_shader", shader, file}`` read from
+        the ``<id>.tombstone.txt`` marker.
+    """
+    grave = _graveyard_dir()
+    if not grave.exists():
+        return []
+    out: list[dict] = []
+    # Tombstones (gpu shader nodes) — authoritative id/name/shader.
+    for t in sorted(grave.glob("*.tombstone.txt")):
+        info: dict = {"id": t.stem.split(".")[0], "kind": "gpu_shader"}
+        try:
+            for line in t.read_text().splitlines():
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    info[k.strip()] = v.strip()
+        except Exception:
+            pass
+        info["file"] = t.name
+        out.append(info)
+    # Moved source files (file-backed nodes).
+    for f in sorted(grave.glob("*.py")):
+        # Skip anything that's a tombstone (handled above) or non-node file.
+        entry = {"id": None, "name": f.stem, "kind": "file", "file": f.name}
+        # Collision-renamed form: <stem>.<id>.py  -> recover the id.
+        parts = f.stem.split(".")
+        if len(parts) >= 2 and parts[-1].isdigit():
+            entry["id"] = parts[-1]
+            entry["name"] = ".".join(parts[:-1])
+        out.append(entry)
+    return out
+
+
+def restore_node(entry_file: str) -> dict:
+    """Restore a deleted node from its graveyard artifact.
+
+    ``entry_file`` is the graveyard filename (``*.tombstone.txt`` or ``*.py``)
+    as returned by ``list_graveyard()``. Returns ``{ok, id, kind}`` or an error.
+    """
+    from .core import registry
+    from .core.graph import clear_node_defs_cache
+    import shutil as _shutil
+
+    grave = _graveyard_dir()
+    src = grave / entry_file
+    if not src.exists():
+        return {"ok": False, "error": f"no graveyard entry {entry_file!r}"}
+
+    # ── GPU shader tombstone ────────────────────────────────────────
+    if entry_file.endswith(".tombstone.txt"):
+        node_id = src.stem.split(".")[0]
+        shader = None
+        try:
+            for line in src.read_text().splitlines():
+                if line.startswith("shader="):
+                    shader = line.split("=", 1)[1].strip().strip("'\"")
+        except Exception:
+            pass
+        if not shader:
+            return {"ok": False, "error": "tombstone missing shader name"}
+        # Re-register the shader as a typed-uniform node (idempotent: a prior
+        # registration is overwritten). The shared source file was never moved.
+        try:
+            from .methods.gpu_shaders._shared import _make_typed
+            from .methods.gpu_shaders import GPU_SHADER_NODE_MAP
+            from .core.shaders import SHADERS
+            sname = shader
+            _make_typed(node_id, sname, SHADERS[sname].get("name", sname))
+            GPU_SHADER_NODE_MAP[node_id] = {
+                "shader": sname,
+                "type": SHADERS[sname]["type"],
+                "typed": True,
+            }
+        except Exception as e:
+            return {"ok": False, "error": f"restore failed: {e}"}
+        src.unlink()  # tombstone consumed
+        clear_node_defs_cache()
+        return {"ok": True, "id": node_id, "kind": "gpu_shader"}
+
+    # ── File-backed node ────────────────────────────────────────────
+    methods_dir = grave.parent
+    dest = methods_dir / src.name
+    if dest.exists():
+        # Avoid clobbering a live file with the same name.
+        dest = methods_dir / f"{src.stem}.restored{src.suffix}"
+    try:
+        _shutil.move(str(src), str(dest))
+    except OSError as e:
+        return {"ok": False, "error": f"move failed: {e}"}
+    # Re-import so the registry picks the node back up (watchdog would do this
+    # on its own, but import now for an immediate, deterministic result).
+    import sys as _sys
+    import importlib as _il
+    try:
+        rel = dest.relative_to(Path(__file__).resolve().parent)
+        module_name = "image_pipeline." + str(rel.with_suffix("")).replace("/", ".").replace("\\", ".")
+        if module_name in _sys.modules:
+            _il.reload(_sys.modules[module_name])
+        else:
+            _il.import_module(module_name)
+    except Exception as e:
+        return {"ok": False, "error": f"re-import failed: {e}", "path": str(dest)}
+    clear_node_defs_cache()
+    # Best-effort: recover the id from the registry by scanning new metas.
+    node_id = None
+    for mid, meta in registry.get_all().items():
+        if getattr(meta, "module", "") == module_name:
+            node_id = mid
+            break
+    return {"ok": True, "id": node_id, "kind": "file", "path": str(dest)}
 
 
 def render_node(node_id: str, params: dict | None = None,

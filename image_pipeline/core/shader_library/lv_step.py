@@ -1,0 +1,30 @@
+"""lv_step — GPU shader registration (dynamically loaded by core/shaders.py)."""
+
+from ._registry import _register
+
+
+
+# Lotka-Volterra 2-var (nodes 118, 119): du = a*u - b*u*v + Du*Lap(u);
+# dv = d*u*v - g*v + Dv*Lap(v). p1=a, p2=b, p3=g, p4=d. Du/Dv fixed scale.
+_register("lv_step",
+          "Lotka-Volterra RD step (5-pt toroidal Laplacian)",
+          "procedural", '''
+void main() {
+    vec2 texel = 1.0 / u_resolution;
+    vec4 s = texture(u_texture, v_uv);
+    float U = s.r, V = s.g;
+    float lu = texture(u_texture, v_uv + vec2(-texel.x,0.0)).r
+             + texture(u_texture, v_uv + vec2(texel.x,0.0)).r
+             + texture(u_texture, v_uv + vec2(0.0,texel.y)).r
+             + texture(u_texture, v_uv + vec2(0.0,-texel.y)).r - 4.0*U;
+    float lv = texture(u_texture, v_uv + vec2(-texel.x,0.0)).g
+             + texture(u_texture, v_uv + vec2(texel.x,0.0)).g
+             + texture(u_texture, v_uv + vec2(0.0,texel.y)).g
+             + texture(u_texture, v_uv + vec2(0.0,-texel.y)).g - 4.0*V;
+    float a = u_params.x, b = u_params.y, g = u_params.z, d = u_params.w;
+    float Du = 0.12, Dv = 0.30;
+    float nU = U + 0.2 * (a*U - b*U*V + Du*lu);
+    float nV = V + 0.2 * (d*U*V - g*V + Dv*lv);
+    f_color = vec4(clamp(nU,0.0,1.0), clamp(nV,0.0,1.0), 0.0, 1.0);
+}
+''')

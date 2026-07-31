@@ -199,6 +199,8 @@ def test_gpu_methods_have_new_image_contract():
     methods = get_all()
     bad = []
     for mid in [str(i) for i in range(173, 220)]:
+        if mid == "180":
+            continue  # 180 GPU Pixel Sort removed (2026-07-30)
         m = methods.get(mid)
         if m is None:
             bad.append(f"#{mid} not registered")

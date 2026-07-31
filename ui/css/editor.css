@@ -774,11 +774,6 @@
   .gnode-deprecated .gnode-title::after { content: ' ⚠ dep'; color: #f59e0b; font-size: 9px; font-weight: 400; }
   .node-error { border: 2px solid #e53935 !important; box-shadow: 0 0 8px rgba(229,57,53,0.4); }
   .node-error .gnode-header::after { content: ' ⚠'; color: #e53935; font-size: 12px; }
-  /* User-flagged "this node is broken" — a standing complaint, distinct from
-     .node-error (a runtime failure from the last execution). Warn, not error:
-     the node still cooks, it just misbehaves. */
-  .gnode-broken { border-color: var(--warn) !important; box-shadow: 0 0 0 1px var(--warn), var(--shadow-2); }
-  .gnode-broken .gnode-title::after { content: ' 🚩'; font-size: 10px; }
   /* ── Group nodes ──────────────────────────────────────── */
   .gnode.gnode-group { border-color: var(--accent2); border-radius: 12px; min-width: 140px; }
   .gnode.gnode-group:hover, .gnode.gnode-group.selected { border-color: var(--accent2); box-shadow: 0 0 0 2px rgba(167,139,250,0.35); }
@@ -850,46 +845,6 @@
   .gm-btn.muted   { background: var(--bg3); color: var(--muted); }
   .gm-btn:hover.primary { opacity: 0.88; }
   .gm-btn:hover.muted   { background: var(--bg2); }
-  /* ── Broken-node flag modal ───────────────────────── */
-  #broken-flag-modal {
-    display: none; position: fixed; inset: 0;
-    background: rgba(0,0,0,0.75); z-index: 1000;
-    align-items: center; justify-content: center;
-  }
-  #broken-flag-modal.open { display: flex; }
-  #bfm-box {
-    background: var(--bg1); border: 1px solid var(--warn);
-    border-radius: 12px; padding: 20px 24px;
-    width: min(90vw, 560px); max-height: 80vh;
-    overflow-y: auto; display: flex; flex-direction: column; gap: 12px;
-  }
-  #bfm-title { font-size: 15px; font-weight: 700; color: var(--warn); }
-  #bfm-node-name { font-size: 12px; color: var(--muted); }
-  #bfm-existing { display: flex; flex-direction: column; gap: 6px; }
-  #bfm-existing:empty { display: none; }
-  .bfm-report {
-    display: flex; align-items: flex-start; gap: 8px;
-    background: var(--bg2); border: 1px solid var(--border);
-    border-left: 2px solid var(--warn); border-radius: var(--radius-s);
-    padding: 8px 10px; font-size: 12px; color: var(--text); line-height: 1.5;
-  }
-  .bfm-report-note { flex: 1; white-space: pre-wrap; word-break: break-word; }
-  .bfm-report-date { color: var(--muted2); font-size: 10px; white-space: nowrap; }
-  .bfm-report-del {
-    border: none; background: none; color: var(--muted); cursor: pointer;
-    font-size: 13px; line-height: 1; padding: 0 2px;
-  }
-  .bfm-report-del:hover { color: var(--err); }
-  #bfm-note {
-    background: var(--bg0); border: 1px solid var(--border); border-radius: var(--radius-m);
-    padding: 10px 12px; color: var(--text); font-family: inherit; font-size: 13px;
-    line-height: 1.5; resize: vertical; min-height: 72px;
-  }
-  #bfm-note:focus { outline: none; border-color: var(--warn); box-shadow: var(--focus-ring); }
-  #bfm-hint { font-size: 11px; color: var(--muted2); }
-  #bfm-hint code { font-family: var(--font-mono); color: var(--muted); }
-  #bfm-actions { display: flex; justify-content: flex-end; gap: 8px; }
-
   /* ── Node source-code editor modal ────────────────── */
   #node-source-modal {
     display: none; position: fixed; inset: 0;
@@ -929,6 +884,141 @@
   #nsm-status.err { color: var(--err); }
   #nsm-actions { display: flex; gap: 8px; flex-wrap: wrap; }
   #nsm-actions .gm-btn:disabled { opacity: 0.5; cursor: default; }
+
+  /* ── Modal tab bar ─────────────────────────────── */
+  .nsm-tabs { display: flex; gap: 2px; flex: 1; }
+  .nsm-tab {
+    background: transparent; border: none;
+    color: var(--muted); font-size: 13px; font-weight: 600;
+    padding: 4px 14px; border-radius: 6px; cursor: pointer;
+    line-height: 1.4;
+  }
+  .nsm-tab:hover { color: var(--text); background: var(--bg2); }
+  .nsm-tab.active { color: var(--accent2); background: var(--bg2); }
+  .nsm-tab-content { display: none; flex-direction: column; gap: 10px; }
+  .nsm-tab-content.active { display: flex; }
+  .nsm-tab-doctor { flex: 1; }
+  /* Node Doctor UI inside modal */
+  .nsm-tab-doctor #nd-messages {
+    flex: 1; min-height: 220px; max-height: 42vh; overflow-y: auto;
+    background: var(--bg0, var(--bg2)); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .nsm-tab-doctor #nd-apply-row {
+    display: none; gap: 8px;
+  }
+  .nsm-tab-doctor #nd-apply-row.nd-show { display: flex; }
+  .nsm-tab-doctor #nd-delete-row {
+    display: flex; flex-direction: column; gap: 6px; margin-top: 8px;
+  }
+  .nsm-tab-doctor #nd-delete-btn {
+    padding: 6px 10px; background: transparent; color: var(--warn, #ff5050);
+    border: 1px solid var(--warn, #ff5050); border-radius: 6px;
+    font-size: 12px; font-weight: 700; cursor: pointer;
+    transition: opacity 0.15s, background 0.15s;
+  }
+  .nsm-tab-doctor #nd-delete-btn:hover { background: rgba(255,80,80,0.12); }
+  .nsm-tab-doctor #nd-delete-confirm { display: none; flex-direction: column; gap: 6px; }
+  .nsm-tab-doctor #nd-delete-confirm.nd-show { display: flex; }
+  .nsm-tab-doctor .nd-delete-warn {
+    font-size: 11.5px; line-height: 1.5; color: var(--warn, #ff5050);
+    background: rgba(255,80,80,0.08); border: 1px solid rgba(255,80,80,0.3);
+    border-radius: 6px; padding: 7px 9px;
+  }
+  .nsm-tab-doctor .nd-delete-btns { display: flex; gap: 6px; }
+  .nsm-tab-doctor #nd-delete-yes {
+    flex: 1; padding: 6px 8px; background: var(--warn, #ff5050); color: #fff;
+    border: none; border-radius: 6px; font-size: 12px; font-weight: 700;
+    cursor: pointer; transition: opacity 0.15s;
+  }
+  .nsm-tab-doctor #nd-delete-yes:hover { opacity: 0.85; }
+  .nsm-tab-doctor #nd-delete-yes:disabled { opacity: 0.5; cursor: default; }
+  .nsm-tab-doctor #nd-delete-no {
+    padding: 6px 10px; background: var(--bg3); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; font-size: 12px;
+    font-weight: 700; cursor: pointer; transition: opacity 0.15s;
+  }
+  .nsm-tab-doctor #nd-delete-no:hover { opacity: 0.8; }
+  .nsm-tab-doctor #nd-delete-no:disabled { opacity: 0.5; cursor: default; }
+  .nsm-tab-doctor #nd-input-row {
+    display: flex; gap: 8px; align-items: flex-end;
+  }
+  .nsm-tab-doctor #nd-input {
+    flex: 1; resize: vertical; min-height: 38px; max-height: 80px;
+    background: var(--bg0, var(--bg2)); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 10px; font-size: 12.5px; font-family: inherit;
+  }
+  .nsm-tab-doctor #nd-input:focus { outline: none; border-color: var(--accent); }
+  .nsm-tab-doctor #nd-input::placeholder { color: var(--muted); }
+  .nsm-tab-doctor #nd-send-btn {
+    background: var(--accent); color: #fff; border: none;
+    border-radius: 6px; width: 36px; height: 36px; cursor: pointer;
+    font-size: 16px; flex-shrink: 0; line-height: 1;
+  }
+  .nsm-tab-doctor #nd-send-btn:disabled { opacity: 0.4; cursor: default; }
+  .nsm-tab-doctor #nd-apply-btn, .nsm-tab-doctor #nd-undo-btn {
+    background: var(--accent); color: #fff; border: none;
+    border-radius: 6px; padding: 6px 14px; cursor: pointer;
+    font-size: 12px; flex-shrink: 0;
+  }
+  .nsm-tab-doctor #nd-apply-btn:disabled, .nsm-tab-doctor #nd-undo-btn:disabled { opacity: 0.4; cursor: default; }
+  .nsm-tab-doctor .nd-msg { font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+  .nsm-tab-doctor .nd-user { color: var(--accent2); }
+  /* ── Graveyard tab (restore deleted nodes) ── */
+  .nsm-tab-graveyard { flex: 1; min-height: 0; overflow-y: auto; gap: 8px; }
+  #ng-head {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 12px; font-weight: 700; color: var(--accent2);
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  #ng-refresh {
+    background: var(--bg3); color: var(--text); border: 1px solid var(--border);
+    border-radius: 5px; cursor: pointer; font-size: 13px; padding: 2px 8px; line-height: 1;
+  }
+  #ng-refresh:hover { background: var(--bg2); }
+  #ng-empty { color: var(--muted); font-size: 12px; padding: 14px 4px; }
+  #ng-list { display: flex; flex-direction: column; gap: 6px; }
+  .ng-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    background: var(--bg1); border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 10px;
+  }
+  .ng-item-label { font-size: 12px; color: var(--text); flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ng-restore-btn {
+    flex-shrink: 0; padding: 5px 12px; background: var(--accent2, var(--accent));
+    color: #fff; border: none; border-radius: 5px; font-size: 12px; font-weight: 700;
+    cursor: pointer; transition: opacity 0.15s;
+  }
+  .ng-restore-btn:hover { opacity: 0.85; }
+  .ng-restore-btn:disabled { opacity: 0.5; cursor: default; }
+  .ng-item.ng-restoring { opacity: 0.6; }
+  .ng-item.ng-restored { border-color: var(--success, #34d399); }
+  .ng-item.ng-restored .ng-item-label { color: var(--success, #34d399); }
+  .ng-loading { color: var(--muted); font-size: 12px; padding: 10px 4px; }
+  .nsm-tab-doctor .nd-bot { color: var(--text); }
+  .nsm-tab-doctor .nd-thinking { color: var(--muted); font-style: italic; }
+  .nsm-tab-doctor .nd-stream-cursor::after {
+    content: '▊'; animation: nd-cursor-blink 0.7s steps(1) infinite;
+    color: var(--accent2); margin-left: 1px;
+  }
+  @keyframes nd-cursor-blink { 50% { opacity: 0; } }
+  .nsm-tab-doctor .nd-spinner {
+    display: inline-block; width: 12px; height: 12px;
+    border: 2px solid var(--muted); border-top-color: var(--accent2);
+    border-radius: 50%; animation: nd-spin 0.6s linear infinite;
+    vertical-align: middle; margin-right: 4px;
+  }
+  @keyframes nd-spin { to { transform: rotate(360deg); } }
+  .nsm-tab-doctor .nd-empty {
+    margin: auto; padding: 20px 0; color: var(--muted); opacity: 0.3;
+    font-size: 7px; line-height: 1.2; text-align: center;
+    white-space: pre; overflow: hidden; user-select: none;
+    pointer-events: none;
+  }
+
   /* ── Node error modal ─────────────────────────────── */
   #node-error-modal {
     display: none; position: fixed; inset: 0;
@@ -1633,101 +1723,8 @@
     flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 6px;
     position: relative; z-index: 11; background: var(--bg1);
   }
-  #nd-toggle-btn {
-    border: none; background: none; cursor: pointer; font-size: 15px;
-    padding: 2px 5px; line-height: 1; border-radius: 5px; flex-shrink: 0;
-    opacity: 0.55; transition: opacity 0.15s, background 0.15s;
-  }
-  #nd-toggle-btn:hover { opacity: 1; background: var(--bg3); }
-  #nd-toggle-btn.nd-active { opacity: 1; background: var(--bg3); }
   #graph-params-scroll { flex: 1; overflow-y: auto; padding: 10px 14px; min-height: 0; }
   #graph-params-empty { color: var(--muted); font-size: 12px; padding: 20px 0; }
-
-  /* ── NODE DOCTOR panel ──────────────────────────────────── */
-  #nd-panel {
-    display: none; flex-direction: column; border-top: 2px solid var(--accent2);
-    background: var(--bg0); flex: 1; min-height: 0;
-  }
-  #nd-panel.nd-open { display: flex; }
-  #nd-header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 6px 11px; background: var(--bg2); border-bottom: 1px solid var(--border);
-    font-size: 10px; font-weight: 800; letter-spacing: 0.12em; color: var(--accent2);
-    text-transform: uppercase; flex-shrink: 0;
-  }
-  #nd-close-btn {
-    border: none; background: none; color: var(--muted); cursor: pointer;
-    font-size: 14px; padding: 2px 4px; line-height: 1;
-  }
-  #nd-close-btn:hover { color: var(--text); }
-  #nd-messages {
-    flex: 1; overflow-y: auto; padding: 8px 10px;
-    display: flex; flex-direction: column; gap: 6px; min-height: 0;
-  }
-  .nd-msg {
-    font-size: 11.5px; line-height: 1.5; padding: 6px 9px; border-radius: 7px;
-    max-width: 94%; white-space: pre-wrap; word-break: break-word;
-  }
-  .nd-msg.nd-user {
-    background: var(--bg3); color: var(--text); align-self: flex-end;
-    border-bottom-right-radius: 2px;
-  }
-  .nd-msg.nd-bot {
-    background: var(--bg2); color: var(--text); align-self: flex-start;
-    border-bottom-left-radius: 2px; border-left: 2px solid var(--accent2);
-  }
-  .nd-msg.nd-thinking { color: var(--muted); font-style: italic; }
-  /* ── Node Doctor spinner ──────────────────────────── */
-  .nd-spinner {
-    display: inline-block; width: 14px; height: 14px;
-    border: 2px solid var(--accent2); border-top-color: transparent;
-    border-radius: 50%; animation: nd-spin 0.7s linear infinite;
-    vertical-align: middle; margin-right: 4px;
-  }
-  @keyframes nd-spin { to { transform: rotate(360deg); } }
-  /* ── Blinking cursor during streaming ───────────────── */
-  .nd-stream-cursor::after {
-    content: '▌'; animation: nd-blink 0.8s step-end infinite;
-    color: var(--accent2); margin-left: 1px;
-  }
-  @keyframes nd-blink { 50% { opacity: 0; } }
-  #nd-apply-row {
-    padding: 5px 10px; display: none; gap: 6px; flex-shrink: 0;
-    border-top: 1px solid var(--border); background: var(--bg1); align-items: center;
-  }
-  #nd-apply-row.nd-show { display: flex; }
-  #nd-apply-btn {
-    flex: 1; padding: 5px 8px; background: var(--accent); color: #fff;
-    border: none; border-radius: 5px; font-size: 11px; font-weight: 700;
-    cursor: pointer; transition: opacity 0.15s;
-  }
-  #nd-apply-btn:hover { opacity: 0.85; }
-  #nd-apply-btn:disabled { opacity: 0.35; cursor: default; }
-  #nd-undo-btn {
-    padding: 5px 10px; background: var(--bg3); color: var(--warn);
-    border: 1px solid var(--warn); border-radius: 5px; font-size: 11px; font-weight: 700;
-    cursor: pointer; display: none; transition: opacity 0.15s;
-  }
-  #nd-undo-btn.nd-show { display: block; }
-  #nd-undo-btn:hover { opacity: 0.8; }
-  #nd-undo-btn:disabled { opacity: 0.35; cursor: default; }
-  #nd-input-row {
-    display: flex; gap: 6px; padding: 6px 10px; flex-shrink: 0;
-    border-top: 1px solid var(--border); background: var(--bg1);
-  }
-  #nd-input {
-    flex: 1; background: var(--bg2); border: 1px solid var(--border);
-    border-radius: 6px; color: var(--text); font-size: 11.5px; padding: 5px 8px;
-    resize: none; outline: none; font-family: inherit; line-height: 1.4;
-  }
-  #nd-input:focus { border-color: var(--accent2); }
-  #nd-send-btn {
-    padding: 0 11px; background: var(--accent2); color: #fff; border: none;
-    border-radius: 6px; font-size: 16px; cursor: pointer; transition: opacity 0.15s;
-    align-self: flex-end; height: 32px;
-  }
-  #nd-send-btn:hover { opacity: 0.85; }
-  #nd-send-btn:disabled { opacity: 0.35; cursor: default; }
 
   /* ── Context menu ─────────────────────────────────────── */
   #graph-ctx-menu {
@@ -1981,26 +1978,23 @@
     z-index: 3000; display: none; white-space: nowrap; pointer-events: none;
   }
 
-  /* ── Node Tester panel ──────────────────────────────────── */
-  #nt-panel {
-    display: none; flex-direction: column; background: var(--bg0);
-    border-top: 2px solid var(--accent); flex-shrink: 0;
-    max-height: 340px; overflow: hidden;
+  /* ── Node Tester (inline in Doctor tab) ─────────────────────── */
+  #nt-section {
+    border-top: 1px solid var(--border); flex-shrink: 0;
   }
-  #nt-panel.nt-open { display: flex; }
-  #nt-header {
-    display: flex; align-items: center; gap: 10px;
-    padding: 6px 12px; background: var(--bg2);
-    border-bottom: 1px solid var(--border); flex-shrink: 0;
-    font-size: 11px; font-weight: 700; color: var(--accent);
-    text-transform: uppercase; letter-spacing: 0.08em;
+  #nt-section.nt-collapsed #nt-section-body { display: none; }
+  #nt-section-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; cursor: pointer; user-select: none;
+    font-size: 11px; font-weight: 600; color: var(--muted);
   }
-  #nt-summary { font-size: 10px; color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; flex: 1; }
-  #nt-close-btn { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 2px 4px; }
-  #nt-close-btn:hover { color: var(--text); }
-  #nt-body { flex: 1; overflow-y: auto; padding: 8px 12px; min-height: 0; }
+  #nt-section-header:hover { color: var(--text); }
+  #nt-toggle { font-size: 9px; color: var(--muted2); width: 12px; }
+  #nt-summary { font-size: 10px; color: var(--muted); font-weight: 400; flex: 1; }
+  #nt-context-label { font-size: 10px; color: var(--accent2); font-weight: 400; }
+  #nt-section-body { padding: 4px 8px 8px; }
   #nt-progress { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); padding: 8px 0; }
-  #nt-results { display: flex; flex-direction: column; gap: 3px; }
+  #nt-results { display: flex; flex-direction: column; gap: 3px; max-height: 200px; overflow-y: auto; }
   .nt-method-row {
     display: flex; align-items: center; gap: 8px; padding: 4px 8px;
     border-radius: 5px; font-size: 11px; cursor: pointer;
@@ -2029,107 +2023,8 @@
     font-size: 10px; color: #f87171; white-space: pre-wrap; word-break: break-word;
     max-height: 120px; overflow-y: auto;
   }
-  #nt-footer {
-    display: flex; gap: 6px; padding: 6px 12px;
-    border-top: 1px solid var(--border); background: var(--bg1); flex-shrink: 0;
-    align-items: center;
-  }
-  #nt-footer .gm-btn { font-size: 11px; padding: 5px 12px; }
-
-  /* ── Broken-nodes review panel ────────────────────────────
-     Same bottom-panel shell as the Node Tester, in warn colours. Grouped by
-     method_id and sorted most-complained-about first, so a node with six
-     reports outranks six nodes with one — that ordering IS the diagnosis. */
-  #bn-panel {
-    display: none; flex-direction: column; background: var(--bg0);
-    border-top: 2px solid var(--warn); flex-shrink: 0;
-    max-height: 340px; overflow: hidden;
-  }
-  #bn-panel.bn-open { display: flex; }
-  #bn-header {
-    display: flex; align-items: center; gap: 10px;
-    padding: 6px 12px; background: var(--bg2);
-    border-bottom: 1px solid var(--border); flex-shrink: 0;
-    font-size: 11px; font-weight: 700; color: var(--warn);
-    text-transform: uppercase; letter-spacing: 0.08em;
-  }
-  #bn-summary { font-size: 10px; color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; flex: 1; }
-  #bn-show-resolved-wrap {
-    display: flex; align-items: center; gap: 4px; cursor: pointer;
-    font-size: 10px; color: var(--muted); font-weight: 400;
-    text-transform: none; letter-spacing: 0;
-  }
-  #bn-close-btn { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 2px 4px; }
-  #bn-close-btn:hover { color: var(--text); }
-  #bn-body { flex: 1; overflow-y: auto; padding: 8px 12px; min-height: 0; }
-  #bn-results { display: flex; flex-direction: column; gap: 3px; }
-  #bn-empty { color: var(--muted); font-size: 12px; padding: 12px 0; }
-
-  /* Cross-cutting summary — which categories and files are accumulating
-     reports, the signal a single row can never show. */
-  #bn-patterns { display: flex; flex-wrap: wrap; gap: 5px; padding-bottom: 8px; }
-  #bn-patterns:empty { display: none; }
-  .bn-chip {
-    display: inline-flex; align-items: center; gap: 5px;
-    background: var(--bg2); border: 1px solid var(--border);
-    border-radius: 999px; padding: 3px 9px; font-size: 10px; color: var(--muted);
-  }
-  .bn-chip b { color: var(--text); font-weight: 600; }
-  .bn-chip.hot { border-color: var(--warn); color: var(--warn); }
-  .bn-chip.hot b { color: var(--warn); }
-
-  .bn-method-row {
-    display: flex; align-items: center; gap: 8px; padding: 5px 8px;
-    border-radius: 5px; font-size: 11px; cursor: pointer;
-    border-left: 2px solid var(--warn); transition: background 0.1s;
-  }
-  .bn-method-row:hover { background: var(--bg2); }
-  .bn-method-row.bn-all-resolved { border-left-color: var(--success); opacity: 0.62; }
-  .bn-method-row .bn-mid { color: var(--muted); font-size: 10px; min-width: 28px; }
-  .bn-method-row .bn-name { flex-shrink: 0; color: var(--text); font-weight: 600; }
-  .bn-method-row .bn-src {
-    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    direction: rtl; text-align: left;
-    font-family: var(--font-mono); font-size: 10px; color: var(--muted2);
-  }
-  .bn-method-row .bn-count { font-size: 10px; color: var(--warn); white-space: nowrap; }
-  .bn-method-row .bn-ingraph { font-size: 10px; color: var(--accent2); white-space: nowrap; }
-  .bn-detail { display: none; padding: 4px 8px 8px 20px; }
-  .bn-detail.bn-open { display: flex; flex-direction: column; gap: 5px; }
-  .bn-report {
-    background: var(--bg1); border: 1px solid var(--border);
-    border-left: 2px solid var(--warn); border-radius: var(--radius-s);
-    padding: 7px 9px; font-size: 11px; line-height: 1.5; color: var(--text);
-  }
-  .bn-report.bn-resolved { border-left-color: var(--success); opacity: 0.6; }
-  .bn-report-note { white-space: pre-wrap; word-break: break-word; }
-  .bn-report-meta {
-    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-    margin-top: 5px; font-size: 10px; color: var(--muted2);
-  }
-  .bn-report-meta .bn-params {
-    font-family: var(--font-mono); overflow: hidden;
-    text-overflow: ellipsis; white-space: nowrap; max-width: 46ch;
-  }
-  .bn-report-actions { display: flex; gap: 4px; margin-left: auto; }
-  .bn-act {
-    border: 1px solid var(--border); background: var(--bg2); color: var(--muted);
-    border-radius: var(--radius-s); padding: 2px 7px; font-size: 10px; cursor: pointer;
-  }
-  .bn-act:hover { color: var(--text); border-color: var(--border-strong); }
-  .bn-act.bn-act-del:hover { color: var(--err); border-color: var(--err); }
-  #bn-footer {
-    display: flex; gap: 8px; align-items: center; padding: 6px 12px;
-    border-top: 1px solid var(--border); background: var(--bg1); flex-shrink: 0;
-  }
-  #bn-footer .gm-btn { font-size: 11px; padding: 5px 12px; }
-  #bn-path-hint { font-size: 10px; color: var(--muted2); }
-  #bn-path-hint code { font-family: var(--font-mono); }
-  #gbb-count {
-    display: none; margin-left: 5px; padding: 0 5px; border-radius: 999px;
-    background: var(--warn); color: var(--bg0); font-size: 9px; font-weight: 700;
-  }
-  #gbb-count.on { display: inline-block; }
+  #nt-actions { display: flex; gap: 6px; padding-top: 6px; flex-wrap: wrap; }
+  #nt-actions .gm-btn { font-size: 11px; padding: 5px 12px; }
 
   /* ── Timeline panel ───────────────────────────────────────── */
   #timeline-panel {

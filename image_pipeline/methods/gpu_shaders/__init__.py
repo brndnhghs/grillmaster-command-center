@@ -18,4 +18,9 @@ from ._shared import (
     SHADER_NAMES,
     GPU_PREVIEW_DROP_ALLOW,
     is_param_justified_drop,
+    # Factories — imported by agent_authoring.py for runtime node authoring.
+    _make_typed,
+    _make_proc,
+    _make_filt,
+    _param_from_uniform,
 )

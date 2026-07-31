@@ -19,7 +19,7 @@ except ImportError:
 
 @method(
     id="13",
-    name="Dithering",
+    name="CPU Dithering",
     category="filters",
     new_image_contract=True,
     tags=["bayer", "error-diffusion", "halftone", "expanded"],

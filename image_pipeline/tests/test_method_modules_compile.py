@@ -33,7 +33,11 @@ _METHOD_ID_RE = re.compile(r"@method\s*\([^)]*?id\s*=\s*[\"']([^\"']+)[\"']", re
 
 
 def _iter_method_modules():
-    for root, _dirs, files in os.walk(_METHODS_DIR):
+    for root, dirs, files in os.walk(_METHODS_DIR):
+        # __NodeGraveyard__ holds intentionally-dead methods (moved out of the
+        # registry); their @method(...) decorators are historical and must NOT
+        # be counted as declared-live ids.
+        dirs[:] = [d for d in dirs if d != "__NodeGraveyard__"]
         for fname in files:
             if not fname.endswith(".py"):
                 continue

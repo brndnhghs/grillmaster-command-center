@@ -489,9 +489,7 @@ const gCtxMenu      = document.getElementById('graph-ctx-menu');
 const gWireTooltip  = document.getElementById('wire-tooltip');
 const gNodeTooltip  = document.getElementById('node-tooltip');
 let   gLastGraphJobId = null;
-// Open "this node is broken" reports from docs/reports/broken-nodes.json,
-// keyed by method_id (the flag is about the node type, not one instance).
-let   gBrokenNodeReports = [];
+
 
 // ── Node error modal ─────────────────────────────────────
 const nemModal   = document.getElementById('node-error-modal');
@@ -522,8 +520,6 @@ gNodesEl.addEventListener('mouseover', e => {
   let text = null;
   if (nodeEl.classList.contains('node-error') && nodeEl.dataset.errorMsg) {
     text = nodeEl.dataset.errorMsg.split('\n').slice(0, 3).join('\n');
-  } else if (nodeEl.dataset.brokenNote) {
-    text = nodeEl.dataset.brokenNote;
   } else {
     const nodeId = nodeEl.id.replace('gnode-', '');
     const node = gNodes.find(n => n.id === nodeId);
@@ -1994,7 +1990,6 @@ function gRenderNode(node) {
 
   if (node.render) el.classList.add('render-target');
   if (def.deprecated) el.classList.add('gnode-deprecated');
-  gApplyBrokenFlag(el, node.method_id);
 
   const header = document.createElement('div');
   header.className = 'gnode-header';
@@ -3484,24 +3479,18 @@ gNodesEl.addEventListener('contextmenu', e => {
   document.getElementById('ctx-node-doctor').style.display = isGroup ? 'none' : '';
   document.getElementById('ctx-group-sel').style.display = hasMultiSel ? '' : 'none';
   document.getElementById('ctx-ungroup').style.display = isGroup ? '' : 'none';
-  // Group nodes have no method_id, so there is no source file to flag.
-  const flagItem = document.getElementById('ctx-flag-broken');
-  flagItem.style.display = isGroup ? 'none' : '';
-  flagItem.textContent = gBrokenFor(node?.method_id).length
-    ? '🚩 Broken — edit report…'
-    : '🚩 Flag as broken…';
   gCtxMenu.style.left=e.clientX+'px'; gCtxMenu.style.top=e.clientY+'px'; gCtxMenu.style.display='block';
 });
-document.getElementById('ctx-flag-broken').addEventListener('click', () => {
-  gCtxMenu.style.display = 'none';
-  if (gSelectedNode) gOpenBrokenFlagModal(gSelectedNode);
-});
+
 document.getElementById('ctx-source').addEventListener('click', () => { gCtxMenu.style.display='none'; if (gSelectedNode) gOpenNodeSource(gSelectedNode); });
 document.getElementById('ctx-node-doctor').addEventListener('click', () => {
   gCtxMenu.style.display='none';
   if (gSelectedNode) {
-    const def = gNodeDefs[gSelectedNode.method_id];
-    ndPrefill(`Working on node “${def ? def.name : gSelectedNode.method_id}” — what would you like to change?`);
+    const node = gNodes.find(n => n.id === gSelectedNode);
+    if (node) {
+      const def = gNodeDefs[node.method_id];
+      ndPrefill('', { method_id: node.method_id, nodeName: def ? def.name : node.method_id });
+    }
   }
 });
 document.getElementById('ctx-group-sel').addEventListener('click', () => { gCtxMenu.style.display='none'; gGroupSelectedNodes(); });
@@ -7161,8 +7150,6 @@ function gConnectEvents() {
         // Notify Node Doctor apply flow that hot-reload completed
         window.dispatchEvent(new CustomEvent('nd-hot-reload'));
     });
-    // Another tab (or an agent hitting the API) changed the broken-node ledger.
-    es.addEventListener('broken-nodes-updated', () => { gLoadBrokenNodes(); });
     es.onerror = () => {
         es.close();
         setTimeout(gConnectEvents, 3000);
@@ -7170,385 +7157,7 @@ function gConnectEvents() {
 }
 gConnectEvents();
 
-// ── Broken-node flags ──────────────────────────────────────────────
-// Right-click a node → "Flag as broken…" → jot down what misbehaves. The
-// report goes to docs/reports/broken-nodes.json, which agents read to spot
-// problems that span many nodes (a shared helper, a whole category) rather
-// than treating each complaint as its own one-off bug.
-//
-// Flags are keyed by method_id, not by graph-node id: the thing that's broken
-// is the node *type* and its source file. Every instance of that type in every
-// graph shows the flag.
-function gBrokenFor(method_id) {
-  if (!method_id) return [];
-  return gBrokenNodeReports.filter(r => r.method_id === method_id && r.status === 'open');
-}
 
-function gApplyBrokenFlag(el, method_id) {
-  const reports = gBrokenFor(method_id);
-  el.classList.toggle('gnode-broken', reports.length > 0);
-  if (reports.length) el.dataset.brokenNote = reports.map(r => '🚩 ' + r.note).join('\n');
-  else delete el.dataset.brokenNote;
-}
-
-function gRefreshBrokenFlags() {
-  for (const node of gNodes) {
-    if (!node.method_id) continue;
-    const el = document.getElementById('gnode-' + node.id);
-    if (el) gApplyBrokenFlag(el, node.method_id);
-  }
-}
-
-// Loads the whole ledger, resolved entries included — the review panel needs
-// the history; gBrokenFor() filters to open for the on-canvas flags.
-async function gLoadBrokenNodes() {
-  try {
-    const r = await fetch('/api/broken-nodes');
-    const d = await r.json();
-    gBrokenNodeReports = Array.isArray(d.reports) ? d.reports : [];
-  } catch {
-    gBrokenNodeReports = [];
-  }
-  gRefreshBrokenFlags();
-  gRenderBrokenPanel();
-  if (bfmModal.classList.contains('open') && bfmNodeId) gRenderBrokenExisting();
-}
-
-const bfmModal    = document.getElementById('broken-flag-modal');
-const bfmName     = document.getElementById('bfm-node-name');
-const bfmExisting = document.getElementById('bfm-existing');
-const bfmNote     = document.getElementById('bfm-note');
-const bfmSaveBtn  = document.getElementById('bfm-save-btn');
-let   bfmNodeId   = null;
-
-function gCloseBrokenFlagModal() {
-  bfmModal.classList.remove('open');
-  bfmNodeId = null;
-}
-
-function gRenderBrokenExisting() {
-  const node = gNodes.find(n => n.id === bfmNodeId);
-  const reports = gBrokenFor(node?.method_id);
-  bfmExisting.innerHTML = '';
-  for (const rep of reports) {
-    const row = document.createElement('div');
-    row.className = 'bfm-report';
-    const note = document.createElement('div');
-    note.className = 'bfm-report-note';
-    note.textContent = rep.note;
-    const date = document.createElement('span');
-    date.className = 'bfm-report-date';
-    date.textContent = (rep.flagged_at || '').slice(0, 10);
-    const del = document.createElement('button');
-    del.className = 'bfm-report-del';
-    del.title = 'Clear this report';
-    del.textContent = '✕';
-    del.addEventListener('click', async () => {
-      del.disabled = true;
-      try {
-        const r = await fetch('/api/broken-nodes/' + encodeURIComponent(rep.id), { method: 'DELETE' });
-        if (!r.ok) throw new Error(`Server error ${r.status}`);
-        await gLoadBrokenNodes();
-        gShowToast('Report cleared');
-      } catch (err) {
-        gShowToast('Could not clear report: ' + err.message, true);
-        del.disabled = false;
-      }
-    });
-    row.append(note, date, del);
-    bfmExisting.appendChild(row);
-  }
-}
-
-function gOpenBrokenFlagModal(nodeId) {
-  const node = gNodes.find(n => n.id === nodeId);
-  if (!node || !node.method_id) return;
-  const def = gNodeDefs[node.method_id];
-  bfmNodeId = nodeId;
-  bfmName.textContent = `${def ? def.name : node.method_id} · ${node.method_id}`;
-  bfmNote.value = '';
-  gRenderBrokenExisting();
-  bfmModal.classList.add('open');
-  bfmNote.focus();
-}
-
-bfmSaveBtn.addEventListener('click', async () => {
-  const node = gNodes.find(n => n.id === bfmNodeId);
-  const note = bfmNote.value.trim();
-  if (!node) return gCloseBrokenFlagModal();
-  if (!note) { gShowToast('Write a note describing what is broken', true); return; }
-
-  bfmSaveBtn.disabled = true;
-  try {
-    const r = await fetch('/api/broken-nodes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      // Params travel with the report so an agent can reproduce the exact
-      // configuration that misbehaved instead of guessing at defaults.
-      body: JSON.stringify({
-        method_id: node.method_id,
-        note,
-        node_id: node.id,
-        params: node.params || {},
-      }),
-    });
-    if (!r.ok) throw new Error(`Server error ${r.status}`);
-    await gLoadBrokenNodes();
-    gShowToast('Flagged as broken');
-    gCloseBrokenFlagModal();
-  } catch (err) {
-    gShowToast('Could not save flag: ' + err.message, true);
-  }
-  bfmSaveBtn.disabled = false;
-});
-
-document.getElementById('bfm-cancel-btn').addEventListener('click', gCloseBrokenFlagModal);
-bfmModal.addEventListener('click', e => { if (e.target === bfmModal) gCloseBrokenFlagModal(); });
-bfmNote.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); bfmSaveBtn.click(); }
-});
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && bfmModal.classList.contains('open')) gCloseBrokenFlagModal();
-});
-
-// ── Broken-nodes review panel ──────────────────────────────────────
-// The whole ledger in one place, grouped by node type and sorted by report
-// count. One report is a bug; a node with six, or a category with a dozen,
-// is a pattern — which is the thing you cannot see from the canvas.
-const bnPanel     = document.getElementById('bn-panel');
-const bnSummary   = document.getElementById('bn-summary');
-const bnPatterns  = document.getElementById('bn-patterns');
-const bnResults   = document.getElementById('bn-results');
-const bnShowResolved = document.getElementById('bn-show-resolved');
-const bnCountBadge   = document.getElementById('gbb-count');
-
-function gBrokenGroups() {
-  const groups = new Map();   // method_id → {meta, reports}
-  for (const rep of gBrokenNodeReports) {
-    let g = groups.get(rep.method_id);
-    if (!g) { g = { method_id: rep.method_id, meta: rep, reports: [] }; groups.set(rep.method_id, g); }
-    g.reports.push(rep);
-  }
-  for (const g of groups.values()) {
-    g.reports.sort((a, b) => (b.flagged_at || '').localeCompare(a.flagged_at || ''));
-    g.open = g.reports.filter(r => r.status === 'open').length;
-  }
-  // Most-complained-about first; ties broken by total report count.
-  return [...groups.values()].sort((a, b) => b.open - a.open || b.reports.length - a.reports.length);
-}
-
-async function gBrokenPatch(id, body) {
-  const r = await fetch('/api/broken-nodes/' + encodeURIComponent(id), {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!r.ok) throw new Error(`Server error ${r.status}`);
-  await gLoadBrokenNodes();
-}
-
-async function gBrokenDelete(id) {
-  const r = await fetch('/api/broken-nodes/' + encodeURIComponent(id), { method: 'DELETE' });
-  if (!r.ok) throw new Error(`Server error ${r.status}`);
-  await gLoadBrokenNodes();
-}
-
-// Centre the canvas on the first instance of a method and select it.
-function gFocusMethodInGraph(method_id) {
-  const node = gNodes.find(n => n.method_id === method_id);
-  if (!node) return false;
-  const el = document.getElementById('gnode-' + node.id);
-  const wrap = gCanvasWrap.getBoundingClientRect();
-  gPanX = wrap.width  / 2 - (node.x + (el ? el.offsetWidth  / 2 : 90)) * gCanvasScale;
-  gPanY = wrap.height / 2 - (node.y + (el ? el.offsetHeight / 2 : 60)) * gCanvasScale;
-  gApplyPan();
-  gRedrawEdges();
-  gSelectNode(node.id);
-  return true;
-}
-
-function gRenderBrokenPanel() {
-  const showResolved = bnShowResolved.checked;
-  const groups = gBrokenGroups().filter(g => showResolved || g.open > 0);
-  const totalOpen = gBrokenNodeReports.filter(r => r.status === 'open').length;
-
-  // Toolbar badge tracks open reports even while the panel is closed.
-  bnCountBadge.textContent = totalOpen || '';
-  bnCountBadge.classList.toggle('on', totalOpen > 0);
-
-  const openNodeCount = new Set(
-    gBrokenNodeReports.filter(r => r.status === 'open').map(r => r.method_id)
-  ).size;
-  bnSummary.textContent = totalOpen
-    ? `${totalOpen} open report${totalOpen === 1 ? '' : 's'} across ${openNodeCount} node${openNodeCount === 1 ? '' : 's'}`
-    : 'nothing flagged';
-
-  // Category breakdown — where the damage clusters.
-  bnPatterns.innerHTML = '';
-  const byCat = {};
-  for (const r of gBrokenNodeReports) {
-    if (r.status !== 'open') continue;
-    const cat = r.category || 'uncategorised';
-    byCat[cat] = (byCat[cat] || 0) + 1;
-  }
-  for (const [cat, n] of Object.entries(byCat).sort((a, b) => b[1] - a[1])) {
-    const chip = document.createElement('span');
-    chip.className = 'bn-chip' + (n >= 3 ? ' hot' : '');
-    chip.innerHTML = `${escHtml(cat)} <b>${n}</b>`;
-    if (n >= 3) chip.title = `${n} open reports in ${cat} — likely a shared cause, not ${n} separate bugs`;
-    bnPatterns.appendChild(chip);
-  }
-
-  bnResults.innerHTML = '';
-  if (!groups.length) {
-    const empty = document.createElement('div');
-    empty.id = 'bn-empty';
-    empty.textContent = showResolved
-      ? 'No reports yet. Right-click a node → 🚩 Flag as broken… to file one.'
-      : 'No open reports. Tick “show resolved” to see the history.';
-    bnResults.appendChild(empty);
-    return;
-  }
-
-  for (const g of groups) {
-    const inGraph = gNodes.some(n => n.method_id === g.method_id);
-    const row = document.createElement('div');
-    row.className = 'bn-method-row' + (g.open === 0 ? ' bn-all-resolved' : '');
-    const resolvedN = g.reports.length - g.open;
-    row.innerHTML = `
-      <span class="bn-mid">${escHtml(g.method_id)}</span>
-      <span class="bn-name">${escHtml(g.meta.method_name || g.method_id)}</span>
-      <span class="bn-src" title="${escHtml(g.meta.source_path || '')}">${escHtml(g.meta.source_path || '')}</span>
-      ${inGraph ? '<span class="bn-ingraph" title="Click to centre on this node in the graph">◎ in graph</span>' : ''}
-      <span class="bn-count">${g.open} open${resolvedN ? ` · ${resolvedN} resolved` : ''}</span>`;
-
-    const detail = document.createElement('div');
-    detail.className = 'bn-detail';
-    for (const rep of g.reports) {
-      if (!showResolved && rep.status !== 'open') continue;
-      const card = document.createElement('div');
-      card.className = 'bn-report' + (rep.status === 'resolved' ? ' bn-resolved' : '');
-
-      const note = document.createElement('div');
-      note.className = 'bn-report-note';
-      note.textContent = rep.note;
-
-      const meta = document.createElement('div');
-      meta.className = 'bn-report-meta';
-      const when = document.createElement('span');
-      when.textContent = (rep.flagged_at || '').slice(0, 16).replace('T', ' ');
-      meta.appendChild(when);
-      if (rep.reported_by && rep.reported_by !== 'ui') {
-        const who = document.createElement('span');
-        who.textContent = `by ${rep.reported_by}`;
-        meta.appendChild(who);
-      }
-      const paramKeys = Object.keys(rep.params || {});
-      if (paramKeys.length) {
-        const p = document.createElement('span');
-        p.className = 'bn-params';
-        p.textContent = paramKeys.map(k => `${k}=${JSON.stringify(rep.params[k])}`).join(' ');
-        p.title = JSON.stringify(rep.params, null, 2);
-        meta.appendChild(p);
-      }
-
-      const actions = document.createElement('div');
-      actions.className = 'bn-report-actions';
-      const toggle = document.createElement('button');
-      toggle.className = 'bn-act';
-      toggle.textContent = rep.status === 'open' ? '✓ Resolve' : '↺ Reopen';
-      toggle.addEventListener('click', async ev => {
-        ev.stopPropagation();
-        toggle.disabled = true;
-        try {
-          await gBrokenPatch(rep.id, { status: rep.status === 'open' ? 'resolved' : 'open' });
-          gShowToast(rep.status === 'open' ? 'Marked resolved' : 'Reopened');
-        } catch (err) { gShowToast(err.message, true); toggle.disabled = false; }
-      });
-      const del = document.createElement('button');
-      del.className = 'bn-act bn-act-del';
-      del.textContent = '✕ Delete';
-      del.addEventListener('click', async ev => {
-        ev.stopPropagation();
-        del.disabled = true;
-        try { await gBrokenDelete(rep.id); gShowToast('Report deleted'); }
-        catch (err) { gShowToast(err.message, true); del.disabled = false; }
-      });
-      actions.append(toggle, del);
-      meta.appendChild(actions);
-
-      card.append(note, meta);
-      detail.appendChild(card);
-    }
-
-    row.addEventListener('click', e => {
-      if (e.target.closest('.bn-ingraph')) {
-        if (gFocusMethodInGraph(g.method_id)) gShowToast(`Centred on ${g.meta.method_name || g.method_id}`);
-        return;
-      }
-      detail.classList.toggle('bn-open');
-    });
-    bnResults.append(row, detail);
-  }
-}
-
-function gBrokenPanelToggle() {
-  const opening = !bnPanel.classList.contains('bn-open');
-  bnPanel.classList.toggle('bn-open', opening);
-  if (opening) gLoadBrokenNodes();
-}
-
-document.getElementById('graph-broken-btn-desk').addEventListener('click', gBrokenPanelToggle);
-document.getElementById('bn-close-btn').addEventListener('click', () => bnPanel.classList.remove('bn-open'));
-bnShowResolved.addEventListener('change', gRenderBrokenPanel);
-
-// A markdown digest to paste at an agent — same facts as the JSON, ordered so
-// the cross-cutting pattern reads first.
-function gBrokenDigest() {
-  const groups = gBrokenGroups().filter(g => g.open > 0);
-  if (!groups.length) return '';
-
-  const byCat = {};
-  for (const r of gBrokenNodeReports) {
-    if (r.status === 'open') byCat[r.category || 'uncategorised'] = (byCat[r.category || 'uncategorised'] || 0) + 1;
-  }
-  const lines = [
-    '# Broken-node reports (open)',
-    '',
-    'Source of truth: docs/reports/broken-nodes.json',
-    `By category: ${Object.entries(byCat).sort((a, b) => b[1] - a[1]).map(([c, n]) => `${c} (${n})`).join(', ')}`,
-    '',
-  ];
-  for (const g of groups) {
-    lines.push(`## ${g.meta.method_name || g.method_id} — id ${g.method_id} (${g.open} open)`);
-    lines.push(`\`${g.meta.source_path || 'source path unknown'}\``);
-    for (const rep of g.reports.filter(r => r.status === 'open')) {
-      lines.push(`- ${rep.note}`);
-      const keys = Object.keys(rep.params || {});
-      if (keys.length) lines.push(`  - params: ${keys.map(k => `${k}=${JSON.stringify(rep.params[k])}`).join(', ')}`);
-    }
-    lines.push('');
-  }
-  return lines.join('\n');
-}
-
-document.getElementById('bn-copy-btn').addEventListener('click', async () => {
-  const text = gBrokenDigest();
-  if (!text) { gShowToast('Nothing to copy — no open reports', true); return; }
-  const groups = gBrokenGroups().filter(g => g.open > 0);
-  try {
-    await navigator.clipboard.writeText(text);
-    gShowToast(`Copied ${groups.length} node${groups.length === 1 ? '' : 's'} to clipboard`);
-  } catch {
-    // Clipboard API needs a secure context; fall back so remote/http still works.
-    const ta = document.createElement('textarea');
-    ta.value = text; document.body.appendChild(ta); ta.select();
-    document.execCommand('copy'); ta.remove();
-    gShowToast('Copied digest to clipboard');
-  }
-});
-
-gLoadBrokenNodes();
 
 // ── Per-parameter flyout menu (dropdown) ───────────────────────────
 // Right-click (or click the ⋮ button) a parameter row to open a small
@@ -7655,8 +7264,14 @@ gLoadBrokenNodes();
 
   document.getElementById('ndpm-open').addEventListener('click', e => {
     e.stopPropagation();
-    ndOpenPanel();
-    if (ctxParam) ndPrefill(`Parameter "${ctxParam}" — what would you like to change?`);
+    const node = currentNode();
+    let ctx = null;
+    if (node) {
+      const def = gNodeDefs[node.method_id];
+      ctx = { method_id: node.method_id, nodeName: def ? def.name : node.method_id };
+      if (ctxParam) ctx.paramName = ctxParam;
+    }
+    ndPrefill('', ctx);
     hideMenu();
   });
 })();
@@ -7666,13 +7281,11 @@ gLoadMethodPalette();
 gLoadPortTypes();
 gLoadGroupPresets();
 
-// ── Node source-code editor ────────────────────────────────────
-// Right-click a node → "Source code" opens the backing module in an
-// editable code block. Applying reuses the Node Doctor apply/undo
-// endpoints (server writes a backup then hot-reloads via watchdog).
+// ── Node source-code editor + Node Doctor (merged modal with tabs) ──
+// The source-code modal now has two tabs: Code (the original source editor)
+// and Doctor (the Node Doctor chat). Both share the same modal.
 (function() {
   const modal    = document.getElementById('node-source-modal');
-  const titleEl  = document.getElementById('nsm-title');
   const pathEl   = document.getElementById('nsm-path');
   const codeEl   = document.getElementById('nsm-code');
   const statusEl = document.getElementById('nsm-status');
@@ -7680,11 +7293,25 @@ gLoadGroupPresets();
   const undoBtn  = document.getElementById('nsm-undo-btn');
   const closeBtn = document.getElementById('nsm-close-btn');
   const closeBtn2= document.getElementById('nsm-close-btn2');
+  const tabBtns  = document.querySelectorAll('.nsm-tab');
+  const tabCode  = document.querySelector('.nsm-tab-code');
+  const tabDoctor= document.querySelector('.nsm-tab-doctor');
+  const tabGrave = document.querySelector('.nsm-tab-graveyard');
 
   let curMethodId = null;
   let backupId    = null;
   let loaded      = '';   // last-loaded source, for dirty detection
   let busy        = false;
+
+  // ── Tab switching ──
+  function switchTab(name) {
+    tabBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    tabCode.classList.toggle('active', name === 'code');
+    tabDoctor.classList.toggle('active', name === 'doctor');
+    tabGrave.classList.toggle('active', name === 'graveyard');
+    if (name === 'graveyard') ngLoad();
+  }
+  tabBtns.forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
 
   function setStatus(msg, kind) {
     statusEl.textContent = msg || '';
@@ -7697,13 +7324,15 @@ gLoadGroupPresets();
     backupId = null;
   }
 
+  // ── Source code tab ──
   async function open(nodeId) {
     const node = gNodes.find(n => n.id === nodeId);
     if (!node || !node.method_id) return;
     curMethodId = node.method_id;
     backupId = null;
+    loaded = '';
     const def = gNodeDefs[node.method_id];
-    titleEl.textContent = `Source — ${def?.name || node.method_id}`;
+    switchTab('code');
     pathEl.textContent = 'loading…';
     codeEl.value = '';
     codeEl.readOnly = true;
@@ -7712,12 +7341,16 @@ gLoadGroupPresets();
     setStatus('');
     modal.classList.add('open');
     codeEl.focus();
+    loadSource(node.method_id);
+  }
 
+  async function loadSource(methodId) {
+    if (!methodId) return;
     try {
-      const r = await fetch(`/api/node-doctor/source/${encodeURIComponent(node.method_id)}`);
+      const r = await fetch(`/api/node-doctor/source/${encodeURIComponent(methodId)}`);
       const d = await r.json();
       if (!d.path) {
-        pathEl.textContent = `#${node.method_id}`;
+        pathEl.textContent = `#${methodId}`;
         codeEl.value = '';
         setStatus('No editable source file for this node (built-in or client-side node).', 'err');
         return;
@@ -7729,7 +7362,7 @@ gLoadGroupPresets();
       saveBtn.disabled = false;
       codeEl.scrollTop = 0;
     } catch (err) {
-      pathEl.textContent = `#${node.method_id}`;
+      pathEl.textContent = `#${methodId}`;
       setStatus('⚠ Failed to load source: ' + err.message, 'err');
     }
   }
@@ -7757,8 +7390,7 @@ gLoadGroupPresets();
       loaded = source;
       undoBtn.style.display = '';
       undoBtn.disabled = false;
-      // Wait for the watchdog hot-reload confirmation (same signal the
-      // Node Doctor listens for), or fall back after a short timeout.
+      // Wait for the watchdog hot-reload confirmation
       const confirmed = await new Promise(resolve => {
         const t = setTimeout(() => resolve(false), 5000);
         window.addEventListener('nd-hot-reload', () => { clearTimeout(t); resolve(true); }, { once: true });
@@ -7810,7 +7442,6 @@ gLoadGroupPresets();
     if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); save(); }
     else if (e.key === 'Escape') { e.preventDefault(); close(); }
     else if (e.key === 'Tab') {
-      // Insert a real tab instead of moving focus out of the editor.
       e.preventDefault();
       const s = codeEl.selectionStart, en = codeEl.selectionEnd;
       codeEl.value = codeEl.value.slice(0, s) + '    ' + codeEl.value.slice(en);
@@ -7819,18 +7450,93 @@ gLoadGroupPresets();
   });
 
   window.gOpenNodeSource = open;
-})();
 
-// ── NODE DOCTOR ────────────────────────────────────────────────
-(function() {
+  // Close modal on Escape from any tab
+  modal.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+  });
+
+  // ── Graveyard tab (restore deleted nodes) ──
+  const ngList   = document.getElementById('ng-list');
+  const ngEmpty  = document.getElementById('ng-empty');
+  const ngRefresh= document.getElementById('ng-refresh');
+
+  async function ngLoad() {
+    ngList.innerHTML = '<div class="ng-loading">Loading…</div>';
+    ngEmpty.style.display = 'none';
+    try {
+      const r = await fetch('/api/nodes/graveyard');
+      const d = await r.json();
+      const entries = d.entries || [];
+      ngList.innerHTML = '';
+      if (!entries.length) {
+        ngEmpty.style.display = '';
+        return;
+      }
+      for (const e of entries) {
+        const row = document.createElement('div');
+        row.className = 'ng-item';
+        const label = document.createElement('div');
+        label.className = 'ng-item-label';
+        const kind = e.kind === 'gpu_shader' ? 'GPU shader' : 'file';
+        label.textContent = `${e.name || e.file}  ·  #${e.id || '?'}  ·  ${kind}`;
+        const btn = document.createElement('button');
+        btn.className = 'ng-restore-btn';
+        btn.textContent = '↩ Restore';
+        btn.addEventListener('click', () => ngRestore(e.file, row, btn));
+        row.appendChild(label);
+        row.appendChild(btn);
+        ngList.appendChild(row);
+      }
+    } catch (err) {
+      ngList.innerHTML = `<div class="ng-loading">⚠ ${err.message}</div>`;
+    }
+  }
+
+  async function ngRestore(entryFile, row, btn) {
+    btn.disabled = true;
+    row.classList.add('ng-restoring');
+    try {
+      const r = await fetch('/api/nodes/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entry_file: entryFile }),
+      });
+      const d = await r.json();
+      if (d.ok) {
+        row.classList.remove('ng-restoring');
+        row.classList.add('ng-restored');
+        btn.textContent = `✓ Restored #${d.id || ''}`;
+        // Refresh palette so the node reappears immediately.
+        if (typeof gLoadMethodPalette === 'function') gLoadMethodPalette();
+        // Auto-refresh the list shortly after to drop the restored entry.
+        setTimeout(ngLoad, 800);
+      } else {
+        row.classList.remove('ng-restoring');
+        btn.disabled = false;
+        btn.textContent = '⚠ Failed';
+        row.querySelector('.ng-item-label').textContent =
+          `Restore failed: ${d.error || 'unknown'}`;
+      }
+    } catch (err) {
+      row.classList.remove('ng-restoring');
+      btn.disabled = false;
+      btn.textContent = '⚠ Failed';
+      row.querySelector('.ng-item-label').textContent = `⚠ ${err.message}`;
+    }
+  }
+
+  ngRefresh.addEventListener('click', ngLoad);
+
+  // ── Doctor tab (Node Doctor) ──
   let ndMessages     = [];
   let ndPendingCode  = null;
   let ndBackupId     = null;
   let ndBusy         = false;
+  let ndContext      = null;  // { method_id, nodeName, filePath?, paramName? }
 
-  const ndPanel      = document.getElementById('nd-panel');
-  const ndToggleBtn  = document.getElementById('nd-toggle-btn');
-  const ndCloseBtn   = document.getElementById('nd-close-btn');
+  const DEFAULT_PLACEHOLDER = 'Describe the issue or what you want to change…';
+
   const ndMsgsEl     = document.getElementById('nd-messages');
   const ndInput      = document.getElementById('nd-input');
   const ndSendBtn    = document.getElementById('nd-send-btn');
@@ -7838,35 +7544,117 @@ gLoadGroupPresets();
   const ndApplyBtn   = document.getElementById('nd-apply-btn');
   const ndUndoBtn    = document.getElementById('nd-undo-btn');
 
-  // ── Pre-fill the chat input (used by the per-parameter flyout) ──
-  // Appends to whatever is already typed, opens the panel, and focuses.
-  function ndPrefill(text) {
-    if (!text) return;
-    if (!ndIsOpen()) ndOpenPanel();
-    const cur = ndInput.value.trim();
-    ndInput.value = cur ? cur + '\n\n' + text : text;
+  // ── Empty-state ASCII art in the messages area ──
+  const ndEmptyEl = document.createElement('pre');
+  ndEmptyEl.className = 'nd-empty';
+  ndEmptyEl.textContent =
+`.              .  ..                                    \n` +
+`                                   :   :                  .                                  \n` +
+`                                  -              .===-=    ::                                \n` +
+`                                  :         :--+++****++:  . =                               \n` +
+`                                 +   -+-...:-=+*+**##***+-   +                               \n` +
+`                                 +. :%%:. :=++*#*#######**.  .                               \n` +
+`                                 -**=%%=...=+*******#####*- ..                               \n` +
+`                                 .#*:#%:...-++**+*##%#####  +                                \n` +
+`                                  =#.%%      :++*=:   =:+#-*:#                               \n` +
+`                                  -*.#:-       -#*:  .. #%*+*#                               \n` +
+`                                  ...#-  .:    -***-::*+#*#-=                                \n` +
+`                                  - -#:-.:.    :**#*++*###%-#                               \n` +
+`                                   #=+%:.::.  ==*###+:+#####=                                \n` +
+`                                    =%::-.     =+***#*+:###                                  \n` +
+`                                     #-+-.....:++*##* :.###                                  \n` +
+`                                      =.-=.. =*##%#=*#=*+*                                   \n` +
+`                   *=*#                -.-...::=+*#####**                                    \n` +
+`                   .-+##              *=-.*..:--+*######%                                    \n` +
+`                   :.-+*#          :.#=#:.=*:::=+*#######=                                   \n` +
+`                    ..-+*         + :## :   *-:=++***### %%                                  \n` +
+`                    + :=*   :#*=..: .=*+:......:-**###* #%.*%                                \n` +
+`                   *. .+*##*==+=*.. .:=+##::-=+*-:**+-**** +##                               \n` +
+`                 ###    *+#-++*-+*:. =-++#%:-:=**.= *****+ *##..#-                           \n` +
+`               *#**#*++*=#*#*-**#+-:  *++##%#::+     *****+####  ####                        \n` +
+`              *####%#++**#+*+#:*##+ .+. .:####:       ***.*##### ##%#%%%%                    \n` +
+`             ##=+###*#****++*##-#- :##+. #%%###        ** ####%%: ##%%%#%##%                 \n` +
+`            ##%#*##*%#+-=*++#=#+*# *+#*:*#%%%#%%     :+ : #####%%. %%%%%%%%%#                \n` +
+`          *###%.:#+ +..+*:=*#-#*+#  %##==-%%%%%%%     := =##%%%%#= %%%%%%###*#               \n` +
+`        .****#.-.+#.  ..  .==####%=:#####+ .%##%#%     = #%%%%%%%%.-####***##%*              \n` +
+`        +#+**#   :+.:#*.   :*%%%##%.##%%##+:+#%%%#%   .  %%%%%%%%%  #**########              \n` +
+`       :-++++*    .- -:      .:*%##+%#%%%%#=#+*%%%%%  . *%%%%%###*.:####%#####**             \n` +
+`        =#**++ .    -  .       .*#*+#%%%%%#+#%#+*%%%#   %#####*#%+-.%#:#####*###             \n` +
+`        :-=**#       : ...    ..:=++-##*##*# ###+-+##   ##%%%%#%*-- +=.*#######*.            \n` +
+`         -====:                   =+*#%#####*##%%#++## #%%###**## ==#+=#****##***            \n` +
+`           -=-::        .+:+.+-..   ==****#########+==.**##########*+*###**+++*+-            \n` +
+`                                   .::=+*+-*#=****++:..                                      `;
+  ndMsgsEl.appendChild(ndEmptyEl);
+
+  function ndSetEmpty(show) {
+    ndEmptyEl.style.display = show ? '' : 'none';
+  }
+
+  async function fetchFilePath(methodId) {
+    try {
+      const r = await fetch(`/api/node-doctor/source/${encodeURIComponent(methodId)}`);
+      const d = await r.json();
+      return d.path || null;
+    } catch { return null; }
+  }
+
+  // Open the Doctor tab with optional context metadata.
+  // When 'context' is provided: no text is filled — the info goes into the
+  // placeholder and is prepended behind the scenes on first send.
+  // When 'text' is provided without context: it fills the input as before
+  // (used by the "Describe an issue…" param flyout handler).
+  function ndPrefill(text, context) {
+    if (!text && !context) return;
+    if (!modal.classList.contains('open')) {
+      const node = gNodes.find(n => n.id === gSelectedNode);
+      if (node && node.method_id) curMethodId = node.method_id;
+      switchTab('doctor');
+      modal.classList.add('open');
+    } else {
+      switchTab('doctor');
+    }
+
+    ndContext = context || null;
+
+    if (context) {
+      // Show context in placeholder, no text filled
+      const parts = [];
+      if (context.paramName) parts.push(`param "${context.paramName}"`);
+      if (context.nodeName) parts.push(context.nodeName);
+      ndInput.placeholder = parts.length
+        ? `Ask about ${parts.join(' on ')} — file path sent with first message`
+        : DEFAULT_PLACEHOLDER;
+      ndInput.value = '';
+      ndInput.title = 'Your first message is prefixed with the node file path and method name so the AI has full context.';
+      // Eagerly load source code so it's ready on the Code tab
+      if (context.method_id) {
+        loaded = '';
+        loadSource(context.method_id);
+      }
+      // Fetch file path asynchronously to enrich the tooltip & context
+      if (context.method_id) {
+        fetchFilePath(context.method_id).then(fp => {
+          if (fp && ndContext === context) {
+            context.filePath = fp;
+            ndInput.title = `First message includes: ${context.nodeName} (${fp})`;
+          }
+        });
+      }
+    } else if (text) {
+      // Legacy behaviour — fill the textarea
+      ndInput.placeholder = DEFAULT_PLACEHOLDER;
+      ndInput.title = '';
+      const cur = ndInput.value.trim();
+      ndInput.value = cur ? cur + '\n\n' + text : text;
+    }
+
     ndInput.focus();
-    // Move caret to the end.
     ndInput.selectionStart = ndInput.selectionEnd = ndInput.value.length;
   }
-  window.ndPrefill = ndPrefill;   // exposed for the flyout menu handler
-
-  function ndIsOpen() { return ndPanel.classList.contains('nd-open'); }
-
-  function ndOpenPanel() {
-    ndPanel.classList.add('nd-open');
-    ndToggleBtn.classList.add('nd-active');
-    ndInput.focus();
-  }
-  function ndClosePanel() {
-    ndPanel.classList.remove('nd-open');
-    ndToggleBtn.classList.remove('nd-active');
-  }
-
-  ndToggleBtn.addEventListener('click', () => ndIsOpen() ? ndClosePanel() : ndOpenPanel());
-  ndCloseBtn.addEventListener('click', ndClosePanel);
+  window.ndPrefill = ndPrefill;
 
   function ndAppend(role, text) {
+    ndSetEmpty(false);
     const el = document.createElement('div');
     el.className = `nd-msg nd-${role}`;
     el.textContent = text;
@@ -7882,23 +7670,41 @@ gLoadGroupPresets();
 
   async function ndSend() {
     if (ndBusy) return;
-    const text = ndInput.value.trim();
+    let text = ndInput.value.trim();
     if (!text) return;
 
     const node = gNodes.find(n => n.id === gSelectedNode);
     if (!node) return;
     const def = gNodeDefs[node.method_id];
+    curMethodId = node.method_id;
+
+    // Prepend context metadata to the first message
+    let firstMsg = text;
+    if (ndContext) {
+      const ctx = ndContext;
+      if (ctx.paramName) {
+        firstMsg = ctx.filePath
+          ? `[Node: ${ctx.nodeName} — ${ctx.filePath} — param "${ctx.paramName}"]\n${text}`
+          : `[Node: ${ctx.nodeName} — param "${ctx.paramName}"]\n${text}`;
+      } else if (ctx.filePath) {
+        firstMsg = `[Node: ${ctx.nodeName} — ${ctx.filePath}]\n${text}`;
+      } else {
+        firstMsg = `[Node: ${ctx.nodeName}]\n${text}`;
+      }
+      ndContext = null; // only prepend once
+    }
 
     ndInput.value = '';
+    ndInput.placeholder = DEFAULT_PLACEHOLDER;
+    ndInput.title = '';
     ndBusy = true;
     ndSendBtn.disabled = true;
 
-    ndMessages.push({ role: 'user', content: text });
-    ndAppend('user', text);
+    ndMessages.push({ role: 'user', content: firstMsg });
+    ndAppend('user', firstMsg);
 
     const thinkEl = ndAppend('bot', '');
     thinkEl.classList.add('nd-thinking');
-    // Show spinner while waiting for first response chunk
     const spinner = document.createElement('span');
     spinner.className = 'nd-spinner';
     thinkEl.prepend(spinner);
@@ -7922,7 +7728,6 @@ gLoadGroupPresets();
       const dec    = new TextDecoder();
       thinkEl.textContent = '';
       thinkEl.classList.remove('nd-thinking');
-      // Add blinking cursor during streaming
       thinkEl.classList.add('nd-stream-cursor');
 
       let buf = '';
@@ -7945,7 +7750,6 @@ gLoadGroupPresets();
           } catch { /* partial JSON */ }
         }
       }
-      // Remove streaming cursor when done
       thinkEl.classList.remove('nd-stream-cursor');
     } catch (err) {
       thinkEl.classList.remove('nd-thinking');
@@ -7977,7 +7781,6 @@ gLoadGroupPresets();
     const node = gNodes.find(n => n.id === gSelectedNode);
     if (!node) return;
     ndApplyBtn.disabled = true;
-    // Show pending message with spinner
     const statusEl = ndAppend('bot', '');
     const spinner = document.createElement('span');
     spinner.className = 'nd-spinner';
@@ -7994,7 +7797,6 @@ gLoadGroupPresets();
         ndBackupId = data.backup_id;
         ndUndoBtn.classList.add('nd-show');
         ndUndoBtn.disabled = false;
-        // Wait for SSE confirmation or timeout
         const confirmed = await new Promise(resolve => {
           const timeout = setTimeout(() => resolve(false), 5000);
           const handler = () => { clearTimeout(timeout); resolve(true); };
@@ -8005,7 +7807,6 @@ gLoadGroupPresets();
           statusEl.classList.remove('nd-thinking');
           statusEl.classList.add('nd-msg', 'nd-bot');
           statusEl.textContent = '✓ Hot-reload complete — method updated';
-          // Flash the node green briefly
           const nodeEl = document.querySelector(`.gnode[data-id="${node.id}"]`);
           if (nodeEl) {
             nodeEl.style.transition = 'border-color 0.15s, box-shadow 0.15s';
@@ -8060,24 +7861,90 @@ gLoadGroupPresets();
     }
   });
 
-  // Wire into node selection — show/hide the toggle button and reset state
-  const _origGSelectNode = gSelectNode;
-  gSelectNode = function(id) {
-    _origGSelectNode(id);
-    const node = gNodes.find(n => n.id === id);
-    if (node) {
-      ndToggleBtn.style.display = '';
-    } else {
-      ndToggleBtn.style.display = 'none';
-      ndClosePanel();
+  // ── Delete-node-source ───────────────────────────────────────
+  // Drops the node type from the registry (DELETE /api/nodes/{id}) and
+  // removes every instance of it from the current graph. Two-step confirm
+  // so a stray click can't nuke a node.
+  const ndDeleteBtn    = document.getElementById('nd-delete-btn');
+  const ndDeleteConfirm= document.getElementById('nd-delete-confirm');
+  const ndDeleteName   = document.getElementById('nd-delete-name');
+  const ndDeleteYes     = document.getElementById('nd-delete-yes');
+  const ndDeleteNo      = document.getElementById('nd-delete-no');
+
+  function ndDeleteShowConfirm(node) {
+    const def = gNodeDefs[node.method_id];
+    ndDeleteName.textContent = def ? def.name : node.method_id;
+    ndDeleteConfirm.classList.add('nd-show');
+  }
+  function ndDeleteHideConfirm() {
+    ndDeleteConfirm.classList.remove('nd-show');
+  }
+
+  ndDeleteBtn.addEventListener('click', () => {
+    const node = gNodes.find(n => n.id === gSelectedNode);
+    if (!node) return;
+    ndDeleteHideConfirm();
+    ndDeleteShowConfirm(node);
+  });
+  ndDeleteNo.addEventListener('click', ndDeleteHideConfirm);
+
+  ndDeleteYes.addEventListener('click', async () => {
+    const node = gNodes.find(n => n.id === gSelectedNode);
+    if (!node) { ndDeleteHideConfirm(); return; }
+    const mid = node.method_id;
+    ndDeleteYes.disabled = true;
+    ndDeleteNo.disabled = true;
+    const statusEl = ndAppend('bot', '');
+    statusEl.classList.add('nd-thinking');
+    statusEl.textContent = `Deleting “${ndDeleteName.textContent}”…`;
+    try {
+      const resp = await fetch(`/api/nodes/${encodeURIComponent(mid)}`, { method: 'DELETE' });
+      const data = await resp.json().catch(() => ({}));
+      statusEl.classList.remove('nd-thinking');
+      statusEl.classList.add('nd-msg', 'nd-bot');
+      if (resp.ok && data.ok) {
+        // Remove every instance of this node type from the live graph.
+        const victims = gNodes.filter(n => n.method_id === mid);
+        victims.forEach(v => gDeleteNode(v.id));
+        const grav = data.graveyard || {};
+        let where = '';
+        if (grav.graved && grav.path) where = ` Moved source → ${grav.path.split('/').slice(-2).join('/')}.`;
+        else if (grav.graved && grav.kind === 'tombstone') where = ` Wrote tombstone (shared GPU shader file left in place).`;
+        statusEl.textContent = `✓ Deleted node “${ndDeleteName.textContent}”. Removed ${victims.length} instance(s) from this graph.${where}`;
+        ndDeleteHideConfirm();
+      } else {
+        statusEl.textContent = '⚠ Delete failed: ' + (data.error || `server error ${resp.status}`);
+      }
+    } catch (err) {
+      statusEl.classList.remove('nd-thinking');
+      statusEl.classList.add('nd-msg', 'nd-bot');
+      statusEl.textContent = '⚠ ' + err.message;
+    } finally {
+      ndDeleteYes.disabled = false;
+      ndDeleteNo.disabled = false;
     }
-    // Reset conversation when switching nodes
-    ndMessages    = [];
-    ndPendingCode = null;
-    ndMsgsEl.innerHTML = '';
-    ndApplyRow.classList.remove('nd-show');
-    ndUndoBtn.classList.remove('nd-show');
-  };
+  });
+
+  // Wire into node selection — show/hide the toggle button and reset state
+  (function() {
+    const _origGSelectNode = gSelectNode;
+    gSelectNode = function(id) {
+      _origGSelectNode(id);
+      // Reset conversation when switching nodes
+      ndMessages    = [];
+      ndPendingCode = null;
+      ndBackupId    = null;
+      ndContext     = null;
+      ndMsgsEl.innerHTML = '';
+      ndMsgsEl.appendChild(ndEmptyEl);
+      ndSetEmpty(true);
+      ndInput.placeholder = DEFAULT_PLACEHOLDER;
+      ndInput.title = '';
+      ndApplyRow.classList.remove('nd-show');
+      ndUndoBtn.classList.remove('nd-show');
+      ndDeleteConfirm.classList.remove('nd-show');
+    };
+  })();
 })();
 
 // ── Load saved clips on init ──────────────────────────────────

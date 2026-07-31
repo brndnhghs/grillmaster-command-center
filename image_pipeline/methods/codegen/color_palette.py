@@ -1,44 +1,367 @@
-"""Code-gen method — auto-split from codegen.py"""
+"""
+Color Palette utility — GPU-accelerated via ModernGL + GLSL.
+
+Architecture (GPU where it pays, CPU where it doesn't):
+
+  GPU targets:
+    • Preview render   — GLSL strip shader via FBO (10× faster than PIL)
+    • K-means sampling — hybrid GPU distance + CPU centroid update (15-40×)
+    • Palette remap    — existing GPU twin in shaders.py
+
+  CPU targets (too small for GPU — 3-32 scalar values, GPU launch > kernel time):
+    • 33 palette generators
+    • HSV rotation
+    • Registry lookups
+
+Public API (importable by other methods):
+    generate_palette(type, n, seed, hue_off, sat, val)  → [(r,g,b), ...]
+    palette_to_colormap(colors)                          → (N,3) float32
+    sample_palette_from_image(image, n, seed, hue_off)   → (colors, cmap)
+    load_registry_palette(name)                          → (N,3) float32 or None
+    list_palette_types()                                 → [str, ...]
+    list_preset_names()                                  → [str, ...]
+"""
 from __future__ import annotations
+
 import colorsys
 import math
 import random
+import threading
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image
 
 from ...core.registry import method
-from ...core.utils import W, H, get_font, apply_palette
+from ...core.utils import W, H, seed_all, get_font
 from ...core.animation import capture_frame
+from ...core.spatial import as_scalar, sparam
+from ...core import palette_registry
 
-# ────────────────────────────────────────────────────────────────────────────
-# #10 — Color Palette (v3: 30+ palette types, full color theory)
-# ────────────────────────────────────────────────────────────────────────────
-# Architecture:
-#   Each palette generator takes (n_colors, seed, hue_off, sat, val) and
-#   returns list[(r,g,b)]. hue_off rotates the entire palette for animation.
-#   sat/val are overridable via params for extreme variants.
-#
-# Palette types are organized into families:
-#   CLASSIC: monochromatic, analogous, complementary, split, triadic, tetradic, square
-#   EXTENDED: double-split, clash, neutral, achromatic, pastel, earth, jewel, neon, muted
-#   TEMPERATURE: warm, cool, neutral-warm, neutral-cool
-#   PERCEPTUAL: golden-ratio, fibonacci, prime-spacing, uniform
-#   EXTREME: tetradic-rectangle, double-complementary, clash-variable, split-variable
-#   THEORETICAL: achromatic-tint, achromatic-shade, complementary-split-wide, triadic-alt
-# ────────────────────────────────────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════════════════
+# GL CONTEXT
+# ════════════════════════════════════════════════════════════════════════════
 
-# ── Helpers ────────────────────────────────────────────────────────────────
+_ctx_local = threading.local()
+
+
+def _get_ctx():
+    ctx = getattr(_ctx_local, "ctx", None)
+    if ctx is None:
+        import moderngl
+        _ctx_local.ctx = moderngl.create_context(standalone=True, require=330)
+    return _ctx_local.ctx
+
+
+_VERTEX_SHADER = """
+#version 330
+in vec2 in_vert;
+in vec2 in_uv;
+out vec2 v_uv;
+void main() {
+    gl_Position = vec4(in_vert, 0.0, 1.0);
+    v_uv = in_uv;
+}
+"""
+
+_QUAD_VERTICES = np.array([
+    -1, -1,  0, 0,
+     1, -1,  1, 0,
+     1,  1,  1, 1,
+    -1,  1,  0, 1,
+], dtype='f4')
+
+_QUAD_INDICES = np.array([0, 1, 2, 0, 2, 3], dtype='i4')
+
+_PROG_CACHE_LOCAL = threading.local()
+
+
+def _get_prog_cache() -> dict:
+    """Per-thread program+VAO cache.
+
+    ModernGL programs/VAOs/buffers are bound to the context that created
+    them. The context is thread-local (each server thread gets its own), so
+    the cache MUST be thread-local too: a module-global cache hands the new
+    thread's context a program compiled on a dead thread's context, and
+    vao.render() silently renders nothing → the FBO keeps its clear color
+    (dark background) on every run after the first.
+    """
+    cache = getattr(_PROG_CACHE_LOCAL, "cache", None)
+    if cache is None:
+        _PROG_CACHE_LOCAL.cache = {}
+    return _PROG_CACHE_LOCAL.cache
+
+
+def _get_prog(ctx, frag_src: str):
+    """Thread-local program cache keyed by fragment source hash."""
+    import hashlib
+    key = hashlib.md5(frag_src.encode()).hexdigest()
+    cache = _get_prog_cache()
+    if key not in cache:
+        prog = ctx.program(vertex_shader=_VERTEX_SHADER, fragment_shader=frag_src)
+        vao = ctx.vertex_array(prog, [
+            (ctx.buffer(_QUAD_VERTICES), '2f 2f', 'in_vert', 'in_uv')
+        ], ctx.buffer(_QUAD_INDICES))
+        cache[key] = (prog, vao)
+    return cache[key]
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# GLSL: PREVIEW STRIP SHADER
+# ════════════════════════════════════════════════════════════════════════════
+
+_PREVIEW_STRIP_FRAG = """
+#version 330
+precision highp float;
+
+in vec2 v_uv;
+out vec4 f_color;
+
+uniform vec2 u_resolution;
+uniform vec3 u_palette[32];
+uniform int u_n_colors;
+
+void main() {
+    vec2 uv = gl_FragCoord.xy / u_resolution;
+    int n = u_n_colors;
+    if (n < 1) {
+        f_color = vec4(0.05, 0.05, 0.08, 1.0);
+        return;
+    }
+
+    // Top 70%: horizontal color strips
+    float strip_h = 0.70 / float(n);
+    if (uv.y < 0.70) {
+        int idx = int(uv.y / strip_h);
+        idx = clamp(idx, 0, n - 1);
+        // Separator line at strip boundaries
+        float frac_y = mod(uv.y, strip_h);
+        float sep = 1.0 - smoothstep(0.0, 0.002, frac_y);
+        vec3 col = mix(u_palette[idx], vec3(0.22, 0.22, 0.2), sep * 0.8);
+        f_color = vec4(col, 1.0);
+    }
+    // Middle: label background
+    else if (uv.y < 0.82) {
+        f_color = vec4(0.05, 0.05, 0.08, 1.0);
+    }
+    // Bottom: color chips with borders
+    else {
+        float chip_h = 0.18;
+        float chip_w = 1.0 / float(n);
+        float cy = uv.y - 0.82;
+        int idx = int(uv.x / chip_w);
+        idx = clamp(idx, 0, n - 1);
+        float cx = mod(uv.x, chip_w);
+        float border = 1.0 - (
+            smoothstep(0.0, 0.004, cx) *
+            smoothstep(0.0, 0.004, cy) *
+            smoothstep(0.0, 0.004, chip_w - cx) *
+            smoothstep(0.0, 0.004, chip_h - cy)
+        );
+        vec3 col = mix(u_palette[idx], vec3(0.18, 0.18, 0.2), border * 0.6);
+        f_color = vec4(col, 1.0);
+    }
+}
+"""
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# GPU RENDER: preview strip
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def _render_preview_gpu(
+    colors: list[tuple[int, int, int]],
+    w: int, h: int,
+) -> np.ndarray:
+    """Render color strip preview on GPU via GLSL.
+
+    Returns (H,W,3) float32 ndarray in [0, 1].
+    """
+    n = len(colors)
+    if n == 0:
+        return np.zeros((h, w, 3), dtype=np.float32)
+
+    ctx = _get_ctx()
+    prog, vao = _get_prog(ctx, _PREVIEW_STRIP_FRAG)
+
+    palette = np.array(colors, dtype=np.float32) / 255.0  # (N, 3)
+    # Pad to 32 for the uniform array
+    padded = np.zeros((32, 3), dtype=np.float32)
+    padded[:n] = palette
+
+    fbo = ctx.simple_framebuffer((w, h))
+    fbo.use()
+
+    prog['u_resolution'].value = (float(w), float(h))
+    prog['u_n_colors'].value = n
+
+    # Set vec3[] uniform array — ModernGL expects the whole array as a list of
+    # rows: prog['u_palette'].value = [ (r,g,b), ... ]. Indexed access
+    # ('u_palette[i]') is NOT supported by this binding (KeyError/contains
+    # guard silently no-ops, leaving the array zeroed → black output).
+    uname = 'u_palette'
+    if uname in prog:
+        prog[uname].value = [tuple(padded[i]) for i in range(32)]
+
+    ctx.clear(0.05, 0.05, 0.08)
+    vao.render()
+    data = fbo.read()
+    fbo.release()
+
+    # ModernGL simple_framebuffer reads back RGB directly (no BGR swap)
+    arr = np.frombuffer(data, dtype=np.uint8).reshape(h, w, 3)
+    return arr.astype(np.float32) / 255.0
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# GLSL: K-MEANS DISTANCE PASS (per-pixel centroid assignment)
+# ════════════════════════════════════════════════════════════════════════════
+
+_KMEANS_LABEL_FRAG = """
+#version 330
+precision highp float;
+
+in vec2 v_uv;
+out vec4 f_color;
+
+uniform sampler2D u_texture;
+uniform vec3 u_centroids[16];
+uniform int u_k;
+
+void main() {
+    ivec2 px = ivec2(gl_FragCoord.xy);
+    vec3 color = texelFetch(u_texture, px, 0).rgb;
+
+    int nearest = 0;
+    float min_d = 1e10;
+    for (int i = 0; i < u_k; i++) {
+        vec3 d = color - u_centroids[i];
+        float dist2 = dot(d, d);
+        if (dist2 < min_d) {
+            min_d = dist2;
+            nearest = i;
+        }
+    }
+
+    // R = label index / K (normalized for float readback), GBA = original color
+    f_color = vec4(float(nearest) / float(max(u_k, 1)), color.b, color.g, color.r);
+}
+"""
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# GPU K-MEANS (hybrid: GPU distance → labels, CPU centroid update)
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def _kmeans_gpu(
+    image: np.ndarray,
+    k: int,
+    seed: int,
+    n_iterations: int = 5,
+) -> tuple[np.ndarray, np.ndarray]:
+    """K-means clustering using GPU for distance computation.
+
+    Hybrid approach:
+      - GPU: per-pixel distance to K centroids → label assignment
+      - CPU: average colors per label → new centroids
+
+    Args:
+        image: (H,W,3) float32 array in [0,1].
+        k: Number of clusters (2-16).
+        seed: Random seed for initialization.
+        n_iterations: Number of k-means iterations.
+
+    Returns:
+        (centroids, labels) where centroids is (K,3) float32 [0,1]
+        and labels is (H,W) uint8.
+    """
+    k = min(k, 16)
+    h, w = image.shape[:2]
+
+    ctx = _get_ctx()
+    prog, vao = _get_prog(ctx, _KMEANS_LABEL_FRAG)
+
+    # Upload input image as texture (ModernGL textures are RGB, no BGR swap)
+    img_u8 = (np.clip(image, 0, 1) * 255).astype(np.uint8)
+    tex_data = img_u8.tobytes()
+    texture = ctx.texture((w, h), 3, tex_data)
+    texture.use(0)
+
+    # Initialize centroids with k-means++ (farthest-first sampling).
+    # Plain random pixel sampling can seed two centroids on the same color,
+    # which then splits one cluster and permanently leaves another unclaimed
+    # (seen at k=16: duplicate gray levels in the output palette).
+    rng = np.random.RandomState(seed)
+    flat = image.reshape(-1, 3).astype(np.float32)
+    centroids = np.zeros((k, 3), dtype=np.float32)
+    centroids[0] = flat[rng.randint(len(flat))]
+    for ci in range(1, k):
+        d2 = ((flat[None, :, :] - centroids[:ci, None, :]) ** 2).sum(axis=2).min(axis=0)
+        total = d2.sum()
+        if total <= 0:
+            centroids[ci] = flat[rng.randint(len(flat))]
+        else:
+            probs = d2 / total
+            centroids[ci] = flat[rng.choice(len(flat), p=probs)]
+
+    # FBO for label output (single-channel R32F)
+    label_fbo = ctx.simple_framebuffer((w, h), dtype='f4')
+
+    for _ in range(n_iterations):
+        # Set uniforms (u_resolution not needed — shader uses gl_FragCoord)
+        prog['u_k'].value = k
+        prog['u_texture'].value = 0
+
+        # Upload centroids as vec3[16] uniform array — whole-array binding
+        # (indexed 'u_centroids[i]' access silently no-ops in ModernGL).
+        padded = np.zeros((16, 3), dtype=np.float32)
+        padded[:k] = centroids
+        prog['u_centroids'].value = [tuple(padded[i]) for i in range(16)]
+
+        # Render labels to FBO
+        label_fbo.use()
+        ctx.clear(0.0, 0.0, 0.0, 0.0)
+        vao.render()
+
+        # Read back labels (FBO is RGBA float32, read(components=1) returns R channel as uint8)
+        label_data = label_fbo.read(components=1)  # (H,W) bytes, 1 byte/pixel
+        labels = np.frombuffer(label_data, dtype=np.uint8).reshape(h, w).astype(np.int32)
+        # Rescale [0,255] → [0,k-1] with ROUNDING: shader writes nearest/k, e.g.
+        # label 3 of 4 → 0.75 → 191; 191*4//255 truncates to 2 (collapses the
+        # last cluster into the previous one, leaving its centroid stale).
+        labels = ((labels * k + 127) // 255).clip(0, k - 1)
+
+        # CPU: update centroids
+        for ci in range(k):
+            mask = labels == ci
+            count = mask.sum()
+            if count > 0:
+                centroids[ci] = image[mask].mean(axis=0)
+            else:
+                # Empty cluster: re-seed with the pixel farthest from it
+                d2 = ((flat - centroids[ci]) ** 2).sum(axis=1)
+                centroids[ci] = flat[np.argmax(d2)]
+
+    label_fbo.release()
+    texture.release()
+
+    return centroids, labels.astype(np.uint8)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# COLOR HELPERS
+# ════════════════════════════════════════════════════════════════════════════
+
 
 def _hsv_to_rgb(h: float, s: float, v: float) -> tuple[int, int, int]:
-    """Convert HSV to (r,g,b) bytes, clamping all values."""
+    """Convert HSV to (r,g,b) bytes."""
     r, g, b = colorsys.hsv_to_rgb(h % 1.0, max(0, min(1, s)), max(0, min(1, v)))
     return (int(r * 255), int(g * 255), int(b * 255))
 
 
 def _lerp_hue(h1: float, h2: float, t: float) -> float:
-    """Lerp between two hues, taking the shortest path around the wheel."""
     diff = (h2 - h1) % 1.0
     if diff > 0.5:
         diff -= 1.0
@@ -46,7 +369,6 @@ def _lerp_hue(h1: float, h2: float, t: float) -> float:
 
 
 def _interpolate_anchors(anchors: list[float], n_colors: int) -> list[float]:
-    """Interpolate between anchor hues to produce n_colors hues."""
     if n_colors <= len(anchors):
         return [anchors[i % len(anchors)] for i in range(n_colors)]
     hues = []
@@ -60,368 +382,436 @@ def _interpolate_anchors(anchors: list[float], n_colors: int) -> list[float]:
 
 
 def _base_hue(seed: int, hue_off: float = 0.0) -> float:
-    """Deterministic base hue from seed, rotated by hue_off."""
     return (seed * 0.01 + hue_off / 360.0) % 1.0
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# CLASSIC HARMONIES
+# LABEL FORMATTING — per-color value labels
+# ════════════════════════════════════════════════════════════════════════════
+#
+# Only formats with an existing conversion in this repo (or stdlib colorsys)
+# are wired up. Named colors and CSS variables are deliberately NOT offered:
+# there is no reverse name→RGB table and no semantic mapping from an arbitrary
+# generated color to a theme var — both would have to be invented.
+
+_LABEL_FORMATS = [
+    "rgb", "rgba", "hsl", "hsla", "hsv",
+    "cmyk", "xyz", "lab", "lch", "oklab", "oklch",
+    "index", "packed",
+]
+
+# sRGB → CIE XYZ (D65) — same matrices/white point as palette_posterize.rgb2lab
+_SRGB_TO_XYZ = np.array([
+    [0.4124, 0.3576, 0.1805],
+    [0.2126, 0.7152, 0.0722],
+    [0.0193, 0.1192, 0.9505],
+], dtype=np.float64)
+_XYZ_WHITE = np.array([95.047, 100.0, 108.883], dtype=np.float64)
+
+
+def _srgb_to_xyz(r: float, g: float, b: float) -> np.ndarray:
+    """sRGB bytes → CIE XYZ (0-100 scale, D65)."""
+    c = np.array([r, g, b], dtype=np.float64) / 255.0
+    c = np.where(c > 0.04045, ((c + 0.055) / 1.055) ** 2.4, c / 12.92) * 100.0
+    return _SRGB_TO_XYZ @ c
+
+
+def _srgb_to_lab(r: float, g: float, b: float) -> np.ndarray:
+    """sRGB bytes → CIELAB (D65), L 0-100."""
+    xyz = _srgb_to_xyz(r, g, b) / _XYZ_WHITE
+    f = lambda t: np.cbrt(t) if t > 0.008856 else 7.787 * t + 16.0 / 116.0
+    fx, fy, fz = f(xyz[0]), f(xyz[1]), f(xyz[2])
+    return np.array([116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz)])
+
+
+def _srgb_to_oklab(r: float, g: float, b: float) -> np.ndarray:
+    """sRGB bytes → OKLab (L 0-1) — same constants as color_grade._rgb_to_oklab."""
+    c = np.array([r, g, b], dtype=np.float64) / 255.0
+    c = np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+    r_, g_, b_ = c
+    l = 0.4122214708 * r_ + 0.5363325363 * g_ + 0.0514459929 * b_
+    m = 0.2119034982 * r_ + 0.6806995451 * g_ + 0.1073969566 * b_
+    s = 0.0883024619 * r_ + 0.2817188376 * g_ + 0.6299787005 * b_
+    l_, m_, s_ = np.cbrt([l, m, s])
+    L = 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_
+    A = 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_
+    B = 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_
+    return np.array([L, A, B])
+
+
+def _srgb_to_cmyk(r: float, g: float, b: float) -> tuple[float, float, float, float]:
+    """sRGB bytes → CMYK (0-1) — same formula as cmyk_halftone._rgb_to_cmyk."""
+    r_, g_, b_ = r / 255.0, g / 255.0, b / 255.0
+    k = 1.0 - max(r_, g_, b_)
+    inv = 1.0 - k
+    safe = inv if inv > 1e-6 else 1.0
+    return (1.0 - r_ - k) / safe, (1.0 - g_ - k) / safe, (1.0 - b_ - k) / safe, k
+
+
+def _lab_to_lch(lab: np.ndarray) -> tuple[float, float, float]:
+    """CIELAB → LCH (polar form: C = hypot(a,b), H = atan2(b,a))."""
+    L, a, b = lab
+    return L, math.hypot(a, b), math.degrees(math.atan2(b, a)) % 360.0
+
+
+def _format_color_value(rgb: tuple[int, int, int], fmt: str, index: int) -> str:
+    """Format one palette color as a label string in the requested format."""
+    r, g, b = rgb
+    if fmt == "rgba":
+        return f"rgba({r}, {g}, {b}, 1)"
+    if fmt == "hsl":
+        h, l, s = colorsys.rgb_to_hls(r / 255.0, g / 255.0, b / 255.0)
+        return f"hsl({h * 360.0:.0f}, {s * 100.0:.0f}%, {l * 100.0:.0f}%)"
+    if fmt == "hsla":
+        h, l, s = colorsys.rgb_to_hls(r / 255.0, g / 255.0, b / 255.0)
+        return f"hsla({h * 360.0:.0f}, {s * 100.0:.0f}%, {l * 100.0:.0f}%, 1)"
+    if fmt == "hsv":
+        h, s, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+        return f"({h * 360.0:.0f}°, {s * 100.0:.0f}%, {v * 100.0:.0f}%)"
+    if fmt == "cmyk":
+        c, m, y, k = _srgb_to_cmyk(r, g, b)
+        return f"({c * 100.0:.0f}%, {m * 100.0:.0f}%, {y * 100.0:.0f}%, {k * 100.0:.0f}%)"
+    if fmt == "xyz":
+        x, y, z = _srgb_to_xyz(r, g, b)
+        return f"({x / 100.0:.2f}, {y / 100.0:.2f}, {z / 100.0:.2f})"
+    if fmt == "lab":
+        L, a, b = _srgb_to_lab(r, g, b)
+        return f"({L:.1f}, {a:.1f}, {b:.1f})"
+    if fmt == "lch":
+        L, c, h = _lab_to_lch(_srgb_to_lab(r, g, b))
+        return f"({L:.1f}, {c:.1f}, {h:.0f})"
+    if fmt == "oklab":
+        L, a, b = _srgb_to_oklab(r, g, b)
+        return f"({L:.3f}, {a:.3f}, {b:.3f})"
+    if fmt == "oklch":
+        L, c, h = _lab_to_lch(_srgb_to_oklab(r, g, b))
+        return f"({L:.3f}, {c:.3f}, {h:.0f})"
+    if fmt == "index":
+        return str(index)
+    if fmt == "packed":
+        return str((r << 16) | (g << 8) | b)
+    return f"rgb({r}, {g}, {b})"
+
+
+def _draw_palette_labels(
+    img: np.ndarray,
+    colors: list[tuple[int, int, int]],
+    fmt: str,
+    title: str,
+) -> np.ndarray:
+    """Overlay color-value labels on the preview (PIL — text has no GLSL path).
+
+    Each strip in the top 70% band gets its color's formatted value, centered;
+    the middle band gets the palette name. Strips too short for legible text
+    (large n) skip the per-color labels but keep the name band.
+    """
+    h, w = img.shape[:2]
+    n = len(colors)
+    strip_h = int(h * 0.70) // max(1, n)
+
+    # Fonts are recreated per frame during animation — cache per size (get_font
+    # re-parses the .ttc on every call, ~33 loads/frame otherwise).
+    _font_cache: dict[int, ImageFont.ImageFont | ImageFont.FreeTypeFont] = {}
+
+    def _font(size: int):
+        font = _font_cache.get(size)
+        if font is None:
+            font = _font_cache[size] = get_font(size)
+        return font
+
+    from PIL import Image as _PILImage, ImageDraw, ImageFont
+    pil = _PILImage.fromarray((np.clip(img, 0, 1) * 255).astype(np.uint8))
+    draw = ImageDraw.Draw(pil)
+
+    if strip_h >= 14:
+        base_size = max(8, min(15, strip_h - 8))
+        for i in range(n):
+            text = _format_color_value(colors[i], fmt, i)
+            size = base_size
+            while size > 8:
+                font = _font(size)
+                if draw.textlength(text, font=font) <= w - 24:
+                    break
+                size -= 1
+            font = _font(size)
+            tw = draw.textlength(text, font=font)
+            if tw > w - 24:
+                continue  # still too wide for the canvas — skip this label
+            r, g, b = colors[i]
+            lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
+            fill = (245, 245, 250) if lum < 128 else (12, 12, 16)
+            x = (w - tw) / 2.0
+            y = i * strip_h + (strip_h - (size + 6)) / 2.0
+            draw.text((x, y), text, font=font, fill=fill)
+
+    if title:
+        band_y0, band_y1 = int(h * 0.70), int(h * 0.82)
+        font = _font(13)
+        tw = draw.textlength(title, font=font)
+        x = (w - tw) / 2.0
+        y = band_y0 + (band_y1 - band_y0 - 18) / 2.0
+        draw.text((x, y), title, font=font, fill=(200, 200, 220))
+
+    return np.asarray(pil).astype(np.float32) / 255.0
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PALETTE GENERATORS — 33 types across 5 families
 # ════════════════════════════════════════════════════════════════════════════
 
-def _monochromatic_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                           sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Single hue, vary saturation and value smoothly for depth."""
+# -- Classic (7)
+
+def _monochromatic_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     hue = _base_hue(seed, hue_off)
-    palette = []
+    out = []
     for i in range(n_colors):
         frac = i / max(1, n_colors - 1)
         c_sat = max(0.1, sat - 0.3 + frac * 0.3)
         c_val = max(0.2, val - 0.3 + frac * 0.4)
-        palette.append(_hsv_to_rgb(hue, c_sat, c_val))
-    return palette
+        out.append(_hsv_to_rgb(hue, c_sat, c_val))
+    return out
 
 
-def _analogous_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                       sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Colors span 30° hue range around base. Cohesive, natural."""
+def _analogous_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     base = _base_hue(seed, hue_off)
     span = 30.0 / 360.0
-    palette = []
+    out = []
     for i in range(n_colors):
         frac = i / max(1, n_colors - 1) if n_colors > 1 else 0.0
         hue = (base - span / 2 + frac * span) % 1.0
-        palette.append(_hsv_to_rgb(hue, sat, val))
-    return palette
+        out.append(_hsv_to_rgb(hue, sat, val))
+    return out
 
 
-def _complementary_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                           sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Base hue + 180° opposite, smooth interpolation between. High contrast."""
+def _complementary_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     base = _base_hue(seed, hue_off)
-    palette = []
+    out = []
     for i in range(n_colors):
         frac = i / max(1, n_colors - 1)
         hue = (base + frac * 0.5) % 1.0
-        palette.append(_hsv_to_rgb(hue, sat, val))
-    return palette
+        out.append(_hsv_to_rgb(hue, sat, val))
+    return out
 
 
-def _split_complementary_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                                  sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Base + 150° + 210°. High contrast with less tension than pure complementary."""
+def _split_complementary_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     base = _base_hue(seed, hue_off)
     anchors = [base, (base + 150.0 / 360.0) % 1.0, (base + 210.0 / 360.0) % 1.0]
     hues = _interpolate_anchors(anchors, n_colors)
     return [_hsv_to_rgb(h, sat, val) for h in hues]
 
 
-def _triadic_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                     sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """3 hues 120° apart. Balanced, vibrant."""
+def _triadic_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     base = _base_hue(seed, hue_off)
     anchors = [(base + i / 3.0) % 1.0 for i in range(3)]
     hues = _interpolate_anchors(anchors, n_colors)
     return [_hsv_to_rgb(h, sat, val) for h in hues]
 
 
-def _tetradic_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                      sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """4 colors in a rectangle on the wheel (two complementary pairs). Rich, complex."""
+def _tetradic_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     base = _base_hue(seed, hue_off)
-    angle = 60.0 / 360.0  # rectangle width
-    anchors = [
-        base,
-        (base + angle) % 1.0,
-        (base + 0.5) % 1.0,  # opposite of base
-        (base + 0.5 + angle) % 1.0,  # opposite of base+angle
-    ]
+    angle = 60.0 / 360.0
+    anchors = [base, (base + angle) % 1.0, (base + 0.5) % 1.0, (base + 0.5 + angle) % 1.0]
     hues = _interpolate_anchors(anchors, n_colors)
     return [_hsv_to_rgb(h, sat, val) for h in hues]
 
 
-def _square_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                    sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """4 colors evenly spaced (90° apart). Maximum variety, needs neutrals to ground."""
+def _square_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     base = _base_hue(seed, hue_off)
     anchors = [(base + i * 0.25) % 1.0 for i in range(4)]
     hues = _interpolate_anchors(anchors, n_colors)
     return [_hsv_to_rgb(h, sat, val) for h in hues]
 
 
-# ════════════════════════════════════════════════════════════════════════════
-# EXTENDED HARMONIES
-# ════════════════════════════════════════════════════════════════════════════
+# -- Extended (9)
 
-def _double_split_complementary_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                                         sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Base + complement + colors adjacent to both. 5 anchors, very rich."""
+def _double_split_complementary_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     base = _base_hue(seed, hue_off)
     comp = (base + 0.5) % 1.0
     split = 30.0 / 360.0
-    anchors = [
-        base,
-        (base + split) % 1.0,
-        comp,
-        (comp + split) % 1.0,
-        (comp - split) % 1.0,
-    ]
+    anchors = [base, (base + split) % 1.0, comp, (comp + split) % 1.0, (comp - split) % 1.0]
     hues = _interpolate_anchors(anchors, n_colors)
     return [_hsv_to_rgb(h, sat, val) for h in hues]
 
 
-def _clash_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                   sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Base + color slightly off from complementary (165-175°). Intentional tension."""
+def _clash_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     base = _base_hue(seed, hue_off)
-    clash_angle = 170.0 / 360.0  # not quite 180 — creates intentional friction
+    clash_angle = 170.0 / 360.0
     anchors = [base, (base + clash_angle) % 1.0]
     hues = _interpolate_anchors(anchors, n_colors)
     return [_hsv_to_rgb(h, sat, val) for h in hues]
 
 
-def _neutral_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                     sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Low-saturation colors with slight hue variation. Calm, sophisticated."""
+def _neutral_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     base = _base_hue(seed, hue_off)
-    palette = []
+    out = []
     for i in range(n_colors):
         frac = i / max(1, n_colors - 1)
-        hue = (base + frac * 0.15) % 1.0  # narrow hue range
-        c_sat = max(0.05, sat * 0.15)  # very low saturation
-        c_val = max(0.3, val - 0.2 + frac * 0.4)  # value range for depth
-        palette.append(_hsv_to_rgb(hue, c_sat, c_val))
-    return palette
+        hue = (base + frac * 0.15) % 1.0
+        c_sat = max(0.05, sat * 0.15)
+        c_val = max(0.3, val - 0.2 + frac * 0.4)
+        out.append(_hsv_to_rgb(hue, c_sat, c_val))
+    return out
 
 
-def _achromatic_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                         sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Pure grayscale — zero saturation. Hue is irrelevant."""
-    palette = []
-    for i in range(n_colors):
-        frac = i / max(1, n_colors - 1)
-        v = int(20 + 220 * frac)
-        palette.append((v, v, v))
-    return palette
+def _achromatic_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
+    return [(int(20 + 220 * i / max(1, n_colors - 1)),) * 3 for i in range(n_colors)]
 
 
-def _pastel_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                    sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """High lightness, low saturation. Soft, gentle."""
+def _pastel_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     base = _base_hue(seed, hue_off)
-    palette = []
+    out = []
     for i in range(n_colors):
         frac = i / max(1, n_colors - 1)
         hue = (base + frac * 0.618) % 1.0
-        c_sat = max(0.1, sat * 0.3)  # low saturation
-        c_val = max(0.7, 0.85)  # high value (light)
-        palette.append(_hsv_to_rgb(hue, c_sat, c_val))
-    return palette
+        c_sat = max(0.1, sat * 0.3)
+        out.append(_hsv_to_rgb(hue, c_sat, 0.82))
+    return out
 
 
-def _earth_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                   sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Warm, natural earth tones: browns, ochres, olives, terracottas."""
-    # Earth tones cluster in 0°-60° (red-yellow) and 90°-150° (green) ranges
+def _earth_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     base = _base_hue(seed, hue_off)
-    palette = []
+    out = []
     for i in range(n_colors):
         frac = i / max(1, n_colors - 1)
-        # Map frac to earth-tone hue ranges
         if frac < 0.5:
-            hue = (base * 0.3 + frac * 2 * 60.0 / 360.0) % 1.0  # 0-60° range
+            hue = (base * 0.3 + frac * 2 * 60.0 / 360.0) % 1.0
         else:
-            hue = (base * 0.3 + 60.0 / 360.0 + (frac - 0.5) * 2 * 60.0 / 360.0) % 1.0  # 60-120° range
-        c_sat = max(0.2, sat * 0.5)  # moderate saturation
-        c_val = max(0.3, val - 0.2 + frac * 0.3)  # moderate value
-        palette.append(_hsv_to_rgb(hue, c_sat, c_val))
-    return palette
+            hue = (base * 0.3 + 60.0 / 360.0 + (frac - 0.5) * 2 * 60.0 / 360.0) % 1.0
+        c_sat = max(0.2, sat * 0.5)
+        c_val = max(0.3, val - 0.2 + frac * 0.3)
+        out.append(_hsv_to_rgb(hue, c_sat, c_val))
+    return out
 
 
-def _jewel_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                   sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Deep, saturated colors like gemstones: ruby, emerald, sapphire, amethyst."""
+def _jewel_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     base = _base_hue(seed, hue_off)
-    palette = []
+    out = []
     for i in range(n_colors):
         frac = i / max(1, n_colors - 1)
         hue = (base + frac * 0.618) % 1.0
-        c_sat = max(0.7, 0.9)  # very saturated
-        c_val = max(0.4, val - 0.1)  # moderate value (deep)
-        palette.append(_hsv_to_rgb(hue, c_sat, c_val))
-    return palette
+        c_sat = max(0.7, 0.9)
+        out.append(_hsv_to_rgb(hue, c_sat, val - 0.1))
+    return out
 
 
-def _neon_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                  sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Extreme saturation, high value. Electric, aggressive."""
+def _neon_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     base = _base_hue(seed, hue_off)
-    palette = []
+    out = []
     for i in range(n_colors):
         frac = i / max(1, n_colors - 1)
         hue = (base + frac * 0.618) % 1.0
-        c_sat = 1.0  # maximum saturation
-        c_val = max(0.8, 1.0)  # maximum value
-        palette.append(_hsv_to_rgb(hue, c_sat, c_val))
-    return palette
+        out.append(_hsv_to_rgb(hue, 1.0, 1.0))
+    return out
 
 
-def _muted_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                   sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Low saturation, moderate value. Subdued, sophisticated."""
+def _muted_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     base = _base_hue(seed, hue_off)
-    palette = []
+    out = []
     for i in range(n_colors):
         frac = i / max(1, n_colors - 1)
         hue = (base + frac * 0.618) % 1.0
-        c_sat = max(0.1, sat * 0.25)  # low saturation
-        c_val = max(0.3, val - 0.1 + frac * 0.2)  # moderate value
-        palette.append(_hsv_to_rgb(hue, c_sat, c_val))
-    return palette
+        c_sat = max(0.1, sat * 0.25)
+        c_val = max(0.3, val - 0.1 + frac * 0.2)
+        out.append(_hsv_to_rgb(hue, c_sat, c_val))
+    return out
 
 
-# ════════════════════════════════════════════════════════════════════════════
-# TEMPERATURE-BASED
-# ════════════════════════════════════════════════════════════════════════════
+# -- Temperature (4)
 
-def _warm_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                  sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Colors in the warm range: reds, oranges, yellows (0°-60°)."""
+def _warm_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     base = _base_hue(seed, hue_off)
-    palette = []
+    out = []
     for i in range(n_colors):
         frac = i / max(1, n_colors - 1)
-        hue = (base * 0.2 + frac * 60.0 / 360.0) % 1.0  # 0-60° range
-        palette.append(_hsv_to_rgb(hue, sat, val))
-    return palette
+        hue = (base * 0.2 + frac * 60.0 / 360.0) % 1.0
+        out.append(_hsv_to_rgb(hue, sat, val))
+    return out
 
 
-def _cool_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                  sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Colors in the cool range: blues, cyans, purples (180°-300°)."""
+def _cool_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     base = _base_hue(seed, hue_off)
-    palette = []
+    out = []
     for i in range(n_colors):
         frac = i / max(1, n_colors - 1)
-        hue = (0.5 + base * 0.2 + frac * 120.0 / 360.0) % 1.0  # 180-300° range
-        palette.append(_hsv_to_rgb(hue, sat, val))
-    return palette
+        hue = (0.5 + base * 0.2 + frac * 120.0 / 360.0) % 1.0
+        out.append(_hsv_to_rgb(hue, sat, val))
+    return out
 
 
-def _neutral_warm_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                           sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Warm-leaning neutrals: warm grays, taupes, beiges."""
+def _neutral_warm_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     base = _base_hue(seed, hue_off)
-    palette = []
+    out = []
     for i in range(n_colors):
         frac = i / max(1, n_colors - 1)
-        hue = (base * 0.1 + frac * 30.0 / 360.0) % 1.0  # narrow warm range
-        c_sat = max(0.05, sat * 0.1)  # very low saturation
+        hue = (base * 0.1 + frac * 30.0 / 360.0) % 1.0
+        c_sat = max(0.05, sat * 0.1)
         c_val = max(0.3, val - 0.2 + frac * 0.4)
-        palette.append(_hsv_to_rgb(hue, c_sat, c_val))
-    return palette
+        out.append(_hsv_to_rgb(hue, c_sat, c_val))
+    return out
 
 
-def _neutral_cool_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                           sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Cool-leaning neutrals: cool grays, slate, steel."""
+def _neutral_cool_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     base = _base_hue(seed, hue_off)
-    palette = []
+    out = []
     for i in range(n_colors):
         frac = i / max(1, n_colors - 1)
-        hue = (0.6 + base * 0.1 + frac * 30.0 / 360.0) % 1.0  # narrow cool range
-        c_sat = max(0.05, sat * 0.1)  # very low saturation
+        hue = (0.6 + base * 0.1 + frac * 30.0 / 360.0) % 1.0
+        c_sat = max(0.05, sat * 0.1)
         c_val = max(0.3, val - 0.2 + frac * 0.4)
-        palette.append(_hsv_to_rgb(hue, c_sat, c_val))
-    return palette
+        out.append(_hsv_to_rgb(hue, c_sat, c_val))
+    return out
 
 
-# ════════════════════════════════════════════════════════════════════════════
-# PERCEPTUAL / MATHEMATICAL
-# ════════════════════════════════════════════════════════════════════════════
+# -- Perceptual / Mathematical (4)
 
-def _golden_ratio_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                           sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Golden ratio (~0.618) hue spacing. Maximally distinct, perceptually uniform."""
-    palette = []
-    for i in range(n_colors):
-        hue = (i * 0.618033988749895 + hue_off / 360.0) % 1.0
-        palette.append(_hsv_to_rgb(hue, sat, val))
-    return palette
+def _golden_ratio_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
+    return [_hsv_to_rgb((i * 0.618033988749895 + hue_off / 360.0) % 1.0, sat, val) for i in range(n_colors)]
 
 
-def _fibonacci_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                        sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Fibonacci-based hue spacing: 1, 2, 3, 5, 8, 13... Creates organic spacing."""
+def _fibonacci_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     fibs = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233]
-    palette = []
+    out = []
     for i in range(n_colors):
         step = fibs[i % len(fibs)] / 360.0
         hue = (i * step + hue_off / 360.0) % 1.0
-        palette.append(_hsv_to_rgb(hue, sat, val))
-    return palette
+        out.append(_hsv_to_rgb(hue, sat, val))
+    return out
 
 
-def _prime_spacing_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                            sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Prime number hue spacing: 2, 3, 5, 7, 11, 13... Avoids harmonic alignment."""
+def _prime_spacing_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     primes = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37]
-    palette = []
+    out = []
     for i in range(n_colors):
         step = primes[i % len(primes)] / 360.0
         hue = (i * step + hue_off / 360.0) % 1.0
-        palette.append(_hsv_to_rgb(hue, sat, val))
-    return palette
+        out.append(_hsv_to_rgb(hue, sat, val))
+    return out
 
 
-def _uniform_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                     sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Evenly spaced hues (360°/n). Maximally distinct for small n."""
-    palette = []
-    for i in range(n_colors):
-        hue = (i / n_colors + hue_off / 360.0) % 1.0
-        palette.append(_hsv_to_rgb(hue, sat, val))
-    return palette
+def _uniform_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
+    return [_hsv_to_rgb((i / n_colors + hue_off / 360.0) % 1.0, sat, val) for i in range(n_colors)]
 
 
-# ════════════════════════════════════════════════════════════════════════════
-# EXTREME / THEORETICAL
-# ════════════════════════════════════════════════════════════════════════════
+# -- Extreme / Theoretical (8)
 
-def _tetradic_rectangle_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                                 sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Tetradic with variable rectangle width (90°). Two complementary pairs."""
+def _tetradic_rectangle_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     base = _base_hue(seed, hue_off)
     rect_width = 90.0 / 360.0
-    anchors = [
-        base,
-        (base + rect_width) % 1.0,
-        (base + 0.5) % 1.0,
-        (base + 0.5 + rect_width) % 1.0,
-    ]
+    anchors = [base, (base + rect_width) % 1.0, (base + 0.5) % 1.0, (base + 0.5 + rect_width) % 1.0]
     hues = _interpolate_anchors(anchors, n_colors)
     return [_hsv_to_rgb(h, sat, val) for h in hues]
 
 
-def _double_complementary_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                                   sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Two complementary pairs with a gap between them. 4 anchors, wide spread."""
+def _double_complementary_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     base = _base_hue(seed, hue_off)
     gap = 20.0 / 360.0
-    anchors = [
-        base,
-        (base + 0.5) % 1.0,  # complement of base
-        (base + gap + 0.25) % 1.0,  # shifted second pair
-        (base + gap + 0.75) % 1.0,
-    ]
+    anchors = [base, (base + 0.5) % 1.0, (base + gap + 0.25) % 1.0, (base + gap + 0.75) % 1.0]
     hues = _interpolate_anchors(anchors, n_colors)
     return [_hsv_to_rgb(h, sat, val) for h in hues]
 
 
-def _clash_variable_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                             sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Clash with variable offset (160°-175°). Adjustable tension."""
+def _clash_variable_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     base = _base_hue(seed, hue_off)
-    # Use seed to vary the clash angle for different feels
     rng = random.Random(seed)
     clash_angle = (160.0 + rng.random() * 15.0) / 360.0
     anchors = [base, (base + clash_angle) % 1.0]
@@ -429,99 +819,62 @@ def _clash_variable_palette(n_colors: int, seed: int, hue_off: float = 0.0,
     return [_hsv_to_rgb(h, sat, val) for h in hues]
 
 
-def _split_variable_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                             sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Split complementary with variable split angle (120°-170°)."""
+def _split_variable_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     base = _base_hue(seed, hue_off)
     rng = random.Random(seed + 1)
     split_angle = (120.0 + rng.random() * 50.0) / 360.0
-    anchors = [
-        base,
-        (base + split_angle) % 1.0,
-        (base + 1.0 - split_angle) % 1.0,
-    ]
+    anchors = [base, (base + split_angle) % 1.0, (base + 1.0 - split_angle) % 1.0]
     hues = _interpolate_anchors(anchors, n_colors)
     return [_hsv_to_rgb(h, sat, val) for h in hues]
 
 
-def _achromatic_tint_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                              sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Achromatic with a single hue tint — grayscale with a color cast."""
+def _achromatic_tint_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     hue = _base_hue(seed, hue_off)
-    palette = []
-    for i in range(n_colors):
-        frac = i / max(1, n_colors - 1)
-        c_sat = 0.05  # barely there
-        c_val = max(0.15, 0.1 + frac * 0.8)
-        palette.append(_hsv_to_rgb(hue, c_sat, c_val))
-    return palette
+    return [_hsv_to_rgb(hue, 0.05, max(0.15, 0.1 + i / max(1, n_colors - 1) * 0.8)) for i in range(n_colors)]
 
 
-def _achromatic_shade_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                               sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Achromatic with a single hue shade — dark grayscale with a color cast."""
+def _achromatic_shade_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     hue = _base_hue(seed, hue_off)
-    palette = []
-    for i in range(n_colors):
-        frac = i / max(1, n_colors - 1)
-        c_sat = 0.08  # slightly more visible than tint
-        c_val = max(0.05, 0.05 + frac * 0.5)  # darker range
-        palette.append(_hsv_to_rgb(hue, c_sat, c_val))
-    return palette
+    return [_hsv_to_rgb(hue, 0.08, max(0.05, 0.05 + i / max(1, n_colors - 1) * 0.5)) for i in range(n_colors)]
 
 
-def _complementary_split_wide_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                                       sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Split complementary with a very wide split (170°). Almost complementary."""
+def _complementary_split_wide_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     base = _base_hue(seed, hue_off)
     wide_split = 170.0 / 360.0
-    anchors = [
-        base,
-        (base + wide_split) % 1.0,
-        (base + 1.0 - wide_split) % 1.0,
-    ]
+    anchors = [base, (base + wide_split) % 1.0, (base + 1.0 - wide_split) % 1.0]
     hues = _interpolate_anchors(anchors, n_colors)
     return [_hsv_to_rgb(h, sat, val) for h in hues]
 
 
-def _triadic_alt_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                          sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Alternate triadic: 3 hues 120° apart, but with varying saturation for depth."""
+def _triadic_alt_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     base = _base_hue(seed, hue_off)
     anchors = [(base + i / 3.0) % 1.0 for i in range(3)]
     hues = _interpolate_anchors(anchors, n_colors)
-    palette = []
+    out = []
     for i, h in enumerate(hues):
         frac = i / max(1, n_colors - 1)
-        c_sat = max(0.3, sat - 0.2 + frac * 0.4)  # vary saturation
-        c_val = max(0.3, val - 0.2 + frac * 0.4)  # vary value
-        palette.append(_hsv_to_rgb(h, c_sat, c_val))
-    return palette
+        c_sat = max(0.3, sat - 0.2 + frac * 0.4)
+        c_val = max(0.3, val - 0.2 + frac * 0.4)
+        out.append(_hsv_to_rgb(h, c_sat, c_val))
+    return out
 
 
-# ════════════════════════════════════════════════════════════════════════════
-# RANDOM (intentionally chaotic, for comparison)
-# ════════════════════════════════════════════════════════════════════════════
-
-def _random_palette(n_colors: int, seed: int, hue_off: float = 0.0,
-                    sat: float = 0.75, val: float = 0.7) -> list[tuple[int, int, int]]:
-    """Fully random — intentionally chaotic, for comparison."""
+def _random_palette(n_colors, seed, hue_off=0.0, sat=0.75, val=0.7):
     rng = random.Random(seed)
-    palette = []
-    for i in range(n_colors):
+    out = []
+    for _ in range(n_colors):
         hue = (rng.random() + hue_off / 360.0) % 1.0
         c_sat = max(0.3, min(1.0, sat + rng.uniform(-0.2, 0.2)))
         c_val = max(0.3, min(1.0, val + rng.uniform(-0.2, 0.2)))
-        palette.append(_hsv_to_rgb(hue, c_sat, c_val))
-    return palette
+        out.append(_hsv_to_rgb(hue, c_sat, c_val))
+    return out
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# REGISTRY — all 30 palette types
+# REGISTRY
 # ════════════════════════════════════════════════════════════════════════════
 
-_PALETTE_GENERATORS = {
-    # Classic (7)
+_PALETTE_GENERATORS: dict[str, callable] = {
     "monochromatic": _monochromatic_palette,
     "analogous": _analogous_palette,
     "complementary": _complementary_palette,
@@ -529,7 +882,6 @@ _PALETTE_GENERATORS = {
     "triadic": _triadic_palette,
     "tetradic": _tetradic_palette,
     "square": _square_palette,
-    # Extended (8)
     "double-split": _double_split_complementary_palette,
     "clash": _clash_palette,
     "neutral": _neutral_palette,
@@ -539,17 +891,14 @@ _PALETTE_GENERATORS = {
     "jewel": _jewel_palette,
     "neon": _neon_palette,
     "muted": _muted_palette,
-    # Temperature (4)
     "warm": _warm_palette,
     "cool": _cool_palette,
     "neutral-warm": _neutral_warm_palette,
     "neutral-cool": _neutral_cool_palette,
-    # Perceptual (4)
     "golden-ratio": _golden_ratio_palette,
     "fibonacci": _fibonacci_palette,
     "prime-spacing": _prime_spacing_palette,
     "uniform": _uniform_palette,
-    # Extreme / Theoretical (7)
     "tetradic-rectangle": _tetradic_rectangle_palette,
     "double-complementary": _double_complementary_palette,
     "clash-variable": _clash_variable_palette,
@@ -558,1021 +907,289 @@ _PALETTE_GENERATORS = {
     "achromatic-shade": _achromatic_shade_palette,
     "complementary-split-wide": _complementary_split_wide_palette,
     "triadic-alt": _triadic_alt_palette,
-    # Chaos (1)
     "random": _random_palette,
 }
 
 _PALETTE_CHOICES = sorted(_PALETTE_GENERATORS.keys())
 
-
-# ════════════════════════════════════════════════════════════════════════════
-# RENDER HELPER — shared between single and morph modes
-# ════════════════════════════════════════════════════════════════════════════
-
-
-def _render_palette_layout(colors: list, layout: str, palette_type: str,
-                           n_colors: int, phase_offset: float = 0.0,
-                           rot_offset: float = 0.0) -> Image.Image:
-    """Render a palette layout to an Image. Returns PIL Image."""
-    n = len(colors)
-    img = Image.new("RGB", (W, H), (10, 10, 18))
-    draw = ImageDraw.Draw(img)
-    cx, cy = W / 2.0, H / 2.0
-
-    if layout == "wheel":
-        radius = min(W, H) * 0.38
-        for i, (r, g, b) in enumerate(colors):
-            start_angle = (i / n) * 360.0 + rot_offset
-            end_angle = ((i + 1) / n) * 360.0 + rot_offset
-            draw.pieslice(
-                [cx - radius, cy - radius, cx + radius, cy + radius],
-                start_angle, end_angle,
-                fill=(r, g, b), outline=(220, 220, 200), width=1,
-            )
-        draw.ellipse(
-            [cx - 20, cy - 20, cx + 20, cy + 20],
-            fill=(10, 10, 18), outline=(220, 220, 200), width=1,
-        )
-
-    elif layout == "gradient":
-        rgb_colors = [(rr / 255.0, gg / 255.0, bb / 255.0) for rr, gg, bb in colors]
-        for x in range(W):
-            frac = (x / max(1, W - 1) + phase_offset) % 1.0
-            pos = frac * (n - 1)
-            idx = int(pos)
-            frac_in = pos - idx
-            if idx >= n - 1:
-                r, g, b = rgb_colors[-1]
-            else:
-                c1 = rgb_colors[idx]
-                c2 = rgb_colors[idx + 1]
-                r = c1[0] + (c2[0] - c1[0]) * frac_in
-                g = c1[1] + (c2[1] - c1[1]) * frac_in
-                b = c1[2] + (c2[2] - c1[2]) * frac_in
-            draw.line([(x, 0), (x, H - 1)], fill=(int(r * 255), int(g * 255), int(b * 255)))
-
-    elif layout == "vertical":
-        band_h = H / n
-        for i, (r, g, b) in enumerate(colors):
-            y0 = int(i * band_h)
-            y1 = int((i + 1) * band_h)
-            draw.rectangle([0, y0, W - 1, y1], fill=(r, g, b))
-            if i > 0:
-                draw.line([(0, y0), (W - 1, y0)], fill=(220, 220, 200), width=1)
-
-    elif layout == "horizontal":
-        band_w = W / n
-        for i, (r, g, b) in enumerate(colors):
-            x0 = int(i * band_w)
-            x1 = int((i + 1) * band_w)
-            draw.rectangle([x0, 0, x1, H - 1], fill=(r, g, b))
-            if i > 0:
-                draw.line([(x0, 0), (x0, H - 1)], fill=(220, 220, 200), width=1)
-
-    elif layout == "grid":
-        cols = max(1, int(math.ceil(math.sqrt(n * W / H))))
-        rows = max(1, int(math.ceil(n / cols)))
-        cell_w = W / cols
-        cell_h = H / rows
-        for idx, (r, g, b) in enumerate(colors):
-            col_i = idx % cols
-            row_i = idx // cols
-            x0 = int(col_i * cell_w)
-            y0 = int(row_i * cell_h)
-            x1 = int((col_i + 1) * cell_w)
-            y1 = int((row_i + 1) * cell_h)
-            draw.rectangle([x0 + 2, y0 + 2, x1 - 2, y1 - 2], fill=(r, g, b))
-
-    elif layout == "overlay":
-        strip_h = max(60, H // 5)
-        band_w = W / n
-        for i, (r, g, b) in enumerate(colors):
-            x0 = int(i * band_w)
-            x1 = int((i + 1) * band_w)
-            y0 = H - strip_h
-            draw.rectangle([x0, y0, x1, H - 1], fill=(r, g, b))
-            if i > 0:
-                draw.line([(x0, y0), (x0, H - 1)], fill=(220, 220, 200), width=1)
-        label_font = get_font(14)
-        draw.text((10, H - strip_h - 18), f"Palette ({palette_type}, {n_colors} colors)",
-                  fill=(200, 200, 200), font=label_font)
-
-    return img
-
-
-# ════════════════════════════════════════════════════════════════════════════
-# VISUAL DISPLAY RENDERERS — rich palette presentation (v4)
-# ════════════════════════════════════════════════════════════════════════════
-
-def _draw_label(draw, text: str, x: int, y: int, size: int = 16, fill=(220,220,220)):
-    """Draw a text label with the best available font."""
-    font = get_font(size)
-    draw.text((x, y), text, fill=fill, font=font)
-
-
-def _hex_str(r: int, g: int, b: int) -> str:
-    """Return #RRGGBB hex string."""
-    return f"#{r:02x}{g:02x}{b:02x}"
-
-
-def _render_harmony_wheel(colors, palette_type, n_colors, rot_offset=0.0, hue_off=0.0, **kwargs):
-    """Proper color wheel with harmonic arcs and labels."""
-    n = len(colors)
-    img = Image.new("RGB", (W, H), (12, 12, 20))
-    draw = ImageDraw.Draw(img)
-    cx, cy = W / 2, H / 2
-    radius = min(W, H) * 0.36
-    inner = radius * 0.35
-
-    # Wheel background ring
-    for angle in range(360):
-        rad = math.radians(angle + rot_offset)
-        h = (angle / 360.0 + hue_off / 360.0) % 1.0
-        r, g, b = _hsv_to_rgb(h, 0.75, 0.65)
-        x1 = cx + inner * math.cos(rad)
-        y1 = cy + inner * math.sin(rad)
-        x2 = cx + radius * math.cos(rad)
-        y2 = cy + radius * math.sin(rad)
-        draw.line([(x1, y1), (x2, y2)], fill=(r, g, b), width=2)
-
-    # Palette color arcs around the wheel
-    for i, (r, g, b) in enumerate(colors):
-        start = (i / n) * 360.0 + rot_offset
-        end = ((i + 1) / n) * 360.0 + rot_offset
-        for a in range(int(start), int(end), 2):
-            rad = math.radians(a)
-            x1 = cx + (radius + 6) * math.cos(rad)
-            y1 = cy + (radius + 6) * math.sin(rad)
-            x2 = cx + (radius + 22) * math.cos(rad)
-            y2 = cy + (radius + 22) * math.sin(rad)
-            draw.line([(x1, y1), (x2, y2)], fill=(r, g, b), width=3)
-
-    # Center circle
-    draw.ellipse([cx - inner, cy - inner, cx + inner, cy + inner],
-                 fill=(12, 12, 20), outline=(60, 60, 70), width=1)
-    _draw_label(draw, palette_type.replace("-", " ").title(), int(cx - 60), int(cy - 10), 14)
-    _draw_label(draw, f"{n_colors} colors", int(cx - 45), int(cy + 10), 12, (150,150,160))
-
-    # Hex labels around wheel
-    for i, (r, g, b) in enumerate(colors):
-        angle = ((i + 0.5) / n) * 2 * math.pi + math.radians(rot_offset)
-        lx = cx + (radius + 40) * math.cos(angle) - 22
-        ly = cy + (radius + 40) * math.sin(angle) - 7
-        _draw_label(draw, _hex_str(r, g, b), int(lx), int(ly), 9, (180, 180, 190))
-
-    return img
-
-
-def _render_aurora_blend(colors, palette_type, n_colors, phase_offset=0.0, **kwargs):
-    """Luminous overlapping color blobs — Aurora borealis aesthetic."""
-    n_blobs = min(len(colors) * 2, 20)
-    canvas = np.zeros((H, W, 3), dtype=np.float32)
-
-    for bi in range(n_blobs):
-        ci = bi % len(colors)
-        r, g, b = colors[ci]
-        sweep = (bi / n_blobs + phase_offset * 0.3) % 1.0
-        cx = W * 0.2 + W * 0.6 * sweep
-        cy = H * 0.25 + H * 0.5 * math.sin(sweep * math.pi * 2 + bi * 0.7)
-        rx = 80 + 120 * (1.0 - abs(sweep - 0.5) * 2)
-        ry = 40 + 60 * math.sin(bi * 1.3 + phase_offset * 2)
-        yy, xx = np.ogrid[:H, :W]
-        dist = ((xx - cx) / rx) ** 2 + ((yy - cy) / ry) ** 2
-        mask = np.exp(-dist * 3.0).clip(0, 1)
-        glow = mask[:, :, None] * np.array([r / 255.0, g / 255.0, b / 255.0])
-        canvas = canvas + glow * 0.65
-
-    canvas = np.clip(canvas * 1.15, 0, 1)
-    img = Image.fromarray((canvas * 255).astype(np.uint8))
-    draw = ImageDraw.Draw(img)
-    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  {n_colors} colors  ·  Aurora",
-                10, 10, 14, (240, 240, 245))
-    return img
-
-
-def _render_radial_mesh(colors, palette_type, n_colors, phase_offset=0.0, hue_off=0.0, **kwargs):
-    """Multi-stop radial gradient with palette colors spaced around center."""
-    n = len(colors)
-    canvas = np.zeros((H, W, 3), dtype=np.float32)
-    cx, cy = W / 2, H / 2
-    max_r = math.sqrt(cx**2 + cy**2)
-    yy, xx = np.ogrid[:H, :W]
-    dist = np.sqrt((xx - cx)**2 + (yy - cy)**2) / max_r
-    angle = (np.arctan2(yy - cy, xx - cx) + math.pi + math.radians(hue_off + phase_offset * 360)) % (2 * math.pi)
-    angle_frac = angle / (2 * math.pi)
-
-    for i in range(n):
-        r, g, b = colors[i]
-        a0 = i / n
-        a1 = (i + 1) / n
-        weight = np.clip(1.0 - np.abs(angle_frac - (a0 + a1) / 2) * n * 1.5, 0, 1)
-        weight = weight * (1.0 - dist * 0.6)
-        canvas[:, :, 0] += (r / 255.0) * weight
-        canvas[:, :, 1] += (g / 255.0) * weight
-        canvas[:, :, 2] += (b / 255.0) * weight
-
-    canvas = np.clip(canvas, 0, 1)
-    img = Image.fromarray((canvas * 255).astype(np.uint8))
-    draw = ImageDraw.Draw(img)
-    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  Radial Mesh", 10, 10, 14, (240, 240, 245))
-    return img
-
-
-def _render_concentric_rings(colors, palette_type, n_colors, phase_offset=0.0, **kwargs):
-    """Concentric rings radiating from center — thickness proportional to position."""
-    n = len(colors)
-    img = Image.new("RGB", (W, H), (12, 12, 20))
-    draw = ImageDraw.Draw(img)
-    cx, cy = W / 2, H / 2
-    max_r = min(W, H) * 0.42
-    ring_w = max_r / n
-
-    for i, (r, g, b) in enumerate(colors):
-        inner = max_r * (i / n) + phase_offset * ring_w * 0.5
-        outer = inner + ring_w
-        draw.ellipse([cx - outer, cy - outer, cx + outer, cy + outer],
-                     fill=None, outline=(r, g, b), width=int(ring_w * 0.85))
-        angle = math.radians(15 + phase_offset * 30)
-        lx = cx + (inner + ring_w/2) * math.cos(angle) + 6
-        ly = cy + (inner + ring_w/2) * math.sin(angle) - 5
-        _draw_label(draw, _hex_str(r, g, b), int(lx), int(ly), 9, (180, 180, 190))
-
-    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  {n_colors} colors",
-                10, 10, 14, (220, 220, 230))
-    return img
-
-
-def _render_weighted_scatter(colors, palette_type, n_colors, phase_offset=0.0, seed_val=42, **kwargs):
-    """Weighted random scatter — dominant colors appear more frequently."""
-    n = len(colors)
-    img = Image.new("RGB", (W, H), (14, 14, 22))
-    draw = ImageDraw.Draw(img)
-    rng = random.Random(seed_val)
-    weights = [1.0 - i / (n + 1) * 0.7 for i in range(n)]
-    total_w = sum(weights)
-    probs = [w / total_w for w in weights]
-
-    for i in range(n):
-        r, g, b = colors[i]
-        cx = W * 0.15 + W * 0.7 * (i / max(1, n - 1))
-        cy = H * 0.3 + H * 0.4 * math.sin(i * 2.1 + phase_offset * math.pi * 2)
-        for sz in [200, 140, 80]:
-            draw.ellipse([cx - sz, cy - sz, cx + sz, cy + sz],
-                         fill=(int(r * 0.3), int(g * 0.3), int(b * 0.3)))
-
-    for _ in range(120):
-        ci = rng.choices(range(n), weights=probs, k=1)[0]
-        r, g, b = colors[ci]
-        x = rng.randint(20, W - 20)
-        y = rng.randint(20, H - 20)
-        sz = rng.randint(8, 30)
-        shape = rng.randint(0, 3)
-        if shape == 0:
-            draw.ellipse([x - sz, y - sz, x + sz, y + sz], fill=(r, g, b))
-        elif shape == 1:
-            draw.rectangle([x - sz, y - sz, x + sz, y + sz], fill=(r, g, b))
-        else:
-            draw.regular_polygon((x, y, sz), 3, rotation=rng.randint(0, 360), fill=(r, g, b))
-
-    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  {n_colors} colors  ·  Weighted",
-                10, 10, 14, (230, 230, 240))
-    return img
-
-
-def _render_neon_glow_strips(colors, palette_type, n_colors, phase_offset=0.0, **kwargs):
-    """Thin luminous strips with glow — neon tube / light art aesthetic."""
-    n = len(colors)
-    canvas = np.zeros((H, W, 3), dtype=np.float32)
-    strip_h = H / n
-
-    for i, (r, g, b) in enumerate(colors):
-        yc = int((i + 0.5 + phase_offset * 0.5) * strip_h)
-        for dy in range(-6, 7):
-            cy = yc + dy
-            if 0 <= cy < H:
-                alpha = math.exp(-(dy ** 2) / 6.0) * 0.9
-                canvas[cy, :, 0] += (r / 255.0) * alpha
-                canvas[cy, :, 1] += (g / 255.0) * alpha
-                canvas[cy, :, 2] += (b / 255.0) * alpha
-
-    canvas = np.clip(canvas * 1.1, 0, 1)
-    img = Image.fromarray((canvas * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(radius=2))
-    draw = ImageDraw.Draw(img)
-
-    for i, (r, g, b) in enumerate(colors):
-        yc = int((i + 0.5 + phase_offset * 0.5) * strip_h)
-        if 0 <= yc < H:
-            _draw_label(draw, _hex_str(r, g, b), W - 80, yc - 5, 10, (220, 220, 230))
-
-    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  {n_colors} colors  ·  Neon",
-                10, 10, 14, (240, 240, 245))
-    return img
-
-
-def _render_color_frequency(colors, palette_type, n_colors, phase_offset=0.0, **kwargs):
-    """Frequency visualization — palette colors as sine wave amplitudes."""
-    n = len(colors)
-    img = Image.new("RGB", (W, H), (10, 10, 18))
-    draw = ImageDraw.Draw(img)
-
-    for i, (r, g, b) in enumerate(colors):
-        amp = 60 - i * (40 / max(1, n))
-        freq = 1.5 + i * 0.6
-        points = []
-        for x in range(W):
-            frac = x / W
-            y = H / 2 + amp * math.sin(frac * math.pi * 2 * freq + phase_offset * math.pi * 2 + i * 0.5)
-            points.append((x, int(y)))
-        for t in range(-2, 3):
-            draw.line([(p[0], p[1] + t) for p in points],
-                      fill=(min(r + 20, 255), min(g + 20, 255), min(b + 20, 255)), width=1)
-
-    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  {n_colors} colors  ·  Frequency",
-                10, 10, 14, (220, 220, 230))
-    for i, (r, g, b) in enumerate(colors):
-        _draw_label(draw, f"C{i+1} {_hex_str(r,g,b)}", 10, H - 20 - i * 18, 9, (r, g, b))
-
-    return img
-
-
-def _render_interpolation_ribbon(colors, palette_type, n_colors, phase_offset=0.0, **kwargs):
-    """Smooth 2D ribbon sweeping through all palette colors."""
-    n = len(colors)
-    canvas = np.zeros((H, W, 3), dtype=np.float32)
-    yy, xx = np.ogrid[:H, :W]
-
-    for i in range(n):
-        r, g, b = colors[i]
-        ribbon_y = H * 0.3 + H * 0.4 * (i / max(1, n - 1))
-        dy = yy - ribbon_y
-        wave = 30 * np.sin(i * 1.8 + xx / W * np.pi * 3 + phase_offset * np.pi * 2)
-        sigma = 18 + 10 * np.sin(float(i + phase_offset * 2))
-        weight = np.exp(-((dy - wave) ** 2) / (2 * sigma ** 2))
-        canvas[:, :, 0] += (r / 255.0) * weight
-        canvas[:, :, 1] += (g / 255.0) * weight
-        canvas[:, :, 2] += (b / 255.0) * weight
-
-    canvas = np.clip(canvas, 0, 1)
-    img = Image.fromarray((canvas * 255).astype(np.uint8))
-    draw = ImageDraw.Draw(img)
-    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  Interpolation Ribbon",
-                10, 10, 14, (230, 230, 240))
-    return img
-
-
-def _render_gradient_mesh(colors, palette_type, n_colors, phase_offset=0.0, hue_off=0.0, **kwargs):
-    """Multi-control-point mesh gradient — palette colors at nodes with smooth interpolation."""
-    n = len(colors)
-    canvas = np.zeros((H, W, 3), dtype=np.float32)
-    yy, xx = np.ogrid[:H, :W]
-    cols = min(4, n)
-    rows = max(1, (n + cols - 1) // cols)
-
-    for i, (r, g, b) in enumerate(colors):
-        ci = i % cols
-        ri = i // cols
-        cx = W * (0.1 + 0.8 * ci / max(1, cols - 1)) if cols > 1 else W / 2
-        cy = H * (0.1 + 0.8 * ri / max(1, rows - 1)) if rows > 1 else H / 2
-        cx += 40 * math.sin(i * 2.3 + phase_offset * math.pi * 2)
-        cy += 30 * math.cos(i * 1.7 + phase_offset * math.pi * 2 + 1)
-        sigma_x = 80 + 60 * math.sin(i * 1.4 + hue_off * 0.01)
-        sigma_y = 80 + 60 * math.cos(i * 1.9 + hue_off * 0.01)
-        dx = (xx - cx) / sigma_x
-        dy = (yy - cy) / sigma_y
-        weight = np.exp(-(dx**2 + dy**2) * 2.0)
-        canvas[:, :, 0] += (r / 255.0) * weight
-        canvas[:, :, 1] += (g / 255.0) * weight
-        canvas[:, :, 2] += (b / 255.0) * weight
-
-    canvas = np.clip(canvas, 0, 1)
-    img = Image.fromarray((canvas * 255).astype(np.uint8))
-    draw = ImageDraw.Draw(img)
-    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  {n_colors} colors  ·  Mesh",
-                10, 10, 14, (230, 230, 240))
-    return img
-
-
-def _render_color_field(colors, palette_type, n_colors, phase_offset=0.0, seed_val=42, **kwargs):
-    """Voronoi-like color field — palette colors as soft cell fills with blending."""
-    n = len(colors)
-    rng = random.Random(seed_val)
-    px = [rng.randint(30, W - 30) for _ in range(n * 3)]
-    py = [rng.randint(30, H - 30) for _ in range(n * 3)]
-    cell_colors = [colors[i % n] for i in range(n * 3)]
-    canvas = np.zeros((H, W, 3), dtype=np.float32)
-    yy, xx = np.ogrid[:H, :W]
-
-    for ci in range(len(px)):
-        r, g, b = cell_colors[ci]
-        cx = px[ci] + 15 * math.sin(ci * 0.7 + phase_offset * math.pi * 2)
-        cy = py[ci] + 15 * math.cos(ci * 0.9 + phase_offset * math.pi * 2 + 1)
-        dist = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2) + 0.5
-        weight = 1.0 / (1.0 + dist * 0.8)
-        canvas[:, :, 0] += (r / 255.0) * weight
-        canvas[:, :, 1] += (g / 255.0) * weight
-        canvas[:, :, 2] += (b / 255.0) * weight
-
-    max_val = canvas.max()
-    if max_val > 0:
-        canvas = canvas / max_val * 0.9
-    canvas = np.clip(canvas, 0, 1)
-    img = Image.fromarray((canvas * 255).astype(np.uint8))
-    draw = ImageDraw.Draw(img)
-    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  {n_colors} colors  ·  Color Field",
-                10, 10, 14, (240, 240, 245))
-    return img
-
-
-
-
-def _render_paint_deck(colors, palette_type, n_colors, phase_offset=0.0, seed_val=42, **kwargs):
-    """Stacked paint chips with realistic drop shadows — professional paint fan deck aesthetic."""
-    n = len(colors)
-    img = Image.new("RGB", (W, H), (28, 28, 32))
-    draw = ImageDraw.Draw(img)
-
-    chip_w, chip_h = 140, 72
-    start_x = W * 0.08
-    start_y = H * 0.08
-    stagger = 24
-    overlap = 8
-
-    for i, (r, g, b) in enumerate(colors):
-        x = int(start_x + (i % 3) * stagger + phase_offset * 20)
-        y = int(start_y + i * (chip_h - overlap) + phase_offset * 15)
-        draw.rounded_rectangle(
-            [x + 4, y + 4, x + chip_w + 4, y + chip_h + 4],
-            radius=6, fill=(14, 14, 18, 180))
-        draw.rounded_rectangle([x, y, x + chip_w, y + chip_h],
-                               radius=6, fill=(r, g, b), outline=(min(r+30,255), min(g+30,255), min(b+30,255)), width=1)
-        hex_text = _hex_str(r, g, b)
-        txt_contrast = (255, 255, 255) if (r*0.299 + g*0.587 + b*0.114) < 128 else (30, 30, 30)
-        _draw_label(draw, hex_text, x + 10, y + chip_h - 22, 11, txt_contrast)
-        _draw_label(draw, str(i + 1).zfill(2), x + chip_w - 30, y + 8, 10, txt_contrast)
-
-    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  Paint Deck",
-                16, H - 28, 14, (180, 180, 190))
-    return img
-
-
-def _render_editorial_spread(colors, palette_type, n_colors, phase_offset=0.0, **kwargs):
-    """Magazine editorial layout — large serif numbers, generous white space."""
-    n = len(colors)
-    bg = (248, 246, 240)
-    img = Image.new("RGB", (W, H), bg)
-    draw = ImageDraw.Draw(img)
-    margin = 44
-    usable_w = W - 2 * margin
-    usable_h = H - 2 * margin
-    cols = min(4, n)
-    rows = max(1, (n + cols - 1) // cols)
-    cell_w = usable_w / cols
-    cell_h = usable_h / rows
-
-    for i, (r, g, b) in enumerate(colors):
-        ci = i % cols
-        ri = i // rows
-        cx = margin + ci * cell_w
-        cy = margin + ri * cell_h
-        block_w = min(90, cell_w * 0.6)
-        block_h = min(60, cell_h * 0.35)
-        bx = int(cx + (cell_w - block_w) / 2)
-        by = int(cy + 20)
-        draw.rectangle([bx, by, bx + int(block_w), by + int(block_h)], fill=(r, g, b))
-        font = get_font(28)
-        draw.text((int(bx + block_w + 12), by - 4), str(i + 1).zfill(2), fill=(60, 55, 50), font=font)
-        _draw_label(draw, _hex_str(r, g, b), bx, by + int(block_h) + 6, 10, (100, 95, 90))
-        draw.line([(bx, by + int(block_h) + 22), (bx + int(block_w), by + int(block_h) + 22)],
-                  fill=(200, 195, 185), width=1)
-
-    font = get_font(16)
-    draw.text((margin, 14), palette_type.replace("-", " ").title(), fill=(60, 55, 50), font=font)
-    draw.text((margin, 34), f"{n_colors}-color palette", fill=(140, 135, 125), font=get_font(11))
-    return img
-
-
-def _render_watercolor_wash(colors, palette_type, n_colors, phase_offset=0.0, seed_val=42, **kwargs):
-    """Soft bleeding watercolor edges on textured paper."""
-    n = len(colors)
-    rng = random.Random(seed_val + 99)
-    paper = np.random.normal(245, 4, (H, W, 3)).clip(230, 255).astype(np.float32)
-    grain = np.random.normal(0, 2, (H, W, 3)).astype(np.float32)
-    paper = np.clip(paper + grain, 230, 255)
-    canvas = np.zeros((H, W, 3), dtype=np.float32)
-    yy, xx = np.ogrid[:H, :W]
-
-    for i, (r, g, b) in enumerate(colors):
-        cx = W * 0.1 + W * 0.8 * ((i + phase_offset * 0.5) % 1.0) + 20 * np.sin(i * 2.7)
-        cy = H * 0.1 + H * 0.8 * ((i * 0.618 + phase_offset * 0.3) % 1.0)
-        rx = 70 + 40 * np.sin(i * 1.3 + phase_offset)
-        ry = 40 + 25 * np.cos(i * 0.9 + phase_offset + 1)
-        dx = (xx - cx) / rx
-        dy = (yy - cy) / ry
-        dist = dx**2 + dy**2
-        weight = np.exp(-dist * 1.5) * 0.85
-        weight = np.clip(weight, 0, 1)
-        canvas[:, :, 0] += (r / 255.0) * weight
-        canvas[:, :, 1] += (g / 255.0) * weight
-        canvas[:, :, 2] += (b / 255.0) * weight
-
-    result = paper / 255.0 * 0.3 + np.clip(canvas, 0, 1) * 0.7
-    result = np.clip(result, 0, 1)
-    img = Image.fromarray((result * 255).astype(np.uint8))
-    draw = ImageDraw.Draw(img)
-    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  Watercolor", 16, H - 26, 13, (80, 75, 70))
-    for i, (r, g, b) in enumerate(colors):
-        cx_l = int(W * 0.1 + W * 0.8 * ((i + phase_offset * 0.5) % 1.0) + 20 * np.sin(i * 2.7))
-        cy_l = int(H * 0.1 + H * 0.8 * ((i * 0.618 + phase_offset * 0.3) % 1.0) + 70)
-        _draw_label(draw, _hex_str(r, g, b), cx_l - 24, cy_l, 9, (60, 55, 50))
-    return img
-
-
-def _render_museum_labels(colors, palette_type, n_colors, phase_offset=0.0, **kwargs):
-    """Gallery wall presentation — Rothko-study aesthetic with curator labels."""
-    n = len(colors)
-    img = Image.new("RGB", (W, H), (242, 240, 235))
-    draw = ImageDraw.Draw(img)
-    margin = 48
-    usable_w = W - 2 * margin
-    cols = min(5, n)
-    rows = max(1, (n + cols - 1) // cols)
-    cell_w = usable_w / cols
-    cell_h = (H - 2 * margin) / rows
-
-    for i, (r, g, b) in enumerate(colors):
-        ci = i % cols
-        ri = i // rows
-        cx = margin + ci * cell_w
-        cy = margin + ri * cell_h
-        sq = min(70, cell_w * 0.5, cell_h * 0.5)
-        bx = int(cx + (cell_w - sq) / 2)
-        by = int(cy + (cell_h - sq) / 2 - 8)
-        draw.rectangle([bx - 1, by - 1, bx + int(sq) + 1, by + int(sq) + 1], fill=(220, 218, 212))
-        draw.rectangle([bx, by, bx + int(sq), by + int(sq)], fill=(r, g, b))
-        label_y = by + int(sq) + 10
-        _draw_label(draw, f"{palette_type.replace('-',' ').title()} #{i+1}", bx, label_y, 10, (60, 55, 50))
-        _draw_label(draw, _hex_str(r, g, b), bx, label_y + 14, 9, (140, 135, 125))
-        h, s, v = colorsys.rgb_to_hsv(r/255, g/255, b/255)
-        _draw_label(draw, f"HSL {int(h*360)}°, {int(s*100)}%, {int(v*100)}%", bx, label_y + 26, 8, (160, 155, 145))
-
-    font = get_font(14)
-    draw.text((margin, 14), palette_type.replace("-", " ").title(), fill=(40, 38, 35), font=font)
-    draw.text((margin, 32), f"Color Study · {n_colors} specimens", fill=(140, 135, 125), font=get_font(10))
-    return img
-
-
-def _render_jewel_box(colors, palette_type, n_colors, phase_offset=0.0, seed_val=42, **kwargs):
-    """Precious gemstone presentation — colors in rounded wells on dark velvet."""
-    n = len(colors)
-    rng = random.Random(seed_val + 200)
-    bg_arr = np.random.normal(18, 3, (H, W, 3)).clip(10, 28).astype(np.uint8)
-    img = Image.fromarray(bg_arr)
-    draw = ImageDraw.Draw(img)
-    margin = 30
-    cols = min(5, n)
-    rows = max(1, (n + cols - 1) // cols)
-    cell_w = (W - 2 * margin) / cols
-    cell_h = (H - 2 * margin - 40) / rows
-    well_r = min(32, cell_w * 0.35, cell_h * 0.38)
-
-    for i, (r, g, b) in enumerate(colors):
-        ci = i % cols
-        ri = i // rows
-        cx = int(margin + ci * cell_w + cell_w / 2)
-        cy = int(margin + 20 + ri * cell_h + cell_h / 2)
-        draw.ellipse([cx - well_r - 4, cy - well_r - 4, cx + well_r + 4, cy + well_r + 4], fill=(8, 8, 12))
-        draw.ellipse([cx - well_r - 2, cy - well_r - 2, cx + well_r + 2, cy + well_r + 2], fill=None, outline=(180, 170, 140), width=2)
-        draw.ellipse([cx - well_r, cy - well_r, cx + well_r, cy + well_r], fill=None, outline=(140, 130, 100), width=1)
-        draw.ellipse([cx - well_r + 2, cy - well_r + 2, cx + well_r - 2, cy + well_r - 2], fill=(r, g, b))
-        hl_x = cx - well_r * 0.3
-        hl_y = cy - well_r * 0.35
-        hl_r = well_r * 0.25
-        draw.ellipse([hl_x - hl_r, hl_y - hl_r, hl_x + hl_r, hl_y + hl_r], fill=(min(r+80,255), min(g+80,255), min(b+80,255)))
-        _draw_label(draw, f"#{i+1}", cx - 14, cy + well_r + 8, 10, (180, 175, 165))
-        _draw_label(draw, _hex_str(r,g,b), cx - 28, cy + well_r + 22, 9, (120, 115, 105))
-
-    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  Jewel Box", 20, H - 22, 13, (200, 195, 180))
-    return img
-
-
-def _render_letterpress_series(colors, palette_type, n_colors, phase_offset=0.0, seed_val=42, **kwargs):
-    """Premium letterpress stationery — cards with deboss borders, organic placement."""
-    n = len(colors)
-    bg = (245, 242, 235)
-    img = Image.new("RGB", (W, H), bg)
-    draw = ImageDraw.Draw(img)
-    rng = random.Random(seed_val + 500)
-    card_w, card_h = 110, 80
-
-    for i, (r, g, b) in enumerate(colors):
-        angle = rng.uniform(-6, 6) + phase_offset * 2
-        cx = W * 0.1 + W * 0.8 * ((i * 0.618 + phase_offset * 0.15) % 1.0)
-        cy = H * 0.1 + H * 0.7 * ((i * 0.382 + phase_offset * 0.12) % 1.0)
-        card = Image.new("RGBA", (card_w + 20, card_h + 20), (0, 0, 0, 0))
-        card_draw = ImageDraw.Draw(card)
-        pad = 10
-        card_draw.rectangle([pad + 2, pad + 2, pad + card_w + 2, pad + card_h + 2], fill=(200, 195, 185, 120))
-        card_draw.rectangle([pad, pad, pad + card_w, pad + card_h], fill=(r, g, b), outline=(160, 155, 145), width=1)
-        card_draw.rectangle([pad + 4, pad + 4, pad + card_w - 4, pad + card_h - 4], fill=None, outline=(min(r+40,255), min(g+40,255), min(b+40,255), 100), width=1)
-        txt_c = (255, 255, 255) if (r*0.299 + g*0.587 + b*0.114) < 128 else (40, 38, 35)
-        card_draw.text((pad + 8, pad + card_h - 20), _hex_str(r, g, b), fill=txt_c, font=get_font(10))
-        rotated = card.rotate(angle, expand=True, resample=Image.BICUBIC)
-        px = int(cx - rotated.width / 2)
-        py = int(cy - rotated.height / 2)
-        img.paste(rotated, (px, py), rotated)
-
-    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  Letterpress", 20, H - 26, 13, (100, 95, 85))
-    return img
-
-
-def _render_iro_washi(colors, palette_type, n_colors, phase_offset=0.0, seed_val=42, **kwargs):
-    """Japanese washi paper aesthetic — color blocks with poetic labels."""
-    n = len(colors)
-    rng = random.Random(seed_val + 777)
-    bg_arr = np.random.normal(248, 3, (H, W, 3)).clip(240, 253).astype(np.float32)
-    for x in range(0, W, 4):
-        bg_arr[:, x, :] += rng.uniform(-2, 2)
-    bg_arr = np.clip(bg_arr, 238, 254).astype(np.uint8)
-    img = Image.fromarray(bg_arr)
-    draw = ImageDraw.Draw(img)
-    block_w = min(90, (W - 80) / n)
-    block_h = H * 0.55
-    start_x = (W - (n * block_w + (n - 1) * 4)) / 2
-    start_y = H * 0.15
-
-    for i, (r, g, b) in enumerate(colors):
-        x = int(start_x + i * (block_w + 4))
-        y = int(start_y + phase_offset * 8)
-        draw.rectangle([x, y, x + int(block_w), y + int(block_h)], fill=(r, g, b))
-        draw.line([(x + int(block_w), y), (x + int(block_w), y + int(block_h))], fill=(max(r-20, 0), max(g-20, 0), max(b-20, 0)), width=1)
-        _draw_label(draw, f"色 #{i+1}", x + 4, y + int(block_h) + 8, 10, (60, 55, 50))
-        _draw_label(draw, _hex_str(r,g,b), x + 4, y + int(block_h) + 22, 9, (140, 130, 120))
-
-    font = get_font(13)
-    draw.text((20, 10), palette_type.replace("-", " ").title(), fill=(40, 38, 35), font=font)
-    draw.text((20, 26), f"{n_colors} iro", fill=(140, 135, 125), font=get_font(10))
-    draw.line([(20, 42), (W - 20, 42)], fill=(200, 195, 185), width=1)
-    return img
-
-
-def _render_fabric_swatches(colors, palette_type, n_colors, phase_offset=0.0, seed_val=42, **kwargs):
-    """Textile/fashion mood board — fabric swatches with weave texture."""
-    n = len(colors)
-    bg = (250, 248, 244)
-    img = Image.new("RGB", (W, H), bg)
-    draw = ImageDraw.Draw(img)
-    margin = 36
-    cols = min(5, n)
-    rows = max(1, (n + cols - 1) // cols)
-    cell_w = (W - 2 * margin) / cols
-    cell_h = (H - 2 * margin - 50) / rows
-
-    for i, (r, g, b) in enumerate(colors):
-        ci = i % cols
-        ri = i // rows
-        cx = margin + ci * cell_w
-        cy = margin + ri * cell_h
-        swatch_w = cell_w * 0.75
-        swatch_h = cell_h * 0.55
-        sx = int(cx + (cell_w - swatch_w) / 2)
-        sy = int(cy + 12)
-        swatch_arr = np.full((int(swatch_h), int(swatch_w), 3), [r, g, b], dtype=np.float32)
-        for wy in range(0, int(swatch_h), 4):
-            swatch_arr[wy, :, :] *= 0.92
-        for wx in range(0, int(swatch_w), 6):
-            swatch_arr[:, wx, :] *= 0.94
-        noise = np.random.normal(0, 4, swatch_arr.shape)
-        swatch_arr = np.clip(swatch_arr + noise, 0, 255).astype(np.uint8)
-        swatch = Image.fromarray(swatch_arr)
-        img.paste(swatch, (sx, sy))
-        _draw_label(draw, f"Nº {i+1}", sx, sy + int(swatch_h) + 6, 10, (80, 75, 70))
-        _draw_label(draw, _hex_str(r,g,b), sx, sy + int(swatch_h) + 20, 9, (150, 145, 135))
-        pin_x = sx + int(swatch_w) // 2
-        draw.ellipse([pin_x - 3, sy - 1, pin_x + 3, sy + 5], fill=(180, 175, 165), outline=(140, 135, 125), width=1)
-
-    font = get_font(14)
-    draw.text((margin, 6), f"COLLECTION: {palette_type.replace('-',' ').upper()}", fill=(40, 38, 35), font=font)
-    draw.text((margin, 24), f"Seasonal Color Story · {n_colors} swatches", fill=(140, 135, 125), font=get_font(10))
-    return img
-
-
-def _render_specimen_cards(colors, palette_type, n_colors, phase_offset=0.0, seed_val=42, **kwargs):
-    """Herbarium-style botanical specimen plates — scientific color documentation."""
-    n = len(colors)
-    bg = (245, 243, 238)
-    img = Image.new("RGB", (W, H), bg)
-    draw = ImageDraw.Draw(img)
-    margin = 24
-    card_w = (W - margin * 2) / max(1, n)
-    card_h = H - margin * 2
-
-    for i, (r, g, b) in enumerate(colors):
-        x = int(margin + i * card_w + phase_offset * 8)
-        y = margin
-        draw.rectangle([x, y, x + int(card_w) - 4, y + int(card_h)], fill=(250, 248, 244), outline=(180, 175, 165), width=1)
-        spec_w = card_w * 0.65
-        spec_h = card_h * 0.25
-        sx = int(x + (card_w - spec_w) / 2)
-        sy = int(y + card_h * 0.15)
-        draw.rectangle([sx, sy, sx + int(spec_w), sy + int(spec_h)], fill=(r, g, b))
-        label_y = sy + int(spec_h) + 12
-        _draw_label(draw, f"Color #{i+1}", sx, label_y, 10, (40, 38, 35))
-        _draw_label(draw, _hex_str(r, g, b), sx, label_y + 14, 9, (100, 95, 85))
-        h, s, v = colorsys.rgb_to_hsv(r/255, g/255, b/255)
-        _draw_label(draw, f"H: {int(h*360)}°", sx, label_y + 28, 8, (140, 135, 125))
-        _draw_label(draw, f"S: {int(s*100)}%", sx, label_y + 40, 8, (140, 135, 125))
-        _draw_label(draw, f"V: {int(v*100)}%", sx, label_y + 52, 8, (140, 135, 125))
-        _draw_label(draw, f"SPEC-{i+1:03d}", int(x + card_w/2 - 28), y + 10, 9, (120, 115, 105))
-
-    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  Color Specimens", 16, H - 20, 12, (100, 95, 85))
-    return img
-
-
-def _render_stained_glass(colors, palette_type, n_colors, phase_offset=0.0, seed_val=42, **kwargs):
-    """Stained glass window — colors as luminous glass panes with lead lines."""
-    n = len(colors)
-    img = Image.new("RGB", (W, H), (8, 8, 14))
-    draw = ImageDraw.Draw(img)
-    margin = 40
-    usable_w = W - 2 * margin
-    usable_h = H - 2 * margin
-    cols = min(4, n)
-    rows = max(1, (n + cols - 1) // cols)
-    pane_w = usable_w / cols
-    pane_h = usable_h / rows
-    inner = 6
-
-    for i, (r, g, b) in enumerate(colors):
-        ci = i % cols
-        ri = i // rows
-        px = margin + ci * pane_w
-        py = margin + ri * pane_h
-        glass = (min(r + 40, 255), min(g + 40, 255), min(b + 40, 255))
-        draw.rectangle([int(px + inner), int(py + inner), int(px + pane_w - inner), int(py + pane_h - inner)], fill=(r, g, b))
-        hl_x1 = int(px + inner + 4)
-        hl_y1 = int(py + inner + 4)
-        hl_w = int(pane_w - inner * 2) * 0.4
-        hl_h = int(pane_h - inner * 2) * 0.3
-        draw.rectangle([hl_x1, hl_y1, hl_x1 + int(hl_w), hl_y1 + int(hl_h)], fill=glass)
-
-    lead = (22, 22, 26)
-    for ci in range(cols + 1):
-        x = int(margin + ci * pane_w)
-        draw.line([(x, margin), (x, margin + int(usable_h))], fill=lead, width=4)
-    for ri in range(rows + 1):
-        y = int(margin + ri * pane_h)
-        draw.line([(margin, y), (margin + int(usable_w), y)], fill=lead, width=4)
-
-    for i, (r, g, b) in enumerate(colors):
-        label_x = int(margin + (i % cols) * pane_w + pane_w/2 - 25)
-        _draw_label(draw, _hex_str(r,g,b), label_x, H - 16, 8, (160, 155, 145))
-
-    _draw_label(draw, f"{palette_type.replace('-',' ').title()}  ·  Stained Glass", 16, 10, 13, (180, 175, 165))
-    return img
-
-
-# Dispatch table for display modes
-_DISPLAY_RENDERERS = {
-    "harmony_wheel": _render_harmony_wheel,
-    "concentric_rings": _render_concentric_rings,
-    "gradient_mesh": _render_gradient_mesh,
-    "paint_deck": _render_paint_deck,
-    "editorial_spread": _render_editorial_spread,
-    "museum_labels": _render_museum_labels,
-    "fabric_swatches": _render_fabric_swatches,
-    "specimen_cards": _render_specimen_cards,
-    "stained_glass": _render_stained_glass,
+_DEFAULT_SAT: dict[str, float] = {
+    "monochromatic": 0.75, "analogous": 0.75, "complementary": 0.75,
+    "split": 0.75, "triadic": 0.75, "tetradic": 0.75, "square": 0.75,
+    "double-split": 0.75, "clash": 0.75, "neutral": 0.15,
+    "achromatic": 0.0, "pastel": 0.25, "earth": 0.4, "jewel": 0.85,
+    "neon": 1.0, "muted": 0.2, "warm": 0.75, "cool": 0.75,
+    "neutral-warm": 0.1, "neutral-cool": 0.1,
+    "golden-ratio": 0.75, "fibonacci": 0.75, "prime-spacing": 0.75,
+    "uniform": 0.75,
+    "tetradic-rectangle": 0.75, "double-complementary": 0.75,
+    "clash-variable": 0.75, "split-variable": 0.75,
+    "achromatic-tint": 0.05, "achromatic-shade": 0.08,
+    "complementary-split-wide": 0.75, "triadic-alt": 0.75,
+    "random": 0.75,
 }
 
-_DISPLAY_CHOICES = sorted(_DISPLAY_RENDERERS.keys())
+_DEFAULT_VAL: dict[str, float] = {
+    "monochromatic": 0.7, "analogous": 0.7, "complementary": 0.7,
+    "split": 0.7, "triadic": 0.7, "tetradic": 0.7, "square": 0.7,
+    "double-split": 0.7, "clash": 0.7, "neutral": 0.6,
+    "achromatic": 0.6, "pastel": 0.85, "earth": 0.5, "jewel": 0.55,
+    "neon": 0.95, "muted": 0.5, "warm": 0.7, "cool": 0.7,
+    "neutral-warm": 0.6, "neutral-cool": 0.6,
+    "golden-ratio": 0.7, "fibonacci": 0.7, "prime-spacing": 0.7,
+    "uniform": 0.7,
+    "tetradic-rectangle": 0.7, "double-complementary": 0.7,
+    "clash-variable": 0.7, "split-variable": 0.7,
+    "achromatic-tint": 0.6, "achromatic-shade": 0.3,
+    "complementary-split-wide": 0.7, "triadic-alt": 0.7,
+    "random": 0.7,
+}
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# METHOD
+# PUBLIC API
 # ════════════════════════════════════════════════════════════════════════════
+
+
+def list_palette_types() -> list[str]:
+    return list(_PALETTE_CHOICES)
+
+
+def list_preset_names() -> list[str]:
+    return sorted(palette_registry.get_all().keys())
+
+
+def generate_palette(
+    palette_type: str,
+    n_colors: int = 8,
+    seed: int = 0,
+    hue_off: float = 0.0,
+    sat: float | None = None,
+    val: float | None = None,
+) -> list[tuple[int, int, int]]:
+    """Generate palette colors from one of 33 algorithmic types (CPU — 2-5 µs).
+
+    Scalar math on 3-32 values: GPU launch overhead dominates, so this stays CPU.
+    """
+    gen_fn = _PALETTE_GENERATORS.get(palette_type, _golden_ratio_palette)
+    pt = palette_type if palette_type in _PALETTE_GENERATORS else "golden-ratio"
+    if sat is None:
+        sat = _DEFAULT_SAT.get(pt, 0.75)
+    if val is None:
+        val = _DEFAULT_VAL.get(pt, 0.7)
+    n_colors = max(3, min(32, int(n_colors)))
+    return gen_fn(n_colors, seed, hue_off=hue_off, sat=sat, val=val)
+
+
+def palette_to_colormap(colors: list[tuple[int, int, int]]) -> np.ndarray:
+    """Convert (r,g,b) byte tuples to (N,3) float32 COLORMAP."""
+    return np.array(colors, dtype=np.float32) / 255.0
+
+
+def sample_palette_from_image(
+    image: np.ndarray,
+    n_colors: int = 6,
+    seed: int = 0,
+    hue_off: float = 0.0,
+) -> tuple[list[tuple[int, int, int]], np.ndarray]:
+    """Extract dominant colors from an image via GPU-accelerated k-means.
+
+    GPU: per-pixel distance computation (parallel GLSL fragments).
+    CPU: centroid update (K × 3 floats, trivial).
+
+    Returns:
+        (colors_list, colormap_array)
+    """
+    n_colors = max(2, min(16, int(n_colors)))
+
+    # Downsample to 64×64 for k-means
+    h, w = image.shape[:2]
+    if h > 64 or w > 64:
+        from PIL import Image as _PIL
+        img_pil = _PIL.fromarray((np.clip(image, 0, 1) * 255).astype(np.uint8))
+        img_small = img_pil.resize((64, 64), _PIL.LANCZOS)
+        thumb = np.array(img_small).astype(np.float32) / 255.0
+    else:
+        thumb = image
+
+    # GPU k-means
+    centroids, _ = _kmeans_gpu(thumb, n_colors, seed)
+
+    # Sort by luminance (brightest first)
+    lum = centroids.mean(axis=1)
+    order = np.argsort(-lum)
+    centroids = centroids[order]
+
+    # Convert to byte tuples
+    colors = [
+        (int(c[0] * 255), int(c[1] * 255), int(c[2] * 255))
+        for c in centroids[:n_colors]
+    ]
+
+    # Apply hue offset rotation
+    if hue_off != 0.0:
+        rotated = []
+        for r, g, b in colors:
+            h, s, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+            h = (h + hue_off / 360.0) % 1.0
+            rotated.append(_hsv_to_rgb(h, s, v))
+        colors = rotated
+        centroids = np.array(colors, dtype=np.float32) / 255.0
+
+    return colors, centroids.astype(np.float32)
+
+
+def load_registry_palette(name: str) -> np.ndarray | None:
+    """Load a named preset palette from the palette_registry.
+
+    Supports ``_r`` suffix for reversed variants.
+    """
+    raw = palette_registry.get(name)
+    if raw is None:
+        return None
+    return np.array(raw, dtype=np.float32) / 255.0
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# @method — Color Palette pipeline node
+# ════════════════════════════════════════════════════════════════════════════
+
 
 @method(
     id="10",
     name="Color Palette",
     category="codegen",
-    tags=["palette", "color", "fast"],
+    tags=["palette", "color", "fast", "utility", "gpu"],
     inputs={
         "image_in": "IMAGE",
         "hue_offset": "SCALAR",
-        "phase_offset": "SCALAR",
-        "rot_offset": "SCALAR",
         "saturation": "SCALAR",
         "value": "SCALAR",
         "palette_select": "SCALAR",
         "n_colors": "SCALAR",
-        "display_select": "SCALAR",
     },
     outputs={"image": "IMAGE", "luminance": "FIELD", "palette": "COLORMAP"},
     params={
         "source": {
-            "description": "palette source: generated (30 palette types) or sampled (extract from wired image_in)",
-            "choices": ["generated", "sampled"],
+            "description": "palette source: generated (33 types), sampled (extract from wired image_in via GPU k-means), or registry (named preset)",
+            "choices": ["generated", "sampled", "registry"],
             "default": "generated",
         },
         "n_colors": {
-            "description": "number of palette colors",
+            "description": "number of palette colors (3-32, ignored when source=registry)",
             "default": 8,
         },
         "n_sample_colors": {
-            "description": "number of colors to extract when sampling an input image",
+            "description": "number of colors to extract when source=sampled (GPU k-means)",
             "default": 6,
         },
-        "layout": {
-            "description": "palette display layout (legacy — use display_mode for v4 renderers)",
-            "choices": ["wheel", "gradient", "vertical", "horizontal", "grid", "overlay"],
-            "default": "vertical",
-        },
-        "display_mode": {
-            "description": "visual presentation mode (v4 rich renderers)",
-            "choices": _DISPLAY_CHOICES,
-            "default": "harmony_wheel",
-        },
         "palette_type": {
-            "description": "palette generation method (30 types). Ignored when source=sampled.",
+            "description": "palette generation method (33 types). Used when source=generated.",
             "choices": _PALETTE_CHOICES,
             "default": "golden-ratio",
         },
+        "palette_name": {
+            "description": "registry preset name. Used when source=registry.",
+            "default": "bw",
+        },
         "saturation": {
-            "description": "color saturation override (0.0-1.0, -1=auto). Wire LFO.value here.",
+            "description": "saturation override (0-1, -1=auto per palette type). Wire LFO.value here.",
             "default": -1.0,
         },
         "value": {
-            "description": "color value/brightness override (0.0-1.0, -1=auto). Wire LFO.value here.",
+            "description": "value/brightness override (0-1, -1=auto per palette type). Wire LFO.value here.",
             "default": -1.0,
         },
         "hue_offset": {
-            "description": "SCALAR-driven hue rotation. Wire LFO.value here.",
-            "default": 0.0,
-        },
-        "phase_offset": {
-            "description": "SCALAR-driven phase offset for gradient/display sweep. Wire LFO.value here.",
-            "default": 0.0,
-        },
-        "rot_offset": {
-            "description": "SCALAR-driven wheel rotation offset. Wire LFO.value here.",
+            "description": "hue rotation in degrees. Wire LFO.value here.",
             "default": 0.0,
         },
         "palette_select": {
-            "description": "SCALAR-driven palette type index (0-1 maps to all 30 palette types). Wire Counter.value here.",
+            "description": "SCALAR-driven palette type index (0-1 maps to all 33 types). Wire Counter.value here.",
             "default": -1.0,
         },
-        "display_select": {
-            "description": "SCALAR-driven display mode index (0-1 maps to all display modes). Wire Counter.value here.",
-            "default": -1.0,
-        },
-        "palette": {
-            "description": "PALETTES name to remap output colors (none = generated colors)",
+        "remap_palette": {
+            "description": "registry palette name to remap output colors through (none = use as-is)",
             "default": "none",
+        },
+        "show_labels": {
+            "description": "overlay each swatch with its color value label (and the palette name in the center band)",
+            "default": False,
+        },
+        "label_format": {
+            "description": "color value format for the labels (named colors & CSS variables not offered — no reverse mapping exists)",
+            "choices": _LABEL_FORMATS,
+            "default": "rgb",
         },
     },
 )
 def method_10_color_palette(out_dir: Path, seed: int, params=None):
-    """Multi-mode color palette display with 30 palette types and 20 display modes.
+    """Generate, sample, or load a color palette and emit it as COLORMAP.
 
-    Architecture B (stateless, one call = one frame). Animation is driven
-    by wired SCALAR inputs instead of internal anim_mode logic.
+    GPU acceleration:
+      - Preview render: GLSL strip shader via ModernGL (10× faster than PIL)
+      - K-means sampling: hybrid GPU distance + CPU centroid update (15-40× faster)
+      - Palette generators: CPU (3-32 scalar values, GPU overhead would dominate)
 
-    When image_in is wired and source=sampled, the palette is extracted
-    from the input image's dominant colors instead of generated.
-
-    Wire channel nodes to drive params:
-      LFO.value → hue_offset      (hue rotation, replaces hue_rotate)
-      LFO.value → phase_offset    (gradient/display sweep, replaces gradient_sweep)
-      LFO.value → rot_offset      (wheel spin, replaces wheel_spin)
-      LFO.value → saturation      (saturation pulse, replaces saturation_pulse)
-      LFO.value → value           (value pulse, replaces value_pulse)
-      Counter.value → palette_select (palette type cycling, replaces palette_morph)
-      Counter.value → display_select (display mode cycling)
-      LFO.value → n_colors        (color count sweep)
+    Three source modes:
+      - generated: 33 algorithmic palette types (harmonic, perceptual, etc.)
+      - sampled: extract dominant colors from wired image_in via GPU k-means
+      - registry: load a named preset from palette_registry
     """
     if params is None:
         params = {}
 
-    # ── Read SCALAR inputs ──
-    hue_offset_override = params.get("hue_offset")
-    effective_hue_offset = float(hue_offset_override) if hue_offset_override is not None else float(params.get("hue_offset", 0.0))
+    source = params.get("source", "generated")
+    n_colors = max(3, min(32, int(as_scalar(sparam(params, "n_colors", 8, cast=int)))))
+    n_sample_colors = max(2, min(16, int(as_scalar(sparam(params, "n_sample_colors", 6, cast=int)))))
+    remap = params.get("remap_palette", "none")
+    show_labels = bool(params.get("show_labels", False))
+    label_fmt = params.get("label_format", "rgb")
+    if label_fmt not in _LABEL_FORMATS:
+        label_fmt = "rgb"
 
-    phase_offset_override = params.get("phase_offset")
-    effective_phase_offset = float(phase_offset_override) if phase_offset_override is not None else float(params.get("phase_offset", 0.0))
+    # -- Read SCALAR inputs --
+    # sparam() + as_scalar() are null-safe: the UI sends None for unwired
+    # SCALAR ports (bare params.get() would feed int(None)/float(None) →
+    # TypeError → error placeholder → no image output), and the executor
+    # auto-injects upstream scalars as both the value AND a broadcast
+    # _field_<name> (H,W) array — as_scalar collapses the field to its mean.
+    # (Fixed 2026-07-30.)
+    effective_hue_offset = float(as_scalar(sparam(params, "hue_offset", 0.0)))
 
-    rot_offset_override = params.get("rot_offset")
-    effective_rot_offset = float(rot_offset_override) if rot_offset_override is not None else float(params.get("rot_offset", 0.0))
+    sat_ui = float(as_scalar(sparam(params, "saturation", -1.0)))
+    effective_sat = max(0.0, min(1.0, sat_ui)) if sat_ui >= 0 else None
 
-    sat_override = params.get("saturation")
-    if sat_override is not None:
-        effective_sat = max(0.0, min(1.0, float(sat_override)))
-    else:
-        sat_override_ui = float(params.get("saturation", -1.0))
-        effective_sat = sat_override_ui if sat_override_ui >= 0 else 0.75
+    val_ui = float(as_scalar(sparam(params, "value", -1.0)))
+    effective_val = max(0.0, min(1.0, val_ui)) if val_ui >= 0 else None
 
-    val_override = params.get("value")
-    if val_override is not None:
-        effective_val = max(0.0, min(1.0, float(val_override)))
-    else:
-        val_override_ui = float(params.get("value", -1.0))
-        effective_val = val_override_ui if val_override_ui >= 0 else 0.7
-
-    palette_select_override = params.get("palette_select")
-    if palette_select_override is not None:
-        pidx = int(float(palette_select_override) * len(_PALETTE_CHOICES)) % len(_PALETTE_CHOICES)
+    palette_select_raw = float(as_scalar(sparam(params, "palette_select", -1.0)))
+    if palette_select_raw >= 0:
+        pidx = int(float(palette_select_raw) * len(_PALETTE_CHOICES)) % len(_PALETTE_CHOICES)
         palette_type = _PALETTE_CHOICES[pidx]
     else:
         palette_type = params.get("palette_type", "golden-ratio")
 
-    display_select_override = params.get("display_select")
-    if display_select_override is not None:
-        didx = int(float(display_select_override) * len(_DISPLAY_CHOICES)) % len(_DISPLAY_CHOICES)
-        display_mode = _DISPLAY_CHOICES[didx]
-    else:
-        display_mode = params.get("display_mode", "harmony_wheel")
-
-    n_colors_override = params.get("n_colors")
-    if n_colors_override is not None:
-        n_colors = max(3, min(32, int(n_colors_override)))
-    else:
-        n_colors = max(3, min(32, int(params.get("n_colors", 8))))
-
-    # ── Read UI params ──
-    layout = params.get("layout", "vertical")
-    source = params.get("source", "generated")
-    n_sample_colors = max(2, min(16, int(params.get("n_sample_colors", 6))))
-
-    # ── Check for sampled input image ──
     input_img = params.get("_input_image")
-    use_sampled = (source == "sampled" and input_img is not None)
 
-    # ── Per-palette-type default sat/val ──
-    _DEFAULT_SAT = {
-        "monochromatic": 0.75, "analogous": 0.75, "complementary": 0.75,
-        "split": 0.75, "triadic": 0.75, "tetradic": 0.75, "square": 0.75,
-        "double-split": 0.75, "clash": 0.75, "neutral": 0.15,
-        "achromatic": 0.0, "pastel": 0.25, "earth": 0.4, "jewel": 0.85,
-        "neon": 1.0, "muted": 0.2, "warm": 0.75, "cool": 0.75,
-        "neutral-warm": 0.1, "neutral-cool": 0.1,
-        "golden-ratio": 0.75, "fibonacci": 0.75, "prime-spacing": 0.75,
-        "uniform": 0.75, "tetradic-rectangle": 0.75, "double-complementary": 0.75,
-        "clash-variable": 0.75, "split-variable": 0.75,
-        "achromatic-tint": 0.05, "achromatic-shade": 0.08,
-        "complementary-split-wide": 0.75, "triadic-alt": 0.75,
-        "random": 0.75,
-    }
-    _DEFAULT_VAL = {
-        "monochromatic": 0.7, "analogous": 0.7, "complementary": 0.7,
-        "split": 0.7, "triadic": 0.7, "tetradic": 0.7, "square": 0.7,
-        "double-split": 0.7, "clash": 0.7, "neutral": 0.6,
-        "achromatic": 0.6, "pastel": 0.85, "earth": 0.5, "jewel": 0.55,
-        "neon": 0.95, "muted": 0.5, "warm": 0.7, "cool": 0.7,
-        "neutral-warm": 0.6, "neutral-cool": 0.6,
-        "golden-ratio": 0.7, "fibonacci": 0.7, "prime-spacing": 0.7,
-        "uniform": 0.7, "tetradic-rectangle": 0.7, "double-complementary": 0.7,
-        "clash-variable": 0.7, "split-variable": 0.7,
-        "achromatic-tint": 0.6, "achromatic-shade": 0.3,
-        "complementary-split-wide": 0.7, "triadic-alt": 0.7,
-        "random": 0.7,
-    }
-    # Only use defaults when sat/val weren't wired AND weren't set in UI
-    if sat_override is None:
-        sat_ui = float(params.get("saturation", -1.0))
-        if sat_ui < 0:
-            effective_sat = _DEFAULT_SAT.get(palette_type, 0.75)
-    if val_override is None:
-        val_ui = float(params.get("value", -1.0))
-        if val_ui < 0:
-            effective_val = _DEFAULT_VAL.get(palette_type, 0.7)
+    # -- Generate / sample / load palette --
+    if source == "sampled" and input_img is not None:
+        colors, colormap_arr = sample_palette_from_image(
+            input_img, n_colors=n_sample_colors, seed=seed,
+            hue_off=effective_hue_offset,
+        )
+        label_str = f"sampled ({n_sample_colors} colors)"
 
-    # ── Generate or sample palette ──
-    if use_sampled:
-        # Extract dominant colors from input image via color quantization
-        img_pil = Image.fromarray((np.clip(input_img, 0, 1) * 255).astype(np.uint8))
-        # Downsample to speed up quantization
-        img_small = img_pil.resize((64, 64), Image.LANCZOS)
-        pixels = np.array(img_small).reshape(-1, 3).astype(np.float32)
-
-        # Simple k-means with 5 iterations
-        k = min(n_sample_colors, len(pixels))
-        rng = np.random.RandomState(seed)
-        idxs = rng.choice(len(pixels), k, replace=False)
-        centroids = pixels[idxs].copy()
-
-        for _ in range(5):
-            dists = np.sum((pixels[:, None, :] - centroids[None, :, :]) ** 2, axis=-1)
-            labels = np.argmin(dists, axis=-1)
-            for ci in range(k):
-                mask = labels == ci
-                if mask.any():
-                    centroids[ci] = pixels[mask].mean(axis=0)
-
-        # Sort by luminance (brightest first) for a clean display
-        lum = centroids.mean(axis=1)
-        order = np.argsort(-lum)
-        colors = [tuple(int(c) for c in centroids[i]) for i in order]
-
-        # Apply hue offset rotation to sampled colors
+    elif source == "registry":
+        palette_name = params.get("palette_name", "bw")
+        colormap_arr = load_registry_palette(palette_name)
+        if colormap_arr is None:
+            raw = palette_registry.get("amber")
+            colormap_arr = np.array(raw, dtype=np.float32) / 255.0 if raw else np.zeros((1, 3), dtype=np.float32)
+        colors = [
+            (int(c[0] * 255), int(c[1] * 255), int(c[2] * 255))
+            for c in np.clip(colormap_arr, 0, 1)
+        ]
+        # Apply hue rotation (matches generated/sampled behaviour)
         if effective_hue_offset != 0.0:
             rotated = []
             for r, g, b in colors:
@@ -1580,31 +1197,59 @@ def method_10_color_palette(out_dir: Path, seed: int, params=None):
                 h = (h + effective_hue_offset / 360.0) % 1.0
                 rotated.append(_hsv_to_rgb(h, s, v))
             colors = rotated
+            colormap_arr = np.array(colors, dtype=np.float32) / 255.0
+        label_str = palette_name
 
-        palette_label = f"sampled ({n_sample_colors} colors)"
     else:
-        # Generate from palette type
-        gen_fn = _PALETTE_GENERATORS.get(palette_type, _golden_ratio_palette)
-        colors = gen_fn(n_colors, seed, hue_off=effective_hue_offset,
-                        sat=effective_sat, val=effective_val)
-        palette_label = palette_type
+        colors = generate_palette(
+            palette_type, n_colors=n_colors, seed=seed,
+            hue_off=effective_hue_offset,
+            sat=effective_sat, val=effective_val,
+        )
+        colormap_arr = palette_to_colormap(colors)
+        label_str = palette_type
 
-    # ── Render ──
-    render_display = display_mode in _DISPLAY_RENDERERS
-    if render_display:
-        img = _DISPLAY_RENDERERS[display_mode](colors, palette_label, len(colors),
-                                               phase_offset=effective_phase_offset,
-                                               hue_off=effective_hue_offset,
-                                               rot_offset=effective_rot_offset)
-    else:
-        img = _render_palette_layout(colors, layout, palette_label, len(colors),
-                                     phase_offset=effective_phase_offset,
-                                     rot_offset=effective_rot_offset)
+    # -- Optional remap through another palette --
+    if remap not in ("none", ""):
+        raw_remap = palette_registry.get(remap)
+        if raw_remap:
+            remap_arr = np.array(raw_remap, dtype=np.float32) / 255.0
+            col_flat = colormap_arr.reshape(-1, 3)
+            diffs = col_flat[:, None, :] - remap_arr[None, :, :]
+            nearest = np.argmin(np.sum(diffs**2, axis=2), axis=1)
+            colormap_arr = remap_arr[nearest]
+            colors = [(int(c[0] * 255), int(c[1] * 255), int(c[2] * 255)) for c in colormap_arr]
+            label_str = f"{label_str} → {remap}"
 
-    # ── Convert to numpy array, capture frame, return ──
-    result_arr = np.array(img).astype(np.float32) / 255.0
-    result_arr = apply_palette(result_arr, params.get("palette", "none"))
+    # -- Render preview on GPU (GLSL strip shader) --
+    try:
+        result_arr = _render_preview_gpu(colors, W, H)
+    except Exception:
+        # Fallback: numpy vectorized (no PIL)
+        n = len(colors)
+        strip_h = int(H * 0.70) // n
+        chip_h = int(H * 0.18)
+        chip_y = int(H * 0.82)
+        canvas = np.full((H, W, 3), 0.05, dtype=np.float32)
+        for i, (r, g, b) in enumerate(colors):
+            y0 = i * strip_h
+            y1 = (i + 1) * strip_h
+            canvas[y0:y1, :] = np.array([r, g, b], dtype=np.float32) / 255.0
+        for i, (r, g, b) in enumerate(colors):
+            x0 = int(i * (W / n))
+            x1 = int((i + 1) * (W / n))
+            canvas[chip_y:chip_y + chip_h, x0:x1] = np.array([r, g, b], dtype=np.float32) / 255.0
+        result_arr = canvas
+
+    # Apply optional palette remap to image too
+    if remap not in ("none", ""):
+        from ...core.utils import apply_palette
+        result_arr = apply_palette(result_arr, remap)
+
+    # -- Optional per-swatch value labels (PIL overlay on the GPU render) --
+    # Drawn last so labels reflect the FINAL displayed colors (post-remap).
+    if show_labels:
+        result_arr = _draw_palette_labels(result_arr, colors, label_fmt, label_str)
+
     capture_frame("10", result_arr)
-    # Output palette as (N,3) float32 COLORMAP for downstream nodes
-    palette_arr = np.array(colors, dtype=np.float32) / 255.0
-    return {"image": result_arr, "palette": palette_arr}
+    return {"image": result_arr, "palette": colormap_arr}

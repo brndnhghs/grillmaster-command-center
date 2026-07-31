@@ -746,14 +746,12 @@ class GraphExecutor:
         tl_params = tl_node.params if tl_node else {}
         tl_total = int(tl_params.get("total_frames", frames))
         tl_fps = int(tl_params.get("fps", self._fps))
-        tl_speed = float(tl_params.get("speed", 1.0))
-
-        # Also check per-node anim_speed — first node with anim_speed wins for global timeline
-        for n in gnodes:
-            ns = float(n.params.get("anim_speed", 1.0))
-            if ns != 1.0:
-                tl_speed = ns
-                break
+        # Speed is FIXED at 1.0 — the playback-speed multiplier was removed
+        # (see core/timeline.py): pace is varied via wired drivers or per-node
+        # total_substeps, never a float multiplier. No node's `anim_speed`
+        # param is allowed to hijack the global clock (that was a leftover
+        # from before the timeline refactor; a per-node knob must stay local).
+        tl_speed = 1.0
 
         timeline = make_timeline(
             global_frame=frame,

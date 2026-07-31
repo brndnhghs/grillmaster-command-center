@@ -3,6 +3,9 @@
 __pycache__/
 *.pyc
 .DS_Store
+# Deleted-node tombstones (moved here by the Node Doctor delete flow). Kept
+# for recoverability but intentionally excluded from version control.
+image_pipeline/methods/__NodeGraveyard__/
 *.sqlite3
 **/data/*
 # Curated learned artifact (dead-param blacklist the generator consumes to avoid

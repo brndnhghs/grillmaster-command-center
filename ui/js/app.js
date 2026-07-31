@@ -459,7 +459,6 @@ function renderParamField(key, spec) {
       </div>
       <div class="checkbox-row">
         <input type="checkbox" class="param-ctrl" id="p_${escHtml(key)}" ${def ? 'checked' : ''}>
-        <label for="p_${escHtml(key)}" style="font-size:13px;cursor:pointer">${def ? 'Enabled' : 'Disabled'}</label>
       </div>
     </div>`;
   }

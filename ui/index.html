@@ -231,8 +231,6 @@ try {
         <div class="gtb-set">
           <button id="graph-edit3d-btn-desk" class="g-autobtn" title="3D viewport editor">🧊 3D</button>
           <button id="graph-overlay-btn-desk" class="g-autobtn" title="Visual FX overlay (decorative)">✨ FX</button>
-          <button id="graph-test-btn-desk" class="g-autobtn" title="Test all nodes">🧪 Test</button>
-          <button id="graph-broken-btn-desk" class="g-autobtn" title="Review nodes flagged as broken">🚩 Broken<span id="gbb-count"></span></button>
         </div>
         <span class="gtb-sep"></span>
         <div class="gtb-set">
@@ -316,27 +314,10 @@ try {
     </div>
     <div id="graph-params-header">
       <span id="gph-title">Node Parameters</span>
-      <button id="nd-toggle-btn" title="Open Node Doctor">🩺</button>
     </div>
     <div id="graph-params-scroll">
       <div id="graph-params-empty">Select a node to edit its parameters.</div>
       <div id="graph-params-form" style="display:none"></div>
-    </div>
-    <!-- NODE DOCTOR chat panel -->
-    <div id="nd-panel">
-      <div id="nd-header">
-        <span>⚕ NODE DOCTOR</span>
-        <button id="nd-close-btn" title="Close">✕</button>
-      </div>
-      <div id="nd-messages"></div>
-      <div id="nd-apply-row">
-        <button id="nd-apply-btn">Apply changes</button>
-        <button id="nd-undo-btn">↩ Undo</button>
-      </div>
-      <div id="nd-input-row">
-        <textarea id="nd-input" placeholder="Describe the issue or what you want to change…" rows="2"></textarea>
-        <button id="nd-send-btn" title="Send">↑</button>
-      </div>
     </div>
   </div>
 
@@ -448,45 +429,6 @@ try {
   </div>
 </div>
 
-<!-- ── Node Tester panel ─────────────────────────────────────── -->
-<div id="nt-panel">
-  <div id="nt-header">
-    <span>🧪 Node Tester</span>
-    <span id="nt-summary"></span>
-    <button id="nt-close-btn" title="Close">✕</button>
-  </div>
-  <div id="nt-body">
-    <div id="nt-progress" style="display:none">
-      <span class="nd-spinner" style="display:inline-block;margin-right:6px"></span>
-      <span id="nt-progress-text">Running tests…</span>
-    </div>
-    <div id="nt-results"></div>
-  </div>
-  <div id="nt-footer" style="display:none">
-    <button id="nt-run-btn" class="gm-btn primary">▶ Run All Tests</button>
-    <button id="nt-batch-apply-btn" class="gm-btn muted" style="display:none">⚕ Batch Apply Fixes</button>
-    <button id="nt-export-btn" class="gm-btn muted">📋 Export Report</button>
-  </div>
-</div>
-
-<!-- ── Broken-nodes review panel ─────────────────────── -->
-<div id="bn-panel">
-  <div id="bn-header">
-    <span>🚩 Broken Nodes</span>
-    <span id="bn-summary"></span>
-    <label id="bn-show-resolved-wrap"><input type="checkbox" id="bn-show-resolved"> show resolved</label>
-    <button id="bn-close-btn" title="Close">✕</button>
-  </div>
-  <div id="bn-body">
-    <div id="bn-patterns"></div>
-    <div id="bn-results"></div>
-  </div>
-  <div id="bn-footer">
-    <button id="bn-copy-btn" class="gm-btn muted">📋 Copy digest for agent</button>
-    <span id="bn-path-hint"><code>docs/reports/broken-nodes.json</code></span>
-  </div>
-</div>
-
 <!-- Fullscreen image/video overlay -->
 <div id="graph-img-fullscreen">
   <img id="graph-fs-img" src="" alt="">
@@ -511,23 +453,81 @@ try {
   <div class="ctx-item danger" id="ctx-del-node">Delete node</div>
   <div class="ctx-item" id="ctx-group-sel" style="display:none">⊞ Group selection</div>
   <div class="ctx-item" id="ctx-ungroup" style="display:none">⊟ Ungroup</div>
-  <div class="ctx-item" id="ctx-flag-broken" style="display:none">🚩 Flag as broken…</div>
 </div>
 
-<!-- Node source-code editor modal -->
+<!-- Node source-code editor modal (now includes Node Doctor as tab) -->
 <div id="node-source-modal">
   <div id="nsm-box">
     <div id="nsm-header">
-      <span id="nsm-title">Source code</span>
+      <div class="nsm-tabs">
+        <button class="nsm-tab active" data-tab="code">&lt;/&gt; Code</button>
+        <button class="nsm-tab" data-tab="doctor">🩺 Doctor</button>
+        <button class="nsm-tab" data-tab="graveyard">🪦 Graveyard</button>
+      </div>
       <button id="nsm-close-btn" title="Close (Esc)">✕</button>
     </div>
-    <div id="nsm-path"></div>
-    <textarea id="nsm-code" spellcheck="false" wrap="off"></textarea>
-    <div id="nsm-status"></div>
-    <div id="nsm-actions">
-      <button class="gm-btn primary" id="nsm-save-btn">Apply &amp; hot-reload</button>
-      <button class="gm-btn muted" id="nsm-undo-btn" style="display:none">↩ Undo</button>
-      <button class="gm-btn muted" id="nsm-close-btn2">Close</button>
+    <!-- Code tab -->
+    <div class="nsm-tab-content nsm-tab-code active">
+      <div id="nsm-path"></div>
+      <textarea id="nsm-code" spellcheck="false" wrap="off"></textarea>
+      <div id="nsm-status"></div>
+      <div id="nsm-actions">
+        <button class="gm-btn primary" id="nsm-save-btn">Apply &amp; hot-reload</button>
+        <button class="gm-btn muted" id="nsm-undo-btn" style="display:none">↩ Undo</button>
+        <button class="gm-btn muted" id="nsm-close-btn2">Close</button>
+      </div>
+    </div>
+    <!-- Doctor tab -->
+    <div class="nsm-tab-content nsm-tab-doctor">
+      <div id="nd-messages"></div>
+      <!-- ── Inline test results (context-aware) ───────────────── -->
+      <div id="nt-section" class="nt-collapsed">
+        <div id="nt-section-header">
+          <span id="nt-toggle">▶</span>
+          <span>🧪 Tests</span>
+          <span id="nt-summary"></span>
+          <span id="nt-context-label"></span>
+        </div>
+        <div id="nt-section-body">
+          <div id="nt-progress" style="display:none">
+            <span class="nd-spinner" style="display:inline-block;margin-right:6px"></span>
+            <span id="nt-progress-text">Running tests…</span>
+          </div>
+          <div id="nt-results"></div>
+          <div id="nt-actions">
+            <button id="nt-run-current-btn" class="gm-btn primary" style="display:none">▶ Test Current Node</button>
+            <button id="nt-run-btn" class="gm-btn muted">▶ Run All Tests</button>
+            <button id="nt-export-btn" class="gm-btn muted">📋 Export Report</button>
+          </div>
+        </div>
+      </div>
+      <div id="nd-apply-row">
+        <button id="nd-apply-btn">Apply changes</button>
+        <button id="nd-undo-btn">↩ Undo</button>
+      </div>
+      <div id="nd-delete-row">
+        <button id="nd-delete-btn" title="Delete this node from the registry">🗑 Delete node</button>
+        <div id="nd-delete-confirm">
+          <span class="nd-delete-warn">Delete “<span id="nd-delete-name"></span>”? This removes the node type from the palette and every graph.</span>
+          <div class="nd-delete-btns">
+            <button id="nd-delete-yes">✓ Yes, delete</button>
+            <button id="nd-delete-no">✕ Cancel</button>
+          </div>
+        </div>
+      </div>
+      <div id="nd-input-row">
+        <textarea id="nd-input" placeholder="Describe the issue or what you want to change…" rows="2"></textarea>
+        <button id="nd-send-btn" title="Send">↑</button>
+      </div>
+    </div>
+    <!-- Graveyard tab (restore deleted nodes) -->
+    <div class="nsm-tab-content nsm-tab-graveyard">
+      <div id="ng-head">
+        <span>🪦 Deleted nodes</span>
+        <button id="ng-refresh" title="Refresh">⟳</button>
+      </div>
+      <div id="ng-list"></div>
+      <div id="ng-empty">No deleted nodes. Deleting a node from the Node Doctor moves its source here.</div>
     </div>
   </div>
 </div>
@@ -551,22 +551,6 @@ try {
       <button class="gm-btn primary" id="gm-save-preset-btn">Save as preset</button>
       <button class="gm-btn danger" id="gm-ungroup-btn">Ungroup</button>
       <button class="gm-btn muted" id="gm-close-btn">Close</button>
-    </div>
-  </div>
-</div>
-
-<!-- ── Broken-node flag modal ────────────────────────── -->
-<div id="broken-flag-modal">
-  <div id="bfm-box">
-    <div id="bfm-title">🚩 Flag node as broken</div>
-    <div id="bfm-node-name"></div>
-    <div id="bfm-existing"></div>
-    <textarea id="bfm-note" rows="4"
-      placeholder="What's broken? e.g. “seed param has no effect above 0.5 — output is identical for every seed”"></textarea>
-    <div id="bfm-hint">Saved to <code>docs/reports/broken-nodes.json</code> for agents to review.</div>
-    <div id="bfm-actions">
-      <button class="gm-btn muted" id="bfm-cancel-btn">Cancel</button>
-      <button class="gm-btn primary" id="bfm-save-btn">Flag as broken</button>
     </div>
   </div>
 </div>

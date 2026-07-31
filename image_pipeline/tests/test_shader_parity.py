@@ -172,7 +172,10 @@ def test_gpu_shader_node_map_resolves():
     # 316 -> 319: +3 closed-form typed-uniform procedural twins (535/534/953).
     # 325 -> 327: +2 closed-form typed-uniform math_art twins (500 Spirograph,
     #             531 Flowing Truchet).
-    assert len(GPU_SHADER_NODE_MAP) == 327, len(GPU_SHADER_NODE_MAP)
+    # 327 -> 328: +1 typed-uniform filter node (504 Pixel Sort B).
+    # 328 -> 325: -3 pixel-sort nodes removed (180 GPU Pixel Sort, 503 Pixel
+    #             Sort A, 504 Pixel Sort B) — shaders + registrations deleted.
+    assert len(GPU_SHADER_NODE_MAP) == 325, len(GPU_SHADER_NODE_MAP)
     for mid, entry in GPU_SHADER_NODE_MAP.items():
         if entry.get("type") == "sim":
             # P1 ping-pong sim: seed/step/display must all resolve to shaders.

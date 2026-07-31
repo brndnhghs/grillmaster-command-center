@@ -18,6 +18,9 @@ architecture) are excluded from the assertion:
                         shader twin path
   * ``io``             — input/output plumbing (load/save), not generative
   * ``ml_models``      — static CLIP/SAM utility nodes (CPU-only, models absent)
+  * ``analysis``       — ML prediction/analysis utility node (__predict__ time-
+                        series forecaster), no generative GPU twin; same class
+                        as ml_models
   * ``p5_sketches``    — single sketch node, not part of the twin family
   * ``system``         — timeline / graph-system control nodes
 """
@@ -36,6 +39,7 @@ GPU_EXEMPT_CATEGORIES = {
     "ml_models",
     "p5_sketches",
     "system",
+    "analysis",
 }
 
 

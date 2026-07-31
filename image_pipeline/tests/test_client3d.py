@@ -188,7 +188,8 @@ def test_graph_overlay_is_noninteractive_and_default_off():
     # into served modules (ui/css/editor.css, ui/js/app.js, ui/js/graph.js) in the
     # modularization batch (44a747e), so we resolve the <link> href and fetch it.
     import re
-    css_href = re.search(r'<link[^>]+href="(/ui/css/editor\.css)"', html)
+    # The href is cache-busted (?v=...) so the query string is optional.
+    css_href = re.search(r'<link[^>]+href="(/ui/css/editor\.css)(?:\?[^"]*)?"', html)
     css_text = ""
     if css_href:
         css_text = client.get(css_href.group(1)).text

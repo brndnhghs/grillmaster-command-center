@@ -6,7 +6,7 @@ The system is designed to run entirely locally on a laptop: no cloud dependencie
 
 ## Key Concepts
 
-- **Method** — a single generative algorithm registered with the `@method` decorator (373 methods across 8 categories + top-level files). Each method declares its parameters, input/output ports, and tags.
+- **Method** — a single generative algorithm registered with the `@method` decorator (540 methods across 16 categories). Each method declares its parameters, input/output ports, and tags.
 - **Node Graph** — a directed acyclic graph of method nodes wired together. The executor topologically sorts the graph and runs each node in order, passing image/field/mask data along edges.
 - **Architecture A vs B** — Architecture-A methods (simulations) cook an entire frame list internally and are cached by the executor. Architecture-B methods are stateless single-frame generators driven by a timeline or `time` parameter.
 - **Live Simulation** — the graph can run continuously, re-reading the shared graph document every frame so edits are absorbed by the running loop without restarting.
@@ -28,6 +28,7 @@ See [architecture.md](architecture.md).
 
 | Module | Purpose |
 |--------|---------|
+| [`image-pipeline`](modules/image-pipeline.md) | Package overview — registry → executor → server → UI, GPU shader system, palette registry |
 | [`core-graph`](modules/core-graph.md) | Node/edge schema, topological executor, live-dirty tracking |
 | [`core-registry`](modules/core-registry.md) | `@method` decorator, `MethodMeta`, auto-discovery |
 | [`core-port_types`](modules/core-port_types.md) | Port-type system (IMAGE, FIELD, MASK, SCALAR, TEXT, PARTICLES) |
@@ -45,7 +46,7 @@ See [architecture.md](architecture.md).
 | [`core-postprocess`](modules/core-postprocess.md) | OpenCV filter library (~56 effects: oil, edge, bloom, warp, …) |
 | [`core-annotator`](modules/core-annotator.md) | Demo overlay renderer (stamps params onto output images) |
 | [`server`](modules/server.md) | FastAPI server: REST, SSE, WebSocket, job queue, live sim, Node Doctor |
-| [`methods-library`](modules/methods-library.md) | 373 generative methods across 8 categories + top-level files |
+| [`methods-library`](modules/methods-library.md) | 540 generative methods across 16 categories |
 | [`ui-editor`](modules/ui-editor.md) | Browser SPA: method browser, node-graph canvas, 3D viewport, diagnostics |
 | [`dashboard`](modules/dashboard.md) | Process supervisor + unified control-panel UI |
 

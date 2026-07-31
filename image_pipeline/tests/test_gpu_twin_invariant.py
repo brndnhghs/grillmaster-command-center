@@ -276,102 +276,43 @@ def test_typed_uniforms_drive_output(mid):
 # CPU-node synonym by design (secondary artistic knobs, or a string param that
 # pitfall #14 says must stay unmapped). These are intentional, not bugs.
 _TWIN_UNIFORM_ALLOW = {
-    "66": "julia: `constant` is a string param (pitfall #14); the twin uses its "
-          "own fixed view (c_re/c_im/zoom/color_shift) — intentionally unmapped",
-    "29": "voronoi: `scale` (zoom) is not exposed by CPU node 29",
-    "03": "domain_warp: `warp`/`hue_shift` are shader-only artistic knobs not in "
-          "CPU node 03",
-    "05": "voronoise: `hue_shift` is not exposed by CPU node 05",
-    "07": "truchet: `scale` (frequency) is not cleanly synonymous with CPU node 07 "
-          "`tile_size`",
-    "74": "swirl_gpu: `radius`/`spin` have no clean CPU-node synonym in node 74",
-    # Categorical coverage (2026-07-11): each twin below is a standalone
-    # closed-form pattern generator with its own artistic uniforms (fg/bg color,
-    # speed, line thick, internal freq counts) that have NO CPU-node synonym by
-    # design. The backing CPU node is a different algorithm (particle/serial/
-    # multi-pass) whose params do not map 1:1 onto the twin's per-pixel knobs;
-    # the twin is a live-preview approximation and the CPU fn stays authoritative
-    # (two-tier precision). Documented so the wiring guard does not regress.
-    "16": "flow_field_typed: zoom/swirl/freq/density are shader-only flow knobs; "
-          "only `speed` maps to CPU node 16",
-    "65": "waveform_typed: amp/thick/fg/bg are shader-only render knobs; only "
-          "freq1/2/3 (k1/2/3) map to CPU node 65",
-    "78": "circle_packing_typed: normalized min_r/max_r/speed/bg/fg are shader "
-          "knobs; only radius bounds map to CPU node 78",
-    "56": "maze_typed: normalized scale/wall/drift/bg/fg are shader knobs; only "
-          "cell_size/ wall_thickness map to CPU node 56",
-    "81": "fourier_circles_typed: thick/phase2/bg/fg are shader knobs; freq1/2/3/"
-          "speed map to CPU node 81",
-    "406": "harmonograph_typed: decay/turns/steps/thick/bg/fg are shader knobs; "
-          "freq1/freq2/phase/scale map to CPU node 406",
-    "409": "superformula_typed: n/b/c/p/scale/thick/bg are shader knobs; only `m` "
-           "maps to CPU node 409",
-    "431": "domain_coloring_typed: `grid` is a shader-only contour-overlay strength; "
-           "the CPU node's `coloring` is a string mode ('grid'/'none'/...), not a "
-           "float synonym. exponent/scale/center_x/center_y map 1:1 to CPU node 431; "
-           "animation is driven by the live-preview clock u_time (not a CPU param).",
-    # gpu-twin-candidate CPU nodes (431/432/433/464) — closed-form f(uv,t) live
-    # previews. Each routes real numeric params 1:1 via param_map; remaining
-    # shader uniforms are artistic knobs with no CPU-node float synonym (the CPU
-    # node is a different/serial algorithm), same pattern as 16/65/78 above.
-    "432": "maurer_rose_typed: k/d/n_lines/line_width/brightness/hue animate via "
-           "param_map (petals/deg/steps/thick + anim_speed->speed); `bg`/`scale` are "
-           "shader-only render knobs (background->bg bridged, `scale` not in CPU 432)",
-    "433": "low_discrepancy_typed: count/radius/anim_speed map 1:1; `bg`/`ox`/`oy` are "
-           "shader-only seed/background knobs with no CPU-node float synonym",
-    "464": "thin_film_gpu: thickness/thickness_scale/ior/tilt/intensity/saturation map "
-           "via param_map (thickness_range/angle/strength/saturation); the twin names "
-           "them by optical role (thickness_range/angle/strength) rather than the CPU "
-           "param names (thickness_scale/tilt/intensity) — all bridged, no dead control",
-    # Closed-form live-preview twins (pattern / math-art) whose artistic uniforms
-    # have NO clean CPU-node float synonym by design — the backing CPU node is a
-    # different/serial algorithm (particle/attractor integrator, parametric tube
-    # generator) whose params do not map 1:1 onto the twin's per-pixel knobs. The
-    # twin is a live-preview approximation and the CPU fn stays authoritative
-    # (two-tier precision). Same intentional-exception pattern as 16/65/78/56/81/
-    # 406/409/431/432/433 above.
-    "342": "strange_attractor_typed: band/gain/speed are shader-only artistic knobs "
-           "(attractor color/intensity/animation) with no CPU-node float synonym; CPU "
-           "node 342 is a serial particle integrator (a/b/c/d/points/brightness)",
-    "444": "droste_typed: bands/fg/bg/speed are shader-only render knobs (ring count/"
-           "colors/animation) with no CPU-node float synonym; CPU node 444 is a "
-           "different spiral algorithm (ring_spacing/twist/zoom)",
-    "498": "de_jong_typed: morph/sharp/density_scale/speed are shader-only artistic "
-           "knobs with no CPU-node float synonym; CPU node 498 is a serial attractor "
-           "integrator (walkers/steps/discard)",
-    "510": "flow_field_typed: zoom/swirl/freq/density/fg/bg are shader-only flow knobs "
-           "with no CPU-node float synonym (CPU node 510 uses noise_scale/particles/dt/"
-           "steps); twin is a live-preview approximation",
-    "957": "strange_attractor_typed: band/gain/speed are shader-only artistic knobs "
-           "with no CPU-node float synonym; same pattern as node 342",
-    "962": "torusknot_typed: rad/steps/scale/thick/speed/bg are shader-only render "
-           "knobs (tube radius/steps/scale/thickness/animation/bg) with no CPU-node "
-           "float synonym; CPU node 962 is a parametric tube generator (major_r/tube_r/"
-           "line_width/n_points/glow)",
-    "964": "gyroid_tpms_gpu: rotate is a shader-only artistic knob (surface rotation) "
-           "with no CPU-node float synonym; twin is a live-preview approximation",
-    "1006": "phasor_noise_gpu: contrast/animate are shader-only artistic knobs "
-           "(contrast/animation toggle) with no CPU-node float synonym; twin is a "
-           "live-preview approximation",
-    # P0 closed-form CPU nodes -> faithful typed twins (cron run). Each routes its
-    # real numeric params 1:1 via param_map; remaining shader uniforms are artistic
-    # / render knobs with no CPU-node float synonym (the CPU node is a different or
-    # serial algorithm, or the knob is purely cosmetic). Two-tier precision: CPU fn
-    # stays authoritative. Same intentional-exception pattern as 342/444/498/510/957/962.
-    "355": "curl_noise_gpu: brightness is a shader-only render knob; scale/octaves map 1:1 "
-           "to CPU node 355 (Curl-Noise Warp) — faithful live preview",
-    "343": "hex_grid_typed: thickness/flow/offset_x/offset_y/fill_a/fill_b/line are shader-only "
-           "grid render knobs; scale maps 1:1 to CPU node 343 (Hex Distance Field)",
-    "470": "mandelbulb_gpu: cam_angle/bailout/spec/base_color/glow_color/bg/anim_speed are "
-           "shader-only render knobs; power/iterations/cam_dist map 1:1 to CPU node 470 (Mandelbulb)",
-    "62": "strange_attractor_typed: band/gain/speed are shader-only artistic knobs; a/b/c/d map "
-           "1:1 to CPU node 62 (Chaotic Map) — faithful live preview of the attractor",
-    "351": "mandelbrot_gpu: color_shift is a shader-only palette knob; zoom/center_x/center_y/"
-           "iterations/escape_radius map 1:1 to CPU node 351 (Kaleidoscopic IFS)",
-    "997": "color_grade_gpu: contrast/hue_rotate/temperature/tint/vignette are shader-only grade "
-           "knobs; exposure/gamma/saturation map 1:1 to CPU node 997 (Tone Mapping)",
-    "991": "bilateral_grid_gpu: grid_scale is a shader-only internal knob; blend/sigma_r/sigma_s "
-           "map 1:1 to CPU node 991 (Domain Transform filter)",
+    # ── Re-keyed to the post-renumbering registry (commit 85512e2) ───────────
+    # 85512e2 renumbered every method id sequentially and re-keyed the
+    # CLIENT_GPU_SHIMS entries; this allow-list follows the CURRENT ids. Each
+    # entry documents why a twin uniform has no CPU-node float synonym: it is a
+    # shader-only artistic knob, or it is bridged by `param_map` under a
+    # different name. The CPU numpy fn stays authoritative for export
+    # (two-tier precision).
+    "03": "domain_warp: `warp`/`hue_shift` are shader-only artistic knobs not in CPU node 03 (Moiré)",
+    "05": "voronoise: `hue_shift` is not exposed by CPU node 05 (Procedural Noise)",
+    "07": "truchet: `scale` (frequency) is not cleanly synonymous with CPU node 07 `tile_size`",
+    "16": "flow_field_typed: zoom/swirl/density/fg/bg are shader-only flow knobs; speed maps 1:1 to CPU node 16 (Flow Field (Codegen))",
+    "27": "voronoi: `scale` (zoom) is not exposed by CPU node 27 (Voronoi Tiles); n_cells/jitter map via p1/p2",
+    "54": "maze_typed: wall/scale are bridged via param_map (wall_thickness→wall, cell_size→scale); drift/density/bg/fg are shader-only render knobs — CPU node 54 (Maze)",
+    "58": "strange_attractor_typed: band/gain/speed are shader-only artistic knobs; a/b/c/d map 1:1 to CPU node 58 (Chaotic Map)",
+    "61": "waveform_typed: amp/thick/fg/bg/speed are shader-only render knobs; k1/k2/k3 bridged via param_map (freq1→k1, freq2→k2, freq3→k3) — CPU node 61 (Waveform)",
+    "70": "swirl_gpu: `radius`/`spin` have no clean CPU-node synonym in node 70 (Swirl Displacement); strength maps via p1",
+    "73": "circle_packing_typed: min_r/max_r/speed are bridged via param_map (min_radius/max_radius/anim_speed); bg/scale are shader-only render knobs — CPU node 73 (Circle Packing)",
+    "76": "fourier_circles_typed: only `speed` maps (via param_map); freq1/2/3/phase1/phase2/thick/bg/fg are shader-only harmonic knobs — CPU node 76 (Fourier Circles) has n_circles/scale/shape, no freq-synth params",
+    "329": "strange_attractor_typed: band/gain/speed are shader-only artistic knobs; a/b/c/d map 1:1 to CPU node 329 (Strange Attractor 2D)",
+    "330": "hex_grid_typed: thickness/flow/offset_x/offset_y/fill_a/fill_b/line are shader-only grid render knobs; scale maps 1:1 to CPU node 330 (Hex Distance Field)",
+    "338": "mandelbrot_gpu: `color_shift` is a shader-only palette knob; zoom/center_x/center_y/iterations/escape_radius map 1:1 to CPU node 338 (Kaleidoscopic IFS)",
+    "352": "harmonograph_typed: decay/turns/steps/thick/bg/fg/py are shader-only knobs; fx/fy/px/scale bridged via param_map (freq1→fx, freq2→fy, phase→px) — CPU node 352 (Harmonograph)",
+    "354": "superformula_typed: n/b/c/p/scale/thick/bg/speed are shader-only knobs; only `m` maps 1:1 to CPU node 354 (Superformula)",
+    "371": "domain_coloring_typed: `grid` is a shader-only contour-overlay strength (CPU `coloring` is a string mode, pitfall #14); exponent/scale/center_x/center_y map 1:1 to CPU node 371 (Domain Coloring)",
+    "372": "maurer_rose_typed: petals/deg/steps/thick/speed bridged via param_map (k→petals, d→deg, n_lines→steps, line_width→thick, anim_speed→speed); bg/scale are shader-only render knobs — CPU node 372 (Maurer Rose)",
+    "373": "low_discrepancy_typed: count/radius/anim_speed map 1:1; bg/ox/oy are shader-only seed/background knobs — CPU node 373 (Low-Discrepancy Field)",
+    "384": "droste_typed: bands/fg/bg/speed are shader-only render knobs (ring count/colors/animation); twist/zoom map 1:1 to CPU node 384 (Droste Spiral)",
+    "400": "mandelbulb_gpu: cam_angle/bailout/spec/base_color/glow_color/bg are shader-only render knobs; power/iterations/cam_dist map 1:1 to CPU node 400 (Mandelbulb 3D Fractal)",
+    "421": "de_jong_typed: morph/sharp/density_scale/speed are shader-only artistic knobs; a/b/c/d/exposure map 1:1 to CPU node 421 (De Jong Attractor)",
+    "428": "flow_field_typed: zoom/swirl/freq/density/fg/bg are shader-only flow knobs; speed maps 1:1 to CPU node 428 (Curl-Noise Flow Field (Math-Art))",
+    "342": "curl_noise_gpu: `brightness` is a shader-only render knob; scale/octaves map 1:1 to CPU node 342 (Curl-Noise Warp)",
+    "464": "strange_attractor_typed: band/gain/speed are shader-only artistic knobs; a/b/c/d map 1:1 to CPU node 464 (Strange Attractor)",
+    "467": "torusknot_typed: rad/steps/scale/thick/speed/bg are shader-only render knobs (tube radius/steps/thickness/animation); p/q map 1:1 to CPU node 467 (Torus Knot)",
+    "469": "gyroid_tpms_gpu: `rotate` is a shader-only artistic knob (surface rotation); surface/freq/level/thickness/warp/contrast/shell map 1:1 to CPU node 469 (Gyroid TPMS)",
+    "486": "bilateral_grid_gpu: `grid_scale` is a shader-only internal knob; blend/sigma_r/sigma_s map 1:1 to CPU node 486 (Domain Transform)",
+    "492": "color_grade_gpu: contrast/hue_rotate/temperature/tint/vignette are shader-only grade knobs; exposure/gamma/saturation map 1:1 to CPU node 492 (Tone Mapping)",
+    "500": "phasor_noise_gpu: `contrast`/`animate` are shader-only artistic knobs (contrast/animation toggle); scale/anisotropy/falloff/frequency/profile/sharpness map 1:1 to CPU node 500 (Phasor Noise)",
 }
 
 
