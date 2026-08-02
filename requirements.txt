@@ -17,6 +17,7 @@ pydantic==2.13.4
 PyYAML==6.0.3
 pyngrok==8.1.2          # localhost tunneling (server.py / scripts/tunnel.sh)
 watchdog>=4.0.0         # file-system watcher for method hot-reload
+websockets==17.0.1      # live-sim WebSocket UI (uvicorn[standard] equivalent)
 
 # ── Optional (uncomment to enable specific methods) ──
 # Each of these is imported lazily inside the method that uses it, so the server
