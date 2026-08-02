@@ -7,6 +7,7 @@ into a single texture: glyphs_per_row × glyph_height tall.
 Output: a GL-compatible PNG image (grayscale, 1 byte per pixel).
 """
 from __future__ import annotations
+import tempfile
 from pathlib import Path
 import struct
 
@@ -83,8 +84,9 @@ def main():
     print(f"// To embed in GLSL, use this as a uniform texture or array.")
 
     # Also output a PNG for visual inspection
-    atlas.save("/tmp/glyph_atlas.png")
-    print(f"\n// Atlas saved to /tmp/glyph_atlas.png")
+    atlas_path = Path(tempfile.gettempdir()) / "glyph_atlas.png"
+    atlas.save(str(atlas_path))
+    print(f"\n// Atlas saved to {atlas_path}")
 
     # Output C-style hex array for embedding
     print(f"\nconst int GLYPH_ATLAS_DATA[{len(raw)}] = int[{len(raw)}](")

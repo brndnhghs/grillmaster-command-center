@@ -154,8 +154,8 @@ sequenceDiagram
     User->>UI: clicks Stop
     UI->>Dashboard: POST /api/stop
     Dashboard->>Dashboard: stop_all()
-    Dashboard->>Pipeline: _stop(pipeline) -> killpg(SIGTERM)
-    Dashboard->>Sidecar: _stop(3d) -> killpg(SIGTERM)
+    Dashboard->>Pipeline: _stop(pipeline) -> _kill_tree(SIGTERM) [killpg | taskkill /T /F]
+    Dashboard->>Sidecar: _stop(3d) -> _kill_tree(SIGTERM) [killpg | taskkill /T /F]
     Dashboard-->>UI: {status: stopped}
 ```
 
@@ -163,5 +163,5 @@ sequenceDiagram
 1. **POST /api/launch** — `dashboard/__init__.py:256` calls `launch_all()`, which spawns all three services first, then waits for readiness (avoids stacking readiness timeouts).
 2. **Spawn** — `_spawn()` launches `python -m <module> --port <port>` under the repo venv with `PYTHONPATH` set to the repo root, in a new session so it survives the parent.
 3. **Health check** — `_is_healthy()` requires a 200 from `/health`, not just a LISTEN socket — a wedged server keeps its socket open but answers nothing.
-4. **Stop** — `_stop()` kills the whole process group (`os.killpg`) so children die too; `api_stop_one` also calls `_reclaim_port()` to clear orphaned listeners.
+4. **Stop** — `_stop()` kills the whole process tree via `_kill_tree()` (`os.killpg` on POSIX, `taskkill /T /F` on Windows) so children die too; `api_stop_one` also calls `_reclaim_port()` to clear orphaned listeners.
 

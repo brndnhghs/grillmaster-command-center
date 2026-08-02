@@ -14,6 +14,7 @@ and spatiotemporal intermittency — all from a 5-line-per-frame loop.
 """
 
 from __future__ import annotations
+import tempfile
 import math
 from pathlib import Path
 import numpy as np
@@ -172,4 +173,4 @@ def cml(out_dir, seed, params=None):
 
 
 if __name__ == "__main__":
-    cml(Path("/tmp/cml_test"), 42, {"anim_mode": "evolve", "n_frames": 100})
+    cml(Path(tempfile.gettempdir()) / "cml_test", 42, {"anim_mode": "evolve", "n_frames": 100})

@@ -59,4 +59,4 @@ print(f'// Flat GLYPH_LO array ({len(lo)} entries)')
 for fi in range(nf):
     for ci in range(0, nc, 16):
         row = lo[fi*nc + ci:fi*nc + min(ci+16, nc)]
-        print(f'// f{fi}c{ci}: {\" \".join(str(v).rjust(10) for v in row)}')
+        print(f'// f{fi}c{ci}: {" ".join(str(v).rjust(10) for v in row)}')

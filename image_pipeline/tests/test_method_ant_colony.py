@@ -12,6 +12,7 @@ patches ``image_pipeline.methods.simulations.ant_colony.capture_frame`` (not
 the ``core.animation`` reference) to intercept the buffered frames.
 """
 from __future__ import annotations
+import tempfile
 
 from pathlib import Path
 
@@ -48,7 +49,7 @@ def _run(mode: str, t: float = 0.0, seed: int = 42) -> tuple[np.ndarray, list[np
     # is order-dependent — a small canvas collapses the time delta below 0.05.
     set_canvas(512, 512)
     fn = get_meta("974").fn
-    out = Path("/tmp/aco974_out")
+    out = Path(tempfile.gettempdir()) / "aco974_out"
     out.mkdir(parents=True, exist_ok=True)
     for p in out.glob("*.png"):
         p.unlink()

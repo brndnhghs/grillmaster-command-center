@@ -306,12 +306,26 @@ def _get_prog_cache() -> dict:
 
 
 def _create_vao(ctx, prog):
-    """Create full-screen quad VAO."""
+    """Create full-screen quad VAO.
+
+    Bind only the attributes the GLSL compiler actually kept: when a fragment
+    shader never uses v_uv (fractals, math art), drivers dead-code-eliminate
+    in_uv and its whole chain, so a hardcoded 'in_uv' binding raises KeyError
+    (seen on NVIDIA and modern Intel GLSL compilers; macOS kept it).
+    """
     vbo = ctx.buffer(_QUAD_VERTICES.tobytes())
     ibo = ctx.buffer(_QUAD_INDICES.tobytes())
-    vao = ctx.vertex_array(prog, [
-        (vbo, '2f 2f', 'in_vert', 'in_uv'),
-    ], ibo)
+    if 'in_uv' in prog:
+        vao = ctx.vertex_array(prog, [
+            (vbo, '2f 2f', 'in_vert', 'in_uv'),
+        ], ibo)
+    else:
+        # 16-byte vertex stride: bind the full quad as '4f' — the fragment
+        # only reads xy; uv floats are dead data (a '2f 12x' skip layout
+        # drops the first triangle on some GL drivers).
+        vao = ctx.vertex_array(prog, [
+            (vbo, '4f', 'in_vert'),
+        ], ibo)
     return vao
 
 
@@ -387,7 +401,7 @@ def render_shader(shader_name: str, resolution: tuple[int, int] = (512, 512),
             img_u8 = (np.clip(input_image, 0.0, 1.0) * 255).astype(np.uint8)
         else:
             img_u8 = input_image
-        tex_data = img_u8[:, :, ::-1].tobytes()  # RGB -> BGR for GL
+        tex_data = img_u8[:, :, ::-1].tobytes()  # RGB -> BGR for GL (pipeline-wide BGR convention)
         texture = ctx.texture((img_u8.shape[1], img_u8.shape[0]), 3, tex_data)
         texture.use(0)
         prog['u_texture'].value = 0
@@ -411,7 +425,9 @@ def render_shader(shader_name: str, resolution: tuple[int, int] = (512, 512),
     vao.render()
     data = fbo.read()
 
-    # Convert to PIL
+    # Convert to PIL. The pipeline carries colors BGR end-to-end (coerce_uniform
+    # pre-swaps color uniforms, input textures are uploaded BGR), so the readback
+    # bytes are BGR and the raw decoder swaps them back to RGB.
     img = Image.frombytes('RGB', (w, h), data, 'raw', 'BGR')
 
     # Release per-frame resources (program + VAO stay in cache)

@@ -7,6 +7,7 @@ over the video duration, creating a visible gradual takeover.
   bias_ramp = bias * (frame / n_frames)  →  starts neutral, ends conquered
 """
 from __future__ import annotations
+import tempfile
 import math
 from pathlib import Path
 import numpy as np
@@ -101,4 +102,4 @@ def pm_rd(out_dir, seed, params=None):
     save(img,mn(143,f"CGL-bias{bias:+.0f}"),out_dir)
 
 if __name__ == "__main__":
-    pm_rd(Path("/tmp/test"),42,{"bias":6.0,"n_frames":200})
+    pm_rd(Path(tempfile.gettempdir()) / "test",42,{"bias":6.0,"n_frames":200})

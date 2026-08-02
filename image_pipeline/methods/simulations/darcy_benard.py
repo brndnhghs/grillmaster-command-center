@@ -15,6 +15,7 @@ explicit u³ + Darcy advection in physical space.
 """
 
 from __future__ import annotations
+import tempfile
 import math
 from pathlib import Path
 import numpy as np
@@ -198,4 +199,4 @@ def db(out_dir, seed, params=None):
 
 
 if __name__ == "__main__":
-    db(Path("/tmp/db_test"), 42, {"anim_mode": "plumes", "n_frames": 150})
+    db(Path(tempfile.gettempdir()) / "db_test", 42, {"anim_mode": "plumes", "n_frames": 150})

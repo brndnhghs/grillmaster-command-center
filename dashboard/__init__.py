@@ -34,8 +34,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = REPO_ROOT / "data"
 UI_DIR = Path(__file__).resolve().parent / "ui"
 
-# Use the repo .venv (Py 3.12), which has image_pipeline installed.
-VENV_PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
+# Use the repo .venv (Py 3.11), which has image_pipeline installed.
+# Layout differs per platform: POSIX uses .venv/bin/python, Windows .venv/Scripts/python.exe.
+_IS_WINDOWS = os.name == "nt"
+# signal.SIGKILL does not exist on Windows — 9 is the conventional value.
+_SIGKILL = getattr(signal, "SIGKILL", 9)
+VENV_PYTHON = REPO_ROOT / ".venv" / ("Scripts/python.exe" if _IS_WINDOWS else "bin/python")
 
 PIPELINE_PORT = 7860
 DASHBOARD_PORT = 7870
@@ -60,13 +64,36 @@ def _spawn(name: str, module: str, port: int) -> subprocess.Popen:
     return proc
 
 
+def _kill_tree(pid: int, sig: int) -> None:
+    """Terminate a process tree.
+
+    POSIX: signal the whole process group (killpg). Windows has no process
+    groups (os.killpg/os.getpgid don't exist) — taskkill /T kills the tree.
+    """
+    if hasattr(os, "killpg"):
+        try:
+            os.killpg(os.getpgid(pid), sig)
+            return
+        except (ProcessLookupError, PermissionError):
+            pass
+    if _IS_WINDOWS:
+        # taskkill /T kills the tree. /F (force) is used for both signals —
+        # console apps ignore the WM_CLOSE that plain taskkill sends.
+        subprocess.run(
+            ["taskkill", "/PID", str(pid), "/T", "/F"],
+            capture_output=True, timeout=5,
+        )
+    else:
+        try:
+            os.kill(pid, sig)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+
 def _stop(name: str) -> None:
     proc = _PROCS.get(name)
     if proc and proc.poll() is None:
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-        except ProcessLookupError:
-            pass
+        _kill_tree(proc.pid, signal.SIGTERM)
     _PROCS.pop(name, None)
 
 
@@ -88,6 +115,32 @@ def _is_healthy(port: int, timeout: float = 1.0) -> bool:
         return False
 
 
+def _listeners_on_port(port: int) -> list[int]:
+    """PIDs currently LISTENING on tcp `port` (lsof on POSIX, netstat on Windows)."""
+    if _IS_WINDOWS:
+        try:
+            out = subprocess.run(
+                ["netstat", "-ano"], capture_output=True, text=True, timeout=5,
+            ).stdout
+        except Exception:  # noqa: BLE001
+            return []
+        pids = []
+        for line in out.splitlines():
+            if f":{port}" in line and "LISTENING" in line:
+                parts = line.split()
+                if parts and parts[-1].isdigit():
+                    pids.append(int(parts[-1]))
+        return pids
+    try:
+        out = subprocess.run(
+            ["lsof", "-ti", f"tcp:{port}", "-sTCP:LISTEN"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout.split()
+    except Exception:  # noqa: BLE001
+        return []
+    return [int(raw) for raw in out if raw.isdigit()]
+
+
 def _reclaim_port(port: int) -> bool:
     """Kill whatever is listening on `port`. Returns True if something was killed.
 
@@ -95,30 +148,12 @@ def _reclaim_port(port: int) -> bool:
     answering) keeps the port, every relaunch dies with 'address already in
     use', and the UI reports 'starting' forever.
     """
-    try:
-        out = subprocess.run(
-            ["lsof", "-ti", f"tcp:{port}", "-sTCP:LISTEN"],
-            capture_output=True, text=True, timeout=5,
-        ).stdout.split()
-    except Exception:
-        return False
     killed = False
-    for raw in out:
-        try:
-            pid = int(raw)
-        except ValueError:
-            continue
-        try:
-            # Kill the whole group like _stop does — killing only the listener
-            # would orphan any children it spawned.
-            os.killpg(os.getpgid(pid), signal.SIGKILL)
-            killed = True
-        except (ProcessLookupError, PermissionError):
-            try:
-                os.kill(pid, signal.SIGKILL)
-                killed = True
-            except (ProcessLookupError, PermissionError):
-                pass
+    for pid in _listeners_on_port(port):
+        # Kill the whole tree like _stop does — killing only the listener
+        # would orphan any children it spawned.
+        _kill_tree(pid, _SIGKILL)
+        killed = True
     if killed:
         time.sleep(1.0)
     return killed

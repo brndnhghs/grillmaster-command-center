@@ -1,7 +1,7 @@
 # Module: `methods/` (Method Library)
 
 ## Purpose
-The generative heart of the Image Pipeline — **373 registered methods** across the `methods/` tree (8 category sub-packages + 37 top-level `methods/*.py` files). Each method is a self-contained generator (fractal, simulation, filter, pattern, shader, ML model, …) that registers itself via the `@method` decorator. The library is auto-discovered: dropping a new `*.py` into a category package is enough to make it appear in the UI and the registry.
+The generative heart of the Image Pipeline — **542 registered methods** across 16 category sub-packages under `methods/`. Each method is a self-contained generator (fractal, simulation, filter, pattern, shader, ML model, …) that registers itself via the `@method` decorator. The library is auto-discovered: dropping a new `*.py` into a category package is enough to make it appear in the UI and the registry.
 
 ## Registration System
 `methods/__init__.py` walks the package with `pkgutil.iter_modules` and imports every submodule, which triggers each `@method(...)` decorator to populate the global registry (see [`core-registry.md`](core-registry.md)). No manual list of methods is maintained — the filesystem *is* the index.
@@ -37,21 +37,28 @@ Key fields (full list in [`core-registry.md`](core-registry.md)): `id`, `name`, 
 4. Return nothing (write via `save()`) or return an `ndarray` / dict
 5. It auto-registers on next server start / hot-reload — no other file to edit
 
-## Category Breakdown (373 methods)
+## Category Breakdown (542 methods)
 
 | Category | Methods | What lives here |
 |----------|---------|----------------|
-| `simulations` | 112 | Internal-loop sims (Gray-Scott, Boids, DLA, fracture) — Architecture A |
-| `filters` | 87 | Post-style image transforms (see [`core-postprocess.md`](core-postprocess.md) for the filter layer) |
+| `gpu_shaders` | 159 | GPU shader nodes (moderngl GLSL 330 + webgl2 parity, typed uniforms) |
+| `simulations` | 113 | Internal-loop sims (Gray-Scott, Boids, DLA, fracture) — Architecture A |
+| `filters` | 86 | Post-style image transforms (see [`core-postprocess.md`](core-postprocess.md) for the filter layer) |
 | `patterns` | 69 | Tiling, weaving, generative pattern art |
-| `math_art` | 27 | Math-driven generative visuals |
+| `math_art` | 28 | Math-driven generative visuals |
+| `channels` | 21 | CHOP-style channel nodes (LFO, Counter, Beats, Envelope, Math, Logic, Strobe, Burst, AgeHeat) |
 | `fractals` | 16 | Escape-time & orbit-trap fractals (Mandelbrot, Julia, …) |
+| `codegen` | 13 | Code-generation / shader-source methods |
 | `compositing` | 10 | Blend / composite nodes (see [`core-compositing.md`](core-compositing.md)) |
-| `codegen` | 14 | Code-generation / shader-source methods |
-| `system` | 1 | System / control nodes (e.g. `__timeline__`) |
-| `top-level` | 37 | Methods defined directly in `methods/*.py` (not in a sub-package) |
+| `cli_tools` | 8 | CLI-wrapper methods (pyfiglet ASCII art, etc.) |
+| `io` | 7 | Input/output nodes (webcam, file) |
+| `ml_models` | 7 | ML methods (Stable Diffusion, CLIP, ComfyUI bridge) — lazy torch |
+| `analysis` | 1 | Analysis nodes |
+| `client_3d` | 1 | Three.js client-3D nodes (rendered by the sidecar) |
+| `p5_sketches` | 1 | p5.js sketch nodes |
+| `system` | 2 | System / control nodes (e.g. `__timeline__`) |
 
-> **Count note:** the table sums to 336; the remaining 37 methods live in **top-level** files directly under `image_pipeline/methods/` (e.g. `io_nodes.py`, `custom_shader.py`, `gpu_shaders.py`, `cli_tools.py`, `references.py`, `simulations_cellular.py`) and are auto-discovered alongside the category packages.
+> **Count note:** the registry is authoritative — `len(registry.get_all())` at import time. Category membership moves as methods are renumbered; `tools/next_id.py` allocates IDs and the migration tooling in `tools/` keeps tests in sync.
 
 ## Architecture split
 - **Architecture A** (simulation): methods with an `n_frames` param, `anim_mode`, or a `simulation`/`sim` tag cook a full frame list internally and are cached by the executor (see [`core-arch.md`](core-arch.md)).
@@ -69,4 +76,4 @@ Key fields (full list in [`core-registry.md`](core-registry.md)): `id`, `name`, 
 - `core/graph.py` — builds `NodeDef`s from each method's metadata
 
 ## Source
-[`image_pipeline/methods/__init__.py`](https://github.com/brndnhghs/grillmaster-command-center/blob/3e085d44fccca63896b5f6543aaa54ab4216e4b3/image_pipeline/methods/__init__.py) · [example: `fractals/fractal.py`](https://github.com/brndnhghs/grillmaster-command-center/blob/3e085d44fccca63896b5f6543aaa54ab4216e4b3/image_pipeline/methods/fractals/fractal.py)
+[`image_pipeline/methods/__init__.py`](https://github.com/brndnhghs/grillmaster-command-center/blob/f689773c452e24fa1bf1bbcf3e6817fb5304c81d/image_pipeline/methods/__init__.py) · [example: `fractals/fractal.py`](https://github.com/brndnhghs/grillmaster-command-center/blob/f689773c452e24fa1bf1bbcf3e6817fb5304c81d/image_pipeline/methods/fractals/fractal.py)

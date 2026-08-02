@@ -4,10 +4,14 @@
 # Run with: bash scripts/grillmaster-launcher.sh
 set -euo pipefail
 
+# Repo root derived from this script's own location — portable across machines
+# (macOS, Linux, Windows git-bash) and checkouts.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(dirname "$SCRIPT_DIR")"
 PIPELINE_PORT=7860
-DATA_DIR="/Users/admin/Documents/GitHub/grillmaster-command-center/data"
-PIPELINE_DIR="/Users/admin/Documents/GitHub/grillmaster-command-center/image_pipeline"
-VENV_PYTHON="/Users/admin/Documents/GitHub/grillmaster-command-center/.venv/bin/python"
+DATA_DIR="$REPO/data"
+PIPELINE_DIR="$REPO/image_pipeline"
+VENV_PYTHON="$REPO/.venv/bin/python"
 LOG_DIR="$DATA_DIR/logs"
 mkdir -p "$LOG_DIR"
 
@@ -19,7 +23,7 @@ sleep 1
 echo "Starting Image Pipeline server..."
 # Clear PYTHONPATH/_VIRTUAL_ENV so the agent venv isn't shadowed by the
 # Hermes shell's inherited py3.11 site-packages (which breaks numpy import).
-env -u PYTHONPATH -u _VIRTUAL_ENV PYTHONPATH="/Users/admin/Documents/GitHub/grillmaster-command-center" nohup "$VENV_PYTHON" -m image_pipeline.server --port "$PIPELINE_PORT" > "$LOG_DIR/pipeline-server.log" 2>&1 &
+env -u PYTHONPATH -u _VIRTUAL_ENV PYTHONPATH="$REPO" nohup "$VENV_PYTHON" -m image_pipeline.server --port "$PIPELINE_PORT" > "$LOG_DIR/pipeline-server.log" 2>&1 &
 PIPE_PID=$!
 
 for i in $(seq 1 15); do

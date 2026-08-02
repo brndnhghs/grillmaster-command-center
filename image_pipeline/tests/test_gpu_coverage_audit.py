@@ -59,7 +59,9 @@ from image_pipeline.methods.gpu_shaders import GPU_SHADER_NODE_MAP
 # 326 -> 328: +2 typed-uniform filter nodes (503 Pixel Sort A, 504 Pixel Sort B).
 # 328 -> 325: -3 pixel-sort nodes removed (180 GPU Pixel Sort, 503 Pixel Sort A,
 #             504 Pixel Sort B) — shaders + registrations deleted.
-EXPECTED_MAP_ENTRIES = 325
+# 325 -> 326: +1 GPU Test Pattern procedural node (504, shader test_pattern_gpu)
+#             — GPU analog of the CPU Test Node (`__test__`).
+EXPECTED_MAP_ENTRIES = 326
 
 # Simulations-category CPU nodes that are intentionally NOT GPU-mirrored yet.
 # These are Architecture-A stateful sims (discrete CA, agent/particle systems,

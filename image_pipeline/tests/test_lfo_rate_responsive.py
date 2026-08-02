@@ -19,6 +19,7 @@ loudly. Note this is now the only guard on rate-liveness: the former
 Run: pytest image_pipeline/tests/test_lfo_rate_responsive.py
 """
 from __future__ import annotations
+import tempfile
 
 import types
 from pathlib import Path
@@ -40,7 +41,7 @@ def _lfo_series(waveform: str, rate: float, seed: int = 42) -> list[float]:
             "rate": rate, "phase": 0.0, "bipolar": True,
             "total_frames": FRAMES, "fps": float(FPS),
         }
-        out.append(float(mod.method_lfo(Path("/tmp"), seed, p)["value"]))
+        out.append(float(mod.method_lfo(Path(tempfile.gettempdir()), seed, p)["value"]))
     return out
 
 

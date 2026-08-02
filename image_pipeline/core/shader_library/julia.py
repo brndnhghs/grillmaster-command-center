@@ -3,7 +3,6 @@
 from ._registry import _register
 
 
-
 _register("julia", 'Julia set fractal (client-GPU twin of node 66)', "procedural",
           '''
 void main() {

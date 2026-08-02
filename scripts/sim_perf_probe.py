@@ -16,6 +16,7 @@ Exit code is non-zero if a method errors/times-out, or if any measured time
 exceeds the baseline value plus a margin. Pure PASS produces exit 0.
 """
 from __future__ import annotations
+import tempfile
 
 import argparse
 import csv
@@ -32,7 +33,7 @@ PER_METHOD_TIMEOUT = 90.0          # hard cap per method (seconds)
 CUMULATIVE_SLOW_IDS = {"36", "55"}  # DLA, Sandpile -- expected long runtimes
 CUMULATIVE_TIMEOUT = 150.0
 REGRESSION_MARGIN_SEC = 10.0       # warn if now > baseline + this
-BASELINE_GLOB = "/tmp/prof_out/prof_*.csv"
+BASELINE_GLOB = f"{tempfile.gettempdir()}/prof_out/prof_*.csv"
 
 
 def _timeout_for(mid: str) -> float:
@@ -54,7 +55,7 @@ def _run_one(mid: str):
     from image_pipeline.core import utils as U
 
     meta = _ga()[mid]
-    node_dir = _P("/tmp/prof_out") / mid
+    node_dir = _P(tempfile.gettempdir()) / "prof_out" / mid
     node_dir.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
     token = U.set_canvas(256, 256)
@@ -119,7 +120,7 @@ def main():
 
     # Write fresh baseline CSV
     ts = int(time.time())
-    out_csv = Path("/tmp/prof_out") / f"prof_{ts}.csv"
+    out_csv = Path(tempfile.gettempdir()) / "prof_out" / f"prof_{ts}.csv"
     out_csv.parent.mkdir(parents=True, exist_ok=True)
     with out_csv.open("w", newline="") as fh:
         w = csv.writer(fh)

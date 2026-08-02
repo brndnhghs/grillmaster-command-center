@@ -52,4 +52,4 @@ Each effect reads its parameters from the spec dict with sensible defaults (e.g.
 - `oil` prefers `cv2.xphoto.oilPainting`; falls back to bilateral filter when the xphoto module is unavailable
 
 ## Source
-[`image_pipeline/core/postprocess.py`](https://github.com/brndnhghs/grillmaster-command-center/blob/3e085d44fccca63896b5f6543aaa54ab4216e4b3/image_pipeline/core/postprocess.py)
+[`image_pipeline/core/postprocess.py`](https://github.com/brndnhghs/grillmaster-command-center/blob/f689773c452e24fa1bf1bbcf3e6817fb5304c81d/image_pipeline/core/postprocess.py)

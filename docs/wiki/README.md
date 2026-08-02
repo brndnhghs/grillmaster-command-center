@@ -6,17 +6,17 @@ The system is designed to run entirely locally on a laptop: no cloud dependencie
 
 ## Key Concepts
 
-- **Method** — a single generative algorithm registered with the `@method` decorator (540 methods across 16 categories). Each method declares its parameters, input/output ports, and tags.
+- **Method** — a single generative algorithm registered with the `@method` decorator (542 methods across 16 categories). Each method declares its parameters, input/output ports, and tags.
 - **Node Graph** — a directed acyclic graph of method nodes wired together. The executor topologically sorts the graph and runs each node in order, passing image/field/mask data along edges.
 - **Architecture A vs B** — Architecture-A methods (simulations) cook an entire frame list internally and are cached by the executor. Architecture-B methods are stateless single-frame generators driven by a timeline or `time` parameter.
 - **Live Simulation** — the graph can run continuously, re-reading the shared graph document every frame so edits are absorbed by the running loop without restarting.
 
 ## Entry Points
 
-- [`image_pipeline/pipeline.py`](https://github.com/brndnhghs/grillmaster-command-center/blob/3e085d44fccca63896b5f6543aaa54ab4216e4b3/image_pipeline/pipeline.py) — CLI batch runner (`python -m image_pipeline.pipeline --all`)
-- [`image_pipeline/server.py`](https://github.com/brndnhghs/grillmaster-command-center/blob/3e085d44fccca63896b5f6543aaa54ab4216e4b3/image_pipeline/server.py) — FastAPI server (default `:7860`) serving the node-graph UI and REST/SSE/WebSocket API
-- [`dashboard/__init__.py`](https://github.com/brndnhghs/grillmaster-command-center/blob/3e085d44fccca63896b5f6543aaa54ab4216e4b3/dashboard/__init__.py) — Dashboard supervisor (default `:7870`) that spawns and monitors the services
-- [`scripts/grillmaster-launcher.sh`](https://github.com/brndnhghs/grillmaster-command-center/blob/3e085d44fccca63896b5f6543aaa54ab4216e4b3/scripts/grillmaster-launcher.sh) — one-shot launcher for the pipeline server
+- [`image_pipeline/pipeline.py`](https://github.com/brndnhghs/grillmaster-command-center/blob/f689773c452e24fa1bf1bbcf3e6817fb5304c81d/image_pipeline/pipeline.py) — CLI batch runner (`python -m image_pipeline.pipeline --all`)
+- [`image_pipeline/server.py`](https://github.com/brndnhghs/grillmaster-command-center/blob/f689773c452e24fa1bf1bbcf3e6817fb5304c81d/image_pipeline/server.py) — FastAPI server (default `:7860`) serving the node-graph UI and REST/SSE/WebSocket API
+- [`dashboard/__init__.py`](https://github.com/brndnhghs/grillmaster-command-center/blob/f689773c452e24fa1bf1bbcf3e6817fb5304c81d/dashboard/__init__.py) — Dashboard supervisor (default `:7870`) that spawns and monitors the services
+- [`scripts/grillmaster-launcher.sh`](https://github.com/brndnhghs/grillmaster-command-center/blob/f689773c452e24fa1bf1bbcf3e6817fb5304c81d/scripts/grillmaster-launcher.sh) — one-shot launcher for the pipeline server
 
 ## High-Level Architecture
 
@@ -63,5 +63,5 @@ See [getting-started.md](getting-started.md).
 ## Repository
 
 - **Source:** https://github.com/brndnhghs/grillmaster-command-center
-- **SHA:** `3e085d44fccca63896b5f6543aaa54ab4216e4b3`
-- **Generated:** 2026-07-24 by `hermes-agent code-wiki skill v0.1.0`
+- **SHA:** `f689773c452e24fa1bf1bbcf3e6817fb5304c81d`
+- **Generated:** 2026-07-31 by `hermes-agent code-wiki skill v0.1.0`

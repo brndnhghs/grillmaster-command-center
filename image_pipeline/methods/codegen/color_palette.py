@@ -99,9 +99,18 @@ def _get_prog(ctx, frag_src: str):
     cache = _get_prog_cache()
     if key not in cache:
         prog = ctx.program(vertex_shader=_VERTEX_SHADER, fragment_shader=frag_src)
-        vao = ctx.vertex_array(prog, [
-            (ctx.buffer(_QUAD_VERTICES), '2f 2f', 'in_vert', 'in_uv')
-        ], ctx.buffer(_QUAD_INDICES))
+        # Bind only attributes the compiler kept — in_uv is dead-code-eliminated
+        # when the fragment never uses v_uv (see core/shaders._create_vao).
+        if 'in_uv' in prog:
+            vao = ctx.vertex_array(prog, [
+                (ctx.buffer(_QUAD_VERTICES), '2f 2f', 'in_vert', 'in_uv')
+            ], ctx.buffer(_QUAD_INDICES))
+        else:
+            # '4f' keeps the 16-byte stride when in_uv is optimized out
+            # ('2f 12x' skip layouts drop the first triangle on some drivers).
+            vao = ctx.vertex_array(prog, [
+                (ctx.buffer(_QUAD_VERTICES), '4f', 'in_vert')
+            ], ctx.buffer(_QUAD_INDICES))
         cache[key] = (prog, vao)
     return cache[key]
 

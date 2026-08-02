@@ -20,22 +20,45 @@ GLYPH_H = 24
 GLYPHS_PER_ROW = 8  # 8×12 = 96 slots (one extra for 95 chars)
 FONT_SIZE = 22  # matches GLYPH_H closely for good fit
 
-FONTS: list[tuple[str, str, int]] = [
-    ("menlo",   "/System/Library/Fonts/Menlo.ttc", 0),
-    ("courier", "/System/Library/Fonts/Courier.ttc", 0),
-    ("monaco",  "/System/Library/Fonts/Monaco.ttf", 0),
-    ("sf-mono", "/System/Library/Fonts/SFNSMono.ttf", 0),
-    ("andale",  "/System/Library/Fonts/Supplemental/Andale Mono.ttf", 0),
-    ("courier-new", "/System/Library/Fonts/Supplemental/Courier New.ttf", 0),
+# Portable font resolution: try macOS paths, then Windows equivalents, so the
+# atlas can be (re)generated on either platform.
+FONTS: list[tuple[str, list[tuple[str, int]]]] = [
+    ("menlo", [
+        ("/System/Library/Fonts/Menlo.ttc", 0),
+        (r"C:\Windows\Fonts\consola.ttf", 0),      # Consolas
+        (r"C:\Windows\Fonts\cascadiamono.ttf", 0), # Cascadia Mono (Win11)
+    ]),
+    ("courier", [
+        ("/System/Library/Fonts/Courier.ttc", 0),
+        (r"C:\Windows\Fonts\cour.ttf", 0),         # Courier New
+    ]),
+    ("monaco", [
+        ("/System/Library/Fonts/Monaco.ttf", 0),
+        (r"C:\Windows\Fonts\lucon.ttf", 0),        # Lucida Console
+        (r"C:\Windows\Fonts\cascadiamono.ttf", 0),
+    ]),
+    ("sf-mono", [
+        ("/System/Library/Fonts/SFNSMono.ttf", 0),
+        (r"C:\Windows\Fonts\cascadiamono.ttf", 0),
+        (r"C:\Windows\Fonts\consola.ttf", 0),
+    ]),
+    ("andale", [
+        ("/System/Library/Fonts/Supplemental/Andale Mono.ttf", 0),
+        (r"C:\Windows\Fonts\consola.ttf", 0),
+        (r"C:\Windows\Fonts\cour.ttf", 0),
+    ]),
+    ("courier-new", [
+        ("/System/Library/Fonts/Supplemental/Courier New.ttf", 0),
+        (r"C:\Windows\Fonts\cour.ttf", 0),
+    ]),
 ]
 
 
-def build_atlas(font_path: str, font_index: int = 0) -> tuple[Image.Image, str]:
+def build_atlas(font, font_name: str) -> Image.Image:
     """Build a glyph atlas image for all 95 printable ASCII characters.
 
-    Returns (atlas_image, font_name).
+    Returns the atlas image (font_name is used only for diagnostics).
     """
-    font = ImageFont.truetype(font_path, FONT_SIZE, index=font_index)
     chars = [chr(i) for i in range(32, 127)]
     count = len(chars)
     rows = (count + GLYPHS_PER_ROW - 1) // GLYPHS_PER_ROW
@@ -66,8 +89,20 @@ def main():
     out_dir = Path(__file__).resolve().parents[2] / 'image_pipeline' / 'core'
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    for font_name, font_path, font_idx in FONTS:
-        atlas = build_atlas(font_path, font_idx)
+    for font_name, candidates in FONTS:
+        font = None
+        for font_path, font_idx in candidates:
+            if Path(font_path).exists():
+                try:
+                    font = ImageFont.truetype(font_path, FONT_SIZE, index=font_idx)
+                    break
+                except Exception:
+                    continue
+        if font is None:
+            raise FileNotFoundError(
+                f"no usable font for '{font_name}' — tried {[p for p, _ in candidates]}"
+            )
+        atlas = build_atlas(font, font_name)
         fname = f"glyph_atlas_{font_name}.png"
         path = out_dir / fname
         atlas.save(str(path))

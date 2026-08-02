@@ -1,12 +1,13 @@
 """Tests for the Counter node: triggered output, trigger-driven advance, backward compat."""
 from __future__ import annotations
+import tempfile
 from pathlib import Path
 
 import pytest
 
 from image_pipeline.methods.channels.counter import method_counter, _COUNTER_STATE
 
-_TMP = Path("/tmp")
+_TMP = Path(tempfile.gettempdir())
 
 
 def _pulse(mid: str, low_high: tuple[float, float] = (0.0, 1.0), **kw):

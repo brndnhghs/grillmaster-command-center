@@ -6,8 +6,8 @@ Process supervisor for the Grillmaster stack. A small FastAPI app (port **7870**
 **Nothing depends on it.** The pipeline server spawns the three.js sidecar itself on first 3D render (`_ensure_threejs_sidecar`), and an already-healthy service is adopted rather than restarted, so both supervisors can run at once. This panel is a convenience for pre-warming and watching services, not a dependency.
 
 ## Responsibilities
-- Spawn each service as a backgrounded subprocess (repo `.venv` Python, `PYTHONPATH` set to repo root)
-- Stop services (kills the whole process group, not just the listener)
+- Spawn each service as a backgrounded subprocess (repo `.venv` Python — `.venv/Scripts/python.exe` on Windows — with `PYTHONPATH` set to repo root)
+- Stop services (kills the whole process tree, not just the listener; `taskkill /T /F` on Windows)
 - Reclaim a stale/orphaned port before relaunching (a hung server keeps its socket open)
 - Health-check via `/health` (a listening socket alone is not enough — a wedged server answers nothing)
 - Expose launch/stop/status endpoints for the UI
@@ -22,10 +22,13 @@ Launches `python -m <module> --port <port>` under the repo venv, redirecting std
 Spawns the Node.js three.js sidecar (`image_pipeline/3d/threejs-sidecar.mjs`) via `node`.
 
 ### `_stop(name)`
-Kills the service's process group (`os.killpg`) so any children it spawned die too.
+Kills the service's process tree via `_kill_tree()` — `os.killpg(os.getpgid(pid), signal.SIGTERM)` on POSIX, `taskkill /T /F` on Windows (which has no process groups) — so any children it spawned die too.
+
+### `_listeners_on_port(port) -> list[int]`
+Finds the PIDs holding `tcp:<port>` in LISTEN — `lsof -ti` on POSIX, `netstat -ano` parse on Windows.
 
 ### `_reclaim_port(port) -> bool`
-Uses `lsof` to find whatever holds `tcp:<port>` in LISTEN and `SIGKILL`s it (group-first, then PID). Returns True if something was killed. Prevents "address already in use" on relaunch.
+`SIGKILL`s every listener from `_listeners_on_port()` (tree-kill). Returns True if something was killed. Prevents "address already in use" on relaunch.
 
 ### `_is_healthy(port) -> bool`
 Opens `http://127.0.0.1:<port>/health` and requires a 200 — distinguishes "port open but dead" from "actually serving".
@@ -56,7 +59,7 @@ python -m dashboard --autostart  # also boots both services at startup
 ## Dependencies
 - `fastapi`, `uvicorn`
 - stdlib: `subprocess`, `signal`, `socket`, `urllib.request`
-- The repo `.venv` Python (3.12) — has `image_pipeline` on path
+- The repo `.venv` Python (3.12) — has `image_pipeline` on path. On Windows the venv layout is `.venv/Scripts/python.exe`; the module resolves it per-platform (`_IS_WINDOWS`).
 
 ## Key Design Notes
 - **Forgets `_PROCS` across its own restarts** — so after a dashboard restart, `api_stop_one` also calls `_reclaim_port` to free any orphaned listener.
@@ -64,4 +67,4 @@ python -m dashboard --autostart  # also boots both services at startup
 - **3D sidecar** is a Node.js process (`threejs-sidecar.mjs`), not a Python module; spawned via `_spawn_node`. The pipeline server can also spawn it on demand — `_begin_start` adopts an already-healthy one instead of double-spawning.
 
 ## Source
-[`dashboard/__init__.py`](https://github.com/brndnhghs/grillmaster-command-center/blob/3e085d44fccca63896b5f6543aaa54ab4216e4b3/dashboard/__init__.py)
+[`dashboard/__init__.py`](https://github.com/brndnhghs/grillmaster-command-center/blob/f689773c452e24fa1bf1bbcf3e6817fb5304c81d/dashboard/__init__.py)

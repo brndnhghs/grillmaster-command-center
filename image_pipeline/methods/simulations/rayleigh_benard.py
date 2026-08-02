@@ -8,6 +8,7 @@ spatial parameter sweep and temporal regime morphing.
 """
 
 from __future__ import annotations
+import tempfile
 import math
 from pathlib import Path
 import numpy as np
@@ -206,4 +207,4 @@ def sh(out_dir, seed, params=None):
 
 
 if __name__ == "__main__":
-    sh(Path("/tmp/sh_test"), 42, {"anim_mode": "morph", "n_frames": 200})
+    sh(Path(tempfile.gettempdir()) / "sh_test", 42, {"anim_mode": "morph", "n_frames": 200})

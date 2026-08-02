@@ -32,6 +32,9 @@ image_pipeline/output/
 *.jpeg
 *.gif
 *.svg
+# …except the ASCII glyph atlases, which are runtime-required by the
+# ascii_art_gpu shader (regenerate with tools/build_glyph_atlas.py).
+!image_pipeline/core/glyph_atlas_*.png
 
 # NOTE: deliberately NOT ignoring *.html / *.txt globally — the UI
 # (ui/index.html) and requirements.txt are tracked source. Output text

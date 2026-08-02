@@ -61,6 +61,7 @@ FastAPI web server (3,015 lines) serving the node-graph editor frontend, the gen
 
 ## Hot-Reload
 - `_MethodWatcher` (watchdog `FileSystemEventHandler`) watches `image_pipeline/methods/`
+- The watchdog `Observer` is created fresh on every app lifespan startup and stopped with a bounded join (`timeout=2`) — on Windows the emitter thread blocks inside `ReadDirectoryChangesW` and cannot be interrupted by `stop()`, so a reused observer deadlocks the next startup (`_observer.start()` joins the leftover emitter). macOS/FSEvents is unaffected; the fresh-observer pattern keeps parity.
 - `_hot_reload_path(filepath)` — unregisters old methods, re-imports module, broadcasts SSE
 - `_sse_clients` — list of asyncio queues for `/api/events` SSE endpoint
 

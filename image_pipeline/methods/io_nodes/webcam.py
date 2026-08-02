@@ -2,17 +2,18 @@
 
 Architecture note
 -----------------
-This node uses server-side ``cv2.VideoCapture`` (macOS AVFoundation), NOT the
-browser's ``getUserMedia``.  There is no browser permission dialog.  Instead,
-macOS requires that the **Python process** running the server has been granted
-camera access in System Settings:
+This node uses server-side ``cv2.VideoCapture`` (NOT the browser's
+``getUserMedia``).  There is no browser permission dialog.  Instead, the
+**Python process** running the server must be granted camera access in the
+OS privacy settings:
 
-    System Settings → Privacy & Security → Camera → enable <your terminal app>
-    (e.g. Terminal.app, iTerm2, or VS Code), then restart the server.
+    macOS:   System Settings → Privacy & Security → Camera → enable <your terminal app>
+    Windows: Settings → Privacy & Security → Camera → let desktop apps access the camera
+    Linux:   grant the user/video group access to the V4L2 device (e.g. /dev/video0)
 
-A **Camera Permissions…** button on the node body opens this System Settings
-panel directly — click it, toggle the switch for your terminal/IDE, then
-restart the server (or toggle the node off/on to prompt a re‑probe).
+The capture backend is chosen per-platform (DirectShow/Media Foundation on
+Windows, AVFoundation on macOS, V4L2 on Linux) so the camera opens reliably
+instead of hanging on an OS-invalid backend.
 
 Performance & resolution
 ------------------------
@@ -25,10 +26,13 @@ path.  When capture already matches the canvas, the resize is skipped entirely.
 """
 from __future__ import annotations
 
+import threading
 import time
 from pathlib import Path
 
 import numpy as np
+
+import platform as _platform
 
 from ...core.registry import method
 from ...core.utils import save, mn, W, H
@@ -43,6 +47,37 @@ from ...core.utils import save, mn, W, H
 # Entries are closed + evicted after CAMERA_IDLE_TIMEOUT seconds of disuse.
 _camera_cache = {}  # dict[tuple[int, str], (cv2.VideoCapture | None, float)]
 CAMERA_IDLE_TIMEOUT = 5.0  # seconds before evicting an unused handle
+
+# ── Platform-appropriate capture backends ─────────────────────────────
+# The camera only opens reliably with a backend that exists on the current
+# OS.  The original code tried CAP_ANY then CAP_AVFOUNDATION (macOS-only).
+# CAP_AVFOUNDATION is an invalid/no-op backend on Windows/Linux, and on a
+# real Windows camera calling cv2.VideoCapture(idx, CAP_AVFOUNDATION) can
+# hang for tens of seconds before failing — which surfaced as the webcam
+# LED lighting up ~30s after toggling live, then going dark with no image.
+# Always lead with CAP_ANY (let OpenCV pick the OS default) and then try
+# the OS-correct explicit backend(s) so a working camera is found fast.
+def _camera_backends():
+    """Return (backend_name, backend_value) pairs to try, best first."""
+    import cv2
+    sysname = _platform.system().lower()
+    if sysname == "windows":
+        # DirectShow is the most reliable Windows backend and — critically —
+        # must be tried BEFORE CAP_ANY.  CAP_ANY resolves to Media Foundation
+        # (MSMF) on Windows, and MSMF is the backend that blocks for ~30s on
+        # open/set/read for many live USB webcams (the exact hang this module
+        # is fixing).  DSHOW exposes the camera asynchronously and fails fast.
+        backends = [("CAP_DSHOW", getattr(cv2, "CAP_DSHOW", 700)),
+                    ("CAP_MSMF", getattr(cv2, "CAP_MSMF", 1400)),
+                    ("CAP_ANY", cv2.CAP_ANY)]
+        return backends
+    if sysname == "darwin":
+        # macOS: AVFoundation is the correct TCC-aware backend.
+        return [("CAP_AVFOUNDATION", getattr(cv2, "CAP_AVFOUNDATION", 1200)),
+                ("CAP_ANY", cv2.CAP_ANY)]
+    # linux / other — V4L2 is the standard
+    return [("CAP_V4L2", getattr(cv2, "CAP_V4L2", 200)),
+            ("CAP_ANY", cv2.CAP_ANY)]
 
 # On first probe failure we run a full sweep across indices 0–4 and log the
 # results to the server console so the operator sees what happened.  Cached
@@ -68,17 +103,14 @@ def _probe_devices() -> None:
 
     for i in range(5):
         results = []
-        for backend_name, backend_val in [
-            ("CAP_ANY", cv2.CAP_ANY),
-            ("CAP_AVFOUNDATION", cv2.CAP_AVFOUNDATION),
-        ]:
+        for backend_name, backend_val in _camera_backends():
             try:
                 cap = cv2.VideoCapture(i, backend_val)
                 opened = cap.isOpened()
                 if opened:
                     w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                    ok, frame = cap.read()
+                    ok, frame = _read_frame_bounded(cap)
                     if ok and frame is not None:
                         mean_val = float(frame.mean())
                         results.append(f"{backend_name}=✓({w}×{h})")
@@ -106,12 +138,55 @@ def _probe_devices() -> None:
     # Check whether any device was found
     if not any(k in _camera_cache for k in range(5)):
         _log("NO WORKING CAMERA FOUND on devices 0–4.")
-        _log("  macOS: grant Camera access in "
-             "System Settings → Privacy & Security → Camera")
+        if _platform.system().lower() == "darwin":
+            _log("  macOS: grant Camera access in "
+                 "System Settings → Privacy & Security → Camera")
+        elif _platform.system().lower() == "windows":
+            _log("  Windows: make sure the camera isn't in use by another "
+                 "app (Teams/Zoom/browser), and that drivers are installed.")
+        else:
+            _log("  Linux: check for a /dev/video* device and the v4l2 loopback.")
         _log("  Then restart the Python server (or just this node will retry "
              "next frame).")
 
     _probe_printed = True
+
+
+def _read_frame_bounded(cap, timeout: float = 3.0):
+    """Run ``cap.read()`` under a hard timeout so a wedged camera (or a
+    platform backend that stalls on grab) can never freeze the live loop the
+    way a bare ``cap.read()`` can — the original 30s freeze.
+
+    cv2 has no native read timeout on most backends; MSMF in particular can
+    block inside ``read()`` for tens of seconds on a misbehaving device.
+    Running the grab on a watchdog thread lets us bail after ``timeout`` and
+    return ``(False, None)``, and the caller falls back to the no-signal
+    frame rather than stalling the whole graph.  The worker is a daemon, so
+    if it never unblocks it is discarded at interpreter exit, not leaked.
+
+    Returns the same ``(retval, frame)`` shape as ``cap.read()``.
+    """
+    result: dict = {"ok": False, "frame": None}
+
+    def _grab():
+        try:
+            ok, fr = cap.read()
+            result["ok"] = bool(ok and fr is not None)
+            result["frame"] = fr
+        except Exception:
+            result["ok"] = False
+            result["frame"] = None
+
+    t = threading.Thread(target=_grab, daemon=True)
+    t.start()
+    t.join(timeout=timeout)
+    if t.is_alive():
+        # Grab is still blocked — give up and report failure. The worker
+        # thread stays alive as a daemon until the device unblocks or the
+        # process exits; we do not try to kill it (Python can't), but we no
+        # longer let it hold the caller (and the live loop) hostage.
+        return False, None
+    return result["ok"], result["frame"]
 
 
 def _fallback_frame(device_index: int) -> np.ndarray:
@@ -123,17 +198,23 @@ def _fallback_frame(device_index: int) -> np.ndarray:
     d = _Draw.Draw(img)
     font = get_font(max(10, int(H) // 16))
 
-    lines = [
-        "Webcam not available",
-        f"device={device_index}",
-        "",
-        "Grant camera permission to",
-        "the terminal/Python process:",
-        "System Settings → Privacy & Security",
-        "→ Camera → enable <your terminal app>",
-        "",
-        "Then restart this server.",
-    ]
+    if _platform.system().lower() == "darwin":
+        conn = ["Grant camera permission to",
+                "the terminal/Python process:",
+                "System Settings → Privacy & Security",
+                "→ Camera → enable <your app>"]
+    elif _platform.system().lower() == "windows":
+        conn = ["Grant camera access to the",
+                "Python/server process:",
+                "Settings → Privacy & Security → Camera",
+                "→ let desktop apps use the camera"]
+    else:
+        conn = ["No camera captured. Check that a",
+                "video device exists (e.g. /dev/video0)",
+                "and that the user has device access.",
+                "Then toggle the node off/on."]
+
+    lines = ["Webcam not available", f"device={device_index}", ""] + conn + ["", "Then toggle this node off/on."]
     y = int(H) // 2 - 40
     for line in lines:
         wl = d.textlength(line, font=font)
@@ -215,11 +296,8 @@ def method_webcam(out_dir: Path, seed: int, params=None):
         _camera_cache.pop(cache_key, None)
 
     if cap is None or not cap.isOpened():
-        # Try CAP_ANY first, then CAP_AVFOUNDATION
-        for backend_name, backend_val in [
-            ("CAP_ANY", cv2.CAP_ANY),
-            ("CAP_AVFOUNDATION", cv2.CAP_AVFOUNDATION),
-        ]:
+        # Try CAP_ANY first, then the OS-correct explicit backend(s)
+        for backend_name, backend_val in _camera_backends():
             try:
                 cap = cv2.VideoCapture(device_index, backend_val)
                 if cap.isOpened():
@@ -232,7 +310,7 @@ def method_webcam(out_dir: Path, seed: int, params=None):
                 cap = None
 
     if cap is not None:
-        ok, bgr = cap.read()
+        ok, bgr = _read_frame_bounded(cap)
         if ok and bgr is not None:
             _camera_cache[cache_key] = (cap, now)
 
@@ -291,3 +369,22 @@ def method_webcam(out_dir: Path, seed: int, params=None):
     luminance = float(np.mean(arr))
     save(arr, mn(0, "Webcam"), out_dir)
     return {"image": arr, "field": arr, "luminance": luminance}
+
+
+def release_cameras() -> int:
+    """Close every cached camera handle.
+
+    Called when live mode stops so the OS hardware indicator (LED) turns off
+    immediately instead of lingering until the idle-eviction timeout. Returns
+    the number of handles released.
+    """
+    released = 0
+    for key in list(_camera_cache.keys()):
+        cap, _ = _camera_cache.pop(key, (None, 0.0))
+        if cap is not None:
+            try:
+                cap.release()
+            except Exception:
+                pass
+            released += 1
+    return released

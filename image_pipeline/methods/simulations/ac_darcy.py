@@ -22,6 +22,7 @@ explicit u - u³ + α·∂ψ/∂y in physical space.
 """
 
 from __future__ import annotations
+import tempfile
 import math
 from pathlib import Path
 import numpy as np
@@ -182,4 +183,4 @@ def acd(out_dir, seed, params=None):
 
 
 if __name__ == "__main__":
-    acd(Path("/tmp/acd_test"), 42, {"anim_mode": "evolve", "n_frames": 100})
+    acd(Path(tempfile.gettempdir()) / "acd_test", 42, {"anim_mode": "evolve", "n_frames": 100})

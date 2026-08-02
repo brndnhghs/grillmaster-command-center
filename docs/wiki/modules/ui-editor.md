@@ -44,4 +44,4 @@ The shell is a **tabbed layout** defined in `index.html`:
 - The 3D viewport and graph canvas are co-equal panes; both stay live during a render
 
 ## Source
-[`ui/index.html`](https://github.com/brndnhghs/grillmaster-command-center/blob/3e085d44fccca63896b5f6543aaa54ab4216e4b3/ui/index.html) · [`ui/js/app.js`](https://github.com/brndnhghs/grillmaster-command-center/blob/3e085d44fccca63896b5f6543aaa54ab4216e4b3/ui/js/app.js)
+[`ui/index.html`](https://github.com/brndnhghs/grillmaster-command-center/blob/f689773c452e24fa1bf1bbcf3e6817fb5304c81d/ui/index.html) · [`ui/js/app.js`](https://github.com/brndnhghs/grillmaster-command-center/blob/f689773c452e24fa1bf1bbcf3e6817fb5304c81d/ui/js/app.js)

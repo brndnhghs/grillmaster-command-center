@@ -4,6 +4,11 @@
 # ── Core (required to run the server and the built-in methods) ──
 fastapi==0.137.2
 uvicorn==0.47.0
+websockets==15.0.1      # WebSocket transport for live preview (/api/live/ws).
+                        # Without it uvicorn cannot upgrade WS connections and live
+                        # mode silently falls back to MJPEG (image only) — the
+                        # on-node Runtime readouts / LFO / meter widgets never receive
+                        # node_values and freeze at "–".
 numpy==2.4.6
 scipy==1.17.1
 opencv-python==4.13.0.92
@@ -20,6 +25,7 @@ watchdog>=4.0.0         # file-system watcher for method hot-reload
 # matplotlib       # colormaps used by various pattern / fractal / filter methods
 # scikit-image     # resize step in some fractal methods
 # pyfiglet         # ASCII-art / typography methods (cli_tools)
+pyfiglet==1.0.4   # REQUIRED: hard-imported by methods/cli_tools/pyfiglet.py at module scope
 # qrcode           # method #09 QR Code
 moderngl          # method #82 GPU Shaders
 mcp>=1.2          # tools/mcp_authoring_server.py — runtime agent node-authoring over MCP

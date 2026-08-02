@@ -10,16 +10,41 @@ A **node-based generative image & video editor** that takes the best of Houdini 
 
 ## Running
 
+Python **3.12** is the pinned interpreter (`.python-version`; the project was
+built and tested on 3.12). `uv` picks it up automatically.
+
 ```bash
-uv venv .venv && uv pip install -r requirements.txt --python .venv/bin/python
+uv venv .venv && uv pip install -r requirements.txt --python .venv/bin/python   # macOS / Linux
+uv venv .venv && uv pip install -r requirements.txt --python .venv/Scripts/python.exe   # Windows
 
 # Option A — unified dashboard (recommended): one panel to launch & monitor both
-bash scripts/dashboard.sh              # http://localhost:7870  → "Launch Both"
-bash scripts/dashboard.sh --autostart  # also boots both services on startup
+bash scripts/dashboard.sh              # http://localhost:7870  → "Launch Both"   (macOS/Linux/git-bash)
+scripts/launch_pipeline.bat            # Windows: clickable launcher (pipeline only)
+python -m dashboard --autostart        # or run the dashboard module directly (any platform)
 
 # Option B — run the pipeline server directly
-.venv/bin/python -m image_pipeline.server            # http://localhost:7860
+.venv/bin/python -m image_pipeline.server            # http://localhost:7860   (macOS/Linux)
+.venv/Scripts/python.exe -m image_pipeline.server    # http://localhost:7860   (Windows)
 ```
+
+> **Agent-shell gotcha (Windows):** shells launched from agent runtimes (e.g.
+> Hermes) export a `PYTHONPATH` pointing at the agent's own site-packages,
+> which shadows the repo venv and breaks numpy/fastapi versions. The `.bat`
+> launchers and `grillmaster-launcher.sh` clear `PYTHONPATH` before starting;
+> if you launch the server by hand from such a shell, run
+> `env -u PYTHONPATH .venv/Scripts/python.exe -m image_pipeline.server`.
+
+**GPU support:** Apple (Metal/OpenGL on macOS) and NVIDIA (OpenGL/CUDA on
+Windows and Linux). GPU shader methods use `moderngl` (OpenGL 3.3+); the
+three.js sidecar needs Node.js on `PATH` (`node --version`). No AMD/Intel
+GPU code paths are maintained.
+
+> **Windows hybrid-GPU note:** on laptops with an Intel iGPU + NVIDIA dGPU
+> (Optimus), WGL contexts default to the Intel adapter. If moderngl shader
+> methods fail with attribute/program errors, the Intel driver is likely too
+> old — update the Intel driver or the NVIDIA driver (≥430, which honors
+> Windows' per-app GPU preference) so the NVIDIA GPU serves GL. The three.js
+> sidecar is unaffected (it renders via ANGLE/D3D11).
 
 **Command Center Dashboard (port 7870)** — a single control panel that launches,
 monitors, and stops the services, and embeds their UIs behind a tab switcher.

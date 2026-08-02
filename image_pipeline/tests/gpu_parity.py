@@ -18,6 +18,7 @@ this module is safe to import in CI.
 CLI:  python -m image_pipeline.tests.gpu_parity <method_id> [--seed N] [--wh WxH] [k=v ...]
 """
 from __future__ import annotations
+import tempfile
 
 import base64
 import io
@@ -72,7 +73,7 @@ def render_cpu(method_id: str, params: dict | None = None, seed: int = 42,
     from image_pipeline.core.graph import GraphExecutor
     from image_pipeline.core.utils import set_canvas
     set_canvas(w, h)
-    ex = GraphExecutor(Path("/tmp/gm_gpu_parity_session"), in_memory=True)
+    ex = GraphExecutor(Path(tempfile.gettempdir()) / "gm_gpu_parity_session", in_memory=True)
     node = {"id": "n", "method_id": method_id, "render": True, "params": dict(params or {})}
     outputs, terminal_id, errs = ex.execute([node], [], seed, frame=frame, frames=1)
     if errs:

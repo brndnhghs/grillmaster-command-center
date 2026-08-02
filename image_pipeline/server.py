@@ -376,18 +376,25 @@ class _MethodWatcher(FileSystemEventHandler):
 
 
 _methods_dir = str(Path(__file__).parent / "methods")
-_observer = Observer()
+_observer: Observer | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _event_loop
+    global _event_loop, _observer
     _event_loop = asyncio.get_event_loop()
+    # Fresh observer on every startup. On Windows the watchdog emitter thread
+    # blocks inside ReadDirectoryChangesW and cannot be interrupted by stop(),
+    # so a reused observer deadlocks start() while joining its leftover
+    # emitter (macOS/FSEvents is unaffected — this guard keeps parity).
+    _observer = Observer()
     _observer.schedule(_MethodWatcher(), _methods_dir, recursive=True)
     _observer.start()
-    yield
-    _observer.stop()
-    _observer.join()
+    try:
+        yield
+    finally:
+        _observer.stop()
+        _observer.join(timeout=2.0)
 
 
 # ── Mutating-endpoint auth ────────────────────────────────────────────
@@ -1617,20 +1624,37 @@ def _tcc_native_trigger() -> str:
 
     Returns the detected TCC status from a quick ``authorizationStatus``
     check only (no blocking wait).
+
+    On non-macOS platforms there is no TCC layer, so this is a no-op that
+    returns "n/a" — it must NOT probe the camera here (that is the live
+    loop's job) and must NOT open it with CAP_AVFOUNDATION, which is a
+    macOS-only backend that can hang for tens of seconds on Windows.
     """
+    import platform as _plat
+    if _plat.system().lower() != "darwin":
+        return "n/a"
+
     helper = _ensure_tcc_helper()
     if helper is None:
         return "no_swift_helper"
 
-    # 1. Quick check — read current auth status without triggering dialog
+    # 1. Quick check — read current auth status without triggering dialog.
+    #    Use the platform-correct backend so we never touch CAP_AVFOUNDATION
+    #    on Windows/Linux (see image_pipeline.methods.io_nodes.webcam).
     try:
+        from image_pipeline.methods.io_nodes.webcam import _camera_backends
         import cv2 as _cv2
-        cap = _cv2.VideoCapture(0, _cv2.CAP_AVFOUNDATION)
-        if cap.isOpened():
-            ok, _ = cap.read()
-            cap.release()
-            if ok:
-                return "allowed"
+        for _bname, _bval in _camera_backends():
+            try:
+                cap = _cv2.VideoCapture(0, _bval)
+            except Exception:
+                continue
+            if cap.isOpened():
+                ok, _ = cap.read()
+                cap.release()
+                if ok:
+                    return "allowed"
+            break  # only need one backend attempt for the quick status check
     except Exception:
         pass
 
@@ -1658,7 +1682,8 @@ def _tcc_native_trigger() -> str:
 
 @app.post("/api/webcam/configure")
 async def webcam_open_permissions():
-    """Open macOS System Settings → Camera privacy panel.
+    """Open the OS camera-privacy panel and (macOS only) trigger the TCC
+    permission dialog.
 
     macOS TCC (Transparency, Consent, & Control) only shows an app in the
     camera-permissions list *after* it has attempted camera access. This
@@ -1671,20 +1696,30 @@ async def webcam_open_permissions():
        the endpoint returns immediately).
     3. Also fires ``ffmpeg -f avfoundation`` as a secondary TCC trigger.
     4. Opens System Settings → Privacy → Camera so the user can toggle it ON.
+
+    On Windows/Linux there is no TCC layer and no AVFoundation; the button
+    is repurposed to a no-op that reports the OS and points the user at the
+    right OS camera-privacy setting. It must NOT open the camera (that is
+    the live loop's job) or run macOS-only commands, which is what produced
+    the ~30s LED-on-then-off symptom on Windows.
     """
+    import platform as _plat
+    is_mac = _plat.system().lower() == "darwin"
+
     parent_name = _tcc_process_name()
     tree = _tcc_process_tree()
 
-    # ── Trigger TCC dialog (fire-and-forget) ──────────────────────────
-    tcc_status = _tcc_native_trigger()
+    # ── Trigger TCC dialog (fire-and-forget, macOS only) ──────────────
+    tcc_status = _tcc_native_trigger() if is_mac else "n/a"
 
-    # ── Open System Settings → Privacy → Camera ──────────────────────
-    try:
-        subprocess.Popen(
-            ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"]
-        )
-    except Exception as e:
-        return {"ok": False, "msg": f"Failed to open preferences: {e}"}
+    # ── Open the OS camera-privacy panel (macOS only) ─────────────────
+    if is_mac:
+        try:
+            subprocess.Popen(
+                ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"]
+            )
+        except Exception as e:
+            return {"ok": False, "msg": f"Failed to open preferences: {e}"}
 
     # ── Build contextual message ─────────────────────────────────────
     msg = ""
@@ -1706,6 +1741,15 @@ async def webcam_open_permissions():
             "look for **" + parent_name + "** in the list and ensure it's "
             "toggled **ON**.\n\n"
             f"*(Process ancestry: {chain_str})*"
+        )
+    elif tcc_status == "n/a":
+        msg = (
+            f"Camera permissions are managed by {_plat.system()} here, not macOS TCC. "
+            "Live mode opens the camera directly. If the webcam node shows no "
+            "image, grant the **Python/server process** camera access in your OS "
+            "privacy settings (e.g. Windows → Settings → Privacy & Security → "
+            "Camera → let desktop apps access the camera), then toggle the node "
+            "off/on to re-probe."
         )
     else:
         msg = (
@@ -2126,7 +2170,13 @@ def _stop_threejs_sidecar() -> None:
     if proc is None or proc.poll() is not None:
         return
     try:
-        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        if hasattr(os, "killpg"):
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        else:  # Windows — no process groups; taskkill the tree
+            subprocess.run(
+                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                capture_output=True, timeout=5,
+            )
         proc.wait(timeout=5)
     except Exception:  # noqa: BLE001 — best-effort shutdown
         try:
@@ -2487,6 +2537,15 @@ def live_graph_sim(req: GraphRequest):
                 _live_sim_cancel.set()
                 _live_sim_thread.join(timeout=5.0)
             _live_sim_thread = None
+            # Release any camera handles the webcam node opened, so the OS
+            # hardware indicator (LED) turns off immediately rather than
+            # lingering until the 5s idle-eviction timeout (or, worse, an
+            # orphaned handle keeping the LED on after live mode ends).
+            try:
+                from image_pipeline.methods.io_nodes.webcam import release_cameras
+                release_cameras()
+            except Exception:
+                pass
             return {"status": "stopped"}
 
         # Graph source of truth: the shared doc. The live loop reads it every
@@ -3411,7 +3470,19 @@ def nd_get_source(method_id: str):
     path = _get_method_path(method_id)
     if not path or not path.exists():
         return {"source": "", "path": ""}
-    return {"source": path.read_text(), "path": str(path)}
+    try:
+        # Method sources are UTF-8. read_text() without an explicit encoding
+        # uses the process default (locale) codec, which is cp1252 on a
+        # Windows server launched without UTF-8 mode — decoding a UTF-8
+        # source then raises UnicodeDecodeError. FastAPI renders the escaping
+        # exception as a text/plain 500, which breaks the editor's r.json()
+        # ("JSON.parse: unexpected character at line 1 column 1"). Pin UTF-8
+        # and, if a read still fails, return a structured JSON error instead
+        # of letting the response stop being JSON.
+        source = path.read_text(encoding="utf-8")
+    except Exception as exc:
+        return {"source": "", "path": str(path), "error": f"{type(exc).__name__}: {exc}"}
+    return {"source": source, "path": str(path)}
 
 
 _ND_RUNNER = Path(__file__).resolve().parent / "nd_runner.py"

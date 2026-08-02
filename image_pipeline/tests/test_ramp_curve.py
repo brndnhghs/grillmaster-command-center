@@ -1,5 +1,6 @@
 """Tests for the stateless curve-evaluator ramp node (__ramp__, v2)."""
 from __future__ import annotations
+import tempfile
 
 import json
 import math
@@ -132,7 +133,7 @@ class TestMethodRamp:
         self.fn = meta.fn
 
     def test_identity_curve(self):
-        res = self.fn(Path("/tmp"), 0, {
+        res = self.fn(Path(tempfile.gettempdir()), 0, {
             "x": 0.5,
             "control_points": json.dumps([{"x": 0.0, "y": 0.0}, {"x": 1.0, "y": 1.0}]),
         })
@@ -140,19 +141,19 @@ class TestMethodRamp:
         assert res["phase"] == 0.5
 
     def test_no_control_points_defaults_to_identity(self):
-        res = self.fn(Path("/tmp"), 0, {"x": 0.3})
+        res = self.fn(Path(tempfile.gettempdir()), 0, {"x": 0.3})
         assert abs(res["value"] - 0.3) < 1e-9
 
     def test_empty_control_points_no_warning(self):
         """Empty string / None should not trigger JSON parse warning."""
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            self.fn(Path("/tmp"), 0, {"x": 0.3, "control_points": None})
+            self.fn(Path(tempfile.gettempdir()), 0, {"x": 0.3, "control_points": None})
             cp_warnings = [x for x in w if "control_points" in str(x.message).lower()]
             assert len(cp_warnings) == 0
 
     def test_clamp_oob(self):
-        res = self.fn(Path("/tmp"), 0, {
+        res = self.fn(Path(tempfile.gettempdir()), 0, {
             "x": -10.0,
             "control_points": json.dumps([{"x": 0.0, "y": 0.0}, {"x": 1.0, "y": 1.0}]),
         })
@@ -160,7 +161,7 @@ class TestMethodRamp:
         assert res["phase"] == 0.0
 
     def test_wrap_oob(self):
-        res = self.fn(Path("/tmp"), 0, {
+        res = self.fn(Path(tempfile.gettempdir()), 0, {
             "x": 2.5,
             "control_points": json.dumps([{"x": 0.0, "y": 0.0}, {"x": 1.0, "y": 1.0}]),
             "out_of_range": "wrap",
@@ -169,7 +170,7 @@ class TestMethodRamp:
         assert abs(res["phase"] - 0.5) < 1e-9
 
     def test_extend_oob(self):
-        res = self.fn(Path("/tmp"), 0, {
+        res = self.fn(Path(tempfile.gettempdir()), 0, {
             "x": 2.0,
             "control_points": json.dumps([{"x": 0.0, "y": 0.0}, {"x": 1.0, "y": 1.0}]),
             "out_of_range": "extend",
@@ -178,7 +179,7 @@ class TestMethodRamp:
         assert res["phase"] == 1.0  # clamped for phase
 
     def test_smooth_interpolation(self):
-        res = self.fn(Path("/tmp"), 0, {
+        res = self.fn(Path(tempfile.gettempdir()), 0, {
             "x": 0.25,
             "control_points": json.dumps([
                 {"x": 0.0, "y": 0.0},
@@ -193,7 +194,7 @@ class TestMethodRamp:
     def test_legacy_params_trigger_warning(self):
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            self.fn(Path("/tmp"), 0, {
+            self.fn(Path(tempfile.gettempdir()), 0, {
                 "start": 0.0,
                 "end": 1.0,
                 "duration_frames": 48,
@@ -205,5 +206,5 @@ class TestMethodRamp:
 
     def test_x_defaults_to_zero(self):
         """When x param is not set, default to 0.0."""
-        res = self.fn(Path("/tmp"), 0, {})
+        res = self.fn(Path(tempfile.gettempdir()), 0, {})
         assert abs(res["value"]) < 1e-9

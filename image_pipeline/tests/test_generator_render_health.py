@@ -37,6 +37,7 @@ Run:
         image_pipeline/tests/test_generator_render_health.py -q -p no:cacheprovider -m slow
 """
 from __future__ import annotations
+import tempfile
 
 import time
 
@@ -146,7 +147,7 @@ def _run_one(mid: str):
     from image_pipeline.core import utils as U
 
     meta = _ga()[mid]
-    node_dir = _P("/tmp/gen_health") / mid
+    node_dir = _P(tempfile.gettempdir()) / "gen_health" / mid
     if node_dir.exists():
         for f in node_dir.glob("*"):
             f.unlink()

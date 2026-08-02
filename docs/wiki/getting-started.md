@@ -2,10 +2,12 @@
 
 ## Prerequisites
 
-- **Python 3.12** — the repo ships a `.venv` built on 3.12.13. The Image Pipeline runs under it.
+- **Python 3.12** — pinned via `.python-version`; the project is built and tested on 3.12 on both macOS and Windows.
+- **uv** — the venv is uv-managed (`uv venv .venv`). The repo's `.python-version` makes uv pick 3.12 automatically.
 - **Git** — to clone, and to track the source SHA.
-- **Node.js** — only for the 3D viewport sidecar (`image_pipeline/3d/threejs-sidecar.mjs`), which the server spawns automatically when a graph uses 3D nodes. The 2D pipeline needs no Node.
-- **macOS / Linux** — paths and `lsof`/`killpg` usage assume a Unix-like shell.
+- **Node.js 22+** — only for the 3D viewport sidecar (`image_pipeline/3d/threejs-sidecar.mjs`), which the server spawns automatically when a graph uses 3D nodes. The 2D pipeline needs no Node.
+- **NPM** — `gl` (headless WebGL) must be installed once: `npm install gl` in the repo root (the sidecar renders via ANGLE/D3D11 on Windows, Metal/ANGLE on macOS).
+- **GPU** — Apple (Metal/OpenGL) and NVIDIA (OpenGL/CUDA) are supported. GPU shader methods use `moderngl` (OpenGL 3.3+). On hybrid Intel+NVIDIA laptops, WGL defaults to the Intel adapter; update the NVIDIA driver (≥430) so Windows' per-app GPU preference can route GL to the NVIDIA GPU.
 
 ## Installation
 
@@ -13,12 +15,12 @@
 git clone https://github.com/brndnhghs/grillmaster-command-center.git
 cd grillmaster-command-center
 
-# Create the venv the services expect (Python 3.12)
-python3.12 -m venv .venv
-source .venv/bin/activate
+# Create the venv (uv reads .python-version → 3.12)
+uv venv .venv
 
 # Install the pinned dependency set
-pip install -r requirements.txt
+uv pip install -r requirements.txt            # macOS / Linux
+uv pip install -r requirements.txt --python .venv/Scripts/python.exe   # Windows
 ```
 
 `requirements.txt` pins the known-good set (regenerated 2026-06-20):
@@ -34,28 +36,36 @@ pip install -r requirements.txt
 | `PyYAML` | 6.0.3 | Preset loading |
 | `pyngrok` | 8.1.2 | Localhost tunneling (optional) |
 | `watchdog` | >=4.0.0 | File-system watcher for method hot-reload |
+| `moderngl` | — | GPU shader methods (#82, gpu_shaders category) |
+| `pyfiglet` | 1.0.4 | ASCII-art methods (hard-imported — required) |
 
-**Optional extras** (commented out in `requirements.txt`; each is imported lazily inside the method that needs it, so the server runs without them — only that method fails until installed): `matplotlib` (colormaps), `scikit-image` (fractal resize), `pyfiglet` (ASCII art), `qrcode` (#09 QR Code), `moderngl` (#82 GPU Shaders), `torch` + `diffusers` (#21 Stable Diffusion 1.5, ~2 GB+).
+**Optional extras** (commented out in `requirements.txt`; each is imported lazily inside the method that needs it, so the server runs without them — only that method fails until installed): `matplotlib` (colormaps), `scikit-image` (fractal resize), `qrcode` (#09 QR Code), `torch` + `diffusers` (#21 Stable Diffusion 1.5, ~2 GB+).
 
 ## First Run
 
 The simplest path is the Dashboard, which launches and monitors both services:
 
 ```bash
+# macOS / Linux
 source .venv/bin/activate
 python -m dashboard --autostart
+
+# Windows (git-bash or cmd)
+.venv/Scripts/python.exe -m dashboard --autostart
 # → http://127.0.0.1:7870
 ```
 
 Open `http://127.0.0.1:7870` in a browser. The dashboard shows Launch/Stop controls for each service and an embedded UI switcher.
 
-**Alternative — direct launcher script:**
+**Alternative — launcher scripts** (repo-relative, portable):
 
 ```bash
-bash scripts/grillmaster-launcher.sh
+bash scripts/dashboard.sh              # macOS / Linux / git-bash
+bash scripts/grillmaster-launcher.sh   # pipeline only
+scripts/launch_pipeline.bat            # Windows: clickable pipeline launcher
 ```
 
-> ⚠️ `scripts/grillmaster-launcher.sh` hard-codes a machine-specific venv path (`/Users/admin/Documents/GitHub/hermes-agent/venv/bin/python`). It works on this machine but is **not portable** — prefer `python -m dashboard` elsewhere.
+> **Agent-shell gotcha (Windows):** shells launched from agent runtimes (e.g. Hermes) export a `PYTHONPATH` pointing at the agent's own site-packages, which shadows the repo venv and breaks numpy/fastapi versions. The `.bat` launchers and `grillmaster-launcher.sh` clear `PYTHONPATH` before starting; if you launch by hand from such a shell, run `env -u PYTHONPATH .venv/Scripts/python.exe -m image_pipeline.server`.
 
 ## Service Ports
 
@@ -68,7 +78,8 @@ bash scripts/grillmaster-launcher.sh
 You can also run a single service directly:
 
 ```bash
-python -m image_pipeline.server --port 7860
+.venv/bin/python -m image_pipeline.server --port 7860          # macOS / Linux
+.venv/Scripts/python.exe -m image_pipeline.server --port 7860   # Windows
 ```
 
 ## Common Workflows
@@ -91,7 +102,16 @@ Open the **Node Graph** tab. Drag methods from the palette onto the canvas, wire
 - **`GRILLMASTER_API_TOKEN`** — when set, the server requires this token on protected endpoints (Node Doctor apply/undo, Node Tester batch-apply). The UI reads it from `localStorage['api-token']` and attaches it as `X-Api-Token` on every request. No-op when unset (local/dev).
 - **`THREEJS_SIDECAR_URL`** — default `http://127.0.0.1:7862`. The server proxies 3D-node graph renders to this Node.js sidecar, spawning it on first use if nothing is listening. Override to point at a remote sidecar.
 - **`THREEJS_SIDECAR_EXTERNAL`** — set to `1` when something else owns the sidecar process (a supervisor, a debugger, a remote host). The server will then proxy to it but never spawn it.
+- **`HERMES_AGENT_DIR`** / **`HERMES_PYTHON`** — Node Doctor backend (default `~/.hermes/hermes-agent`).
 - **`data/logs/`** — service stdout/stderr are written here (e.g. `data/logs/pipeline.log`). Useful when a launch reports "failed".
+
+## Regenerating the glyph atlases
+
+The ASCII shader (`ascii_art_gpu`) requires `image_pipeline/core/glyph_atlas_*.png` (6 fonts). They are committed; regenerate with:
+
+```bash
+python image_pipeline/tools/build_glyph_atlas.py   # finds macOS or Windows fonts
+```
 
 ## Where to Go Next
 

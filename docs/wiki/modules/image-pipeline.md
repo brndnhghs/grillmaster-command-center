@@ -52,7 +52,7 @@ image_pipeline/
 │   ├── spatial.py         #   Spatial-parameter (auto-2D) support
 │   ├── threejs_nodes.py   #   THREEJS_3D_NODE_DEFS + factories (category "client_3d")
 │   └── timeline.py        #   (see above)
-├── methods/               # ★ Node library — 540 methods across 16 categories
+├── methods/               # ★ Node library — 542 methods across 16 categories
 │   ├── __init__.py        #   pkgutil auto-import of every module (new files register automatically)
 │   ├── channels/          #   Driver/signal-routing nodes: __lfo__, __envelope__, __stepseq__, __lag__, …
 │   ├── gpu_shaders/       #   GPU node factory: _PROC_SHADERS/_FILT_SHADERS, _make_typed
@@ -68,7 +68,7 @@ image_pipeline/
 └── tools/                 #   (repo-root tools/ — see Tools below)
 ```
 
-Method count is dynamic: the registry reports **540 methods across 16 categories** at import (`analysis, channels, cli_tools, client_3d, codegen, compositing, filters, fractals, gpu_shaders, io, math_art, ml_models, p5_sketches, patterns, simulations, system`).
+Method count is dynamic: the registry reports **542 methods across 16 categories** at import (`analysis, channels, cli_tools, client_3d, codegen, compositing, filters, fractals, gpu_shaders, io, math_art, ml_models, p5_sketches, patterns, simulations, system`).
 
 ## Architecture — Four Layers
 

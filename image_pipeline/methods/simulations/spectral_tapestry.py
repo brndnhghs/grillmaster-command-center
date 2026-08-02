@@ -17,6 +17,7 @@ The result: a living, flowing interference field.
 """
 
 from __future__ import annotations
+import tempfile
 import math
 from pathlib import Path
 import numpy as np
@@ -194,4 +195,4 @@ def st(out_dir, seed, params=None):
 
 
 if __name__ == "__main__":
-    st(Path("/tmp/st_test"), 42, {"anim_mode": "flow", "n_frames": 100})
+    st(Path(tempfile.gettempdir()) / "st_test", 42, {"anim_mode": "flow", "n_frames": 100})

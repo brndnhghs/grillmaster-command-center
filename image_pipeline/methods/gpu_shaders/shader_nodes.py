@@ -329,4 +329,13 @@ _TYPED_SHADER_NODES = [
     # contrast-only static liveness cull). CPU numpy node 1006 stays authoritative
     # for export. 361 is the free ID above 360.
     ("348", "phasor_noise_gpu", "GPU Phasor Noise"),
+    # Node 504: GPU Test Pattern — GPU analog of the CPU Test Node (`__test__`).
+    # Single-pass procedural render of the same diagnostic image patterns
+    # (color_bars / checkerboard / gradient_h / gradient_v / white / black /
+    # noise / color_ramp), driven by a `pattern` choice uniform + named typed
+    # controls. Mirrors the CPU node's image-pattern output on the GPU. Static by
+    # default; `animate`/`speed` scroll the gradients/noise with u_time so
+    # temporal-continuity testing still works on the GPU path. 504 is a free ID
+    # above 503.
+    ("504", "test_pattern_gpu", "GPU Test Pattern"),
 ]

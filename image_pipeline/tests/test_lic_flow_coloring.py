@@ -8,6 +8,7 @@ callers produce (elementwise IEEE math == the scalar loop; int() truncation
 cannot silently change the rendered colors.
 """
 import numpy as np
+import tempfile
 import pytest
 from pathlib import Path
 from PIL import Image
@@ -22,7 +23,7 @@ def _render(color_mode, params=None, seed=42):
     p = {"color_mode": color_mode}
     if params:
         p.update(params)
-    img = lic_flow.method_lic_flow(Path("/tmp"), seed, p)
+    img = lic_flow.method_lic_flow(Path(tempfile.gettempdir()), seed, p)
     return np.array(img, dtype=np.uint8)
 
 

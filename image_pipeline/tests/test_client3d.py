@@ -13,6 +13,7 @@ guard the SERVER-SIDE contract of that additive feature:
 4. Regression: a normal 2D graph still executes server-side and yields an image
    (the 3D branch must not perturb the untouched server path).
 """
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -143,7 +144,7 @@ def test_keyframe_parity_ease_in_out():
 def test_2d_graph_still_renders_server_side():
     """A plain 2D graph must still execute server-side and yield an image."""
     set_canvas(64, 48)
-    ex = GraphExecutor(Path("/tmp/gm_client3d_test_session"), in_memory=True)
+    ex = GraphExecutor(Path(tempfile.gettempdir()) / "gm_client3d_test_session", in_memory=True)
     nodes = [{
         "id": "cs", "method_id": "__custom_shader__", "render": True,
         "params": {"glsl_code": "void main(){ f_color = vec4(v_uv, 0.5, 1.0); }"},
@@ -213,7 +214,7 @@ def test_edge_transport_records_mem_and_disk_per_edge():
     Surfaced in last_frame_stats['edge_transport'] keyed 'src->dst' — this is
     what drives the FX overlay's stream-vs-packets channel from real data."""
     set_canvas(48, 32)
-    ex = GraphExecutor(Path("/tmp/gm_edge_transport_test"), in_memory=True)
+    ex = GraphExecutor(Path(tempfile.gettempdir()) / "gm_edge_transport_test", in_memory=True)
     gen_glsl = "void main(){ f_color = vec4(v_uv, 0.5, 1.0); }"
     nodes = [
         {"id": "gen", "method_id": "__custom_shader__", "params": {"glsl_code": gen_glsl}},

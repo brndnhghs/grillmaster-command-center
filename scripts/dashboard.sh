@@ -5,7 +5,10 @@
 # Run with: bash scripts/dashboard.sh   (optionally: --autostart)
 set -euo pipefail
 
-REPO="/Users/admin/Documents/GitHub/grillmaster-command-center"
+# Repo root derived from this script's own location — portable across machines
+# (macOS, Linux, Windows git-bash) and checkouts.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(dirname "$SCRIPT_DIR")"
 VENV_PY="$REPO/.venv/bin/python"
 DASH_PORT=7870
 

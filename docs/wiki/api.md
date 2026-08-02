@@ -6,7 +6,7 @@ This page is a **functional index** — every endpoint is documented with its pa
 
 | Group | Representative endpoints | Purpose |
 |-------|--------------------------|---------|
-| **Methods** | `GET /api/methods`, `GET /api/node-defs`, `GET /api/port-types`, `GET /api/palettes`, `GET /api/easing-presets` | Browse the 373-method library and its port/param schema |
+| **Methods** | `GET /api/methods`, `GET /api/node-defs`, `GET /api/port-types`, `GET /api/palettes`, `GET /api/easing-presets`, `GET /api/shader-sources` | Browse the 542-method library, its port/param schema, and the GPU shader sources (webgl2/gl330) |
 | **Generation** | `POST /api/generate`, `GET /api/jobs/{id}/stream` (SSE), `DELETE /api/jobs/{id}` | Run a single method, stream progress, cancel |
 | **Graph Execute** | `POST /api/graph/execute`, `GET /api/graph/{gid}/render`, `POST /api/graph/save`, `GET /api/graph/saved` | Headless graph render → bytes, save/load shared graph docs |
 | **Live Sim** | `POST /api/graph/live`, `GET /api/graph/live/stream` (MJPEG), `WS /api/live/ws`, `GET /api/graph/live/status` | Continuous simulation, frame streaming, live stats |

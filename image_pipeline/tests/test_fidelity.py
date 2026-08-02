@@ -8,6 +8,7 @@ Tests:
 5. In-memory vs disk speed comparison
 """
 import time
+import tempfile
 from pathlib import Path
 import numpy as np
 import shutil
@@ -37,14 +38,14 @@ def _cleanup(path: Path):
 
 def test_arch_a_temporal_continuity():
     """Architecture A methods should produce different frames across time."""
-    _cleanup(Path("/tmp/test_arch_a"))
+    _cleanup(Path(tempfile.gettempdir()) / "test_arch_a")
     nodes = [{
         "id": "n1",
         "method_id": "145",
         "params": {"n_frames": 5, "anim_mode": "radial"},
         "dirty": True,
     }]
-    ex = GraphExecutor(Path("/tmp/test_arch_a"), in_memory=True)
+    ex = GraphExecutor(Path(tempfile.gettempdir()) / "test_arch_a", in_memory=True)
 
     outputs = []
     for f in range(5):
@@ -68,14 +69,14 @@ def test_arch_a_temporal_continuity():
 
 def test_arch_b_in_memory():
     """Architecture B methods should work with in_memory=True."""
-    _cleanup(Path("/tmp/test_arch_b"))
+    _cleanup(Path(tempfile.gettempdir()) / "test_arch_b")
     nodes = [{
         "id": "n1",
         "method_id": "05",
         "params": {"noise_type": "perlin"},
         "dirty": True,
     }]
-    ex = GraphExecutor(Path("/tmp/test_arch_b"), in_memory=True)
+    ex = GraphExecutor(Path(tempfile.gettempdir()) / "test_arch_b", in_memory=True)
     result, _, errors = ex.execute(nodes, [], 42, frame=0, frames=1)
     arr = result.get("n1", {}).get("image")
     assert arr is not None, f"No output: {errors}"
@@ -113,8 +114,8 @@ def test_architecture_detection():
 
 def test_in_memory_faster_than_disk():
     """In-memory mode should be faster than disk mode for Arch B methods."""
-    _cleanup(Path("/tmp/test_perf_mem"))
-    _cleanup(Path("/tmp/test_perf_disk"))
+    _cleanup(Path(tempfile.gettempdir()) / "test_perf_mem")
+    _cleanup(Path(tempfile.gettempdir()) / "test_perf_disk")
 
     nodes = [{
         "id": "n1",
@@ -124,14 +125,14 @@ def test_in_memory_faster_than_disk():
     }]
 
     # In-memory
-    ex_mem = GraphExecutor(Path("/tmp/test_perf_mem"), in_memory=True)
+    ex_mem = GraphExecutor(Path(tempfile.gettempdir()) / "test_perf_mem", in_memory=True)
     t0 = time.time()
     for f in range(5):
         ex_mem.execute(nodes, [], 42, frame=f, frames=5)
     mem_time = time.time() - t0
 
     # Disk
-    ex_disk = GraphExecutor(Path("/tmp/test_perf_disk"), in_memory=False)
+    ex_disk = GraphExecutor(Path(tempfile.gettempdir()) / "test_perf_disk", in_memory=False)
     t0 = time.time()
     for f in range(5):
         ex_disk.execute(nodes, [], 42, frame=f, frames=5)
@@ -145,8 +146,8 @@ def test_in_memory_faster_than_disk():
 def test_chain_in_memory_vs_disk():
     """Multi-node chain (Noise→Glitch→Transform) should produce identical pixel output
     in in_memory and disk modes when new_image_contract methods are used."""
-    _cleanup(Path("/tmp/test_chain_mem"))
-    _cleanup(Path("/tmp/test_chain_disk"))
+    _cleanup(Path(tempfile.gettempdir()) / "test_chain_mem")
+    _cleanup(Path(tempfile.gettempdir()) / "test_chain_disk")
 
     nodes = [
         {"id": "src",   "method_id": "05",  "params": {"noise_type": "perlin"},      "dirty": True},
@@ -158,8 +159,8 @@ def test_chain_in_memory_vs_disk():
         {"src_node": "glitch","src_port": "image", "dst_node": "xform",  "dst_port": "image_in"},
     ]
 
-    ex_mem  = GraphExecutor(Path("/tmp/test_chain_mem"),  in_memory=True)
-    ex_disk = GraphExecutor(Path("/tmp/test_chain_disk"), in_memory=False)
+    ex_mem  = GraphExecutor(Path(tempfile.gettempdir()) / "test_chain_mem",  in_memory=True)
+    ex_disk = GraphExecutor(Path(tempfile.gettempdir()) / "test_chain_disk", in_memory=False)
 
     result_mem,  _, errs_mem  = ex_mem.execute(nodes,  edges, 42, frame=0, frames=1)
     result_disk, _, errs_disk = ex_disk.execute(nodes, edges, 42, frame=0, frames=1)
@@ -182,14 +183,14 @@ def test_chain_in_memory_vs_disk():
 
 def test_arch_a_cache_hit():
     """Architecture A should cache simulation and serve from cache."""
-    _cleanup(Path("/tmp/test_cache_hit"))
+    _cleanup(Path(tempfile.gettempdir()) / "test_cache_hit")
     nodes = [{
         "id": "n1",
         "method_id": "145",
         "params": {"n_frames": 5, "anim_mode": "radial"},
         "dirty": True,
     }]
-    ex = GraphExecutor(Path("/tmp/test_cache_hit"), in_memory=True)
+    ex = GraphExecutor(Path(tempfile.gettempdir()) / "test_cache_hit", in_memory=True)
 
     # First call — runs sim, caches frames
     ex.execute(nodes, [], 42, frame=0, frames=5)

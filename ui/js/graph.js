@@ -7348,7 +7348,18 @@ gLoadGroupPresets();
     if (!methodId) return;
     try {
       const r = await fetch(`/api/node-doctor/source/${encodeURIComponent(methodId)}`);
+      if (!r.ok) {
+        pathEl.textContent = `#${methodId}`;
+        const body = (await r.text()).trim();
+        setStatus(`⚠ Failed to load source: server error ${r.status}${body ? ' — ' + body.slice(0, 140) : ''}`, 'err');
+        return;
+      }
       const d = await r.json();
+      if (d.error) {
+        pathEl.textContent = `#${methodId}`;
+        setStatus('⚠ Failed to load source: ' + d.error, 'err');
+        return;
+      }
       if (!d.path) {
         pathEl.textContent = `#${methodId}`;
         codeEl.value = '';

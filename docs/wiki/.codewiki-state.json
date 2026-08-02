@@ -1,0 +1,31 @@
+{
+  "repo_name": "grillmaster-command-center",
+  "source_path": "C:\\Users\\brndn\\Documents\\GitHub\\grillmaster-command-center",
+  "source_sha": "f689773c452e24fa1bf1bbcf3e6817fb5304c81d",
+  "generated_at": "2026-07-31T00:00:00Z",
+  "generator": "hermes-agent code-wiki skill v0.1.0",
+  "modules_documented": [
+    "image-pipeline",
+    "core-graph",
+    "core-registry",
+    "core-port_types",
+    "core-timeline",
+    "core-arch",
+    "core-cache",
+    "core-compositing",
+    "core-easing",
+    "core-expr",
+    "core-node_tester",
+    "core-quality",
+    "core-runner",
+    "core-utils",
+    "core-animation",
+    "core-postprocess",
+    "core-annotator",
+    "server",
+    "methods-library",
+    "ui-editor",
+    "dashboard",
+    "chord-bot"
+  ]
+}

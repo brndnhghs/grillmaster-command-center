@@ -13,6 +13,7 @@ only `set_job_context` (not the sidecar sink), so `write_field` falls through
 to disk and the executor recovers the sidecar at cook time.
 """
 import shutil
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -38,7 +39,7 @@ def _cleanup(path: Path):
 def _make_nodes(n_frames: int) -> list:
     return [{
         "id": "n1",
-        "method_id": "155",  # gray_scott — writes a field sidecar
+        "method_id": "146",  # gray_scott — writes a field sidecar
         "params": {"n_frames": n_frames, "anim_mode": "spots"},
         "dirty": True,
     }]
@@ -46,7 +47,7 @@ def _make_nodes(n_frames: int) -> list:
 
 def test_arch_a_sidecar_survives_cache_hit_render():
     """Arch-A sim field sidecar must survive a cache-hit frame (render path)."""
-    out = Path("/tmp/test_sim_sidecar_cache")
+    out = Path(tempfile.gettempdir()) / "test_sim_sidecar_cache"
     _cleanup(out)
     nodes = _make_nodes(100)
     # Render path (default in_memory=False, audit_to_disk=True) — where #15 hit.
@@ -78,7 +79,7 @@ def test_arch_a_sidecar_survives_cache_hit_render():
 
 def test_arch_a_sidecar_survives_cache_hit_live():
     """Arch-A sim field sidecar must survive a cache-hit frame (live path)."""
-    out = Path("/tmp/test_sim_sidecar_cache_live")
+    out = Path(tempfile.gettempdir()) / "test_sim_sidecar_cache_live"
     _cleanup(out)
     nodes = _make_nodes(100)
     # Live path: in_memory=True, audit_to_disk=False.
@@ -104,7 +105,7 @@ def test_arch_a_sidecar_survives_cache_hit_live():
 
 def test_sidecar_eviction_parity():
     """_evict_sim_cache must clear _sim_sidecars alongside _sim_cache."""
-    ex = GraphExecutor(Path("/tmp/test_sim_sidecar_evict"), fps=24)
+    ex = GraphExecutor(Path(tempfile.gettempdir()) / "test_sim_sidecar_evict", fps=24)
     # Force the eviction loop to actually run (budget 0 → everything unprotected pops).
     # setattr bypasses the Literal[1500000000] class-attribute type.
     setattr(ex, "SIM_CACHE_MAX_BYTES", 0)
